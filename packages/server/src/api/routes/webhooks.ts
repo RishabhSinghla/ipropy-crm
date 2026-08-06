@@ -9,6 +9,7 @@ import { Router, type Request } from 'express';
 import crypto from 'node:crypto';
 import { z } from 'zod';
 import { config } from '../../config.js';
+import { getSettings } from '../../core/settings/integrations.js';
 import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
@@ -33,7 +34,7 @@ webhooksRouter.get('/whatsapp', (req, res) => {
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
-  if (mode === 'subscribe' && token === config.whatsapp.verifyToken) {
+  if (mode === 'subscribe' && token === getSettings().whatsapp.verifyToken) {
     logger.info('whatsapp webhook verified');
     res.status(200).send(challenge);
     return;
@@ -215,7 +216,7 @@ webhooksRouter.get('/telephony/lookup', asyncHandler(async (req, res) => {
 // ---------------------------------------------------------------------------
 
 webhooksRouter.get('/leads/facebook', (req, res) => {
-  if (req.query['hub.mode'] === 'subscribe' && req.query['hub.verify_token'] === config.leadSources.facebook.verifyToken) {
+  if (req.query['hub.mode'] === 'subscribe' && req.query['hub.verify_token'] === getSettings().leadSources.facebook.verifyToken) {
     res.status(200).send(req.query['hub.challenge']);
     return;
   }
@@ -235,7 +236,7 @@ webhooksRouter.post('/leads/facebook', asyncHandler(async (req, res) => {
       if (!leadgenId) continue;
       try {
         // Meta only sends the id; the field data has to be fetched.
-        const token = config.leadSources.facebook.pageAccessToken;
+        const token = getSettings().leadSources.facebook.pageAccessToken;
         if (!token) {
           logger.warn('facebook lead received but no page access token is configured');
           continue;
@@ -257,7 +258,8 @@ webhooksRouter.post('/leads/facebook', asyncHandler(async (req, res) => {
 
 webhooksRouter.post('/leads/google', asyncHandler(async (req, res) => {
   const body = req.body as { google_key?: string; lead_id?: string };
-  if (config.leadSources.googleAdsWebhookKey && body.google_key !== config.leadSources.googleAdsWebhookKey) {
+  const { googleAdsWebhookKey } = getSettings().leadSources;
+  if (googleAdsWebhookKey && body.google_key !== googleAdsWebhookKey) {
     throw new UnauthorizedError('Invalid webhook key');
   }
   res.sendStatus(200);
@@ -383,7 +385,7 @@ webhooksRouter.get('/email/open/:trackingId.gif', asyncHandler(async (req, res) 
 
 webhooksRouter.post('/leads/generic', asyncHandler(async (req, res) => {
   const key = req.headers['x-webform-key'];
-  if (key !== config.leadSources.webformPublicKey) throw new UnauthorizedError('Invalid webhook key');
+  if (key !== getSettings().leadSources.webformPublicKey) throw new UnauthorizedError('Invalid webhook key');
 
   const input = z.object({
     firstName: z.string().min(1),

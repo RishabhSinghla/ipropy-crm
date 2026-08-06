@@ -9,6 +9,7 @@
  */
 import crypto from 'node:crypto';
 import { config } from '../../config.js';
+import { getSettings } from '../../core/settings/integrations.js';
 import { logger } from '../../utils/logger.js';
 import { IntegrationError } from '../../utils/errors.js';
 import { db } from '../../db/pool.js';
@@ -65,21 +66,14 @@ interface Credentials {
  * the admin panel) and fall back to environment variables.
  */
 async function getCredentials(): Promise<Credentials | null> {
-  const row = await db.queryOne<{ config: Record<string, string>; credentials: Record<string, string>; is_active: boolean }>(
-    `SELECT config, credentials, is_active FROM ipy_integration WHERE provider = 'meta_whatsapp' LIMIT 1`,
-  );
-
-  const phoneNumberId = row?.credentials?.phoneNumberId || config.whatsapp.phoneNumberId;
-  const accessToken = row?.credentials?.accessToken || config.whatsapp.accessToken;
-
-  if (!phoneNumberId || !accessToken) return null;
-  if (row && row.is_active === false) return null;
+  const wa = getSettings().whatsapp;
+  if (!wa.phoneNumberId || !wa.accessToken) return null;
 
   return {
-    phoneNumberId,
-    accessToken,
-    apiVersion: row?.config?.apiVersion || config.whatsapp.apiVersion,
-    businessAccountId: row?.credentials?.businessAccountId || config.whatsapp.businessAccountId,
+    phoneNumberId: wa.phoneNumberId,
+    accessToken: wa.accessToken,
+    apiVersion: wa.apiVersion,
+    businessAccountId: wa.businessAccountId,
   };
 }
 
@@ -284,7 +278,7 @@ export async function syncTemplates(): Promise<{ synced: number }> {
 
 /** Verify Meta's X-Hub-Signature-256 header before trusting a webhook body. */
 export function verifyWebhookSignature(rawBody: Buffer, signature: string | undefined): boolean {
-  const secret = config.whatsapp.appSecret;
+  const secret = getSettings().whatsapp.appSecret;
   // Without a configured secret we cannot verify; allow only outside production.
   if (!secret) return !config.isProd;
   if (!signature?.startsWith('sha256=')) return false;

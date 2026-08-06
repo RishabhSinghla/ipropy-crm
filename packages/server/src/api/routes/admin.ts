@@ -7,6 +7,10 @@ import { getUser, hashPassword, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, ConflictError, NotFoundError } from '../../utils/errors.js';
 import { assertCapability, invalidatePermissions } from '../../core/permissions/index.js';
 import { registry } from '../../core/metadata/registry.js';
+import {
+  getSettings, listIntegrations, getIntegrationSummary, saveIntegration, recordIntegrationResult,
+} from '../../core/settings/integrations.js';
+import { verifyConnection as verifySmtpConnection } from '../../integrations/email/service.js';
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth);
@@ -653,4 +657,103 @@ adminRouter.get('/health', asyncHandler(async (req, res) => {
     },
     uptimeSeconds: Math.round(process.uptime()),
   });
+}));
+
+// ---------------------------------------------------------------------------
+// Integration settings — configure providers from the UI instead of .env
+// ---------------------------------------------------------------------------
+
+adminRouter.get('/integrations', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.integrations');
+  res.json(await listIntegrations());
+}));
+
+adminRouter.get('/integrations/:provider', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.integrations');
+  const summary = await getIntegrationSummary(req.params.provider);
+  if (!summary) throw new NotFoundError(`Unknown integration provider '${req.params.provider}'`);
+  res.json(summary);
+}));
+
+adminRouter.put('/integrations/:provider', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.integrations');
+  const input = z.object({
+    config: z.record(z.string()).optional(),
+    credentials: z.record(z.string()).optional(),
+    isActive: z.boolean().optional(),
+  }).parse(req.body);
+
+  const existing = await getIntegrationSummary(req.params.provider);
+  if (!existing) throw new NotFoundError(`Unknown integration provider '${req.params.provider}'`);
+
+  await saveIntegration(req.params.provider, input);
+  res.json(await getIntegrationSummary(req.params.provider));
+}));
+
+/** Lightweight, read-only connectivity check per provider. Never throws. */
+async function testIntegration(provider: string): Promise<{ ok: boolean; message: string }> {
+  const s = getSettings();
+  try {
+    switch (provider) {
+      case 'meta_whatsapp': {
+        const { phoneNumberId, accessToken, apiVersion } = s.whatsapp;
+        if (!phoneNumberId || !accessToken) return { ok: false, message: 'Phone number ID and access token are required.' };
+        const r = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}?fields=display_phone_number`, {
+          headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000),
+        });
+        const body = await r.json().catch(() => ({})) as { display_phone_number?: string; error?: { message?: string } };
+        if (!r.ok) return { ok: false, message: body.error?.message ?? `Meta returned HTTP ${r.status}` };
+        return { ok: true, message: `Connected — ${body.display_phone_number ?? 'number verified'}.` };
+      }
+      case 'twilio': {
+        const { accountSid, authToken } = s.telephony.twilio;
+        if (!accountSid || !authToken) return { ok: false, message: 'Account SID and auth token are required.' };
+        const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}.json`, {
+          headers: { Authorization: `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString('base64')}` },
+          signal: AbortSignal.timeout(10_000),
+        });
+        const body = await r.json().catch(() => ({})) as { friendly_name?: string; message?: string };
+        if (!r.ok) return { ok: false, message: body.message ?? `Twilio returned HTTP ${r.status}` };
+        return { ok: true, message: `Connected — ${body.friendly_name ?? 'account verified'}.` };
+      }
+      case 'exotel': {
+        const { sid, apiKey, apiToken, subdomain } = s.telephony.exotel;
+        if (!sid || !apiKey || !apiToken) return { ok: false, message: 'SID, API key and API token are required.' };
+        const r = await fetch(`https://${apiKey}:${apiToken}@${subdomain}/v1/Accounts/${sid}/Calls.json?PageSize=1`, {
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({})) as { RestException?: { Message?: string } };
+          return { ok: false, message: body.RestException?.Message ?? `Exotel returned HTTP ${r.status}` };
+        }
+        return { ok: true, message: 'Connected — credentials accepted.' };
+      }
+      case 'smtp': {
+        if (!s.email.host) return { ok: false, message: 'SMTP host is required.' };
+        const result = await verifySmtpConnection();
+        return result.ok ? { ok: true, message: 'Connected — SMTP server accepted the credentials.' } : { ok: false, message: result.error ?? 'Connection failed.' };
+      }
+      case 'anthropic': {
+        if (!s.ai.apiKey) return { ok: false, message: 'An API key is required.' };
+        const Anthropic = (await import('@anthropic-ai/sdk')).default;
+        const client = new Anthropic({ apiKey: s.ai.apiKey });
+        await client.models.list({ limit: 1 });
+        return { ok: true, message: 'Connected — API key accepted.' };
+      }
+      case 'facebook_leads':
+        if (!s.leadSources.facebook.pageAccessToken) return { ok: false, message: 'A page access token is required.' };
+        return { ok: true, message: 'Page access token is set. Full verification happens on the next inbound lead.' };
+      default:
+        return { ok: false, message: 'This provider does not support a connectivity test — save the settings and check the webhook logs instead.' };
+    }
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : 'Connection failed.' };
+  }
+}
+
+adminRouter.post('/integrations/:provider/test', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.integrations');
+  const result = await testIntegration(req.params.provider);
+  await recordIntegrationResult(req.params.provider, result.ok, result.ok ? undefined : result.message);
+  res.json(result);
 }));

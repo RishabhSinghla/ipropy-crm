@@ -8,6 +8,7 @@
  */
 import { toE164 } from '@ipropy/shared';
 import { config } from '../../config.js';
+import { getSettings } from '../../core/settings/integrations.js';
 import { db, type Tx } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { BadRequestError, IntegrationError } from '../../utils/errors.js';
@@ -42,7 +43,7 @@ export interface CallAdapter {
 const twilioAdapter: CallAdapter = {
   name: 'twilio',
   async placeCall({ agentNumber, customerNumber, callerId, callbackUrl }) {
-    const { accountSid, authToken } = config.telephony.twilio;
+    const { accountSid, authToken } = getSettings().telephony.twilio;
     if (!accountSid || !authToken) throw new IntegrationError('twilio', 'Missing account SID or auth token');
 
     const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls.json`;
@@ -76,7 +77,7 @@ const twilioAdapter: CallAdapter = {
   },
 
   async fetchRecording(providerCallId) {
-    const { accountSid, authToken } = config.telephony.twilio;
+    const { accountSid, authToken } = getSettings().telephony.twilio;
     if (!accountSid || !authToken) return null;
     const res = await fetch(
       `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls/${providerCallId}/Recordings.json`,
@@ -91,7 +92,7 @@ const twilioAdapter: CallAdapter = {
 const exotelAdapter: CallAdapter = {
   name: 'exotel',
   async placeCall({ agentNumber, customerNumber, callerId, callbackUrl }) {
-    const { sid, apiKey, apiToken, subdomain } = config.telephony.exotel;
+    const { sid, apiKey, apiToken, subdomain } = getSettings().telephony.exotel;
     if (!sid || !apiKey || !apiToken) throw new IntegrationError('exotel', 'Missing Exotel credentials');
 
     const url = `https://${apiKey}:${apiToken}@${subdomain}/v1/Accounts/${sid}/Calls/connect.json`;
@@ -129,7 +130,7 @@ const nullAdapter: CallAdapter = {
 };
 
 function getAdapter(): CallAdapter {
-  switch (config.telephony.provider) {
+  switch (getSettings().telephony.provider) {
     case 'twilio': return twilioAdapter;
     case 'exotel': return exotelAdapter;
     default: return nullAdapter;
@@ -137,7 +138,7 @@ function getAdapter(): CallAdapter {
 }
 
 export function isTelephonyConfigured(): boolean {
-  return config.telephony.provider !== 'none';
+  return getSettings().telephony.provider !== 'none';
 }
 
 // ---------------------------------------------------------------------------
@@ -167,8 +168,8 @@ export async function placeCall(input: PlaceCallInput): Promise<{ callId: string
 
   const adapter = getAdapter();
   const callerId = input.callerId
-    ?? config.telephony.twilio.callerId
-    ?? config.telephony.exotel.callerId
+    ?? getSettings().telephony.twilio.callerId
+    ?? getSettings().telephony.exotel.callerId
     ?? agentNumber;
 
   const callbackUrl = `${config.apiUrl}/api/webhooks/telephony/${adapter.name}`;

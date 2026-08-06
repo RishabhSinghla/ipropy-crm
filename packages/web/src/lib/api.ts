@@ -144,6 +144,13 @@ export interface ModuleSummary {
   permissions: { view: boolean; create: boolean; edit: boolean; delete: boolean; export: boolean; import: boolean };
 }
 
+export interface IntegrationSummary {
+  provider: string; kind: string; label: string; isActive: boolean;
+  status: string; lastSyncAt: string | null; lastError: string | null;
+  config: Record<string, string>;
+  credentialFields: Record<string, { set: boolean; preview: string }>;
+}
+
 export const api = {
   /** Escape hatch for endpoints without a dedicated helper. */
   request,
@@ -270,6 +277,11 @@ export const api = {
   saveSettings: (settings: Record<string, unknown>) => put('/api/admin/settings', { settings }),
   auditLog: (params: Record<string, unknown> = {}) => get<Record<string, unknown>[]>(`/api/admin/audit${qs(params)}`),
   systemHealth: () => get<Record<string, unknown>>('/api/admin/health'),
+  integrations: () => get<IntegrationSummary[]>('/api/admin/integrations'),
+  integration: (provider: string) => get<IntegrationSummary>(`/api/admin/integrations/${provider}`),
+  saveIntegration: (provider: string, data: { config?: Record<string, string>; credentials?: Record<string, string>; isActive?: boolean }) =>
+    put<IntegrationSummary>(`/api/admin/integrations/${provider}`, data),
+  testIntegration: (provider: string) => post<{ ok: boolean; message: string }>(`/api/admin/integrations/${provider}/test`, {}),
 
   // --- workflows ----------------------------------------------------------
   workflows: () => get<{ workflows: Record<string, unknown>[]; taskTypes: string[] }>('/api/workflows'),

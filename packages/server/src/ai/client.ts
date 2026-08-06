@@ -6,20 +6,28 @@
  * key is present, and an audit row per call.
  */
 import Anthropic from '@anthropic-ai/sdk';
-import { config } from '../config.js';
+import { getSettings } from '../core/settings/integrations.js';
 import { db } from '../db/pool.js';
 import { logger } from '../utils/logger.js';
 
 let client: Anthropic | null = null;
+let clientKey: string | null = null;
 
 function getClient(): Anthropic | null {
-  if (!config.ai.enabled || !config.ai.apiKey) return null;
-  if (!client) client = new Anthropic({ apiKey: config.ai.apiKey });
+  const { enabled, apiKey } = getSettings().ai;
+  if (!enabled || !apiKey) return null;
+  // Rebuild if the admin rotated the key via the integrations panel — a stale
+  // client would keep authenticating with the old one.
+  if (!client || clientKey !== apiKey) {
+    client = new Anthropic({ apiKey });
+    clientKey = apiKey;
+  }
   return client;
 }
 
 export function isAiAvailable(): boolean {
-  return Boolean(config.ai.enabled && config.ai.apiKey);
+  const { enabled, apiKey } = getSettings().ai;
+  return Boolean(enabled && apiKey);
 }
 
 export interface CompleteOptions {
@@ -49,7 +57,8 @@ export async function complete(opts: CompleteOptions): Promise<CompleteResult | 
   const api = getClient();
   if (!api) return null;
 
-  const model = opts.fast ? config.ai.fastModel : config.ai.model;
+  const aiSettings = getSettings().ai;
+  const model = opts.fast ? aiSettings.fastModel : aiSettings.model;
   const started = Date.now();
 
   try {
@@ -58,7 +67,7 @@ export async function complete(opts: CompleteOptions): Promise<CompleteResult | 
 
     const response = await api.messages.create({
       model,
-      max_tokens: opts.maxTokens ?? config.ai.maxTokens,
+      max_tokens: opts.maxTokens ?? aiSettings.maxTokens,
       temperature: opts.temperature ?? 0.2,
       system: opts.system,
       messages,
@@ -135,7 +144,7 @@ async function logCall(
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
     [
       opts.feature,
-      result?.model ?? (opts.fast ? config.ai.fastModel : config.ai.model),
+      result?.model ?? (opts.fast ? getSettings().ai.fastModel : getSettings().ai.model),
       opts.userId ?? null,
       opts.recordId ?? null,
       opts.prompt.slice(0, 500),
@@ -173,7 +182,7 @@ export async function saveInsight(input: {
     [
       input.recordId, input.module, input.kind, input.title, input.body,
       JSON.stringify(input.data ?? {}), input.score ?? null, input.confidence ?? null,
-      input.model ?? config.ai.model, input.userId ?? null,
+      input.model ?? getSettings().ai.model, input.userId ?? null,
     ],
   );
   return row?.id ?? null;

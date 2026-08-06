@@ -5,6 +5,7 @@ import { logger } from './utils/logger.js';
 import { createApp } from './app.js';
 import { checkConnection, closePool } from './db/pool.js';
 import { registry } from './core/metadata/registry.js';
+import { warmup as warmupIntegrationSettings } from './core/settings/integrations.js';
 import { registerWorkflowHandlers } from './core/workflow/engine.js';
 import { startScheduler, stopScheduler } from './core/workflow/scheduler.js';
 import { initRealtime, closeRealtime } from './realtime.js';
@@ -30,6 +31,7 @@ async function main(): Promise<void> {
 
   try {
     await registry.warmup();
+    await warmupIntegrationSettings();
   } catch (err) {
     logger.error({ err }, 'failed to load metadata — have you run `npm run db:migrate && npm run db:seed`?');
     process.exit(1);

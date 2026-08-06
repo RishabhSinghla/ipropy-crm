@@ -7,28 +7,34 @@ import crypto from 'node:crypto';
 import nodemailer, { type Transporter } from 'nodemailer';
 import { renderTemplate } from '@ipropy/shared';
 import { config } from '../../config.js';
+import { getSettings } from '../../core/settings/integrations.js';
 import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { NotFoundError } from '../../utils/errors.js';
 
 let transporter: Transporter | null = null;
-let transporterChecked = false;
+let transporterKey = '';
 
 function getTransporter(): Transporter | null {
-  if (transporterChecked) return transporter;
-  transporterChecked = true;
-  if (!config.email.host) {
-    logger.info('SMTP not configured — emails will be logged only');
+  const email = getSettings().email;
+  if (!email.host) {
+    transporter = null;
+    transporterKey = '';
     return null;
   }
+  // Rebuild if the admin changed SMTP settings via the integrations panel.
+  const key = `${email.host}:${email.port}:${email.secure}:${email.user}:${email.password}`;
+  if (transporter && transporterKey === key) return transporter;
+
   transporter = nodemailer.createTransport({
-    host: config.email.host,
-    port: config.email.port,
-    secure: config.email.secure,
-    auth: config.email.user ? { user: config.email.user, pass: config.email.password } : undefined,
+    host: email.host,
+    port: email.port,
+    secure: email.secure,
+    auth: email.user ? { user: email.user, pass: email.password } : undefined,
     pool: true,
     maxConnections: 5,
   });
+  transporterKey = key;
   return transporter;
 }
 
@@ -66,7 +72,7 @@ export async function sendEmail(input: SendEmailInput): Promise<{ id: string; st
      VALUES ($1,'outbound',$2,$3,$4,$5,$6,$7,$8,'queued',$9,$10,$11,$12)
      RETURNING id`,
     [
-      input.recordId ?? null, config.email.from,
+      input.recordId ?? null, getSettings().email.from,
       JSON.stringify(to), JSON.stringify(input.cc ?? []), JSON.stringify(input.bcc ?? []),
       input.subject, html, input.text ?? null,
       input.templateId ?? null, trackingId, input.sentBy ?? null, input.isAiGenerated ?? false,
@@ -82,7 +88,7 @@ export async function sendEmail(input: SendEmailInput): Promise<{ id: string; st
 
   try {
     const info = await tx.sendMail({
-      from: config.email.from,
+      from: getSettings().email.from,
       to, cc: input.cc, bcc: input.bcc,
       subject: input.subject,
       html,

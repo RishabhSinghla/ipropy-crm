@@ -329,10 +329,10 @@ export function ToastHost(): JSX.Element {
 // ---------------------------------------------------------------------------
 
 export function Toggle({
-  checked, onChange, label, disabled,
-}: { checked: boolean; onChange: (v: boolean) => void; label?: string; disabled?: boolean }): JSX.Element {
+  checked, onChange, label, disabled, className,
+}: { checked: boolean; onChange: (v: boolean) => void; label?: string; disabled?: boolean; className?: string }): JSX.Element {
   return (
-    <label className={cn('inline-flex cursor-pointer items-center gap-2', disabled && 'cursor-not-allowed opacity-50')}>
+    <label className={cn('inline-flex cursor-pointer items-center gap-2', disabled && 'cursor-not-allowed opacity-50', className)}>
       <button
         type="button"
         role="switch"
@@ -345,9 +345,16 @@ export function Toggle({
         )}
       >
         <span
+          // `left-0.5` is required, not decorative: buttons get `text-align:
+          // center` from Preflight, so an absolutely-positioned span with no
+          // explicit inset resolves its static position to the button's
+          // horizontal center (an empty inline box centers to a single
+          // point). Without `left-0.5` pinning it, the translate-x below
+          // stacks on top of that centred point instead of the track's edge,
+          // and the thumb ends up rendered outside the pill when checked.
           className={cn(
-            'absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform',
-            checked ? 'translate-x-[1.15rem]' : 'translate-x-0.5',
+            'absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform',
+            checked ? 'translate-x-4' : 'translate-x-0',
           )}
         />
       </button>
