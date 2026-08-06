@@ -1,0 +1,31 @@
+{
+  "name": "ipropy-crm",
+  "version": "1.0.0",
+  "private": true,
+  "description": "iPropy — AI-native, metadata-driven CRM for real estate",
+  "license": "UNLICENSED",
+  "workspaces": [
+    "packages/shared",
+    "packages/server",
+    "packages/web"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "npm run build -w @ipropy/shared && npm run build -w @ipropy/server && npm run build -w @ipropy/web",
+    "build:shared": "npm run build -w @ipropy/shared",
+    "dev": "concurrently -n server,web -c cyan,magenta \"npm run dev -w @ipropy/server\" \"npm run dev -w @ipropy/web\"",
+    "dev:server": "npm run dev -w @ipropy/server",
+    "dev:web": "npm run dev -w @ipropy/web",
+    "typecheck": "npm run typecheck -w @ipropy/shared && npm run typecheck -w @ipropy/server && npm run typecheck -w @ipropy/web",
+    "db:migrate": "npm run db:migrate -w @ipropy/server",
+    "db:seed": "npm run db:seed -w @ipropy/server",
+    "db:reset": "npm run db:reset -w @ipropy/server",
+    "setup": "npm install && npm run build:shared && npm run db:migrate && npm run db:seed"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "typescript": "^5.7.2"
+  }
+}
