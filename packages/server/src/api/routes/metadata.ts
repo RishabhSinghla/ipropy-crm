@@ -116,10 +116,15 @@ metadataRouter.post('/modules/:name/toggle', asyncHandler(async (req, res) => {
     );
   }
 
+  // Do NOT touch show_in_menu here. The nav (GET /meta/modules) already filters
+  // by is_active, so a disabled module is hidden regardless. Clobbering
+  // show_in_menu on disable left it false forever — re-enabling never restored
+  // it, so a module that had been switched off once stayed missing from the
+  // sidebar even after being turned back on. Menu visibility is edited
+  // separately (ModuleBuilder), so leave the admin's choice intact.
   await db.query(
     `UPDATE ipy_module
      SET is_active = $2,
-         show_in_menu = CASE WHEN $2 THEN show_in_menu ELSE false END,
          disabled_reason = CASE WHEN $2 THEN NULL ELSE $3 END,
          disabled_at = CASE WHEN $2 THEN NULL ELSE now() END,
          disabled_by = CASE WHEN $2 THEN NULL ELSE $4::uuid END,
