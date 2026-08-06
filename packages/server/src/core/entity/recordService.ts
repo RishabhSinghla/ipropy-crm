@@ -1055,26 +1055,40 @@ export async function globalSearch(
 ): Promise<{ id: string; module: string; moduleLabel: string; label: string; recordNumber: string | null }[]> {
   if (!term.trim()) return [];
   const modules = await registry.getModules({ entityOnly: true });
-  const allowed: string[] = [];
+  const allowed: ModuleMeta[] = [];
   for (const m of modules) {
     const perm = await import('../permissions/index.js').then((p) => p.canAccessModule(ctx.user, m.name, 'view'));
-    if (perm) allowed.push(m.id);
+    if (perm) allowed.push(m);
   }
   if (!allowed.length) return [];
 
   const params = new SqlParams();
-  const moduleParam = params.add(allowed);
   const search = buildSearchClause(term, params);
-  const scope = ctx.system ? null : await recordScopeSql(ctx, modules[0].name, params);
+
+  // Sharing is configured per module — leads/deals are private while
+  // projects/properties are public_read — so one module's scope fragment must
+  // never be applied to another's rows. Scope each module independently and OR
+  // the branches together; a null scope means that module is unrestricted for
+  // this user.
+  const branches: string[] = [];
+  for (const m of allowed) {
+    const moduleParam = params.add(m.id);
+    const scope = ctx.system ? null : await recordScopeSql(ctx, m.name, params);
+    branches.push(
+      scope
+        ? `(${RECORD_ALIAS}.module_id = ${moduleParam}::uuid AND ${scope})`
+        : `${RECORD_ALIAS}.module_id = ${moduleParam}::uuid`,
+    );
+  }
+
   const limitParam = params.add(limit);
 
   const res = await db.query<{ id: string; module_name: string; label: string; record_number: string | null }>(
     `SELECT ${RECORD_ALIAS}.id, ${RECORD_ALIAS}.module_name, ${RECORD_ALIAS}.label, ${RECORD_ALIAS}.record_number
      FROM ipy_record ${RECORD_ALIAS}
-     WHERE ${RECORD_ALIAS}.module_id = ANY(${moduleParam}::uuid[])
+     WHERE (${branches.join(' OR ')})
        AND ${RECORD_ALIAS}.is_deleted = false
        AND ${search}
-       ${scope ? `AND ${scope}` : ''}
      ORDER BY ${RECORD_ALIAS}.updated_at DESC
      LIMIT ${limitParam}`,
     params.all(),
