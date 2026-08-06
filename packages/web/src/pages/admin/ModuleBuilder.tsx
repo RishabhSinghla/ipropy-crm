@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FieldMeta } from '@ipropy/shared';
 import { UITYPE_LIST } from '@ipropy/shared';
-import { Blocks, Edit3, Lock, Plus, Trash2 } from 'lucide-react';
+import { Blocks, Edit3, Eye, Lock, Plus, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
 import { cn } from '../../lib/utils';
@@ -18,19 +18,36 @@ export default function ModuleBuilder(): JSX.Element {
   const [creatingModule, setCreatingModule] = useState(false);
   const [deleteField, setDeleteField] = useState<FieldMeta | null>(null);
 
+  // Distinct query key from the app-wide ['module', name] used by record
+  // screens: this one includes hidden/inactive fields so they can be found
+  // and re-enabled, which those screens must never see.
   const { data: meta, isLoading } = useQuery({
-    queryKey: ['module', selectedModule],
-    queryFn: () => api.module(selectedModule),
+    queryKey: ['module', selectedModule, 'builder'],
+    queryFn: () => api.module(selectedModule, { includeInactive: true }),
   });
+
+  const invalidateModule = (): void => {
+    void queryClient.invalidateQueries({ queryKey: ['module', selectedModule, 'builder'] });
+    void queryClient.invalidateQueries({ queryKey: ['module', selectedModule] });
+  };
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.deleteField(id),
     onSuccess: (result) => {
       const r = result as { deactivated?: boolean };
       toast.success(r.deactivated ? 'Field hidden' : 'Field deleted');
-      void queryClient.invalidateQueries({ queryKey: ['module', selectedModule] });
+      invalidateModule();
     },
     onError: (err: Error) => toast.error('Could not remove the field', err.message),
+  });
+
+  const unhideMutation = useMutation({
+    mutationFn: (id: string) => api.updateField(id, { isActive: true }),
+    onSuccess: () => {
+      toast.success('Field restored');
+      invalidateModule();
+    },
+    onError: (err: Error) => toast.error('Could not restore the field', err.message),
   });
 
   return (
@@ -122,13 +139,24 @@ export default function ModuleBuilder(): JSX.Element {
                           <button onClick={() => setEditingField(field)} className="btn-ghost p-1.5" title="Edit">
                             <Edit3 className="h-3.5 w-3.5" />
                           </button>
-                          <button
-                            onClick={() => setDeleteField(field)}
-                            className="btn-ghost p-1.5 text-slate-400 hover:text-red-600"
-                            title={field.isCustom ? 'Delete field' : 'Hide field'}
-                          >
-                            {field.isCustom ? <Trash2 className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
-                          </button>
+                          {!field.isCustom && !field.isActive ? (
+                            <button
+                              onClick={() => unhideMutation.mutate(field.id)}
+                              disabled={unhideMutation.isPending}
+                              className="btn-ghost p-1.5 text-slate-400 hover:text-emerald-600"
+                              title="Show field again"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => setDeleteField(field)}
+                              className="btn-ghost p-1.5 text-slate-400 hover:text-red-600"
+                              title={field.isCustom ? 'Delete field' : 'Hide field'}
+                            >
+                              {field.isCustom ? <Trash2 className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -151,7 +179,7 @@ export default function ModuleBuilder(): JSX.Element {
           onSaved={() => {
             setCreatingField(false);
             setEditingField(null);
-            void queryClient.invalidateQueries({ queryKey: ['module', selectedModule] });
+            invalidateModule();
           }}
         />
       )}

@@ -168,12 +168,12 @@ export const api = {
 
   // --- metadata -----------------------------------------------------------
   modules: () => get<ModuleSummary[]>('/api/meta/modules'),
-  module: (name: string) => get<ModuleMeta & {
+  module: (name: string, opts: { includeInactive?: boolean } = {}) => get<ModuleMeta & {
     layouts: { id: string; name: string; type: string; is_default: boolean; config: unknown }[];
     picklistDependencies: { sourceField: string; targetField: string; mapping: Record<string, string[]> }[];
     permissions: ModuleSummary['permissions'];
     supportsConversion: boolean;
-  }>(`/api/meta/modules/${name}`),
+  }>(`/api/meta/modules/${name}${opts.includeInactive ? '?includeInactive=true' : ''}`),
   layout: (module: string, type: string) =>
     get<{ id: string; name: string; config: Record<string, unknown> }>(`/api/meta/modules/${module}/layout/${type}`),
   layouts: (module: string) => get<Record<string, unknown>[]>(`/api/meta/modules/${module}/layouts`),

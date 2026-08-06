@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, ChevronRight, Plus, Save, Shield, Users } from 'lucide-react';
+import { Check, ChevronRight, Eye, EyeOff, Lock, Plus, Save, Shield, Users } from 'lucide-react';
 import { api } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
 import { cn } from '../../lib/utils';
@@ -12,6 +12,7 @@ interface RoleNode {
 }
 
 type Perm = { view: boolean; create: boolean; edit: boolean; delete: boolean; export: boolean; import: boolean };
+type FieldPermValue = 'editable' | 'readonly' | 'hidden';
 
 export default function RolesProfiles(): JSX.Element {
   const [tab, setTab] = useState('roles');
@@ -168,6 +169,8 @@ function ProfilesTab(): JSX.Element {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [perms, setPerms] = useState<Record<string, Perm>>({});
   const [capabilities, setCapabilities] = useState<string[]>([]);
+  const [fieldPerms, setFieldPerms] = useState<Map<string, FieldPermValue>>(new Map());
+  const [fieldModule, setFieldModule] = useState('leads');
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -182,10 +185,18 @@ function ProfilesTab(): JSX.Element {
     enabled: Boolean(activeId),
   });
 
+  const { data: fieldModuleMeta } = useQuery({
+    queryKey: ['module', fieldModule],
+    queryFn: () => api.module(fieldModule),
+    enabled: Boolean(fieldModule),
+  });
+
   useEffect(() => {
     if (!detail) return;
     setPerms((detail.modulePermissions ?? {}) as Record<string, Perm>);
     setCapabilities((detail.capabilities ?? []) as string[]);
+    const fp = (detail.fieldPermissions ?? []) as { module: string; field: string; permission: FieldPermValue }[];
+    setFieldPerms(new Map(fp.map((f) => [`${f.module}::${f.field}`, f.permission])));
     setDirty(false);
   }, [detail]);
 
@@ -205,11 +216,20 @@ function ProfilesTab(): JSX.Element {
     setDirty(true);
   };
 
+  const setFieldPerm = (moduleName: string, fieldName: string, permission: FieldPermValue): void => {
+    setFieldPerms((prev) => new Map(prev).set(`${moduleName}::${fieldName}`, permission));
+    setDirty(true);
+  };
+
   const save = async (): Promise<void> => {
     if (!activeId) return;
     setSaving(true);
     try {
-      await api.saveProfilePermissions(activeId, { modulePermissions: perms, capabilities });
+      const fieldPermissions = [...fieldPerms.entries()].map(([key, permission]) => {
+        const [module, field] = key.split('::');
+        return { module, field, permission };
+      });
+      await api.saveProfilePermissions(activeId, { modulePermissions: perms, capabilities, fieldPermissions });
       toast.success('Permissions saved');
       setDirty(false);
       void queryClient.invalidateQueries({ queryKey: ['profile', activeId] });
@@ -297,6 +317,69 @@ function ProfilesTab(): JSX.Element {
               </tbody>
             </table>
           </div>
+        </div>
+
+        <div className="card overflow-hidden">
+          <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
+            <p className="text-sm font-medium">Field permissions</p>
+            <span className="text-2xs text-slate-400">
+              — controls what this profile sees and can edit, field by field
+            </span>
+            <div className="ml-auto w-56">
+              <Select
+                value={fieldModule}
+                onChange={setFieldModule}
+                options={modules.filter((m) => m.isEntity).map((m) => ({ value: m.name, label: m.label }))}
+              />
+            </div>
+            <button onClick={() => void save()} disabled={!dirty || saving} className="btn-primary btn-sm">
+              {saving ? <Spinner className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />} Save
+            </button>
+          </div>
+
+          {!fieldModuleMeta ? (
+            <div className="space-y-2 p-4">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
+          ) : (
+            <div className="max-h-96 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800">
+              {fieldModuleMeta.fields.filter((f) => f.isActive).map((f) => {
+                const key = `${fieldModule}::${f.name}`;
+                const value = fieldPerms.get(key) ?? 'editable';
+                return (
+                  <div key={f.name} className="flex items-center gap-3 px-4 py-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm">{f.label}</p>
+                      <p className="font-mono text-2xs text-slate-400">{f.name}</p>
+                    </div>
+                    <div className="flex shrink-0 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
+                      {([
+                        { value: 'editable' as const, label: 'Editable', icon: Eye },
+                        { value: 'readonly' as const, label: 'Read-only', icon: Lock },
+                        { value: 'hidden' as const, label: 'Hidden', icon: EyeOff },
+                      ]).map((opt, i) => (
+                        <button
+                          key={opt.value}
+                          onClick={() => setFieldPerm(fieldModule, f.name, opt.value)}
+                          title={opt.label}
+                          className={cn(
+                            'flex items-center gap-1 px-2 py-1 text-2xs transition-colors',
+                            i > 0 && 'border-l border-slate-200 dark:border-slate-700',
+                            value === opt.value
+                              ? 'bg-brand-600 text-white'
+                              : 'bg-white text-slate-500 hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-800',
+                          )}
+                        >
+                          <opt.icon className="h-3 w-3" /> {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+              {fieldModuleMeta.fields.filter((f) => f.isActive).length === 0 && (
+                <p className="px-4 py-6 text-center text-xs text-slate-400">No fields on this module.</p>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="card p-4">

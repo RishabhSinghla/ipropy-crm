@@ -6,7 +6,7 @@ import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getUser, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, ConflictError, NotFoundError } from '../../utils/errors.js';
 import { registry } from '../../core/metadata/registry.js';
-import { assertCapability, canAccessModule, getFieldPermissions, getModulePermission, invalidatePermissions } from '../../core/permissions/index.js';
+import { assertCapability, canAccessModule, getFieldPermissions, getModulePermission, hasCapability, invalidatePermissions } from '../../core/permissions/index.js';
 import { FORMULA_FUNCTIONS, validateFormula } from '../../core/entity/formula.js';
 import { previewNumber } from '../../core/entity/numbering.js';
 
@@ -155,8 +155,14 @@ metadataRouter.get('/modules/:name', asyncHandler(async (req, res) => {
     throw new NotFoundError(`Unknown module '${req.params.name}'`);
   }
 
+  // The field builder needs to see hidden/inactive fields to manage them —
+  // every other screen must not, or a field an admin hid is still fetchable
+  // by name/label/config one API call away even though its value is stripped.
+  const includeInactive = req.query.includeInactive === 'true' && await hasCapability(user, 'admin.fields');
+
   const fieldPerms = await getFieldPermissions(user, module.name);
-  const visible = (name: string): boolean => fieldPerms.get(name) !== 'hidden';
+  const visible = (f: { name: string; isActive: boolean; displayType: string }): boolean =>
+    fieldPerms.get(f.name) !== 'hidden' && (includeInactive || (f.isActive && f.displayType !== 'hidden'));
 
   const [layouts, dependencies] = await Promise.all([
     db.query<{ id: string; name: string; type: string; is_default: boolean; config: unknown }>(
@@ -170,11 +176,11 @@ metadataRouter.get('/modules/:name', asyncHandler(async (req, res) => {
   res.json({
     ...module,
     fields: module.fields
-      .filter((f) => visible(f.name))
+      .filter(visible)
       .map((f) => ({ ...f, permission: fieldPerms.get(f.name) ?? 'editable' })),
     blocks: module.blocks.map((b) => ({
       ...b,
-      fields: b.fields.filter((f) => visible(f.name)).map((f) => ({ ...f, permission: fieldPerms.get(f.name) ?? 'editable' })),
+      fields: b.fields.filter(visible).map((f) => ({ ...f, permission: fieldPerms.get(f.name) ?? 'editable' })),
     })),
     layouts: layouts.rows,
     picklistDependencies: dependencies,
@@ -427,6 +433,7 @@ const fieldSchema = z.object({
   isMandatory: z.boolean().default(false),
   isReadonly: z.boolean().default(false),
   isUnique: z.boolean().default(false),
+  isActive: z.boolean().optional(),
   displayType: z.enum(['default', 'readonly', 'hidden', 'detail_only', 'create_only']).default('default'),
   defaultValue: z.unknown().optional(),
   maxLength: z.number().int().positive().optional(),
@@ -503,8 +510,8 @@ metadataRouter.patch('/fields/:id', asyncHandler(async (req, res) => {
   await assertCapability(getUser(req), 'admin.fields');
   const input = fieldSchema.partial().omit({ name: true }).parse(req.body);
 
-  const current = await db.queryOne<{ uitype: string; config: Record<string, unknown>; is_custom: boolean; module_id: string }>(
-    `SELECT uitype, config, is_custom, module_id FROM ipy_field WHERE id = $1`, [req.params.id],
+  const current = await db.queryOne<{ uitype: string; config: Record<string, unknown>; is_custom: boolean; module_id: string; display_type: string }>(
+    `SELECT uitype, config, is_custom, module_id, display_type FROM ipy_field WHERE id = $1`, [req.params.id],
   );
   if (!current) throw new NotFoundError('Field not found');
 
@@ -515,9 +522,17 @@ metadataRouter.patch('/fields/:id', asyncHandler(async (req, res) => {
   const nextConfig = { ...current.config, ...(input.config ?? {}) };
   if (input.uitype || input.config) validateFieldConfig(nextType, nextConfig);
 
+  // Re-activating a field that was hidden via the "Hide field" action must
+  // also clear display_type='hidden', or the field stays invisible on every
+  // screen (the web app filters on isActive AND displayType !== 'hidden') —
+  // the toggle would silently do nothing from the admin's point of view.
+  if (input.isActive === true && current.display_type === 'hidden' && input.displayType === undefined) {
+    input.displayType = 'default';
+  }
+
   const map: Record<string, string> = {
     label: 'label', uitype: 'uitype', blockId: 'block_id', sequence: 'sequence',
-    isMandatory: 'is_mandatory', isReadonly: 'is_readonly', isUnique: 'is_unique',
+    isMandatory: 'is_mandatory', isReadonly: 'is_readonly', isUnique: 'is_unique', isActive: 'is_active',
     displayType: 'display_type', maxLength: 'max_length', helpText: 'help_text',
     quickCreate: 'quick_create', massEditable: 'mass_editable', searchable: 'searchable',
   };
