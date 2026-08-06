@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../lib/store';
 import { api } from '../lib/api';
+import { useRealtime } from '../lib/realtime';
 import { cn, groupModules } from '../lib/utils';
 import { Avatar, Badge, Dropdown, DropdownItem, Spinner } from './ui';
 import AiAssistant from './AiAssistant';
@@ -23,6 +24,10 @@ export default function Layout(): JSX.Element {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
   const location = useLocation();
+
+  // One socket for the whole session: server-side changes (workflow tasks, AI
+  // scoring, another user's edit) invalidate the matching queries live.
+  useRealtime(Boolean(user));
 
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
 

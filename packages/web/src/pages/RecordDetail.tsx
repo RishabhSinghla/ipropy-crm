@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
+import { useWatchRecord } from '../lib/realtime';
+import { invalidateRecordQueries } from '../lib/invalidate';
 import { cn, renderMarkdown } from '../lib/utils';
 import { FieldValue } from '../components/FieldRenderer';
 import {
@@ -43,11 +45,15 @@ export default function RecordDetail(): JSX.Element {
     enabled: Boolean(moduleName && id),
   });
 
+  // Join this record's realtime room so workflow/AI writes that land after the
+  // response (lead scoring, lifecycle promotion) appear without a refresh.
+  useWatchRecord(id);
+
   const deleteMutation = useMutation({
     mutationFn: () => api.remove(moduleName!, id!),
     onSuccess: () => {
       toast.success('Record deleted');
-      void queryClient.invalidateQueries({ queryKey: ['records', moduleName] });
+      invalidateRecordQueries(queryClient, moduleName, id);
       navigate(`/${moduleName}`);
     },
   });

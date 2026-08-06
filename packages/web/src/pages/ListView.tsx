@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
+import { invalidateRecordQueries } from '../lib/invalidate';
 import { cn } from '../lib/utils';
 import { FieldValue } from '../components/FieldRenderer';
 import { FilterBuilder, countConditions } from '../components/FilterBuilder';
@@ -105,7 +106,7 @@ export default function ListView(): JSX.Element {
     onSuccess: (result) => {
       toast.success(`${result.deleted} record${result.deleted === 1 ? '' : 's'} deleted`);
       setSelected(new Set());
-      void queryClient.invalidateQueries({ queryKey: ['records', moduleName] });
+      invalidateRecordQueries(queryClient, moduleName);
     },
     onError: (err: Error) => toast.error('Delete failed', err.message),
   });
@@ -113,8 +114,8 @@ export default function ListView(): JSX.Element {
   const stageMutation = useMutation({
     mutationFn: ({ id, values }: { id: string; values: Record<string, unknown> }) =>
       api.update(moduleName!, id, values),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['records', moduleName] });
+    onSuccess: (_res, vars) => {
+      invalidateRecordQueries(queryClient, moduleName, vars.id);
     },
     onError: (err: Error) => toast.error('Could not move the record', err.message),
   });

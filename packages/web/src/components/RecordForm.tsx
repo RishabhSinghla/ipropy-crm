@@ -6,11 +6,12 @@
  * visibility, live duplicate detection and server-side field errors.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FieldMeta, ModuleMeta, RecordEnvelope } from '@ipropy/shared';
 import { AlertTriangle, ChevronDown, Save, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
+import { invalidateRecordQueries } from '../lib/invalidate';
 import { cn } from '../lib/utils';
 import { FieldInput } from './FieldRenderer';
 import { Spinner } from './ui';
@@ -34,6 +35,7 @@ export default function RecordForm({
   initialValues?: Record<string, unknown>;
 }): JSX.Element {
   const isCreate = !record;
+  const queryClient = useQueryClient();
   const [values, setValues] = useState<Record<string, unknown>>(() => ({
     ...(record?.values ?? {}),
     ...(initialValues ?? {}),
@@ -161,6 +163,11 @@ export default function RecordForm({
       const saved = record
         ? await api.update(module.name, record.id, body)
         : await api.create(module.name, body);
+
+      // Invalidate here rather than in each caller: the record was previously
+      // written without any caller refreshing the cache, so the page navigated
+      // to after a save showed the pre-edit values until a manual reload.
+      invalidateRecordQueries(queryClient, module.name, saved.id);
       onSaved(saved);
     } catch (err) {
       if (err instanceof ApiError) {

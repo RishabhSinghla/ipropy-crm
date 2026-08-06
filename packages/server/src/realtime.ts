@@ -79,6 +79,11 @@ function emitTo(room: string, event: string, payload: unknown): void {
   io?.to(room).emit(event, payload);
 }
 
+/** Tell every client that some record in this module changed. Name only. */
+function broadcastModuleChange(module: string): void {
+  io?.emit('module:changed', { module });
+}
+
 function wireEvents(): void {
   bus.on('message.received', async (p) => {
     emitTo(`conversation:${p.conversationId}`, 'message', { ...p, direction: 'inbound' });
@@ -107,12 +112,24 @@ function wireEvents(): void {
       changedFields: p.changedFields,
       updatedBy: p.user?.fullName ?? 'System',
     });
+    broadcastModuleChange(p.module);
   });
 
   bus.on('record.created', (p) => {
     // Let list views know something new arrived in their module.
     io?.emit('record:created', { module: p.module, recordId: p.recordId });
   });
+
+  // List views, dashboards and reports aggregate a whole module, so they need
+  // to hear about every write - not just writes to a record they are watching.
+  // Only the module name is broadcast: the payload deliberately carries no
+  // record id, so this cannot reveal the existence of a record the recipient
+  // is not allowed to see. Clients treat it purely as a cache-invalidation
+  // hint and re-fetch through the normal permission-scoped endpoints.
+  bus.on('record.deleted', (p) => broadcastModuleChange(p.module));
+  bus.on('record.restored', (p) => broadcastModuleChange(p.module));
+  bus.on('record.owner_changed', (p) => broadcastModuleChange(p.module));
+  bus.on('record.converted', (p) => broadcastModuleChange(p.module));
 
   bus.on('call.started', (p) => {
     if (p.userId) emitTo(`user:${p.userId}`, 'call:incoming', p);
