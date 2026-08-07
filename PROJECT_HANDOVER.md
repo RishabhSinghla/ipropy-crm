@@ -1,8 +1,10 @@
 # iPropy CRM — Project Handover
 
-**Last updated:** 6 August 2026
+**Last updated:** 7 August 2026
 **Status:** Feature-complete build, verified end-to-end. No work in progress.
 **Location:** `/Users/rishabhsinghla/Downloads/iPropy-crm`
+**Git:** initialised, pushed to `origin/main` (`https://github.com/RishabhSinghla/ipropy-crm.git`).
+Latest commit `80de2fc`. Working tree clean.
 
 > Reference implementation: the original Vtiger PHP source sits at
 > `/Users/rishabhsinghla/Downloads/vtigercrm`. It was used as an **architecture
@@ -32,14 +34,18 @@ adds WhatsApp, telephony, portal lead capture and an AI layer.
 | Dashboards | 5 seeded, 39 widgets: metrics with period deltas, funnel, stacked inventory, leaderboards, AI insight tiles |
 | Reports | Ad-hoc summary + tabular with grouping, measures, CSV export |
 | Automation | 17 workflows, 14 task types, delayed + field-relative scheduling, assignment rules, SLA tracking |
-| Admin panel | Module enable/disable, field builder, layout designer, dropdowns, users, roles, profiles, sharing, workflows, integrations, import, audit |
+| Admin panel | Module enable/disable, field builder, layout designer, dropdowns, users, roles, profiles, sharing, **field permissions per profile**, workflows (**full create/edit composer**), **integrations (editable in-UI, encrypted credentials)**, import, audit |
 | AI | Lead scoring, property matching, deal risk, call analysis, drafting, "Ask your CRM" NL→query |
-| Permissions | 4-layer: profile → org default → role hierarchy → sharing rules/per-record shares. Enforced in SQL. |
+| Permissions | 4-layer: profile → org default → role hierarchy → sharing rules/per-record shares. Enforced in SQL, **including per-field hidden/readonly, with a UI to set it.** |
+| Realtime | Socket.IO client now actually connected — record edits, workflow/AI writes and metadata changes push live to every open screen, no refresh needed |
+| Record navigation | Prev/next via on-screen buttons or ← → keys through whatever list you last viewed, on every module |
+| Inline quick-edit | Click any picklist or owner field (status, pipeline stage, rating, assigned-to) on a list, kanban card or record header to change it without opening the edit form |
+| Dashboard drill-through | Every widget type (metric, gauge, bar, line, area, pie, donut, funnel, stacked, table) clicks through to a correctly pre-filtered record list |
 
 **Verified live metrics (current database):**
 77 tables · 12 modules · 430 fields · 54 picklists · 54 views · 36 layouts · 17 workflows ·
-5 dashboards / 39 widgets · 16 roles · 9 profiles · 10 users · 304 demo records.
-Codebase: 116 source files, ~38,100 lines.
+5 dashboards / 39 widgets · 16 roles · 9 profiles · 10 users · ~305 demo records.
+5 migrations applied. Codebase has grown by ~9 files / ~2,600 lines this session (see §7).
 
 ---
 
@@ -112,7 +118,7 @@ Real-estate specific: `currency` (accepts `"1.5 Cr"` → `15000000`), `area`, `s
 
 **Connection:** `postgres://ipropy:ipropy@localhost:5432/ipropy` (Docker container `ipropy-db`).
 
-### Migrations applied (all four, verified in `ipy_migration`)
+### Migrations applied (all five, verified in `ipy_migration`)
 
 | Migration | Applied | What it does |
 |---|---|---|
@@ -120,6 +126,7 @@ Real-estate specific: `currency` (accepts `"1.5 Cr"` → `15000000`), `area`, `s
 | `002_entities.sql` | 2026-08-06 13:35 | Real-estate payload tables: organizations, contacts, leads, projects, properties, deals, site_visits, bookings, payments, channel_partners, campaigns, activities, documents |
 | `003_automation_comms_ai.sql` | 2026-08-06 13:35 | Workflow engine + task queue + logs, assignment rules, SLA, conversations/messages/templates, email log, calls + virtual numbers, AI insights/logs/threads, integrations, webforms, lead inbox, webhooks, API keys, import jobs, reports, targets |
 | `004_merge_contacts_into_leads.sql` | 2026-08-06 16:30 | **Merged Contacts into Leads** (see below) + added module enable/disable columns (`disabled_reason`, `disabled_at`, `disabled_by`, `is_core`) |
+| `005_integration_settings.sql` | 2026-08-07 | Added the `webform` provider row to `ipy_integration` so the generic web-form capture key is editable from the admin UI like every other credential, not `.env`-only |
 
 The migration runner (`db/migrate.ts`) is forward-only, applies each `.sql` in name order inside its
 own transaction, and records it in `ipy_migration`. It is safe to re-run (already-applied files are
@@ -173,22 +180,30 @@ What 004 did, verified on live data:
 Config is centralised in `packages/server/src/config.ts`; the template is `.env.example`.
 **Only `DATABASE_URL` and `JWT_SECRET` are required to boot.**
 
+**As of this session, every integration credential is also editable from Admin → Integrations →
+Providers — `.env` is no longer the only way to configure them.** `core/settings/integrations.ts` is
+the resolver: it reads `ipy_integration.config`/`credentials` first and falls back to the matching
+`.env` variable below only when no DB value is set. Credentials are encrypted at rest (AES-256-GCM,
+key derived from `JWT_SECRET` via scrypt — no new required env var). Saving a credential through the
+UI auto-activates that provider; a per-provider "Test connection" button does a real, read-only
+connectivity probe (WhatsApp/Twilio/Exotel/SMTP/Anthropic).
+
 | Variable | Purpose | Current state |
 |---|---|---|
 | `DATABASE_URL` | Postgres connection | Set — Docker local |
-| `JWT_SECRET` | Token signing | **Dev default. Server refuses to start in production with it.** |
-| `ANTHROPIC_API_KEY` | Claude | **Empty → AI runs rule-based fallback** |
+| `JWT_SECRET` | Token signing | **Dev default. Server refuses to start in production with it.** Also the source key for integration-credential encryption. |
+| `ANTHROPIC_API_KEY` | Claude | **Empty → AI runs rule-based fallback**. Also settable via Admin → Integrations → Anthropic. |
 | `AI_MODEL` / `AI_MODEL_FAST` | Model selection | `claude-sonnet-5` / `claude-haiku-4-5-20251001` |
-| `WHATSAPP_*` | Meta Cloud API (phone id, token, verify token, **app secret**) | Empty → simulation mode |
-| `TELEPHONY_PROVIDER` + `TWILIO_*` / `EXOTEL_*` | Voice | `none` → logs only |
-| `SMTP_*` / `IMAP_*` | Email | Empty → logged with open tracking |
-| `FACEBOOK_*`, `GOOGLE_ADS_WEBHOOK_KEY`, `WEBFORM_PUBLIC_KEY` | Lead capture | Endpoints live, no traffic |
-| `STORAGE_DRIVER` + `S3_*` | Files | `local` → `./storage` |
+| `WHATSAPP_*` | Meta Cloud API (phone id, token, verify token, **app secret**) | Empty → simulation mode. Editable in-UI. |
+| `TELEPHONY_PROVIDER` + `TWILIO_*` / `EXOTEL_*` | Voice | `none` → logs only. Editable in-UI (provider auto-selected from whichever of Twilio/Exotel is active). |
+| `SMTP_*` / `IMAP_*` | Email | Empty → logged with open tracking. Editable in-UI. |
+| `FACEBOOK_*`, `GOOGLE_ADS_WEBHOOK_KEY`, `WEBFORM_PUBLIC_KEY` | Lead capture | Endpoints live, no traffic. Editable in-UI (migration 005 added the `webform` provider row). |
+| `STORAGE_DRIVER` + `S3_*` | Files | `local` → `./storage`. **Not yet moved into the DB-backed settings — still `.env` only.** |
 | `ENABLE_SCHEDULER`, `SCHEDULER_TICK_SECONDS` | Background jobs | `true`, 60s |
 | `SEED_DEMO_DATA` | Demo records on seed | `true` — **set `false` for production** |
 
-**Every integration degrades gracefully.** With an empty `.env` the whole product is demoable:
-messages and calls are recorded in the CRM and marked sent, so workflows stay testable.
+**Every integration degrades gracefully.** With nothing configured (env or UI) the whole product is
+demoable: messages and calls are recorded in the CRM and marked sent, so workflows stay testable.
 
 Webhook URLs to hand to providers are listed in-app at **Admin → Integrations → Webhook URLs**
 (WhatsApp, Facebook Lead Ads, Google Ads, 99acres, MagicBricks, Housing, NoBroker, Twilio, Exotel,
@@ -249,27 +264,39 @@ iPropy-crm/
     │   │   ├── workflow/engine.ts     event-driven workflow execution
     │   │   ├── workflow/tasks.ts      14 task types
     │   │   ├── workflow/scheduler.ts  queue drain + scheduled workflows + housekeeping
-    │   │   └── analytics/widgets.ts   widget + report query engine
+    │   │   ├── analytics/widgets.ts   widget + report query engine — client drill-through reads
+    │   │   │                          WidgetConfig straight off this (module/groupBy/filter/dateField)
+    │   │   └── settings/integrations.ts ★ DB-first, env-fallback resolver for every integration
+    │   │                          credential. AES-256-GCM at rest, key derived from JWT_SECRET.
+    │   │                          Synchronous getSettings() snapshot, reloaded on admin save.
     │   ├── db/
     │   │   ├── pool.ts         ★★ query/transaction + onCommit() after-commit hook
     │   │   ├── migrate.ts      forward-only migration runner
-    │   │   ├── migrations/     4 × .sql
+    │   │   ├── migrations/     5 × .sql
     │   │   └── seed/           modules.ts (the data model), picklists, rbac, dashboards, automation, demo
     │   ├── api/routes/         auth, metadata, records, views, dashboards, admin, comms, telephony, ai, webhooks, misc
-    │   ├── integrations/       whatsapp, telephony, email, leadsources
+    │   ├── integrations/       whatsapp, telephony, email, leadsources — all resolve credentials via
+    │   │                       core/settings/integrations.ts now, not process.env directly
     │   ├── ai/                 client, leadScoring, matching, dealRisk, callAnalysis, drafting, assistant, actions
     │   ├── app.ts / index.ts / realtime.ts / config.ts
     └── web/src/
         ├── components/
-        │   ├── FieldRenderer.tsx  ★★ FieldValue + FieldInput — the heart of the dynamic UI
+        │   ├── FieldRenderer.tsx  ★★ FieldValue + FieldInput + QuickEditField/isQuickEditable —
+        │   │                        the heart of the dynamic UI, including inline click-to-edit
         │   ├── RecordForm.tsx     layout-driven form with validation + duplicate detection
-        │   ├── FilterBuilder.tsx  nested AND/OR builder
-        │   ├── Layout.tsx         app shell, sidebar, global search, notifications
-        │   └── ui.tsx             design-system primitives
+        │   ├── FilterBuilder.tsx  nested AND/OR builder — also what dashboard drill-through renders
+        │   ├── Layout.tsx         app shell, sidebar, global search, notifications, useRealtime() mount
+        │   └── ui.tsx             design-system primitives (Modal now sets role="dialog"; Toggle fixed)
         ├── lib/api.ts          ★ typed API client with token refresh
         ├── lib/store.ts        zustand app state + toasts
-        └── pages/              Dashboard, ListView, RecordDetail, RecordEdit, Inbox, Calls,
-                                InventoryBoard, Reports, Settings, Login, admin/*
+        ├── lib/realtime.ts     ★ Socket.IO client — useRealtime() (app-wide) / useWatchRecord() (per record)
+        ├── lib/invalidate.ts   ★ shared invalidateRecordQueries()/invalidateMetadataQueries() — call
+        │                        after every write instead of hand-picking query keys
+        ├── lib/listNav.ts      sessionStorage-backed id order for RecordDetail's prev/next nav
+        └── pages/              Dashboard (★ drill-through helpers), ListView, RecordDetail (★ prev/next
+                                + quick-edit), RecordEdit, Inbox, Calls, InventoryBoard, Reports,
+                                Settings, Login, admin/* (★ WorkflowAdmin composer, IntegrationsAdmin,
+                                RolesProfiles field-permissions card)
 ```
 
 ★ = read before changing related behaviour · ★★ = highest-blast-radius files
@@ -278,72 +305,121 @@ iPropy-crm/
 
 ## 7. Current unfinished task and exact current state
 
-**There is no task in progress. The last requested work is complete and verified.**
+**There is no task in progress. The last requested work is complete, verified live, and pushed.**
 
-Most recent session delivered two changes, both finished:
-1. **Contacts merged into Leads** (migration 004 + seed + conversion + integrations + UI).
-2. **Module enable/disable** (`Admin → Modules`, API, registry guard).
+### This session's work (7 August 2026)
+
+The user reported the enable/disable toggle looked broken, then asked for a batch of fixes and
+features. All ten items shipped, each verified against the running app (not just typechecked) before
+committing:
+
+1. **Fixed module re-enable permanently hiding the module from the sidebar.** The toggle handler
+   clobbered `show_in_menu` on disable and never restored it on re-enable; nav already filters on
+   `is_active` alone, so the clobber was redundant *and* the bug. Two already-corrupted rows
+   (`organizations`, `campaigns`) repaired live.
+2. **Fixed the `globalSearch` cross-module permission leak from §8 below** — it's gone, see §8 bugs
+   for what was verified.
+3. **Moved every integration credential into the admin UI** (`core/settings/integrations.ts` +
+   `IntegrationsAdmin.tsx`). See §4.
+4. **Fixed stale UI requiring a manual refresh.** The Socket.IO *client* had never been written —
+   `socket.io-client` was an installed, unused dependency. Added `lib/realtime.ts`, mounted it in
+   `Layout.tsx`, and added a `module:changed` broadcast server-side for writes that previously only
+   notified the single record's own room (list/kanban views were never told anything changed).
+   Centralised invalidation into `lib/invalidate.ts` and fixed `RecordEdit`/`RecordForm`, which
+   previously saved and navigated **without invalidating any query** — the page you landed on after
+   saving showed the pre-edit data until a manual reload.
+5. **Fixed field hide/unhide** — three separate bugs: (a) no "unhide" existed anywhere despite the
+   confirm dialog promising "you can re-enable it later"; (b) a hidden field's metadata (label,
+   uitype, config) still leaked via the describe endpoint even though its *value* was correctly
+   stripped; (c) the standard per-profile field permission UI (editable/readonly/hidden) didn't exist
+   at all — added to Roles & Profiles.
+6. **Fixed the Toggle switch component app-wide.** Root cause: the thumb `<span>` had no explicit
+   `left`, and Tailwind Preflight sets `text-align:center` on every `<button>`; for an absolutely
+   positioned empty inline element that resolves its static position to the button's centre, so the
+   translate-x stacked on a bogus 18px offset and the thumb rendered outside the pill when checked.
+   One shared-component fix, visible everywhere immediately.
+7. **Built the workflow create/edit composer** — trigger, conditions (reuses `FilterBuilder`), all 14
+   task types with structured fields, scheduling, per-task delay. Previously read-only in the UI
+   despite the engine and API fully supporting it.
+8. **Prev/next record navigation** — arrow keys and on-screen buttons, generic across every module,
+   via `lib/listNav.ts` + `RecordDetail.tsx`.
+9. **Inline quick-edit** for picklist/owner fields (status, pipeline stage, rating, assigned-to) on
+   list tables, kanban cards and record headers — `FieldRenderer.tsx`'s `QuickEditField`, generic by
+   uitype, not hardcoded to any module.
+10. **Dashboard drill-through** — every widget type now clicks through to a correctly pre-filtered
+    record list, including two-dimension filters on the stacked inventory widget. `ListView.tsx`
+    gained the ability to seed its filter from a `?filter=` URL param, which didn't exist before.
+
+**Also done as part of this work, not separately requested:** `git init`, an initial commit, then 8
+feature commits, and `git push` to `origin/main`. Version control — previously the #1 listed risk in
+this document — now exists.
 
 ### Exact runtime state right now
 
 | | |
 |---|---|
-| Postgres | Docker container `ipropy-db`, **up and healthy**, all 4 migrations applied |
+| Postgres | Docker container `ipropy-db`, **up and healthy**, all 5 migrations applied |
 | Dev servers | **Running** — `tsx watch` (API :4000) and `vite` (web :5173) |
 | Build | Clean — all three packages typecheck and build |
-| Tests | **63/63** full smoke + **25/25** merge & toggle verification passing |
-| Demo data | Clean (304 records; test residue removed) |
-| Git | **NOT a git repository — no version control initialised** (see §8) |
-| AI | `ANTHROPIC_API_KEY` empty → rule-based fallback active |
-
-Verification scripts live in the session scratchpad (**not** in the repo):
-`/private/tmp/claude-501/-Users-rishabhsinghla-Downloads-vtigercrm/5b5172d8-d447-491d-94cd-3684b2d575ff/scratchpad/`
-— `smoke.mjs` and `verify-merge.mjs`. **These will be lost when the temp dir is cleared** — see task 3
-in §12.
+| Tests | No automated suite (see §8 risk 3) — this session's work was verified via live browser/API testing, not scripted checks |
+| Demo data | Clean — all test records/workflows/credentials created during verification were deleted or reverted afterward |
+| Git | **Initialised, pushed to `origin/main`.** Latest commit `80de2fc`. Working tree clean. |
+| AI | `ANTHROPIC_API_KEY` empty → rule-based fallback active (also configurable now via Admin → Integrations) |
 
 ---
 
 ## 8. Known bugs, risks and technical debt
 
+### Fixed this session (kept here so the history isn't lost, not because they're still open)
+
+* ~~`globalSearch` applies one module's sharing scope to a cross-module search.~~ **Fixed.** Each
+  allowed module is now scoped independently in `recordService.ts::globalSearch()` and the branches
+  are ORed together. Verified live: flipping `leads` to `public_read` grew a restricted user's lead
+  results 7→20 while `deals` and `site_visits` (still `private`) stayed unchanged — under the old code
+  they would have leaked to admin-level counts.
+* ~~No version control.~~ **Resolved.** Git initialised, pushed to `origin/main`.
+* ~~Secrets in `ipy_integration.credentials` stored as plain JSONB.~~ **Resolved.** Now AES-256-GCM
+  encrypted at rest (see §4). `S3_*` storage config was **not** moved into this system — still `.env` only.
+* ~~Workflow builder is read-only in the UI.~~ **Resolved.** Full create/edit composer shipped this
+  session (see §7).
+
 ### Bugs (real, currently present, not fixed)
 
-1. **`globalSearch` applies one module's sharing scope to a cross-module search.**
-   `core/entity/recordService.ts` → `globalSearch()` calls
-   `recordScopeSql(ctx, modules[0].name, params)` and applies that single fragment to results from
-   *all* modules. If modules have different org-wide defaults (they do — leads/deals are `private`,
-   projects/properties are `public_read`), global search can under- or over-return. **Treat as a
-   potential data-exposure issue.** Fix: scope per module and UNION, or filter post-query.
-
-2. **`ipy_e_leads.converted_contact_id` is a dead column.** Migration 004 nulled it (verified: 0
+1. **`ipy_e_leads.converted_contact_id` is a dead column.** Migration 004 nulled it (verified: 0
    non-null) and it is no longer written, but the column and its hidden field metadata remain.
 
 ### Risks
 
-3. **No version control.** The project is not a git repository. There is no history, no branches, no
-   way to revert. **This is the single highest risk.** Initialise git before any further work.
-4. **No automated test suite.** Verification is two hand-written `.mjs` smoke scripts that live in a
-   temp directory and will vanish.
-5. **Production hardening not done.** `JWT_SECRET` is the dev default (the server does refuse to boot
-   in production with it). `WHATSAPP_APP_SECRET` is unset — webhook signature verification is skipped
-   outside production. No TLS, no rate-limit tuning, no backups configured.
-6. **Single-process scheduler.** `FOR UPDATE SKIP LOCKED` makes the queue multi-instance safe, but
+2. **No automated test suite.** There is no Vitest/Jest suite in the repo. This session's verification
+   was live (real API calls, real browser interaction, checked and reverted), which is thorough but
+   not repeatable — a regression here would not be caught automatically.
+3. **Production hardening not done.** `JWT_SECRET` is the dev default (the server does refuse to boot
+   in production with it) — **and now also derives the integration-credential encryption key**, so
+   rotating it in production will require re-entering every credential saved via the admin UI.
+   `WHATSAPP_APP_SECRET` is unset — webhook signature verification is skipped outside production. No
+   TLS, no rate-limit tuning, no backups configured.
+4. **Single-process scheduler.** `FOR UPDATE SKIP LOCKED` makes the queue multi-instance safe, but
    scheduled workflows scan up to 5,000 records per tick in-process — will not scale to large tenants.
-7. **Secrets in `ipy_integration.credentials`** are stored as plain JSONB. Encrypt at rest before
-   real credentials go in.
 
 ### Technical debt
 
-8. **`ipy_e_contacts_archived_004`** (24 rows) retained deliberately for recovery. Drop once the merge
+5. **`ipy_e_contacts_archived_004`** (24 rows) retained deliberately for recovery. Drop once the merge
    is confirmed in production.
-9. **Dashboard drag-to-resize not wired.** `saveDashboardLayout` exists in `lib/api.ts` and the server
+6. **Dashboard drag-to-resize not wired.** `saveDashboardLayout` exists in `lib/api.ts` and the server
    endpoint works, but **no page calls it** — the grid is responsive-only.
-10. **Workflow builder is read-only in the UI.** Workflows are fully editable via API and seeded
-    declaratively; the admin screen lists/inspects/enables/deletes but cannot compose a new one.
-11. **Speech-to-text not bundled.** Call analysis needs a transcript from the provider or pasted in.
-12. **Web bundle is ~1 MB** (198 KB gzipped) — no route-level code splitting yet.
-13. **`is_converted` and `lifecycle_stage` overlap** post-merge. Both are maintained; consider
-    collapsing to lifecycle alone.
-14. **Redis is in `docker-compose.yml` but unused.** Either use it (caching/queue) or remove it.
+7. **Speech-to-text not bundled.** Call analysis needs a transcript from the provider or pasted in.
+8. **Web bundle is ~1.1 MB** (~223 KB gzipped, grew slightly this session with the workflow composer
+   and dashboard drill-through) — no route-level code splitting yet.
+9. **`is_converted` and `lifecycle_stage` overlap** post-merge. Both are maintained; consider
+   collapsing to lifecycle alone.
+10. **Redis is in `docker-compose.yml` but unused.** Either use it (caching/queue) or remove it.
+11. **`S3_*` storage config was not moved into the DB-backed integration settings** added this
+    session — still `.env`-only, inconsistent with every other integration.
+12. **Funnel widget drill-through uses `equals` on the clicked stage**, not the cumulative "reached
+    this stage or later" semantics the funnel's own numbers represent (a funnel counts a lead as
+    having reached every earlier stage too). Correct behaviour would need the server to also return
+    the ordered stage-key list so the client can build an `in` filter; scoped out as beyond "make it
+    clickable".
 
 ---
 
@@ -403,7 +479,12 @@ docker exec -it ipropy-db psql -U ipropy -d ipropy    # psql shell
 
 ## 10. Testing commands
 
-**There is no automated test suite.** Current verification:
+**There is no automated test suite in the repo.** A prior session's handover referenced two smoke
+scripts (`smoke.mjs`, `verify-merge.mjs`) that lived in a session scratchpad outside the repo — those
+are gone; the scratchpad they were in belonged to a different session and was never recovered. Do not
+assume they still exist. **Adding a real test suite (Vitest) is still the top item in §12.**
+
+Current verification, until that exists:
 
 ```bash
 npm run typecheck             # all three packages — MUST be clean before committing
@@ -412,23 +493,11 @@ npm run build                 # full build incl. Vite production bundle
 curl -s http://localhost:4000/api/health      # {"status":"ok","database":"connected",...}
 ```
 
-Two smoke scripts (in the session scratchpad, **not in the repo** — see §7 for the path):
-
-```bash
-node <scratchpad>/smoke.mjs          # 63 checks: auth, metadata, list/kanban/filters, detail,
-                                     # write path, inbox, telephony, inventory, reports, admin,
-                                     # permission enforcement across 3 profiles
-node <scratchpad>/verify-merge.mjs   # 25 checks: Contacts→Leads merge + module enable/disable
-```
-
-Both require the dev servers running (they hit `http://localhost:5173` through the Vite proxy).
-**They write and delete real records** — run against dev only, and clean residue afterwards:
-
-```sql
-DELETE FROM ipy_record WHERE label LIKE 'Smoke Test%' OR label LIKE 'Merge Check%';
-```
-
-**Task 3 in §12 is to move these into the repo as a proper test suite.**
+Beyond that: manual API checks with `curl`/Python against the running dev server, and browser
+verification via whatever preview tooling the session has (this session used the Browser pane). Every
+change in §7 was verified this way — logged in as the relevant demo user, exercised the actual
+feature, checked the actual response/DOM, and reverted any test data afterward. There is no shortcut
+for this until a real test suite exists.
 
 ---
 
@@ -457,52 +526,60 @@ process.
 - [ ] `APP_URL` set to the real origin (CORS + Socket.IO allow-list read from it)
 - [ ] Switch `STORAGE_DRIVER=s3` and configure the bucket (local disk won't survive a container)
 - [ ] Managed Postgres with automated backups
-- [ ] Encrypt `ipy_integration.credentials` at rest
+- [x] ~~Encrypt `ipy_integration.credentials` at rest~~ — done this session (AES-256-GCM, key from `JWT_SECRET`)
 - [ ] Decide scheduler ownership if running multiple instances (`ENABLE_SCHEDULER`)
 
 ---
 
-## 12. Next 20 tasks, in priority order
+## 12. Next tasks, in priority order
+
+Everything that was on this list and got done this session (git init, the `globalSearch` fix, secrets
+encryption, the workflow builder, stale-UI/realtime, module toggle, field hide/unhide, Toggle CSS,
+record navigation, quick-edit, dashboard drill-through) has been removed. What's left:
 
 ### Do these before anything else
 
-1. **Initialise git and make an initial commit.** No version control exists — there is currently no
-   way to revert a mistake. `git init && git add -A && git commit`.
-2. **Fix the `globalSearch` permission-scoping bug** (§8.1). Potential data exposure.
-3. **Move the two smoke scripts into the repo** (`packages/server/test/`) and wire `npm test`. They
-   live in a temp directory and will be lost.
+1. **Add a real test framework (Vitest)** with unit coverage for the highest-risk pure logic:
+   `query/builder`, `query/evaluate`, `entity/formula`, `permissions`. There is still no automated
+   suite in the repo (§8 risk 2) — this session's fixes were verified live, which does not protect
+   against regressions on the *next* change.
+2. Remove the dead `converted_contact_id` column and its field metadata (migration 006).
 
 ### Correctness and safety
 
-4. Add a real test framework (Vitest) with unit coverage for the highest-risk pure logic:
-   `query/builder`, `query/evaluate`, `entity/formula`, `permissions`.
-5. Production-harden secrets: strong `JWT_SECRET`, set `WHATSAPP_APP_SECRET`, encrypt
-   `ipy_integration.credentials` at rest.
-6. Remove the dead `converted_contact_id` column and its field metadata (migration 005).
-7. Add DB backup + restore runbook; verify a restore actually works.
+3. Production-harden secrets: strong `JWT_SECRET` for production, set `WHATSAPP_APP_SECRET`. Note
+   `JWT_SECRET` now also derives the integration-credential encryption key (§8 risk 3) — rotating it
+   means re-entering every credential saved via Admin → Integrations.
+4. Add DB backup + restore runbook; verify a restore actually works.
+5. Move `S3_*` storage config into the DB-backed integration settings for consistency with every
+   other integration (§8 technical debt 11) — currently the one credential still `.env`-only.
 
 ### Finish partially-built features
 
-8. Wire dashboard drag-to-resize to the existing `saveDashboardLayout` endpoint.
-9. Build the visual workflow builder (create/edit) — currently read-only in the UI.
-10. Add speech-to-text so call analysis runs without a manual transcript.
-11. Add the many-to-many related-list "select existing record" UI (API already supports it).
-12. Build the Channel Partner portal (restricted profile exists and is seeded; no portal UI).
+6. Wire dashboard drag-to-resize to the existing `saveDashboardLayout` endpoint.
+7. Add speech-to-text so call analysis runs without a manual transcript.
+8. Add the many-to-many related-list "select existing record" UI (API already supports it).
+9. Build the Channel Partner portal (restricted profile exists and is seeded; no portal UI).
+10. Make funnel-widget drill-through use the funnel's actual cumulative "reached this stage or
+    later" semantics instead of `equals` on the single stage (§8 technical debt 12) — needs the
+    server to also return the ordered stage-key list.
 
 ### Deployment and operations
 
-13. Write a Dockerfile + docker-compose for the full app; set up CI (typecheck → build → test).
-14. Add structured error reporting (Sentry or equivalent) and request tracing.
-15. Move the scheduler to a dedicated worker process/queue so it scales past one instance.
+11. Write a Dockerfile + docker-compose for the full app; set up CI (typecheck → build → test).
+12. Add structured error reporting (Sentry or equivalent) and request tracing.
+13. Move the scheduler to a dedicated worker process/queue so it scales past one instance.
 
 ### Product depth
 
-16. Route-level code splitting to cut the ~1 MB web bundle.
-17. Mobile-responsive pass on ListView, RecordDetail and the Inventory board.
-18. Email inbound (IMAP) sync into the timeline — outbound works, inbound does not.
-19. Rollup fields (`uitype: 'rollup'` is declared and typed but the aggregation engine is not
+14. Route-level code splitting — the web bundle is now ~1.1 MB / ~223 KB gzipped, having grown with
+    the workflow composer and dashboard drill-through this session.
+15. Mobile-responsive pass on ListView, RecordDetail and the Inventory board.
+16. Email inbound (IMAP) sync into the timeline — outbound works, inbound does not. Credentials are
+    now configurable via Admin → Integrations; the sync itself still isn't built.
+17. Rollup fields (`uitype: 'rollup'` is declared and typed but the aggregation engine is not
     implemented — currently a no-op).
-20. Collapse `is_converted` into `lifecycle_stage` and simplify conversion logic (§8.13).
+18. Collapse `is_converted` into `lifecycle_stage` and simplify conversion logic (§8 technical debt 9).
 
 ---
 
@@ -512,7 +589,8 @@ Read this before touching anything.
 
 ### Non-negotiables
 
-1. **This is not a git repository.** There is no undo. Initialise git first, or be extremely careful.
+1. **Git exists now — use it properly.** Initialised and pushed to `origin/main` this session.
+   Create real commits for real changes; don't let this regress back into an uncommitted pile.
 2. **Never add a per-module CRUD path.** Everything goes through `core/entity/recordService.ts`.
    If a module needs different behaviour, express it as metadata or a workflow hook.
 3. **Never emit a domain event inside an open transaction.** Use `onCommit(conn, fn)` from
@@ -523,11 +601,22 @@ Read this before touching anything.
    The metadata registry is an in-memory cache read on nearly every request. `invalidateAll()` in
    `api/routes/metadata.ts` does both.
 5. **Field-level permissions must be enforced on data, not just metadata.** `getRecord`/`listRecords`
-   call `stripHidden()`. A regression here leaks data — it happened once already.
+   call `stripHidden()`. A regression here leaks data — it happened once already, and the *describe*
+   endpoint leaking a hidden field's metadata (not its value) was a second, separate instance of the
+   same failure class, fixed this session (§7 item 5b).
 6. **Never build SQL from user-supplied identifiers.** Field references resolve through metadata
    (`resolveFieldPath`), and `quoteIdent()` rejects anything outside `[A-Za-z_][A-Za-z0-9_]*`.
 7. **`ANTHROPIC_API_KEY` is empty.** Every AI feature must keep working without it — the rule engines
-   are the fallback, not a stub. Do not write AI code that throws when the key is missing.
+   are the fallback, not a stub. Do not write AI code that throws when the key is missing. It's also
+   now settable via Admin → Integrations, resolved through `core/settings/integrations.ts` — read
+   credentials through `getSettings()`, never `process.env` directly, for any integration.
+8. **After any write anywhere in the web app, call `invalidateRecordQueries()` /
+   `invalidateMetadataQueries()` from `lib/invalidate.ts`.** Don't hand-pick query keys to invalidate
+   — `RecordForm`'s save path used to invalidate nothing at all, which is why edits looked like they
+   needed a manual refresh (§7 item 4). The realtime socket (`lib/realtime.ts`) also depends on the
+   server actually broadcasting `record.deleted`/`record.restored`/`record.owner_changed`, not just
+   `record.updated`/`record.created` — check `realtime.ts`'s `wireEvents()` if a new mutation type
+   needs to show up live elsewhere.
 
 ### Postgres gotchas that already bit this codebase
 
@@ -538,6 +627,28 @@ Read this before touching anything.
 * **Empty arrays must not become NULL.** The `*_locations` / `configuration` style columns are
   `jsonb NOT NULL DEFAULT '[]'`. `coerceValue` special-cases empty arrays for
   `multipicklist`/`multireference`/`tags` — don't "simplify" that away.
+
+### Frontend gotchas that already bit this codebase
+
+* **Absolutely-positioned elements inside a `<button>` need an explicit inset.** Tailwind Preflight
+  sets `text-align: center` on every `<button>`. An absolutely-positioned child with no explicit
+  `left`/`right` resolves its static position to the button's *centre*, not its edge — this silently
+  broke the Toggle component's thumb (§7 item 6) app-wide, in a way that "looked slightly off" rather
+  than obviously broken. Always pin `left-*`/`top-*` explicitly on absolutely-positioned children of
+  a button; never rely on default static position inside one.
+* **`Modal` (`components/ui.tsx`) sets `role="dialog"` now — it didn't before.** If code needs to
+  detect "is a modal currently open" (e.g. to suppress a global keyboard shortcut), that's the
+  reliable selector (`document.querySelector('[role="dialog"]')`); it was silently absent before this
+  session, so any prior such check would never have matched.
+* **Dashboard widgets carry everything needed for drill-through already.** `WidgetConfig` (module,
+  groupBy, filter, dateField, interval, stackBy) rides along on every `DashboardWidget`, and every
+  `series`/`stage`/`segment` item's `key` is the *raw* stored field value (picklist value, or a UUID
+  for reference/owner/user groupings), not its display label — safe to drop straight into a
+  `FilterCondition.value`. Building a new widget type that should drill through needs no new API;
+  see `Dashboard.tsx`'s `withCondition`/`drillPath`/`bucketRange` helpers.
+* **Recharts `dot`/`activeDot` don't forward arbitrary extra props.** A per-point click handler on a
+  `Line`/`Area` has to be a function/component that closes over the handler in its own scope
+  (`Dashboard.tsx`'s `clickableDot`), not a prop passed through the chart's own API.
 
 ### Conventions
 
