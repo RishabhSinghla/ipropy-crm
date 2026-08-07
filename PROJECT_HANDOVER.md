@@ -1,10 +1,10 @@
 # iPropy CRM — Project Handover
 
 **Last updated:** 7 August 2026
-**Status:** Feature-complete build, verified end-to-end. **Vitest unit test suite added this session** — 107 tests over the query builder, filter evaluator, formula engine and permission engine. No work in progress.
+**Status:** Feature-complete build, verified end-to-end. **Vitest unit test suite added this session** (107 tests), **dead `converted_contact_id` column removed** (migration 006). No work in progress.
 **Location:** `/Users/rishabhsinghla/Downloads/iPropy-crm`
 **Git:** initialised, pushed to `origin/main` (`https://github.com/RishabhSinghla/ipropy-crm.git`).
-Latest commit `a4385a6`. Working tree clean.
+Latest commit `8c0ad52`. Working tree clean.
 
 > Reference implementation: the original Vtiger PHP source sits at
 > `/Users/rishabhsinghla/Downloads/vtigercrm`. It was used as an **architecture
@@ -45,7 +45,7 @@ adds WhatsApp, telephony, portal lead capture and an AI layer.
 **Verified live metrics (current database):**
 77 tables · 12 modules · 430 fields · 54 picklists · 54 views · 36 layouts · 17 workflows ·
 5 dashboards / 39 widgets · 16 roles · 9 profiles · 10 users · ~305 demo records.
-5 migrations applied. Codebase has grown by ~9 files / ~2,600 lines this session (see §7).
+6 migrations applied. Codebase has grown by ~9 files / ~2,600 lines this session (see §7).
 
 ---
 
@@ -118,7 +118,7 @@ Real-estate specific: `currency` (accepts `"1.5 Cr"` → `15000000`), `area`, `s
 
 **Connection:** `postgres://ipropy:ipropy@localhost:5432/ipropy` (Docker container `ipropy-db`).
 
-### Migrations applied (all five, verified in `ipy_migration`)
+### Migrations applied (all six, verified in `ipy_migration`)
 
 | Migration | Applied | What it does |
 |---|---|---|
@@ -127,6 +127,7 @@ Real-estate specific: `currency` (accepts `"1.5 Cr"` → `15000000`), `area`, `s
 | `003_automation_comms_ai.sql` | 2026-08-06 13:35 | Workflow engine + task queue + logs, assignment rules, SLA, conversations/messages/templates, email log, calls + virtual numbers, AI insights/logs/threads, integrations, webforms, lead inbox, webhooks, API keys, import jobs, reports, targets |
 | `004_merge_contacts_into_leads.sql` | 2026-08-06 16:30 | **Merged Contacts into Leads** (see below) + added module enable/disable columns (`disabled_reason`, `disabled_at`, `disabled_by`, `is_core`) |
 | `005_integration_settings.sql` | 2026-08-07 | Added the `webform` provider row to `ipy_integration` so the generic web-form capture key is editable from the admin UI like every other credential, not `.env`-only |
+| `006_remove_converted_contact_id.sql` | 2026-08-07 | Dropped the dead `ipy_e_leads.converted_contact_id` column and deleted its field metadata (no nulls, no indexes, no views/workflows/dashboards/reports references) |
 
 The migration runner (`db/migrate.ts`) is forward-only, applies each `.sql` in name order inside its
 own transaction, and records it in `ipy_migration`. It is safe to re-run (already-applied files are
@@ -272,7 +273,7 @@ iPropy-crm/
     │   ├── db/
     │   │   ├── pool.ts         ★★ query/transaction + onCommit() after-commit hook
     │   │   ├── migrate.ts      forward-only migration runner
-    │   │   ├── migrations/     5 × .sql
+    │   │   ├── migrations/     6 × .sql
     │   │   └── seed/           modules.ts (the data model), picklists, rbac, dashboards, automation, demo
     │   ├── api/routes/         auth, metadata, records, views, dashboards, admin, comms, telephony, ai, webhooks, misc
     │   ├── integrations/       whatsapp, telephony, email, leadsources — all resolve credentials via
@@ -356,16 +357,20 @@ committing:
     `permissions` (module/field/record scoping, sharing rules, admin short-circuits — DB and metadata
     registry stubbed, no Postgres needed). Tests live in `packages/server/tests/`, outside `src/`, so
     they never compile into the server build.
+12. **Removed the dead `converted_contact_id` column** (migration 006). Pre-flight verified 0 non-null
+    values, no index, no references in views/workflows/dashboards/reports/field permissions; dropped
+    the column and its field metadata. Verified live after a server reload: describe no longer lists
+    the field (77 fields), list and lookup still work.
 
-**Also done as part of this work, not separately requested:** `git init`, an initial commit, then 8
-feature commits, and `git push` to `origin/main`. Version control — previously the #1 listed risk in
+**Also done as part of this work, not separately requested:** `git init`, an initial commit, then 10
+more commits, and `git push` to `origin/main`. Version control — previously the #1 listed risk in
 this document — now exists.
 
 ### Exact runtime state right now
 
 | | |
 |---|---|
-| Postgres | Docker container `ipropy-db`, **up and healthy**, all 5 migrations applied |
+| Postgres | Docker container `ipropy-db`, **up and healthy**, all 6 migrations applied |
 | Dev servers | **Running** — `tsx watch` (API :4000) and `vite` (web :5173) |
 | Build | Clean — all three packages typecheck and build |
 | Tests | **Vitest added this session** — 107 unit tests pass via `npm test` (no DB needed); feature work still verified live |
@@ -395,34 +400,34 @@ this document — now exists.
 
 ### Bugs (real, currently present, not fixed)
 
-1. **`ipy_e_leads.converted_contact_id` is a dead column.** Migration 004 nulled it (verified: 0
-   non-null) and it is no longer written, but the column and its hidden field metadata remain.
+None open. (Migration 006 removed the dead `converted_contact_id` column and its field metadata this
+session — the sole real bug is gone.)
 
 ### Risks
 
-2. **Production hardening not done.** `JWT_SECRET` is the dev default (the server does refuse to boot
+1. **Production hardening not done.** `JWT_SECRET` is the dev default (the server does refuse to boot
    in production with it) — **and now also derives the integration-credential encryption key**, so
    rotating it in production will require re-entering every credential saved via the admin UI.
    `WHATSAPP_APP_SECRET` is unset — webhook signature verification is skipped outside production. No
    TLS, no rate-limit tuning, no backups configured.
-3. **Single-process scheduler.** `FOR UPDATE SKIP LOCKED` makes the queue multi-instance safe, but
+2. **Single-process scheduler.** `FOR UPDATE SKIP LOCKED` makes the queue multi-instance safe, but
    scheduled workflows scan up to 5,000 records per tick in-process — will not scale to large tenants.
 
 ### Technical debt
 
-5. **`ipy_e_contacts_archived_004`** (24 rows) retained deliberately for recovery. Drop once the merge
+3. **`ipy_e_contacts_archived_004`** (24 rows) retained deliberately for recovery. Drop once the merge
    is confirmed in production.
-6. **Dashboard drag-to-resize not wired.** `saveDashboardLayout` exists in `lib/api.ts` and the server
+4. **Dashboard drag-to-resize not wired.** `saveDashboardLayout` exists in `lib/api.ts` and the server
    endpoint works, but **no page calls it** — the grid is responsive-only.
-7. **Speech-to-text not bundled.** Call analysis needs a transcript from the provider or pasted in.
-8. **Web bundle is ~1.1 MB** (~223 KB gzipped, grew slightly this session with the workflow composer
+5. **Speech-to-text not bundled.** Call analysis needs a transcript from the provider or pasted in.
+6. **Web bundle is ~1.1 MB** (~223 KB gzipped, grew slightly this session with the workflow composer
    and dashboard drill-through) — no route-level code splitting yet.
-9. **`is_converted` and `lifecycle_stage` overlap** post-merge. Both are maintained; consider
+7. **`is_converted` and `lifecycle_stage` overlap** post-merge. Both are maintained; consider
    collapsing to lifecycle alone.
-10. **Redis is in `docker-compose.yml` but unused.** Either use it (caching/queue) or remove it.
-11. **`S3_*` storage config was not moved into the DB-backed integration settings** added this
-    session — still `.env`-only, inconsistent with every other integration.
-12. **Funnel widget drill-through uses `equals` on the clicked stage**, not the cumulative "reached
+8. **Redis is in `docker-compose.yml` but unused.** Either use it (caching/queue) or remove it.
+9. **`S3_*` storage config was not moved into the DB-backed integration settings** added this
+   session — still `.env`-only, inconsistent with every other integration.
+10. **Funnel widget drill-through uses `equals` on the clicked stage**, not the cumulative "reached
     this stage or later" semantics the funnel's own numbers represent (a funnel counts a lead as
     having reached every earlier stage too). Correct behaviour would need the server to also return
     the ordered stage-key list so the client can build an `in` filter; scoped out as beyond "make it
@@ -539,47 +544,44 @@ process.
 
 Everything that was on this list and got done this session (git init, the `globalSearch` fix, secrets
 encryption, the workflow builder, stale-UI/realtime, module toggle, field hide/unhide, Toggle CSS,
-record navigation, quick-edit, dashboard drill-through) has been removed. What's left:
-
-### Do these before anything else
-
-1. Remove the dead `converted_contact_id` column and its field metadata (migration 006).
+record navigation, quick-edit, dashboard drill-through, the Vitest unit suite, removal of the dead
+`converted_contact_id` column) has been removed. What's left:
 
 ### Correctness and safety
 
-3. Production-harden secrets: strong `JWT_SECRET` for production, set `WHATSAPP_APP_SECRET`. Note
-   `JWT_SECRET` now also derives the integration-credential encryption key (§8 risk 2) — rotating it
+1. Production-harden secrets: strong `JWT_SECRET` for production, set `WHATSAPP_APP_SECRET`. Note
+   `JWT_SECRET` now also derives the integration-credential encryption key (§8 risk 1) — rotating it
    means re-entering every credential saved via Admin → Integrations.
-4. Add DB backup + restore runbook; verify a restore actually works.
-5. Move `S3_*` storage config into the DB-backed integration settings for consistency with every
-   other integration (§8 technical debt 11) — currently the one credential still `.env`-only.
+2. Add DB backup + restore runbook; verify a restore actually works.
+3. Move `S3_*` storage config into the DB-backed integration settings for consistency with every
+   other integration (§8 technical debt 9) — currently the one credential still `.env`-only.
 
 ### Finish partially-built features
 
-6. Wire dashboard drag-to-resize to the existing `saveDashboardLayout` endpoint.
-7. Add speech-to-text so call analysis runs without a manual transcript.
-8. Add the many-to-many related-list "select existing record" UI (API already supports it).
-9. Build the Channel Partner portal (restricted profile exists and is seeded; no portal UI).
-10. Make funnel-widget drill-through use the funnel's actual cumulative "reached this stage or
-    later" semantics instead of `equals` on the single stage (§8 technical debt 12) — needs the
-    server to also return the ordered stage-key list.
+4. Wire dashboard drag-to-resize to the existing `saveDashboardLayout` endpoint.
+5. Add speech-to-text so call analysis runs without a manual transcript.
+6. Add the many-to-many related-list "select existing record" UI (API already supports it).
+7. Build the Channel Partner portal (restricted profile exists and is seeded; no portal UI).
+8. Make funnel-widget drill-through use the funnel's actual cumulative "reached this stage or
+   later" semantics instead of `equals` on the single stage (§8 technical debt 10) — needs the
+   server to also return the ordered stage-key list.
 
 ### Deployment and operations
 
-11. Write a Dockerfile + docker-compose for the full app; set up CI (typecheck → build → test).
-12. Add structured error reporting (Sentry or equivalent) and request tracing.
-13. Move the scheduler to a dedicated worker process/queue so it scales past one instance.
+9. Write a Dockerfile + docker-compose for the full app; set up CI (typecheck → build → test).
+10. Add structured error reporting (Sentry or equivalent) and request tracing.
+11. Move the scheduler to a dedicated worker process/queue so it scales past one instance.
 
 ### Product depth
 
-14. Route-level code splitting — the web bundle is now ~1.1 MB / ~223 KB gzipped, having grown with
+12. Route-level code splitting — the web bundle is now ~1.1 MB / ~223 KB gzipped, having grown with
     the workflow composer and dashboard drill-through this session.
-15. Mobile-responsive pass on ListView, RecordDetail and the Inventory board.
-16. Email inbound (IMAP) sync into the timeline — outbound works, inbound does not. Credentials are
+13. Mobile-responsive pass on ListView, RecordDetail and the Inventory board.
+14. Email inbound (IMAP) sync into the timeline — outbound works, inbound does not. Credentials are
     now configurable via Admin → Integrations; the sync itself still isn't built.
-17. Rollup fields (`uitype: 'rollup'` is declared and typed but the aggregation engine is not
+15. Rollup fields (`uitype: 'rollup'` is declared and typed but the aggregation engine is not
     implemented — currently a no-op).
-18. Collapse `is_converted` into `lifecycle_stage` and simplify conversion logic (§8 technical debt 9).
+16. Collapse `is_converted` into `lifecycle_stage` and simplify conversion logic (§8 technical debt 7).
 
 ---
 
