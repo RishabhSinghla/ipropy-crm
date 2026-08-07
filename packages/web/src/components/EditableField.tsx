@@ -223,81 +223,116 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
   }
 
   const mandatoryError = editing && field.isMandatory && isEmptyValue(draft) ? `${field.label} is required` : undefined;
+  const kind = editorKind(field);
+  // Controls that draw their own input-looking box (a text input, a combobox)
+  // would read as a duplicate sitting next to the value, so they cover it.
+  // Bare dropdown panels have nothing to duplicate and hang below it instead.
+  const coversValue = kind === 'text' || kind === 'control';
+
+  const readState = HAS_OWN_LINK.has(field.uitype) ? (
+    // FieldValue renders an <a> for these (mailto:/tel:/href, or a reference
+    // Link) — nesting that inside a <button> would be invalid,
+    // interactive-in-interactive HTML that silently breaks in browsers.
+    // Keep the link itself a plain click, and put editing behind its own
+    // small affordance instead of swallowing the click into it.
+    <StatusRing key={flashKey} status={status}>
+      <span className={cn('group/ef -mx-1 inline-flex items-center gap-1 rounded px-1 py-0.5', editing && coversValue && 'invisible')}>
+        <FieldValue field={field} value={localValue} display={localDisplay} compact={compact} linkTo={linkTo} />
+        {status === 'saving' ? (
+          <Loader2 className="h-3 w-3 shrink-0 animate-spin text-slate-400" />
+        ) : (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); openEdit(); }}
+            title="Change"
+            className="shrink-0 rounded p-0.5 text-slate-300 opacity-0 transition-opacity hover:text-slate-500 group-hover/ef:opacity-100 dark:hover:text-slate-300"
+          >
+            <Pencil className="h-3 w-3" />
+          </button>
+        )}
+      </span>
+    </StatusRing>
+  ) : (
+    <EditTrigger
+      onClick={openEdit}
+      status={status}
+      flashKey={flashKey}
+      compact={compact}
+      invisible={editing && coversValue}
+    >
+      <FieldValue field={field} value={localValue} display={localDisplay} compact={compact} />
+    </EditTrigger>
+  );
 
   return (
-    <div className="relative inline-block max-w-full align-top" ref={editing ? editRef : undefined} onClick={(e) => e.stopPropagation()}>
-      {!editing ? (
-        HAS_OWN_LINK.has(field.uitype) ? (
-          // FieldValue renders an <a> for these (mailto:/tel:/href, or a
-          // reference Link) — nesting that inside a <button> would be invalid,
-          // interactive-in-interactive HTML that silently breaks in browsers.
-          // Keep the link itself a plain click, and put editing behind its
-          // own small affordance instead of swallowing the click into it.
-          <StatusRing key={flashKey} status={status}>
-            <span className="group/ef -mx-1 inline-flex max-w-full items-center gap-1 rounded px-1 py-0.5">
-              <FieldValue field={field} value={localValue} display={localDisplay} compact={compact} linkTo={linkTo} />
-              {status === 'saving' ? (
-                <Loader2 className="h-3 w-3 shrink-0 animate-spin text-slate-400" />
-              ) : (
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); openEdit(); }}
-                  title="Change"
-                  className="shrink-0 rounded p-0.5 text-slate-300 opacity-0 transition-opacity hover:text-slate-500 group-hover/ef:opacity-100 dark:hover:text-slate-300"
-                >
-                  <Pencil className="h-3 w-3" />
-                </button>
-              )}
-            </span>
-          </StatusRing>
-        ) : (
-          <EditTrigger onClick={openEdit} status={status} flashKey={flashKey} compact={compact}>
-            <FieldValue field={field} value={localValue} display={localDisplay} compact={compact} />
-          </EditTrigger>
-        )
-      ) : field.uitype === 'picklist' ? (
-        <PicklistPopover field={field} value={draft as string | null} restrictTo={restrictTo} onPick={pickAndClose} />
-      ) : field.uitype === 'owner' || field.uitype === 'user' ? (
-        <OwnerPopover value={draft as string | null} allowGroups={field.uitype === 'owner'} mandatory={field.isMandatory} onPick={pickAndClose} />
-      ) : field.uitype === 'reference' ? (
-        <div className="min-w-[15rem]">
-          <ReferencePicker
-            field={field}
-            value={draft as string | null}
-            autoOpen
-            onOpenChange={(open) => { if (!open) setEditing(false); }}
-            onChange={pickAndClose}
-          />
+    <div className="relative inline-block" ref={editing ? editRef : undefined} onClick={(e) => e.stopPropagation()}>
+      {/* Always rendered, even mid-edit: it is what reserves the cell's width,
+          so opening an editor can't resize a table column and reflow the page. */}
+      {readState}
+
+      {editing && (
+        <div
+          className={cn(
+            // Absolute so the editor is painted over the layout rather than
+            // participating in it — the row keeps its exact geometry.
+            'absolute left-0 z-40',
+            coversValue ? 'top-1/2 -translate-y-1/2' : 'top-full mt-1.5',
+            kind === 'text' && (field.uitype === 'textarea' || field.uitype === 'richtext'
+              ? 'w-72'
+              : compact ? 'w-40' : 'w-52'),
+            kind === 'control' && (field.uitype === 'tags' ? 'w-56' : 'w-64'),
+          )}
+        >
+          {kind === 'picklist' ? (
+            <PicklistPopover field={field} value={draft as string | null} restrictTo={restrictTo} onPick={pickAndClose} />
+          ) : kind === 'owner' ? (
+            <OwnerPopover value={draft as string | null} allowGroups={field.uitype === 'owner'} mandatory={field.isMandatory} onPick={pickAndClose} />
+          ) : kind === 'form' ? (
+            <div className="w-80 animate-slide-up space-y-2 rounded-xl border border-slate-200 bg-white p-3 shadow-float dark:border-slate-700 dark:bg-slate-900">
+              <FieldInput field={field} value={draft} onChange={setDraft} autoFocus error={mandatoryError} />
+              {mandatoryError && <p className="text-2xs text-red-500">{mandatoryError}</p>}
+              <div className="flex justify-end gap-1.5 pt-0.5">
+                <button type="button" className="btn-ghost btn-sm" onClick={closeWithoutSaving}>Cancel</button>
+                <button type="button" className="btn-primary btn-sm" onClick={() => closeAndCommitIfChanged()}>Save</button>
+              </div>
+            </div>
+          ) : field.uitype === 'reference' ? (
+            <ReferencePicker
+              field={field}
+              value={draft as string | null}
+              autoOpen
+              onOpenChange={(open) => { if (!open) setEditing(false); }}
+              onChange={pickAndClose}
+            />
+          ) : field.uitype === 'multipicklist' ? (
+            <MultiSelect options={field.options ?? []} value={(draft as string[]) ?? []} onChange={pickAndStayOpen} />
+          ) : field.uitype === 'tags' ? (
+            <TagInput value={(draft as string[]) ?? []} onChange={pickAndStayOpen} />
+          ) : (
+            <InlineTextEditor
+              field={field}
+              draft={draft}
+              setDraft={setDraft}
+              error={mandatoryError}
+              onCommit={closeAndCommitIfChanged}
+            />
+          )}
         </div>
-      ) : field.uitype === 'multipicklist' ? (
-        <div className="min-w-[15rem]">
-          <MultiSelect options={field.options ?? []} value={(draft as string[]) ?? []} onChange={pickAndStayOpen} />
-        </div>
-      ) : field.uitype === 'tags' ? (
-        <div className="min-w-[13rem]">
-          <TagInput value={(draft as string[]) ?? []} onChange={pickAndStayOpen} />
-        </div>
-      ) : field.uitype === 'address' || field.uitype === 'json' ? (
-        <div className="absolute z-40 mt-1.5 w-80 animate-slide-up space-y-2 rounded-xl border border-slate-200 bg-white p-3 shadow-float dark:border-slate-700 dark:bg-slate-900">
-          <FieldInput field={field} value={draft} onChange={setDraft} autoFocus error={mandatoryError} />
-          {mandatoryError && <p className="text-2xs text-red-500">{mandatoryError}</p>}
-          <div className="flex justify-end gap-1.5 pt-0.5">
-            <button type="button" className="btn-ghost btn-sm" onClick={closeWithoutSaving}>Cancel</button>
-            <button type="button" className="btn-primary btn-sm" onClick={() => closeAndCommitIfChanged()}>Save</button>
-          </div>
-        </div>
-      ) : (
-        <InlineTextEditor
-          field={field}
-          draft={draft}
-          setDraft={setDraft}
-          error={mandatoryError}
-          compact={compact}
-          onCommit={closeAndCommitIfChanged}
-        />
       )}
     </div>
   );
+}
+
+type EditorKind = 'picklist' | 'owner' | 'form' | 'control' | 'text';
+
+function editorKind(field: FieldMeta): EditorKind {
+  switch (field.uitype) {
+    case 'picklist': return 'picklist';
+    case 'owner': case 'user': return 'owner';
+    case 'address': case 'json': return 'form';
+    case 'reference': case 'multipicklist': case 'tags': return 'control';
+    default: return 'text';
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -314,24 +349,50 @@ function StatusRing({ status, children }: { status: Status; children: React.Reac
   );
 }
 
+/**
+ * Deliberately plain geometry: `inline-flex` sized to its content, and
+ * nothing that constrains width. An earlier version wrapped the value in a
+ * `truncate` span and capped the button at `max-w-full` — both are layout
+ * poison here. `truncate` sets `overflow:hidden`, which per the flexbox spec
+ * drops a flex item's `min-width` from `auto` to `0`, so the value could
+ * shrink to nothing; `max-w-full` inside an auto-layout `<table>` then let
+ * every column resolve to that new near-zero minimum ("Test" rendered as
+ * "T…"). Cells already clip via `.table-cell`'s `whitespace-nowrap`, and
+ * FieldValue does its own length-capping in `compact` mode, so neither is
+ * this component's job.
+ *
+ * `invisible` renders it as a size-preserving placeholder while an overlay
+ * editor sits on top — that is what keeps the table from reflowing on click.
+ */
 function EditTrigger({
-  onClick, status, flashKey, compact, children,
-}: { onClick: () => void; status: Status; flashKey: number; compact?: boolean; children: React.ReactNode }): JSX.Element {
+  onClick, status, flashKey, compact, invisible, children,
+}: {
+  onClick?: () => void;
+  status: Status;
+  flashKey: number;
+  compact?: boolean;
+  invisible?: boolean;
+  children: React.ReactNode;
+}): JSX.Element {
   return (
     <button
       type="button"
       key={flashKey}
-      onClick={(e) => { e.stopPropagation(); onClick(); }}
-      disabled={status === 'saving'}
-      title="Click to edit"
+      onClick={(e) => { e.stopPropagation(); onClick?.(); }}
+      disabled={status === 'saving' || invisible}
+      tabIndex={invisible ? -1 : undefined}
+      aria-hidden={invisible}
+      title={invisible ? undefined : 'Click to edit'}
       className={cn(
-        'group/ef -mx-1 inline-flex max-w-full items-center gap-1 rounded px-1 py-0.5 text-left transition-colors',
-        'hover:bg-slate-100 disabled:cursor-wait dark:hover:bg-slate-800/70',
-        status === 'success' && 'animate-pulse-success',
-        status === 'error' && 'animate-pulse-error',
+        'group/ef -mx-1 inline-flex items-center gap-1 rounded px-1 py-0.5 text-left transition-colors',
+        invisible
+          ? 'invisible'
+          : 'hover:bg-slate-100 disabled:cursor-wait dark:hover:bg-slate-800/70',
+        !invisible && status === 'success' && 'animate-pulse-success',
+        !invisible && status === 'error' && 'animate-pulse-error',
       )}
     >
-      <span className="truncate">{children}</span>
+      {children}
       {status === 'saving'
         ? <Loader2 className="h-3 w-3 shrink-0 animate-spin text-slate-400" />
         : <ChevronDown className={cn('h-3 w-3 shrink-0 text-slate-300 opacity-0 transition-opacity group-hover/ef:opacity-100', compact && 'hidden sm:inline')} />}
@@ -344,13 +405,12 @@ function EditTrigger({
 // ---------------------------------------------------------------------------
 
 function InlineTextEditor({
-  field, draft, setDraft, error, compact, onCommit,
+  field, draft, setDraft, error, onCommit,
 }: {
   field: FieldMeta;
   draft: unknown;
   setDraft: (v: unknown) => void;
   error?: string;
-  compact?: boolean;
   onCommit: (draft: unknown) => void;
 }): JSX.Element {
   const isMultiline = field.uitype === 'textarea' || field.uitype === 'richtext';
@@ -376,7 +436,9 @@ function InlineTextEditor({
 
   return (
     <div
-      className={cn('relative', isMultiline ? 'min-w-[16rem]' : compact ? 'min-w-[8rem]' : 'min-w-[11rem]')}
+      // Width comes from the absolutely-positioned wrapper in EditableField;
+      // the shadow lifts the editor off whatever value it is covering.
+      className="relative rounded-lg shadow-float"
       onBlur={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget as Node)) commitOnce();
       }}
@@ -412,7 +474,7 @@ function PicklistPopover({
   }, [field.options, restrictTo, value]);
 
   return (
-    <div className="absolute z-40 mt-1.5 min-w-[12rem] max-w-xs animate-slide-up overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-float dark:border-slate-700 dark:bg-slate-900">
+    <div className="w-max min-w-[12rem] max-w-xs animate-slide-up overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-float dark:border-slate-700 dark:bg-slate-900">
       <div className="max-h-72 overflow-y-auto">
         {options.map((o) => (
           <button
@@ -471,7 +533,7 @@ function OwnerPopover({
   const filteredGroups = groups.filter((g) => !q || g.name.toLowerCase().includes(q));
 
   return (
-    <div className="absolute z-40 mt-1.5 w-64 animate-slide-up overflow-hidden rounded-xl border border-slate-200 bg-white shadow-float dark:border-slate-700 dark:bg-slate-900">
+    <div className="w-64 animate-slide-up overflow-hidden rounded-xl border border-slate-200 bg-white shadow-float dark:border-slate-700 dark:bg-slate-900">
       <div className="border-b border-slate-100 p-2 dark:border-slate-800">
         <input
           className="input py-1 text-xs"

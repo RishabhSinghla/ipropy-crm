@@ -196,6 +196,21 @@ export function FieldValue({
     case 'autonumber':
       return <span className="font-mono text-xs text-slate-500 dark:text-slate-400">{String(value)}</span>;
 
+    // Computed fields carry no uitype of their own, so they fell through to
+    // the default below and rendered as a bare String() — which is why an
+    // all-inclusive unit price showed as "11888410" instead of "₹1.19 Cr".
+    // Their declared config already says how to read the result (money via
+    // `currency`, an area unit via `unit`), so honour it the same way the
+    // concrete numeric uitypes above do.
+    case 'formula':
+    case 'rollup': {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return <span>{compact ? truncate(String(value), 50) : String(value)}</span>;
+      if (field.config.currency) return <span className="font-medium tnum">{formatIndianPrice(n)}</span>;
+      if (field.config.unit) return <span className="tnum">{formatArea(n, field.config.unit)}</span>;
+      return <span className="tnum">{new Intl.NumberFormat('en-IN').format(n)}</span>;
+    }
+
     default:
       return <span>{compact ? truncate(String(value), 50) : String(value)}</span>;
   }
