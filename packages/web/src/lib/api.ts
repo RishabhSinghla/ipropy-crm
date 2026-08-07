@@ -382,4 +382,18 @@ export const api = {
   webforms: () => get<Record<string, unknown>[]>('/api/webforms'),
   createWebform: (data: Record<string, unknown>) => post<{ id: string; publicKey: string; endpoint: string }>('/api/webforms', data),
   leadInbox: (status?: string) => get<Record<string, unknown>[]>(`/api/lead-inbox${qs({ status })}`),
+
+  // --- partner portal ------------------------------------------------------
+  portalOverview: () =>
+    get<{ partner: Record<string, unknown>; stats: {
+      leads: number; siteVisits: number; bookings: number; agreementValue: number; commission: number;
+    } }>('/api/portal/overview'),
+  portalLeads: (page = 1, pageSize = 25) =>
+    get<{ rows: { id: string; label: string; values: Record<string, unknown> }[]; total: number; page: number; pageSize: number }>(
+      `/api/portal/leads${qs({ page, pageSize })}`),
+  portalBookings: (page = 1, pageSize = 25) =>
+    get<{ rows: { id: string; label: string; values: Record<string, unknown> }[]; total: number; page: number; pageSize: number }>(
+      `/api/portal/bookings${qs({ page, pageSize })}`),
+  portalSubmitLead: (data: Record<string, unknown>) =>
+    post<{ status: 'created' | 'duplicate' | 'failed'; recordId: string | null; message?: string }>('/api/portal/leads', data),
 };

@@ -94,6 +94,7 @@ function user(over: Partial<AuthUser> = {}): AuthUser {
     theme: 'system',
     defaultDashboardId: null,
     extension: null,
+    channelPartnerId: null,
     lastLoginAt: null,
     ...over,
   };

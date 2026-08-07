@@ -395,3 +395,56 @@ export function ScoreChip({ score, invert }: { score: number | null | undefined;
     </span>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Form primitives
+// ---------------------------------------------------------------------------
+
+export function Input({
+  value, onChange, type = 'text', placeholder, error, className, autoFocus, ...rest
+}: React.InputHTMLAttributes<HTMLInputElement> & { error?: string; autoFocus?: boolean }): JSX.Element {
+  return (
+    <div className="space-y-1">
+      <input
+        type={type}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        autoFocus={autoFocus}
+        className={cn('input', error && 'border-red-300 focus:ring-red-500 focus:border-red-500', className)}
+        {...rest}
+      />
+      {error && <p className="text-2xs text-red-600 dark:text-red-400">{error}</p>}
+    </div>
+  );
+}
+
+export function Textarea({
+  value, onChange, placeholder, rows = 3, error, className, ...rest
+}: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { error?: string }): JSX.Element {
+  return (
+    <div className="space-y-1">
+      <textarea
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        rows={rows}
+        className={cn('input resize-none', error && 'border-red-300 focus:ring-red-500 focus:border-red-500', className)}
+        {...rest}
+      />
+      {error && <p className="text-2xs text-red-600 dark:text-red-400">{error}</p>}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Layout primitives
+// ---------------------------------------------------------------------------
+
+export function Card({ children, className, ...rest }: { children: ReactNode; className?: string } & React.HTMLAttributes<HTMLDivElement>): JSX.Element {
+  return (
+    <div className={cn('card', className)} {...rest}>
+      {children}
+    </div>
+  );
+}

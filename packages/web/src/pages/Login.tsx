@@ -16,7 +16,7 @@ export default function Login(): JSX.Element {
   const [busy, setBusy] = useState(false);
 
   if (!loading && user) {
-    const from = (location.state as { from?: { pathname: string } })?.from?.pathname ?? '/dashboard';
+    const from = (location.state as { from?: { pathname: string } })?.from?.pathname ?? (user.channelPartnerId ? '/portal' : '/dashboard');
     return <Navigate to={from} replace />;
   }
 

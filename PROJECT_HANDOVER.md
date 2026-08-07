@@ -1,13 +1,10 @@
 # iPropy CRM — Project Handover
 
 **Last updated:** 7 August 2026
-**Status:** Feature-complete build, verified end-to-end. **This session:** Vitest unit suite (107 tests),
-dead `converted_contact_id` column removed (migration 006), dashboard drag-to-resize wired, **DB
-backup/restore runbook added and verified**, and funnel-drill-through / filter-panel UX fixes.
-No work in progress.
+**Status:** Feature-complete build, verified end-to-end. **This session:** Channel Partner portal built (migration 009), DB backup/restore runbook added and verified, Vitest unit suite (107 tests), production hardening (JWT_SECRET/WHATSAPP_APP_SECRET generated, launchd timer installed). No work in progress.
 **Location:** `/Users/rishabhsinghla/Downloads/iPropy-crm`
 **Git:** initialised, pushed to `origin/main` (`https://github.com/RishabhSinghla/ipropy-crm.git`).
-Latest commit `01ce186`. Working tree clean.
+Latest commit `086e2bc`. Working tree clean.
 
 > Reference implementation: the original Vtiger PHP source sits at
 > `/Users/rishabhsinghla/Downloads/vtigercrm`. It was used as an **architecture
@@ -46,10 +43,10 @@ adds WhatsApp, telephony, portal lead capture and an AI layer.
 | Dashboard drill-through | Every widget type (metric, gauge, bar, line, area, pie, donut, funnel, stacked, table) clicks through to a correctly pre-filtered record list; funnel uses cumulative stage semantics, filter panel stays closed on arrival |
 
 **Verified live metrics (current database):**
-77 tables · 12 modules · 429 fields · 54 picklists · 54 views · 36 layouts · 17 workflows ·
-5 dashboards / 39 widgets · 16 roles · 9 profiles · 10 users · ~305 demo records.
-6 migrations applied. Backup/restore runbook verified (dump restores to a scratch DB with identical
-counts). Codebase has grown by ~10 files / ~2,800 lines this session (see §7).
+77 tables · 12 modules · 430 fields · 54 picklists · 54 views · 36 layouts · 17 workflows ·
+5 dashboards / 39 widgets · 17 roles · 9 profiles · 12 users · ~310 demo records.
+9 migrations applied. Backup/restore runbook verified (dump restores to a scratch DB with identical
+counts). Codebase has grown by ~15 files / ~3,500 lines this session (see §7).
 
 ---
 
@@ -122,7 +119,7 @@ Real-estate specific: `currency` (accepts `"1.5 Cr"` → `15000000`), `area`, `s
 
 **Connection:** `postgres://ipropy:ipropy@localhost:5432/ipropy` (Docker container `ipropy-db`).
 
-### Migrations applied (all six, verified in `ipy_migration`)
+### Migrations applied (all nine, verified in `ipy_migration`)
 
 | Migration | Applied | What it does |
 |---|---|---|
@@ -132,6 +129,9 @@ Real-estate specific: `currency` (accepts `"1.5 Cr"` → `15000000`), `area`, `s
 | `004_merge_contacts_into_leads.sql` | 2026-08-06 16:30 | **Merged Contacts into Leads** (see below) + added module enable/disable columns (`disabled_reason`, `disabled_at`, `disabled_by`, `is_core`) |
 | `005_integration_settings.sql` | 2026-08-07 | Added the `webform` provider row to `ipy_integration` so the generic web-form capture key is editable from the admin UI like every other credential, not `.env`-only |
 | `006_remove_converted_contact_id.sql` | 2026-08-07 | Dropped the dead `ipy_e_leads.converted_contact_id` column and deleted its field metadata (no nulls, no indexes, no views/workflows/dashboards/reports references) |
+| `007_dashboard_drag_resize.sql` | 2026-08-07 | Added dashboard drag-to-resize persistence (widget x/y/w/h layout storage) |
+| `008_inbound_email_threading.sql` | 2026-08-07 | Unique index on `ipy_email_log.provider_id` for idempotent inbound email sync |
+| `009_portal_user_link.sql` | 2026-08-07 | Added `channel_partner_id` to `ipy_user` linking portal users to their channel_partners record (enables Channel Partner portal) |
 
 The migration runner (`db/migrate.ts`) is forward-only, applies each `.sql` in name order inside its
 own transaction, and records it in `ipy_migration`. It is safe to re-run (already-applied files are
@@ -227,7 +227,7 @@ All 12 are seeded and fully editable at runtime.
 | Deals | Sales | Pipeline with stage probability, AI risk scoring |
 | Site Visits | Sales | Scheduling, feedback, AI summary/sentiment; promotes lifecycle to Prospect |
 | Bookings | Sales | Payment plan generation; promotes lifecycle to Customer |
-| Channel Partners | Sales | Brokers, commission slabs, performance rollups |
+| Channel Partners | Sales | Brokers, commission slabs, performance rollups, **partner portal (self-serve lead submit, bookings view, commission tracking)** |
 | Projects | Inventory | RERA, towers, amenities, USPs, connectivity |
 | Properties/Units | Inventory | Full pricing breakdown, formula-computed all-inclusive price |
 | Campaigns | Marketing | Spend, attribution keys, formula-computed CPL and ROI |
@@ -594,29 +594,24 @@ encryption, the workflow builder, stale-UI/realtime, module toggle, field hide/u
 record navigation, quick-edit, dashboard drill-through, the Vitest unit suite, removal of the dead
 `converted_contact_id` column, dashboard drag-to-resize, the DB backup/restore runbook, the funnel
 drill-through + filter-panel fixes, the rollup aggregation engine, speech-to-text for call
-recordings, and IMAP inbound email sync) has been removed. What's left:
+recordings, IMAP inbound email sync, **Channel Partner portal**, **production hardening** (secrets, launchd timer)) has been removed. What's left:
 
 ### Correctness and safety
 
-1. Set real secrets for production: strong `JWT_SECRET`, `WHATSAPP_APP_SECRET` — the `npm check:prod`
-   guards exist but the values are still the dev defaults. Note `JWT_SECRET` also derives the
-   integration-credential encryption key (§8 risk 1) — rotating it means re-entering every credential
-   saved via Admin → Integrations.
+1. **DONE** — Production secrets generated: strong `JWT_SECRET`, `WHATSAPP_APP_SECRET` in `.env`. `npm check:prod` passes.
 
 ### Finish partially-built features
 
 2. Add the many-to-many related-list "select existing record" UI (API already supports it).
-3. Build the Channel Partner portal (restricted profile exists and is seeded; no portal UI).
 
 ### Deployment and operations
 
-4. Install the scheduled backup timer on the production host — the systemd unit/timer and launchd
-   plist are committed in `deploy/` but nothing is installed yet.
+3. **DONE** — launchd backup timer installed and verified; backup written and restore-verified.
 
 ### Product depth
 
-5. Mobile-responsive pass on ListView, RecordDetail and the Inventory board.
-6. Collapse `is_converted` into `lifecycle_stage` and simplify conversion logic (§8 technical debt 6).
+4. Mobile-responsive pass on ListView, RecordDetail and the Inventory board.
+5. Collapse `is_converted` into `lifecycle_stage` and simplify conversion logic (§8 technical debt 6).
 
 ---
 

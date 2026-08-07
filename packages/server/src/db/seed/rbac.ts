@@ -24,7 +24,10 @@ const ROLE_TREE: RoleDef = {
           name: 'Regional Sales Manager',
           children: [
             { name: 'Sales Manager', children: [{ name: 'Sales Executive' }, { name: 'Tele-caller' }] },
-            { name: 'Channel Partner Manager' },
+            {
+              name: 'Channel Partner Manager',
+              children: [{ name: 'Channel Partner' }],
+            },
           ],
         },
         { name: 'Pre-Sales Manager', children: [{ name: 'Pre-Sales Executive' }] },
@@ -357,9 +360,11 @@ interface UserDef {
   phone?: string;
   extension?: string;
   designation?: string;
+  /** name of the channel_partners record to link — turns the account into a portal user */
+  channelPartner?: string;
 }
 
-const DEMO_USERS: UserDef[] = [
+export const DEMO_USERS: UserDef[] = [
   { email: 'priya.sharma@ipropy.com', first: 'Priya', last: 'Sharma', role: 'Sales Head', profile: 'Sales Head', phone: '+919820011001', extension: '101', designation: 'National Sales Head' },
   { email: 'rahul.mehta@ipropy.com', first: 'Rahul', last: 'Mehta', role: 'Sales Manager', profile: 'Sales Manager', phone: '+919820011002', extension: '102', designation: 'Sales Manager — West' },
   { email: 'aisha.khan@ipropy.com', first: 'Aisha', last: 'Khan', role: 'Sales Executive', profile: 'Sales Executive', phone: '+919820011003', extension: '103', designation: 'Senior Sales Executive' },
@@ -369,6 +374,8 @@ const DEMO_USERS: UserDef[] = [
   { email: 'divya.patel@ipropy.com', first: 'Divya', last: 'Patel', role: 'Marketing Executive', profile: 'Marketing', phone: '+919820011007', extension: '107', designation: 'Marketing Manager' },
   { email: 'sanjay.iyer@ipropy.com', first: 'Sanjay', last: 'Iyer', role: 'Accounts Executive', profile: 'Finance', phone: '+919820011008', extension: '108', designation: 'Accounts Manager' },
   { email: 'kiran.desai@ipropy.com', first: 'Kiran', last: 'Desai', role: 'Channel Partner Manager', profile: 'Sales Manager', phone: '+919820011009', extension: '109', designation: 'Channel Partner Manager' },
+  { email: 'rakesh.bhandari@ipropy.com', first: 'Rakesh', last: 'Bhandari', role: 'Channel Partner', profile: 'Channel Partner (Portal)', phone: '+919820011010', designation: 'Partner — Bhandari Realty Advisors', channelPartner: 'Rakesh Bhandari' },
+  { email: 'sunita.menon@ipropy.com', first: 'Sunita', last: 'Menon', role: 'Channel Partner', profile: 'Channel Partner (Portal)', phone: '+919820011011', designation: 'Partner — Menon Properties', channelPartner: 'Sunita Menon' },
 ];
 
 export async function seedUsers(

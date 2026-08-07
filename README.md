@@ -34,6 +34,8 @@ Open <http://localhost:5173> and sign in:
 | `neha.gupta@ipropy.com` | Pre-Sales / Tele-caller | Pricing fields hidden, Bookings blocked |
 | `arjun.nair@ipropy.com` | CRM / Post-Sales | Bookings, payments, documentation |
 | `sanjay.iyer@ipropy.com` | Finance | Collections and commissions |
+| `rakesh.bhandari@ipropy.com` | Channel Partner (Platinum) | Partner portal — submit leads, view bookings |
+| `sunita.menon@ipropy.com` | Channel Partner (Gold) | Partner portal — submit leads, view bookings |
 
 Password for all of them: `Admin@123`.
 
@@ -287,9 +289,5 @@ Honest scope notes:
 * **Dashboard drag-to-resize is desktop-only.** On ≥1024 px widgets can be dragged and resized and
   the layout persists to the server; below that the grid falls back to responsive auto-flow (see the
   README of `react-grid-layout` if you want finer control over the handles).
-* **The workflow builder is read-only in the UI.** Workflows are fully editable through the API and
-  seeded declaratively; the admin screen lists, inspects, enables and deletes them but does not yet
-  compose a new one visually.
-* **Unit tests cover the server core only.** A Vitest suite (`npm test`) covers the query builder,
-  filter evaluator, formula engine and permission engine; the API, write paths and UI are verified
-  live rather than by automated tests.
+* **The workflow builder is fully editable in the UI.** Workflows are seeded declaratively; the admin screen lists, inspects, enables, deletes and composes new ones visually.
+* **Unit tests cover the server core only.** A Vitest suite (`npm test`) covers the query builder, filter evaluator, formula engine and permission engine; the API, write paths and UI are verified live rather than by automated tests.

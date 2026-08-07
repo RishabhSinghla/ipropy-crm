@@ -22,7 +22,7 @@ const SYSTEM_USER: AuthUser = {
   isAdmin: true, isActive: true, roleId: null, roleName: null,
   profileId: null, profileName: null, groupIds: [],
   timezone: 'Asia/Kolkata', locale: 'en-IN', currency: 'INR',
-  theme: 'system', defaultDashboardId: null, extension: null, lastLoginAt: null,
+  theme: 'system', defaultDashboardId: null, extension: null, channelPartnerId: null, lastLoginAt: null,
 };
 
 function systemContext(): ServiceContext {
@@ -66,7 +66,7 @@ export async function captureLead(
   source: string,
   raw: unknown,
   normalized: NormalizedLead,
-  opts: { externalId?: string; ownerId?: string; assignRuleId?: string } = {},
+  opts: { externalId?: string; ownerId?: string; assignRuleId?: string; createdBy?: AuthUser } = {},
 ): Promise<CaptureResult> {
   const inbox = await db.queryOne<{ id: string }>(
     `INSERT INTO ipy_lead_inbox (source, external_id, raw_payload, normalized)
@@ -140,7 +140,10 @@ export async function captureLead(
     }
     values.owner_id = ownerId;
 
-    const record = await createRecord(systemContext(), 'leads', values, { skipDuplicateCheck: true });
+    const ctx = opts.createdBy
+      ? { user: opts.createdBy, subordinateIds: [], groupIds: [], system: true, source: 'lead_capture' }
+      : systemContext();
+    const record = await createRecord(ctx, 'leads', values, { skipDuplicateCheck: true });
 
     await db.query(
       `UPDATE ipy_lead_inbox SET status = 'processed', record_id = $2, processed_at = now() WHERE id = $1`,

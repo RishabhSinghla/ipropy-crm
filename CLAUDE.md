@@ -20,8 +20,7 @@ Vtiger (at `../vtigercrm`) is an **architecture reference only**. No Vtiger code
 
 ## Critical rules — violating these breaks the system
 
-1. **No version control yet.** The repo is not a git repository. There is no undo. Be careful with
-   destructive commands; propose `git init` early if the user hasn't.
+1. **Version control is in place.** The repo is a git repository (branch `main`, remote `origin`). Commits are the only undo — be careful with destructive commands.
 
 2. **Never write per-module CRUD.** All record reads/writes go through
    `core/entity/recordService.ts`. Module differences are expressed as metadata or workflow hooks.
