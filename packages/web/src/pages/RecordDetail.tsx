@@ -556,6 +556,7 @@ function TimelineItem({ entry }: { entry: TimelineEntry }): JSX.Element {
 }
 
 function RelatedTab({ meta, module, id }: { meta: ModuleMeta; module: string; id: string }): JSX.Element {
+  const queryClient = useQueryClient();
   const [active, setActive] = useState(meta.relations[0]?.name ?? '');
   const relation = meta.relations.find((r) => r.name === active);
 
@@ -571,6 +572,40 @@ function RelatedTab({ meta, module, id }: { meta: ModuleMeta; module: string; id
     enabled: Boolean(relation?.targetModule),
   });
 
+  const [showSelect, setShowSelect] = useState(false);
+  const [search, setSearch] = useState('');
+  const [results, setResults] = useState<{ id: string; label: string; recordNumber: string | null }[]>([]);
+  const [searching, setSearching] = useState(false);
+
+  useEffect(() => {
+    if (!showSelect || !relation?.targetModule) return;
+    setSearching(true);
+    const timer = setTimeout(() => {
+      void api.lookup(relation.targetModule, search)
+        .then((r) => setResults(r))
+        .catch(() => setResults([]))
+        .finally(() => setSearching(false));
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [showSelect, search, relation?.targetModule]);
+
+  const refresh = (): void => {
+    void queryClient.invalidateQueries({ queryKey: ['related', module, id, active] });
+    void queryClient.invalidateQueries({ queryKey: ['record', module, id] });
+  };
+
+  const linkMutation = useMutation({
+    mutationFn: (targetId: string) => api.linkRelated(module, id, active, targetId),
+    onSuccess: () => { setShowSelect(false); setSearch(''); refresh(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const unlinkMutation = useMutation({
+    mutationFn: (targetId: string) => api.unlinkRelated(module, id, active, targetId),
+    onSuccess: refresh,
+    onError: (e) => toast.error(e.message),
+  });
+
   if (!meta.relations.length) {
     return <div className="card"><EmptyState title="No related lists configured" /></div>;
   }
@@ -579,10 +614,11 @@ function RelatedTab({ meta, module, id }: { meta: ModuleMeta; module: string; id
     ? relation.columns
     : (targetMeta?.fields ?? []).filter((f) => f.isActive && f.displayType !== 'hidden').slice(0, 5).map((f) => f.name);
   const fieldMap = new Map((targetMeta?.fields ?? []).map((f) => [f.name, f]));
+  const linkedIds = new Set((data?.rows ?? []).map((r) => r.id));
 
   return (
     <div className="card overflow-hidden">
-      <div className="flex flex-wrap gap-1 border-b border-slate-100 p-2 dark:border-slate-800">
+      <div className="flex flex-wrap items-center gap-1 border-b border-slate-100 p-2 dark:border-slate-800">
         {meta.relations.map((r) => (
           <button
             key={r.name}
@@ -597,6 +633,24 @@ function RelatedTab({ meta, module, id }: { meta: ModuleMeta; module: string; id
             {r.label}
           </button>
         ))}
+
+        {relation && (
+          <div className="ml-auto flex items-center gap-1">
+            {relation.actions.includes('select') && (
+              <button onClick={() => setShowSelect(true)} className="btn-ghost btn-sm">
+                <Icons.Link2 className="h-3.5 w-3.5" /> Select existing
+              </button>
+            )}
+            {relation.actions.includes('add') && (
+              <Link
+                to={`/${relation.targetModule}/new?${relation.foreignField}=${id}`}
+                className="btn-secondary btn-sm"
+              >
+                <Icons.Plus className="h-3.5 w-3.5" /> Add
+              </Link>
+            )}
+          </div>
+        )}
       </div>
 
       {isLoading ? (
@@ -606,12 +660,21 @@ function RelatedTab({ meta, module, id }: { meta: ModuleMeta; module: string; id
           title={`No ${relation?.label.toLowerCase()} yet`}
           action={
             relation && (
-              <Link
-                to={`/${relation.targetModule}/new?${relation.foreignField}=${id}`}
-                className="btn-secondary btn-sm"
-              >
-                <Icons.Plus className="h-3.5 w-3.5" /> Add
-              </Link>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                {relation.actions.includes('select') && (
+                  <button onClick={() => setShowSelect(true)} className="btn-secondary btn-sm">
+                    <Icons.Link2 className="h-3.5 w-3.5" /> Select existing
+                  </button>
+                )}
+                {relation.actions.includes('add') && (
+                  <Link
+                    to={`/${relation.targetModule}/new?${relation.foreignField}=${id}`}
+                    className="btn-secondary btn-sm"
+                  >
+                    <Icons.Plus className="h-3.5 w-3.5" /> Add
+                  </Link>
+                )}
+              </div>
             )
           }
         />
@@ -623,6 +686,7 @@ function RelatedTab({ meta, module, id }: { meta: ModuleMeta; module: string; id
                 {columns.map((c) => (
                   <th key={c} className="table-head">{fieldMap.get(c)?.label ?? c}</th>
                 ))}
+                {relation?.actions.includes('remove') && <th className="table-head w-10" />}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -642,12 +706,64 @@ function RelatedTab({ meta, module, id }: { meta: ModuleMeta; module: string; id
                       </td>
                     );
                   })}
+                  {relation?.actions.includes('remove') && (
+                    <td className="table-cell w-10">
+                      <button
+                        onClick={() => unlinkMutation.mutate(row.id)}
+                        disabled={unlinkMutation.isPending && unlinkMutation.variables === row.id}
+                        className="btn-ghost p-1 text-slate-400 hover:text-red-500 disabled:opacity-40"
+                        title={`Unlink ${row.label}`}
+                      >
+                        <Icons.X className="h-3.5 w-3.5" />
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+
+      <Modal open={showSelect} onClose={() => setShowSelect(false)} title={`Link existing ${relation?.label.toLowerCase()}`}>
+        <div className="space-y-3">
+          <div className="relative">
+            <Icons.Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              autoFocus
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={`Search ${relation?.targetModule}…`}
+              className="input pl-9"
+            />
+          </div>
+          <div className="max-h-72 space-y-1 overflow-y-auto">
+            {searching ? (
+              <div className="flex justify-center py-6"><Spinner /></div>
+            ) : results.length === 0 ? (
+              <p className="py-6 text-center text-sm text-slate-400">No matches</p>
+            ) : (
+              results.map((r) => {
+                const alreadyLinked = linkedIds.has(r.id);
+                return (
+                  <button
+                    key={r.id}
+                    disabled={alreadyLinked || linkMutation.isPending}
+                    onClick={() => linkMutation.mutate(r.id)}
+                    className="flex w-full items-center gap-2 rounded-lg border border-slate-100 px-3 py-2 text-left text-sm transition-colors hover:border-brand-300 hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-800 dark:hover:border-brand-700 dark:hover:bg-brand-950/40"
+                  >
+                    <span className="min-w-0 flex-1 truncate font-medium">{r.label}</span>
+                    {r.recordNumber && <span className="font-mono text-2xs text-slate-400">{r.recordNumber}</span>}
+                    {alreadyLinked
+                      ? <Icons.Check className="h-3.5 w-3.5 text-brand-500" />
+                      : <Icons.Plus className="h-3.5 w-3.5 text-slate-400" />}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

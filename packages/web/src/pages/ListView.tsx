@@ -185,7 +185,7 @@ export default function ListView(): JSX.Element {
             <div className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
               <input
-                className="input w-48 py-1.5 pl-8 text-sm"
+                className="input w-40 py-1.5 pl-8 text-sm sm:w-48"
                 placeholder={`Search ${meta.label.toLowerCase()}…`}
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
@@ -433,7 +433,7 @@ export default function ListView(): JSX.Element {
 
       {/* Pagination */}
       {displayMode === 'table' && (data?.totalPages ?? 1) > 1 && (
-        <div className="flex shrink-0 items-center justify-between border-t border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900 sm:px-6">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900 sm:px-6">
           <p className="text-xs text-slate-500 tnum">
             {((data!.page - 1) * data!.pageSize + 1).toLocaleString('en-IN')}–
             {Math.min(data!.page * data!.pageSize, data!.total).toLocaleString('en-IN')} of {data!.total.toLocaleString('en-IN')}
@@ -593,7 +593,7 @@ function KanbanBoard({
           <div
             key={col.key}
             className={cn(
-              'flex w-72 shrink-0 flex-col rounded-xl border bg-slate-100/60 transition-colors dark:bg-slate-900/60',
+              'flex w-64 shrink-0 flex-col rounded-xl border bg-slate-100/60 transition-colors dark:bg-slate-900/60 sm:w-72',
               overColumn === col.key
                 ? 'border-brand-400 bg-brand-50 dark:border-brand-700 dark:bg-brand-950/40'
                 : 'border-slate-200 dark:border-slate-800',

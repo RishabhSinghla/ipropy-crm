@@ -1,19 +1,22 @@
-import { useEffect } from 'react';
+import { Suspense, lazy, useEffect } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useApp } from './lib/store';
 import { Spinner, ToastHost } from './components/ui';
 import Layout from './components/Layout';
 import Login from './pages/Login';
-import DashboardPage from './pages/Dashboard';
-import ListView from './pages/ListView';
-import RecordDetail from './pages/RecordDetail';
-import RecordEdit from './pages/RecordEdit';
-import Inbox from './pages/Inbox';
-import InventoryBoard from './pages/InventoryBoard';
-import CallsPage from './pages/Calls';
-import ReportsPage from './pages/Reports';
-import SettingsPage from './pages/Settings';
-import AdminPage from './pages/admin/Admin';
+
+// Route-level code splitting: every page ships as its own chunk and loads on
+// first visit. Login and the shell stay eager so the first paint is instant.
+const DashboardPage = lazy(() => import('./pages/Dashboard'));
+const ListView = lazy(() => import('./pages/ListView'));
+const RecordDetail = lazy(() => import('./pages/RecordDetail'));
+const RecordEdit = lazy(() => import('./pages/RecordEdit'));
+const Inbox = lazy(() => import('./pages/Inbox'));
+const InventoryBoard = lazy(() => import('./pages/InventoryBoard'));
+const CallsPage = lazy(() => import('./pages/Calls'));
+const ReportsPage = lazy(() => import('./pages/Reports'));
+const SettingsPage = lazy(() => import('./pages/Settings'));
+const AdminPage = lazy(() => import('./pages/admin/Admin'));
 
 function RequireAuth({ children }: { children: JSX.Element }): JSX.Element {
   const { user, loading } = useApp();
@@ -33,6 +36,14 @@ function RequireAuth({ children }: { children: JSX.Element }): JSX.Element {
   return children;
 }
 
+function PageLoader(): JSX.Element {
+  return (
+    <div className="flex h-full min-h-[60vh] items-center justify-center">
+      <Spinner className="h-6 w-6 text-brand-600" />
+    </div>
+  );
+}
+
 export default function App(): JSX.Element {
   const bootstrap = useApp((s) => s.bootstrap);
 
@@ -40,34 +51,36 @@ export default function App(): JSX.Element {
 
   return (
     <>
-      <Routes>
-        <Route path="/login" element={<Login />} />
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
 
-        <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
-          <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="dashboard/:id" element={<DashboardPage />} />
+          <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
+            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route path="dashboard" element={<DashboardPage />} />
+            <Route path="dashboard/:id" element={<DashboardPage />} />
 
-          <Route path="inbox" element={<Inbox />} />
-          <Route path="inbox/:conversationId" element={<Inbox />} />
+            <Route path="inbox" element={<Inbox />} />
+            <Route path="inbox/:conversationId" element={<Inbox />} />
 
-          <Route path="calls" element={<CallsPage />} />
-          <Route path="reports" element={<ReportsPage />} />
-          <Route path="inventory" element={<InventoryBoard />} />
-          <Route path="inventory/:projectId" element={<InventoryBoard />} />
+            <Route path="calls" element={<CallsPage />} />
+            <Route path="reports" element={<ReportsPage />} />
+            <Route path="inventory" element={<InventoryBoard />} />
+            <Route path="inventory/:projectId" element={<InventoryBoard />} />
 
-          <Route path="settings" element={<SettingsPage />} />
-          <Route path="admin/*" element={<AdminPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+            <Route path="admin/*" element={<AdminPage />} />
 
-          {/* Generic module routes — every module, seeded or custom, uses these. */}
-          <Route path=":module" element={<ListView />} />
-          <Route path=":module/new" element={<RecordEdit />} />
-          <Route path=":module/:id" element={<RecordDetail />} />
-          <Route path=":module/:id/edit" element={<RecordEdit />} />
-        </Route>
+            {/* Generic module routes — every module, seeded or custom, uses these. */}
+            <Route path=":module" element={<ListView />} />
+            <Route path=":module/new" element={<RecordEdit />} />
+            <Route path=":module/:id" element={<RecordDetail />} />
+            <Route path=":module/:id/edit" element={<RecordEdit />} />
+          </Route>
 
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
-      </Routes>
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </Suspense>
       <ToastHost />
     </>
   );

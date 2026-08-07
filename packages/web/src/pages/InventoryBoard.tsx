@@ -83,7 +83,7 @@ export default function InventoryBoard(): JSX.Element {
           value={activeProject}
           onChange={(id) => navigate(`/inventory/${id}`)}
           options={(projects.rows ?? []).map((p) => ({ value: p.id, label: p.label }))}
-          className="w-64"
+          className="w-full sm:w-64"
         />
       </div>
 
@@ -128,7 +128,7 @@ export default function InventoryBoard(): JSX.Element {
                           <button
                             key={unit.id}
                             onClick={() => setSelected(unit)}
-                            className="group relative flex h-14 w-[5.5rem] shrink-0 flex-col justify-center rounded-lg border-2 px-2 text-left transition-all hover:scale-105 hover:shadow-md"
+                            className="group relative flex h-14 w-20 shrink-0 flex-col justify-center rounded-lg border-2 px-2 text-left transition-all hover:scale-105 hover:shadow-md sm:w-[5.5rem]"
                             style={{
                               borderColor: STATUS_COLOR[unit.status] ?? '#94a3b8',
                               backgroundColor: `${STATUS_COLOR[unit.status] ?? '#94a3b8'}12`,

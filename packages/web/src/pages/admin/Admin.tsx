@@ -1,20 +1,23 @@
+import { Suspense, lazy } from 'react';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {
   Activity, Blocks, Database, GitBranch, Globe, KeyRound, Layers, LayoutTemplate,
   ListTree, Plug, Settings2, Shield, Sliders, ToggleLeft, Users, Workflow,
 } from 'lucide-react';
+import { Spinner } from '../../components/ui';
 import { cn } from '../../lib/utils';
-import ModuleBuilder from './ModuleBuilder';
-import ModuleManager from './ModuleManager';
-import LayoutDesigner from './LayoutDesigner';
-import PicklistManager from './PicklistManager';
-import UsersAdmin from './UsersAdmin';
-import RolesProfiles from './RolesProfiles';
-import SharingAdmin from './SharingAdmin';
-import WorkflowAdmin from './WorkflowAdmin';
-import IntegrationsAdmin from './IntegrationsAdmin';
-import SystemAdmin from './SystemAdmin';
-import ImportAdmin from './ImportAdmin';
+
+const ModuleBuilder = lazy(() => import('./ModuleBuilder'));
+const ModuleManager = lazy(() => import('./ModuleManager'));
+const LayoutDesigner = lazy(() => import('./LayoutDesigner'));
+const PicklistManager = lazy(() => import('./PicklistManager'));
+const UsersAdmin = lazy(() => import('./UsersAdmin'));
+const RolesProfiles = lazy(() => import('./RolesProfiles'));
+const SharingAdmin = lazy(() => import('./SharingAdmin'));
+const WorkflowAdmin = lazy(() => import('./WorkflowAdmin'));
+const IntegrationsAdmin = lazy(() => import('./IntegrationsAdmin'));
+const SystemAdmin = lazy(() => import('./SystemAdmin'));
+const ImportAdmin = lazy(() => import('./ImportAdmin'));
 
 const SECTIONS = [
   {
@@ -83,13 +86,19 @@ export default function AdminPage(): JSX.Element {
       </nav>
 
       <div className="min-w-0 flex-1 overflow-y-auto">
-        <Routes>
-          <Route index element={<Navigate to="modules" replace />} />
-          {SECTIONS.flatMap((s) => s.items).map((item) => (
-            <Route key={item.path} path={item.path} element={item.element} />
-          ))}
-          <Route path="*" element={<Navigate to="modules" replace />} />
-        </Routes>
+        <Suspense fallback={
+          <div className="flex h-full min-h-[50vh] items-center justify-center">
+            <Spinner className="h-5 w-5 text-brand-600" />
+          </div>
+        }>
+          <Routes>
+            <Route index element={<Navigate to="modules" replace />} />
+            {SECTIONS.flatMap((s) => s.items).map((item) => (
+              <Route key={item.path} path={item.path} element={item.element} />
+            ))}
+            <Route path="*" element={<Navigate to="modules" replace />} />
+          </Routes>
+        </Suspense>
       </div>
     </div>
   );

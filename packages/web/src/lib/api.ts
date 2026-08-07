@@ -219,6 +219,10 @@ export const api = {
     post(`/api/records/${module}/${id}/comments`, { body, mentions }),
   related: (module: string, id: string, relation: string, page = 1) =>
     get<ListResult & { relation: Record<string, unknown> }>(`/api/records/${module}/${id}/related/${relation}${qs({ page })}`),
+  linkRelated: (module: string, id: string, relation: string, targetId: string) =>
+    post(`/api/records/${module}/${id}/related/${relation}`, { targetId }),
+  unlinkRelated: (module: string, id: string, relation: string, targetId: string) =>
+    del(`/api/records/${module}/${id}/related/${relation}/${targetId}`),
   audit: (module: string, id: string) => get<Record<string, unknown>[]>(`/api/records/${module}/${id}/audit`),
   checkDuplicates: (module: string, values: Record<string, unknown>, excludeId?: string) =>
     post<{ id: string; label: string; matchedOn: string[] }[]>(`/api/records/${module}/check-duplicates`, { values, excludeId }),
