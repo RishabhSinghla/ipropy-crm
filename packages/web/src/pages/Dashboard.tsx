@@ -578,10 +578,14 @@ function FunnelCard({ widget, data }: { widget: DashboardWidget; data: Record<st
   const max = Math.max(...stages.map((s) => s.value), 1);
   const groupBy = widget.config.groupBy as string | undefined;
   const drillable = Boolean(widget.config.module && groupBy);
+  // Server returns the funnel's ordered stage keys. A stage's number counts
+  // records that reached it *or later*, so drilling must filter on every key
+  // from the clicked stage onward, not just that one stage.
+  const keys = (data.keys as string[] | undefined) ?? stages.map((s) => s.key);
 
-  const drill = (stage: { key: string }): void => {
+  const drill = (index: number): void => {
     if (!drillable) return;
-    const path = drillPath(widget.config.module, withCondition(widget.config.filter, groupBy!, 'equals', stage.key));
+    const path = drillPath(widget.config.module, withCondition(widget.config.filter, groupBy!, 'in', keys.slice(index)));
     if (path) navigate(path);
   };
 
@@ -592,7 +596,7 @@ function FunnelCard({ widget, data }: { widget: DashboardWidget; data: Record<st
         {stages.map((stage, i) => (
           <div
             key={stage.key}
-            onClick={() => drill(stage)}
+            onClick={() => drill(i)}
             className={cn(drillable && 'cursor-pointer rounded transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60')}
           >
             <div className="flex items-baseline justify-between text-xs">

@@ -23,6 +23,9 @@
     "db:migrate": "npm run db:migrate -w @ipropy/server",
     "db:seed": "npm run db:seed -w @ipropy/server",
     "db:reset": "npm run db:reset -w @ipropy/server",
+    "db:backup": "bash scripts/db-backup.sh",
+    "db:restore": "bash scripts/db-restore.sh",
+    "db:backup:verify": "bash scripts/db-verify-restore.sh",
     "setup": "npm install && npm run build:shared && npm run db:migrate && npm run db:seed"
   },
   "devDependencies": {

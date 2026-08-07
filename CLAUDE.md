@@ -84,6 +84,9 @@ npm run build                 # full build
 npm run db:migrate            # apply pending migrations
 npm run db:seed               # idempotent; refreshes metadata, demo data only if DB empty
 npm run db:reset              # DESTRUCTIVE: drops schema, re-migrates, re-seeds
+npm run db:backup             # pg_dump to backups/ (gitignored); retention 14
+npm run db:backup:verify      # restore newest dump into scratch DB, compare counts, drop it
+npm run db:restore <dump>     # DESTRUCTIVE: replaces the live DB (see PROJECT_HANDOVER.md §9)
 ```
 
 Login: `admin@ipropy.com` / `Admin@123`. Other demo users in `PROJECT_HANDOVER.md` §9.

@@ -63,7 +63,9 @@ export default function ListView(): JSX.Element {
     setPage(1); setSearch(''); setSearchInput(''); setFilter(seeded);
     setSelected(new Set()); setSortBy(undefined); setColumns([]);
     setViewId(searchParams.get('view') ?? undefined);
-    setShowFilters(countConditions(seeded) > 0);
+    // The seeded filter is already applied to the list — don't pop the filter
+    // panel open on arrival (dashboard drill-through lands on the records).
+    setShowFilters(false);
   }, [moduleName]);
 
   useEffect(() => {

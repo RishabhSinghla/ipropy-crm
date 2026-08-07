@@ -236,6 +236,9 @@ npm run typecheck      # types only
 npm run db:migrate     # apply pending migrations
 npm run db:seed        # (re)seed metadata; demo data only if the DB is empty
 npm run db:reset       # drop everything and start over
+npm run db:backup      # pg_dump the DB to backups/ipropy-<timestamp>.dump
+npm run db:backup:verify  # restore newest dump to a scratch DB, compare counts, drop it
+npm run db:restore <dump> # replace the live DB from a backup (see PROJECT_HANDOVER.md §9)
 ```
 
 Seeding is idempotent — re-run `db:seed` after changing module definitions to refresh metadata

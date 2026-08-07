@@ -32,6 +32,8 @@ export interface WidgetResult {
   columns?: string[];
   /** funnel */
   stages?: { key: string; label: string; value: number; conversionFromPrevious: number; conversionFromFirst: number }[];
+  /** funnel: ordered stage keys, for cumulative "reached this stage or later" drill-through */
+  keys?: string[];
   format?: string;
   total?: number;
   meta?: Record<string, unknown>;
@@ -418,7 +420,7 @@ async function runFunnel(ctx: ScopeContext, config: WidgetConfig, conn: Tx): Pro
     };
   });
 
-  return { type: 'funnel', stages, total: first };
+  return { type: 'funnel', stages, keys: order, total: first };
 }
 
 // ---------------------------------------------------------------------------

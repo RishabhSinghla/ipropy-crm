@@ -2,7 +2,9 @@
 
 **Last updated:** 7 August 2026
 **Status:** Feature-complete build, verified end-to-end. **This session:** Vitest unit suite (107 tests),
-dead `converted_contact_id` column removed (migration 006), and **dashboard drag-to-resize wired**. No work in progress.
+dead `converted_contact_id` column removed (migration 006), dashboard drag-to-resize wired, **DB
+backup/restore runbook added and verified**, and funnel-drill-through / filter-panel UX fixes.
+No work in progress.
 **Location:** `/Users/rishabhsinghla/Downloads/iPropy-crm`
 **Git:** initialised, pushed to `origin/main` (`https://github.com/RishabhSinghla/ipropy-crm.git`).
 Latest commit `01ce186`. Working tree clean.
@@ -41,12 +43,13 @@ adds WhatsApp, telephony, portal lead capture and an AI layer.
 | Realtime | Socket.IO client now actually connected — record edits, workflow/AI writes and metadata changes push live to every open screen, no refresh needed |
 | Record navigation | Prev/next via on-screen buttons or ← → keys through whatever list you last viewed, on every module |
 | Inline quick-edit | Click any picklist or owner field (status, pipeline stage, rating, assigned-to) on a list, kanban card or record header to change it without opening the edit form |
-| Dashboard drill-through | Every widget type (metric, gauge, bar, line, area, pie, donut, funnel, stacked, table) clicks through to a correctly pre-filtered record list |
+| Dashboard drill-through | Every widget type (metric, gauge, bar, line, area, pie, donut, funnel, stacked, table) clicks through to a correctly pre-filtered record list; funnel uses cumulative stage semantics, filter panel stays closed on arrival |
 
 **Verified live metrics (current database):**
-77 tables · 12 modules · 430 fields · 54 picklists · 54 views · 36 layouts · 17 workflows ·
+77 tables · 12 modules · 429 fields · 54 picklists · 54 views · 36 layouts · 17 workflows ·
 5 dashboards / 39 widgets · 16 roles · 9 profiles · 10 users · ~305 demo records.
-6 migrations applied. Codebase has grown by ~10 files / ~2,800 lines this session (see §7).
+6 migrations applied. Backup/restore runbook verified (dump restores to a scratch DB with identical
+counts). Codebase has grown by ~10 files / ~2,800 lines this session (see §7).
 
 ---
 
@@ -369,8 +372,22 @@ committing:
     (one round trip, server already supported it). Editing is gated on `canEdit`, drags start only off
     interactive elements (links/buttons), and below lg the page keeps its responsive auto-flow grid.
     Verified live: swapped two widgets through the layout API and confirmed the round trip.
+14. **DB backup + restore runbook** (scripts `db-backup.sh`, `db-restore.sh`, `db-verify-restore.sh`;
+    npm `db:backup` / `db:restore` / `db:backup:verify`). Verified end-to-end: a fresh dump restored
+    into a throwaway database matched live counts exactly (`ipy_migration` 6, `ipy_user` 10,
+    `ipy_record` 306, `ipy_module` 12, `ipy_field` 429) and the scratch DB was dropped — live data
+    untouched.
+15. **Fixed dashboard drill-through opening the filter panel.** `ListView` auto-opened the filter
+    builder whenever a `?filter=` param was present (`setShowFilters(countConditions(seeded) > 0)`),
+    so every widget click landed on a filter screen. The filter stays applied; the panel no longer
+    pops open on arrival.
+16. **Funnel drill-through now uses the funnel's cumulative semantics.** A funnel's per-stage number
+    counts records that *reached that stage or later*; clicking a stage filtered to that single stage
+    instead (`equals`). The server now returns the ordered stage keys (`keys`) and the client builds
+    an `in` filter for every key from the clicked stage onward. Verified live: clicking "Revisit"
+    (cumulative 17) drills to 17 deals — the old `equals` returned 4.
 
-**Also done as part of this work, not separately requested:** `git init`, an initial commit, then 11
+**Also done as part of this work, not separately requested:** `git init`, an initial commit, then 12
 more commits, and `git push` to `origin/main`. Version control — previously the #1 listed risk in
 this document — now exists.
 
@@ -408,6 +425,9 @@ this document — now exists.
 * ~~Dashboard drag-to-resize not wired.~~ **Resolved.** The grid now renders widgets at their stored
   x/y/w/h via `react-grid-layout` on desktop and persists drags/resizes through the existing
   `saveDashboardLayout` endpoint (see §7).
+* ~~Funnel drill-through uses `equals` on the clicked stage.~~ **Resolved.** The server returns the
+  ordered stage keys and the client filters `in` every stage from the clicked one onward, matching
+  the funnel's cumulative numbers (see §7).
 
 ### Bugs (real, currently present, not fixed)
 
@@ -420,7 +440,8 @@ session — the sole real bug is gone.)
    in production with it) — **and now also derives the integration-credential encryption key**, so
    rotating it in production will require re-entering every credential saved via the admin UI.
    `WHATSAPP_APP_SECRET` is unset — webhook signature verification is skipped outside production. No
-   TLS, no rate-limit tuning, no backups configured.
+   TLS, no rate-limit tuning, no scheduled backups (backup/restore scripts now exist — see §9; wire
+   them into a cron/systemd timer for production).
 2. **Single-process scheduler.** `FOR UPDATE SKIP LOCKED` makes the queue multi-instance safe, but
    scheduled workflows scan up to 5,000 records per tick in-process — will not scale to large tenants.
 
@@ -436,11 +457,6 @@ session — the sole real bug is gone.)
 7. **Redis is in `docker-compose.yml` but unused.** Either use it (caching/queue) or remove it.
 8. **`S3_*` storage config was not moved into the DB-backed integration settings** added this
    session — still `.env`-only, inconsistent with every other integration.
-9. **Funnel widget drill-through uses `equals` on the clicked stage**, not the cumulative "reached
-   this stage or later" semantics the funnel's own numbers represent (a funnel counts a lead as
-   having reached every earlier stage too). Correct behaviour would need the server to also return
-   the ordered stage-key list so the client can build an `in` filter; scoped out as beyond "make it
-   clickable".
 
 ---
 
@@ -483,6 +499,26 @@ npm run db:seed               # (re)seed metadata; demo data only if DB is empty
 npm run db:reset              # DROP public schema, re-migrate, re-seed  ← destructive
 docker exec -it ipropy-db psql -U ipropy -d ipropy    # psql shell
 ```
+
+### Backup & restore (runbook)
+
+Backups are custom-format `pg_dump` files in `backups/` (gitignored), taken via the
+docker container so no host Postgres tools are needed. Retention: newest 14
+(`BACKUP_KEEP` overrides).
+
+```bash
+npm run db:backup             # write backups/ipropy-<timestamp>.dump
+npm run db:backup:verify      # restore newest dump into a throwaway DB, compare
+                              # key table counts against live, then drop it
+npm run db:restore backups/ipropy-<timestamp>.dump        # ← replaces LIVE data
+TARGET_DB=ipropy_staging npm run db:restore backups/ipropy-<timestamp>.dump
+```
+
+Restore procedure: stop app writes, take a fresh backup, restore the chosen dump
+with `npm run db:restore`, then re-apply any newer migrations (dumps include
+migrations, so this only matters if you restore an older dump and the schema has
+moved on). `db:backup:verify` exercises the whole pipeline safely — the verified
+counts are `ipy_migration`, `ipy_user`, `ipy_record`, `ipy_module`, `ipy_field`.
 
 ### Demo accounts (all password `Admin@123`)
 
@@ -543,7 +579,8 @@ process.
 - [ ] TLS termination in front of the API
 - [ ] `APP_URL` set to the real origin (CORS + Socket.IO allow-list read from it)
 - [ ] Switch `STORAGE_DRIVER=s3` and configure the bucket (local disk won't survive a container)
-- [ ] Managed Postgres with automated backups
+- [ ] Managed Postgres with automated backups (backup/restore runbook exists — §9 — but nothing
+      scheduled; wire into a cron/systemd timer for production)
 - [x] ~~Encrypt `ipy_integration.credentials` at rest~~ — done this session (AES-256-GCM, key from `JWT_SECRET`)
 - [ ] Decide scheduler ownership if running multiple instances (`ENABLE_SCHEDULER`)
 
@@ -554,31 +591,29 @@ process.
 Everything that was on this list and got done this session (git init, the `globalSearch` fix, secrets
 encryption, the workflow builder, stale-UI/realtime, module toggle, field hide/unhide, Toggle CSS,
 record navigation, quick-edit, dashboard drill-through, the Vitest unit suite, removal of the dead
-`converted_contact_id` column, dashboard drag-to-resize) has been removed. What's left:
+`converted_contact_id` column, dashboard drag-to-resize, the DB backup/restore runbook, and the
+funnel drill-through + filter-panel fixes) has been removed. What's left:
 
 ### Correctness and safety
 
 1. Production-harden secrets: strong `JWT_SECRET` for production, set `WHATSAPP_APP_SECRET`. Note
    `JWT_SECRET` now also derives the integration-credential encryption key (§8 risk 1) — rotating it
    means re-entering every credential saved via Admin → Integrations.
-2. Add DB backup + restore runbook; verify a restore actually works.
-3. Move `S3_*` storage config into the DB-backed integration settings for consistency with every
+2. Move `S3_*` storage config into the DB-backed integration settings for consistency with every
    other integration (§8 technical debt 8) — currently the one credential still `.env`-only.
 
 ### Finish partially-built features
 
-4. Add speech-to-text so call analysis runs without a manual transcript.
-5. Add the many-to-many related-list "select existing record" UI (API already supports it).
-6. Build the Channel Partner portal (restricted profile exists and is seeded; no portal UI).
-7. Make funnel-widget drill-through use the funnel's actual cumulative "reached this stage or
-   later" semantics instead of `equals` on the single stage (§8 technical debt 9) — needs the
-   server to also return the ordered stage-key list.
+3. Add speech-to-text so call analysis runs without a manual transcript.
+4. Add the many-to-many related-list "select existing record" UI (API already supports it).
+5. Build the Channel Partner portal (restricted profile exists and is seeded; no portal UI).
 
 ### Deployment and operations
 
-8. Write a Dockerfile + docker-compose for the full app; set up CI (typecheck → build → test).
-9. Add structured error reporting (Sentry or equivalent) and request tracing.
-10. Move the scheduler to a dedicated worker process/queue so it scales past one instance.
+6. Write a Dockerfile + docker-compose for the full app; set up CI (typecheck → build → test).
+7. Add structured error reporting (Sentry or equivalent) and request tracing.
+8. Move the scheduler to a dedicated worker process/queue so it scales past one instance.
+9. Wire `npm run db:backup` into a cron/systemd timer for production.
 
 ### Product depth
 
