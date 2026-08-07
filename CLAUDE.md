@@ -128,8 +128,8 @@ packages/web/src/components/FieldRenderer.tsx      metadata → UI
 
 ## Known open issues (details in PROJECT_HANDOVER.md §8)
 
-* `globalSearch` applies **one module's** sharing scope across all modules — possible data exposure.
-  High priority.
-* No deployment pipeline. (Git exists; a Vitest unit suite for the server core exists too — run `npm test`.)
-* Visual workflow builder, rollup fields and speech-to-text are declared but not implemented.
-  Dashboard drag-to-resize is wired (react-grid-layout on desktop, persisted via `saveDashboardLayout`).
+* Production hardening is not done: `JWT_SECRET` is the dev default, `WHATSAPP_APP_SECRET` is unset,
+  no scheduled backups, nothing deployed.
+* Speech-to-text, email IMAP inbound, rollup fields and the Channel Partner portal shipped as
+  graceful-degradation features — they need real credentials/keys to be exercised end-to-end.
+* Dashboard drag-to-resize is wired (react-grid-layout on desktop, persisted via `saveDashboardLayout`).
