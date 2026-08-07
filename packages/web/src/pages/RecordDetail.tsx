@@ -1,19 +1,20 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FieldMeta, ModuleMeta, RecordEnvelope, TimelineEntry } from '@ipropy/shared';
 import { formatIndianPrice, relativeTime } from '@ipropy/shared';
 import * as Icons from 'lucide-react';
 import {
-  Activity, ChevronDown, ChevronLeft, Edit3, Link2, MessageCircle, MoreHorizontal,
+  Activity, ChevronDown, ChevronLeft, ChevronRight, Edit3, Link2, MessageCircle, MoreHorizontal,
   Paperclip, Phone, Send, Sparkles, Star, Trash2, UserCheck,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { useWatchRecord } from '../lib/realtime';
 import { invalidateRecordQueries } from '../lib/invalidate';
+import { loadListNav } from '../lib/listNav';
 import { cn, renderMarkdown } from '../lib/utils';
-import { FieldValue } from '../components/FieldRenderer';
+import { FieldValue, isQuickEditable, QuickEditField } from '../components/FieldRenderer';
 import {
   Avatar, Badge, ConfirmDialog, Dropdown, DropdownItem, EmptyState, Modal,
   ScoreChip, Skeleton, Spinner, Tabs,
@@ -48,6 +49,32 @@ export default function RecordDetail(): JSX.Element {
   // Join this record's realtime room so workflow/AI writes that land after the
   // response (lead scoring, lifecycle promotion) appear without a refresh.
   useWatchRecord(id);
+
+  // Prev/next through whatever list the user last viewed for this module —
+  // populated by ListView, read here so opening a record doesn't need to
+  // carry that list through router state.
+  const navIds = useMemo(() => (moduleName ? loadListNav(moduleName) : []), [moduleName]);
+  const navIndex = id ? navIds.indexOf(id) : -1;
+  const prevId = navIndex > 0 ? navIds[navIndex - 1] : null;
+  const nextId = navIndex >= 0 && navIndex < navIds.length - 1 ? navIds[navIndex + 1] : null;
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      // Don't hijack arrow keys while the user is typing, in a select, or a
+      // modal (edit form, compose, convert) is open above this page.
+      const target = e.target as HTMLElement | null;
+      const isEditable = target && (
+        target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT'
+        || target.isContentEditable
+      );
+      if (isEditable || document.querySelector('[role="dialog"]')) return;
+
+      if (e.key === 'ArrowLeft' && prevId) navigate(`/${moduleName}/${prevId}`);
+      else if (e.key === 'ArrowRight' && nextId) navigate(`/${moduleName}/${nextId}`);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [moduleName, prevId, nextId, navigate]);
 
   const deleteMutation = useMutation({
     mutationFn: () => api.remove(moduleName!, id!),
@@ -101,6 +128,30 @@ export default function RecordDetail(): JSX.Element {
             <ChevronLeft className="h-4 w-4" />
           </button>
 
+          {navIds.length > 0 && (
+            <div className="flex shrink-0 items-center gap-0.5 rounded-lg border border-slate-200 p-0.5 dark:border-slate-700">
+              <button
+                onClick={() => prevId && navigate(`/${moduleName}/${prevId}`)}
+                disabled={!prevId}
+                className="btn-ghost p-1 disabled:cursor-not-allowed disabled:opacity-30"
+                title="Previous (←)"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </button>
+              {navIndex >= 0 && (
+                <span className="px-1 text-2xs tnum text-slate-400">{navIndex + 1} / {navIds.length}</span>
+              )}
+              <button
+                onClick={() => nextId && navigate(`/${moduleName}/${nextId}`)}
+                disabled={!nextId}
+                className="btn-ghost p-1 disabled:cursor-not-allowed disabled:opacity-30"
+                title="Next (→)"
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+
           <Avatar name={record.label} size={48} />
 
           <div className="min-w-0 flex-1">
@@ -112,9 +163,29 @@ export default function RecordDetail(): JSX.Element {
                 </span>
               )}
               {meta.pipelineField && record.values[meta.pipelineField] != null && (
-                <FieldValue
-                  field={fieldMap.get(meta.pipelineField)!}
-                  value={record.values[meta.pipelineField]}
+                isQuickEditable(fieldMap.get(meta.pipelineField)!) ? (
+                  <QuickEditField
+                    module={moduleName!}
+                    recordId={record.id}
+                    field={fieldMap.get(meta.pipelineField)!}
+                    value={record.values[meta.pipelineField]}
+                    onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void refetch(); }}
+                  />
+                ) : (
+                  <FieldValue
+                    field={fieldMap.get(meta.pipelineField)!}
+                    value={record.values[meta.pipelineField]}
+                  />
+                )
+              )}
+              {fieldMap.get('rating') && (
+                <QuickEditField
+                  module={moduleName!}
+                  recordId={record.id}
+                  field={fieldMap.get('rating')!}
+                  value={record.values.rating}
+                  display={record.display?.rating}
+                  onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void refetch(); }}
                 />
               )}
               {typeof record.values.ai_score === 'number' && (
@@ -139,15 +210,39 @@ export default function RecordDetail(): JSX.Element {
                 return (
                   <span key={name} className="inline-flex items-center gap-1.5">
                     <span className="text-slate-400">{field.label}:</span>
-                    <FieldValue field={field} value={record.values[name]} display={record.display?.[name]} compact />
+                    {isQuickEditable(field) ? (
+                      <QuickEditField
+                        module={moduleName!}
+                        recordId={record.id}
+                        field={field}
+                        value={record.values[name]}
+                        display={record.display?.[name]}
+                        compact
+                        onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void refetch(); }}
+                      />
+                    ) : (
+                      <FieldValue field={field} value={record.values[name]} display={record.display?.[name]} compact />
+                    )}
                   </span>
                 );
               })}
               <span className="inline-flex items-center gap-1.5">
                 <span className="text-slate-400">Owner:</span>
-                {record.display?.owner_id
-                  ? <span className="inline-flex items-center gap-1"><Avatar name={record.display.owner_id} size={16} />{record.display.owner_id}</span>
-                  : <span className="text-slate-400">Unassigned</span>}
+                {fieldMap.get('owner_id') ? (
+                  <QuickEditField
+                    module={moduleName!}
+                    recordId={record.id}
+                    field={fieldMap.get('owner_id')!}
+                    value={record.values.owner_id}
+                    display={record.display?.owner_id}
+                    compact
+                    onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void refetch(); }}
+                  />
+                ) : record.display?.owner_id ? (
+                  <span className="inline-flex items-center gap-1"><Avatar name={record.display.owner_id} size={16} />{record.display.owner_id}</span>
+                ) : (
+                  <span className="text-slate-400">Unassigned</span>
+                )}
               </span>
               <span className="text-slate-400">Updated {relativeTime(record.updatedAt)}</span>
             </div>

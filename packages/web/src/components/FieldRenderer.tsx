@@ -14,6 +14,7 @@ import {
   Check, ChevronDown, ExternalLink, Loader2, Mail, MapPin, Phone, Search, X,
 } from 'lucide-react';
 import { api } from '../lib/api';
+import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
 import { Avatar, Badge, ScoreChip } from './ui';
 
@@ -399,6 +400,75 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
         />
       );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Quick edit — click a picklist/owner value anywhere to change it in place
+// ---------------------------------------------------------------------------
+
+/** Only uitypes with a single-click, no-typing editor are worth quick-editing. */
+export function isQuickEditable(field: FieldMeta): boolean {
+  return (field.uitype === 'picklist' || field.uitype === 'owner') && !field.isReadonly && field.displayType !== 'readonly';
+}
+
+export function QuickEditField({
+  module, recordId, field, value, display, compact, onSaved,
+}: {
+  module: string;
+  recordId: string;
+  field: FieldMeta;
+  value: unknown;
+  display?: string;
+  compact?: boolean;
+  /** called with the field's new value after a successful save */
+  onSaved?: (value: unknown) => void;
+}): JSX.Element {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  if (saving) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-slate-400">
+        <Loader2 className="h-3 w-3 animate-spin" /> <FieldValue field={field} value={value} display={display} compact={compact} />
+      </span>
+    );
+  }
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+        className="group/qe -mx-1 inline-flex items-center gap-1 rounded px-1 py-0.5 text-left transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+        title="Click to change"
+      >
+        <FieldValue field={field} value={value} display={display} compact={compact} />
+        <ChevronDown className="h-3 w-3 shrink-0 text-slate-300 opacity-0 transition-opacity group-hover/qe:opacity-100" />
+      </button>
+    );
+  }
+
+  return (
+    <div className="min-w-[9rem]" onClick={(e) => e.stopPropagation()}>
+      <FieldInput
+        field={field}
+        value={value}
+        autoFocus
+        onChange={async (next) => {
+          setEditing(false);
+          setSaving(true);
+          try {
+            const saved = await api.update(module, recordId, { [field.name]: next });
+            onSaved?.(saved.values[field.name]);
+          } catch (err) {
+            toast.error(`Could not update ${field.label}`, (err as Error).message);
+          } finally {
+            setSaving(false);
+          }
+        }}
+      />
+    </div>
+  );
 }
 
 function toLocalInput(iso: string): string {

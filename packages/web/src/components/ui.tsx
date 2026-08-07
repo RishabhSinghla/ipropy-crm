@@ -103,7 +103,12 @@ export function Modal({
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 sm:p-8">
       <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm animate-fade-in" onClick={onClose} />
-      <div className={cn('relative z-10 w-full animate-slide-up rounded-xl bg-white shadow-float dark:bg-slate-900', widths[size])}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className={cn('relative z-10 w-full animate-slide-up rounded-xl bg-white shadow-float dark:bg-slate-900', widths[size])}
+      >
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3.5 dark:border-slate-800">
           <h2 className="text-base font-semibold">{title}</h2>
           <button onClick={onClose} className="btn-ghost -mr-2 p-1.5" aria-label="Close">
