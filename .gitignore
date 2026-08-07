@@ -5,7 +5,7 @@ build/
 .env.local
 *.log
 logs/
-storage/
+packages/server/storage/
 coverage/
 .DS_Store
 .vite/
