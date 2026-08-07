@@ -45,11 +45,25 @@ export default function ListView(): JSX.Element {
   const [showColumns, setShowColumns] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  // Reset per-module state when navigating between modules.
+  // Reset per-module state when navigating between modules. A `filter` query
+  // param (dashboard drill-through) seeds the filter builder directly, so
+  // clicking a chart segment lands on exactly those records rather than the
+  // whole module.
   useEffect(() => {
-    setPage(1); setSearch(''); setSearchInput(''); setFilter(EMPTY_FILTER);
+    const raw = searchParams.get('filter');
+    let seeded = EMPTY_FILTER;
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as FilterGroup;
+        if (parsed?.conditions) seeded = parsed;
+      } catch {
+        // malformed/tampered query param — fall back to no filter rather than crash
+      }
+    }
+    setPage(1); setSearch(''); setSearchInput(''); setFilter(seeded);
     setSelected(new Set()); setSortBy(undefined); setColumns([]);
     setViewId(searchParams.get('view') ?? undefined);
+    setShowFilters(countConditions(seeded) > 0);
   }, [moduleName]);
 
   useEffect(() => {

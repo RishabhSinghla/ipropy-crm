@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import type { DashboardWidget } from '@ipropy/shared';
+import type { DashboardWidget, FilterGroup, FilterOperator } from '@ipropy/shared';
 import { formatIndianPrice } from '@ipropy/shared';
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart,
@@ -159,6 +159,42 @@ function DigestBanner(): JSX.Element | null {
 }
 
 // ---------------------------------------------------------------------------
+// Drill-through — every widget already knows the module/groupBy/filter it
+// queried with (WidgetConfig), so clicking a bar, slice, funnel stage or
+// stacked segment can jump to exactly those records instead of just the
+// module's unfiltered list.
+// ---------------------------------------------------------------------------
+
+/** Combine the widget's own server-side filter with the clicked segment's condition. */
+function withCondition(
+  base: FilterGroup | undefined,
+  field: string,
+  operator: FilterOperator,
+  value?: unknown,
+  value2?: unknown,
+): FilterGroup {
+  const cond = { field, operator, value, value2 };
+  return base?.conditions?.length ? { logic: 'AND', conditions: [base, cond] } : { logic: 'AND', conditions: [cond] };
+}
+
+function drillPath(module: string | undefined, filter?: FilterGroup): string | undefined {
+  if (!module) return undefined;
+  return filter ? `/${module}?filter=${encodeURIComponent(JSON.stringify(filter))}` : `/${module}`;
+}
+
+/** [start, end) for a date-truncated bucket like the ones runTimeSeries emits. */
+function bucketRange(bucket: string, interval?: string): { start: string; end: string } {
+  const start = new Date(`${bucket}T00:00:00`);
+  const end = new Date(start);
+  switch (interval) {
+    case 'day': end.setDate(end.getDate() + 1); break;
+    case 'week': end.setDate(end.getDate() + 7); break;
+    case 'quarter': end.setMonth(end.getMonth() + 3); break;
+    case 'year': end.setFullYear(end.getFullYear() + 1); break;
+    default: end.setMonth(end.getMonth() + 1); // month
+  }
+  return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+}
 
 function Widget({ widget }: { widget: DashboardWidget }): JSX.Element {
   const { data, isLoading, error } = useQuery({
@@ -232,10 +268,10 @@ function MetricCard({ widget, data }: { widget: DashboardWidget; data: Record<st
   const change = data.changePercent as number | undefined;
   const format = (data.format as string) ?? widget.config.format;
   const color = (widget.config.color as string) ?? '#6366f1';
-  const linkTo = widget.config.module ? `/${widget.config.module}` : undefined;
+  const linkTo = drillPath(widget.config.module, widget.config.filter);
 
   const body = (
-    <div className="card h-full p-4 transition-shadow hover:shadow-md">
+    <div className={cn('card h-full p-4 transition-shadow', linkTo && 'hover:shadow-md hover:ring-1 hover:ring-brand-200 dark:hover:ring-brand-800')}>
       <p className="truncate text-xs font-medium text-slate-500 dark:text-slate-400">{widget.title}</p>
       <p className="mt-1.5 text-2xl font-semibold tracking-tight tnum" style={{ color }}>
         {formatValue(value, format)}
@@ -262,9 +298,10 @@ function GaugeCard({ widget, data }: { widget: DashboardWidget; data: Record<str
   const target = Number(data.target ?? widget.config.target ?? 0);
   const pct = target > 0 ? Math.min(100, (value / target) * 100) : 0;
   const color = pct >= 100 ? '#22c55e' : pct >= 70 ? '#f59e0b' : '#6366f1';
+  const linkTo = drillPath(widget.config.module, widget.config.filter);
 
-  return (
-    <div className="card h-full p-4">
+  const body = (
+    <div className={cn('card h-full p-4 transition-shadow', linkTo && 'hover:shadow-md hover:ring-1 hover:ring-brand-200 dark:hover:ring-brand-800')}>
       <p className="truncate text-xs font-medium text-slate-500 dark:text-slate-400">{widget.title}</p>
       <p className="mt-1.5 text-2xl font-semibold tracking-tight tnum" style={{ color }}>
         {formatValue(value, (data.format as string) ?? 'currency')}
@@ -279,6 +316,8 @@ function GaugeCard({ widget, data }: { widget: DashboardWidget; data: Record<str
       </div>
     </div>
   );
+
+  return linkTo ? <Link to={linkTo} className="block h-full">{body}</Link> : body;
 }
 
 interface Series { key: string; label: string; value: number; color?: string | null; secondary?: number }
@@ -286,10 +325,20 @@ interface Series { key: string; label: string; value: number; color?: string | n
 function BarCard({
   widget, data, horizontal,
 }: { widget: DashboardWidget; data: Record<string, unknown>; horizontal?: boolean }): JSX.Element {
+  const navigate = useNavigate();
   const series = (data.series as Series[] | undefined) ?? [];
   const format = (data.format as string) ?? widget.config.format;
+  const groupBy = widget.config.groupBy as string | undefined;
+  const drillable = Boolean(widget.config.module && groupBy);
 
   if (!series.length) return <EmptyWidget title={widget.title} />;
+
+  const drill = (index: number): void => {
+    const s = series[index];
+    if (!drillable || !s) return;
+    const path = drillPath(widget.config.module, withCondition(widget.config.filter, groupBy!, 'equals', s.key));
+    if (path) navigate(path);
+  };
 
   return (
     <div className="card h-full p-4">
@@ -312,7 +361,12 @@ function BarCard({
             formatter={(v: number) => formatValue(v, format)}
             contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
           />
-          <Bar dataKey="value" radius={horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}>
+          <Bar
+            dataKey="value"
+            radius={horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}
+            cursor={drillable ? 'pointer' : undefined}
+            onClick={(_data, index) => drill(index)}
+          >
             {series.map((s, i) => (
               <Cell key={s.key} fill={s.color ?? PALETTE[i % PALETTE.length]} />
             ))}
@@ -326,11 +380,39 @@ function BarCard({
 function LineCard({
   widget, data, area,
 }: { widget: DashboardWidget; data: Record<string, unknown>; area?: boolean }): JSX.Element {
+  const navigate = useNavigate();
   const series = (data.series as Series[] | undefined) ?? [];
   const format = (data.format as string) ?? widget.config.format;
   if (!series.length) return <EmptyWidget title={widget.title} />;
 
   const Chart = area ? AreaChart : LineChart;
+  const dateField = (widget.config.dateField as string) ?? 'created_at';
+  const interval = widget.config.interval as string | undefined;
+  const drillable = Boolean(widget.config.module);
+
+  const drill = (index: number): void => {
+    const s = series[index];
+    if (!drillable || !s) return;
+    const { start, end } = bucketRange(s.key, interval);
+    const path = drillPath(widget.config.module, withCondition(widget.config.filter, dateField, 'between', start, end));
+    if (path) navigate(path);
+  };
+
+  // Recharts renders `dot` per point without forwarding extra props, so the
+  // click handler has to close over `drill` here rather than living on a
+  // standalone component.
+  const clickableDot = (props: { cx?: number; cy?: number; index?: number }): JSX.Element => (
+    <circle
+      cx={props.cx}
+      cy={props.cy}
+      r={3.5}
+      fill="#6366f1"
+      stroke="#fff"
+      strokeWidth={1}
+      style={{ cursor: drillable ? 'pointer' : undefined }}
+      onClick={() => drill(props.index ?? -1)}
+    />
+  );
 
   return (
     <div className="card h-full p-4">
@@ -345,9 +427,9 @@ function LineCard({
             contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
           />
           {area ? (
-            <Area type="monotone" dataKey="value" stroke="#6366f1" fill="#6366f1" fillOpacity={0.15} strokeWidth={2} />
+            <Area type="monotone" dataKey="value" stroke="#6366f1" fill="#6366f1" fillOpacity={0.15} strokeWidth={2} dot={clickableDot as never} activeDot={clickableDot as never} />
           ) : (
-            <Line type="monotone" dataKey="value" stroke="#6366f1" strokeWidth={2} dot={{ r: 2.5 }} activeDot={{ r: 4 }} />
+            <Line type="monotone" dataKey="value" stroke="#6366f1" strokeWidth={2} dot={clickableDot as never} activeDot={clickableDot as never} />
           )}
         </Chart>
       </ResponsiveContainer>
@@ -358,8 +440,18 @@ function LineCard({
 function PieCard({
   widget, data, donut,
 }: { widget: DashboardWidget; data: Record<string, unknown>; donut?: boolean }): JSX.Element {
+  const navigate = useNavigate();
   const series = (data.series as Series[] | undefined) ?? [];
+  const groupBy = widget.config.groupBy as string | undefined;
+  const drillable = Boolean(widget.config.module && groupBy);
   if (!series.length) return <EmptyWidget title={widget.title} />;
+
+  const drill = (index: number): void => {
+    const s = series[index];
+    if (!drillable || !s) return;
+    const path = drillPath(widget.config.module, withCondition(widget.config.filter, groupBy!, 'equals', s.key));
+    if (path) navigate(path);
+  };
 
   return (
     <div className="card h-full p-4">
@@ -375,6 +467,8 @@ function PieCard({
             innerRadius={donut ? 45 : 0}
             outerRadius={75}
             paddingAngle={1}
+            cursor={drillable ? 'pointer' : undefined}
+            onClick={(_entry, index) => drill(index)}
           >
             {series.map((s, i) => <Cell key={s.key} fill={s.color ?? PALETTE[i % PALETTE.length]} />)}
           </Pie>
@@ -387,16 +481,29 @@ function PieCard({
 }
 
 function FunnelCard({ widget, data }: { widget: DashboardWidget; data: Record<string, unknown> }): JSX.Element {
+  const navigate = useNavigate();
   const stages = (data.stages as { key: string; label: string; value: number; conversionFromPrevious: number; conversionFromFirst: number }[] | undefined) ?? [];
   if (!stages.length) return <EmptyWidget title={widget.title} />;
   const max = Math.max(...stages.map((s) => s.value), 1);
+  const groupBy = widget.config.groupBy as string | undefined;
+  const drillable = Boolean(widget.config.module && groupBy);
+
+  const drill = (stage: { key: string }): void => {
+    if (!drillable) return;
+    const path = drillPath(widget.config.module, withCondition(widget.config.filter, groupBy!, 'equals', stage.key));
+    if (path) navigate(path);
+  };
 
   return (
     <div className="card h-full p-4">
       <p className="mb-3 text-sm font-medium">{widget.title}</p>
       <div className="space-y-1.5">
         {stages.map((stage, i) => (
-          <div key={stage.key}>
+          <div
+            key={stage.key}
+            onClick={() => drill(stage)}
+            className={cn(drillable && 'cursor-pointer rounded transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60')}
+          >
             <div className="flex items-baseline justify-between text-xs">
               <span className="font-medium text-slate-700 dark:text-slate-300">{stage.label}</span>
               <span className="flex items-baseline gap-2">
@@ -438,11 +545,22 @@ function FunnelCard({ widget, data }: { widget: DashboardWidget; data: Record<st
 }
 
 function StackedCard({ widget, data }: { widget: DashboardWidget; data: Record<string, unknown> }): JSX.Element {
+  const navigate = useNavigate();
   const stacked = (data.stacked as { key: string; label: string; segments: { key: string; label: string; value: number; color?: string | null }[] }[] | undefined) ?? [];
   if (!stacked.length) return <EmptyWidget title={widget.title} />;
 
   const allSegments = [...new Set(stacked.flatMap((g) => g.segments.map((s) => s.key)))];
   const colorOf = new Map(stacked.flatMap((g) => g.segments.map((s) => [s.key, s.color])));
+  const groupBy = widget.config.groupBy as string | undefined;
+  const stackBy = (widget.config.stackBy as string) ?? 'status';
+  const drillable = Boolean(widget.config.module && groupBy);
+
+  const drill = (groupKey: string, segmentKey: string): void => {
+    if (!drillable) return;
+    const withGroup = withCondition(widget.config.filter, groupBy!, 'equals', groupKey);
+    const path = drillPath(widget.config.module, withCondition(withGroup, stackBy, 'equals', segmentKey));
+    if (path) navigate(path);
+  };
 
   return (
     <div className="card h-full p-4">
@@ -453,14 +571,20 @@ function StackedCard({ widget, data }: { widget: DashboardWidget; data: Record<s
           return (
             <div key={group.key}>
               <div className="flex items-baseline justify-between text-xs">
-                <span className="truncate font-medium text-slate-700 dark:text-slate-300">{group.label}</span>
+                <span
+                  className={cn('truncate font-medium text-slate-700 dark:text-slate-300', drillable && 'cursor-pointer hover:text-brand-600 dark:hover:text-brand-400')}
+                  onClick={() => drillable && navigate(drillPath(widget.config.module, withCondition(widget.config.filter, groupBy!, 'equals', group.key))!)}
+                >
+                  {group.label}
+                </span>
                 <span className="shrink-0 text-slate-500 tnum">{total} units</span>
               </div>
               <div className="mt-1 flex h-5 overflow-hidden rounded">
                 {group.segments.map((seg) => (
                   <div
                     key={seg.key}
-                    className="flex items-center justify-center text-[9px] font-semibold text-white transition-all"
+                    onClick={() => drill(group.key, seg.key)}
+                    className={cn('flex items-center justify-center text-[9px] font-semibold text-white transition-all', drillable && 'cursor-pointer hover:brightness-110')}
                     style={{ width: `${(seg.value / total) * 100}%`, backgroundColor: seg.color ?? '#94a3b8' }}
                     title={`${seg.label}: ${seg.value}`}
                   >
@@ -496,7 +620,7 @@ function TableCard({ widget, data }: { widget: DashboardWidget; data: Record<str
       <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
         <p className="text-sm font-medium">{widget.title}</p>
         {module && (
-          <Link to={`/${module}`} className="text-2xs text-brand-600 hover:underline dark:text-brand-400">
+          <Link to={drillPath(module, widget.config.filter)!} className="text-2xs text-brand-600 hover:underline dark:text-brand-400">
             View all
           </Link>
         )}
