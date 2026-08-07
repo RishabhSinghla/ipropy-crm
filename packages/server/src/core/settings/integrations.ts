@@ -69,6 +69,14 @@ export interface ResolvedSettings {
     googleAdsWebhookKey: string;
     webformPublicKey: string;
   };
+  storage: {
+    driver: 'local' | 's3';
+    bucket: string;
+    region: string;
+    accessKeyId: string;
+    secretAccessKey: string;
+    endpoint: string;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -150,11 +158,14 @@ function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
   const fb = map.get('facebook_leads');
   const google = map.get('google_ads');
   const webform = map.get('webform');
+  const s3 = map.get('s3');
 
   let telephonyProvider: 'none' | 'twilio' | 'exotel' = config.telephony.provider === 'twilio' || config.telephony.provider === 'exotel'
     ? config.telephony.provider : 'none';
   if (twilio?.isActive && twilio.credentials.accountSid && twilio.credentials.authToken) telephonyProvider = 'twilio';
   else if (exotel?.isActive && exotel.credentials.sid && exotel.credentials.apiKey && exotel.credentials.apiToken) telephonyProvider = 'exotel';
+
+  const storageDriver = pick(s3, 'config', 'driver', config.storage.driver) === 's3' ? 's3' : 'local';
 
   return {
     whatsapp: {
@@ -213,6 +224,14 @@ function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
       googleAdsWebhookKey: pick(google, 'credentials', 'webhookKey', config.leadSources.googleAdsWebhookKey),
       webformPublicKey: pick(webform, 'config', 'key', config.leadSources.webformPublicKey) || config.leadSources.webformPublicKey,
     },
+    storage: {
+      driver: storageDriver,
+      bucket: pick(s3, 'config', 'bucket', config.storage.s3.bucket),
+      region: pick(s3, 'config', 'region', config.storage.s3.region) || config.storage.s3.region,
+      accessKeyId: pick(s3, 'credentials', 'accessKeyId', config.storage.s3.accessKeyId),
+      secretAccessKey: pick(s3, 'credentials', 'secretAccessKey', config.storage.s3.secretAccessKey),
+      endpoint: pick(s3, 'config', 'endpoint', config.storage.s3.endpoint),
+    },
   };
 }
 
@@ -245,6 +264,7 @@ const SECRET_FIELDS: Record<string, string[]> = {
   anthropic: ['apiKey'],
   facebook_leads: ['appSecret', 'pageAccessToken'],
   google_ads: ['webhookKey'],
+  s3: ['accessKeyId', 'secretAccessKey'],
 };
 
 function mask(value: string): string {

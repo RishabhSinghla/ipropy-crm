@@ -640,6 +640,7 @@ export async function seedIntegrations(conn: Tx): Promise<void> {
     { provider: 'smtp', kind: 'email', label: 'Outbound Email (SMTP)' },
     { provider: 'imap', kind: 'email', label: 'Inbound Email (IMAP)' },
     { provider: 'anthropic', kind: 'ai', label: 'Claude (Anthropic)' },
+    { provider: 's3', kind: 'storage', label: 'S3 Object Storage' },
   ];
   for (const i of integrations) {
     await conn.query(

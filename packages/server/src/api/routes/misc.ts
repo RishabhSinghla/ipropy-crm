@@ -4,10 +4,7 @@
  */
 import { Router } from 'express';
 import crypto from 'node:crypto';
-import { createWriteStream } from 'node:fs';
-import { mkdir, unlink } from 'node:fs/promises';
-import { dirname, extname, join, resolve } from 'node:path';
-import { pipeline } from 'node:stream/promises';
+import { extname, resolve } from 'node:path';
 import multer from 'multer';
 import { z } from 'zod';
 import { config } from '../../config.js';
@@ -17,6 +14,7 @@ import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../utils/errors.js';
 import { assertCapability, canAccessRecord } from '../../core/permissions/index.js';
+import { getDriver, getStorageSettings } from '../../core/storage/index.js';
 import { recordService } from '../../core/entity/recordService.js';
 import { registry } from '../../core/metadata/registry.js';
 import { invalidateWorkflows } from '../../core/workflow/engine.js';
@@ -132,15 +130,8 @@ miscRouter.post('/files', upload.single('file'), asyncHandler(async (req, res) =
   const ext = extname(file.originalname).toLowerCase();
   const safeExt = SAFE_EXT.test(ext) ? ext : '';
   const key = `${new Date().toISOString().slice(0, 7)}/${crypto.randomUUID()}${safeExt}`;
-  const destination = resolve(config.storage.localPath, key);
 
-  // Belt and braces against path traversal via a crafted key.
-  const root = resolve(config.storage.localPath);
-  if (!destination.startsWith(root)) throw new BadRequestError('Invalid storage path');
-
-  await mkdir(dirname(destination), { recursive: true });
-  const { Readable } = await import('node:stream');
-  await pipeline(Readable.from(file.buffer), createWriteStream(destination));
+  await getDriver().then((driver) => driver.save(key, file.buffer, file.mimetype));
 
   const row = await db.queryOne<{ id: string }>(
     `INSERT INTO ipy_attachment (record_id, file_name, mime_type, size, storage_key, url, category, uploaded_by)
@@ -177,17 +168,28 @@ miscRouter.get('/files/:id', asyncHandler(async (req, res) => {
     }
   }
 
-  const path = resolve(config.storage.localPath, file.storage_key);
-  if (!path.startsWith(resolve(config.storage.localPath))) throw new ForbiddenError();
+  const storage = getStorageSettings();
+  if (storage.driver === 'local') {
+    // Preserve the streaming path for local storage.
+    const path = resolve(storage.localPath, file.storage_key);
+    if (!path.startsWith(resolve(storage.localPath))) throw new ForbiddenError();
 
+    res.setHeader('Content-Type', file.mime_type);
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(file.file_name)}"`);
+    res.sendFile(path, (err) => {
+      if (err) {
+        logger.warn({ err, id: req.params.id }, 'file stream failed');
+        if (!res.headersSent) res.status(404).json({ error: 'not_found', message: 'File is missing from storage' });
+      }
+    });
+    return;
+  }
+
+  const data = await getDriver().then((driver) => driver.read(file.storage_key));
+  if (!data) throw new NotFoundError('File is missing from storage');
   res.setHeader('Content-Type', file.mime_type);
   res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(file.file_name)}"`);
-  res.sendFile(path, (err) => {
-    if (err) {
-      logger.warn({ err, id: req.params.id }, 'file stream failed');
-      if (!res.headersSent) res.status(404).json({ error: 'not_found', message: 'File is missing from storage' });
-    }
-  });
+  res.send(data);
 }));
 
 miscRouter.delete('/files/:id', asyncHandler(async (req, res) => {
@@ -199,7 +201,7 @@ miscRouter.delete('/files/:id', asyncHandler(async (req, res) => {
   if (file.uploaded_by !== user.id && !user.isAdmin) throw new ForbiddenError();
 
   await db.query(`DELETE FROM ipy_attachment WHERE id = $1`, [req.params.id]);
-  await unlink(resolve(config.storage.localPath, file.storage_key)).catch(() => undefined);
+  await getDriver().then((driver) => driver.remove(file.storage_key));
   res.json({ ok: true });
 }));
 

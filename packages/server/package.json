@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.68.0",
+    "@aws-sdk/client-s3": "^3.1105.0",
     "@ipropy/shared": "*",
     "bcryptjs": "^2.4.3",
     "compression": "^1.7.5",

@@ -84,6 +84,14 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
   google_ads: [
     { key: 'webhookKey', label: 'Webhook Key', source: 'credentials', secret: true },
   ],
+  s3: [
+    { key: 'driver', label: 'Driver — "local" or "s3"', source: 'config', placeholder: 'local' },
+    { key: 'bucket', label: 'Bucket', source: 'config', placeholder: 'ipropy-files' },
+    { key: 'region', label: 'Region', source: 'config', placeholder: 'ap-south-1' },
+    { key: 'endpoint', label: 'Custom endpoint (MinIO/other S3-compatible)', source: 'config', placeholder: 'https://s3.ap-south-1.amazonaws.com' },
+    { key: 'accessKeyId', label: 'Access Key ID', source: 'credentials' },
+    { key: 'secretAccessKey', label: 'Secret Access Key', source: 'credentials', secret: true },
+  ],
   webform: [
     { key: 'key', label: 'Public Webhook Key', source: 'config', placeholder: 'ipropy-public-webform' },
   ],
@@ -245,7 +253,7 @@ export default function IntegrationsAdmin(): JSX.Element {
   };
 
   const KIND_LABELS: Record<string, string> = {
-    messaging: 'WhatsApp', telephony: 'Telephony', lead_source: 'Lead sources', email: 'Email', ai: 'AI',
+    messaging: 'WhatsApp', telephony: 'Telephony', lead_source: 'Lead sources', email: 'Email', ai: 'AI', storage: 'Storage',
   };
 
   return (
@@ -274,7 +282,7 @@ export default function IntegrationsAdmin(): JSX.Element {
           <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>
         ) : (
           <div className="space-y-6">
-            {['messaging', 'telephony', 'email', 'ai', 'lead_source'].map((kind) => {
+            {['messaging', 'telephony', 'email', 'ai', 'lead_source', 'storage'].map((kind) => {
               const list = (integrations ?? []).filter((i) => i.kind === kind && PROVIDER_FIELDS[i.provider]);
               if (!list.length) return null;
               return (
