@@ -12,7 +12,7 @@ import { AlertTriangle, ChevronDown, Save, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import { invalidateRecordQueries } from '../lib/invalidate';
-import { cn } from '../lib/utils';
+import { cn, deepEqual } from '../lib/utils';
 import { FieldInput } from './FieldRenderer';
 import { Spinner } from './ui';
 
@@ -291,15 +291,4 @@ export default function RecordForm({
       </div>
     </form>
   );
-}
-
-function deepEqual(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (a === null || a === undefined) return b === null || b === undefined || b === '';
-  if (b === null || b === undefined) return a === '';
-  if (Array.isArray(a) && Array.isArray(b)) {
-    return a.length === b.length && a.every((v, i) => String(v) === String(b[i]));
-  }
-  if (typeof a === 'object' || typeof b === 'object') return JSON.stringify(a) === JSON.stringify(b);
-  return String(a) === String(b);
 }

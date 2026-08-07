@@ -13,8 +13,9 @@ import { toast, useApp } from '../lib/store';
 import { useWatchRecord } from '../lib/realtime';
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { loadListNav } from '../lib/listNav';
-import { cn, renderMarkdown } from '../lib/utils';
-import { FieldValue, isQuickEditable, QuickEditField } from '../components/FieldRenderer';
+import { cn, renderMarkdown, restrictionForField } from '../lib/utils';
+import { FieldValue } from '../components/FieldRenderer';
+import { EditableField, isInlineEditable } from '../components/EditableField';
 import {
   Avatar, Badge, ConfirmDialog, Dropdown, DropdownItem, EmptyState, Modal,
   ScoreChip, Skeleton, Spinner, Tabs,
@@ -163,12 +164,13 @@ export default function RecordDetail(): JSX.Element {
                 </span>
               )}
               {meta.pipelineField && record.values[meta.pipelineField] != null && (
-                isQuickEditable(fieldMap.get(meta.pipelineField)!) ? (
-                  <QuickEditField
+                record.can?.edit && isInlineEditable(fieldMap.get(meta.pipelineField)!) ? (
+                  <EditableField
                     module={moduleName!}
                     recordId={record.id}
                     field={fieldMap.get(meta.pipelineField)!}
                     value={record.values[meta.pipelineField]}
+                    restrictTo={restrictionForField(meta.picklistDependencies, record.values, meta.pipelineField)}
                     onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void refetch(); }}
                   />
                 ) : (
@@ -179,14 +181,18 @@ export default function RecordDetail(): JSX.Element {
                 )
               )}
               {fieldMap.get('rating') && (
-                <QuickEditField
-                  module={moduleName!}
-                  recordId={record.id}
-                  field={fieldMap.get('rating')!}
-                  value={record.values.rating}
-                  display={record.display?.rating}
-                  onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void refetch(); }}
-                />
+                record.can?.edit && isInlineEditable(fieldMap.get('rating')!) ? (
+                  <EditableField
+                    module={moduleName!}
+                    recordId={record.id}
+                    field={fieldMap.get('rating')!}
+                    value={record.values.rating}
+                    display={record.display?.rating}
+                    onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void refetch(); }}
+                  />
+                ) : (
+                  <FieldValue field={fieldMap.get('rating')!} value={record.values.rating} display={record.display?.rating} />
+                )
               )}
               {typeof record.values.ai_score === 'number' && (
                 <span className="inline-flex items-center gap-1">
@@ -210,14 +216,15 @@ export default function RecordDetail(): JSX.Element {
                 return (
                   <span key={name} className="inline-flex items-center gap-1.5">
                     <span className="text-slate-400">{field.label}:</span>
-                    {isQuickEditable(field) ? (
-                      <QuickEditField
+                    {record.can?.edit && isInlineEditable(field) ? (
+                      <EditableField
                         module={moduleName!}
                         recordId={record.id}
                         field={field}
                         value={record.values[name]}
                         display={record.display?.[name]}
                         compact
+                        restrictTo={restrictionForField(meta.picklistDependencies, record.values, field.name)}
                         onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void refetch(); }}
                       />
                     ) : (
@@ -228,8 +235,8 @@ export default function RecordDetail(): JSX.Element {
               })}
               <span className="inline-flex items-center gap-1.5">
                 <span className="text-slate-400">Owner:</span>
-                {fieldMap.get('owner_id') ? (
-                  <QuickEditField
+                {fieldMap.get('owner_id') && record.can?.edit ? (
+                  <EditableField
                     module={moduleName!}
                     recordId={record.id}
                     field={fieldMap.get('owner_id')!}
@@ -323,7 +330,15 @@ export default function RecordDetail(): JSX.Element {
       {/* Body */}
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
-          {tab === 'overview' && <OverviewTab meta={meta} record={record} layoutConfig={layoutConfig} />}
+          {tab === 'overview' && (
+            <OverviewTab
+              meta={meta}
+              record={record}
+              layoutConfig={layoutConfig}
+              module={moduleName!}
+              onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void refetch(); }}
+            />
+          )}
           {tab === 'timeline' && <TimelineTab module={moduleName!} id={id!} />}
           {tab === 'related' && <RelatedTab meta={meta} module={moduleName!} id={id!} />}
           {tab === 'files' && <FilesTab module={moduleName!} id={id!} />}
@@ -374,11 +389,13 @@ export default function RecordDetail(): JSX.Element {
 // ---------------------------------------------------------------------------
 
 function OverviewTab({
-  meta, record, layoutConfig,
+  meta, record, layoutConfig, module, onSaved,
 }: {
-  meta: ModuleMeta;
+  meta: ModuleMeta & { picklistDependencies: { sourceField: string; targetField: string; mapping: Record<string, string[]> }[] };
   record: RecordEnvelope;
   layoutConfig: { blocks?: { key: string; label: string; columns: number; collapsed?: boolean; fields: string[] }[] };
+  module: string;
+  onSaved: () => void;
 }): JSX.Element {
   const fieldMap = new Map(meta.fields.map((f) => [f.name, f]));
   const [collapsed, setCollapsed] = useState<Set<string>>(
@@ -432,12 +449,25 @@ function OverviewTab({
                   <div key={field.name} className={cn(field.config.fullWidth && 'sm:col-span-2')}>
                     <dt className="text-2xs font-medium uppercase tracking-wide text-slate-400">{field.label}</dt>
                     <dd className="mt-0.5 text-sm">
-                      <FieldValue
-                        field={field}
-                        value={record.values[field.name]}
-                        display={record.display?.[field.name]}
-                        linkTo={field.uitype === 'reference' ? record.display?.[`${field.name}__module`] : undefined}
-                      />
+                      {record.can?.edit && isInlineEditable(field) ? (
+                        <EditableField
+                          module={module}
+                          recordId={record.id}
+                          field={field}
+                          value={record.values[field.name]}
+                          display={record.display?.[field.name]}
+                          restrictTo={restrictionForField(meta.picklistDependencies, record.values, field.name)}
+                          linkTo={field.uitype === 'reference' ? record.display?.[`${field.name}__module`] : undefined}
+                          onSaved={onSaved}
+                        />
+                      ) : (
+                        <FieldValue
+                          field={field}
+                          value={record.values[field.name]}
+                          display={record.display?.[field.name]}
+                          linkTo={field.uitype === 'reference' ? record.display?.[`${field.name}__module`] : undefined}
+                        />
+                      )}
                     </dd>
                   </div>
                 ))}

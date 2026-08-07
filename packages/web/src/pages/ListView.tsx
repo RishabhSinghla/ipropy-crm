@@ -11,8 +11,9 @@ import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { saveListNav } from '../lib/listNav';
-import { cn } from '../lib/utils';
-import { FieldValue, isQuickEditable, QuickEditField } from '../components/FieldRenderer';
+import { cn, restrictionForField } from '../lib/utils';
+import { FieldValue } from '../components/FieldRenderer';
+import { EditableField, isInlineEditable } from '../components/EditableField';
 import { FilterBuilder, countConditions } from '../components/FilterBuilder';
 import {
   Badge, ConfirmDialog, Dropdown, DropdownItem, EmptyState, Modal, Select, Skeleton, Spinner,
@@ -402,14 +403,16 @@ export default function ListView(): JSX.Element {
                     }
                     return (
                       <td key={col} className={cn('table-cell', ci === 0 && 'font-medium text-slate-900 dark:text-slate-100')}>
-                        {isQuickEditable(field) ? (
-                          <QuickEditField
+                        {meta.permissions.edit && isInlineEditable(field) ? (
+                          <EditableField
                             module={moduleName}
                             recordId={row.id}
                             field={field}
                             value={row.values[col]}
                             display={row.display?.[col]}
                             compact
+                            restrictTo={restrictionForField(meta.picklistDependencies, row.values, field.name)}
+                            linkTo={field.uitype === 'reference' ? row.display?.[`${col}__module`] : undefined}
                             onSaved={() => invalidateRecordQueries(queryClient, moduleName, row.id)}
                           />
                         ) : (
@@ -557,7 +560,7 @@ function defaultColumns(meta: { fields: { name: string; isActive: boolean; displ
 function KanbanBoard({
   module, rows, groups, groupBy, onMove,
 }: {
-  module: { fields: FieldMeta[]; name: string; singularLabel: string };
+  module: { fields: FieldMeta[]; name: string; singularLabel: string; permissions: { edit: boolean } };
   rows: RecordEnvelope[];
   groups: { key: string; label: string; color?: string | null; count: number; sum?: number }[];
   groupBy: string;
@@ -641,16 +644,20 @@ function KanbanBoard({
                   )}
                   <div className="mt-2 flex items-center justify-between gap-2">
                     {ownerField && (
-                      <span className="truncate text-2xs text-slate-500">
-                        <QuickEditField
-                          module={module.name}
-                          recordId={row.id}
-                          field={ownerField}
-                          value={row.values.owner_id}
-                          display={row.display?.owner_id}
-                          compact
-                          onSaved={() => invalidateRecordQueries(queryClient, module.name, row.id)}
-                        />
+                      <span className="truncate text-2xs text-slate-500" onClick={(e) => e.stopPropagation()}>
+                        {module.permissions.edit && isInlineEditable(ownerField) ? (
+                          <EditableField
+                            module={module.name}
+                            recordId={row.id}
+                            field={ownerField}
+                            value={row.values.owner_id}
+                            display={row.display?.owner_id}
+                            compact
+                            onSaved={() => invalidateRecordQueries(queryClient, module.name, row.id)}
+                          />
+                        ) : (
+                          <FieldValue field={ownerField} value={row.values.owner_id} display={row.display?.owner_id} compact />
+                        )}
                       </span>
                     )}
                     {typeof row.values.ai_score === 'number' && (

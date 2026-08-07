@@ -286,8 +286,11 @@ iPropy-crm/
     │   ├── app.ts / index.ts / realtime.ts / config.ts
     └── web/src/
         ├── components/
-        │   ├── FieldRenderer.tsx  ★★ FieldValue + FieldInput + QuickEditField/isQuickEditable —
-        │   │                        the heart of the dynamic UI, including inline click-to-edit
+        │   ├── FieldRenderer.tsx  ★★ FieldValue + FieldInput — the heart of the dynamic UI, every
+        │   │                        list/detail/form screen renders fields through these two
+        │   ├── EditableField.tsx  ★★ universal inline editing — click any field's value anywhere
+        │   │                        (list cells, kanban cards, record detail) to change it in place,
+        │   │                        no separate edit screen. isInlineEditable() gates by uitype.
         │   ├── RecordForm.tsx     layout-driven form with validation + duplicate detection
         │   ├── FilterBuilder.tsx  nested AND/OR builder — also what dashboard drill-through renders
         │   ├── Layout.tsx         app shell, sidebar, global search, notifications, useRealtime() mount
@@ -844,3 +847,82 @@ serving untouched).
 **Not done yet:** no music track is actually bundled (intentional — needs a specific
 confirmed-license file dropped in by whoever picks one); HEIC/HEIF decode support depends on the
 installed `sharp`/`libvips` build and hasn't been verified against a real HEIC file from an iPhone.
+
+---
+
+## 16. Universal inline editing (`EditableField.tsx`)
+
+Before this round, click-to-edit-in-place only existed for `picklist`/`owner` fields, only in a
+handful of hardcoded spots (the Kanban pipeline badge, a few header chips), and rendered as a bare
+native `<select>` — functional but visually inconsistent with the rest of the app. The user asked
+for this to work for **every editable field, everywhere** (list table cells, kanban cards, and —
+previously entirely read-only — the record detail page's field grid), with a UX upgrade to match.
+
+`components/EditableField.tsx` replaces the old `isQuickEditable`/`QuickEditField`
+(FieldRenderer.tsx) with `isInlineEditable(field)` + `<EditableField>`, wired into
+`pages/ListView.tsx` (table cells, kanban owner chip) and `pages/RecordDetail.tsx` (header chips
+**and** `OverviewTab`'s field-block `<dl>`, which used to be pure `FieldValue`). Gated on
+`meta.permissions.edit` in ListView (module-level; list rows carry no per-record `.can`) and
+`record.can?.edit` in RecordDetail (record-level, more precise — a real gap in the old
+`QuickEditField` usage, which checked neither).
+
+Four interaction shapes, chosen per uitype by how much commitment a value warrants — not one
+generic popover for everything:
+
+* **Instant** (`boolean`): a real toggle switch, click = immediate save. No popover.
+* **Inline text** (scalars — string, number, currency, date/datetime/time, textarea/richtext): the
+  read value morphs into a bordered input in the same spot (delegates to the existing `FieldInput`).
+  Enter/blur commits; Escape reverts the draft without saving.
+* **Popover picker** (`picklist`, `owner`/`user`, `reference`, `multipicklist`, `tags`): a floating
+  panel opens below the value. Picking writes through immediately (optimistic — UI updates and the
+  panel closes for single-value fields before the network call resolves); there's nothing to
+  "confirm." Multi-select fields keep the panel open across several picks instead of closing after
+  one. `picklist` and `owner`/`user` got genuinely new UI here (`PicklistPopover`, `OwnerPopover` —
+  coloured option list / searchable people list with avatars) replacing the native `<select>`, which
+  was almost certainly the actual "not soothing" complaint. `reference` and `multipicklist`/`tags`
+  reuse the existing `ReferencePicker`/`MultiSelect`/`TagInput` verbatim, just choreographed to
+  auto-open and report back when they close (`ReferencePicker` gained `autoOpen`/`onOpenChange` for
+  this — small, backward-compatible, existing callers unaffected).
+* **Popover form** (`address`, `json`): explicit Save/Cancel — these are compound values, so a stray
+  outside click cancels rather than half-committing a partial edit (every other popover type treats
+  outside-click as "done," not "cancel").
+
+Not inline-editable, same as before: `autonumber`/`formula`/`rollup` (nothing to write),
+`image` (has its own dedicated `GalleryField` uploader that needs more room), `multireference` (no
+working editor exists for it anywhere in the app today, including the full record-edit form — no
+module actually uses this uitype).
+
+**`reference`/`email`/`phone`/`url` get special handling** (`HAS_OWN_LINK` in EditableField.tsx):
+`FieldValue` renders these as a real `<a>`/`Link`, and the naive approach — wrapping the whole read
+value in a `<button>` to make it clickable-to-edit — produces invalid interactive-in-interactive
+HTML that silently breaks in browsers (confirmed while testing: the phone column's `tel:` link and
+its click handler both stopped working). Fixed by keeping the link a plain click and putting editing
+behind a small separate pencil icon that fades in on hover, so both "navigate" and "edit" stay
+available without either swallowing the other's click.
+
+Every write is optimistic with a quiet success/error ring on the field itself (`pulse-success`/
+`pulse-error` keyframes, tailwind.config.js) instead of a toast for the success path — a toast for
+every field edit would be noisy at this frequency. A failed save reverts the value and explains why
+via toast (which does still fire on error, since that needs more attention than a glance). A
+monotonic per-field request counter guards against an out-of-order response from a superseded edit
+overwriting a newer one.
+
+**Real bug found and fixed during verification**: `CurrencyInput` (existing component, reused as-is
+for the inline-text case) buffers what's typed locally and only calls the parent's `onChange` once,
+already-parsed, from its own `onBlur` — it never fires per-keystroke like every other `FieldInput`
+sub-editor does. `EditableField`'s Enter-to-commit handler read `draft` (React state) at the moment
+Enter fired, which raced against that same-tick, not-yet-flushed `onChange` call — pressing Enter
+right after typing a new budget value silently re-saved the *old* value instead (confirmed via a
+real PATCH that persisted `10000000` unchanged after typing "1.75 Cr" and hitting Enter). Fixed with
+a `useRef` mirror (`draftRef`) updated synchronously alongside `setDraft`, read instead of the state
+value at commit time — refs aren't subject to React's batching, so the mirror is always current by
+the time a same-tick blur/Enter handler reads it, regardless of ordering between sibling `onBlur`
+handlers on the input and its wrapper.
+
+**Verified end-to-end** against the running dev server for every interaction shape (real clicks,
+real PATCH requests, DB reads to confirm persistence — not just visual inspection): picklist
+popover (Leads pipeline status), owner popover with live search (Leads assigned-to, including a
+Teams/People-grouped list), currency inline-text including the race-condition fix, plain-string
+inline-text, boolean toggle, and reference popover with auto-open search (Interested Project on a
+Lead, confirmed both the write and the resolved display label) — the last three specifically on
+`RecordDetail`'s `OverviewTab`, the surface that was pure read-only before this round.

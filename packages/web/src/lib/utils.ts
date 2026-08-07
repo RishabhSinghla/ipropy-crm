@@ -38,6 +38,31 @@ export function renderMarkdown(text: string): string {
     .replace(/\n/g, '<br/>');
 }
 
+/** Field-value equality that treats null/undefined/'' as the same "empty", and compares arrays by element. */
+export function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a === null || a === undefined) return b === null || b === undefined || b === '';
+  if (b === null || b === undefined) return a === '';
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((v, i) => String(v) === String(b[i]));
+  }
+  if (typeof a === 'object' || typeof b === 'object') return JSON.stringify(a) === JSON.stringify(b);
+  return String(a) === String(b);
+}
+
+/** Narrows a dependent picklist's options to what its parent field currently allows. */
+export function restrictionForField(
+  picklistDependencies: { sourceField: string; targetField: string; mapping: Record<string, string[]> }[] | undefined,
+  values: Record<string, unknown>,
+  fieldName: string,
+): string[] | undefined {
+  const dep = picklistDependencies?.find((d) => d.targetField === fieldName);
+  if (!dep) return undefined;
+  const sourceValue = values[dep.sourceField];
+  if (!sourceValue) return undefined;
+  return dep.mapping[String(sourceValue)] ?? [];
+}
+
 export const MODULE_ICON_FALLBACK = 'box';
 
 /** Group modules for the sidebar, preserving the admin-defined order. */
