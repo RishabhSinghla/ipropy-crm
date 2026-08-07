@@ -17,6 +17,11 @@ FROM node:20-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 ENV SERVE_WEB=true
+# Video processing (core/media/video.ts) shells out to ffmpeg; without it,
+# that pipeline degrades gracefully (videos serve unprocessed) rather than
+# failing, but installing it is what actually turns transcode/watermark/
+# title-card/music on in a deployed image.
+RUN apk add --no-cache ffmpeg
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/package-lock.json ./package-lock.json
 COPY --from=build /app/node_modules ./node_modules

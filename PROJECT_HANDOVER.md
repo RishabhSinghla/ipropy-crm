@@ -762,3 +762,85 @@ dynamic per-listing OG images, city landing pages, dark mode, amenity icons, rec
 
 **Not done yet:** locality-level (as opposed to city-level) SEO pages; deployment (website currently
 only runs locally against this CRM's `localhost:4000`).
+
+---
+
+## 15. Property media pipeline (photos + video, watermark, auto-edit)
+
+Uploading a photo/video against a project or property (from the CRM web app — including mobile
+Safari, so an iPhone can shoot and upload directly) now produces web-ready derivatives
+automatically, without ever touching the original bytes. Two-stage design: the upload request
+stores the original and returns immediately (feels instant regardless of file size); a background
+job then generates everything else. Same graceful-degradation shape as `ai/client.ts` throughout —
+every stage that depends on an optional capability (ffmpeg installed, a music track present) logs
+and skips itself on failure rather than blocking the upload or throwing.
+
+* **Upload**: `POST /api/files` (`api/routes/misc.ts`) now uses a disk-buffered multer instance
+  (`mediaUpload`, 2 GB limit) instead of memory-buffering, so a multi-GB 4K phone video never sits
+  fully in Node's heap — it streams temp file → `StorageDriver.save()` → gets deleted. The original
+  CSV-import `upload` (memory, 25 MB) is untouched, on its own instance. Image/video uploads enqueue
+  a row in `ipy_media_job`.
+* **Storage**: `StorageDriver` (`core/storage/index.ts`) gained `readToTempFile()` (a real
+  filesystem path for ffmpeg — the local driver returns its existing path directly, S3 downloads to
+  `os.tmpdir()` first) and `save()` now accepts a `Readable` in addition to `Buffer`, streamed via
+  `pipeline()` rather than buffered.
+* **Job queue**: `ipy_media_job` (migration `010_media_pipeline.sql`) mirrors `ipy_task_queue`'s
+  `FOR UPDATE SKIP LOCKED` claim/retry/backoff pattern exactly — it's deliberately a separate table,
+  not shoehorned into the workflow queue it structurally resembles, since it isn't FK'd to a
+  workflow/task. Drained by `scheduler.ts`'s `drainMediaQueue()`, called alongside `drainQueue()`
+  every tick. `docker-compose.yml`'s `ipropy_storage` volume, previously mounted only on `app`, is
+  now also mounted on `worker` — a latent gap (nothing used to run there against local storage) that
+  this pipeline made real.
+* **Images** (`core/media/images.ts`, `sharp`): EXIF auto-orient, three WebP derivatives
+  (thumb 480w / medium 1200w / large 2400w, q~82), IPROPY watermark composited onto medium/large only
+  (thumbnails stay clean for dense grids). Derivative keys land in a new `ipy_attachment.variants
+  JSONB` column; the original file on disk is never re-encoded or overwritten.
+* **Video** (`core/media/video.ts`, ffmpeg via direct `execFile`, not the `fluent-ffmpeg` wrapper —
+  see note below): transcodes to H.264/AAC MP4 with `faststart`, caps the longer side at 1920 (never
+  upscales — the master is untouched so nothing is lost, this only affects the served derivative),
+  overlays the same watermark throughout via the `overlay` filter, prepends a ~3s title card
+  rendered from the record's **live** name/price/location (via `sharp`, so it's never stale — pulled
+  fresh from `ipy_e_projects`/`ipy_e_properties` in `pipeline.ts::getTitleCardInfo`, joined via
+  concat demuxer, `-c copy` since title card and main clip are re-encoded to matching resolution/fps
+  first), and mixes in a background track at low volume (~16%, `amix`) under any existing audio —
+  **only if** a file exists at `packages/server/assets/music/background.mp3`. No track is bundled;
+  see that folder's `README.md` for the licensing convention. This one step silently no-ops without
+  it, same as every other optional stage. ffmpeg missing from PATH at all → the whole pipeline
+  degrades to "serve the original, unprocessed," logged once, no error surfaced to the uploader.
+  Docker: `RUN apk add --no-cache ffmpeg` in the runtime stage.
+  * **fluent-ffmpeg pitfall hit and fixed**: `fluent-ffmpeg`'s fluent API validates every `-f <name>`
+    input format against its own cached `ffmpeg -formats` capability list before allowing a command
+    to run — and on this stack that check rejected `lavfi` (the virtual device the title card's
+    silent-audio track needs, `anullsrc=r=44100:cl=stereo`), even though the installed ffmpeg binary
+    supports it fine (confirmed directly at the CLI). `.inputFormat('lavfi')` vs
+    `.inputOptions(['-f','lavfi'])` made no difference — both hit the same validation layer. Fixed by
+    dropping `fluent-ffmpeg` for every actual processing command (`runFfmpeg()`, a thin
+    `execFile('ffmpeg', [...])` wrapper) and keeping it only for `ffmpeg.ffprobe()` (probing works
+    fine through it — the bug is specific to fluent-ffmpeg's input-format validation, not the package
+    generally). If `fluent-ffmpeg` is upgraded later, worth re-testing whether this is still needed.
+* **Upload UI**: `FieldRenderer.tsx` gained the previously-missing `'image'` case in `FieldInput` —
+  a `GalleryField` (thumbnail grid, per-item remove, concurrency-capped multi-file upload with
+  progress, native `<input type="file" multiple accept="image/*,video/*">` — this is what makes iOS
+  Safari itself offer "Photo Library / Take Photo or Video", no extra code needed for camera access).
+  `<img>` tags can't send an `Authorization` header, so thumbnails use the CRM's pre-existing
+  `?access_token=` query-param fallback (`authedImageUrl()` helper — same mechanism CSV export
+  already used, not a new auth surface).
+* **Public API / website**: `toPublicMedia()` (`api/routes/public.ts`) prefers the `medium` variant
+  for list/grid contexts and `large` for detail/lightbox, falling back to the original whenever a
+  variant isn't ready yet (still processing) or doesn't exist (video has no image variants) — this
+  is the entire mechanism that makes the site faster; no website code changes were needed for images.
+  `GET /api/files/:id` and the public media endpoint both gained `?size=thumb|medium|large`.
+  `Gallery.tsx` on the website gained a `<video>` branch (detected via `next/image`'s `onError`,
+  since the API gives no explicit "is this a video" flag) since a gallery can now include a
+  walkthrough clip.
+
+**Verified end-to-end** (real upload → scheduler → derivative, not just unit-level): original file
+SHA-256 confirmed byte-identical before/after processing; processed video duration matched
+4s source + 3s title card exactly; watermark and title-card frames visually inspected; music-mix
+path produced non-silent stereo audio (`volumedetect`); ffmpeg removed from `PATH` confirmed the
+pipeline returns `null` without throwing and without ever calling `driver.save()` (original keeps
+serving untouched).
+
+**Not done yet:** no music track is actually bundled (intentional — needs a specific
+confirmed-license file dropped in by whoever picks one); HEIC/HEIF decode support depends on the
+installed `sharp`/`libvips` build and hasn't been verified against a real HEIC file from an iPhone.

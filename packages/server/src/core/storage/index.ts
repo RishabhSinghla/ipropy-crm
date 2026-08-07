@@ -6,9 +6,13 @@
  * resolved driver is `s3`.
  */
 import { createWriteStream } from 'node:fs';
-import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
+import {
+  mkdir, readFile, stat, unlink, writeFile,
+} from 'node:fs/promises';
 import { pipeline as streamPipeline } from 'node:stream/promises';
 import type { Readable } from 'node:stream';
+import { randomUUID } from 'node:crypto';
+import os from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { config } from '../../config.js';
 import { getSettings } from '../settings/integrations.js';
@@ -48,6 +52,15 @@ export interface StorageDriver {
   save(key: string, data: Buffer | Readable, contentType: string): Promise<void>;
   read(key: string): Promise<Buffer | null>;
   remove(key: string): Promise<void>;
+  /**
+   * A real filesystem path to the object's bytes — ffmpeg needs actual file
+   * access, not a Buffer (a video can be well over a GB; buffering that in
+   * process memory just to hand it to ffmpeg would undo the point of the
+   * streaming upload path). The local driver returns its existing path
+   * directly, no copy. `cleanup` is a no-op there; for a driver that has to
+   * download first (s3), it removes the temp copy. Always call it when done.
+   */
+  readToTempFile(key: string): Promise<{ path: string; cleanup: () => Promise<void> } | null>;
 }
 
 const localDriver: StorageDriver = {
@@ -69,6 +82,15 @@ const localDriver: StorageDriver = {
   },
   async remove(key) {
     await unlink(localPath(key)).catch(() => undefined);
+  },
+  async readToTempFile(key) {
+    const path = localPath(key);
+    try {
+      await stat(path);
+    } catch {
+      return null;
+    }
+    return { path, cleanup: async () => undefined };
   },
 };
 
@@ -110,6 +132,17 @@ async function s3Driver(settings: StorageSettings): Promise<StorageDriver> {
     },
     async remove(key) {
       await client.send(new DeleteObjectCommand({ Bucket, Key: key })).catch(() => undefined);
+    },
+    async readToTempFile(key) {
+      try {
+        const out = await client.send(new GetObjectCommand({ Bucket, Key: key }));
+        if (!out.Body) return null;
+        const path = join(os.tmpdir(), `ipropy-media-${randomUUID()}`);
+        await streamPipeline(out.Body as Readable, createWriteStream(path));
+        return { path, cleanup: async () => unlink(path).catch(() => undefined) };
+      } catch {
+        return null;
+      }
     },
   };
 }
