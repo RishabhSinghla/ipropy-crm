@@ -392,8 +392,13 @@ export const MODULES: ModuleDef[] = [
           F.num('total_towers', 'Total Towers'),
           F.num('total_floors', 'Total Floors'),
           F.num('total_units', 'Total Units'),
-          F.num('available_units', 'Available Units', { readonly: true }),
-          F.num('booked_units', 'Booked Units', { readonly: true }),
+          F.rollup('available_units', 'Available Units', 'project_properties', 'count', {
+            filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'equals', value: 'Available' }] },
+          }),
+          F.rollup('booked_units', 'Booked Units', 'project_properties', 'count', {
+            filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'in', value: ['Booked', 'Sold'] }] },
+          }),
+          F.rollup('total_inventory', 'Total Inventory', 'project_properties', 'count'),
           F.pct('open_area_percent', 'Open Area %'),
         ],
       },

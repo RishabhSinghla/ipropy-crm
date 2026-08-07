@@ -64,6 +64,9 @@ export interface ResolvedSettings {
   ai: {
     enabled: boolean; apiKey: string; model: string; fastModel: string; maxTokens: number;
   };
+  stt: {
+    provider: 'none' | 'openai'; apiKey: string; baseUrl: string; model: string;
+  };
   leadSources: {
     facebook: { appId: string; appSecret: string; pageAccessToken: string; verifyToken: string };
     googleAdsWebhookKey: string;
@@ -155,6 +158,7 @@ function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
   const smtp = map.get('smtp');
   const imap = map.get('imap');
   const anthropic = map.get('anthropic');
+  const sttRow = map.get('stt');
   const fb = map.get('facebook_leads');
   const google = map.get('google_ads');
   const webform = map.get('webform');
@@ -214,6 +218,12 @@ function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
       fastModel: pick(anthropic, 'config', 'fastModel', config.ai.fastModel) || config.ai.fastModel,
       maxTokens: Number(pick(anthropic, 'config', 'maxTokens', String(config.ai.maxTokens))) || config.ai.maxTokens,
     },
+    stt: {
+      provider: pick(sttRow, 'config', 'provider', config.stt.provider) === 'openai' ? 'openai' : 'none',
+      apiKey: pick(sttRow, 'credentials', 'apiKey', config.stt.apiKey),
+      baseUrl: pick(sttRow, 'config', 'baseUrl', config.stt.baseUrl) || config.stt.baseUrl,
+      model: pick(sttRow, 'config', 'model', config.stt.model) || config.stt.model,
+    },
     leadSources: {
       facebook: {
         appId: pick(fb, 'config', 'appId', config.leadSources.facebook.appId),
@@ -262,6 +272,7 @@ const SECRET_FIELDS: Record<string, string[]> = {
   smtp: ['password'],
   imap: ['password'],
   anthropic: ['apiKey'],
+  stt: ['apiKey'],
   facebook_leads: ['appSecret', 'pageAccessToken'],
   google_ads: ['webhookKey'],
   s3: ['accessKeyId', 'secretAccessKey'],

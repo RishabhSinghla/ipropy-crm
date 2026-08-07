@@ -59,6 +59,13 @@ export const config = {
     maxTokens: num('AI_MAX_TOKENS', 4096),
   },
 
+  stt: {
+    provider: str('STT_PROVIDER', 'openai') as 'none' | 'openai',
+    apiKey: str('STT_API_KEY'),
+    baseUrl: str('STT_BASE_URL', 'https://api.openai.com/v1'),
+    model: str('STT_MODEL', 'whisper-1'),
+  },
+
   whatsapp: {
     provider: str('WHATSAPP_PROVIDER', 'meta'),
     phoneNumberId: str('WHATSAPP_PHONE_NUMBER_ID'),
@@ -98,6 +105,7 @@ export const config = {
       port: num('IMAP_PORT', 993),
       user: str('IMAP_USER'),
       password: str('IMAP_PASSWORD'),
+      pollMinutes: num('EMAIL_IMAP_POLL_MINUTES', 5),
     },
   },
 

@@ -286,6 +286,8 @@ export const api = {
   saveIntegration: (provider: string, data: { config?: Record<string, string>; credentials?: Record<string, string>; isActive?: boolean }) =>
     put<IntegrationSummary>(`/api/admin/integrations/${provider}`, data),
   testIntegration: (provider: string) => post<{ ok: boolean; message: string }>(`/api/admin/integrations/${provider}/test`, {}),
+  syncImapInbound: (max?: number) => post<{ checked: number; imported: number; matched: number; skipped: number; errors: string[] }>(
+    `/api/admin/integrations/imap/sync${max ? `?max=${max}` : ''}`, {}),
 
   // --- workflows ----------------------------------------------------------
   workflows: () => get<{ workflows: Record<string, unknown>[]; taskTypes: string[] }>('/api/workflows'),
@@ -339,6 +341,7 @@ export const api = {
   digest: () => get<{ greeting: string; summary: string; priorities: Record<string, unknown>[]; stats: Record<string, number> }>('/api/ai/digest'),
   dashboardInsight: (scope: string, prompt?: string) => post<{ insight: string }>('/api/ai/insight', { scope, prompt }),
   analyseCall: (id: string, transcript?: string) => post<Record<string, unknown>>(`/api/ai/calls/${id}/analyse`, { transcript }),
+  transcribeCall: (id: string) => post<{ transcript: string }>(`/api/ai/calls/${id}/transcribe`, {}),
   coaching: (userId: string) => get<Record<string, unknown>>(`/api/ai/coaching/${userId}`),
   aiUsage: () => get<{ byFeature: Record<string, unknown>[]; daily: Record<string, unknown>[] }>('/api/ai/usage'),
 

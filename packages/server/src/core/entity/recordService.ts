@@ -37,6 +37,7 @@ import {
 } from '../query/builder.js';
 import { evaluateFormula } from './formula.js';
 import { nextNumber } from './numbering.js';
+import { computeRollups } from './rollups.js';
 import {
   assertModuleAccess,
   assertRecordAccess,
@@ -85,9 +86,23 @@ export async function getRecord(
   );
   if (!row) throw new NotFoundError(`${module.singularLabel} not found`);
 
-  const envelope = await rowToEnvelope(module, row, { withDisplay: opts.withDisplay !== false, conn });
+  const rollups = await computeRollups(conn, module, [recordId], buildContextFrom(ctx));
+  const envelope = await rowToEnvelope(module, row, {
+    withDisplay: opts.withDisplay !== false,
+    conn,
+    rollups: rollups.get(recordId),
+  });
   if (!ctx.system) stripHidden(envelope, await hiddenFieldsFor(ctx, moduleName));
   return envelope;
+}
+
+function buildContextFrom(ctx: ServiceContext): BuildContext {
+  return {
+    userId: ctx.user.id,
+    groupIds: ctx.groupIds,
+    subordinateIds: ctx.subordinateIds,
+    timezone: ctx.user.timezone,
+  };
 }
 
 /**
@@ -131,12 +146,7 @@ export async function listRecords(
   const page = Math.max(1, q.page ?? 1);
   const pageSize = Math.min(500, Math.max(1, q.pageSize ?? 25));
   const params = new SqlParams();
-  const buildCtx: BuildContext = {
-    userId: ctx.user.id,
-    groupIds: ctx.groupIds,
-    subordinateIds: ctx.subordinateIds,
-    timezone: ctx.user.timezone,
-  };
+  const buildCtx = buildContextFrom(ctx);
 
   const clauses: string[] = [
     `${RECORD_ALIAS}.module_id = ${params.add(module.id)}::uuid`,
@@ -200,8 +210,13 @@ export async function listRecords(
     params.all(),
   );
 
+  const rollups = await computeRollups(conn, module, rowsRes.rows.map((r) => String(r.id)), buildCtx);
   const rows = await Promise.all(
-    rowsRes.rows.map((r) => rowToEnvelope(module, r, { withDisplay: true, conn })),
+    rowsRes.rows.map((r) => rowToEnvelope(module, r, {
+      withDisplay: true,
+      conn,
+      rollups: rollups.get(String(r.id)),
+    })),
   );
 
   // Resolved once for the whole page rather than per row.
@@ -296,7 +311,7 @@ async function computeGroups(
 async function rowToEnvelope(
   module: ModuleMeta,
   row: Record<string, unknown>,
-  opts: { withDisplay: boolean; conn: Tx },
+  opts: { withDisplay: boolean; conn: Tx; rollups?: Map<string, number> },
 ): Promise<RecordEnvelope> {
   const custom = (row.custom_fields ?? {}) as Record<string, unknown>;
   const values: Record<string, unknown> = {};
@@ -305,6 +320,11 @@ async function rowToEnvelope(
     if (!f.isActive) continue;
     const raw = f.storage === 'column' ? row[f.columnName] : custom[f.columnName];
     values[f.name] = fromDbValue(f, raw ?? null);
+  }
+
+  // Engine-computed aggregates override whatever (possibly stale) value is stored.
+  if (opts.rollups?.size) {
+    for (const [name, v] of opts.rollups) values[name] = v;
   }
 
   // System fields are always present regardless of metadata.

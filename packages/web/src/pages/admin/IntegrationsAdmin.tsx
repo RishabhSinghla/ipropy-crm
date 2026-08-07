@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
 import {
-  Check, CheckCircle2, Copy, Globe, Loader2, MessageCircle, Phone, Plug, Sparkles, Webhook, X, XCircle,
+  Check, CheckCircle2, Copy, Download, Globe, Loader2, MessageCircle, Phone, Plug, Sparkles, Webhook, X, XCircle,
 } from 'lucide-react';
 import { api, type IntegrationSummary } from '../../lib/api';
 import { toast } from '../../lib/store';
@@ -75,6 +75,11 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
     { key: 'fastModel', label: 'Fast model', source: 'config', placeholder: 'claude-haiku-4-5-20251001' },
     { key: 'maxTokens', label: 'Max tokens', source: 'config', placeholder: '4096' },
   ],
+  stt: [
+    { key: 'apiKey', label: 'API Key (OpenAI-compatible Whisper)', source: 'credentials', secret: true },
+    { key: 'baseUrl', label: 'Base URL', source: 'config', placeholder: 'https://api.openai.com/v1' },
+    { key: 'model', label: 'Model', source: 'config', placeholder: 'whisper-1' },
+  ],
   facebook_leads: [
     { key: 'appId', label: 'App ID', source: 'config' },
     { key: 'appSecret', label: 'App Secret', source: 'credentials', secret: true },
@@ -97,7 +102,7 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
   ],
 };
 
-const TESTABLE = new Set(['meta_whatsapp', 'twilio', 'exotel', 'smtp', 'anthropic', 'facebook_leads']);
+const TESTABLE = new Set(['meta_whatsapp', 'twilio', 'exotel', 'smtp', 'imap', 'anthropic', 'facebook_leads']);
 
 function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element {
   const queryClient = useQueryClient();
@@ -107,6 +112,7 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
   );
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   const setField = (key: string, v: string): void => setValues((prev) => ({ ...prev, [key]: v }));
@@ -160,6 +166,24 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
       await queryClient.invalidateQueries({ queryKey: ['integrations'] });
     } catch (err) {
       toast.error('Could not update', (err as Error).message);
+    }
+  };
+
+  const syncNow = async (): Promise<void> => {
+    setSyncing(true);
+    setTestResult(null);
+    try {
+      const result = await api.syncImapInbound(50);
+      setTestResult({
+        ok: result.errors.length === 0,
+        message: result.errors[0]
+          ?? `Imported ${result.imported} of ${result.checked} messages${result.matched ? `, linked to records` : ''}.`,
+      });
+      await queryClient.invalidateQueries({ queryKey: ['integrations'] });
+    } catch (err) {
+      setTestResult({ ok: false, message: (err as Error).message });
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -218,6 +242,11 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
         {TESTABLE.has(summary.provider) && (
           <button className="btn-secondary btn-sm" disabled={testing} onClick={() => void test()}>
             {testing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plug className="h-3 w-3" />} Test connection
+          </button>
+        )}
+        {summary.provider === 'imap' && (
+          <button className="btn-secondary btn-sm" disabled={syncing} onClick={() => void syncNow()}>
+            {syncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />} Sync now
           </button>
         )}
       </div>

@@ -203,7 +203,7 @@ connectivity probe (WhatsApp/Twilio/Exotel/SMTP/Anthropic).
 | `TELEPHONY_PROVIDER` + `TWILIO_*` / `EXOTEL_*` | Voice | `none` → logs only. Editable in-UI (provider auto-selected from whichever of Twilio/Exotel is active). |
 | `SMTP_*` / `IMAP_*` | Email | Empty → logged with open tracking. Editable in-UI. |
 | `FACEBOOK_*`, `GOOGLE_ADS_WEBHOOK_KEY`, `WEBFORM_PUBLIC_KEY` | Lead capture | Endpoints live, no traffic. Editable in-UI (migration 005 added the `webform` provider row). |
-| `STORAGE_DRIVER` + `S3_*` | Files | `local` → `./storage`. **Not yet moved into the DB-backed settings — still `.env` only.** |
+| `STORAGE_DRIVER` + `S3_*` | Files | `local` → `./storage`. Moved into the DB-backed settings — `local` is the fallback, S3 is editable in Admin → Integrations. |
 | `ENABLE_SCHEDULER`, `SCHEDULER_TICK_SECONDS` | Background jobs | `true`, 60s |
 | `SEED_DEMO_DATA` | Demo records on seed | `true` — **set `false` for production** |
 
@@ -247,7 +247,7 @@ iPropy-crm/
 ├── PROJECT_HANDOVER.md         ← this file
 ├── CLAUDE.md                   ← permanent instructions for AI sessions
 ├── README.md                   ← product/setup docs
-├── docker-compose.yml          ← Postgres 16 + Redis (Redis unused so far)
+├── docker-compose.yml          ← Postgres 16 (+ app/worker behind the 'app' profile)
 ├── .env / .env.example
 └── packages/
     ├── shared/src/
@@ -416,7 +416,7 @@ this document — now exists.
   they would have leaked to admin-level counts.
 * ~~No version control.~~ **Resolved.** Git initialised, pushed to `origin/main`.
 * ~~Secrets in `ipy_integration.credentials` stored as plain JSONB.~~ **Resolved.** Now AES-256-GCM
-  encrypted at rest (see §4). `S3_*` storage config was **not** moved into this system — still `.env` only.
+  encrypted at rest (see §4), and `S3_*` storage config is moved into this system as the `s3` provider.
 * ~~Workflow builder is read-only in the UI.~~ **Resolved.** Full create/edit composer shipped this
   session (see §7).
 * ~~No automated test suite.~~ **Resolved.** Vitest is in the repo — 107 unit tests across the query
@@ -449,14 +449,15 @@ session — the sole real bug is gone.)
 
 3. **`ipy_e_contacts_archived_004`** (24 rows) retained deliberately for recovery. Drop once the merge
    is confirmed in production.
-4. **Speech-to-text not bundled.** Call analysis needs a transcript from the provider or pasted in.
+4. **Speech-to-text, IMAP inbound and rollups ship as graceful-degradation features.** Whisper needs an
+   `STT_API_KEY`; the IMAP sync needs real mailbox credentials (the admin "Sync now" button and the
+   scheduler hook are the entry points); rollup values are computed on read. None can be exercised
+   end-to-end without keys, so they've been verified structurally (typecheck, unit suite, build, API
+   no-op paths) rather than against live services.
 5. **Web bundle is ~1.2 MB** (~244 KB gzipped, grew this session with the workflow composer, dashboard
    drill-through and now `react-grid-layout`) — no route-level code splitting yet.
-6. **`is_converted` and `lifecycle_stage` overlap** post-merge. Both are maintained; consider
-   collapsing to lifecycle alone.
-7. **Redis is in `docker-compose.yml` but unused.** Either use it (caching/queue) or remove it.
-8. **`S3_*` storage config was not moved into the DB-backed integration settings** added this
-   session — still `.env`-only, inconsistent with every other integration.
+ 6. **`is_converted` and `lifecycle_stage` overlap** post-merge. Both are maintained; consider
+    collapsing to lifecycle alone.
 
 ---
 
@@ -588,43 +589,34 @@ process.
 
 ## 12. Next tasks, in priority order
 
-Everything that was on this list and got done this session (git init, the `globalSearch` fix, secrets
+Everything that was on this list and got done (git init, the `globalSearch` fix, secrets
 encryption, the workflow builder, stale-UI/realtime, module toggle, field hide/unhide, Toggle CSS,
 record navigation, quick-edit, dashboard drill-through, the Vitest unit suite, removal of the dead
-`converted_contact_id` column, dashboard drag-to-resize, the DB backup/restore runbook, and the
-funnel drill-through + filter-panel fixes) has been removed. What's left:
+`converted_contact_id` column, dashboard drag-to-resize, the DB backup/restore runbook, the funnel
+drill-through + filter-panel fixes, the rollup aggregation engine, speech-to-text for call
+recordings, and IMAP inbound email sync) has been removed. What's left:
 
 ### Correctness and safety
 
-1. Production-harden secrets: strong `JWT_SECRET` for production, set `WHATSAPP_APP_SECRET`. Note
-   `JWT_SECRET` now also derives the integration-credential encryption key (§8 risk 1) — rotating it
-   means re-entering every credential saved via Admin → Integrations.
-2. Move `S3_*` storage config into the DB-backed integration settings for consistency with every
-   other integration (§8 technical debt 8) — currently the one credential still `.env`-only.
+1. Set real secrets for production: strong `JWT_SECRET`, `WHATSAPP_APP_SECRET` — the `npm check:prod`
+   guards exist but the values are still the dev defaults. Note `JWT_SECRET` also derives the
+   integration-credential encryption key (§8 risk 1) — rotating it means re-entering every credential
+   saved via Admin → Integrations.
 
 ### Finish partially-built features
 
-3. Add speech-to-text so call analysis runs without a manual transcript.
-4. Add the many-to-many related-list "select existing record" UI (API already supports it).
-5. Build the Channel Partner portal (restricted profile exists and is seeded; no portal UI).
+2. Add the many-to-many related-list "select existing record" UI (API already supports it).
+3. Build the Channel Partner portal (restricted profile exists and is seeded; no portal UI).
 
 ### Deployment and operations
 
-6. Write a Dockerfile + docker-compose for the full app; set up CI (typecheck → build → test).
-7. Add structured error reporting (Sentry or equivalent) and request tracing.
-8. Move the scheduler to a dedicated worker process/queue so it scales past one instance.
-9. Wire `npm run db:backup` into a cron/systemd timer for production.
+4. Install the scheduled backup timer on the production host — the systemd unit/timer and launchd
+   plist are committed in `deploy/` but nothing is installed yet.
 
 ### Product depth
 
-11. Route-level code splitting — the web bundle is now ~1.2 MB / ~244 KB gzipped, having grown with
-    the workflow composer, dashboard drill-through and `react-grid-layout` this session.
-12. Mobile-responsive pass on ListView, RecordDetail and the Inventory board.
-13. Email inbound (IMAP) sync into the timeline — outbound works, inbound does not. Credentials are
-    now configurable via Admin → Integrations; the sync itself still isn't built.
-14. Rollup fields (`uitype: 'rollup'` is declared and typed but the aggregation engine is not
-    implemented — currently a no-op).
-15. Collapse `is_converted` into `lifecycle_stage` and simplify conversion logic (§8 technical debt 6).
+5. Mobile-responsive pass on ListView, RecordDetail and the Inventory board.
+6. Collapse `is_converted` into `lifecycle_stage` and simplify conversion logic (§8 technical debt 6).
 
 ---
 

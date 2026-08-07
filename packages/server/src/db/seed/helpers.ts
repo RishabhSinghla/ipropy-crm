@@ -1,5 +1,5 @@
 import type { Tx } from '../pool.js';
-import type { FieldConfig, UIType } from '@ipropy/shared';
+import type { FieldConfig, FilterGroup, UIType } from '@ipropy/shared';
 
 /**
  * Declarative seed helpers. The module definitions read like a schema DSL so
@@ -344,6 +344,19 @@ export const F = {
     ({ name, label, uitype: 'reference', column: name, config: { referenceModules: modules }, ...extra }),
   num: (name: string, label: string, extra: Partial<FieldDef> = {}): FieldDef =>
     ({ name, label, uitype: 'integer', column: name, ...extra }),
+  rollup: (
+    name: string,
+    label: string,
+    relation: string,
+    aggregate: 'count' | 'sum' | 'avg' | 'min' | 'max',
+    extra: Partial<FieldDef> & { field?: string; filter?: FilterGroup } = {},
+  ): FieldDef => {
+    const { field, filter, ...rest } = extra;
+    return {
+      name, label, uitype: 'rollup', column: name, readonly: true, ...rest,
+      config: { rollup: { relation, aggregate, field, filter } },
+    };
+  },
   dec: (name: string, label: string, extra: Partial<FieldDef> = {}): FieldDef =>
     ({ name, label, uitype: 'decimal', column: name, ...extra }),
   pct: (name: string, label: string, extra: Partial<FieldDef> = {}): FieldDef =>

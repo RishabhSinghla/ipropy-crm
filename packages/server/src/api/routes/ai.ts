@@ -6,6 +6,7 @@ import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, NotFoundError } from '../../utils/errors.js';
 import { assertCapability, canAccessRecord } from '../../core/permissions/index.js';
 import { isAiAvailable } from '../../ai/client.js';
+import { isSttConfigured, SttError, transcribeRecording } from '../../core/stt/index.js';
 import { scoreLead } from '../../ai/leadScoring.js';
 import { analyseDeal } from '../../ai/dealRisk.js';
 import { matchForRecord, matchProperties, matchBuyersForProperty, loadRequirement } from '../../ai/matching.js';
@@ -125,6 +126,35 @@ aiRouter.post('/summarise/:module/:id', asyncHandler(async (req, res) => {
 // ---------------------------------------------------------------------------
 // Call intelligence
 // ---------------------------------------------------------------------------
+
+/** Transcribe a call recording so analysis can run without a manual transcript. */
+aiRouter.post('/calls/:id/transcribe', asyncHandler(async (req, res) => {
+  const call = await db.queryOne<{ id: string; recording_url: string | null }>(
+    `SELECT id, recording_url FROM ipy_call WHERE id = $1`,
+    [req.params.id],
+  );
+  if (!call) throw new NotFoundError('Call not found');
+  if (!call.recording_url) {
+    throw new BadRequestError('This call has no recording to transcribe');
+  }
+
+  const { getSettings } = await import('../../core/settings/integrations.js');
+  const settings = getSettings().stt;
+  if (!isSttConfigured(settings)) {
+    throw new BadRequestError(
+      'Speech-to-text is not configured — add an STT API key under Admin → Integrations (or set STT_API_KEY).',
+    );
+  }
+
+  try {
+    const transcript = await transcribeRecording(call.recording_url, settings);
+    await db.query(`UPDATE ipy_call SET transcript = $2 WHERE id = $1`, [call.id, transcript]);
+    res.json({ transcript });
+  } catch (err) {
+    if (err instanceof SttError) throw new BadRequestError(err.message);
+    throw err;
+  }
+}));
 
 aiRouter.post('/calls/:id/analyse', asyncHandler(async (req, res) => {
   const { transcript } = z.object({ transcript: z.string().min(20).optional() }).parse(req.body ?? {});

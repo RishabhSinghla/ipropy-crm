@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
 import {
-  Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Sparkles, TrendingUp,
+  Mic, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Sparkles, TrendingUp,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
@@ -185,6 +185,20 @@ function CallModal({ call, onClose }: { call: Call; onClose: () => void }): JSX.
     }
   };
 
+  const [transcribing, setTranscribing] = useState(false);
+  const transcribe = async (): Promise<void> => {
+    setTranscribing(true);
+    try {
+      const { transcript: text } = await api.transcribeCall(call.id);
+      setTranscript(text);
+      toast.success('Recording transcribed');
+    } catch (err) {
+      toast.error('Transcription failed', (err as Error).message);
+    } finally {
+      setTranscribing(false);
+    }
+  };
+
   return (
     <Modal
       open
@@ -252,14 +266,22 @@ function CallModal({ call, onClose }: { call: Call; onClose: () => void }): JSX.
         )}
 
         <div>
-          <div className="mb-1 flex items-center justify-between">
+          <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
             <label className="label mb-0">Transcript</label>
-            {aiAvailable && (
-              <button onClick={() => void analyse()} disabled={analysing || !transcript.trim()} className="btn-secondary btn-sm">
-                {analysing ? <Spinner className="h-3 w-3" /> : <Sparkles className="h-3 w-3 text-brand-500" />}
-                {full.ai_summary ? 'Re-analyse' : 'Analyse with AI'}
-              </button>
-            )}
+            <div className="flex items-center gap-1.5">
+              {full.recording_url && (
+                <button onClick={() => void transcribe()} disabled={transcribing || Boolean(full.transcript)} className="btn-secondary btn-sm">
+                  {transcribing ? <Spinner className="h-3 w-3" /> : <Mic className="h-3 w-3" />}
+                  {full.transcript ? 'Transcribed' : 'Transcribe recording'}
+                </button>
+              )}
+              {aiAvailable && (
+                <button onClick={() => void analyse()} disabled={analysing || !transcript.trim()} className="btn-secondary btn-sm">
+                  {analysing ? <Spinner className="h-3 w-3" /> : <Sparkles className="h-3 w-3 text-brand-500" />}
+                  {full.ai_summary ? 'Re-analyse' : 'Analyse with AI'}
+                </button>
+              )}
+            </div>
           </div>
           <textarea
             className="input font-mono text-xs"
@@ -269,7 +291,7 @@ function CallModal({ call, onClose }: { call: Call; onClose: () => void }): JSX.
             onChange={(e) => setTranscript(e.target.value)}
           />
           <p className="mt-1 text-2xs text-slate-400">
-            Transcripts arrive automatically when your provider supplies them; otherwise paste one here.
+            Transcripts arrive automatically when your provider supplies them; otherwise transcribe the recording or paste one here.
           </p>
         </div>
       </div>

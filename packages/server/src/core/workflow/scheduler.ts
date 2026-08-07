@@ -264,7 +264,25 @@ async function housekeeping(): Promise<void> {
     sendActivityReminders(),
     expireWhatsAppWindows(),
     pruneOldQueueRows(),
+    pollInboundEmail(),
   ]);
+}
+
+let lastImapPollAt = 0;
+
+/**
+ * IMAP inbound sync runs on the scheduler but throttled to its own cadence —
+ * the 60s tick is far too frequent for a mailbox poll.
+ */
+async function pollInboundEmail(): Promise<void> {
+  const intervalMs = Math.max(1, config.email.imap.pollMinutes) * 60_000;
+  if (Date.now() - lastImapPollAt < intervalMs) return;
+  lastImapPollAt = Date.now();
+  const { syncInboundEmails } = await import('../../integrations/email/inbound.js');
+  const result = await syncInboundEmails();
+  if (result.imported > 0 || result.errors.length) {
+    logger.info({ ...result }, 'inbound email sync');
+  }
 }
 
 /** Keep days_in_stage honest without touching the record service. */

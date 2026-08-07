@@ -459,6 +459,18 @@ function validateFieldConfig(uitype: string, config: Record<string, unknown>): v
     const check = validateFormula(expr);
     if (!check.valid) throw new BadRequestError(`Formula error: ${check.error}`);
   }
+  if (uitype === 'rollup') {
+    const rollup = config.rollup as
+      | { relation?: string; aggregate?: string; field?: string; filter?: unknown }
+      | undefined;
+    if (!rollup?.relation) throw new BadRequestError('Rollup fields need a related list (`relation`)');
+    if (!['count', 'sum', 'avg', 'min', 'max'].includes(rollup.aggregate ?? '')) {
+      throw new BadRequestError(`Unknown rollup aggregate '${rollup.aggregate}'`);
+    }
+    if (rollup.aggregate !== 'count' && !rollup.field) {
+      throw new BadRequestError(`'${rollup.aggregate}' rollups need the field to aggregate`);
+    }
+  }
 }
 
 metadataRouter.post('/modules/:name/fields', asyncHandler(async (req, res) => {
