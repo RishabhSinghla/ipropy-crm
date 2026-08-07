@@ -27,7 +27,9 @@ COPY --from=build /app/package-lock.json ./package-lock.json
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/packages ./packages
 COPY --from=build /app/scripts ./scripts
+RUN chmod +x ./scripts/docker-entrypoint.sh
 EXPOSE 4000
-# API server (serves the built web app too). The scheduler runs in the
-# separate `worker` service — see docker-compose.yml.
-CMD ["node", "packages/server/dist/index.js"]
+# Migrate + seed + start. docker-compose overrides this for the `worker`
+# service (which runs the scheduler instead) and relies on the `app` service
+# having already migrated — see docker-compose.yml.
+CMD ["./scripts/docker-entrypoint.sh"]

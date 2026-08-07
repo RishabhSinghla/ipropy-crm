@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { FieldMeta, FilterGroup, ListQuery, RecordEnvelope } from '@ipropy/shared';
+import type { FieldMeta, FilterGroup, ListQuery, ModuleMeta, RecordEnvelope } from '@ipropy/shared';
 import { formatIndianPrice } from '@ipropy/shared';
 import {
   ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, Columns3, Download, Filter,
@@ -345,7 +345,32 @@ export default function ListView(): JSX.Element {
             onMove={(id, value) => stageMutation.mutate({ id, values: { [groupByField!]: value } })}
           />
         ) : (
-          <table className="w-full border-collapse">
+          <>
+          {/* Phones get stacked cards instead of the table: a 7-column grid on a
+              375px screen is a horizontal-scroll maze, and the first column
+              (the record's name) scrolls out of view the moment you look at any
+              other field. Same rows, same inline editing — just re-laid out. */}
+          <div className="divide-y divide-slate-100 md:hidden dark:divide-slate-800">
+            {rows.map((row) => (
+              <MobileRecordCard
+                key={row.id}
+                row={row}
+                module={meta}
+                columns={visibleColumns}
+                fieldMap={fieldMap}
+                selected={selected.has(row.id)}
+                onToggleSelect={(checked) => {
+                  const next = new Set(selected);
+                  if (checked) next.add(row.id); else next.delete(row.id);
+                  setSelected(next);
+                }}
+                onOpen={() => navigate(`/${moduleName}/${row.id}`)}
+                onSaved={() => invalidateRecordQueries(queryClient, moduleName, row.id)}
+              />
+            ))}
+          </div>
+
+          <table className="hidden w-full border-collapse md:table">
             <thead>
               <tr>
                 <th className="table-head w-10">
@@ -431,6 +456,7 @@ export default function ListView(): JSX.Element {
               ))}
             </tbody>
           </table>
+          </>
         )}
       </div>
 
@@ -555,6 +581,99 @@ function defaultColumns(meta: { fields: { name: string; isActive: boolean; displ
     .filter((f) => f.isActive && f.displayType !== 'hidden')
     .slice(0, 7)
     .map((f) => f.name);
+}
+
+/**
+ * One record as a phone-sized card. The first visible column is the record's
+ * identity, so it becomes the heading and is the tap target for opening the
+ * record; the rest render as label/value rows and stay inline-editable exactly
+ * as they are in the table. Empty values are dropped rather than shown as "—",
+ * because a column that is blank for most rows is just noise once it is a
+ * stacked row instead of a narrow column.
+ */
+function MobileRecordCard({
+  row, module, columns, fieldMap, selected, onToggleSelect, onOpen, onSaved,
+}: {
+  row: RecordEnvelope;
+  module: ModuleMeta & { permissions: { edit: boolean }; picklistDependencies: { sourceField: string; targetField: string; mapping: Record<string, string[]> }[] };
+  columns: string[];
+  fieldMap: Map<string, FieldMeta>;
+  selected: boolean;
+  onToggleSelect: (checked: boolean) => void;
+  onOpen: () => void;
+  onSaved: () => void;
+}): JSX.Element {
+  // Fields that make up row.label are already the heading — repeating them as
+  // rows ("First Name: Test", "Last Name: User" under a "Test User" title) is
+  // pure noise and doubles the card's height. The record number is likewise
+  // already under the title; it's matched by uitype rather than by name
+  // because each module names its own (lead_number, deal_number, …) and the
+  // engine must not care which module it is looking at.
+  const titleFields = new Set(module.labelFields ?? []);
+  const detailCols = columns.filter((c) => {
+    if (titleFields.has(c)) return false;
+    const field = fieldMap.get(c);
+    if (!field || field.uitype === 'autonumber') return false;
+    const v = row.values[c];
+    return v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && !v.length);
+  });
+
+  return (
+    <div className="bg-white px-4 py-3 dark:bg-slate-900">
+      <div className="flex items-start gap-3">
+        <input
+          type="checkbox"
+          className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300"
+          checked={selected}
+          onChange={(e) => onToggleSelect(e.target.checked)}
+          aria-label="Select record"
+        />
+        <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
+          <p className="truncate font-medium text-slate-900 dark:text-slate-100">{row.label}</p>
+          {row.recordNumber && (
+            <p className="mt-0.5 font-mono text-2xs text-slate-400">{row.recordNumber}</p>
+          )}
+        </button>
+        <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-300" />
+      </div>
+
+      {detailCols.length > 0 && (
+        <dl className="mt-2.5 space-y-1.5 pl-7">
+          {detailCols.map((col) => {
+            const field = fieldMap.get(col)!;
+            return (
+              <div key={col} className="flex items-start gap-2 text-xs">
+                <dt className="w-28 shrink-0 truncate text-slate-400">{field.label}</dt>
+                <dd className="min-w-0 flex-1">
+                  {module.permissions.edit && isInlineEditable(field) ? (
+                    <EditableField
+                      module={module.name}
+                      recordId={row.id}
+                      field={field}
+                      value={row.values[col]}
+                      display={row.display?.[col]}
+                      compact
+                      restrictTo={restrictionForField(module.picklistDependencies, row.values, field.name)}
+                      linkTo={field.uitype === 'reference' ? row.display?.[`${col}__module`] : undefined}
+                      onSaved={onSaved}
+                    />
+                  ) : (
+                    <FieldValue
+                      field={field}
+                      value={row.values[col]}
+                      display={row.display?.[col]}
+                      compact
+                      linkTo={field.uitype === 'reference' ? row.display?.[`${col}__module`] : undefined}
+                    />
+                  )}
+                </dd>
+              </div>
+            );
+          })}
+        </dl>
+      )}
+    </div>
+  );
 }
 
 function KanbanBoard({

@@ -1,0 +1,101 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+#
+# One Docker web service runs the whole CRM: the Express API, the built React
+# app (SERVE_WEB) and the background scheduler (ENABLE_SCHEDULER) in a single
+# process. docker-compose splits the scheduler into its own container so it can
+# scale out; a single Render instance has nothing to scale against, and the
+# queue's FOR UPDATE SKIP LOCKED claims make running it in-process safe either
+# way.
+#
+# Deliberately NOT declared here:
+#
+#   databases:  Render's free Postgres is deleted after 30 days. DATABASE_URL is
+#               left as a paste-it-in value so you can point at Neon's free tier
+#               (which persists) instead — see DEPLOYMENT.md.
+#   disk:       persistent disks are a paid feature, and a free instance's
+#               filesystem is wiped on every deploy. Uploaded photos/videos
+#               therefore go to Cloudflare R2 (S3-compatible, free tier, no
+#               egress fees) via the S3_* vars below. Leave those blank and
+#               storage falls back to local disk — fine for a quick look, but
+#               every redeploy loses the files.
+#
+# After the first deploy, set APP_URL to this service's real URL (plus the
+# website's, comma-separated) — app.ts uses it as the CORS allowlist in
+# production, so image requests from the website are rejected until it matches.
+
+services:
+  - type: web
+    name: ipropy-crm
+    runtime: docker
+    plan: free
+    region: singapore # closest Render region to India — lowest latency for the team
+    branch: main
+    autoDeploy: true # every push to main redeploys
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # Serve the React app from this same service, so the CRM is one URL.
+      - key: SERVE_WEB
+        value: "true"
+
+      # Single instance → run the queue drain in-process (no separate worker).
+      - key: ENABLE_SCHEDULER
+        value: "true"
+
+      # Render injects PORT; config.ts reads it. Do not hardcode.
+
+      # --- must be filled in the Render dashboard -------------------------
+      # Postgres connection string. Neon free tier recommended (persists;
+      # Render's own free Postgres is deleted after 30 days).
+      - key: DATABASE_URL
+        sync: false
+
+      # Comma-separated CORS allowlist: this service's URL + the website's.
+      # e.g. https://ipropy-crm.onrender.com,https://ipropy.vercel.app
+      - key: APP_URL
+        sync: false
+
+      # First admin login. Set these BEFORE the first deploy — the seed uses
+      # them, and the repo's dev default (admin@ipropy.com / Admin@123) must
+      # never be what guards a public URL.
+      - key: SEED_ADMIN_EMAIL
+        sync: false
+      - key: SEED_ADMIN_PASSWORD
+        sync: false
+
+      # --- generated once by Render, never shown in git --------------------
+      # Also the key that encrypts stored integration credentials
+      # (core/settings/integrations.ts), so changing it later makes previously
+      # saved API keys unreadable and they must be re-entered.
+      - key: JWT_SECRET
+        generateValue: true
+
+      # --- optional ---------------------------------------------------------
+      # MUST stay false. validateProductionConfig() (config.ts) refuses to boot
+      # otherwise, because the demo seed creates a dozen users that all share
+      # one publicly-known password — harmless on localhost, an open door on a
+      # public URL. To get sample data for a demo, seed it from your laptop
+      # against the same database instead; see DEPLOYMENT.md.
+      - key: SEED_DEMO_DATA
+        value: "false"
+
+      # Media storage. Blank = local disk = files lost on every free-tier
+      # redeploy. Fill these with Cloudflare R2 credentials to keep them.
+      - key: STORAGE_DRIVER
+        value: local
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ENDPOINT
+        sync: false
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_REGION
+        value: auto # R2 ignores region but the SDK requires a value
+
+      # AI features degrade to deterministic rules without this — never throw.
+      - key: ANTHROPIC_API_KEY
+        sync: false
