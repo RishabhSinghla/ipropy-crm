@@ -725,9 +725,13 @@ from this CRM's own database, plus a CarWale-style deep comparison tool.
   `/media/:attachmentId`. Every query hand-picks an explicit `SELECT` column whitelist — it never
   goes through `recordService`/the metadata engine — so a sensitive field (`owner_contact_id`,
   `blocked_for_lead_id`, `broker_commission_pct`, admin-added custom JSON fields) can't leak here
-  just because it exists on the record. Visibility is status-based only for now: projects in
-  `New Launch | Under Construction | Nearing Possession | Ready To Move`, properties in `Available`
-  — no schema change. Own rate limiter (`app.ts`), separate from the general `/api` one.
+  just because it exists on the record. A record is visible when its status qualifies (projects:
+  `New Launch | Under Construction | Nearing Possession | Ready To Move`; properties: `Available`)
+  **and** its `publish_to_web` field is truthy (JSON-storage custom field, added to both modules in
+  `db/seed/modules.ts`, default `true` — no migration). An admin can hide one record from the site
+  without changing its status. Own rate limiter (`app.ts`), separate from the general `/api` one.
+  `GET /api/public/cities` adds one aggregate query (project count, available units, price range per
+  city) backing the site's `/cities` pages, instead of it looping a `city=` filter per picklist value.
 * **System user seeded** (`db/seed/rbac.ts::seedSystemUser`, id
   `00000000-0000-0000-0000-000000000000`) — fixes a **real, pre-existing bug** found while wiring
   the website's enquiry form through the existing `POST /api/webhooks/forms/:publicKey` → `captureLead`
@@ -753,6 +757,8 @@ from this CRM's own database, plus a CarWale-style deep comparison tool.
 so none of its CORS/API-key surface had to change. Its enquiry form posts to its own
 `/api/enquiry` route, which forwards server-side to `POST /api/webhooks/forms/website-enquiry`.
 
-**Not done yet:** an admin-facing `publish_to_web` toggle per record (status-based visibility is
-the MVP); city/locality SEO landing pages; deployment (website currently only runs locally against
-this CRM's `localhost:4000`).
+**Also shipped on the website side this round** (see its own README): JSON-LD structured data,
+dynamic per-listing OG images, city landing pages, dark mode, amenity icons, recently-viewed.
+
+**Not done yet:** locality-level (as opposed to city-level) SEO pages; deployment (website currently
+only runs locally against this CRM's `localhost:4000`).
