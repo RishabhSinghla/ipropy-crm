@@ -1,17 +1,22 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { Ref } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { DashboardWidget, FilterGroup, FilterOperator } from '@ipropy/shared';
 import { formatIndianPrice } from '@ipropy/shared';
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart,
   Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
+import GridLayout, { useContainerWidth } from 'react-grid-layout';
+import type { EventCallback, Layout, LayoutItem } from 'react-grid-layout';
+import 'react-grid-layout/css/styles.css';
+import 'react-resizable/css/styles.css';
 import {
   ArrowDownRight, ArrowUpRight, ChevronDown, LayoutDashboard, Sparkles, TrendingUp,
 } from 'lucide-react';
 import { api } from '../lib/api';
-import { useApp } from '../lib/store';
+import { toast, useApp } from '../lib/store';
 import { cn, renderMarkdown } from '../lib/utils';
 import { Badge, Dropdown, DropdownItem, EmptyState, ScoreChip, Skeleton, Spinner } from '../components/ui';
 
@@ -20,6 +25,7 @@ const PALETTE = ['#6366f1', '#22c55e', '#f59e0b', '#ec4899', '#0ea5e9', '#a855f7
 export default function DashboardPage(): JSX.Element {
   const { id } = useParams<{ id?: string }>();
   const navigate = useNavigate();
+  const isDesktop = useMediaQuery('(min-width: 1024px)');
 
   const { data: dashboards } = useQuery({ queryKey: ['dashboards'], queryFn: () => api.dashboards() });
   const activeId = id ?? dashboards?.find((d) => d.isDefault)?.id ?? dashboards?.[0]?.id;
@@ -39,6 +45,11 @@ export default function DashboardPage(): JSX.Element {
           <h1 className="text-xl font-semibold tracking-tight">{dashboard?.name ?? 'Dashboard'}</h1>
           {dashboard?.description && (
             <p className="text-sm text-slate-500">{dashboard.description}</p>
+          )}
+          {dashboard?.canEdit && isDesktop && (
+            <p className="mt-0.5 text-2xs text-slate-400">
+              Drag widgets to rearrange · pull the corner handle to resize
+            </p>
           )}
         </div>
 
@@ -75,6 +86,13 @@ export default function DashboardPage(): JSX.Element {
         </div>
       ) : dashboard.widgets.length === 0 ? (
         <EmptyState icon={<LayoutDashboard className="h-10 w-10" />} title="This dashboard is empty" />
+      ) : isDesktop ? (
+        <DashboardGrid
+          key={dashboard.id}
+          widgets={dashboard.widgets}
+          canEdit={dashboard.canEdit}
+          dashboardId={dashboard.id}
+        />
       ) : (
         <div className="grid auto-rows-[minmax(0,auto)] grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-12">
           {dashboard.widgets.map((widget) => (
@@ -93,6 +111,79 @@ export default function DashboardPage(): JSX.Element {
             </div>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Drag-to-move / drag-to-resize grid (desktop). Positions and sizes are the
+// widget's own x/y/w/h from the layout, persisted through saveDashboardLayout
+// after each drag or resize settles. Below lg the page falls back to the
+// responsive auto-flow grid above.
+// ---------------------------------------------------------------------------
+
+const GRID_COLS = 12;
+const GRID_ROW_H = 80;
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const mql = window.matchMedia(query);
+    const onChange = (e: MediaQueryListEvent): void => setMatches(e.matches);
+    mql.addEventListener('change', onChange);
+    return () => mql.removeEventListener('change', onChange);
+  }, [query]);
+  return matches;
+}
+
+function DashboardGrid({ widgets, canEdit, dashboardId }: {
+  widgets: DashboardWidget[];
+  canEdit: boolean;
+  dashboardId: string;
+}): JSX.Element {
+  const { width, containerRef, mounted } = useContainerWidth();
+  const queryClient = useQueryClient();
+  const [grid, setGrid] = useState<LayoutItem[]>(() =>
+    widgets.map((w) => ({ i: w.id, x: w.x, y: w.y, w: w.w, h: w.h, minW: 1, minH: 1 })),
+  );
+
+  const persist = (layout: Layout): void => {
+    api.saveDashboardLayout(
+      dashboardId,
+      layout.map((l) => ({ id: l.i, x: l.x, y: l.y, w: l.w, h: l.h })),
+    )
+      .then(() => {
+        // Refresh the cached layout so the mobile fallback and re-mounts see
+        // the dragged positions, not the stale pre-drag snapshot.
+        void queryClient.invalidateQueries({ queryKey: ['dashboard', dashboardId] });
+        toast.success('Layout saved');
+      })
+      .catch((err) => toast.error('Could not save layout', (err as Error).message));
+  };
+
+  const stopDrag: EventCallback = (layout) => persist(layout);
+  const stopResize: EventCallback = (layout) => persist(layout);
+
+  return (
+    <div ref={containerRef as Ref<HTMLDivElement>}>
+      {mounted && (
+        <GridLayout
+          width={width}
+          layout={grid}
+          gridConfig={{ cols: GRID_COLS, rowHeight: GRID_ROW_H, margin: [12, 12] }}
+          dragConfig={{ enabled: canEdit, cancel: 'a, button, input, select, textarea, [data-no-drag]' }}
+          resizeConfig={{ enabled: canEdit }}
+          onLayoutChange={(layout) => setGrid([...layout])}
+          onDragStop={stopDrag}
+          onResizeStop={stopResize}
+        >
+          {widgets.map((w) => (
+            <div key={w.id} className="h-full min-w-0">
+              <Widget widget={w} />
+            </div>
+          ))}
+        </GridLayout>
       )}
     </div>
   );

@@ -281,8 +281,9 @@ Honest scope notes:
 
 * **Speech-to-text is not bundled.** Call analysis works from a transcript — supplied by your
   telephony provider, an external STT service, or pasted into the call detail screen.
-* **The dashboard grid is responsive, not drag-to-resize.** Widget position and size are stored and
-  the API to persist a rearranged layout exists; the drag handles are not wired up.
+* **Dashboard drag-to-resize is desktop-only.** On ≥1024 px widgets can be dragged and resized and
+  the layout persists to the server; below that the grid falls back to responsive auto-flow (see the
+  README of `react-grid-layout` if you want finer control over the handles).
 * **The workflow builder is read-only in the UI.** Workflows are fully editable through the API and
   seeded declaratively; the admin screen lists, inspects, enables and deletes them but does not yet
   compose a new one visually.

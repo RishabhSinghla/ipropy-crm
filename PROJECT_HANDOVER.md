@@ -1,10 +1,11 @@
 # iPropy CRM — Project Handover
 
 **Last updated:** 7 August 2026
-**Status:** Feature-complete build, verified end-to-end. **Vitest unit test suite added this session** (107 tests), **dead `converted_contact_id` column removed** (migration 006). No work in progress.
+**Status:** Feature-complete build, verified end-to-end. **This session:** Vitest unit suite (107 tests),
+dead `converted_contact_id` column removed (migration 006), and **dashboard drag-to-resize wired**. No work in progress.
 **Location:** `/Users/rishabhsinghla/Downloads/iPropy-crm`
 **Git:** initialised, pushed to `origin/main` (`https://github.com/RishabhSinghla/ipropy-crm.git`).
-Latest commit `8c0ad52`. Working tree clean.
+Latest commit `01ce186`. Working tree clean.
 
 > Reference implementation: the original Vtiger PHP source sits at
 > `/Users/rishabhsinghla/Downloads/vtigercrm`. It was used as an **architecture
@@ -45,7 +46,7 @@ adds WhatsApp, telephony, portal lead capture and an AI layer.
 **Verified live metrics (current database):**
 77 tables · 12 modules · 430 fields · 54 picklists · 54 views · 36 layouts · 17 workflows ·
 5 dashboards / 39 widgets · 16 roles · 9 profiles · 10 users · ~305 demo records.
-6 migrations applied. Codebase has grown by ~9 files / ~2,600 lines this session (see §7).
+6 migrations applied. Codebase has grown by ~10 files / ~2,800 lines this session (see §7).
 
 ---
 
@@ -361,8 +362,15 @@ committing:
     values, no index, no references in views/workflows/dashboards/reports/field permissions; dropped
     the column and its field metadata. Verified live after a server reload: describe no longer lists
     the field (77 fields), list and lookup still work.
+13. **Wired dashboard drag-to-resize (and drag-to-rearrange).** The dashboard grid was responsive-only
+    and the persisted layout (x/y/w/h per widget) was never editable or even rendered by position.
+    Now on desktop (≥1024 px) the grid renders widgets at their stored positions via
+    `react-grid-layout` and persists drags/resizes through the existing `saveDashboardLayout` endpoint
+    (one round trip, server already supported it). Editing is gated on `canEdit`, drags start only off
+    interactive elements (links/buttons), and below lg the page keeps its responsive auto-flow grid.
+    Verified live: swapped two widgets through the layout API and confirmed the round trip.
 
-**Also done as part of this work, not separately requested:** `git init`, an initial commit, then 10
+**Also done as part of this work, not separately requested:** `git init`, an initial commit, then 11
 more commits, and `git push` to `origin/main`. Version control — previously the #1 listed risk in
 this document — now exists.
 
@@ -375,7 +383,7 @@ this document — now exists.
 | Build | Clean — all three packages typecheck and build |
 | Tests | **Vitest added this session** — 107 unit tests pass via `npm test` (no DB needed); feature work still verified live |
 | Demo data | Clean — all test records/workflows/credentials created during verification were deleted or reverted afterward |
-| Git | **Initialised, pushed to `origin/main`.** Latest commit `80de2fc`. Working tree clean. |
+| Git | **Initialised, pushed to `origin/main`.** Latest commit `01ce186`. Working tree clean. |
 | AI | `ANTHROPIC_API_KEY` empty → rule-based fallback active (also configurable now via Admin → Integrations) |
 
 ---
@@ -397,6 +405,9 @@ this document — now exists.
 * ~~No automated test suite.~~ **Resolved.** Vitest is in the repo — 107 unit tests across the query
   builder, filter evaluator, formula engine and permission engine (see §10). The highest-risk pure
   logic now has repeatable coverage; the write/API paths and UI still rely on live verification.
+* ~~Dashboard drag-to-resize not wired.~~ **Resolved.** The grid now renders widgets at their stored
+  x/y/w/h via `react-grid-layout` on desktop and persists drags/resizes through the existing
+  `saveDashboardLayout` endpoint (see §7).
 
 ### Bugs (real, currently present, not fixed)
 
@@ -417,21 +428,19 @@ session — the sole real bug is gone.)
 
 3. **`ipy_e_contacts_archived_004`** (24 rows) retained deliberately for recovery. Drop once the merge
    is confirmed in production.
-4. **Dashboard drag-to-resize not wired.** `saveDashboardLayout` exists in `lib/api.ts` and the server
-   endpoint works, but **no page calls it** — the grid is responsive-only.
-5. **Speech-to-text not bundled.** Call analysis needs a transcript from the provider or pasted in.
-6. **Web bundle is ~1.1 MB** (~223 KB gzipped, grew slightly this session with the workflow composer
-   and dashboard drill-through) — no route-level code splitting yet.
-7. **`is_converted` and `lifecycle_stage` overlap** post-merge. Both are maintained; consider
+4. **Speech-to-text not bundled.** Call analysis needs a transcript from the provider or pasted in.
+5. **Web bundle is ~1.2 MB** (~244 KB gzipped, grew this session with the workflow composer, dashboard
+   drill-through and now `react-grid-layout`) — no route-level code splitting yet.
+6. **`is_converted` and `lifecycle_stage` overlap** post-merge. Both are maintained; consider
    collapsing to lifecycle alone.
-8. **Redis is in `docker-compose.yml` but unused.** Either use it (caching/queue) or remove it.
-9. **`S3_*` storage config was not moved into the DB-backed integration settings** added this
+7. **Redis is in `docker-compose.yml` but unused.** Either use it (caching/queue) or remove it.
+8. **`S3_*` storage config was not moved into the DB-backed integration settings** added this
    session — still `.env`-only, inconsistent with every other integration.
-10. **Funnel widget drill-through uses `equals` on the clicked stage**, not the cumulative "reached
-    this stage or later" semantics the funnel's own numbers represent (a funnel counts a lead as
-    having reached every earlier stage too). Correct behaviour would need the server to also return
-    the ordered stage-key list so the client can build an `in` filter; scoped out as beyond "make it
-    clickable".
+9. **Funnel widget drill-through uses `equals` on the clicked stage**, not the cumulative "reached
+   this stage or later" semantics the funnel's own numbers represent (a funnel counts a lead as
+   having reached every earlier stage too). Correct behaviour would need the server to also return
+   the ordered stage-key list so the client can build an `in` filter; scoped out as beyond "make it
+   clickable".
 
 ---
 
@@ -545,7 +554,7 @@ process.
 Everything that was on this list and got done this session (git init, the `globalSearch` fix, secrets
 encryption, the workflow builder, stale-UI/realtime, module toggle, field hide/unhide, Toggle CSS,
 record navigation, quick-edit, dashboard drill-through, the Vitest unit suite, removal of the dead
-`converted_contact_id` column) has been removed. What's left:
+`converted_contact_id` column, dashboard drag-to-resize) has been removed. What's left:
 
 ### Correctness and safety
 
@@ -554,34 +563,33 @@ record navigation, quick-edit, dashboard drill-through, the Vitest unit suite, r
    means re-entering every credential saved via Admin → Integrations.
 2. Add DB backup + restore runbook; verify a restore actually works.
 3. Move `S3_*` storage config into the DB-backed integration settings for consistency with every
-   other integration (§8 technical debt 9) — currently the one credential still `.env`-only.
+   other integration (§8 technical debt 8) — currently the one credential still `.env`-only.
 
 ### Finish partially-built features
 
-4. Wire dashboard drag-to-resize to the existing `saveDashboardLayout` endpoint.
-5. Add speech-to-text so call analysis runs without a manual transcript.
-6. Add the many-to-many related-list "select existing record" UI (API already supports it).
-7. Build the Channel Partner portal (restricted profile exists and is seeded; no portal UI).
-8. Make funnel-widget drill-through use the funnel's actual cumulative "reached this stage or
-   later" semantics instead of `equals` on the single stage (§8 technical debt 10) — needs the
+4. Add speech-to-text so call analysis runs without a manual transcript.
+5. Add the many-to-many related-list "select existing record" UI (API already supports it).
+6. Build the Channel Partner portal (restricted profile exists and is seeded; no portal UI).
+7. Make funnel-widget drill-through use the funnel's actual cumulative "reached this stage or
+   later" semantics instead of `equals` on the single stage (§8 technical debt 9) — needs the
    server to also return the ordered stage-key list.
 
 ### Deployment and operations
 
-9. Write a Dockerfile + docker-compose for the full app; set up CI (typecheck → build → test).
-10. Add structured error reporting (Sentry or equivalent) and request tracing.
-11. Move the scheduler to a dedicated worker process/queue so it scales past one instance.
+8. Write a Dockerfile + docker-compose for the full app; set up CI (typecheck → build → test).
+9. Add structured error reporting (Sentry or equivalent) and request tracing.
+10. Move the scheduler to a dedicated worker process/queue so it scales past one instance.
 
 ### Product depth
 
-12. Route-level code splitting — the web bundle is now ~1.1 MB / ~223 KB gzipped, having grown with
-    the workflow composer and dashboard drill-through this session.
-13. Mobile-responsive pass on ListView, RecordDetail and the Inventory board.
-14. Email inbound (IMAP) sync into the timeline — outbound works, inbound does not. Credentials are
+11. Route-level code splitting — the web bundle is now ~1.2 MB / ~244 KB gzipped, having grown with
+    the workflow composer, dashboard drill-through and `react-grid-layout` this session.
+12. Mobile-responsive pass on ListView, RecordDetail and the Inventory board.
+13. Email inbound (IMAP) sync into the timeline — outbound works, inbound does not. Credentials are
     now configurable via Admin → Integrations; the sync itself still isn't built.
-15. Rollup fields (`uitype: 'rollup'` is declared and typed but the aggregation engine is not
+14. Rollup fields (`uitype: 'rollup'` is declared and typed but the aggregation engine is not
     implemented — currently a no-op).
-16. Collapse `is_converted` into `lifecycle_stage` and simplify conversion logic (§8 technical debt 7).
+15. Collapse `is_converted` into `lifecycle_stage` and simplify conversion logic (§8 technical debt 6).
 
 ---
 

@@ -100,3 +100,33 @@
 .prose-ai strong { @apply font-semibold text-slate-900 dark:text-slate-100; }
 .prose-ai ul { @apply my-2 list-disc space-y-1 pl-5; }
 .prose-ai p + p { @apply mt-2; }
+
+/* Dashboard drag/resize grid (react-grid-layout). These selectors are
+   prefixed with .react-grid-layout so they win over react-grid-layout's own
+   stylesheet, which is imported later in the bundle. */
+.react-grid-layout { position: relative; }
+.react-grid-layout .react-grid-item {
+  transition: left 200ms ease, top 200ms ease, width 200ms ease, height 200ms ease;
+}
+.react-grid-layout .react-grid-item.react-draggable-dragging,
+.react-grid-layout .react-grid-item.react-resizing {
+  transition: none;
+  z-index: 30;
+  will-change: transform;
+}
+.react-grid-layout .react-grid-item.react-grid-placeholder {
+  border-radius: 0.75rem;
+  background: #6366f1;
+  opacity: 0.15;
+}
+.react-grid-layout .react-grid-item > .react-resizable-handle {
+  width: 18px;
+  height: 18px;
+  background-image: none;
+}
+.react-grid-layout .react-grid-item > .react-resizable-handle::after {
+  width: 9px;
+  height: 9px;
+  border-right: 2px solid #6366f1;
+  border-bottom: 2px solid #6366f1;
+}

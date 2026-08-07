@@ -128,6 +128,5 @@ packages/web/src/components/FieldRenderer.tsx      metadata → UI
 * `globalSearch` applies **one module's** sharing scope across all modules — possible data exposure.
   High priority.
 * No deployment pipeline. (Git exists; a Vitest unit suite for the server core exists too — run `npm test`.)
-* `converted_contact_id` is a dead column post-merge.
-* Dashboard drag-to-resize, visual workflow builder, rollup fields and speech-to-text are declared
-  but not implemented.
+* Visual workflow builder, rollup fields and speech-to-text are declared but not implemented.
+  Dashboard drag-to-resize is wired (react-grid-layout on desktop, persisted via `saveDashboardLayout`).
