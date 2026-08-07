@@ -1,10 +1,10 @@
 # iPropy CRM — Project Handover
 
 **Last updated:** 7 August 2026
-**Status:** Feature-complete build, verified end-to-end. No work in progress.
+**Status:** Feature-complete build, verified end-to-end. **Vitest unit test suite added this session** — 107 tests over the query builder, filter evaluator, formula engine and permission engine. No work in progress.
 **Location:** `/Users/rishabhsinghla/Downloads/iPropy-crm`
 **Git:** initialised, pushed to `origin/main` (`https://github.com/RishabhSinghla/ipropy-crm.git`).
-Latest commit `80de2fc`. Working tree clean.
+Latest commit `a4385a6`. Working tree clean.
 
 > Reference implementation: the original Vtiger PHP source sits at
 > `/Users/rishabhsinghla/Downloads/vtigercrm`. It was used as an **architecture
@@ -349,6 +349,13 @@ committing:
 10. **Dashboard drill-through** — every widget type now clicks through to a correctly pre-filtered
     record list, including two-dimension filters on the stacked inventory widget. `ListView.tsx`
     gained the ability to seed its filter from a `?filter=` URL param, which didn't exist before.
+11. **Brought in the test framework** — Vitest (`npm test`), with 107 unit tests over the four
+    highest-risk pure-logic modules: `query/builder` (operator SQL, column vs json storage,
+    identifier hardening, cross-module reference joins), `query/evaluate` (operator parity with the
+    SQL engine), `entity/formula` (grammar, functions, real-estate helpers, error handling) and
+    `permissions` (module/field/record scoping, sharing rules, admin short-circuits — DB and metadata
+    registry stubbed, no Postgres needed). Tests live in `packages/server/tests/`, outside `src/`, so
+    they never compile into the server build.
 
 **Also done as part of this work, not separately requested:** `git init`, an initial commit, then 8
 feature commits, and `git push` to `origin/main`. Version control — previously the #1 listed risk in
@@ -361,7 +368,7 @@ this document — now exists.
 | Postgres | Docker container `ipropy-db`, **up and healthy**, all 5 migrations applied |
 | Dev servers | **Running** — `tsx watch` (API :4000) and `vite` (web :5173) |
 | Build | Clean — all three packages typecheck and build |
-| Tests | No automated suite (see §8 risk 3) — this session's work was verified via live browser/API testing, not scripted checks |
+| Tests | **Vitest added this session** — 107 unit tests pass via `npm test` (no DB needed); feature work still verified live |
 | Demo data | Clean — all test records/workflows/credentials created during verification were deleted or reverted afterward |
 | Git | **Initialised, pushed to `origin/main`.** Latest commit `80de2fc`. Working tree clean. |
 | AI | `ANTHROPIC_API_KEY` empty → rule-based fallback active (also configurable now via Admin → Integrations) |
@@ -382,6 +389,9 @@ this document — now exists.
   encrypted at rest (see §4). `S3_*` storage config was **not** moved into this system — still `.env` only.
 * ~~Workflow builder is read-only in the UI.~~ **Resolved.** Full create/edit composer shipped this
   session (see §7).
+* ~~No automated test suite.~~ **Resolved.** Vitest is in the repo — 107 unit tests across the query
+  builder, filter evaluator, formula engine and permission engine (see §10). The highest-risk pure
+  logic now has repeatable coverage; the write/API paths and UI still rely on live verification.
 
 ### Bugs (real, currently present, not fixed)
 
@@ -390,15 +400,12 @@ this document — now exists.
 
 ### Risks
 
-2. **No automated test suite.** There is no Vitest/Jest suite in the repo. This session's verification
-   was live (real API calls, real browser interaction, checked and reverted), which is thorough but
-   not repeatable — a regression here would not be caught automatically.
-3. **Production hardening not done.** `JWT_SECRET` is the dev default (the server does refuse to boot
+2. **Production hardening not done.** `JWT_SECRET` is the dev default (the server does refuse to boot
    in production with it) — **and now also derives the integration-credential encryption key**, so
    rotating it in production will require re-entering every credential saved via the admin UI.
    `WHATSAPP_APP_SECRET` is unset — webhook signature verification is skipped outside production. No
    TLS, no rate-limit tuning, no backups configured.
-4. **Single-process scheduler.** `FOR UPDATE SKIP LOCKED` makes the queue multi-instance safe, but
+3. **Single-process scheduler.** `FOR UPDATE SKIP LOCKED` makes the queue multi-instance safe, but
    scheduled workflows scan up to 5,000 records per tick in-process — will not scale to large tenants.
 
 ### Technical debt
@@ -479,25 +486,22 @@ docker exec -it ipropy-db psql -U ipropy -d ipropy    # psql shell
 
 ## 10. Testing commands
 
-**There is no automated test suite in the repo.** A prior session's handover referenced two smoke
-scripts (`smoke.mjs`, `verify-merge.mjs`) that lived in a session scratchpad outside the repo — those
-are gone; the scratchpad they were in belonged to a different session and was never recovered. Do not
-assume they still exist. **Adding a real test suite (Vitest) is still the top item in §12.**
-
-Current verification, until that exists:
+**Vitest is in the repo.** `packages/server/tests/` holds 107 unit tests over the highest-risk pure
+logic — `query/builder`, `query/evaluate`, `entity/formula` and `permissions` (the DB and metadata
+registry are stubbed; no Postgres needed). The smoke scripts (`smoke.mjs`, `verify-merge.mjs`)
+referenced by older handovers lived in a session scratchpad and were never recovered — do not assume
+they still exist.
 
 ```bash
+npm test                      # vitest run — 107 tests, no DB required
 npm run typecheck             # all three packages — MUST be clean before committing
 npm run build                 # full build incl. Vite production bundle
 
 curl -s http://localhost:4000/api/health      # {"status":"ok","database":"connected",...}
 ```
 
-Beyond that: manual API checks with `curl`/Python against the running dev server, and browser
-verification via whatever preview tooling the session has (this session used the Browser pane). Every
-change in §7 was verified this way — logged in as the relevant demo user, exercised the actual
-feature, checked the actual response/DOM, and reverted any test data afterward. There is no shortcut
-for this until a real test suite exists.
+Write/API flows, permissions end-to-end and the UI still have no automated coverage — those are
+verified live (real API calls and browser interaction), with any test data reverted afterward.
 
 ---
 
@@ -539,16 +543,12 @@ record navigation, quick-edit, dashboard drill-through) has been removed. What's
 
 ### Do these before anything else
 
-1. **Add a real test framework (Vitest)** with unit coverage for the highest-risk pure logic:
-   `query/builder`, `query/evaluate`, `entity/formula`, `permissions`. There is still no automated
-   suite in the repo (§8 risk 2) — this session's fixes were verified live, which does not protect
-   against regressions on the *next* change.
-2. Remove the dead `converted_contact_id` column and its field metadata (migration 006).
+1. Remove the dead `converted_contact_id` column and its field metadata (migration 006).
 
 ### Correctness and safety
 
 3. Production-harden secrets: strong `JWT_SECRET` for production, set `WHATSAPP_APP_SECRET`. Note
-   `JWT_SECRET` now also derives the integration-credential encryption key (§8 risk 3) — rotating it
+   `JWT_SECRET` now also derives the integration-credential encryption key (§8 risk 2) — rotating it
    means re-entering every credential saved via Admin → Integrations.
 4. Add DB backup + restore runbook; verify a restore actually works.
 5. Move `S3_*` storage config into the DB-backed integration settings for consistency with every

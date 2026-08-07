@@ -286,5 +286,6 @@ Honest scope notes:
 * **The workflow builder is read-only in the UI.** Workflows are fully editable through the API and
   seeded declaratively; the admin screen lists, inspects, enables and deletes them but does not yet
   compose a new one visually.
-* **No test suite.** Verification was done through the end-to-end smoke script described above rather
-  than unit tests.
+* **Unit tests cover the server core only.** A Vitest suite (`npm test`) covers the query builder,
+  filter evaluator, formula engine and permission engine; the API, write paths and UI are verified
+  live rather than by automated tests.

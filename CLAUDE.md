@@ -88,9 +88,10 @@ npm run db:reset              # DESTRUCTIVE: drops schema, re-migrates, re-seeds
 
 Login: `admin@ipropy.com` / `Admin@123`. Other demo users in `PROJECT_HANDOVER.md` §9.
 
-**Verification:** there is no automated test suite. Two smoke scripts (63 + 25 checks) exist in the
-session scratchpad and are **not in the repo** — moving them in is a top-3 priority task. Until then,
-verify with `npm run typecheck && npm run build` plus manual API checks against the running server.
+**Verification:** `npm test` runs the Vitest unit suite (107 tests over the query builder, filter
+evaluator, formula engine and permissions — no DB needed). There is no integration/e2e coverage, so
+verify feature work with `npm run typecheck && npm run build` plus manual API checks against the
+running server.
 
 ---
 
@@ -126,7 +127,7 @@ packages/web/src/components/FieldRenderer.tsx      metadata → UI
 
 * `globalSearch` applies **one module's** sharing scope across all modules — possible data exposure.
   High priority.
-* No git, no test suite, no deployment pipeline.
+* No deployment pipeline. (Git exists; a Vitest unit suite for the server core exists too — run `npm test`.)
 * `converted_contact_id` is a dead column post-merge.
 * Dashboard drag-to-resize, visual workflow builder, rollup fields and speech-to-text are declared
   but not implemented.
