@@ -651,3 +651,39 @@ export async function seedIntegrations(conn: Tx): Promise<void> {
     );
   }
 }
+
+/**
+ * Webform used by the public property website's enquiry forms (a separate
+ * app — see /Users/rishabhsinghla/Downloads/ipropy-website). A fixed
+ * public_key means the website's server-side proxy (app/api/enquiry/route.ts
+ * there) can point at it out of the box with no manual admin-panel setup.
+ * Submissions land as real Leads via the existing POST /api/webhooks/forms/:publicKey
+ * endpoint — this seed only registers the form, it does not add any new
+ * lead-capture code path.
+ */
+export async function seedWebforms(conn: Tx): Promise<void> {
+  const leads = await conn.queryOne<{ id: string }>(`SELECT id FROM ipy_module WHERE name = 'leads'`);
+  if (!leads) return;
+
+  await conn.query(
+    `INSERT INTO ipy_webform (name, public_key, module_id, fields, defaults, success_message, captcha_enabled, allowed_origins)
+     VALUES ($1, $2, $3, $4, $5, $6, false, '[]'::jsonb)
+     ON CONFLICT (public_key) DO UPDATE SET
+       module_id = EXCLUDED.module_id, fields = EXCLUDED.fields, defaults = EXCLUDED.defaults,
+       success_message = EXCLUDED.success_message`,
+    [
+      'Website Enquiry',
+      'website-enquiry',
+      leads.id,
+      JSON.stringify([
+        { name: 'first_name', label: 'Full Name' },
+        { name: 'mobile', label: 'Phone' },
+        { name: 'email', label: 'Email' },
+        { name: 'message', label: 'Message' },
+        { name: 'project', label: 'Interested Project' },
+      ]),
+      JSON.stringify({ lead_source: 'Website' }),
+      "Thanks — our team will call you shortly.",
+    ],
+  );
+}

@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 5173
+    },
+    {
+      "name": "ipropy-website",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd /Users/rishabhsinghla/Downloads/ipropy-website && npm run dev"],
+      "port": 3000
     }
   ]
 }

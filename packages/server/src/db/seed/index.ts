@@ -13,11 +13,11 @@ import { registry } from '../../core/metadata/registry.js';
 import { MODULES } from './modules.js';
 import { seedPicklists, seedPicklistDependencies } from './picklists.js';
 import { seedDefaultLayouts, upsertModule, upsertRelations, upsertViews } from './helpers.js';
-import { seedGroups, seedProfiles, seedRoles, seedSharing, seedUsers, type SeededUser, DEMO_USERS } from './rbac.js';
+import { seedGroups, seedProfiles, seedRoles, seedSharing, seedSystemUser, seedUsers, type SeededUser, DEMO_USERS } from './rbac.js';
 import { seedDashboards } from './dashboards.js';
 import {
   seedAssignmentRules, seedIntegrations, seedSettings, seedSlaPolicies,
-  seedTemplates, seedWorkflows,
+  seedTemplates, seedWebforms, seedWorkflows,
 } from './automation.js';
 import { seedDemoData } from './demo.js';
 
@@ -47,6 +47,7 @@ export async function seed(): Promise<void> {
 
   // --- identity -------------------------------------------------------------
   const users = await transaction(async (tx) => {
+    await seedSystemUser(tx);
     const roles = await seedRoles(tx);
     const profiles = await seedProfiles(tx);
     await seedSharing(tx);
@@ -66,6 +67,7 @@ export async function seed(): Promise<void> {
     await seedTemplates(tx);
     await seedSettings(tx);
     await seedIntegrations(tx);
+    await seedWebforms(tx);
     logger.info('  dashboards, workflows, templates and settings ✓');
   });
 

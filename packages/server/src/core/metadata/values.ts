@@ -25,12 +25,21 @@ export function isEmpty(v: unknown): boolean {
  */
 /** uitypes stored in NOT NULL jsonb columns — an empty list is a value, not an absence. */
 const LIST_TYPES = new Set(['multipicklist', 'multireference', 'tags']);
+/**
+ * uitypes backing a handful of NOT NULL DEFAULT '' columns (e.g. leads/contacts
+ * last_name) — an empty string must round-trip as '' rather than NULL, or the
+ * column's NOT NULL constraint rejects it outright. Safe to apply broadly: both
+ * filter engines already treat '' and NULL as equivalent for text (builder.ts's
+ * is_empty/is_not_empty, evaluate.ts's isBlank), so this changes no query result.
+ */
+const TEXT_TYPES = new Set(['string', 'textarea', 'richtext']);
 
 export function coerceValue(field: FieldMeta, raw: unknown): unknown {
   // An empty multi-select must round-trip as [] rather than NULL: the payload
   // columns are `jsonb NOT NULL DEFAULT '[]'`, so writing NULL violates the
   // constraint. Mandatory validation still rejects [] via isEmpty().
   if (Array.isArray(raw) && raw.length === 0 && LIST_TYPES.has(field.uitype)) return [];
+  if (raw === '' && TEXT_TYPES.has(field.uitype)) return '';
   if (isEmpty(raw)) return null;
 
   switch (field.uitype) {

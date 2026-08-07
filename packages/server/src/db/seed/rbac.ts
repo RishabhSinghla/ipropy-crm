@@ -378,6 +378,21 @@ export const DEMO_USERS: UserDef[] = [
   { email: 'sunita.menon@ipropy.com', first: 'Sunita', last: 'Menon', role: 'Channel Partner', profile: 'Channel Partner (Portal)', phone: '+919820011011', designation: 'Partner — Menon Properties', channelPartner: 'Sunita Menon' },
 ];
 
+/**
+ * The fixed-id "system" user that unattended lead capture writes as
+ * created_by (see integrations/leadsources/capture.ts SYSTEM_USER — id must
+ * match exactly). Without a real row here, every unauthenticated capture
+ * path (webforms, portal leads, Facebook/Google Ads, IMAP inbound) fails
+ * createRecord's created_by FK constraint. Can never log in: no password_hash.
+ */
+export async function seedSystemUser(conn: Tx): Promise<void> {
+  await conn.query(
+    `INSERT INTO ipy_user (id, email, first_name, last_name, is_admin, is_active)
+     VALUES ('00000000-0000-0000-0000-000000000000', 'system@ipropy', 'iPropy', 'Capture', true, true)
+     ON CONFLICT (id) DO NOTHING`,
+  );
+}
+
 export async function seedUsers(
   conn: Tx,
   roles: Map<string, string>,

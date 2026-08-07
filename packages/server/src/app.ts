@@ -23,6 +23,7 @@ import { aiRouter } from './api/routes/ai.js';
 import { webhooksRouter } from './api/routes/webhooks.js';
 import { portalRouter } from './api/routes/portal.js';
 import { miscRouter } from './api/routes/misc.js';
+import { publicRouter } from './api/routes/public.js';
 
 export function createApp(): Express {
   const app = express();
@@ -81,6 +82,14 @@ export function createApp(): Express {
     windowMs: 60_000, limit: 600, standardHeaders: true, legacyHeaders: false,
   }));
 
+  // The public property-website API — read-only, unauthenticated, fetched
+  // server-to-server by the website's own Next.js server (see
+  // api/routes/public.ts), so its traffic is a handful of origins, not
+  // end-user browsers directly. Own budget, separate from the general /api one.
+  app.use('/api/public', rateLimit({
+    windowMs: 60_000, limit: 300, standardHeaders: true, legacyHeaders: false,
+  }));
+
   app.use('/api', rateLimit({
     windowMs: 60_000,
     limit: 600,
@@ -103,8 +112,10 @@ export function createApp(): Express {
   });
 
   // --- routes ---------------------------------------------------------------
-  // Webhooks first: they authenticate themselves and must not hit requireAuth.
+  // Webhooks and the public API first: neither goes through requireAuth —
+  // webhooks authenticate themselves, the public API is intentionally open.
   app.use('/api/webhooks', webhooksRouter);
+  app.use('/api/public', publicRouter);
 
   app.use('/api/auth', authRouter);
   app.use('/api/meta', metadataRouter);

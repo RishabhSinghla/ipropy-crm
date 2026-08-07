@@ -1,7 +1,7 @@
 # iPropy CRM — Project Handover
 
 **Last updated:** 7 August 2026
-**Status:** Feature-complete build, verified end-to-end. **This session:** Channel Partner portal built (migration 009), DB backup/restore runbook added and verified, Vitest unit suite (107 tests), production hardening (JWT_SECRET/WHATSAPP_APP_SECRET generated, launchd timer installed). No work in progress.
+**Status:** Feature-complete build, verified end-to-end. **This session:** Channel Partner portal built (migration 009), DB backup/restore runbook added and verified, Vitest unit suite (107 tests), production hardening (JWT_SECRET/WHATSAPP_APP_SECRET generated, launchd timer installed); then a public, unauthenticated read API (`/api/public/*`) added for a new sibling customer-facing website — see §14. No work in progress.
 **Location:** `/Users/rishabhsinghla/Downloads/iPropy-crm`
 **Git:** initialised, pushed to `origin/main` (`https://github.com/RishabhSinghla/ipropy-crm.git`).
 Latest commit `086e2bc`. Working tree clean.
@@ -707,3 +707,52 @@ packages/server/src/core/permissions/index.ts      how access is decided
 packages/server/src/db/seed/modules.ts             the real-estate data model
 packages/web/src/components/FieldRenderer.tsx      how metadata becomes UI
 ```
+
+---
+
+## 14. Public property website (new sibling repo)
+
+A separate, customer-facing property showcase site lives at
+`/Users/rishabhsinghla/Downloads/ipropy-website` — **not** part of this monorepo, its own git repo,
+built with Next.js (App Router) + TypeScript + Tailwind. It shows live Projects/Properties pulled
+from this CRM's own database, plus a CarWale-style deep comparison tool.
+
+**What changed here to support it (all additive, nothing existing modified):**
+
+* **`packages/server/src/api/routes/public.ts`** — new unauthenticated router, mounted in `app.ts`
+  next to `webhooksRouter` (same "authenticates itself, skips `requireAuth`" pattern). Endpoints:
+  `GET /api/public/projects`, `/projects/:id`, `/properties`, `/properties/:id`, `/filters`,
+  `/media/:attachmentId`. Every query hand-picks an explicit `SELECT` column whitelist — it never
+  goes through `recordService`/the metadata engine — so a sensitive field (`owner_contact_id`,
+  `blocked_for_lead_id`, `broker_commission_pct`, admin-added custom JSON fields) can't leak here
+  just because it exists on the record. Visibility is status-based only for now: projects in
+  `New Launch | Under Construction | Nearing Possession | Ready To Move`, properties in `Available`
+  — no schema change. Own rate limiter (`app.ts`), separate from the general `/api` one.
+* **System user seeded** (`db/seed/rbac.ts::seedSystemUser`, id
+  `00000000-0000-0000-0000-000000000000`) — fixes a **real, pre-existing bug** found while wiring
+  the website's enquiry form through the existing `POST /api/webhooks/forms/:publicKey` → `captureLead`
+  path: unattended lead capture (webforms, portal leads, Facebook/Google Ads — anything using
+  `systemContext()` in `integrations/leadsources/capture.ts`) wrote `created_by` as that fixed UUID,
+  but no `ipy_user` row existed with that id, so **every unauthenticated capture silently failed**
+  on the `ipy_record_created_by_fkey` constraint. Can never log in (no `password_hash`).
+* **`coerceValue` fix** (`core/metadata/values.ts`) — a second bug hit by the same test: `last_name`
+  on `leads`/`contacts` is `TEXT NOT NULL DEFAULT ''` at the DB level but not marked `mandatory` in
+  metadata, and `coerceValue` turned an empty string into `NULL` for every text-like uitype, which
+  the NOT NULL constraint then rejected. Fixed the same way rule 9 already handles empty arrays:
+  `''` now round-trips as `''` for `string`/`textarea`/`richtext` fields, never promoted to `NULL`.
+  Verified safe — both filter engines (`query/builder.ts`'s `is_empty`, `query/evaluate.ts`'s
+  `isBlank`) already treated `''` and `NULL` as equivalent, so this changes no query result.
+* **`db/seed/automation.ts::seedWebforms`** — idempotently registers a "Website Enquiry" `ipy_webform`
+  row (module `leads`, fixed `public_key: 'website-enquiry'`) so the site's enquiry forms work
+  out of the box with zero manual admin-panel setup. Submissions become real Leads
+  (`lead_source: 'Website'`) through the CRM's existing capture/assignment/SLA pipeline — no new
+  lead-capture code path was added.
+
+**Data flow:** the website's own Next.js server calls `/api/public/*` server-to-server (cached
+~60s via `fetch(..., { next: { revalidate: 60 } })`) — the browser never talks to this CRM directly,
+so none of its CORS/API-key surface had to change. Its enquiry form posts to its own
+`/api/enquiry` route, which forwards server-side to `POST /api/webhooks/forms/website-enquiry`.
+
+**Not done yet:** an admin-facing `publish_to_web` toggle per record (status-based visibility is
+the MVP); city/locality SEO landing pages; deployment (website currently only runs locally against
+this CRM's `localhost:4000`).
