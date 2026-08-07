@@ -5,7 +5,10 @@
  * the S3 driver is only loaded (and the AWS SDK only imported) when the
  * resolved driver is `s3`.
  */
+import { createWriteStream } from 'node:fs';
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
+import { pipeline as streamPipeline } from 'node:stream/promises';
+import type { Readable } from 'node:stream';
 import { dirname, join, resolve } from 'node:path';
 import { config } from '../../config.js';
 import { getSettings } from '../settings/integrations.js';
@@ -38,7 +41,11 @@ export function getStorageSettings(): StorageSettings {
 }
 
 export interface StorageDriver {
-  save(key: string, data: Buffer, contentType: string): Promise<void>;
+  // Readable is accepted alongside Buffer so a large upload (an iPhone 4K
+  // video can be well over a GB) never has to sit fully in process memory —
+  // callers with big files stream from a multer disk-temp file straight
+  // through to the destination instead of buffering it first.
+  save(key: string, data: Buffer | Readable, contentType: string): Promise<void>;
   read(key: string): Promise<Buffer | null>;
   remove(key: string): Promise<void>;
 }
@@ -47,7 +54,11 @@ const localDriver: StorageDriver = {
   async save(key, data) {
     const destination = localPath(key);
     await mkdir(dirname(destination), { recursive: true });
-    await writeFile(destination, data);
+    if (Buffer.isBuffer(data)) {
+      await writeFile(destination, data);
+    } else {
+      await streamPipeline(data, createWriteStream(destination));
+    }
   },
   async read(key) {
     try {

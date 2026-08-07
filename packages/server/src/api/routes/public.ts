@@ -110,7 +110,7 @@ publicRouter.get('/projects', asyncHandler(async (req, res) => {
       params.slice(0, -2),
     ),
   ]);
-  res.json({ items: rows.rows.map(toPublicMedia), total: count?.count ?? 0 });
+  res.json({ items: rows.rows.map((r) => toPublicMedia(r)), total: count?.count ?? 0 });
 }));
 
 publicRouter.get('/projects/:id', asyncHandler(async (req, res) => {
@@ -143,9 +143,9 @@ publicRouter.get('/projects/:id', asyncHandler(async (req, res) => {
   );
 
   res.json({
-    project: toPublicMedia(project),
-    units: units.rows.map(toPublicMedia),
-    similar: similar.rows.map(toPublicMedia),
+    project: toPublicMedia(project, 'large'),
+    units: units.rows.map((r) => toPublicMedia(r)),
+    similar: similar.rows.map((r) => toPublicMedia(r)),
   });
 }));
 
@@ -187,7 +187,7 @@ publicRouter.get('/properties', asyncHandler(async (req, res) => {
       params.slice(0, -2),
     ),
   ]);
-  res.json({ items: rows.rows.map(toPublicMedia), total: count?.count ?? 0 });
+  res.json({ items: rows.rows.map((r) => toPublicMedia(r)), total: count?.count ?? 0 });
 }));
 
 publicRouter.get('/properties/:id', asyncHandler(async (req, res) => {
@@ -199,7 +199,7 @@ publicRouter.get('/properties/:id', asyncHandler(async (req, res) => {
     [req.params.id, PUBLIC_PROPERTY_STATUS],
   );
   if (!unit) throw new NotFoundError('Property not found');
-  res.json(toPublicMedia(unit));
+  res.json(toPublicMedia(unit, 'large'));
 }));
 
 // ---------------------------------------------------------------------------
@@ -244,11 +244,17 @@ publicRouter.get('/cities', asyncHandler(async (_req, res) => {
 // (`/api/files/<attachment-id>`), so this serves the same bytes without
 // auth, but only for an attachment whose owning record currently passes the
 // public-visibility filter above — an id alone isn't enough to fetch it.
+// ?size=thumb|medium|large serves the resized/watermarked derivative
+// (core/media/pipeline.ts) when one exists, falling back to the untouched
+// original otherwise — this is the whole reason the website is fast: it
+// never downloads a multi-MB original just to show a listing thumbnail.
 // ---------------------------------------------------------------------------
 
+const VARIANT_SIZES = new Set(['thumb', 'medium', 'large']);
+
 publicRouter.get('/media/:attachmentId', asyncHandler(async (req, res) => {
-  const file = await db.queryOne<{ storage_key: string; file_name: string; mime_type: string; record_id: string | null }>(
-    `SELECT storage_key, file_name, mime_type, record_id FROM ipy_attachment WHERE id = $1`,
+  const file = await db.queryOne<{ storage_key: string; file_name: string; mime_type: string; record_id: string | null; variants: Record<string, string> | null }>(
+    `SELECT storage_key, file_name, mime_type, record_id, variants FROM ipy_attachment WHERE id = $1`,
     [req.params.attachmentId],
   );
   if (!file?.record_id) throw new NotFoundError('File not found');
@@ -261,11 +267,16 @@ publicRouter.get('/media/:attachmentId', asyncHandler(async (req, res) => {
   );
   if (!visible) throw new NotFoundError('File not found');
 
+  const requestedSize = typeof req.query.size === 'string' ? req.query.size : null;
+  const variantKey = requestedSize && VARIANT_SIZES.has(requestedSize) ? file.variants?.[requestedSize] : undefined;
+  const storageKey = variantKey ?? file.storage_key;
+  const mimeType = variantKey ? 'image/webp' : file.mime_type;
+
   const storage = getStorageSettings();
   if (storage.driver === 'local') {
-    const path = resolve(storage.localPath, file.storage_key);
+    const path = resolve(storage.localPath, storageKey);
     if (!path.startsWith(resolve(storage.localPath))) throw new NotFoundError('File not found');
-    res.setHeader('Content-Type', file.mime_type);
+    res.setHeader('Content-Type', mimeType);
     res.setHeader('Cache-Control', 'public, max-age=3600');
     res.sendFile(path, (err) => {
       if (err) {
@@ -276,32 +287,34 @@ publicRouter.get('/media/:attachmentId', asyncHandler(async (req, res) => {
     return;
   }
 
-  const data = await getDriver().then((driver) => driver.read(file.storage_key));
+  const data = await getDriver().then((driver) => driver.read(storageKey));
   if (!data) throw new NotFoundError('File is missing from storage');
-  res.setHeader('Content-Type', file.mime_type);
+  res.setHeader('Content-Type', mimeType);
   res.setHeader('Cache-Control', 'public, max-age=3600');
   res.send(data);
 }));
 
 // ---------------------------------------------------------------------------
 // Normalise stored `/api/files/:id` URLs (gallery, floor plans) into the
-// public media route, in whatever field on the row holds them.
+// public media route, requesting a specific derivative size — `medium` for
+// card/grid contexts (project & property lists, similar/units cards),
+// `large` for the record the visitor is actually looking at in detail.
 // ---------------------------------------------------------------------------
 
-function toPublicUrl(u: string): string {
+function toPublicUrl(u: string, size: 'medium' | 'large'): string {
   const m = /\/api\/files\/([^/?#]+)/.exec(u);
-  return m ? `/api/public/media/${m[1]}` : u;
+  return m ? `/api/public/media/${m[1]}?size=${size}` : u;
 }
 
-function toPublicMedia<T extends Record<string, unknown>>(row: T): T {
+function toPublicMedia<T extends Record<string, unknown>>(row: T, size: 'medium' | 'large' = 'medium'): T {
   const out: Record<string, unknown> = { ...row };
   for (const key of ['gallery', 'floor_plans'] as const) {
     const val = out[key];
-    if (Array.isArray(val)) out[key] = val.map((v) => (typeof v === 'string' ? toPublicUrl(v) : v));
+    if (Array.isArray(val)) out[key] = val.map((v) => (typeof v === 'string' ? toPublicUrl(v, size) : v));
   }
   for (const key of ['floor_plan_url', 'master_plan_url'] as const) {
     const val = out[key];
-    if (typeof val === 'string' && val) out[key] = toPublicUrl(val);
+    if (typeof val === 'string' && val) out[key] = toPublicUrl(val, size);
   }
   return out as T;
 }

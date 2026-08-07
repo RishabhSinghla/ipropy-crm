@@ -11,12 +11,28 @@ import { Link } from 'react-router-dom';
 import type { FieldMeta } from '@ipropy/shared';
 import { formatArea, formatDate, formatDateTime, formatIndianPrice, formatPhone } from '@ipropy/shared';
 import {
-  Check, ChevronDown, ExternalLink, Loader2, Mail, MapPin, Phone, Search, X,
+  Check, ChevronDown, ExternalLink, ImagePlus, Loader2, Mail, MapPin, Phone, Search, Video, X,
 } from 'lucide-react';
-import { api } from '../lib/api';
+import { api, tokenStore } from '../lib/api';
 import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
 import { Avatar, Badge, ScoreChip } from './ui';
+
+/**
+ * A plain <img src> can't carry the app's Authorization header, and
+ * GET /api/files/:id is permission-checked — so image previews use the same
+ * ?access_token= fallback requireAuth already supports for other embeds
+ * (see middleware/auth.ts's extractToken; api.ts's CSV export uses the same
+ * pattern). Without this, every gallery thumbnail 401s.
+ */
+function authedImageUrl(url: string, size?: 'thumb' | 'medium' | 'large'): string {
+  const params = new URLSearchParams();
+  if (size) params.set('size', size);
+  const token = tokenStore.get();
+  if (token) params.set('access_token', token);
+  const qs = params.toString();
+  return qs ? `${url}?${qs}` : url;
+}
 
 // ---------------------------------------------------------------------------
 // Read-only display
@@ -162,7 +178,13 @@ export function FieldValue({
       return (
         <span className="inline-flex gap-1">
           {urls.slice(0, 3).map((u, i) => (
-            <img key={i} src={String(u)} alt="" className="h-8 w-8 rounded object-cover" />
+            <img
+              key={i}
+              src={authedImageUrl(String(u), 'thumb')}
+              alt=""
+              className="h-8 w-8 rounded object-cover"
+              onError={(e) => { (e.target as HTMLImageElement).src = authedImageUrl(String(u)); }}
+            />
           ))}
         </span>
       );
@@ -198,6 +220,9 @@ export interface FieldInputProps {
   /** allowed values when a dependency narrows this picklist */
   restrictTo?: string[];
   autoFocus?: boolean;
+  /** record/module context for the 'image' uitype's uploads (permission check + attachment linkage) */
+  recordId?: string;
+  moduleName?: string;
 }
 
 export function FieldInput(props: FieldInputProps): JSX.Element {
@@ -376,6 +401,9 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
         />
       );
 
+    case 'image':
+      return <GalleryField {...props} readOnly={readOnly} />;
+
     case 'autonumber':
     case 'formula':
     case 'rollup':
@@ -523,6 +551,138 @@ function CurrencyInput({
         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-2xs text-slate-400">
           {formatIndianPrice(parse(text)!)}
         </span>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Gallery — the 'image' uitype. config.multiple: true (projects/properties'
+// gallery fields) stores an array of /api/files/:id URLs and accepts several
+// photos/videos at once (the plain <input accept="image/*,video/*" multiple>
+// is what makes iOS Safari offer "Take Photo or Video / Photo Library" —
+// no capture attribute, which would restrict to camera-only). A single
+// F.image() field (e.g. an org logo) is the same component with one slot.
+// Uploads go through the existing api.uploadFile → POST /api/files, which
+// now also enqueues async derivative generation (see core/media/pipeline.ts
+// server-side) — this component never waits on that, it just shows the
+// original immediately and the thumbnail swaps in once ready on next load.
+// ---------------------------------------------------------------------------
+
+function GalleryField({
+  field, value, onChange, readOnly, recordId, moduleName,
+}: FieldInputProps & { readOnly: boolean }): JSX.Element {
+  const multiple = Boolean(field.config.multiple);
+  const urls = useMemo<string[]>(() => {
+    if (multiple) return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+    return typeof value === 'string' && value ? [value] : [];
+  }, [value, multiple]);
+
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState<{ done: number; total: number } | null>(null);
+
+  async function handleFiles(fileList: FileList | null) {
+    if (!fileList?.length) return;
+    const files = Array.from(fileList);
+    setUploading({ done: 0, total: files.length });
+
+    const uploaded: string[] = [];
+    const CONCURRENCY = 3;
+    let cursor = 0;
+    async function worker() {
+      while (cursor < files.length) {
+        const file = files[cursor++];
+        try {
+          const res = await api.uploadFile(file, recordId, moduleName);
+          uploaded.push(res.url);
+        } catch {
+          toast.error(`Failed to upload ${file.name}`);
+        } finally {
+          setUploading((s) => (s ? { ...s, done: s.done + 1 } : s));
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, files.length) }, worker));
+
+    setUploading(null);
+    if (!uploaded.length) return;
+    onChange(multiple ? [...urls, ...uploaded] : uploaded[uploaded.length - 1]);
+  }
+
+  function remove(url: string) {
+    onChange(multiple ? urls.filter((u) => u !== url) : null);
+    const id = url.split('/').pop();
+    if (id) api.deleteFile(id).catch(() => undefined); // best-effort; the field value is the source of truth either way
+  }
+
+  return (
+    <div>
+      <div className="flex flex-wrap gap-2">
+        {urls.map((url) => (
+          <GalleryThumb key={url} url={url} onRemove={readOnly ? undefined : () => remove(url)} />
+        ))}
+
+        {!readOnly && (multiple || urls.length === 0) && (
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            disabled={Boolean(uploading)}
+            className="flex h-20 w-20 flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-300 text-slate-400 hover:border-brand-400 hover:text-brand-500 disabled:opacity-60 dark:border-slate-700"
+          >
+            {uploading ? <Loader2 size={18} className="animate-spin" /> : <ImagePlus size={18} />}
+            <span className="text-2xs">
+              {uploading ? `${uploading.done}/${uploading.total}` : 'Add'}
+            </span>
+          </button>
+        )}
+      </div>
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*,video/*"
+        multiple={multiple}
+        className="hidden"
+        onChange={(e) => { void handleFiles(e.target.files); e.target.value = ''; }}
+      />
+    </div>
+  );
+}
+
+function GalleryThumb({ url, onRemove }: { url: string; onRemove?: () => void }): JSX.Element {
+  const [isVideo, setIsVideo] = useState(false);
+  return (
+    <div className="group relative h-20 w-20 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800">
+      {isVideo ? (
+        <div className="flex h-full w-full items-center justify-center text-slate-400">
+          <Video size={22} />
+        </div>
+      ) : (
+        <img
+          src={authedImageUrl(url, 'thumb')}
+          alt=""
+          className="h-full w-full object-cover"
+          onError={(e) => {
+            // Not an image (a video attachment) or no derivative yet — the
+            // <img> tag can't render video, so fall back to a plain icon
+            // rather than a broken-image glyph.
+            if ((e.target as HTMLImageElement).src.includes('size=thumb')) {
+              (e.target as HTMLImageElement).src = authedImageUrl(url); // retry the original
+            } else {
+              setIsVideo(true);
+            }
+          }}
+        />
+      )}
+      {onRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label="Remove"
+          className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100"
+        >
+          <X size={12} />
+        </button>
       )}
     </div>
   );

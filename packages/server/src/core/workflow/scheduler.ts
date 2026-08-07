@@ -45,6 +45,7 @@ async function tick(): Promise<void> {
   try {
     await Promise.allSettled([
       drainQueue(),
+      drainMediaQueue(),
       runScheduledWorkflows(),
       housekeeping(),
     ]);
@@ -152,6 +153,70 @@ async function complete(id: number, status: string): Promise<void> {
     `UPDATE ipy_task_queue SET status = $2, completed_at = now(), locked_at = NULL, locked_by = NULL WHERE id = $1`,
     [id, status],
   );
+}
+
+// ---------------------------------------------------------------------------
+// 1b. Media processing queue (derivative images/video for uploaded attachments)
+//
+// Same claim/retry/backoff shape as the deferred task queue above, on its own
+// table (ipy_media_job) since these jobs aren't tied to a workflow/task.
+// Attachment-only, generic-purpose. See core/media/pipeline.ts for what a job
+// actually does — this function only owns claiming and retry bookkeeping.
+// ---------------------------------------------------------------------------
+
+interface MediaJobRow {
+  id: number;
+  attachment_id: string;
+  attempts: number;
+  max_attempts: number;
+}
+
+async function drainMediaQueue(batchSize = 20): Promise<void> {
+  const claimed = await transaction(async (tx) => {
+    const res = await tx.query<MediaJobRow>(
+      `WITH due AS (
+         SELECT id FROM ipy_media_job
+         WHERE status = 'pending'
+         ORDER BY created_at
+         LIMIT $1
+         FOR UPDATE SKIP LOCKED
+       )
+       UPDATE ipy_media_job j
+       SET status = 'running', locked_at = now(), locked_by = $2, attempts = j.attempts + 1
+       FROM due WHERE j.id = due.id
+       RETURNING j.id, j.attachment_id, j.attempts, j.max_attempts`,
+      [batchSize, WORKER_ID],
+    );
+    return res.rows;
+  });
+
+  if (!claimed.length) return;
+  logger.debug({ count: claimed.length }, 'processing media jobs');
+
+  for (const job of claimed) {
+    try {
+      const { processAttachment } = await import('../media/pipeline.js');
+      await processAttachment(job.attachment_id);
+      await db.query(
+        `UPDATE ipy_media_job SET status = 'done', completed_at = now(), locked_at = NULL, locked_by = NULL WHERE id = $1`,
+        [job.id],
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error({ err, jobId: job.id, attachmentId: job.attachment_id }, 'media job failed');
+      if (job.attempts >= job.max_attempts) {
+        await db.query(
+          `UPDATE ipy_media_job SET status = 'failed', last_error = $2, completed_at = now() WHERE id = $1`,
+          [job.id, message],
+        );
+      } else {
+        await db.query(
+          `UPDATE ipy_media_job SET status = 'pending', last_error = $2, locked_at = NULL, locked_by = NULL WHERE id = $1`,
+          [job.id, message],
+        );
+      }
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -368,6 +433,9 @@ async function expireWhatsAppWindows(): Promise<void> {
 async function pruneOldQueueRows(): Promise<void> {
   await db.query(
     `DELETE FROM ipy_task_queue WHERE status IN ('done','cancelled') AND completed_at < now() - interval '14 days'`,
+  );
+  await db.query(
+    `DELETE FROM ipy_media_job WHERE status = 'done' AND completed_at < now() - interval '14 days'`,
   );
   await db.query(`DELETE FROM ipy_workflow_log WHERE created_at < now() - interval '60 days'`);
   await db.query(`DELETE FROM ipy_session WHERE expires_at < now() - interval '7 days'`);

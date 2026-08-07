@@ -56,6 +56,11 @@ services:
       NODE_ENV: production
       ENABLE_SCHEDULER: "true"
       DATABASE_URL: postgres://ipropy:ipropy@db:5432/ipropy
+    volumes:
+      # Media jobs (core/media/pipeline.ts) run on this container and need to
+      # read/write the same local-disk attachments the app container uploads
+      # to — without this, background processing silently can't touch them.
+      - ipropy_storage:/app/storage
 
 volumes:
   ipropy_pgdata:

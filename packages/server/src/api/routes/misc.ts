@@ -4,6 +4,9 @@
  */
 import { Router } from 'express';
 import crypto from 'node:crypto';
+import { createReadStream } from 'node:fs';
+import { unlink } from 'node:fs/promises';
+import os from 'node:os';
 import { extname, resolve } from 'node:path';
 import multer from 'multer';
 import { z } from 'zod';
@@ -112,9 +115,22 @@ const upload = multer({
   limits: { fileSize: 25 * 1024 * 1024 },
 });
 
-const SAFE_EXT = /^\.[a-z0-9]{1,8}$/i;
+// Photos/videos shot on a phone can be huge — several minutes of 4K video
+// easily exceeds a GB. Disk-buffered (not memoryStorage) so multer never
+// holds the whole upload in process memory during the multipart parse, and
+// the route below streams straight from that temp file into storage
+// afterward (StorageDriver.save's Readable overload) rather than reading it
+// back into a Buffer. Deliberately a separate multer instance from `upload`
+// above, which CSV import also uses — this doesn't touch that path at all.
+const mediaUpload = multer({
+  storage: multer.diskStorage({ destination: os.tmpdir() }),
+  limits: { fileSize: 2 * 1024 * 1024 * 1024 },
+});
 
-miscRouter.post('/files', upload.single('file'), asyncHandler(async (req, res) => {
+const SAFE_EXT = /^\.[a-z0-9]{1,8}$/i;
+const MEDIA_MIME_PREFIXES = ['image/', 'video/'];
+
+miscRouter.post('/files', mediaUpload.single('file'), asyncHandler(async (req, res) => {
   const user = getUser(req);
   const scope = getScope(req);
   const file = (req as unknown as { file?: Express.Multer.File }).file;
@@ -123,6 +139,7 @@ miscRouter.post('/files', upload.single('file'), asyncHandler(async (req, res) =
   const recordId = typeof req.body.recordId === 'string' ? req.body.recordId : null;
   const module = typeof req.body.module === 'string' ? req.body.module : null;
   if (recordId && module && !(await canAccessRecord(scope, module, recordId, 'edit'))) {
+    await unlink(file.path).catch(() => undefined);
     throw new ForbiddenError('You cannot attach files to this record');
   }
 
@@ -131,7 +148,9 @@ miscRouter.post('/files', upload.single('file'), asyncHandler(async (req, res) =
   const safeExt = SAFE_EXT.test(ext) ? ext : '';
   const key = `${new Date().toISOString().slice(0, 7)}/${crypto.randomUUID()}${safeExt}`;
 
-  await getDriver().then((driver) => driver.save(key, file.buffer, file.mimetype));
+  const driver = await getDriver();
+  await driver.save(key, createReadStream(file.path), file.mimetype);
+  await unlink(file.path).catch(() => undefined);
 
   const row = await db.queryOne<{ id: string }>(
     `INSERT INTO ipy_attachment (record_id, file_name, mime_type, size, storage_key, url, category, uploaded_by)
@@ -142,6 +161,13 @@ miscRouter.post('/files', upload.single('file'), asyncHandler(async (req, res) =
     ],
   );
 
+  // Derivatives (resized/watermarked images, transcoded video) generate
+  // asynchronously so the upload response never waits on processing — see
+  // core/media/pipeline.ts, picked up by scheduler.ts's drainMediaQueue.
+  if (row?.id && MEDIA_MIME_PREFIXES.some((p) => file.mimetype.startsWith(p))) {
+    await db.query(`INSERT INTO ipy_media_job (attachment_id) VALUES ($1)`, [row.id]);
+  }
+
   res.status(201).json({
     id: row?.id,
     fileName: file.originalname,
@@ -151,10 +177,12 @@ miscRouter.post('/files', upload.single('file'), asyncHandler(async (req, res) =
   });
 }));
 
+const VARIANT_SIZES = new Set(['thumb', 'medium', 'large']);
+
 miscRouter.get('/files/:id', asyncHandler(async (req, res) => {
   const scope = getScope(req);
-  const file = await db.queryOne<{ storage_key: string; file_name: string; mime_type: string; record_id: string | null }>(
-    `SELECT storage_key, file_name, mime_type, record_id FROM ipy_attachment WHERE id = $1`,
+  const file = await db.queryOne<{ storage_key: string; file_name: string; mime_type: string; record_id: string | null; variants: Record<string, string> | null }>(
+    `SELECT storage_key, file_name, mime_type, record_id, variants FROM ipy_attachment WHERE id = $1`,
     [req.params.id],
   );
   if (!file) throw new NotFoundError('File not found');
@@ -168,13 +196,21 @@ miscRouter.get('/files/:id', asyncHandler(async (req, res) => {
     }
   }
 
+  // ?size=thumb|medium|large serves a generated derivative when one exists,
+  // falling back to the untouched original otherwise (not yet processed, or
+  // this attachment never had derivatives — e.g. a PDF).
+  const requestedSize = typeof req.query.size === 'string' ? req.query.size : null;
+  const variantKey = requestedSize && VARIANT_SIZES.has(requestedSize) ? file.variants?.[requestedSize] : undefined;
+  const storageKey = variantKey ?? file.storage_key;
+  const mimeType = variantKey ? 'image/webp' : file.mime_type;
+
   const storage = getStorageSettings();
   if (storage.driver === 'local') {
     // Preserve the streaming path for local storage.
-    const path = resolve(storage.localPath, file.storage_key);
+    const path = resolve(storage.localPath, storageKey);
     if (!path.startsWith(resolve(storage.localPath))) throw new ForbiddenError();
 
-    res.setHeader('Content-Type', file.mime_type);
+    res.setHeader('Content-Type', mimeType);
     res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(file.file_name)}"`);
     res.sendFile(path, (err) => {
       if (err) {
@@ -185,9 +221,9 @@ miscRouter.get('/files/:id', asyncHandler(async (req, res) => {
     return;
   }
 
-  const data = await getDriver().then((driver) => driver.read(file.storage_key));
+  const data = await getDriver().then((driver) => driver.read(storageKey));
   if (!data) throw new NotFoundError('File is missing from storage');
-  res.setHeader('Content-Type', file.mime_type);
+  res.setHeader('Content-Type', mimeType);
   res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(file.file_name)}"`);
   res.send(data);
 }));
