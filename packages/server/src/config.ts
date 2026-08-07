@@ -27,6 +27,11 @@ export const config = {
   appUrl: str('APP_URL', 'http://localhost:5173'),
   apiUrl: str('API_URL', 'http://localhost:4000'),
   logLevel: str('LOG_LEVEL', 'info'),
+  serveWeb: bool('SERVE_WEB', false),
+
+  sentry: {
+    dsn: str('SENTRY_DSN'),
+  },
 
   db: {
     url: str('DATABASE_URL', 'postgres://ipropy:ipropy@localhost:5432/ipropy'),
@@ -130,5 +135,28 @@ export const config = {
     locale: str('DEFAULT_LOCALE', 'en-IN'),
   },
 };
+
+const INSECURE_JWT_SECRETS = new Set([
+  'dev-only-insecure-secret-change-me',
+  'change-me-to-a-long-random-string',
+]);
+
+/**
+ * Fail-fast checks for production boot. Kept separate so both the API server
+ * and the scheduler worker refuse to start with a risky configuration.
+ */
+export function validateProductionConfig(): string[] {
+  const problems: string[] = [];
+  if (INSECURE_JWT_SECRETS.has(config.auth.jwtSecret)) {
+    problems.push('JWT_SECRET is still a known development default — generate a strong secret with `npm run secrets:generate`');
+  }
+  if (config.seed.demoData) {
+    problems.push('SEED_DEMO_DATA must be false in production (it would create demo users)');
+  }
+  if (config.whatsapp.provider === 'meta' && config.whatsapp.accessToken && !config.whatsapp.appSecret) {
+    problems.push('WHATSAPP_APP_SECRET is required in production to verify Meta webhook signatures');
+  }
+  return problems;
+}
 
 export type Config = typeof config;

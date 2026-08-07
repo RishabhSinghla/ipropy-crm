@@ -2,7 +2,12 @@ import type { NextFunction, Request, Response } from 'express';
 import { ZodError } from 'zod';
 import { AppError } from '../utils/errors.js';
 import { logger } from '../utils/logger.js';
+import { reportError } from '../utils/errorReporter.js';
 import { config } from '../config.js';
+
+function reqId(req: Request): string | undefined {
+  return (req as Request & { id?: string }).id;
+}
 
 export function notFound(req: Request, res: Response): void {
   res.status(404).json({
@@ -45,9 +50,10 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
 
   if (err instanceof AppError) {
     if (err.status >= 500) {
-      logger.error({ err, path: req.path, userId: req.user?.id }, 'request failed');
+      logger.error({ err, path: req.path, requestId: reqId(req), userId: req.user?.id }, 'request failed');
+      reportError(err, { path: req.path, requestId: reqId(req), userId: req.user?.id });
     } else {
-      logger.debug({ code: err.code, path: req.path }, err.message);
+      logger.debug({ code: err.code, path: req.path, requestId: reqId(req) }, err.message);
     }
     res.status(err.status).json({
       error: err.code,
@@ -59,12 +65,13 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
 
   const pg = translatePgError(err as { code?: string });
   if (pg) {
-    logger.warn({ err, path: req.path }, 'database constraint violation');
+    logger.warn({ err, path: req.path, requestId: reqId(req) }, 'database constraint violation');
     res.status(pg.status).json({ error: pg.code, message: pg.message });
     return;
   }
 
-  logger.error({ err, path: req.path, userId: req.user?.id }, 'unhandled error');
+  logger.error({ err, path: req.path, requestId: reqId(req), userId: req.user?.id }, 'unhandled error');
+  reportError(err, { path: req.path, requestId: reqId(req), userId: req.user?.id });
   res.status(500).json({
     error: 'internal_error',
     message: 'Something went wrong on our end.',

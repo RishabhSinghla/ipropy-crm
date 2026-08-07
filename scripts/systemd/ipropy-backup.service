@@ -1,0 +1,10 @@
+[Unit]
+Description=iPropy database backup (oneshot)
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+# Adjust to your deploy directory; requires npm + node on PATH.
+WorkingDirectory=/opt/ipropy-crm
+ExecStart=/usr/bin/npm run db:backup

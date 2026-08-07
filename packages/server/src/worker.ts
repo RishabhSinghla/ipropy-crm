@@ -1,27 +1,31 @@
-import { createServer } from 'node:http';
+/**
+ * Standalone scheduler worker.
+ *
+ * Runs the same in-process tick as the API server (`core/workflow/scheduler.ts`)
+ * but without Express/Socket.IO, so production can run a dedicated worker
+ * container. Queue claims are FOR UPDATE SKIP LOCKED, so an extra worker is
+ * always safe; the docker-compose setup keeps the API's scheduler off.
+ */
 import { mkdir } from 'node:fs/promises';
 import { config, validateProductionConfig } from './config.js';
 import { logger } from './utils/logger.js';
-import { createApp } from './app.js';
 import { checkConnection, closePool } from './db/pool.js';
 import { registry } from './core/metadata/registry.js';
 import { warmup as warmupIntegrationSettings } from './core/settings/integrations.js';
 import { registerWorkflowHandlers } from './core/workflow/engine.js';
 import { startScheduler, stopScheduler } from './core/workflow/scheduler.js';
-import { initRealtime, closeRealtime } from './realtime.js';
 
 async function main(): Promise<void> {
-  logger.info('starting iPropy CRM server…');
+  logger.info('starting iPropy worker…');
 
   if (!(await checkConnection())) {
     logger.error(
       { url: config.db.url.replace(/:[^:@]+@/, ':***@') },
-      'cannot reach the database — start Postgres (docker compose up -d db) and check DATABASE_URL',
+      'cannot reach the database — check DATABASE_URL',
     );
     process.exit(1);
   }
 
-  // Fail loudly rather than shipping development defaults to production.
   if (config.isProd) {
     const problems = validateProductionConfig();
     if (problems.length) {
@@ -42,29 +46,16 @@ async function main(): Promise<void> {
   }
 
   registerWorkflowHandlers();
-
-  const app = createApp();
-  const server = createServer(app);
-  initRealtime(server);
   startScheduler();
 
-  server.listen(config.port, () => {
-    logger.info(`iPropy API listening on http://localhost:${config.port}`);
-    logger.info(`   health:  http://localhost:${config.port}/api/health`);
-    logger.info(`   web app: ${config.appUrl}`);
-    if (!config.ai.apiKey) {
-      logger.warn('   ANTHROPIC_API_KEY is not set — AI features fall back to rule-based behaviour');
-    }
-  });
+  // The scheduler's timer is unref'd so tests/CLI exit cleanly; a real worker
+  // must keep the process alive instead.
+  setInterval(() => undefined, 86_400_000);
 
   const shutdown = (signal: string): void => {
-    logger.info({ signal }, 'shutting down…');
+    logger.info({ signal }, 'worker shutting down…');
     stopScheduler();
-    closeRealtime();
-    server.close(() => {
-      void closePool().then(() => process.exit(0));
-    });
-    // Don't hang forever on a stuck connection.
+    void closePool().then(() => process.exit(0));
     setTimeout(() => process.exit(1), 10_000).unref();
   };
 
@@ -80,6 +71,6 @@ async function main(): Promise<void> {
 }
 
 void main().catch((err) => {
-  logger.fatal({ err }, 'failed to start');
+  logger.fatal({ err }, 'failed to start worker');
   process.exit(1);
 });

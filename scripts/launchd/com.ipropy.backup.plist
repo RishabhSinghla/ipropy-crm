@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS (launchd) daily backup for local/dev iPropy databases.
+
+  Install:
+    cp scripts/launchd/com.ipropy.backup.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.ipropy.backup.plist
+
+  Adjust the ProgramArguments path to this repo. Runs daily at 02:00.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ipropy.backup</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/env</string>
+    <string>bash</string>
+    <string>/Users/rishabhsinghla/Downloads/iPropy-crm/scripts/db-backup.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>2</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/tmp/ipropy-backup.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/ipropy-backup.err.log</string>
+</dict>
+</plist>

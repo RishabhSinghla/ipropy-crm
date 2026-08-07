@@ -17,15 +17,46 @@ services:
       timeout: 5s
       retries: 10
 
-  redis:
-    image: redis:7-alpine
-    container_name: ipropy-redis
+  # Containerised app + worker. Behind the `app` profile so local dev
+  # (`docker compose up -d db`) is unaffected — bring the full stack up with
+  # `docker compose --profile app up -d --build`.
+  app:
+    image: ipropy-crm:latest
+    build:
+      context: .
+    profiles: ["app"]
     restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      SERVE_WEB: "true"
+      ENABLE_SCHEDULER: "false"
+      # Inside the compose network Postgres is reachable by service name.
+      DATABASE_URL: postgres://ipropy:ipropy@db:5432/ipropy
     ports:
-      - "6379:6379"
+      - "4000:4000"
     volumes:
-      - ipropy_redisdata:/data
+      - ipropy_storage:/app/storage
+
+  worker:
+    image: ipropy-crm:latest
+    build:
+      context: .
+    profiles: ["app"]
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    command: ["npm", "run", "start:worker"]
+    environment:
+      NODE_ENV: production
+      ENABLE_SCHEDULER: "true"
+      DATABASE_URL: postgres://ipropy:ipropy@db:5432/ipropy
 
 volumes:
   ipropy_pgdata:
-  ipropy_redisdata:
+  ipropy_storage:
