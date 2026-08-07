@@ -26,6 +26,12 @@ export const publicRouter = Router();
 const PUBLIC_PROJECT_STATUSES = ['New Launch', 'Under Construction', 'Nearing Possession', 'Ready To Move'];
 const PUBLIC_PROPERTY_STATUS = 'Available';
 
+// publish_to_web (db/seed/modules.ts) is a JSON-storage custom field,
+// default true — an admin can hide a specific record from the website
+// without changing its status. Absent key (pre-existing records, never
+// re-saved since the field was added) is treated as the default: visible.
+const publishClause = (alias: string) => `(${alias}.custom_fields->>'publish_to_web' IS NULL OR ${alias}.custom_fields->>'publish_to_web' = 'true')`;
+
 // Never build ORDER BY from raw query input — a fixed whitelist keeps it injection-safe.
 const PROJECT_SORTS: Record<string, string> = {
   possession: 'p.possession_date ASC NULLS LAST',
@@ -71,7 +77,7 @@ const PROPERTY_FIELDS = `
 // ---------------------------------------------------------------------------
 
 publicRouter.get('/projects', asyncHandler(async (req, res) => {
-  const conds: string[] = [`p.status = ANY($1)`];
+  const conds: string[] = [`p.status = ANY($1)`, publishClause('p')];
   const params: unknown[] = [PUBLIC_PROJECT_STATUSES];
 
   const push = (sql: string, value: unknown) => { params.push(value); conds.push(sql.replace('?', `$${params.length}`)); };
@@ -112,7 +118,7 @@ publicRouter.get('/projects/:id', asyncHandler(async (req, res) => {
     `SELECT ${PROJECT_FIELDS}
      FROM ipy_e_projects p
      LEFT JOIN ipy_e_organizations d ON d.record_id = p.developer_id
-     WHERE p.record_id = $1 AND p.status = ANY($2)`,
+     WHERE p.record_id = $1 AND p.status = ANY($2) AND ${publishClause('p')}`,
     [req.params.id, PUBLIC_PROJECT_STATUSES],
   );
   if (!project) throw new NotFoundError('Project not found');
@@ -121,7 +127,7 @@ publicRouter.get('/projects/:id', asyncHandler(async (req, res) => {
     `SELECT ${PROPERTY_FIELDS}
      FROM ipy_e_properties u
      LEFT JOIN ipy_e_projects pr ON pr.record_id = u.project_id
-     WHERE u.project_id = $1 AND u.status = $2
+     WHERE u.project_id = $1 AND u.status = $2 AND ${publishClause('u')}
      ORDER BY u.total_price ASC NULLS LAST`,
     [req.params.id, PUBLIC_PROPERTY_STATUS],
   );
@@ -130,7 +136,7 @@ publicRouter.get('/projects/:id', asyncHandler(async (req, res) => {
     `SELECT ${PROJECT_FIELDS}
      FROM ipy_e_projects p
      LEFT JOIN ipy_e_organizations d ON d.record_id = p.developer_id
-     WHERE p.record_id <> $1 AND p.status = ANY($2) AND p.city = $3
+     WHERE p.record_id <> $1 AND p.status = ANY($2) AND p.city = $3 AND ${publishClause('p')}
      ORDER BY p.possession_date ASC NULLS LAST
      LIMIT 4`,
     [req.params.id, PUBLIC_PROJECT_STATUSES, (project as { city: string | null }).city],
@@ -148,7 +154,7 @@ publicRouter.get('/projects/:id', asyncHandler(async (req, res) => {
 // ---------------------------------------------------------------------------
 
 publicRouter.get('/properties', asyncHandler(async (req, res) => {
-  const conds: string[] = [`u.status = $1`];
+  const conds: string[] = [`u.status = $1`, publishClause('u')];
   const params: unknown[] = [PUBLIC_PROPERTY_STATUS];
 
   const push = (sql: string, value: unknown) => { params.push(value); conds.push(sql.replace('?', `$${params.length}`)); };
@@ -189,7 +195,7 @@ publicRouter.get('/properties/:id', asyncHandler(async (req, res) => {
     `SELECT ${PROPERTY_FIELDS}
      FROM ipy_e_properties u
      LEFT JOIN ipy_e_projects pr ON pr.record_id = u.project_id
-     WHERE u.record_id = $1 AND u.status = $2`,
+     WHERE u.record_id = $1 AND u.status = $2 AND ${publishClause('u')}`,
     [req.params.id, PUBLIC_PROPERTY_STATUS],
   );
   if (!unit) throw new NotFoundError('Property not found');
@@ -214,6 +220,24 @@ publicRouter.get('/filters', asyncHandler(async (_req, res) => {
   res.json(grouped);
 }));
 
+// City summaries for the website's /cities landing pages — one aggregate
+// query rather than the site looping a `city=` filter per picklist value.
+publicRouter.get('/cities', asyncHandler(async (_req, res) => {
+  const rows = await db.query<{ city: string; project_count: number; unit_count: number; price_min: number | null; price_max: number | null }>(
+    `SELECT p.city,
+            COUNT(DISTINCT p.record_id)::int AS project_count,
+            COALESCE(SUM(p.available_units), 0)::int AS unit_count,
+            MIN(p.price_min) AS price_min,
+            MAX(p.price_max) AS price_max
+     FROM ipy_e_projects p
+     WHERE p.status = ANY($1) AND ${publishClause('p')} AND p.city IS NOT NULL
+     GROUP BY p.city
+     ORDER BY project_count DESC`,
+    [PUBLIC_PROJECT_STATUSES],
+  );
+  res.json({ items: rows.rows });
+}));
+
 // ---------------------------------------------------------------------------
 // Media — the CRM's own /api/files/:id requires auth. Gallery/floor-plan
 // fields on projects/properties store URLs of that same shape
@@ -230,9 +254,9 @@ publicRouter.get('/media/:attachmentId', asyncHandler(async (req, res) => {
   if (!file?.record_id) throw new NotFoundError('File not found');
 
   const visible = await db.queryOne(
-    `SELECT 1 FROM ipy_e_projects WHERE record_id = $1 AND status = ANY($2)
+    `SELECT 1 FROM ipy_e_projects WHERE record_id = $1 AND status = ANY($2) AND ${publishClause('ipy_e_projects')}
      UNION ALL
-     SELECT 1 FROM ipy_e_properties WHERE record_id = $1 AND status = $3`,
+     SELECT 1 FROM ipy_e_properties WHERE record_id = $1 AND status = $3 AND ${publishClause('ipy_e_properties')}`,
     [file.record_id, PUBLIC_PROJECT_STATUSES, PUBLIC_PROPERTY_STATUS],
   );
   if (!visible) throw new NotFoundError('File not found');

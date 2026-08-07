@@ -435,6 +435,10 @@ export const MODULES: ModuleDef[] = [
           F.url('master_plan_url', 'Master Plan'),
           F.image('gallery', 'Gallery', { config: { multiple: true } }),
           F.json('floor_plans', 'Floor Plans'),
+          F.bool('publish_to_web', 'Show on Website', {
+            storage: 'json', default: true, quickCreate: true,
+            help: 'Whether this project appears on the public property website, in addition to the usual status-based visibility.',
+          }),
         ],
       },
       { name: 'more', label: 'Description', collapsed: true, fields: [F.textarea('description', 'Description', { searchable: true })] },
@@ -586,6 +590,10 @@ export const MODULES: ModuleDef[] = [
           F.url('video_url', 'Video'),
           F.url('virtual_tour_url', 'Virtual Tour'),
           F.textarea('description', 'Description', { searchable: true }),
+          F.bool('publish_to_web', 'Show on Website', {
+            storage: 'json', default: true, quickCreate: true,
+            help: 'Whether this unit appears on the public property website, in addition to the usual status-based visibility.',
+          }),
         ],
       },
     ],
