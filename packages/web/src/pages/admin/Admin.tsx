@@ -57,14 +57,39 @@ const SECTIONS = [
 
 export default function AdminPage(): JSX.Element {
   return (
-    <div className="flex h-full">
-      <nav className="w-56 shrink-0 overflow-y-auto border-r border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-        <div className="mb-4 flex items-center gap-2 px-1">
+    // A fixed 14rem rail is fine on a desktop and ruinous on a phone: it left
+    // about 160px for the panel, which wrapped every label a character at a
+    // time. Below `lg` the same destinations become a horizontally scrolling
+    // strip above full-width content.
+    <div className="flex h-full min-w-0 flex-col lg:flex-row">
+      <nav className="shrink-0 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 lg:w-56 lg:overflow-y-auto lg:border-b-0 lg:border-r lg:p-3">
+        <div className="mb-4 hidden items-center gap-2 px-1 lg:flex">
           <Settings2 className="h-4 w-4 text-slate-400" />
           <h2 className="text-sm font-semibold">Admin</h2>
         </div>
 
-        <div className="space-y-4">
+        {/* Mobile: one flat scrolling strip. The group headings are dropped
+            rather than repeated — 12 destinations are quicker to scan in a row
+            than 4 headings are to read. */}
+        <div className="flex gap-1 overflow-x-auto px-2 py-2 lg:hidden">
+          {SECTIONS.flatMap((s) => s.items).map((item) => (
+            <NavLink
+              key={item.path}
+              to={`/admin/${item.path}`}
+              className={({ isActive }) => cn(
+                'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                isActive
+                  ? 'border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-950/50 dark:text-brand-300'
+                  : 'border-slate-200 text-slate-600 dark:border-slate-700 dark:text-slate-300',
+              )}
+            >
+              <item.icon className="h-3.5 w-3.5 shrink-0" />
+              {item.label}
+            </NavLink>
+          ))}
+        </div>
+
+        <div className="hidden space-y-4 lg:block">
           {SECTIONS.map((section) => (
             <div key={section.group}>
               <p className="mb-1 px-3 text-2xs font-semibold uppercase tracking-wider text-muted">

@@ -121,22 +121,25 @@ export default function ReportsPage(): JSX.Element {
           <div className="mt-3">
             <label className="label">Measures</label>
             <div className="space-y-1.5">
+              {/* Three fixed-width controls plus a button came to ~470px in a
+                  non-wrapping row, which scrolled a phone sideways. They now
+                  share the line and wrap. */}
               {aggregates.map((agg, i) => (
-                <div key={i} className="flex items-center gap-2">
+                <div key={i} className="flex flex-wrap items-center gap-2">
                   <Select
                     value={agg.fn}
                     onChange={(fn) => setAggregates(aggregates.map((a, j) => j === i ? { ...a, fn: fn as Aggregate['fn'] } : a))}
                     options={['count', 'sum', 'avg', 'min', 'max'].map((f) => ({ value: f, label: f.toUpperCase() }))}
-                    className="w-28 py-1.5 text-xs"
+                    className="w-24 py-1.5 text-xs sm:w-28"
                   />
                   <Select
                     value={agg.field}
                     onChange={(field) => setAggregates(aggregates.map((a, j) => j === i ? { ...a, field } : a))}
                     options={numericFields.map((f) => ({ value: f.name, label: f.label }))}
-                    className="w-44 py-1.5 text-xs"
+                    className="min-w-[8rem] flex-1 py-1.5 text-xs sm:w-44 sm:flex-none"
                   />
                   <input
-                    className="input w-40 py-1.5 text-xs"
+                    className="input min-w-[7rem] flex-1 py-1.5 text-xs sm:w-40 sm:flex-none"
                     placeholder="Column label"
                     value={agg.label ?? ''}
                     onChange={(e) => setAggregates(aggregates.map((a, j) => j === i ? { ...a, label: e.target.value } : a))}

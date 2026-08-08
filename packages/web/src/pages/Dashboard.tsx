@@ -106,9 +106,12 @@ export default function DashboardPage(): JSX.Element {
     <div className="p-4 sm:p-6">
       <DigestBanner />
 
-      <div className="mb-4 mt-5 flex flex-wrap items-start gap-3">
+      {/* Title and controls stack on a phone. Sharing one flex row meant a
+          name like "Collections & Finance" wrapped *behind* the button group,
+          and in edit mode the third button pushed the title apart entirely. */}
+      <div className="mb-4 mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start">
         <div className="min-w-0 flex-1">
-          <h1 className="text-xl font-semibold tracking-tight">{dashboard?.name ?? 'Dashboard'}</h1>
+          <h1 className="text-lg font-semibold tracking-tight sm:text-xl">{dashboard?.name ?? 'Dashboard'}</h1>
           {dashboard?.description && (
             <p className="text-sm text-muted">{dashboard.description}</p>
           )}
@@ -121,7 +124,7 @@ export default function DashboardPage(): JSX.Element {
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="-mx-1 flex shrink-0 items-center gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
           <Dropdown
             align="left"
             trigger={
