@@ -145,8 +145,11 @@ packages/web/src/components/FieldRenderer.tsx      metadata → UI
 
 ## Known open issues (details in PROJECT_HANDOVER.md §8)
 
-* Production hardening is not done: `JWT_SECRET` is the dev default, `WHATSAPP_APP_SECRET` is unset,
-  no scheduled backups, nothing deployed.
+* Deployed on Render from `render.yaml` (see `DEPLOYMENT.md`); every push to `main` redeploys.
+  Production generates its own `JWT_SECRET` and sets `SEED_DEMO_DATA=false` — that gate must stay
+  false, since the demo seed creates ~12 users sharing a password published in this repo. **Local
+  dev still uses the committed defaults**, so never point a dev `.env` at the deployed database.
+* `WHATSAPP_APP_SECRET` is unset and there are no scheduled backups.
 * Speech-to-text, email IMAP inbound, rollup fields and the Channel Partner portal shipped as
   graceful-degradation features — they need real credentials/keys to be exercised end-to-end.
 * Dashboard drag-to-resize is wired (react-grid-layout on desktop, persisted via `saveDashboardLayout`).
