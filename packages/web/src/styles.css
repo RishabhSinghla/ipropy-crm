@@ -153,8 +153,18 @@
   @apply text-sm leading-relaxed text-slate-700 dark:text-slate-300;
 }
 .prose-ai strong { @apply font-semibold text-slate-900 dark:text-slate-100; }
+.prose-ai em { @apply italic; }
 .prose-ai ul { @apply my-2 list-disc space-y-1 pl-5; }
 .prose-ai p + p { @apply mt-2; }
+/* Headings, links and code arrived with the document viewer: renderMarkdown
+   emits them now that it renders real .md files, not just short AI answers. */
+.prose-ai h1 { @apply mb-2 mt-4 text-lg font-semibold text-slate-900 first:mt-0 dark:text-slate-100; }
+.prose-ai h2 { @apply mb-1.5 mt-3.5 text-base font-semibold text-slate-900 first:mt-0 dark:text-slate-100; }
+.prose-ai h3 { @apply mb-1 mt-3 text-sm font-semibold text-slate-900 first:mt-0 dark:text-slate-100; }
+.prose-ai a { @apply text-brand-600 underline underline-offset-2 hover:text-brand-700 dark:text-brand-400; }
+.prose-ai code { @apply rounded bg-slate-100 px-1 py-0.5 font-mono text-xs dark:bg-slate-800; }
+.prose-ai pre { @apply my-2 overflow-x-auto rounded-lg bg-slate-100 p-3 dark:bg-slate-800; }
+.prose-ai pre code { @apply bg-transparent p-0; }
 
 /* Dashboard drag/resize grid (react-grid-layout). These selectors are
    prefixed with .react-grid-layout so they win over react-grid-layout's own

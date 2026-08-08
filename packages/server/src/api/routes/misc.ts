@@ -304,6 +304,11 @@ miscRouter.get('/files/:id', asyncHandler(async (req, res) => {
   // ?size=thumb|medium|large serves a generated derivative when one exists,
   // falling back to the untouched original otherwise (not yet processed, or
   // this attachment never had derivatives — e.g. a PDF).
+  // ?download=1 forces a save instead of an in-tab render. The viewer needs
+  // both: `inline` for the preview iframe, `attachment` for its download
+  // button, and the browser will not re-request the same URL for the other.
+  const disposition = req.query.download === '1' ? 'attachment' : 'inline';
+
   const requestedSize = typeof req.query.size === 'string' ? req.query.size : null;
   const variantKey = requestedSize && VARIANT_SIZES.has(requestedSize) ? file.variants?.[requestedSize] : undefined;
   const storageKey = variantKey ?? file.storage_key;
@@ -316,7 +321,7 @@ miscRouter.get('/files/:id', asyncHandler(async (req, res) => {
     if (!path.startsWith(resolve(storage.localPath))) throw new ForbiddenError();
 
     res.setHeader('Content-Type', mimeType);
-    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(file.file_name)}"`);
+    res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(file.file_name)}"`);
     res.sendFile(path, (err) => {
       if (err) {
         logger.warn({ err, id: req.params.id }, 'file stream failed');

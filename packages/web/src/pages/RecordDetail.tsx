@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FieldMeta, ModuleMeta, RecordEnvelope, TimelineEntry } from '@ipropy/shared';
 import { formatIndianPrice, relativeTime } from '@ipropy/shared';
 import {
-  Activity, Check, ChevronDown, FileQuestion, ChevronLeft, ChevronRight, Download, Edit3, FileText, LayoutDashboard,
+  Activity, Check, ChevronDown, Eye, FileQuestion, ChevronLeft, ChevronRight, Download, Edit3, FileText, LayoutDashboard,
   Link2, MessageCircle, MoreHorizontal, Paperclip, Phone, Plus, RefreshCw, Search, Send, Sparkles,
   Star, Trash2, UserCheck, X,
 } from 'lucide-react';
@@ -23,6 +23,7 @@ import {
 } from '../components/ui';
 import { ModuleIcon } from '../components/Layout';
 import ConvertLeadModal from '../components/ConvertLeadModal';
+import DocumentViewer, { isPreviewable, type ViewableFile } from '../components/DocumentViewer';
 import ComposeModal from '../components/ComposeModal';
 
 export default function RecordDetail(): JSX.Element {
@@ -852,6 +853,25 @@ function FilesTab({ module, id }: { module: string; id: string }): JSX.Element {
     queryFn: () => api.files(id),
   });
   const [uploading, setUploading] = useState(false);
+  const [preview, setPreview] = useState<ViewableFile | null>(null);
+
+  // The API returns snake_case rows; the viewer takes a narrow shape. Both are
+  // needed here — the list still shows uploader and date, which the viewer
+  // has no use for.
+  const raw = useMemo(
+    () => new Map((data ?? []).map((f) => {
+      const row = f as { id: string; size: number; created_at: string; uploaded_by_name: string | null };
+      return [row.id, row];
+    })),
+    [data],
+  );
+  const viewables: ViewableFile[] = useMemo(
+    () => (data ?? []).map((f) => {
+      const row = f as { id: string; file_name: string; size: number; mime_type: string };
+      return { id: row.id, fileName: row.file_name, mimeType: row.mime_type, fileSize: row.size };
+    }),
+    [data],
+  );
 
   const upload = async (file: File): Promise<void> => {
     setUploading(true);
@@ -888,26 +908,51 @@ function FilesTab({ module, id }: { module: string; id: string }): JSX.Element {
         <EmptyState icon={<Paperclip className="h-8 w-8" />} title="No files" body="Attach brochures, KYC documents or agreements." />
       ) : (
         <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-          {data.map((f) => {
-            const file = f as { id: string; file_name: string; size: number; mime_type: string; created_at: string; uploaded_by_name: string | null };
+          {viewables.map((file) => {
+            const meta = raw.get(file.id)!;
+            const previewable = isPreviewable(file);
             return (
               <li key={file.id} className="flex items-center gap-3 p-3">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800">
                   <FileText className="h-4 w-4 text-slate-500" />
                 </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{file.file_name}</p>
-                  <p className="text-2xs text-muted">
-                    {(file.size / 1024).toFixed(0)} KB · {file.uploaded_by_name ?? 'Unknown'} · {relativeTime(file.created_at)}
+                <button
+                  type="button"
+                  onClick={() => setPreview(file)}
+                  className="min-w-0 flex-1 text-left"
+                  title={previewable ? 'Open preview' : 'No in-browser preview — opens with the reason'}
+                >
+                  <p className="truncate text-sm font-medium hover:text-brand-600 dark:hover:text-brand-400">
+                    {file.fileName}
                   </p>
-                </div>
-                <a href={`/api/files/${file.id}`} target="_blank" rel="noreferrer" className="btn-ghost btn-sm">
+                  <p className="text-2xs text-muted">
+                    {(meta.size / 1024).toFixed(0)} KB · {meta.uploaded_by_name ?? 'Unknown'} · {relativeTime(meta.created_at)}
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreview(file)}
+                  className="btn-ghost btn-sm"
+                  aria-label={`Preview ${file.fileName}`}
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                </button>
+                <a href={`/api/files/${file.id}?download=1`} className="btn-ghost btn-sm" aria-label={`Download ${file.fileName}`}>
                   <Download className="h-3.5 w-3.5" />
                 </a>
               </li>
             );
           })}
         </ul>
+      )}
+
+      {preview && (
+        <DocumentViewer
+          file={preview}
+          files={viewables}
+          onNavigate={setPreview}
+          onClose={() => setPreview(null)}
+        />
       )}
     </div>
   );
