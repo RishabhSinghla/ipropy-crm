@@ -62,6 +62,37 @@ miscRouter.get('/unseen-counts', asyncHandler(async (req, res) => {
   res.json(await unseenCounts(getScope(req)));
 }));
 
+/**
+ * Branding and the company's own social links.
+ *
+ * Separate from `/api/admin/settings`, which requires the admin.settings
+ * capability — every user needs the sidebar's social bar and the brand line,
+ * and none of this is sensitive. Writes still go through the admin route.
+ */
+miscRouter.get('/brand', asyncHandler(async (_req, res) => {
+  const rows = await db.query<{ key: string; value: unknown }>(
+    `SELECT key, value FROM ipy_setting
+     WHERE key IN ('brand.tagline', 'social.links', 'org.name', 'org.logo_url', 'org.phone', 'org.email')`,
+  );
+  const map = new Map(rows.rows.map((r) => [r.key, r.value]));
+
+  const rawLinks = map.get('social.links');
+  const links = Array.isArray(rawLinks) ? rawLinks as { platform?: string; label?: string; url?: string }[] : [];
+
+  res.json({
+    orgName: (map.get('org.name') as string) ?? 'iPropy',
+    logoUrl: (map.get('org.logo_url') as string) ?? null,
+    phone: (map.get('org.phone') as string) ?? null,
+    email: (map.get('org.email') as string) ?? null,
+    tagline: (map.get('brand.tagline') as string) ?? null,
+    // Only http(s) leaves the server: these are admin-editable and end up in an
+    // href, where a `javascript:` value would run in the app's origin.
+    socialLinks: links
+      .filter((l) => typeof l.url === 'string' && /^https?:\/\//i.test(l.url))
+      .map((l) => ({ platform: String(l.platform ?? 'link'), label: String(l.label ?? l.platform ?? 'Link'), url: l.url as string })),
+  });
+}));
+
 // ---------------------------------------------------------------------------
 // Browser push — one subscription per device, so a person may hold several
 // (laptop Chrome, Android Chrome, iOS home-screen PWA).

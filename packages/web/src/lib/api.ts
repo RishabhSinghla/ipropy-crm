@@ -351,6 +351,18 @@ export const api = {
   // --- misc ---------------------------------------------------------------
   search: (q: string) => get<{ id: string; module: string; moduleLabel: string; label: string }[]>(`/api/search${qs({ q })}`),
   recent: () => get<{ id: string; label: string; module_name: string }[]>('/api/recent'),
+  // --- branding & the company's own social accounts ------------------------
+  /** Public: the sign-in screen renders before there is a session. */
+  publicBrand: () => get<{
+    orgName: string; tagline: string | null;
+    socialLinks: { platform: string; label: string; url: string }[];
+  }>('/api/public/brand'),
+  brand: () => get<{
+    orgName: string; logoUrl: string | null; phone: string | null; email: string | null;
+    tagline: string | null;
+    socialLinks: { platform: string; label: string; url: string }[];
+  }>('/api/brand'),
+
   // --- browser push --------------------------------------------------------
   pushKey: () => get<{ publicKey: string }>('/api/push/key'),
   pushSubscribe: (sub: { endpoint: string; keys: { p256dh: string; auth: string } }) =>

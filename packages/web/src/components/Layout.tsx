@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Bell, Building2, ChevronLeft, LogOut, Menu, Moon, Search, Settings, Shield, Sparkles, Sun, X,
+  Bell, Building2, ChevronLeft, Facebook, Globe, Instagram, Linkedin, LogOut, Menu,
+  MessageCircle, Moon, Search, Settings, Shield, Sparkles, Sun, Twitter, X, Youtube,
 } from 'lucide-react';
 import { useApp } from '../lib/store';
 import { api } from '../lib/api';
@@ -41,6 +42,13 @@ export default function Layout(): JSX.Element {
     refetchInterval: 60_000,
   });
 
+  const { data: brand } = useQuery({
+    queryKey: ['brand'],
+    queryFn: () => api.brand(),
+    enabled: Boolean(user),
+    staleTime: 10 * 60_000,
+  });
+
   const grouped = useMemo(
     () => groupModules(modules.filter((m) => m.showInMenu && m.isEntity && m.permissions.view)),
     [modules],
@@ -70,7 +78,14 @@ export default function Layout(): JSX.Element {
               <Building2 className="h-4.5 w-4.5" />
             </div>
             {!sidebarCollapsed && (
-              <span className="truncate text-base font-semibold tracking-tight">iPropy</span>
+              <span className="min-w-0">
+                <span className="block truncate text-base font-semibold leading-tight tracking-tight">
+                  {brand?.orgName ?? 'iPropy'}
+                </span>
+                {brand?.tagline && (
+                  <span className="block truncate text-[10px] leading-tight text-muted">{brand.tagline}</span>
+                )}
+              </span>
             )}
           </Link>
           <button
@@ -128,6 +143,8 @@ export default function Layout(): JSX.Element {
         </nav>
 
         <div className="shrink-0 border-t border-slate-200 p-2 dark:border-slate-800">
+          <SocialBar collapsed={sidebarCollapsed} />
+
           {user?.isAdmin && (
             <NavItem to="/admin" icon="shield" label="Admin" collapsed={sidebarCollapsed} />
           )}
@@ -249,6 +266,61 @@ function NavItem({
       {!collapsed && badge}
     </NavLink>
   );
+}
+
+/**
+ * One-click links to the company's own social accounts.
+ *
+ * Lives in the sidebar footer rather than a settings page because the job it
+ * serves is reactive — someone comments on the Instagram post, you open it now.
+ * Admin-editable (Admin → Brand), so a wrong or dead handle is a text field to
+ * fix, not a deploy.
+ */
+function SocialBar({ collapsed }: { collapsed: boolean }): JSX.Element | null {
+  const { data: brand } = useQuery({
+    queryKey: ['brand'],
+    queryFn: () => api.brand(),
+    staleTime: 10 * 60_000,
+  });
+
+  const links = brand?.socialLinks ?? [];
+  if (!links.length) return null;
+
+  // Collapsed rail is 4.25rem — a row of icons would wrap or clip, so the bar
+  // is simply not shown there; expanding brings it back.
+  if (collapsed) return null;
+
+  return (
+    <div className="mb-1 flex flex-wrap items-center gap-0.5 px-1 pb-1">
+      {links.map((link) => (
+        <a
+          key={link.url}
+          href={link.url}
+          target="_blank"
+          rel="noreferrer noopener"
+          title={`${link.label} — opens in a new tab`}
+          aria-label={link.label}
+          className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-brand-600 dark:hover:bg-slate-800 dark:hover:text-brand-400"
+        >
+          <SocialIcon platform={link.platform} />
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function SocialIcon({ platform }: { platform: string }): JSX.Element {
+  const className = 'h-4 w-4';
+  switch (platform) {
+    case 'instagram': return <Instagram className={className} />;
+    case 'facebook': return <Facebook className={className} />;
+    case 'x':
+    case 'twitter': return <Twitter className={className} />;
+    case 'linkedin': return <Linkedin className={className} />;
+    case 'youtube': return <Youtube className={className} />;
+    case 'whatsapp': return <MessageCircle className={className} />;
+    default: return <Globe className={className} />;
+  }
 }
 
 /** Count of records in a module this user has never opened. */

@@ -2,7 +2,7 @@ import { Suspense, lazy } from 'react';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {
   Activity, Blocks, Database, GitBranch, Globe, KeyRound, Layers, LayoutTemplate,
-  ListTree, Plug, Settings2, Shield, Sliders, ToggleLeft, Users, Workflow,
+  ListTree, Plug, Settings2, Shield, Sliders, Sparkles, ToggleLeft, Users, Workflow,
 } from 'lucide-react';
 import { Spinner } from '../../components/ui';
 import { cn } from '../../lib/utils';
@@ -18,6 +18,7 @@ const WorkflowAdmin = lazy(() => import('./WorkflowAdmin'));
 const IntegrationsAdmin = lazy(() => import('./IntegrationsAdmin'));
 const SystemAdmin = lazy(() => import('./SystemAdmin'));
 const ImportAdmin = lazy(() => import('./ImportAdmin'));
+const BrandAdmin = lazy(() => import('./BrandAdmin'));
 
 const SECTIONS = [
   {
@@ -48,6 +49,7 @@ const SECTIONS = [
     group: 'Platform',
     items: [
       { path: 'integrations', label: 'Integrations', icon: Plug, element: <IntegrationsAdmin /> },
+      { path: 'brand', label: 'Brand & Social', icon: Sparkles, element: <BrandAdmin /> },
       { path: 'system', label: 'System & Audit', icon: Activity, element: <SystemAdmin /> },
     ],
   },
