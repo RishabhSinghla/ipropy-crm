@@ -155,6 +155,30 @@ miscRouter.get('/push/devices', asyncHandler(async (req, res) => {
   res.json(rows.rows);
 }));
 
+/** The most recent SEO audit, plus the score trend for a sparkline. */
+miscRouter.get('/seo/audit', asyncHandler(async (_req, res) => {
+  const latest = await db.queryOne(
+    `SELECT site_url, pages_checked, score, findings, checked_at
+     FROM ipy_seo_audit ORDER BY checked_at DESC LIMIT 1`,
+  );
+  const history = await db.query(
+    `SELECT score, checked_at FROM ipy_seo_audit ORDER BY checked_at DESC LIMIT 30`,
+  );
+  res.json({ latest, history: history.rows.reverse() });
+}));
+
+/** Run the audit now instead of waiting for the daily tick. */
+miscRouter.post('/seo/audit/run', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.settings');
+  const { runSeoAudit } = await import('../../core/seo/audit.js');
+  const result = await runSeoAudit();
+  if (!result) {
+    res.json({ ok: false, message: 'Set the public website URL in Admin → Settings first.' });
+    return;
+  }
+  res.json({ ok: true, ...result });
+}));
+
 miscRouter.get('/starred', asyncHandler(async (req, res) => {
   const rows = await db.query(
     `SELECT r.id, r.label, r.module_name, r.record_number
