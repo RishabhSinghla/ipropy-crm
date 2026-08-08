@@ -1277,4 +1277,77 @@ export const MODULES: ModuleDef[] = [
       { name: 'KYC Documents', columns: ['title', 'document_type', 'related_to', 'created_at'], filter: { logic: 'AND', conditions: [{ field: 'document_type', operator: 'contains', value: 'KYC' }] } },
     ],
   },
+
+  // =========================================================================
+  // Blog — written here, published to the public website.
+  //
+  // An ordinary module rather than a bolted-on CMS, so posts get list views,
+  // roles, sharing rules, workflows and custom fields for free, and the
+  // website keeps reading everything from one API.
+  // =========================================================================
+  {
+    name: 'blog_posts',
+    label: 'Blog',
+    singular: 'Post',
+    table: 'ipy_e_blog_posts',
+    icon: 'newspaper',
+    color: '#0ea5e9',
+    sequence: 115,
+    menuGroup: 'Marketing',
+    labelFields: ['title'],
+    pipelineField: 'status',
+    blocks: [
+      {
+        name: 'post',
+        label: 'Post',
+        fields: [
+          F.autonum('post_number', 'Post #', 'BLOG-'),
+          F.text('title', 'Title', { mandatory: true, quickCreate: true, searchable: true }),
+          // Left blank the publish hook derives it from the title; stored, not
+          // derived on read, so renaming a post never breaks a live URL.
+          F.text('slug', 'URL slug', { help: 'Leave blank to generate from the title. Changing this breaks existing links.' }),
+          F.pick('status', 'Status', 'blog_status', { mandatory: true, quickCreate: true }),
+          F.pick('category', 'Category', 'blog_category', { quickCreate: true }),
+          F.textarea('excerpt', 'Excerpt', { searchable: true, help: 'One or two sentences. Used on cards, in search results and as the fallback meta description.' }),
+          F.textarea('body', 'Body (Markdown)', { searchable: true }),
+          F.image('cover_image_url', 'Cover image'),
+          F.ref('project_id', 'Related project', ['projects']),
+          F.datetime('published_at', 'Publish at', { help: 'Set a future time and the post goes live by itself.' }),
+          F.owner(),
+        ],
+      },
+      {
+        name: 'seo',
+        label: 'Search & AI visibility',
+        collapsed: true,
+        fields: [
+          F.text('seo_title', 'SEO title', { help: 'Falls back to the post title. Aim for under 60 characters.' }),
+          F.textarea('seo_description', 'Meta description', { help: 'Falls back to the excerpt. Aim for 150–160 characters.' }),
+          F.text('seo_keywords', 'Focus keywords', { help: 'Comma-separated. Used by the daily SEO audit to check the post actually covers them.' }),
+          F.text('canonical_url', 'Canonical URL', { help: 'Only if this was published somewhere else first.' }),
+          // The answer-engine half: a quotable answer and FAQ pairs are what
+          // AI assistants and rich results actually lift.
+          F.textarea('key_takeaway', 'Key takeaway', { help: 'One self-contained sentence answering the reader’s question — this is what AI assistants quote.' }),
+          F.bool('noindex', 'Hide from search engines'),
+        ],
+      },
+      {
+        name: 'stats',
+        label: 'Stats',
+        collapsed: true,
+        fields: [
+          F.num('word_count', 'Word count', { readonly: true }),
+          F.num('reading_minutes', 'Reading time (min)', { readonly: true }),
+          F.num('view_count', 'Views', { readonly: true }),
+        ],
+      },
+    ],
+    views: [
+      { name: 'All Posts', isDefault: true, columns: ['post_number', 'title', 'status', 'category', 'published_at', 'owner_id'], sortBy: 'published_at', sortDir: 'desc' },
+      { name: 'Drafts', columns: ['title', 'category', 'owner_id', 'updated_at'], sortBy: 'updated_at', sortDir: 'desc', filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'equals', value: 'Draft' }] } },
+      { name: 'Published', columns: ['title', 'category', 'published_at', 'view_count'], sortBy: 'published_at', sortDir: 'desc', filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'equals', value: 'Published' }] } },
+      { name: 'Scheduled', columns: ['title', 'published_at', 'owner_id'], sortBy: 'published_at', sortDir: 'asc', filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'equals', value: 'Scheduled' }] } },
+    ],
+  },
+
 ];

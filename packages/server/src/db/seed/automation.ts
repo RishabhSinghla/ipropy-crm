@@ -28,6 +28,17 @@ interface WorkflowSeed {
 }
 
 const WORKFLOWS: WorkflowSeed[] = [
+  // --- Blog ------------------------------------------------------------------
+  {
+    module: 'blog_posts',
+    name: 'Prepare blog post',
+    description: 'Fills in the URL slug, word count, reading time and publish date. Runs on every save so a post is always publishable.',
+    trigger: 'on_create_or_modify',
+    executionMode: 'always',
+    tasks: [
+      { type: 'prepare_blog_post', name: 'Derive slug, reading time and publish date', config: {} },
+    ],
+  },
   // --- Lead intake -----------------------------------------------------------
   {
     module: 'leads',
