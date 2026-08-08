@@ -648,7 +648,7 @@ function MobileRecordCard({
             const field = fieldMap.get(col)!;
             return (
               <div key={col} className="flex items-start gap-2 text-xs">
-                <dt className="w-28 shrink-0 truncate text-slate-400">{field.label}</dt>
+                <dt className="w-28 shrink-0 truncate text-muted">{field.label}</dt>
                 <dd className="min-w-0 flex-1">
                   {module.permissions.edit && isInlineEditable(field) ? (
                     <EditableField

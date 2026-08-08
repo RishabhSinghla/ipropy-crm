@@ -63,7 +63,11 @@ export default function Layout(): JSX.Element {
               <span className="truncate text-base font-semibold tracking-tight">iPropy</span>
             )}
           </Link>
-          <button onClick={() => setMobileOpen(false)} className="btn-ghost ml-auto p-1.5 lg:hidden">
+          <button
+            onClick={() => setMobileOpen(false)}
+            className="btn-ghost ml-auto p-1.5 lg:hidden"
+            aria-label="Close menu"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -132,7 +136,11 @@ export default function Layout(): JSX.Element {
       {/* Main */}
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-3 dark:border-slate-800 dark:bg-slate-900 sm:px-4">
-          <button onClick={() => setMobileOpen(true)} className="btn-ghost p-2 lg:hidden">
+          <button
+            onClick={() => setMobileOpen(true)}
+            className="btn-ghost p-2 lg:hidden"
+            aria-label="Open menu"
+          >
             <Menu className="h-4.5 w-4.5" />
           </button>
 

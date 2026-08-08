@@ -47,7 +47,10 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'], storageState: STORAGE_STATE },
       dependencies: ['setup'],
-      testIgnore: /auth\.setup\.ts/,
+      // mobile.spec.ts asserts phone-only layout (card list instead of table,
+      // off-canvas drawer), so running it at desktop width would assert the
+      // opposite of what is correct there.
+      testIgnore: [/auth\.setup\.ts/, /mobile\.spec\.ts/],
     },
     // The team will use this on phones, so the critical path is checked at
     // phone size too — that is where the list becomes cards and the sidebar
