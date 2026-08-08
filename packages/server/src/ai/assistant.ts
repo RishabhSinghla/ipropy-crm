@@ -154,6 +154,60 @@ export interface AskResult {
   chart?: unknown;
 }
 
+
+/**
+ * Answer a question that is not a record query.
+ *
+ * "Which leads should I call today?", "how is the month going?", "what should
+ * I focus on?" are all reasonable things to ask a CRM and none of them reduce
+ * to a filter. Rather than telling the user to rephrase, this hands the model
+ * the same working set the daily digest builds — the person's own overdue
+ * follow-ups, today's visits, hot leads, at-risk deals and headline numbers —
+ * and lets it answer in plain language.
+ *
+ * Everything is fetched through listRecords under the caller's own scope, so
+ * the assistant can never mention a record the person is not allowed to see.
+ */
+async function answerFromWorkspace(question: string, ctx: ServiceContext): Promise<AskResult> {
+  const digest = await dailyDigest(ctx).catch(() => null);
+
+  const priorities = (digest?.priorities ?? [])
+    .slice(0, 10)
+    .map((p) => `- ${p.title}${p.reason ? ` (${p.reason})` : ''}`)
+    .join('\n');
+
+  const answer = await complete({
+    feature: 'ask_crm_general',
+    system: `${REAL_ESTATE_SYSTEM}
+
+You are answering inside the CRM for ${ctx.user.fullName}. Use only the figures and records given below. If the data does not support an answer, say so and name the one thing that would.`,
+    prompt: `Question: "${question}"
+
+## Their numbers right now
+${JSON.stringify(digest?.stats ?? {}, null, 2)}
+
+## What is on their plate
+${priorities || '(nothing flagged)'}
+
+Answer in 2-5 sentences, in plain British English. Be specific: name records and numbers from the data above. If they asked what to do, give an ordered list of concrete next actions. Never invent a record, a name or a figure that is not shown here.`,
+    fast: true,
+    maxTokens: 800,
+    userId: ctx.user.id,
+  });
+
+  if (!answer?.text.trim()) {
+    // Every provider failed. Say what is true rather than blaming the question.
+    const stats = digest?.stats;
+    return {
+      answer: stats
+        ? `I could not reach the AI provider just now. From your data directly: ${stats.openLeads} open leads, ${stats.overdueFollowups} overdue follow-ups, ${stats.visitsToday} visits today.`
+        : 'I could not reach the AI provider just now. Check Admin → Integrations.',
+    };
+  }
+
+  return { answer: answer.text.trim() };
+}
+
 export async function ask(
   question: string,
   ctx: ServiceContext,
@@ -170,7 +224,11 @@ export async function ask(
 
   const query = await parseNaturalQuery(question, ctx);
   if (!query) {
-    return { answer: "I couldn't turn that into a query. Try naming the module — for example \"show me leads in Whitefield above 1.5 Cr\"." };
+    // Not every question is a query. "Which leads should I call today?",
+    // "how is the month going?" and "what should I do about Riya?" are all
+    // reasonable things to ask a CRM assistant and none of them parse into a
+    // filter — and being told to rephrase is a worse answer than an answer.
+    return answerFromWorkspace(question, ctx);
   }
 
   let results: ListResult | undefined;

@@ -13,7 +13,9 @@
  */
 import Anthropic from '@anthropic-ai/sdk';
 import { config } from '../config.js';
-import { getAiProviderSettings, getSettings, type AiProvider } from '../core/settings/integrations.js';
+import {
+  getAiFallbackChain, getAiProviderSettings, getSettings, type AiProvider,
+} from '../core/settings/integrations.js';
 import { db } from '../db/pool.js';
 import { logger } from '../utils/logger.js';
 
@@ -110,28 +112,54 @@ export interface CompleteResult {
   model: string;
 }
 
+/**
+ * Run a completion, falling through to the next configured provider if the
+ * chosen one fails outright.
+ *
+ * The failure this prevents is real and was hard to diagnose from the UI: an
+ * OpenAI-compatible entry pointing at `http://localhost:…` was left active on
+ * a deployed server, so it won provider selection, every request failed, and a
+ * working Gemini key sat unused behind it. The panel showed "Active" and the
+ * assistant just said it couldn't help.
+ *
+ * Only whole-provider failures fall through (unreachable host, bad key,
+ * retired model). A provider that answers is trusted — retrying elsewhere on a
+ * merely unhelpful answer would double the bill for no gain.
+ */
 export async function complete(opts: CompleteOptions): Promise<CompleteResult | null> {
-  const ai = getSettings().ai;
-  if (!ai.enabled || ai.provider === 'none') return null;
+  const settings = getSettings().ai;
+  if (!settings.enabled) return null;
 
-  const model = opts.fast ? ai.fastModel : ai.model;
-  const maxTokens = opts.maxTokens ?? ai.maxTokens;
-  const temperature = opts.temperature ?? 0.2;
-  const started = Date.now();
+  const chain = getAiFallbackChain();
+  if (!chain.length) return null;
 
-  try {
-    const result = ai.provider === 'anthropic'
-      ? await callAnthropic(ai.apiKey, model, maxTokens, temperature, opts)
-      : await callOpenAiCompatible(ai.baseUrl, ai.apiKey, model, maxTokens, temperature, opts);
+  let lastError = 'No provider answered.';
 
-    await logCall(opts, result, Date.now() - started, true, null);
-    return result;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    logger.error({ err, feature: opts.feature, provider: ai.provider, model }, 'AI call failed');
-    await logCall(opts, null, Date.now() - started, false, message);
-    return null;
+  for (const [index, ai] of chain.entries()) {
+    const model = opts.fast ? ai.fastModel : ai.model;
+    const maxTokens = opts.maxTokens ?? ai.maxTokens;
+    const temperature = opts.temperature ?? 0.2;
+    const started = Date.now();
+
+    try {
+      const result = ai.provider === 'anthropic'
+        ? await callAnthropic(ai.apiKey, model, maxTokens, temperature, opts)
+        : await callOpenAiCompatible(ai.baseUrl, ai.apiKey, model, maxTokens, temperature, opts);
+
+      await logCall(opts, result, Date.now() - started, true, null);
+      if (index > 0) {
+        logger.warn({ feature: opts.feature, provider: ai.provider }, 'primary AI provider failed; answered from fallback');
+      }
+      return result;
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+      logger.error({ err, feature: opts.feature, provider: ai.provider, model }, 'AI call failed');
+      await logCall(opts, null, Date.now() - started, false, lastError);
+    }
   }
+
+  logger.error({ feature: opts.feature, tried: chain.map((c) => c.provider) }, 'every AI provider failed');
+  return null;
 }
 
 async function callAnthropic(

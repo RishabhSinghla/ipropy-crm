@@ -164,6 +164,20 @@ function pick(row: IntegrationRow | undefined, source: 'config' | 'credentials',
 }
 
 /**
+ * Same as `pick`, but ignores the active toggle.
+ *
+ * "Test connection" must read the key saved on *that card*, active or not.
+ * With `pick`, a provider that was toggled off reported "An API key is
+ * required" while the field right above it said "Saved (••••1234)" — a
+ * contradiction on screen, and no way to test a provider before enabling it.
+ * Choosing which provider goes live still respects the toggle; only reading
+ * one provider's own settings ignores it.
+ */
+function pickStored(row: IntegrationRow | undefined, source: 'config' | 'credentials', key: string, envFallback: string): string {
+  return row?.[source]?.[key] || envFallback;
+}
+
+/**
  * Which LLM the CRM talks to.
  *
  * Anthropic is the reference implementation but not a requirement: every other
@@ -203,10 +217,13 @@ const AI_ENV_DEFAULTS: Record<Exclude<AiProvider, 'none'>, { apiKey: string; mod
 function aiCandidate(
   map: Map<string, IntegrationRow>,
   provider: Exclude<AiProvider, 'none'>,
+  /** read the card's own saved settings even if it is toggled off */
+  ignoreToggle = false,
 ): ResolvedSettings['ai'] | null {
   const row = map.get(aiRowKey(provider));
   const env = AI_ENV_DEFAULTS[provider];
-  const apiKey = pick(row, 'credentials', 'apiKey', env.apiKey);
+  const read = ignoreToggle ? pickStored : pick;
+  const apiKey = read(row, 'credentials', 'apiKey', env.apiKey);
   // Ollama is the one provider that is legitimately keyless, so it counts as
   // configured when its row is switched on rather than when a secret exists.
   const configured = provider === 'ollama'
@@ -219,10 +236,10 @@ function aiCandidate(
     apiKey,
     baseUrl: provider === 'anthropic'
       ? ''
-      : (pick(row, 'config', 'baseUrl', AI_BASE_URLS[provider]) || AI_BASE_URLS[provider]),
-    model: pick(row, 'config', 'model', env.model) || env.model,
-    fastModel: pick(row, 'config', 'fastModel', env.fastModel) || env.fastModel,
-    maxTokens: Number(pick(row, 'config', 'maxTokens', String(config.ai.maxTokens))) || config.ai.maxTokens,
+      : (read(row, 'config', 'baseUrl', AI_BASE_URLS[provider]) || AI_BASE_URLS[provider]),
+    model: read(row, 'config', 'model', env.model) || env.model,
+    fastModel: read(row, 'config', 'fastModel', env.fastModel) || env.fastModel,
+    maxTokens: Number(read(row, 'config', 'maxTokens', String(config.ai.maxTokens))) || config.ai.maxTokens,
   };
 }
 
@@ -232,7 +249,58 @@ function aiCandidate(
  * admin clicked, not whatever the CRM happens to be using.
  */
 export function getAiProviderSettings(provider: Exclude<AiProvider, 'none'>): ResolvedSettings['ai'] | null {
-  return aiCandidate(rows, provider);
+  return aiCandidate(rows, provider, true);
+}
+
+/**
+ * Every provider that has enough configuration to be usable, best first.
+ *
+ * `complete()` walks this so one misconfigured provider cannot take the whole
+ * AI layer down — which is exactly what happened when an OpenAI-compatible
+ * entry pointing at `http://localhost:…` was left active on a deployed server:
+ * it won resolution, every call failed, and a perfectly good Gemini key sat
+ * unused behind it.
+ */
+export function getAiFallbackChain(): ResolvedSettings['ai'][] {
+  const chosen = snapshot.ai;
+  const chain: ResolvedSettings['ai'][] = [];
+  const seen = new Set<AiProvider>();
+
+  const add = (candidate: ResolvedSettings['ai'] | null): void => {
+    if (!candidate || seen.has(candidate.provider) || isUnreachable(candidate)) return;
+    seen.add(candidate.provider);
+    chain.push(candidate);
+  };
+
+  if (chosen.provider !== 'none') add(chosen);
+  for (const provider of AI_PROVIDER_ORDER) add(aiCandidate(rows, provider));
+
+  // Last resort: providers that hold a usable key but are switched off. Being
+  // unable to answer while holding a working key is worse than quietly using
+  // it, and the toggle is still honoured as a preference — a disabled provider
+  // is only reached once every enabled one has failed.
+  for (const provider of AI_PROVIDER_ORDER) add(aiCandidate(rows, provider, true));
+
+  return chain;
+}
+
+/**
+ * A loopback address cannot be reached from a hosted server.
+ *
+ * This is not hypothetical: an OpenAI-compatible entry pointing at
+ * `http://localhost:20128/v1` was left active on the deployed CRM, won
+ * provider selection, and made every AI feature fail while the panel cheerfully
+ * reported "Active". In development it is a perfectly normal setup (Ollama,
+ * a local proxy), so the rule only applies in production.
+ */
+function isUnreachable(candidate: ResolvedSettings['ai']): boolean {
+  if (!config.isProd || !candidate.baseUrl) return false;
+  try {
+    const host = new URL(candidate.baseUrl).hostname;
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '0.0.0.0';
+  } catch {
+    return true; // an unparseable base URL cannot be called either
+  }
 }
 
 function resolveAi(map: Map<string, IntegrationRow>): ResolvedSettings['ai'] {
