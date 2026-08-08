@@ -136,6 +136,7 @@ export default function Layout(): JSX.Element {
               </p>
             )}
             <div className="space-y-0.5">
+              <NavItem to="/studio" icon="wand-2" label="Studio" collapsed={sidebarCollapsed} />
               <NavItem to="/inventory" icon="layout-grid" label="Inventory Board" collapsed={sidebarCollapsed} />
               <NavItem to="/reports" icon="bar-chart-3" label="Reports" collapsed={sidebarCollapsed} />
             </div>

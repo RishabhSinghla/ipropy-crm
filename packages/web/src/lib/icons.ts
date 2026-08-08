@@ -26,10 +26,11 @@
 import {
   AlertCircle, BarChart3, Box, Briefcase, Building, Building2, CalendarCheck, CheckCircle2, Circle,
   CircleDashed, ClipboardList, Contact, FileSignature, FileText, Flag, FolderOpen, Gift, Hammer,
-  Handshake, Home, Key, Landmark, LayoutDashboard, LayoutGrid, Mail, Map, MapPinned, Megaphone,
+  Handshake, Home, Key, Landmark, LayoutDashboard, LayoutGrid, Mail, Map, MapPinned, Megaphone, Newspaper,
   MessageCircle, MessageSquare, Package, Paperclip, Pencil, Phone, PhoneMissed, PlusCircle,
   ReceiptIndianRupee, Shield, Sparkles, Star, Ticket, Trash2, Truck, Users, Wrench,
 } from 'lucide-react';
+import { Wand2 } from 'lucide-react';
 import type { ComponentType } from 'react';
 
 export type IconComponent = ComponentType<{ className?: string }>;
@@ -86,6 +87,8 @@ const REGISTRY: Record<string, IconComponent> = {
   // Navigation entries that pass a name through the same resolver
   'layout-dashboard': LayoutDashboard,
   'layout-grid': LayoutGrid,
+  'wand-2': Wand2,
+  newspaper: Newspaper,
   'bar-chart-3': BarChart3,
 };
 
