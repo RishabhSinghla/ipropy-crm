@@ -9,6 +9,22 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # The integration suite needs a real Postgres; it provisions its own
+    # scratch database inside this one (see tests/integration/globalSetup.ts).
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ipropy
+          POSTGRES_PASSWORD: ipropy
+          POSTGRES_DB: ipropy
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    env:
+      DATABASE_URL: postgres://ipropy:ipropy@localhost:5432/ipropy
+      JWT_SECRET: ci-secret-long-enough-to-pass-the-production-startup-checks
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -21,5 +37,7 @@ jobs:
         run: npm run typecheck
       - name: Build
         run: npm run build
-      - name: Test
+      - name: Unit tests
         run: npm test
+      - name: Integration tests
+        run: npm run test:integration

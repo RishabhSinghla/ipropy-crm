@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FieldMeta, ModuleMeta, RecordEnvelope, TimelineEntry } from '@ipropy/shared';
 import { formatIndianPrice, relativeTime } from '@ipropy/shared';
 import {
-  Activity, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Edit3, FileText, LayoutDashboard,
+  Activity, Check, ChevronDown, FileQuestion, ChevronLeft, ChevronRight, Download, Edit3, FileText, LayoutDashboard,
   Link2, MessageCircle, MoreHorizontal, Paperclip, Phone, Plus, RefreshCw, Search, Send, Sparkles,
   Star, Trash2, UserCheck, X,
 } from 'lucide-react';
@@ -42,7 +42,7 @@ export default function RecordDetail(): JSX.Element {
     enabled: Boolean(moduleName),
   });
 
-  const { data: record, isLoading, refetch } = useQuery({
+  const { data: record, isLoading, error, refetch } = useQuery({
     queryKey: ['record', moduleName, id],
     queryFn: () => api.record(moduleName!, id!),
     enabled: Boolean(moduleName && id),
@@ -91,6 +91,39 @@ export default function RecordDetail(): JSX.Element {
     mutationFn: (starred: boolean) => api.star(moduleName!, id!, starred),
     onSuccess: () => void refetch(),
   });
+
+  // A failed load has to be distinguishable from a slow one. Previously this
+  // condition swallowed both: on a 404/403 the query settles with no data, so
+  // `isLoading` goes false while `record` stays undefined and the page sat on
+  // loading skeletons forever, telling the user nothing and offering no way
+  // back. Deleted records are a normal way to reach this — someone follows a
+  // stale link from a notification or a colleague's message.
+  if (error) {
+    const status = (error as { status?: number }).status;
+    return (
+      <div className="p-4 sm:p-6">
+        <EmptyState
+          icon={<FileQuestion className="h-10 w-10" />}
+          title={status === 404 ? 'This record no longer exists' : 'Could not open this record'}
+          body={status === 404
+            ? 'It may have been deleted, or the link may be out of date.'
+            : status === 403
+              ? 'You do not have permission to view this record.'
+              : 'Something went wrong loading it. Please try again.'}
+          action={(
+            <div className="flex gap-2">
+              <button className="btn-secondary btn-sm" onClick={() => navigate(`/${moduleName}`)}>
+                Back to {meta?.label ?? 'list'}
+              </button>
+              {status !== 404 && status !== 403 && (
+                <button className="btn-primary btn-sm" onClick={() => void refetch()}>Try again</button>
+              )}
+            </div>
+          )}
+        />
+      </div>
+    );
+  }
 
   if (isLoading || !meta || !record) {
     return (

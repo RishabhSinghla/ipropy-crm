@@ -238,10 +238,17 @@ export interface FieldInputProps {
   /** record/module context for the 'image' uitype's uploads (permission check + attachment linkage) */
   recordId?: string;
   moduleName?: string;
+  /**
+   * DOM id for the rendered control, so a caller's <label htmlFor> actually
+   * points at something. RecordForm has always emitted `f_<field>` labels;
+   * without this they referenced nothing, leaving every form field unlabelled
+   * for screen readers and unfindable by accessible name.
+   */
+  id?: string;
 }
 
 export function FieldInput(props: FieldInputProps): JSX.Element {
-  const { field, value, onChange, error, disabled, restrictTo, autoFocus } = props;
+  const { field, value, onChange, error, disabled, restrictTo, autoFocus, id } = props;
   const readOnly = disabled || field.isReadonly || field.displayType === 'readonly';
 
   const options = useMemo(() => {
@@ -255,6 +262,7 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
     case 'textarea':
       return (
         <textarea
+          id={id}
           className={inputClass}
           rows={(field.config.rows as number) ?? 3}
           value={String(value ?? '')}
@@ -268,6 +276,7 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
     case 'richtext':
       return (
         <textarea
+          id={id}
           className={cn(inputClass, 'font-mono text-xs')}
           rows={(field.config.rows as number) ?? 6}
           value={String(value ?? '')}
@@ -284,6 +293,7 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
     case 'score':
       return (
         <input
+          id={id}
           type="number"
           className={cn(inputClass, 'tnum')}
           value={value === null || value === undefined ? '' : String(value)}
@@ -301,6 +311,7 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
       return (
         <label className="inline-flex cursor-pointer items-center gap-2 py-1.5">
           <input
+            id={id}
             type="checkbox"
             className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
             checked={Boolean(value)}
@@ -314,6 +325,7 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
     case 'date':
       return (
         <input
+          id={id}
           type="date"
           className={inputClass}
           value={value ? String(value).slice(0, 10) : ''}
@@ -326,6 +338,7 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
     case 'datetime':
       return (
         <input
+          id={id}
           type="datetime-local"
           className={inputClass}
           value={value ? toLocalInput(String(value)) : ''}
@@ -338,6 +351,7 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
     case 'time':
       return (
         <input
+          id={id}
           type="time" className={inputClass} value={String(value ?? '')}
           onChange={(e) => onChange(e.target.value || null)} disabled={readOnly}
         />
@@ -347,6 +361,7 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
       return (
         <div className="relative">
           <select
+            id={id}
             className={cn(inputClass, 'appearance-none pr-8')}
             value={String(value ?? '')}
             onChange={(e) => onChange(e.target.value || null)}
@@ -379,6 +394,7 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
     case 'email':
       return (
         <input
+          id={id}
           type="email" className={inputClass} value={String(value ?? '')}
           onChange={(e) => onChange(e.target.value || null)} disabled={readOnly}
           placeholder="name@example.com" autoFocus={autoFocus}
@@ -388,6 +404,7 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
     case 'phone':
       return (
         <input
+          id={id}
           type="tel" className={cn(inputClass, 'tnum')} value={String(value ?? '')}
           onChange={(e) => onChange(e.target.value || null)} disabled={readOnly}
           placeholder="+91 98765 43210" autoFocus={autoFocus}
@@ -397,6 +414,7 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
     case 'url':
       return (
         <input
+          id={id}
           type="url" className={inputClass} value={String(value ?? '')}
           onChange={(e) => onChange(e.target.value || null)} disabled={readOnly}
           placeholder="https://" autoFocus={autoFocus}
@@ -433,6 +451,7 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
     default:
       return (
         <input
+          id={id}
           className={inputClass}
           value={String(value ?? '')}
           onChange={(e) => onChange(e.target.value || null)}
@@ -458,7 +477,7 @@ function toLocalInput(iso: string): string {
 // ---------------------------------------------------------------------------
 
 function CurrencyInput({
-  value, onChange, readOnly, className,
+  value, onChange, readOnly, className, id,
 }: FieldInputProps & { readOnly: boolean; className: string }): JSX.Element {
   const [text, setText] = useState(value === null || value === undefined ? '' : String(value));
   const [focused, setFocused] = useState(false);
@@ -486,6 +505,7 @@ function CurrencyInput({
     <div className="relative">
       <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">₹</span>
       <input
+        id={id}
         className={cn(className, 'pl-7 tnum')}
         value={focused ? text : (value ? formatIndianPrice(Number(value)).replace('₹', '') : '')}
         onFocus={() => { setFocused(true); setText(value ? String(value) : ''); }}

@@ -11,3 +11,8 @@ coverage/
 .vite/
 *.tsbuildinfo
 backups/
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/

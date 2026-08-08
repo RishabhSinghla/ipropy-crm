@@ -249,6 +249,7 @@ export default function RecordForm({
                       {field.isMandatory && <span className="ml-0.5 text-red-500">*</span>}
                     </label>
                     <FieldInput
+                      id={`f_${field.name}`}
                       field={field}
                       value={values[field.name]}
                       onChange={(v) => setValue(field.name, v)}
