@@ -77,8 +77,8 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
   ],
   ai_gemini: [
     { key: 'apiKey', label: 'API Key', source: 'credentials', secret: true },
-    { key: 'model', label: 'Model', source: 'config', placeholder: 'gemini-2.5-flash' },
-    { key: 'fastModel', label: 'Fast model', source: 'config', placeholder: 'gemini-2.5-flash-lite' },
+    { key: 'model', label: 'Model', source: 'config', placeholder: 'gemini-flash-latest' },
+    { key: 'fastModel', label: 'Fast model', source: 'config', placeholder: 'gemini-flash-lite-latest' },
   ],
   ai_groq: [
     { key: 'apiKey', label: 'API Key', source: 'credentials', secret: true },

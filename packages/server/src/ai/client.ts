@@ -64,14 +64,23 @@ export async function testAiProvider(
 
   try {
     const started = Date.now();
+    // 512, not a token or two. Newer reasoning models (Gemini 3.x, o-series)
+    // spend the budget on internal thinking *before* emitting anything, so a
+    // tight cap returns finish_reason "length" with empty content — a working
+    // key that looks broken. Measured: a one-word reply cost 100 tokens, of
+    // which 1 was output.
+    const testOptions = {
+      feature: 'connectivity_test', system: 'Reply with the single word OK.', prompt: 'Say OK.',
+    };
     const result = provider === 'anthropic'
-      ? await callAnthropic(settings.apiKey, settings.fastModel, 16, 0, {
-        feature: 'connectivity_test', system: 'Reply with the single word OK.', prompt: 'Say OK.',
-      })
-      : await callOpenAiCompatible(settings.baseUrl, settings.apiKey, settings.fastModel, 16, 0, {
-        feature: 'connectivity_test', system: 'Reply with the single word OK.', prompt: 'Say OK.',
-      });
-    if (!result.text.trim()) return { ok: false, message: `${settings.fastModel} returned an empty response.` };
+      ? await callAnthropic(settings.apiKey, settings.fastModel, 512, 0, testOptions)
+      : await callOpenAiCompatible(settings.baseUrl, settings.apiKey, settings.fastModel, 512, 0, testOptions);
+    if (!result.text.trim()) {
+      return {
+        ok: false,
+        message: `${settings.fastModel} accepted the key but returned nothing. This usually means the model spent its whole token budget thinking — raise Max tokens.`,
+      };
+    }
     return { ok: true, message: `Connected — ${settings.fastModel} replied in ${Date.now() - started}ms.` };
   } catch (err) {
     return { ok: false, message: err instanceof Error ? err.message : 'Connection failed.' };
@@ -154,6 +163,42 @@ async function callAnthropic(
   };
 }
 
+/**
+ * Statuses worth trying again: the provider is busy or briefly broken, not
+ * refusing us. 401/403/404 are excluded deliberately — a bad key or a retired
+ * model will fail identically on the tenth attempt, and retrying only delays
+ * the error the operator needs to see.
+ */
+const RETRYABLE = new Set([429, 500, 502, 503, 504]);
+
+/**
+ * Free tiers rate-limit and go briefly unavailable as a matter of course —
+ * observed in practice: Gemini answered a digest fine and returned
+ * 503 "experiencing high demand" for the next call seconds later. Without a
+ * retry, every one of those is a feature that silently fell back to its rule
+ * engine, which reads to the user as "the AI doesn't work".
+ *
+ * Two extra attempts with exponential backoff, honouring Retry-After when the
+ * provider sends one.
+ */
+async function fetchWithRetry(url: string, init: RequestInit, attempts = 3): Promise<Response> {
+  let last: Response | null = null;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const res = await fetch(url, init);
+    if (res.ok || !RETRYABLE.has(res.status)) return res;
+    last = res;
+    if (attempt === attempts - 1) break;
+
+    const retryAfter = Number(res.headers.get('retry-after'));
+    const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
+      ? Math.min(retryAfter * 1000, 10_000)
+      : 400 * 2 ** attempt;
+    logger.debug({ status: res.status, attempt: attempt + 1, waitMs }, 'AI provider busy, retrying');
+    await new Promise((r) => setTimeout(r, waitMs));
+  }
+  return last!;
+}
+
 interface ChatCompletionResponse {
   choices?: { message?: { content?: string | null } }[];
   usage?: { prompt_tokens?: number; completion_tokens?: number };
@@ -180,7 +225,7 @@ async function callOpenAiCompatible(
     ? `${opts.system}\n\nBegin your reply directly with ${opts.prefill.trim()} — no preamble, no code fences.`
     : opts.system;
 
-  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
+  const response = await fetchWithRetry(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
