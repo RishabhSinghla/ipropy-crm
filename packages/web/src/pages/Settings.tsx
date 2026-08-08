@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
-import { Bell, BellOff, Camera, KeyRound, Monitor, Moon, Save, Sun, User } from 'lucide-react';
+import { Bell, BellOff, Camera, Fingerprint, KeyRound, Monitor, Moon, Save, Sun, User } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
@@ -200,6 +200,8 @@ function SecurityTab(): JSX.Element {
 
   return (
     <div className="space-y-4">
+      <PasskeysCard />
+
       <div className="card p-5">
         <p className="mb-3 text-sm font-medium">Change password</p>
         <div className="space-y-3">
@@ -488,4 +490,116 @@ function AvatarPicker(): JSX.Element {
       </div>
     </div>
   );
+}
+
+/**
+ * Face ID / Touch ID / Android biometrics, per device.
+ *
+ * A passkey lives in the phone's secure enclave; the fingerprint never reaches
+ * us and the server only holds a public key. It is also phishing-resistant —
+ * the credential is bound to this origin and will not sign for another one —
+ * which is worth more here than the convenience, given what a CRM holds.
+ */
+function PasskeysCard(): JSX.Element {
+  const [supported, setSupported] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const { data: passkeys, refetch } = useQuery({ queryKey: ['passkeys'], queryFn: () => api.passkeys() });
+
+  useEffect(() => {
+    if (!window.PublicKeyCredential?.isUserVerifyingPlatformAuthenticatorAvailable) return;
+    void window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
+      .then(setSupported).catch(() => setSupported(false));
+  }, []);
+
+  const enrol = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      const { startRegistration } = await import('@simplewebauthn/browser');
+      const options = await api.passkeyRegisterOptions();
+      const attestation = await startRegistration({ optionsJSON: options as never });
+      await api.passkeyRegisterVerify(attestation, describeThisDevice());
+      toast.success('This device can now sign you in', 'Face ID, Touch ID or your fingerprint.');
+      await refetch();
+    } catch (err) {
+      const name = (err as { name?: string }).name;
+      // Cancelling the prompt is a choice, not a failure.
+      if (name !== 'NotAllowedError' && name !== 'AbortError') {
+        toast.error('Could not set up biometric sign-in', (err as Error).message);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (id: string): Promise<void> => {
+    await api.deletePasskey(id);
+    toast.success('Device removed');
+    await refetch();
+  };
+
+  return (
+    <div className="card space-y-4 p-5">
+      <div>
+        <p className="text-sm font-medium">Face ID &amp; fingerprint sign-in</p>
+        <p className="mt-1 text-sm text-muted">
+          Sign in with your face or fingerprint instead of typing a password. The scan stays on
+          your device — iPropy only ever receives a key it can check.
+        </p>
+      </div>
+
+      {!supported ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+          This device or browser has no biometric sign-in available. On iPhone and iPad, add
+          iPropy to your Home Screen and open it from there first.
+        </div>
+      ) : (
+        <button className="btn-primary btn-sm" disabled={busy} onClick={() => void enrol()}>
+          {busy ? <Spinner className="h-3 w-3" /> : <Fingerprint className="h-3.5 w-3.5" />}
+          Set up on this device
+        </button>
+      )}
+
+      <div>
+        <p className="mb-2 text-sm font-medium">Devices that can sign in</p>
+        {(passkeys ?? []).length === 0 ? (
+          <p className="text-xs text-muted">None yet.</p>
+        ) : (
+          <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-700">
+            {(passkeys ?? []).map((raw) => {
+              const k = raw as { id: string; device_label: string | null; created_at: string; last_used_at: string | null };
+              return (
+                <li key={k.id} className="flex items-center justify-between gap-3 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-medium">{k.device_label ?? 'Unnamed device'}</p>
+                    <p className="text-2xs text-muted">
+                      added {relativeTime(k.created_at)}
+                      {k.last_used_at ? ` · last used ${relativeTime(k.last_used_at)}` : ' · never used'}
+                    </p>
+                  </div>
+                  <button className="btn-ghost btn-sm shrink-0 text-negative" onClick={() => void remove(k.id)}>
+                    Remove
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** A label the owner will recognise in the device list. */
+function describeThisDevice(): string {
+  const ua = navigator.userAgent;
+  const os = /iPhone/.test(ua) ? 'iPhone'
+    : /iPad/.test(ua) ? 'iPad'
+    : /Android/.test(ua) ? 'Android'
+    : /Macintosh/.test(ua) ? 'Mac'
+    : /Windows/.test(ua) ? 'Windows' : 'This device';
+  const browser = /Edg\//.test(ua) ? 'Edge'
+    : /Chrome\//.test(ua) ? 'Chrome'
+    : /Firefox\//.test(ua) ? 'Firefox'
+    : /Safari\//.test(ua) ? 'Safari' : 'Browser';
+  return `${os} · ${browser}`;
 }

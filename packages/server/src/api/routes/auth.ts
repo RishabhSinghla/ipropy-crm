@@ -22,9 +22,24 @@ const loginLimiter = rateLimit({
 });
 
 const loginSchema = z.object({
-  email: z.string().email(),
+  /** email or mobile number; `email` kept for older clients */
+  identifier: z.string().min(1).optional(),
+  email: z.string().min(1).optional(),
   password: z.string().min(1),
-});
+}).refine((v) => v.identifier ?? v.email, { message: 'Enter your email or mobile number' });
+
+/**
+ * Reduce a phone number to digits so stored and typed forms match.
+ *
+ * People type "+91 98765 43210", "098765 43210" and "9876543210" for the same
+ * number, and the CRM's own `phone` column has all three shapes in it. The
+ * last ten digits are the stable part for Indian mobiles — the country code
+ * and any trunk zero are the bits that vary.
+ */
+function phoneKey(value: string): string | null {
+  const digits = value.replace(/\D/g, '');
+  return digits.length >= 10 ? digits.slice(-10) : null;
+}
 
 function refreshExpiry(): Date {
   const spec = config.auth.refreshExpiresIn;
@@ -36,16 +51,26 @@ function refreshExpiry(): Date {
 }
 
 authRouter.post('/login', loginLimiter, asyncHandler(async (req, res) => {
-  const { email, password } = loginSchema.parse(req.body);
+  const parsed = loginSchema.parse(req.body);
+  const identifier = (parsed.identifier ?? parsed.email ?? '').trim();
+  const { password } = parsed;
 
+  // Email or mobile. The phone branch compares on the last ten digits, since
+  // the same number is stored with and without +91 across imported records.
+  const mobile = phoneKey(identifier);
   const row = await queryOne<{ id: string; password_hash: string | null; is_active: boolean }>(
-    `SELECT id, password_hash, is_active FROM ipy_user WHERE lower(email) = lower($1) AND deleted_at IS NULL`,
-    [email],
+    `SELECT id, password_hash, is_active FROM ipy_user
+     WHERE deleted_at IS NULL
+       AND ( lower(email) = lower($1)
+             OR ($2::text IS NOT NULL AND right(regexp_replace(coalesce(phone,''), '\\D', '', 'g'), 10) = $2) )
+     ORDER BY (lower(email) = lower($1)) DESC
+     LIMIT 1`,
+    [identifier, mobile],
   );
 
   // Same message either way so the endpoint can't be used to enumerate accounts.
   if (!row?.password_hash || !(await verifyPassword(password, row.password_hash))) {
-    throw new UnauthorizedError('Incorrect email or password');
+    throw new UnauthorizedError('Incorrect email/mobile or password');
   }
   if (!row.is_active) throw new UnauthorizedError('This account has been deactivated');
 

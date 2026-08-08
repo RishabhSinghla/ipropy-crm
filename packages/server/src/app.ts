@@ -13,6 +13,7 @@ import { verifyAccessToken } from './middleware/auth.js';
 import { checkConnection } from './db/pool.js';
 
 import { authRouter } from './api/routes/auth.js';
+import { passkeyRouter } from './api/routes/passkeys.js';
 import { metadataRouter } from './api/routes/metadata.js';
 import { recordsRouter } from './api/routes/records.js';
 import { viewsRouter } from './api/routes/views.js';
@@ -147,6 +148,9 @@ export function createApp(): Express {
   app.use('/api/public', publicRouter);
 
   app.use('/api/auth', authRouter);
+  // Mounted separately from authRouter: its sign-in half is public, and
+  // authRouter's requireAuth is applied per-route rather than at the top.
+  app.use('/api/auth/passkeys', passkeyRouter);
   app.use('/api/meta', metadataRouter);
   app.use('/api/views', viewsRouter);
   app.use('/api/dashboards', dashboardsRouter);
