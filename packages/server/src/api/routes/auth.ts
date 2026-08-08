@@ -100,7 +100,17 @@ const preferencesSchema = z.object({
   firstName: z.string().min(1).optional(),
   lastName: z.string().optional(),
   phone: z.string().optional(),
-  avatarUrl: z.string().url().nullable().optional(),
+  /**
+   * An uploaded avatar lives at `/api/files/<id>`, which `.url()` rejects for
+   * not being absolute. Both forms are allowed, but only `http(s)` and our own
+   * path — this value is rendered into an `<img src>`, where a `javascript:`
+   * or `data:` URL would be an injection point that every user can set on
+   * themselves.
+   */
+  avatarUrl: z.string()
+    .refine((v) => /^\/api\/files\/[\w-]+$/.test(v) || /^https?:\/\//i.test(v),
+      'Must be an uploaded file or an http(s) URL')
+    .nullable().optional(),
   timezone: z.string().optional(),
   locale: z.string().optional(),
   currency: z.string().length(3).optional(),

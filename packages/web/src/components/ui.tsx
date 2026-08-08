@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, Check, ChevronDown, Info, Loader2, X } from 'lucide-react';
+import { authedFileUrl } from '../lib/api';
 import { avatarBackground, badgeVars } from '../lib/color';
 import { cn } from '../lib/utils';
 import { useToasts } from '../lib/store';
@@ -55,7 +56,20 @@ export function Avatar({
     : '?';
 
   if (src) {
-    return <img src={src} alt={name} width={size} height={size} className={cn('rounded-full object-cover', className)} />;
+    return (
+      <img
+        // Avatars are served from the permission-checked /api/files route, so
+        // the token has to ride in the query string — a plain <img> cannot
+        // send an Authorization header. `thumb` because this is 32px on screen
+        // and the original may be a 4MB phone photo.
+        src={authedFileUrl(src, { size: 'thumb' })}
+        alt={name}
+        width={size}
+        height={size}
+        style={{ width: size, height: size }}
+        className={cn('shrink-0 rounded-full object-cover', className)}
+      />
+    );
   }
   return (
     <div

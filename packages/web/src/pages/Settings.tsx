@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
-import { Bell, BellOff, KeyRound, Monitor, Moon, Save, Sun, User } from 'lucide-react';
+import { Bell, BellOff, Camera, KeyRound, Monitor, Moon, Save, Sun, User } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
@@ -64,12 +64,12 @@ function ProfileTab(): JSX.Element {
 
   return (
     <div className="card p-5">
-      <div className="mb-5 flex items-center gap-4">
-        <Avatar name={user?.fullName ?? ''} src={user?.avatarUrl} size={56} />
-        <div>
+      <div className="mb-5 flex items-start gap-4">
+        <AvatarPicker />
+        <div className="min-w-0">
           <p className="text-base font-semibold">{user?.fullName}</p>
-          <p className="text-sm text-muted">{user?.email}</p>
-          <div className="mt-1 flex gap-1.5">
+          <p className="truncate text-sm text-muted">{user?.email}</p>
+          <div className="mt-1 flex flex-wrap gap-1.5">
             {user?.roleName && <Badge>{user.roleName}</Badge>}
             {user?.profileName && <Badge color="#6366f1">{user.profileName}</Badge>}
           </div>
@@ -401,4 +401,91 @@ function describeDevice(userAgent: string | null): string {
     : /Chrome\//i.test(userAgent) ? 'Chrome'
     : /Safari\//i.test(userAgent) ? 'Safari' : 'Browser';
   return `${browser} on ${os}`;
+}
+
+/**
+ * Set, replace or remove your own photo.
+ *
+ * The image goes through the same attachment pipeline as any other upload, so
+ * it inherits the derivative generation — `Avatar` then requests the `thumb`
+ * variant rather than pulling a 4MB phone photo down for a 32px circle.
+ * `avatar_url` holds the path; removing simply clears it and the initials
+ * fallback returns, so nothing is orphaned mid-change.
+ */
+function AvatarPicker(): JSX.Element {
+  const { user, bootstrap } = useApp();
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const choose = async (file: File): Promise<void> => {
+    if (!file.type.startsWith('image/')) {
+      toast.error('Choose an image', `${file.name} is not a picture.`);
+      return;
+    }
+    setBusy(true);
+    try {
+      const { url } = await api.uploadFile(file);
+      await api.updateProfile({ avatarUrl: url });
+      await bootstrap();
+      toast.success('Photo updated');
+    } catch (err) {
+      toast.error('Could not update your photo', (err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      await api.updateProfile({ avatarUrl: null });
+      await bootstrap();
+      toast.success('Photo removed');
+    } catch (err) {
+      toast.error('Could not remove your photo', (err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="shrink-0 text-center">
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        disabled={busy}
+        className="group relative block rounded-full"
+        aria-label={user?.avatarUrl ? 'Change your photo' : 'Add a photo'}
+      >
+        <Avatar name={user?.fullName ?? ''} src={user?.avatarUrl} size={64} />
+        <span className="absolute inset-0 flex items-center justify-center rounded-full bg-slate-900/60 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+          {busy ? <Spinner className="h-4 w-4 text-white" /> : <Camera className="h-4 w-4 text-white" />}
+        </span>
+      </button>
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void choose(f);
+          // Reset so picking the same file twice still fires a change event.
+          e.target.value = '';
+        }}
+      />
+
+      <div className="mt-1.5 flex items-center justify-center gap-2 text-2xs">
+        <button type="button" className="text-brand-600 hover:underline dark:text-brand-400" disabled={busy} onClick={() => inputRef.current?.click()}>
+          {user?.avatarUrl ? 'Change' : 'Add photo'}
+        </button>
+        {user?.avatarUrl && (
+          <button type="button" className="text-negative hover:underline" disabled={busy} onClick={() => void remove()}>
+            Remove
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }

@@ -117,6 +117,23 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   return text ? JSON.parse(text) as T : (undefined as T);
 }
 
+/**
+ * Add the session token to a same-origin file URL.
+ *
+ * `<img>`, `<iframe>` and `<video>` cannot carry an Authorization header, and
+ * `/api/files/:id` is permission-checked — so embeds use the `?access_token=`
+ * fallback `requireAuth` already supports. External URLs are returned as-is:
+ * sending our token to someone else's host would leak the session.
+ */
+export function authedFileUrl(url: string, params: Record<string, string> = {}): string {
+  if (!url.startsWith('/api/')) return url;
+  const search = new URLSearchParams(params);
+  const token = tokenStore.get();
+  if (token) search.set('access_token', token);
+  const qs = search.toString();
+  return qs ? `${url}${url.includes('?') ? '&' : '?'}${qs}` : url;
+}
+
 const get = <T>(path: string): Promise<T> => request<T>(path);
 const post = <T>(path: string, body?: unknown): Promise<T> => request<T>(path, { method: 'POST', body });
 const patch = <T>(path: string, body?: unknown): Promise<T> => request<T>(path, { method: 'PATCH', body });
