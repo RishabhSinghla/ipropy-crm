@@ -76,7 +76,7 @@ export default function AiAssistant({
           <div className="flex-1">
             <p className="text-sm font-semibold">Ask iPropy</p>
             <p className="text-2xs text-muted">
-              {aiAvailable ? 'Ask about your pipeline, leads or inventory' : 'Requires an Anthropic API key'}
+              {aiAvailable ? 'Ask about your pipeline, leads or inventory' : 'Requires an AI provider'}
             </p>
           </div>
           <button onClick={onClose} className="btn-ghost p-1.5"><X className="h-4 w-4" /></button>

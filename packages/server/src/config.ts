@@ -79,8 +79,11 @@ export const config = {
     // Free / low-cost alternatives. Only one needs to be filled in.
     gemini: {
       apiKey: str('GEMINI_API_KEY'),
-      model: str('GEMINI_MODEL', 'gemini-2.5-flash'),
-      fastModel: str('GEMINI_MODEL_FAST', 'gemini-2.5-flash-lite'),
+      // Aliases, not pinned versions. `gemini-2.5-flash` was the default here
+      // and Google retired it for new keys, which returned a 404 that looked
+      // exactly like a bad key. `-latest` follows whatever the current flash is.
+      model: str('GEMINI_MODEL', 'gemini-flash-latest'),
+      fastModel: str('GEMINI_MODEL_FAST', 'gemini-flash-lite-latest'),
     },
     groq: {
       apiKey: str('GROQ_API_KEY'),

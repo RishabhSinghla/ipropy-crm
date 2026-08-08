@@ -11,7 +11,7 @@
  * That is only possible because `credential_id` is globally unique, which is
  * what lets a raw assertion identify the account.
  */
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import crypto from 'node:crypto';
 import { z } from 'zod';
 import rateLimit from 'express-rate-limit';
@@ -37,12 +37,34 @@ const passkeyLimiter = rateLimit({
 });
 
 /**
- * The Relying Party ID must be the site's registered domain — not the origin,
- * and never a port. Derived from APP_URL so a deployment does not need another
- * environment variable to get this subtly wrong.
+ * The Relying Party ID must be the bare domain the browser is actually on —
+ * not the origin, and never a port.
+ *
+ * Derived from the *request*, not from config. Two reasons, both learned the
+ * hard way: `APP_URL` is a comma-separated allowlist (it doubles as the CORS
+ * list), so `new URL(config.appUrl)` yielded the hostname
+ * "ipropy-crm.onrender.com,https" and every browser rejected it; and a
+ * deployment legitimately answers on more than one domain, so no single
+ * configured value can be right for every request.
+ *
+ * The request's origin is still checked against the allowlist before it is
+ * trusted — an attacker-supplied Origin header must not be able to mint a
+ * credential scoped to their own domain.
  */
-function relyingParty(): { rpID: string; origin: string; rpName: string } {
-  const url = new URL(config.appUrl);
+function relyingParty(req: Request): { rpID: string; origin: string; rpName: string } {
+  const allowed = config.appUrl.split(',').map((s) => s.trim()).filter(Boolean);
+
+  const requestOrigin = req.headers.origin
+    ?? `${req.protocol}://${req.get('host') ?? ''}`;
+
+  // In development anything goes (localhost, a LAN IP for phone testing);
+  // in production the origin must be one we published.
+  const trusted = !config.isProd || allowed.some((a) => {
+    try { return new URL(a).origin === requestOrigin; } catch { return false; }
+  });
+
+  const chosen = trusted ? requestOrigin : allowed[0];
+  const url = new URL(chosen);
   return { rpID: url.hostname, origin: url.origin, rpName: 'iPropy CRM' };
 }
 
@@ -75,7 +97,7 @@ async function takeChallenge(challenge: string, kind: 'register' | 'login'): Pro
 
 passkeyRouter.post('/register/options', requireAuth, asyncHandler(async (req, res) => {
   const user = getUser(req);
-  const { rpID, rpName } = relyingParty();
+  const { rpID, rpName } = relyingParty(req);
 
   const existing = await db.query<{ credential_id: string; transports: string[] }>(
     `SELECT credential_id, transports FROM ipy_webauthn_credential WHERE user_id = $1`,
@@ -110,7 +132,7 @@ passkeyRouter.post('/register/options', requireAuth, asyncHandler(async (req, re
 
 passkeyRouter.post('/register/verify', requireAuth, asyncHandler(async (req, res) => {
   const user = getUser(req);
-  const { rpID, origin } = relyingParty();
+  const { rpID, origin } = relyingParty(req);
   const { response, label } = z.object({
     response: z.record(z.unknown()),
     label: z.string().max(80).optional(),
@@ -176,8 +198,8 @@ passkeyRouter.delete('/:id', requireAuth, asyncHandler(async (req, res) => {
 // Sign-in (public)
 // ---------------------------------------------------------------------------
 
-passkeyRouter.post('/login/options', passkeyLimiter, asyncHandler(async (_req, res) => {
-  const { rpID } = relyingParty();
+passkeyRouter.post('/login/options', passkeyLimiter, asyncHandler(async (req, res) => {
+  const { rpID } = relyingParty(req);
   // No allowCredentials: the browser picks from the passkeys it holds for this
   // site, so the user types nothing at all before the biometric prompt.
   const options = await generateAuthenticationOptions({ rpID, userVerification: 'required' });
@@ -186,7 +208,7 @@ passkeyRouter.post('/login/options', passkeyLimiter, asyncHandler(async (_req, r
 }));
 
 passkeyRouter.post('/login/verify', passkeyLimiter, asyncHandler(async (req, res) => {
-  const { rpID, origin } = relyingParty();
+  const { rpID, origin } = relyingParty(req);
   const { response } = z.object({ response: z.record(z.unknown()) }).parse(req.body);
 
   const raw = response as { id?: string; response?: { clientDataJSON?: string } };
