@@ -87,7 +87,13 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<unknown>(value);
   const editRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
   const commitSeq = useRef(0);
+
+  /** Put focus back on the trigger after closing, so Tab order isn't lost. */
+  const restoreFocus = (): void => {
+    queueMicrotask(() => triggerRef.current?.querySelector('button')?.focus());
+  };
 
   // Adopt the server value when it changes from outside (another user's
   // edit, a refetch) — but never while mid-edit, so we don't yank an input
@@ -135,6 +141,7 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
   function closeWithoutSaving(): void {
     setEditing(false);
     setDraft(localValue);
+    restoreFocus();
   }
 
   function closeAndCommitIfChanged(nextDraft: unknown = draft): void {
@@ -198,6 +205,7 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
         <button
           type="button"
           role="switch"
+          aria-label={field.label}
           aria-checked={Boolean(localValue)}
           disabled={status === 'saving'}
           onClick={(e) => {
@@ -268,7 +276,7 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
     <div className="relative inline-block" ref={editing ? editRef : undefined} onClick={(e) => e.stopPropagation()}>
       {/* Always rendered, even mid-edit: it is what reserves the cell's width,
           so opening an editor can't resize a table column and reflow the page. */}
-      {readState}
+      <div ref={triggerRef} className="contents">{readState}</div>
 
       {editing && (
         <div

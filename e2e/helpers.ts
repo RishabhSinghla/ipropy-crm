@@ -1,6 +1,13 @@
 import { expect, type Page } from '@playwright/test';
 
 /**
+ * Where auth.setup.ts stashes the signed-in session for the other specs.
+ * A plain relative path, not import.meta: Playwright compiles config and
+ * specs to CJS, where import.meta is unavailable.
+ */
+export const STORAGE_STATE = 'e2e/.auth/user.json';
+
+/**
  * Credentials come from the environment so this works against a deployed
  * instance too, falling back to the seeded dev defaults locally.
  */

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { editableCells, login, unique, waitForRecords } from './helpers';
+import { editableCells, unique, waitForRecords } from './helpers';
 
 /**
  * The journeys a salesperson actually performs. Each one is a path where a
@@ -8,11 +8,10 @@ import { editableCells, login, unique, waitForRecords } from './helpers';
  * the UI but never reaches the database.
  */
 
-test.beforeEach(async ({ page }) => {
-  await login(page);
-});
-
 test('signs in and lands on a working dashboard', async ({ page }) => {
+  // auth.setup.ts performed the actual sign-in; this confirms the restored
+  // session lands on a working dashboard.
+  await page.goto('/dashboard');
   await expect(page.getByRole('heading', { name: /command centre|dashboard/i }).first()).toBeVisible();
   // The sidebar proves module metadata loaded, not just that a shell rendered.
   await expect(page.getByRole('link', { name: /leads & customers/i })).toBeVisible();

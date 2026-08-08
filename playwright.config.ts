@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { STORAGE_STATE } from './e2e/helpers';
 
 /**
  * End-to-end tests: a real browser against a real stack.
@@ -39,11 +40,24 @@ export default defineConfig({
     video: 'retain-on-failure',
   },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    // Signs in once and saves the session; everything else reuses it rather
+    // than logging in per test and tripping the login rate limiter.
+    { name: 'setup', testMatch: /auth\.setup\.ts/ },
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'], storageState: STORAGE_STATE },
+      dependencies: ['setup'],
+      testIgnore: /auth\.setup\.ts/,
+    },
     // The team will use this on phones, so the critical path is checked at
     // phone size too — that is where the list becomes cards and the sidebar
     // becomes a drawer, i.e. genuinely different code.
-    { name: 'mobile', use: { ...devices['Pixel 7'] }, testMatch: /mobile\.spec\.ts/ },
+    {
+      name: 'mobile',
+      use: { ...devices['Pixel 7'], storageState: STORAGE_STATE },
+      dependencies: ['setup'],
+      testMatch: /mobile\.spec\.ts/,
+    },
   ],
   webServer: [
     {

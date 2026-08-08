@@ -386,7 +386,7 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
 
     case 'owner':
     case 'user':
-      return <UserPicker value={value as string | null} onChange={onChange} disabled={readOnly} allowGroups={field.uitype === 'owner'} />;
+      return <UserPicker id={id} label={field.label} value={value as string | null} onChange={onChange} disabled={readOnly} allowGroups={field.uitype === 'owner'} />;
 
     case 'address':
       return <AddressInput value={value as Record<string, unknown> | null} onChange={onChange} disabled={readOnly} />;
@@ -934,12 +934,15 @@ export function ReferencePicker({
 // ---------------------------------------------------------------------------
 
 export function UserPicker({
-  value, onChange, disabled, allowGroups,
+  value, onChange, disabled, allowGroups, id, label,
 }: {
   value: string | null;
   onChange: (v: string | null) => void;
   disabled?: boolean;
   allowGroups?: boolean;
+  id?: string;
+  /** Fallback accessible name when no <label htmlFor> points at this select. */
+  label?: string;
 }): JSX.Element {
   const [users, setUsers] = useState<{ id: string; fullName: string; designation?: string }[]>([]);
   const [groups, setGroups] = useState<{ id: string; name: string }[]>([]);
@@ -957,6 +960,8 @@ export function UserPicker({
   return (
     <div className="relative">
       <select
+        id={id}
+        aria-label={id ? undefined : (label ?? 'Owner')}
         className="input appearance-none pr-8"
         value={value ?? ''}
         disabled={disabled}

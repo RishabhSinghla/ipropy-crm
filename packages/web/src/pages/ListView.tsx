@@ -176,7 +176,7 @@ export default function ListView(): JSX.Element {
             </span>
             <div>
               <h1 className="text-lg font-semibold leading-tight tracking-tight">{meta.label}</h1>
-              <p className="text-xs text-slate-500 tnum">
+              <p className="text-xs text-slate-500 tnum dark:text-slate-400">
                 {isFetching && !data ? 'Loading…' : `${(data?.total ?? 0).toLocaleString('en-IN')} records`}
               </p>
             </div>
@@ -226,7 +226,7 @@ export default function ListView(): JSX.Element {
             </div>
 
             <Dropdown
-              trigger={<button className="btn-secondary btn-sm"><Settings2 className="h-3.5 w-3.5" /></button>}
+              trigger={<button className="btn-secondary btn-sm" aria-label="List options"><Settings2 className="h-3.5 w-3.5" /></button>}
             >
               {(close) => (
                 <>
@@ -284,7 +284,7 @@ export default function ListView(): JSX.Element {
                 {v.count !== undefined && (
                   <span className={cn(
                     'rounded-full px-1.5 text-2xs tnum',
-                    activeView?.id === v.id ? 'bg-white/20' : 'bg-slate-200 dark:bg-slate-700',
+                    activeView?.id === v.id ? 'bg-white/20' : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200',
                   )}>
                     {v.count}
                   </span>
@@ -376,6 +376,7 @@ export default function ListView(): JSX.Element {
                 <th className="table-head w-10">
                   <input
                     type="checkbox"
+                    aria-label={`Select all ${meta.label.toLowerCase()} on this page`}
                     className="h-3.5 w-3.5 rounded border-slate-300"
                     checked={rows.length > 0 && selected.size === rows.length}
                     onChange={(e) => setSelected(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set())}
@@ -412,6 +413,7 @@ export default function ListView(): JSX.Element {
                   <td className="table-cell" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
+                      aria-label={`Select ${row.label}`}
                       className="h-3.5 w-3.5 rounded border-slate-300"
                       checked={selected.has(row.id)}
                       onChange={(e) => {
@@ -463,13 +465,14 @@ export default function ListView(): JSX.Element {
       {/* Pagination */}
       {displayMode === 'table' && (data?.totalPages ?? 1) > 1 && (
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900 sm:px-6">
-          <p className="text-xs text-slate-500 tnum">
+          <p className="text-xs text-slate-500 tnum dark:text-slate-400">
             {((data!.page - 1) * data!.pageSize + 1).toLocaleString('en-IN')}–
             {Math.min(data!.page * data!.pageSize, data!.total).toLocaleString('en-IN')} of {data!.total.toLocaleString('en-IN')}
           </p>
           <div className="flex items-center gap-1">
             <button
               className="btn-ghost p-1.5 disabled:opacity-30"
+              aria-label="Previous page"
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
             >
@@ -480,6 +483,7 @@ export default function ListView(): JSX.Element {
             </span>
             <button
               className="btn-ghost p-1.5 disabled:opacity-30"
+              aria-label="Next page"
               disabled={page >= (data?.totalPages ?? 1)}
               onClick={() => setPage((p) => p + 1)}
             >

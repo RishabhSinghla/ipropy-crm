@@ -38,6 +38,14 @@ export default function Layout(): JSX.Element {
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950">
+      {/* Visually hidden until focused — the first Tab stop on every page. */}
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-lg focus:bg-brand-600 focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-white"
+      >
+        Skip to main content
+      </a>
+
       {/* Sidebar */}
       <aside
         className={cn(
@@ -60,7 +68,7 @@ export default function Layout(): JSX.Element {
           </button>
         </div>
 
-        <nav className="flex-1 space-y-4 overflow-y-auto px-2 py-3">
+        <nav aria-label="Main" className="flex-1 space-y-4 overflow-y-auto px-2 py-3">
           <div className="space-y-0.5">
             <NavItem to="/dashboard" icon="layout-dashboard" label="Dashboard" collapsed={sidebarCollapsed} />
             <NavItem to="/inbox" icon="message-circle" label="Inbox" collapsed={sidebarCollapsed} badge={<InboxBadge />} />
@@ -70,7 +78,7 @@ export default function Layout(): JSX.Element {
           {grouped.map(([group, list]) => (
             <div key={group}>
               {!sidebarCollapsed && (
-                <p className="mb-1 px-3 text-2xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-600">
+                <p className="mb-1 px-3 text-2xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   {group}
                 </p>
               )}
@@ -91,7 +99,7 @@ export default function Layout(): JSX.Element {
 
           <div>
             {!sidebarCollapsed && (
-              <p className="mb-1 px-3 text-2xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-600">
+              <p className="mb-1 px-3 text-2xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 Tools
               </p>
             )}
@@ -185,7 +193,7 @@ export default function Layout(): JSX.Element {
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto">
+        <main id="main" tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto">
           {/* Per-page net. Keyed on the path so a crashed page clears itself
               when the user navigates away — without the key the boundary stays
               latched and every subsequent route renders the error screen. The
@@ -252,7 +260,7 @@ function NotificationBell(): JSX.Element {
         <button className="btn-ghost relative p-2" title="Notifications">
           <Bell className="h-4 w-4" />
           {unread > 0 && (
-            <span className="absolute right-1 top-1 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+            <span className="absolute right-1 top-1 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-bold text-white">
               {unread > 9 ? '9+' : unread}
             </span>
           )}

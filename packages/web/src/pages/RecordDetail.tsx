@@ -327,7 +327,7 @@ export default function RecordDetail(): JSX.Element {
               </Link>
             )}
 
-            <Dropdown trigger={<button className="btn-ghost p-2"><MoreHorizontal className="h-4 w-4" /></button>}>
+            <Dropdown trigger={<button className="btn-ghost p-2" aria-label="More actions"><MoreHorizontal className="h-4 w-4" /></button>}>
               {(close) => (
                 <>
                   {aiAvailable && (
@@ -944,7 +944,7 @@ function AiPanel({
         <Sparkles className="h-4 w-4 text-brand-500" />
         <span className="text-sm font-medium">AI Insights</span>
         {canAnalyse && (
-          <button onClick={() => void rescore()} disabled={busy} className="btn-ghost btn-sm ml-auto">
+          <button onClick={() => void rescore()} disabled={busy} aria-label="Refresh AI insights" className="btn-ghost btn-sm ml-auto">
             {busy ? <Spinner className="h-3 w-3" /> : <RefreshCw className="h-3 w-3" />}
           </button>
         )}

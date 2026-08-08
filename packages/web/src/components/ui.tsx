@@ -83,9 +83,46 @@ export function Modal({
   footer?: ReactNode;
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
 }): JSX.Element | null {
+  const panelRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose(); };
+
+    // Remember what opened the dialog so focus can go back there on close.
+    // Without this, dismissing a modal drops focus to the top of the document
+    // and a keyboard user has to tab all the way back to where they were.
+    const opener = document.activeElement as HTMLElement | null;
+
+    const focusable = (): HTMLElement[] => Array.from(
+      panelRef.current?.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ) ?? [],
+    ).filter((el) => el.offsetParent !== null);
+
+    // Move focus into the dialog; otherwise a screen reader keeps reading the
+    // page behind it and Tab walks the background content.
+    queueMicrotask(() => (focusable()[0] ?? panelRef.current)?.focus());
+
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') { onClose(); return; }
+      if (e.key !== 'Tab') return;
+
+      // Cycle focus within the dialog rather than letting it escape.
+      const items = focusable();
+      if (items.length === 0) { e.preventDefault(); return; }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+
+      if (e.shiftKey && (active === first || !panelRef.current?.contains(active))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+
     document.addEventListener('keydown', onKey);
     // Prevent the page behind the modal from scrolling.
     const prev = document.body.style.overflow;
@@ -93,6 +130,7 @@ export function Modal({
     return () => {
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = prev;
+      opener?.focus?.();
     };
   }, [open, onClose]);
 
@@ -104,9 +142,11 @@ export function Modal({
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 sm:p-8">
       <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm animate-fade-in" onClick={onClose} />
       <div
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        tabIndex={-1}
         className={cn('relative z-10 w-full animate-slide-up rounded-xl bg-white shadow-float dark:bg-slate-900', widths[size])}
       >
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3.5 dark:border-slate-800">
@@ -299,7 +339,12 @@ export function Select({
 export function ToastHost(): JSX.Element {
   const { toasts, dismiss } = useToasts();
   return createPortal(
-    <div className="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-full max-w-sm flex-col gap-2">
+    <div
+      role="status"
+      aria-live="polite"
+      aria-atomic="false"
+      className="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-full max-w-sm flex-col gap-2"
+    >
       {toasts.map((t) => (
         <div
           key={t.id}
