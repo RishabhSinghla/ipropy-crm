@@ -50,8 +50,9 @@ describe('create', () => {
   });
 
   it('rejects a missing mandatory field', async () => {
-    // last_name is the one field the Leads module marks mandatory.
-    await expect(createRecord(admin, 'leads', { first_name: 'NoSurname' }))
+    // `mobile` is the mandatory field on Leads (last_name is NOT NULL at the
+    // DB level but intentionally not mandatory in metadata).
+    await expect(createRecord(admin, 'leads', { first_name: 'NoMobile', last_name: 'Present' }))
       .rejects.toThrow();
   });
 
