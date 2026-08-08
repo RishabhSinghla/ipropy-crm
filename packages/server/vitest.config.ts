@@ -12,5 +12,11 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],
+    // tests/integration needs a real Postgres and is run by
+    // vitest.integration.config.ts. Without this exclusion the glob above
+    // matches it, and `npm test` would run those suites against whatever
+    // DATABASE_URL happens to be set — i.e. the developer's own database,
+    // creating and deleting records in it.
+    exclude: ['**/node_modules/**', '**/dist/**', 'tests/integration/**'],
   },
 });
