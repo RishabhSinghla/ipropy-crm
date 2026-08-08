@@ -18,14 +18,12 @@ test('signs in and lands on a working dashboard', async ({ page }) => {
   await expect(page.getByRole('link', { name: /leads & customers/i })).toBeVisible();
 });
 
-// FIXME(e2e): the flow itself works — verified from the failure screenshot,
-// which shows the lead created as LD-00093 and returned by the search. What is
-// unfinished is the assertion: the post-create detail heading is not matching
-// via getByRole('heading'), so this needs the real heading locator confirmed
-// against the DOM. Marked fixme rather than left failing, because a
-// permanently red suite is one everybody learns to ignore.
-test.fixme('creates a lead and finds it again in the list', async ({ page }) => {
+test('creates a lead and finds it again in the list', async ({ page }) => {
   const surname = unique('E2E');
+  // Unique per run: the mobile is a duplicate-check field on Leads, so a
+  // hardcoded number makes every run after the first trip the duplicate
+  // warning and never submit.
+  const mobile = `+919${String(Date.now()).slice(-9)}`;
 
   await page.goto('/leads');
   await page.getByRole('button', { name: /new lead/i }).click();
@@ -34,7 +32,7 @@ test.fixme('creates a lead and finds it again in the list', async ({ page }) => 
   await expect(dialog).toBeVisible();
   await dialog.getByLabel(/first name/i).fill('Playwright');
   await dialog.getByLabel(/last name/i).fill(surname);
-  await dialog.getByLabel(/^mobile/i).fill('+919812345670');
+  await dialog.getByLabel(/^mobile/i).fill(mobile);
   // Lifecycle Stage and Pipeline Status are mandatory on the quick-create
   // layout too — the form refuses to submit without them, which is exactly
   // what this test discovered the first time it ran.
@@ -81,21 +79,23 @@ test('inline-edits a picklist in the list and the change survives a reload', asy
   await expect(after).toContainText(chosen ?? '', { timeout: 30_000 });
 });
 
-// FIXME(e2e): the same edit is already proven end-to-end by the list-view
-// picklist test above (edit → save → reload → still there), so the behaviour
-// is covered; what fails here is locating the COMPANY row on the detail page,
-// whose <dt>/<dd> structure the filter() chain doesn't match. Needs the
-// locator reworked, not the app.
-test.fixme('inline-edits a text field on the record detail page', async ({ page }) => {
+test('inline-edits a text field on the record detail page', async ({ page }) => {
   await page.goto('/leads');
   await waitForRecords(page);
-  await page.locator('tbody tr').first().click();
+  // Click the Record # cell, not the row generally: most cells now hold an
+  // inline editor that stops propagation, so clicking one opens the editor
+  // instead of navigating. Record # is an autonumber, so it stays plain text.
+  await page.locator('tbody tr').first().locator('td').nth(1).click();
   await page.waitForURL(/\/leads\/[0-9a-f-]{36}/, { timeout: 30_000 });
 
   const company = unique('Co');
   // Company sits in the Basic Information block and is a plain string field.
-  const row = page.locator('div').filter({ has: page.getByText('COMPANY', { exact: true }) }).last();
-  await row.locator('button[title="Click to edit"]').first().click();
+  // The <dt> renders uppercase via CSS but its DOM text is "Company" —
+  // Playwright matches the text node, not the painted glyphs. Step from the
+  // label to its sibling <dd>, which is where the editable control lives.
+  const value = page.locator('dt', { hasText: /^Company$/ })
+    .locator('xpath=following-sibling::dd[1]');
+  await value.locator('button[title="Click to edit"]').first().click();
 
   const input = page.locator('input:focus');
   await input.fill(company);
