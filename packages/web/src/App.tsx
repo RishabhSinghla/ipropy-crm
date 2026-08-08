@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useApp } from './lib/store';
 import { Spinner, ToastHost } from './components/ui';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 
@@ -55,45 +56,49 @@ export default function App(): JSX.Element {
 
   return (
     <>
-      <Suspense fallback={<PageLoader />}>
-        <Routes>
-          <Route path="/login" element={<Login />} />
+      {/* Outermost net: a crash in the shell (or in Login, which renders
+          outside Layout) still shows a recoverable screen instead of white. */}
+      <ErrorBoundary>
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route path="/login" element={<Login />} />
 
-          <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
-            <Route index element={<Navigate to="/dashboard" replace />} />
-            <Route path="dashboard" element={<DashboardPage />} />
-            <Route path="dashboard/:id" element={<DashboardPage />} />
+            <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
+              <Route index element={<Navigate to="/dashboard" replace />} />
+              <Route path="dashboard" element={<DashboardPage />} />
+              <Route path="dashboard/:id" element={<DashboardPage />} />
 
-            <Route path="inbox" element={<Inbox />} />
-            <Route path="inbox/:conversationId" element={<Inbox />} />
+              <Route path="inbox" element={<Inbox />} />
+              <Route path="inbox/:conversationId" element={<Inbox />} />
 
-            <Route path="calls" element={<CallsPage />} />
-            <Route path="reports" element={<ReportsPage />} />
-            <Route path="inventory" element={<InventoryBoard />} />
-            <Route path="inventory/:projectId" element={<InventoryBoard />} />
+              <Route path="calls" element={<CallsPage />} />
+              <Route path="reports" element={<ReportsPage />} />
+              <Route path="inventory" element={<InventoryBoard />} />
+              <Route path="inventory/:projectId" element={<InventoryBoard />} />
 
-            <Route path="settings" element={<SettingsPage />} />
-            <Route path="admin/*" element={<AdminPage />} />
+              <Route path="settings" element={<SettingsPage />} />
+              <Route path="admin/*" element={<AdminPage />} />
 
-            {/* Generic module routes — every module, seeded or custom, uses these. */}
-            <Route path=":module" element={<ListView />} />
-            <Route path=":module/new" element={<RecordEdit />} />
-            <Route path=":module/:id" element={<RecordDetail />} />
-            <Route path=":module/:id/edit" element={<RecordEdit />} />
-          </Route>
+              {/* Generic module routes — every module, seeded or custom, uses these. */}
+              <Route path=":module" element={<ListView />} />
+              <Route path=":module/new" element={<RecordEdit />} />
+              <Route path=":module/:id" element={<RecordDetail />} />
+              <Route path=":module/:id/edit" element={<RecordEdit />} />
+            </Route>
 
-          {/* Partner Portal routes — must come before the catch-all :module route. */}
-          <Route path="/portal" element={<RequireAuth><PortalDashboard /></RequireAuth>}>
-            <Route index element={<Navigate to="/portal/overview" replace />} />
-            <Route path="overview" element={<PortalDashboard />} />
-            <Route path="leads" element={<PortalLeads />} />
-            <Route path="leads/new" element={<PortalSubmitLead />} />
-            <Route path="bookings" element={<PortalBookings />} />
-          </Route>
+            {/* Partner Portal routes — must come before the catch-all :module route. */}
+            <Route path="/portal" element={<RequireAuth><PortalDashboard /></RequireAuth>}>
+              <Route index element={<Navigate to="/portal/overview" replace />} />
+              <Route path="overview" element={<PortalDashboard />} />
+              <Route path="leads" element={<PortalLeads />} />
+              <Route path="leads/new" element={<PortalSubmitLead />} />
+              <Route path="bookings" element={<PortalBookings />} />
+            </Route>
 
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
-      </Suspense>
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </Suspense>
+      </ErrorBoundary>
       <ToastHost />
     </>
   );

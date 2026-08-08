@@ -1,21 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import * as Icons from 'lucide-react';
 import {
-  Bell, ChevronLeft, LogOut, Menu, Moon, Search, Settings, Shield, Sparkles, Sun, X,
+  Bell, Building2, ChevronLeft, LogOut, Menu, Moon, Search, Settings, Shield, Sparkles, Sun, X,
 } from 'lucide-react';
 import { useApp } from '../lib/store';
 import { api } from '../lib/api';
 import { useRealtime } from '../lib/realtime';
 import { cn, groupModules } from '../lib/utils';
+import { resolveIcon } from '../lib/icons';
+import { ErrorBoundary } from './ErrorBoundary';
 import { Avatar, Badge, Dropdown, DropdownItem, Spinner } from './ui';
 import AiAssistant from './AiAssistant';
 
-/** Resolve a lucide icon by its kebab-case metadata name. */
+/** Resolve a lucide icon by its kebab-case metadata name (see lib/icons.ts for why this is a registry, not a namespace lookup). */
 export function ModuleIcon({ name, className }: { name: string; className?: string }): JSX.Element {
-  const pascal = name.split('-').map((p) => p[0]?.toUpperCase() + p.slice(1)).join('');
-  const Icon = (Icons as unknown as Record<string, React.FC<{ className?: string }>>)[pascal] ?? Icons.Box;
+  const Icon = resolveIcon(name);
   return <Icon className={className ?? 'h-4 w-4'} />;
 }
 
@@ -49,7 +49,7 @@ export default function Layout(): JSX.Element {
         <div className="flex h-14 shrink-0 items-center gap-2 border-b border-slate-200 px-3 dark:border-slate-800">
           <Link to="/dashboard" className="flex items-center gap-2 overflow-hidden">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-white">
-              <Icons.Building2 className="h-4.5 w-4.5" />
+              <Building2 className="h-4.5 w-4.5" />
             </div>
             {!sidebarCollapsed && (
               <span className="truncate text-base font-semibold tracking-tight">iPropy</span>
@@ -186,7 +186,13 @@ export default function Layout(): JSX.Element {
         </header>
 
         <main className="min-h-0 flex-1 overflow-y-auto">
-          <Outlet />
+          {/* Per-page net. Keyed on the path so a crashed page clears itself
+              when the user navigates away — without the key the boundary stays
+              latched and every subsequent route renders the error screen. The
+              sidebar and header live outside it and stay usable throughout. */}
+          <ErrorBoundary resetKey={location.pathname}>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
 
