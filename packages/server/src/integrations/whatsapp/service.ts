@@ -6,12 +6,14 @@
  * everything onto the record timeline.
  */
 import { renderTemplate, toE164 } from '@ipropy/shared';
-import { db, transaction, type Tx } from '../../db/pool.js';
+import { db, onCommit, transaction, type Tx } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { BadRequestError, NotFoundError } from '../../utils/errors.js';
 import { bus } from '../../core/events/bus.js';
 import { touchActivity } from '../../core/entity/recordService.js';
 import * as provider from './provider.js';
+import { detectConsentKeyword, maySend, recordConsent } from './consent.js';
+import { runAutoReply } from './autoreply.js';
 
 const WINDOW_HOURS = 24;
 
@@ -191,6 +193,30 @@ export async function handleInbound(msg: InboundMessage): Promise<{ conversation
       recordId: conv?.record_id ?? null,
     });
 
+    // STOP / START. Handled before anything else can reply, and inside this
+    // transaction, so a person who opts out cannot receive an auto-reply in
+    // the same breath.
+    const consentAction = detectConsentKeyword(body);
+    if (consentAction) {
+      await recordConsent({
+        handle: msg.from, action: consentAction, source: 'keyword',
+        messageText: body, recordId: conv?.record_id ?? null,
+      }, tx);
+    }
+
+    // Auto-reply runs after commit: it sends a message, and doing that inside
+    // an open transaction risks holding a row lock across a network call to
+    // Meta (see CLAUDE.md on emitting inside transactions).
+    onCommit(tx, async () => {
+      await runAutoReply({
+        conversationId,
+        handle: msg.from,
+        text: body,
+        recordId: conv?.record_id ?? null,
+        consentAction,
+      }).catch((err) => logger.warn({ err }, 'auto-reply failed'));
+    });
+
     return { conversationId, messageId: message!.id };
   });
 }
@@ -243,6 +269,23 @@ export async function sendMessage(input: SendMessageInput): Promise<{ messageId:
   // Outside the 24h window Meta only accepts templates — surface that clearly
   // rather than letting the API reject it with a cryptic error.
   const windowOpen = await isWindowOpen(conversationId);
+
+  // Consent is enforced here, on the one path every send goes through, rather
+  // than trusted to whoever built the audience. Meta penalises the *number*
+  // for messaging people who opted out, and the number is the whole channel.
+  // Replying inside an open session is exempt: they messaged us, and declining
+  // to answer a live question is not what opting out of marketing means.
+  const consent = await maySend(handle, { sessionReply: windowOpen && !input.templateName && !input.campaignId });
+  if (!consent.allowed) {
+    const blocked = await db.queryOne<{ id: string }>(
+      `INSERT INTO ipy_message (conversation_id, direction, channel, type, body, status, error, sent_by, campaign_id)
+       VALUES ($1,'outbound','whatsapp','text',$2,'blocked',$3,$4,$5) RETURNING id`,
+      [conversationId, input.text ?? input.templateName ?? null, consent.reason, input.sentBy ?? null, input.campaignId ?? null],
+    );
+    // Logged rather than thrown: a broadcast must skip this recipient and carry
+    // on, and the operator needs to see that it was skipped and why.
+    return { messageId: blocked?.id ?? '', status: 'blocked', error: consent.reason };
+  }
   if (!windowOpen && !input.templateName && !input.media) {
     throw new BadRequestError(
       'This conversation is outside the 24-hour WhatsApp window. Send an approved template to re-open it.',
