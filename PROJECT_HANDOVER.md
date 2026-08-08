@@ -222,7 +222,7 @@ All 12 are seeded and fully editable at runtime.
 
 | Module | Group | Notes |
 |---|---|---|
-| **Leads & Customers** | Sales | **Core.** Single party record; lifecycle Lead→Prospect→Customer→Past Customer. 82 fields, 11 blocks, 6 relations. |
+| **Leads & Contacts** | Sales | **Core.** Single party record; lifecycle Lead→Prospect→Customer→Past Customer. 82 fields, 11 blocks, 6 relations. |
 | Organisations | Sales | Developers, corporates, investors |
 | Deals | Sales | Pipeline with stage probability, AI risk scoring |
 | Site Visits | Sales | Scheduling, feedback, AI summary/sentiment; promotes lifecycle to Prospect |

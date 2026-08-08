@@ -123,12 +123,27 @@ export async function runWidget(
       return runForecast(ctx, config, conn);
     case 'heatmap':
       return runHeatmap(ctx, config, conn);
+    // Both are record lists with an opinionated sort, so they run through the
+    // same permission-scoped path as `table` rather than reading ipy_audit
+    // directly — an audit-backed feed would have to re-derive record
+    // visibility per row, and would leak the existence of records the viewer
+    // cannot open.
+    case 'activity_feed':
+      return runTable(ctx, {
+        module: 'leads', sortBy: 'last_activity_at', sortDir: 'desc', limit: 12,
+        columns: ['status', 'owner_id', 'last_activity_at'],
+        ...config,
+      }, conn, type);
+    case 'calendar':
+      return runTable(ctx, {
+        module: 'activities', sortBy: 'due_date', sortDir: 'asc', limit: 15,
+        columns: ['due_date', 'activity_type', 'owner_id', 'status'],
+        ...config,
+      }, conn, type);
     case 'markdown':
     case 'iframe':
     case 'ai_insights':
-    case 'activity_feed':
-    case 'calendar':
-      // Rendered client-side or by a dedicated endpoint.
+      // Purely client-rendered: no data query to run.
       return { type, meta: config as Record<string, unknown> };
     default:
       throw new BadRequestError(`Unknown widget type '${type}'`);

@@ -60,7 +60,8 @@ Vtiger (at `../vtigercrm`) is an **architecture reference only**. No Vtiger code
 * **`ipy_record` is the shared id space.** Every `*_id` reference (including `contact_id`) points at
   `ipy_record(id)`, never at a payload table. This is why the Contacts→Leads merge preserved every
   foreign key without repointing.
-* **There is no Contacts module.** Leads is the single party record ("Leads & Customers") carrying
+* **There is no separate Contacts module.** Leads is the single party record (labelled "Leads &
+  Contacts") carrying
   `lifecycle_stage`: `Lead → Prospect → Customer → Past Customer`. Conversion promotes the record
   **in place** and opens a Deal — it does not create a second person.
 * **Core modules** (`leads`, `activities`) have `is_core = true` and cannot be disabled.

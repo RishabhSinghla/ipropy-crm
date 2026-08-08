@@ -31,6 +31,16 @@ export default function Layout(): JSX.Element {
 
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
 
+  // Records that arrived while this user was away, per module. Polled rather
+  // than pushed because it also has to be right after a colleague reassigns
+  // something, which produces no event on this session's socket.
+  const { data: unseenCounts } = useQuery({
+    queryKey: ['unseen-counts'],
+    queryFn: () => api.unseenCounts(),
+    enabled: Boolean(user),
+    refetchInterval: 60_000,
+  });
+
   const grouped = useMemo(
     () => groupModules(modules.filter((m) => m.showInMenu && m.isEntity && m.permissions.view)),
     [modules],
@@ -95,6 +105,9 @@ export default function Layout(): JSX.Element {
                     label={m.label}
                     collapsed={sidebarCollapsed}
                     color={m.color}
+                    badge={unseenCounts?.[m.name]
+                      ? <UnseenBadge count={unseenCounts[m.name]} />
+                      : undefined}
                   />
                 ))}
               </div>
@@ -235,6 +248,18 @@ function NavItem({
       {!collapsed && <span className="flex-1 truncate">{label}</span>}
       {!collapsed && badge}
     </NavLink>
+  );
+}
+
+/** Count of records in a module this user has never opened. */
+function UnseenBadge({ count }: { count: number }): JSX.Element {
+  return (
+    <span
+      className="rounded-full bg-brand-600 px-1.5 py-0.5 text-2xs font-semibold text-white"
+      title={`${count} new — not opened yet`}
+    >
+      {count > 99 ? '99+' : count}
+    </span>
   );
 }
 

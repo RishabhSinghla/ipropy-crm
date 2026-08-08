@@ -254,6 +254,9 @@ export const api = {
   previewWidget: (type: string, config: Record<string, unknown>) =>
     post<Record<string, unknown>>('/api/dashboards/preview', { type, config }),
   createDashboard: (data: Record<string, unknown>) => post<{ id: string }>('/api/dashboards', data),
+  updateDashboard: (id: string, data: Record<string, unknown>) => patch(`/api/dashboards/${id}`, data),
+  deleteDashboard: (id: string) => del(`/api/dashboards/${id}`),
+  duplicateDashboard: (id: string) => post<{ id: string }>(`/api/dashboards/${id}/duplicate`, {}),
   addWidget: (dashboardId: string, data: Record<string, unknown>) =>
     post<{ id: string }>(`/api/dashboards/${dashboardId}/widgets`, data),
   updateWidget: (dashboardId: string, widgetId: string, data: Record<string, unknown>) =>
@@ -348,6 +351,20 @@ export const api = {
   // --- misc ---------------------------------------------------------------
   search: (q: string) => get<{ id: string; module: string; moduleLabel: string; label: string }[]>(`/api/search${qs({ q })}`),
   recent: () => get<{ id: string; label: string; module_name: string }[]>('/api/recent'),
+  // --- browser push --------------------------------------------------------
+  pushKey: () => get<{ publicKey: string }>('/api/push/key'),
+  pushSubscribe: (sub: { endpoint: string; keys: { p256dh: string; auth: string } }) =>
+    post('/api/push/subscribe', sub),
+  pushUnsubscribe: (endpoint: string) => post('/api/push/unsubscribe', { endpoint }),
+  pushTest: () => post<{ ok: boolean; message: string }>('/api/push/test', {}),
+  pushDevices: () => get<Record<string, unknown>[]>('/api/push/devices'),
+
+  // --- "new since you last looked" ----------------------------------------
+  unseen: (module: string, ids: string[]) =>
+    post<{ unseen: string[] }>(`/api/records/${module}/unseen`, { ids }),
+  markModuleSeen: (module: string) => post(`/api/records/${module}/seen`, {}),
+  unseenCounts: () => get<Record<string, number>>('/api/unseen-counts'),
+
   notifications: (unread = false) =>
     get<{ notifications: Record<string, unknown>[]; unreadCount: number }>(`/api/notifications${qs({ unread })}`),
   markNotificationsRead: (ids?: string[]) => post('/api/notifications/read', { ids }),

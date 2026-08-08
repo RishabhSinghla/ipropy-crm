@@ -1,21 +1,26 @@
 /**
- * Anthropic client wrapper.
+ * LLM client wrapper.
  *
- * Every AI feature goes through here so we get: one place for model selection,
- * token accounting, structured-output parsing, graceful degradation when no API
- * key is present, and an audit row per call.
+ * Every AI feature goes through here so we get: one place for provider and
+ * model selection, token accounting, structured-output parsing, graceful
+ * degradation when nothing is configured, and an audit row per call.
+ *
+ * Two transports cover every supported provider. Anthropic uses its own SDK;
+ * everything else — Gemini via Google's OpenAI-compatible endpoint, Groq,
+ * OpenRouter, OpenAI, a local Ollama — speaks the OpenAI chat-completions
+ * shape, so a single `fetch` adapter reaches all of them. Which one is in play
+ * is decided in core/settings/integrations.ts, not here.
  */
 import Anthropic from '@anthropic-ai/sdk';
-import { getSettings } from '../core/settings/integrations.js';
+import { config } from '../config.js';
+import { getAiProviderSettings, getSettings, type AiProvider } from '../core/settings/integrations.js';
 import { db } from '../db/pool.js';
 import { logger } from '../utils/logger.js';
 
 let client: Anthropic | null = null;
 let clientKey: string | null = null;
 
-function getClient(): Anthropic | null {
-  const { enabled, apiKey } = getSettings().ai;
-  if (!enabled || !apiKey) return null;
+function getAnthropic(apiKey: string): Anthropic {
   // Rebuild if the admin rotated the key via the integrations panel — a stale
   // client would keep authenticating with the old one.
   if (!client || clientKey !== apiKey) {
@@ -26,8 +31,51 @@ function getClient(): Anthropic | null {
 }
 
 export function isAiAvailable(): boolean {
-  const { enabled, apiKey } = getSettings().ai;
-  return Boolean(enabled && apiKey);
+  const { enabled, provider } = getSettings().ai;
+  return Boolean(enabled && provider !== 'none');
+}
+
+/** For the admin panel and the `aiAvailable` flag the web app reads at login. */
+export function aiStatus(): { available: boolean; provider: string; model: string } {
+  const { enabled, provider, model } = getSettings().ai;
+  return { available: Boolean(enabled && provider !== 'none'), provider, model };
+}
+
+/**
+ * Round-trip one cheap completion against a named provider.
+ *
+ * Deliberately a real generation rather than a `/models` listing: a key can
+ * list models and still be out of quota, be scoped to the wrong project, or
+ * name a model that has been retired — all of which show up here as the same
+ * failure the CRM would hit, which is the point of a connectivity test.
+ */
+export async function testAiProvider(
+  provider: Exclude<AiProvider, 'none'>,
+): Promise<{ ok: boolean; message: string }> {
+  const settings = getAiProviderSettings(provider);
+  if (!settings) {
+    return {
+      ok: false,
+      message: provider === 'ollama'
+        ? 'Enable this provider first — Ollama needs no key, but it does need to be switched on and running.'
+        : 'An API key is required.',
+    };
+  }
+
+  try {
+    const started = Date.now();
+    const result = provider === 'anthropic'
+      ? await callAnthropic(settings.apiKey, settings.fastModel, 16, 0, {
+        feature: 'connectivity_test', system: 'Reply with the single word OK.', prompt: 'Say OK.',
+      })
+      : await callOpenAiCompatible(settings.baseUrl, settings.apiKey, settings.fastModel, 16, 0, {
+        feature: 'connectivity_test', system: 'Reply with the single word OK.', prompt: 'Say OK.',
+      });
+    if (!result.text.trim()) return { ok: false, message: `${settings.fastModel} returned an empty response.` };
+    return { ok: true, message: `Connected — ${settings.fastModel} replied in ${Date.now() - started}ms.` };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : 'Connection failed.' };
+  }
 }
 
 export interface CompleteOptions {
@@ -54,47 +102,124 @@ export interface CompleteResult {
 }
 
 export async function complete(opts: CompleteOptions): Promise<CompleteResult | null> {
-  const api = getClient();
-  if (!api) return null;
+  const ai = getSettings().ai;
+  if (!ai.enabled || ai.provider === 'none') return null;
 
-  const aiSettings = getSettings().ai;
-  const model = opts.fast ? aiSettings.fastModel : aiSettings.model;
+  const model = opts.fast ? ai.fastModel : ai.model;
+  const maxTokens = opts.maxTokens ?? ai.maxTokens;
+  const temperature = opts.temperature ?? 0.2;
   const started = Date.now();
 
   try {
-    const messages: Anthropic.MessageParam[] = [{ role: 'user', content: opts.prompt }];
-    if (opts.prefill) messages.push({ role: 'assistant', content: opts.prefill });
-
-    const response = await api.messages.create({
-      model,
-      max_tokens: opts.maxTokens ?? aiSettings.maxTokens,
-      temperature: opts.temperature ?? 0.2,
-      system: opts.system,
-      messages,
-      ...(opts.stopSequences ? { stop_sequences: opts.stopSequences } : {}),
-    });
-
-    const text = response.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('');
-
-    const result: CompleteResult = {
-      // Prefill isn't echoed back, so re-attach it for the caller's parser.
-      text: opts.prefill ? opts.prefill + text : text,
-      inputTokens: response.usage.input_tokens,
-      outputTokens: response.usage.output_tokens,
-      model,
-    };
+    const result = ai.provider === 'anthropic'
+      ? await callAnthropic(ai.apiKey, model, maxTokens, temperature, opts)
+      : await callOpenAiCompatible(ai.baseUrl, ai.apiKey, model, maxTokens, temperature, opts);
 
     await logCall(opts, result, Date.now() - started, true, null);
     return result;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    logger.error({ err, feature: opts.feature }, 'AI call failed');
+    logger.error({ err, feature: opts.feature, provider: ai.provider, model }, 'AI call failed');
     await logCall(opts, null, Date.now() - started, false, message);
     return null;
   }
+}
+
+async function callAnthropic(
+  apiKey: string, model: string, maxTokens: number, temperature: number, opts: CompleteOptions,
+): Promise<CompleteResult> {
+  const messages: Anthropic.MessageParam[] = [{ role: 'user', content: opts.prompt }];
+  if (opts.prefill) messages.push({ role: 'assistant', content: opts.prefill });
+
+  const response = await getAnthropic(apiKey).messages.create({
+    model,
+    max_tokens: maxTokens,
+    temperature,
+    system: opts.system,
+    messages,
+    ...(opts.stopSequences ? { stop_sequences: opts.stopSequences } : {}),
+  });
+
+  const text = response.content
+    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+    .map((b) => b.text)
+    .join('');
+
+  return {
+    // Prefill isn't echoed back, so re-attach it for the caller's parser.
+    text: opts.prefill ? opts.prefill + text : text,
+    inputTokens: response.usage.input_tokens,
+    outputTokens: response.usage.output_tokens,
+    model,
+  };
+}
+
+interface ChatCompletionResponse {
+  choices?: { message?: { content?: string | null } }[];
+  usage?: { prompt_tokens?: number; completion_tokens?: number };
+  error?: { message?: string } | string;
+}
+
+/**
+ * Gemini / Groq / OpenRouter / OpenAI / Ollama.
+ *
+ * Two differences from the Anthropic path are worth knowing about:
+ *
+ * - Assistant prefill is not part of the OpenAI shape. Several of these
+ *   providers reject or ignore a trailing assistant turn, so `completeJson`'s
+ *   "{" trick is instead expressed as an instruction and the response is
+ *   normalised below. `parseJson` already tolerates fences and prose, which is
+ *   what makes this safe.
+ * - There is no shared SDK. Raw `fetch` keeps the dependency list unchanged and
+ *   works identically against a local Ollama, which is the zero-cost option.
+ */
+async function callOpenAiCompatible(
+  baseUrl: string, apiKey: string, model: string, maxTokens: number, temperature: number, opts: CompleteOptions,
+): Promise<CompleteResult> {
+  const system = opts.prefill
+    ? `${opts.system}\n\nBegin your reply directly with ${opts.prefill.trim()} — no preamble, no code fences.`
+    : opts.system;
+
+  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${apiKey}`,
+      // OpenRouter attributes traffic with these and rate-limits unattributed
+      // callers harder; harmless everywhere else.
+      'http-referer': config.appUrl,
+      'x-title': 'iPropy CRM',
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: maxTokens,
+      temperature,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: opts.prompt },
+      ],
+      ...(opts.stopSequences ? { stop: opts.stopSequences } : {}),
+    }),
+    signal: AbortSignal.timeout(120_000),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`${response.status} ${response.statusText}${body ? `: ${body.slice(0, 300)}` : ''}`);
+  }
+
+  const json = await response.json() as ChatCompletionResponse;
+  if (json.error) {
+    throw new Error(typeof json.error === 'string' ? json.error : (json.error.message ?? 'provider error'));
+  }
+
+  const text = json.choices?.[0]?.message?.content ?? '';
+  return {
+    text,
+    inputTokens: json.usage?.prompt_tokens ?? 0,
+    outputTokens: json.usage?.completion_tokens ?? 0,
+    model,
+  };
 }
 
 /**

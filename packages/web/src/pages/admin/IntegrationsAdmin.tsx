@@ -75,6 +75,32 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
     { key: 'fastModel', label: 'Fast model', source: 'config', placeholder: 'claude-haiku-4-5-20251001' },
     { key: 'maxTokens', label: 'Max tokens', source: 'config', placeholder: '4096' },
   ],
+  ai_gemini: [
+    { key: 'apiKey', label: 'API Key', source: 'credentials', secret: true },
+    { key: 'model', label: 'Model', source: 'config', placeholder: 'gemini-2.5-flash' },
+    { key: 'fastModel', label: 'Fast model', source: 'config', placeholder: 'gemini-2.5-flash-lite' },
+  ],
+  ai_groq: [
+    { key: 'apiKey', label: 'API Key', source: 'credentials', secret: true },
+    { key: 'model', label: 'Model', source: 'config', placeholder: 'llama-3.3-70b-versatile' },
+    { key: 'fastModel', label: 'Fast model', source: 'config', placeholder: 'llama-3.1-8b-instant' },
+  ],
+  ai_openrouter: [
+    { key: 'apiKey', label: 'API Key', source: 'credentials', secret: true },
+    { key: 'model', label: 'Model', source: 'config', placeholder: 'openrouter/free' },
+    { key: 'fastModel', label: 'Fast model', source: 'config', placeholder: 'openrouter/free' },
+  ],
+  ai_openai: [
+    { key: 'apiKey', label: 'API Key', source: 'credentials', secret: true },
+    { key: 'baseUrl', label: 'Base URL', source: 'config', placeholder: 'https://api.openai.com/v1' },
+    { key: 'model', label: 'Model', source: 'config', placeholder: 'gpt-4o-mini' },
+    { key: 'fastModel', label: 'Fast model', source: 'config', placeholder: 'gpt-4o-mini' },
+  ],
+  ai_ollama: [
+    { key: 'baseUrl', label: 'Base URL', source: 'config', placeholder: 'http://localhost:11434/v1' },
+    { key: 'model', label: 'Model', source: 'config', placeholder: 'llama3.1' },
+    { key: 'fastModel', label: 'Fast model', source: 'config', placeholder: 'llama3.1' },
+  ],
   stt: [
     { key: 'apiKey', label: 'API Key (OpenAI-compatible Whisper)', source: 'credentials', secret: true },
     { key: 'baseUrl', label: 'Base URL', source: 'config', placeholder: 'https://api.openai.com/v1' },
@@ -102,11 +128,57 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
   ],
 };
 
-const TESTABLE = new Set(['meta_whatsapp', 'twilio', 'exotel', 'smtp', 'imap', 'anthropic', 'facebook_leads']);
+const TESTABLE = new Set([
+  'meta_whatsapp', 'twilio', 'exotel', 'smtp', 'imap', 'facebook_leads',
+  'anthropic', 'ai_gemini', 'ai_groq', 'ai_openrouter', 'ai_openai', 'ai_ollama',
+]);
+
+/**
+ * Where to get a key, shown on the card. Only the AI providers have these
+ * because they are the ones an operator is expected to sign up for themselves
+ * — the rest are configured by whoever already owns the account.
+ */
+const PROVIDER_HINTS: Record<string, { text: string; href?: string; linkLabel?: string; free?: boolean }> = {
+  anthropic: {
+    text: 'Best quality, paid. Billing required.',
+    href: 'https://console.anthropic.com/settings/keys',
+    linkLabel: 'Get a key',
+  },
+  ai_gemini: {
+    free: true,
+    text: 'Free tier, no card needed — the most generous free option (1M-token context). Note Google may train on free-tier prompts.',
+    href: 'https://aistudio.google.com/apikey',
+    linkLabel: 'Get a free key',
+  },
+  ai_groq: {
+    free: true,
+    text: 'Free tier, no card needed. Fastest responses of the free options.',
+    href: 'https://console.groq.com/keys',
+    linkLabel: 'Get a free key',
+  },
+  ai_openrouter: {
+    free: true,
+    text: 'Free tier, no card needed. Keep the model as openrouter/free — individual “:free” model ids get retired without notice.',
+    href: 'https://openrouter.ai/keys',
+    linkLabel: 'Get a free key',
+  },
+  ai_openai: {
+    text: 'Any OpenAI-compatible endpoint — OpenAI, Together, Fireworks, vLLM.',
+    href: 'https://platform.openai.com/api-keys',
+    linkLabel: 'Get a key',
+  },
+  ai_ollama: {
+    free: true,
+    text: 'Free and fully local — nothing leaves this machine. Needs `ollama serve` running.',
+    href: 'https://ollama.com/download',
+    linkLabel: 'Install Ollama',
+  },
+};
 
 function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element {
   const queryClient = useQueryClient();
   const fields = PROVIDER_FIELDS[summary.provider] ?? [];
+  const hint = PROVIDER_HINTS[summary.provider];
   const [values, setValues] = useState<Record<string, string>>(
     Object.fromEntries(fields.map((f) => [f.key, f.source === 'config' ? (summary.config[f.key] ?? '') : ''])),
   );
@@ -198,6 +270,23 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
         )}
         <Toggle checked={summary.isActive} onChange={(next) => void toggleActive(next)} className="ml-auto" />
       </div>
+
+      {hint && (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-slate-100 bg-slate-50/60 px-4 py-2 text-xs text-muted dark:border-slate-800 dark:bg-slate-800/30">
+          {hint.free && <Badge color="#22c55e">Free tier</Badge>}
+          <span className="min-w-0 flex-1">{hint.text}</span>
+          {hint.href && (
+            <a
+              href={hint.href}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="shrink-0 font-medium text-brand-600 hover:underline dark:text-brand-400"
+            >
+              {hint.linkLabel ?? 'Open'} →
+            </a>
+          )}
+        </div>
+      )}
 
       <div className="grid gap-3 p-4 sm:grid-cols-2">
         {fields.map((f) => {

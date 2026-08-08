@@ -19,6 +19,10 @@ import { BadRequestError, ForbiddenError, NotFoundError } from '../../utils/erro
 import { assertCapability, canAccessRecord } from '../../core/permissions/index.js';
 import { getDriver, getStorageSettings } from '../../core/storage/index.js';
 import { recordService } from '../../core/entity/recordService.js';
+import { unseenCounts } from '../../core/entity/unseen.js';
+import {
+  deletePushSubscription, ensureVapidKeys, notify, savePushSubscription,
+} from '../../core/notifications/index.js';
 import { registry } from '../../core/metadata/registry.js';
 import { invalidateWorkflows } from '../../core/workflow/engine.js';
 import { runSchedulerNow } from '../../core/workflow/scheduler.js';
@@ -45,6 +49,76 @@ miscRouter.get('/recent', asyncHandler(async (req, res) => {
      FROM ipy_recent_view rv JOIN ipy_record r ON r.id = rv.record_id
      WHERE rv.user_id = $1 AND r.is_deleted = false
      ORDER BY rv.viewed_at DESC LIMIT 15`,
+    [getUser(req).id],
+  );
+  res.json(rows.rows);
+}));
+
+/**
+ * Per-module counts of records this user has not opened yet — the sidebar
+ * badges. Scoped, so the number only counts records the user can actually open.
+ */
+miscRouter.get('/unseen-counts', asyncHandler(async (req, res) => {
+  res.json(await unseenCounts(getScope(req)));
+}));
+
+// ---------------------------------------------------------------------------
+// Browser push — one subscription per device, so a person may hold several
+// (laptop Chrome, Android Chrome, iOS home-screen PWA).
+// ---------------------------------------------------------------------------
+
+/** Public VAPID key the browser needs to subscribe. Generated on first request. */
+miscRouter.get('/push/key', asyncHandler(async (_req, res) => {
+  const keys = await ensureVapidKeys();
+  res.json({ publicKey: keys.publicKey });
+}));
+
+miscRouter.post('/push/subscribe', asyncHandler(async (req, res) => {
+  const input = z.object({
+    endpoint: z.string().url(),
+    keys: z.object({ p256dh: z.string().min(1), auth: z.string().min(1) }),
+  }).parse(req.body);
+
+  await savePushSubscription({
+    userId: getUser(req).id,
+    endpoint: input.endpoint,
+    p256dh: input.keys.p256dh,
+    auth: input.keys.auth,
+    userAgent: req.get('user-agent') ?? undefined,
+  });
+  res.json({ ok: true });
+}));
+
+miscRouter.post('/push/unsubscribe', asyncHandler(async (req, res) => {
+  const { endpoint } = z.object({ endpoint: z.string().url() }).parse(req.body);
+  await deletePushSubscription(endpoint);
+  res.json({ ok: true });
+}));
+
+/** Send a test notification to this user's own devices. */
+miscRouter.post('/push/test', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const subs = await db.queryOne<{ count: number }>(
+    `SELECT COUNT(*)::int AS count FROM ipy_push_subscription WHERE user_id = $1`, [user.id],
+  );
+  if (!subs?.count) {
+    res.json({ ok: false, message: 'No devices are subscribed yet — enable notifications first.' });
+    return;
+  }
+  await notify({
+    userId: user.id,
+    kind: 'test',
+    title: 'iPropy test notification',
+    body: 'If you can see this, alerts will reach you when a lead arrives.',
+    link: '/dashboard',
+  });
+  res.json({ ok: true, message: `Sent to ${subs.count} device${subs.count === 1 ? '' : 's'}.` });
+}));
+
+miscRouter.get('/push/devices', asyncHandler(async (req, res) => {
+  const rows = await db.query(
+    `SELECT id, user_agent, created_at, last_used_at
+     FROM ipy_push_subscription WHERE user_id = $1 ORDER BY created_at DESC`,
     [getUser(req).id],
   );
   res.json(rows.rows);

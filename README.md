@@ -96,7 +96,7 @@ permissions strip values from the API response, not just from the UI.
 
 | | |
 |---|---|
-| **Sales** | Leads & Customers · Organisations · Deals · Site Visits · Bookings · Channel Partners |
+| **Sales** | Leads & Contacts · Organisations · Deals · Site Visits · Bookings · Channel Partners |
 | **Inventory** | Projects · Properties/Units |
 | **Marketing** | Campaigns |
 | **Finance** | Payments |
@@ -105,7 +105,7 @@ permissions strip values from the API response, not just from the UI.
 430 fields, 54 dropdown option sets, 30+ system views, 5 dashboards, 17 workflows — all seeded and all
 editable from the admin panel.
 
-### One party record: Leads & Customers
+### One party record: Leads & Contacts
 
 There is no separate Contacts module. A person is a single record that carries a **lifecycle stage**
 from first enquiry to repeat buyer:

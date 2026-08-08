@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { KeyRound, Monitor, Moon, Save, Sun, User } from 'lucide-react';
+import { relativeTime } from '@ipropy/shared';
+import { Bell, BellOff, KeyRound, Monitor, Moon, Save, Sun, User } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
+import { currentSubscription, disablePush, enablePush, permissionState, pushSupport } from '../lib/push';
 import { Avatar, Badge, Select, Skeleton, Spinner, Tabs } from '../components/ui';
 
 export default function SettingsPage(): JSX.Element {
@@ -21,6 +23,7 @@ export default function SettingsPage(): JSX.Element {
         tabs={[
           { key: 'profile', label: 'Profile', icon: <User className="h-3.5 w-3.5" /> },
           { key: 'preferences', label: 'Preferences', icon: <Monitor className="h-3.5 w-3.5" /> },
+          { key: 'alerts', label: 'Alerts', icon: <Bell className="h-3.5 w-3.5" /> },
           { key: 'security', label: 'Security', icon: <KeyRound className="h-3.5 w-3.5" /> },
         ]}
         active={tab}
@@ -30,6 +33,7 @@ export default function SettingsPage(): JSX.Element {
 
       {tab === 'profile' && <ProfileTab />}
       {tab === 'preferences' && <PreferencesTab theme={theme} setTheme={setTheme} />}
+      {tab === 'alerts' && <AlertsTab />}
       {tab === 'security' && <SecurityTab />}
     </div>
   );
@@ -252,4 +256,149 @@ function SecurityTab(): JSX.Element {
       </div>
     </div>
   );
+}
+
+/**
+ * Turn browser alerts on for this device.
+ *
+ * Per device, not per account: someone can want alerts on their phone and not
+ * on the shared desk machine, and the browser's subscription is per
+ * device+origin anyway. The device list makes that visible, because "I turned
+ * notifications on, why is nothing arriving" is otherwise unanswerable.
+ */
+function AlertsTab(): JSX.Element {
+  const [support] = useState(() => pushSupport());
+  const [permission, setPermission] = useState(() => permissionState());
+  const [subscribed, setSubscribed] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const { data: devices, refetch: refetchDevices } = useQuery({
+    queryKey: ['push-devices'],
+    queryFn: () => api.pushDevices(),
+  });
+
+  useEffect(() => {
+    void currentSubscription().then((sub) => setSubscribed(Boolean(sub)));
+  }, []);
+
+  const enable = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      const result = await enablePush();
+      setPermission(permissionState());
+      if (result.ok) {
+        setSubscribed(true);
+        toast.success(result.message);
+        await refetchDevices();
+      } else {
+        toast.error('Could not turn on alerts', result.message);
+      }
+    } catch (err) {
+      toast.error('Could not turn on alerts', (err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const disable = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      await disablePush();
+      setSubscribed(false);
+      toast.success('Alerts turned off for this device');
+      await refetchDevices();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sendTest = async (): Promise<void> => {
+    const result = await api.pushTest();
+    if (result.ok) toast.success('Test sent', result.message);
+    else toast.error('Nothing to send to', result.message);
+  };
+
+  return (
+    <div className="card space-y-5 p-5">
+      <div>
+        <p className="text-sm font-medium">Alerts on this device</p>
+        <p className="mt-1 text-sm text-muted">
+          Get a notification the moment a lead arrives or is assigned to you — even with the
+          CRM closed.
+        </p>
+      </div>
+
+      {!support.supported ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+          {support.reason === 'ios-needs-install'
+            ? 'On iPhone and iPad, alerts only work once iPropy is added to the Home Screen. Tap Share → Add to Home Screen, open it from there, then come back to this page.'
+            : support.reason === 'insecure'
+              ? 'Alerts need a secure (https) connection.'
+              : 'This browser cannot receive push notifications.'}
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          {subscribed ? (
+            <>
+              <button className="btn-secondary btn-sm" disabled={busy} onClick={() => void disable()}>
+                {busy && <Spinner className="h-3 w-3" />}<BellOff className="h-3.5 w-3.5" /> Turn off alerts
+              </button>
+              <button className="btn-secondary btn-sm" onClick={() => void sendTest()}>
+                Send a test
+              </button>
+              <Badge color="#22c55e">On for this device</Badge>
+            </>
+          ) : (
+            <button className="btn-primary btn-sm" disabled={busy} onClick={() => void enable()}>
+              {busy && <Spinner className="h-3 w-3" />}<Bell className="h-3.5 w-3.5" /> Turn on alerts
+            </button>
+          )}
+        </div>
+      )}
+
+      {permission === 'denied' && (
+        <p className="text-xs text-negative">
+          This site is blocked from sending notifications. Allow them in your browser’s site
+          settings (the icon at the left of the address bar), then reload.
+        </p>
+      )}
+
+      <div>
+        <p className="mb-2 text-sm font-medium">Devices receiving alerts</p>
+        {(devices ?? []).length === 0 ? (
+          <p className="text-xs text-muted">No devices yet.</p>
+        ) : (
+          <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-700">
+            {(devices ?? []).map((raw) => {
+              const d = raw as { id: string; user_agent: string | null; created_at: string; last_used_at: string | null };
+              return (
+                <li key={d.id} className="flex items-center justify-between gap-3 px-3 py-2">
+                  <span className="min-w-0 truncate text-xs">{describeDevice(d.user_agent)}</span>
+                  <span className="shrink-0 text-2xs text-muted">
+                    {d.last_used_at ? `last alert ${relativeTime(d.last_used_at)}` : 'no alerts yet'}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** A user-agent string is unreadable; this is enough to tell your devices apart. */
+function describeDevice(userAgent: string | null): string {
+  if (!userAgent) return 'Unknown device';
+  const os = /Android/i.test(userAgent) ? 'Android'
+    : /iPhone|iPad|iPod/i.test(userAgent) ? 'iPhone / iPad'
+    : /Macintosh/i.test(userAgent) ? 'Mac'
+    : /Windows/i.test(userAgent) ? 'Windows'
+    : /Linux/i.test(userAgent) ? 'Linux' : 'Unknown';
+  const browser = /Edg\//i.test(userAgent) ? 'Edge'
+    : /OPR\//i.test(userAgent) ? 'Opera'
+    : /Firefox\//i.test(userAgent) ? 'Firefox'
+    : /Chrome\//i.test(userAgent) ? 'Chrome'
+    : /Safari\//i.test(userAgent) ? 'Safari' : 'Browser';
+  return `${browser} on ${os}`;
 }

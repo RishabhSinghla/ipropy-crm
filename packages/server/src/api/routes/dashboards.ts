@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import type { WidgetConfig } from '@ipropy/shared';
-import { db, transaction } from '../../db/pool.js';
+import { db, transaction, type Tx } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { ForbiddenError, NotFoundError } from '../../utils/errors.js';
@@ -90,8 +90,24 @@ const dashboardSchema = z.object({
   name: z.string().min(1).max(120),
   description: z.string().optional(),
   isShared: z.boolean().default(false),
+  isDefault: z.boolean().optional(),
   module: z.string().nullable().optional(),
 });
+
+/**
+ * "Default" means "what /dashboard opens on", so exactly one may hold it within
+ * a visibility scope. Shared dashboards compete with each other, personal ones
+ * only with that user's own — otherwise setting a personal default would move
+ * every colleague's landing page.
+ */
+async function setDefaultDashboard(conn: Tx, dashboardId: string, ownerId: string | null, isShared: boolean): Promise<void> {
+  if (isShared) {
+    await conn.query(`UPDATE ipy_dashboard SET is_default = false WHERE is_shared AND id <> $1`, [dashboardId]);
+  } else {
+    await conn.query(`UPDATE ipy_dashboard SET is_default = false WHERE owner_id = $2 AND NOT is_shared AND id <> $1`, [dashboardId, ownerId]);
+  }
+  await conn.query(`UPDATE ipy_dashboard SET is_default = true WHERE id = $1`, [dashboardId]);
+}
 
 dashboardsRouter.post('/', asyncHandler(async (req, res) => {
   const user = getUser(req);
@@ -122,14 +138,28 @@ dashboardsRouter.patch('/:id', asyncHandler(async (req, res) => {
   await assertCanEdit(req.params.id, user.id, user.isAdmin);
   const input = dashboardSchema.partial().parse(req.body);
 
-  const sets: string[] = [];
-  const params: unknown[] = [req.params.id];
-  if (input.name !== undefined) { params.push(input.name); sets.push(`name = $${params.length}`); }
-  if (input.description !== undefined) { params.push(input.description); sets.push(`description = $${params.length}`); }
-  if (input.isShared !== undefined && user.isAdmin) { params.push(input.isShared); sets.push(`is_shared = $${params.length}`); }
-  if (sets.length) {
-    await db.query(`UPDATE ipy_dashboard SET ${sets.join(', ')}, updated_at = now() WHERE id = $1`, params);
-  }
+  await transaction(async (tx) => {
+    const sets: string[] = [];
+    const params: unknown[] = [req.params.id];
+    if (input.name !== undefined) { params.push(input.name); sets.push(`name = $${params.length}`); }
+    if (input.description !== undefined) { params.push(input.description); sets.push(`description = $${params.length}`); }
+    if (input.isShared !== undefined && user.isAdmin) { params.push(input.isShared); sets.push(`is_shared = $${params.length}`); }
+    if (sets.length) {
+      await tx.query(`UPDATE ipy_dashboard SET ${sets.join(', ')}, updated_at = now() WHERE id = $1`, params);
+    }
+
+    if (input.isDefault !== undefined) {
+      // Re-read after the update above so a rename+share+default in one PATCH
+      // scopes the default against the new sharing state, not the old one.
+      const dash = await tx.queryOne<{ owner_id: string | null; is_shared: boolean }>(
+        `SELECT owner_id, is_shared FROM ipy_dashboard WHERE id = $1`, [req.params.id],
+      );
+      if (!dash) throw new NotFoundError('Dashboard not found');
+      if (dash.is_shared && !user.isAdmin) throw new ForbiddenError('Only an administrator can change the shared default');
+      if (input.isDefault) await setDefaultDashboard(tx, req.params.id, dash.owner_id, dash.is_shared);
+      else await tx.query(`UPDATE ipy_dashboard SET is_default = false WHERE id = $1`, [req.params.id]);
+    }
+  });
   res.json({ ok: true });
 }));
 
