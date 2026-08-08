@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, Check, ChevronDown, Info, Loader2, X } from 'lucide-react';
-import { badgeVars } from '../lib/color';
+import { avatarBackground, badgeVars } from '../lib/color';
 import { cn } from '../lib/utils';
 import { useToasts } from '../lib/store';
 
@@ -53,10 +53,6 @@ export function Avatar({
   const initials = name
     ? name.trim().split(/\s+/).slice(0, 2).map((p) => p[0]).join('').toUpperCase()
     : '?';
-  // Deterministic hue so the same person is always the same colour.
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  const hue = Math.abs(hash) % 360;
 
   if (src) {
     return <img src={src} alt={name} width={size} height={size} className={cn('rounded-full object-cover', className)} />;
@@ -64,7 +60,9 @@ export function Avatar({
   return (
     <div
       className={cn('flex shrink-0 items-center justify-center rounded-full font-semibold text-white', className)}
-      style={{ width: size, height: size, backgroundColor: `hsl(${hue}, 55%, 45%)`, fontSize: size * 0.38 }}
+      // Deterministic per name, and dark enough that the white initials pass
+      // AA for every hue — see avatarBackground.
+      style={{ width: size, height: size, backgroundColor: avatarBackground(name), fontSize: size * 0.38 }}
       title={name}
     >
       {initials}

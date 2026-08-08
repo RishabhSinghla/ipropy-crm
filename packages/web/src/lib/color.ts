@@ -237,3 +237,40 @@ export function tintedTextVars(
 }
 
 const textCache = new Map<string, CSSProperties | null>();
+
+/**
+ * Avatar background for a name — the same hue it always was, darkened until
+ * the white initials on top actually pass AA.
+ *
+ * The hue is a hash of the name, so `hsl(h, 55%, 45%)` was only readable for
+ * some people: at 45% lightness a blue lands near 5:1 while a green or yellow
+ * lands near 2.9:1. That made it an accessibility bug that appeared or
+ * vanished depending on who was on screen — which is exactly how it went
+ * unnoticed, and why the e2e scan only caught it once a randomly-named test
+ * record hashed into the green part of the wheel.
+ */
+export function avatarBackground(name: string): string {
+  const hit = avatarCache.get(name);
+  if (hit !== undefined) return hit;
+
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  const hue = (Math.abs(hash) % 360) / 360;
+
+  // Walk down from the original 45% until white text clears AA. Saturation and
+  // hue are untouched, so avatars still look like the same palette.
+  let hex = rgbToHex(quantise(hslToRgb(hue, 0.55, 0.45)));
+  for (let l = 45; l >= 10; l--) {
+    const candidate = quantise(hslToRgb(hue, 0.55, l / 100));
+    if (contrastRatio(WHITE, candidate) >= AA_NORMAL) {
+      hex = rgbToHex(candidate);
+      break;
+    }
+  }
+
+  avatarCache.set(name, hex);
+  return hex;
+}
+
+const WHITE: RGB = [255, 255, 255];
+const avatarCache = new Map<string, string>();

@@ -219,3 +219,53 @@ describe('public API', () => {
     expect(total).toBeLessThanOrEqual(Number(allRows[0].count) - unpublished);
   });
 });
+
+/**
+ * The general /api budget is keyed per signed-in user, not per IP.
+ *
+ * This matters for how the product is actually used: a sales team works from
+ * one office behind one NAT, so IP keying would put everyone in a single
+ * 600/min bucket and let one busy user throttle their colleagues. It is the
+ * kind of thing that looks fine in dev — one developer, one IP, one user — and
+ * only shows up once a real team is on it.
+ *
+ * Asserted through the response headers rather than by exhausting the limit,
+ * which would need 600 requests and leave the bucket spent for later tests.
+ */
+describe('API rate limiting', () => {
+  const remaining = (res: request.Response): number => Number(res.headers['ratelimit-remaining']);
+
+  const asUser = (token: string) =>
+    request(app).get('/api/meta/modules').set('Authorization', `Bearer ${token}`);
+
+  it('gives each signed-in user their own budget', async () => {
+    const before = remaining(await asUser(executiveToken).expect(200));
+
+    // Spend some of the admin's budget. If the two shared a bucket, this would
+    // come straight out of the executive's.
+    for (let i = 0; i < 10; i++) await asUser(adminToken).expect(200);
+
+    const after = remaining(await asUser(executiveToken).expect(200));
+    // Only the executive's own two probes are charged to them.
+    expect(before - after).toBe(1);
+  });
+
+  it('charges the admin their own requests', async () => {
+    const before = remaining(await asUser(adminToken).expect(200));
+    await asUser(adminToken).expect(200);
+    const after = remaining(await asUser(adminToken).expect(200));
+    expect(before - after).toBe(2);
+  });
+
+  it('does not mint a fresh budget for an unverifiable token', async () => {
+    // Otherwise anyone could sidestep the limit entirely by sending a new
+    // made-up token with every request.
+    const first = remaining(
+      await request(app).get('/api/meta/modules').set('Authorization', 'Bearer forged.token.one'),
+    );
+    const second = remaining(
+      await request(app).get('/api/meta/modules').set('Authorization', 'Bearer forged.token.two'),
+    );
+    expect(second).toBeLessThan(first);
+  });
+});

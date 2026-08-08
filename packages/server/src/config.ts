@@ -45,6 +45,17 @@ export const config = {
     bcryptRounds: num('BCRYPT_ROUNDS', 10),
   },
 
+  security: {
+    /**
+     * Requests per minute on /api, counted per signed-in user (see
+     * apiRateLimitKey in app.ts) rather than per IP. Configurable because the
+     * right ceiling depends on the deployment — and because the e2e suite
+     * drives a whole app's worth of traffic from one session in under a
+     * minute, which is not a shape any real user produces.
+     */
+    apiRateLimit: num('API_RATE_LIMIT', 600),
+  },
+
   seed: {
     adminEmail: str('SEED_ADMIN_EMAIL', 'admin@ipropy.com'),
     adminPassword: str('SEED_ADMIN_PASSWORD', 'Admin@123'),

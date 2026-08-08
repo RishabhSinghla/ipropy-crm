@@ -8,6 +8,7 @@ import {
   hexToRgb,
   readableOn,
   rgbToHex,
+  avatarBackground,
   tintedTextVars,
 } from '../src/lib/color';
 
@@ -244,5 +245,38 @@ describe('the muted text tokens in styles.css', () => {
   it('improve on the slate steps they replaced', () => {
     expect(ratio(TOKENS.light.muted, '#ffffff')).toBeGreaterThan(ratio('#94a3b8', '#ffffff'));
     expect(ratio(TOKENS.dark.muted, '#0f172a')).toBeGreaterThan(ratio('#64748b', '#0f172a'));
+  });
+});
+
+describe('avatarBackground', () => {
+  it('is readable with white initials for every hue the hash can produce', () => {
+    // The old `hsl(h, 55%, 45%)` passed for blues and failed for greens and
+    // yellows, so whether the app was accessible depended on who was on the
+    // screen. Sweeping many names covers the whole wheel rather than the few
+    // hues the seed data happens to hit.
+    const white = hexToRgb('#ffffff')!;
+    const failures: string[] = [];
+    for (let i = 0; i < 500; i++) {
+      const bg = avatarBackground(`Person Number ${i}`);
+      const r = contrastRatio(white, hexToRgb(bg)!);
+      if (r < AA_NORMAL) failures.push(`${bg} = ${r.toFixed(2)}:1`);
+    }
+    expect(failures.slice(0, 5).join(', ')).toBe('');
+  });
+
+  it('is stable for the same name, so a person keeps their colour', () => {
+    expect(avatarBackground('Aisha Khan')).toBe(avatarBackground('Aisha Khan'));
+    expect(avatarBackground('Aisha Khan')).not.toBe(avatarBackground('Rohit Sharma'));
+  });
+
+  it('still spreads names across distinct colours', () => {
+    // Darkening every hue to the same near-black would pass contrast and make
+    // avatars useless as a visual identifier.
+    const shades = new Set(Array.from({ length: 60 }, (_, i) => avatarBackground(`Name ${i}`)));
+    expect(shades.size).toBeGreaterThan(20);
+  });
+
+  it('handles an empty name without producing an invalid colour', () => {
+    expect(avatarBackground('')).toMatch(/^#[0-9a-f]{6}$/);
   });
 });

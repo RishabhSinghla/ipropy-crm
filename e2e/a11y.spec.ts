@@ -15,7 +15,26 @@ import { waitForRecords } from './helpers';
  */
 const WCAG = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
 
+/**
+ * Wait for entrance animations to finish before measuring anything.
+ *
+ * Playwright calls an element visible as soon as it has a box, so a modal is
+ * "visible" at opacity 0.15 while animate-fade-in is still running — and axe
+ * then measures the *blended* colour. That produced an intermittent contrast
+ * failure reporting #657286 on #f0f0f2, which are not colours this app defines
+ * anywhere; they are a half-faded token over a half-faded backdrop. Waiting on
+ * the animations makes the scan deterministic instead of a race.
+ */
+async function settle(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => document.getAnimations().every((a) => a.playState !== 'running'),
+    undefined,
+    { timeout: 5_000 },
+  ).catch(() => undefined); // a looping animation (spinner) must not hang the scan
+}
+
 async function scan(page: Page) {
+  await settle(page);
   // Contrast is included: colours come from tokens with a proven ratio
   // (lib/color.ts, tests/color.test.ts), so a regression here is a real bug
   // rather than a known backlog item.
@@ -24,6 +43,7 @@ async function scan(page: Page) {
 
 /** Contrast-only scan, used for the both-themes sweep below. */
 async function scanContrast(page: Page) {
+  await settle(page);
   return new AxeBuilder({ page }).withTags(WCAG).withRules(['color-contrast']).analyze();
 }
 
@@ -36,7 +56,18 @@ async function scanContrast(page: Page) {
 async function setTheme(page: Page, theme: 'light' | 'dark'): Promise<void> {
   const isDark = await page.evaluate(() => document.documentElement.classList.contains('dark'));
   if (isDark === (theme === 'dark')) return;
-  await page.getByRole('button', { name: /toggle theme/i }).click();
+
+  // Wait for the profile write, not just the class. setTheme in the store
+  // fires the PATCH without awaiting it, so a test that ends here can finish
+  // before the preference is saved — leaving the shared admin in dark mode and
+  // colouring the *next* run of the whole suite.
+  await Promise.all([
+    page.waitForResponse(
+      (r) => r.url().includes('/api/auth/me') && r.request().method() === 'PATCH',
+      { timeout: 10_000 },
+    ).catch(() => undefined),
+    page.getByRole('button', { name: /toggle theme/i }).click(),
+  ]);
   await page.waitForFunction(
     (t) => document.documentElement.classList.contains('dark') === (t === 'dark'),
     theme,

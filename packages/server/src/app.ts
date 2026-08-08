@@ -9,6 +9,7 @@ import { resolve } from 'node:path';
 import { config } from './config.js';
 import { logger } from './utils/logger.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
+import { verifyAccessToken } from './middleware/auth.js';
 import { checkConnection } from './db/pool.js';
 
 import { authRouter } from './api/routes/auth.js';
@@ -77,6 +78,33 @@ export function createApp(): Express {
     customProps: (req) => ({ userId: (req as Request & { user?: { id?: string } }).user?.id }),
   }));
 
+  /**
+   * The general API budget is per *signed-in user*, falling back to IP for
+   * anonymous traffic.
+   *
+   * Keying on IP alone is wrong for how this product is used: a sales team
+   * works from one office behind one NAT, so thirty people would share a
+   * single 600/min bucket — about 20 requests each per minute, which an
+   * ordinary session blows through. One busy user would throttle their
+   * colleagues.
+   *
+   * The token is verified rather than merely decoded, so a forged or expired
+   * one falls back to the IP bucket instead of minting an unlimited number of
+   * fresh per-"user" budgets.
+   */
+  const apiRateLimitKey = (req: Request): string => {
+    const header = req.headers.authorization;
+    if (header?.startsWith('Bearer ')) {
+      try {
+        return `u:${verifyAccessToken(header.slice(7)).sub}`;
+      } catch {
+        // Invalid or expired — treat as anonymous.
+      }
+    }
+    // Mirrors express-rate-limit's own default, which this replaces.
+    return `ip:${req.ip ?? 'unknown'}`;
+  };
+
   // Webhooks are hit by providers, not browsers — they get their own budget.
   app.use('/api/webhooks', rateLimit({
     windowMs: 60_000, limit: 600, standardHeaders: true, legacyHeaders: false,
@@ -92,10 +120,11 @@ export function createApp(): Express {
 
   app.use('/api', rateLimit({
     windowMs: 60_000,
-    limit: 600,
+    limit: config.security.apiRateLimit,
     standardHeaders: true,
     legacyHeaders: false,
     skip: (req) => req.path.startsWith('/webhooks') || req.path.startsWith('/health'),
+    keyGenerator: apiRateLimitKey,
     message: { error: 'rate_limited', message: 'Too many requests. Slow down a moment.' },
   }));
 

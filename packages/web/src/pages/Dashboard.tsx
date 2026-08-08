@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import type { Ref } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -414,6 +415,63 @@ function GaugeCard({ widget, data }: { widget: DashboardWidget; data: Record<str
 
 interface Series { key: string; label: string; value: number; color?: string | null; secondary?: number }
 
+/**
+ * Wraps a chart so assistive tech gets the numbers instead of the drawing.
+ *
+ * recharts renders every segment as `<path role="img">` with no accessible
+ * name, so a screen reader announces a row of unlabelled images and none of
+ * the data — a serious axe failure, and useless to the person hearing it.
+ * Labelling each path would fix the rule while still conveying nothing, so the
+ * SVG is hidden and the same series is exposed as text, which is what someone
+ * actually needs from a chart.
+ *
+ * This went unnoticed until the a11y scans started waiting for animations to
+ * finish: recharts animates on mount, so axe had been measuring an empty
+ * canvas.
+ */
+function ChartFrame({
+  title, series, format, children,
+}: { title: string; series: Series[]; format?: string; children: ReactNode }): JSX.Element {
+  const ref = useRef<HTMLDivElement>(null);
+
+  // recharts puts tabindex="0" on its own layer groups and ignores a tabIndex
+  // prop, which would leave focusable elements inside an aria-hidden subtree —
+  // axe's aria-hidden-focus, and a real defect: focus would land somewhere a
+  // screen reader says nothing about.
+  //
+  // Done here rather than with `inert`, which is the obvious answer and the
+  // wrong one: inert also suppresses pointer events, so it silently killed
+  // click-to-drill on every chart while making the accessibility tests pass.
+  // The observer is needed because recharts rebuilds this subtree on resize
+  // and on every data change.
+  useEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    const neutralise = (): void => {
+      root.querySelectorAll<HTMLElement>('[tabindex]:not([tabindex="-1"])')
+        .forEach((el) => el.setAttribute('tabindex', '-1'));
+    };
+    neutralise();
+    const observer = new MutationObserver(neutralise);
+    observer.observe(root, { subtree: true, childList: true, attributeFilter: ['tabindex'] });
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <>
+      {/* Hidden from assistive tech, with the series given as text below —
+          labelling each segment would satisfy the rule while still conveying
+          nothing useful. Clicking a segment to drill through is unaffected;
+          it is a shortcut to a filtered list that is reachable from the nav
+          anyway. */}
+      <div ref={ref} aria-hidden="true">{children}</div>
+      <p className="sr-only">
+        {`${title}. ${series.map((s) => `${s.label}: ${formatValue(s.value, format)}`).join('. ')}`}
+      </p>
+    </>
+  );
+}
+
 function BarCard({
   widget, data, horizontal,
 }: { widget: DashboardWidget; data: Record<string, unknown>; horizontal?: boolean }): JSX.Element {
@@ -435,36 +493,38 @@ function BarCard({
   return (
     <div className="card h-full p-4">
       <p className="mb-3 text-sm font-medium">{widget.title}</p>
-      <ResponsiveContainer width="100%" height={horizontal ? Math.max(180, series.length * 32) : 220}>
-        <BarChart data={series} layout={horizontal ? 'vertical' : 'horizontal'} margin={{ top: 4, right: 8, left: horizontal ? 8 : 0, bottom: 4 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-slate-200 dark:text-slate-800" vertical={!horizontal} horizontal={horizontal} />
-          {horizontal ? (
-            <>
-              <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v: number) => shortFormat(v, format)} />
-              <YAxis type="category" dataKey="label" tick={{ fontSize: 10 }} width={110} />
-            </>
-          ) : (
-            <>
-              <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={series.length > 5 ? -25 : 0} textAnchor={series.length > 5 ? 'end' : 'middle'} height={series.length > 5 ? 55 : 30} />
-              <YAxis tick={{ fontSize: 10 }} tickFormatter={(v: number) => shortFormat(v, format)} width={55} />
-            </>
-          )}
-          <Tooltip
-            formatter={(v: number) => formatValue(v, format)}
-            contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
-          />
-          <Bar
-            dataKey="value"
-            radius={horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}
-            cursor={drillable ? 'pointer' : undefined}
-            onClick={(_data, index) => drill(index)}
-          >
-            {series.map((s, i) => (
-              <Cell key={s.key} fill={s.color ?? PALETTE[i % PALETTE.length]} />
-            ))}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
+      <ChartFrame title={widget.title} series={series} format={format}>
+        <ResponsiveContainer width="100%" height={horizontal ? Math.max(180, series.length * 32) : 220}>
+          <BarChart data={series} layout={horizontal ? 'vertical' : 'horizontal'} margin={{ top: 4, right: 8, left: horizontal ? 8 : 0, bottom: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-slate-200 dark:text-slate-800" vertical={!horizontal} horizontal={horizontal} />
+            {horizontal ? (
+              <>
+                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v: number) => shortFormat(v, format)} />
+                <YAxis type="category" dataKey="label" tick={{ fontSize: 10 }} width={110} />
+              </>
+            ) : (
+              <>
+                <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={series.length > 5 ? -25 : 0} textAnchor={series.length > 5 ? 'end' : 'middle'} height={series.length > 5 ? 55 : 30} />
+                <YAxis tick={{ fontSize: 10 }} tickFormatter={(v: number) => shortFormat(v, format)} width={55} />
+              </>
+            )}
+            <Tooltip
+              formatter={(v: number) => formatValue(v, format)}
+              contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
+            />
+            <Bar tabIndex={-1}
+              dataKey="value"
+              radius={horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}
+              cursor={drillable ? 'pointer' : undefined}
+              onClick={(_data, index) => drill(index)}
+            >
+              {series.map((s, i) => (
+                <Cell key={s.key} fill={s.color ?? PALETTE[i % PALETTE.length]} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </ChartFrame>
     </div>
   );
 }
@@ -509,22 +569,24 @@ function LineCard({
   return (
     <div className="card h-full p-4">
       <p className="mb-3 text-sm font-medium">{widget.title}</p>
-      <ResponsiveContainer width="100%" height={220}>
-        <Chart data={series} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-slate-200 dark:text-slate-800" />
-          <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-          <YAxis tick={{ fontSize: 10 }} tickFormatter={(v: number) => shortFormat(v, format)} width={55} />
-          <Tooltip
-            formatter={(v: number) => formatValue(v, format)}
-            contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
-          />
-          {area ? (
-            <Area type="monotone" dataKey="value" stroke="#6366f1" fill="#6366f1" fillOpacity={0.15} strokeWidth={2} dot={clickableDot as never} activeDot={clickableDot as never} />
-          ) : (
-            <Line type="monotone" dataKey="value" stroke="#6366f1" strokeWidth={2} dot={clickableDot as never} activeDot={clickableDot as never} />
-          )}
-        </Chart>
-      </ResponsiveContainer>
+      <ChartFrame title={widget.title} series={series} format={format}>
+        <ResponsiveContainer width="100%" height={220}>
+          <Chart data={series} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-slate-200 dark:text-slate-800" />
+            <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+            <YAxis tick={{ fontSize: 10 }} tickFormatter={(v: number) => shortFormat(v, format)} width={55} />
+            <Tooltip
+              formatter={(v: number) => formatValue(v, format)}
+              contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
+            />
+            {area ? (
+              <Area tabIndex={-1} type="monotone" dataKey="value" stroke="#6366f1" fill="#6366f1" fillOpacity={0.15} strokeWidth={2} dot={clickableDot as never} activeDot={clickableDot as never} />
+            ) : (
+              <Line tabIndex={-1} type="monotone" dataKey="value" stroke="#6366f1" strokeWidth={2} dot={clickableDot as never} activeDot={clickableDot as never} />
+            )}
+          </Chart>
+        </ResponsiveContainer>
+      </ChartFrame>
     </div>
   );
 }
@@ -548,26 +610,28 @@ function PieCard({
   return (
     <div className="card h-full p-4">
       <p className="mb-2 text-sm font-medium">{widget.title}</p>
-      <ResponsiveContainer width="100%" height={220}>
-        <PieChart>
-          <Pie
-            data={series}
-            dataKey="value"
-            nameKey="label"
-            cx="50%"
-            cy="50%"
-            innerRadius={donut ? 45 : 0}
-            outerRadius={75}
-            paddingAngle={1}
-            cursor={drillable ? 'pointer' : undefined}
-            onClick={(_entry, index) => drill(index)}
-          >
-            {series.map((s, i) => <Cell key={s.key} fill={s.color ?? PALETTE[i % PALETTE.length]} />)}
-          </Pie>
-          <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }} />
-          <Legend wrapperStyle={{ fontSize: 11 }} iconSize={8} />
-        </PieChart>
-      </ResponsiveContainer>
+      <ChartFrame title={widget.title} series={series} format={widget.config.format as string | undefined}>
+        <ResponsiveContainer width="100%" height={220}>
+          <PieChart>
+            <Pie tabIndex={-1}
+              data={series}
+              dataKey="value"
+              nameKey="label"
+              cx="50%"
+              cy="50%"
+              innerRadius={donut ? 45 : 0}
+              outerRadius={75}
+              paddingAngle={1}
+              cursor={drillable ? 'pointer' : undefined}
+              onClick={(_entry, index) => drill(index)}
+            >
+              {series.map((s, i) => <Cell key={s.key} fill={s.color ?? PALETTE[i % PALETTE.length]} />)}
+            </Pie>
+            <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }} />
+            <Legend wrapperStyle={{ fontSize: 11 }} iconSize={8} />
+          </PieChart>
+        </ResponsiveContainer>
+      </ChartFrame>
     </div>
   );
 }

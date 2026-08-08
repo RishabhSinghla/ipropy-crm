@@ -69,6 +69,19 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
       stdout: 'pipe',
+      env: {
+        // The whole suite runs as one signed-in admin and drives an app's
+        // worth of navigation in well under a minute, so it exceeds the
+        // per-user budget that protects the real API — producing an empty app
+        // shell that looks exactly like a render bug. The limiter itself is
+        // still exercised by its own tests; this only lifts the ceiling for a
+        // traffic shape no real user produces.
+        //
+        // Note when running locally: reuseExistingServer means an already
+        // running `npm run dev` will NOT pick this up. Stop it first, or run
+        // the suite against a server started with API_RATE_LIMIT set.
+        API_RATE_LIMIT: '20000',
+      },
     },
     {
       command: 'npm run dev:web',
