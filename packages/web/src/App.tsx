@@ -14,6 +14,7 @@ const RecordDetail = lazy(() => import('./pages/RecordDetail'));
 const RecordEdit = lazy(() => import('./pages/RecordEdit'));
 const Inbox = lazy(() => import('./pages/Inbox'));
 const InventoryBoard = lazy(() => import('./pages/InventoryBoard'));
+const Studio = lazy(() => import('./pages/Studio'));
 const CallsPage = lazy(() => import('./pages/Calls'));
 const ReportsPage = lazy(() => import('./pages/Reports'));
 const SettingsPage = lazy(() => import('./pages/Settings'));
@@ -73,6 +74,7 @@ export default function App(): JSX.Element {
 
               <Route path="calls" element={<CallsPage />} />
               <Route path="reports" element={<ReportsPage />} />
+              <Route path="studio" element={<Studio />} />
               <Route path="inventory" element={<InventoryBoard />} />
               <Route path="inventory/:projectId" element={<InventoryBoard />} />
 

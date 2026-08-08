@@ -230,6 +230,88 @@ publicRouter.get('/brand', asyncHandler(async (_req, res) => {
   });
 }));
 
+// ---------------------------------------------------------------------------
+// Blog
+//
+// Visibility is enforced here, not in the CRM's UI: only Published posts with
+// a publish time in the past and noindex off are ever returned, so a draft or
+// a scheduled post cannot leak by guessing a URL.
+// ---------------------------------------------------------------------------
+
+const PUBLISHED = `r.is_deleted = false AND b.status = 'Published'
+  AND b.published_at IS NOT NULL AND b.published_at <= now() AND b.noindex = false`;
+
+publicRouter.get('/blog', asyncHandler(async (req, res) => {
+  const limit = Math.min(50, Number(req.query.limit) || 12);
+  const offset = Math.max(0, Number(req.query.offset) || 0);
+  const category = typeof req.query.category === 'string' ? req.query.category : null;
+
+  const rows = await db.query(
+    `SELECT b.slug, b.title, b.excerpt, b.category, b.cover_image_url, b.published_at,
+            b.reading_minutes, b.key_takeaway,
+            u.first_name || ' ' || u.last_name AS author
+     FROM ipy_e_blog_posts b
+     JOIN ipy_record r ON r.id = b.record_id
+     LEFT JOIN ipy_user u ON u.id = r.owner_id
+     WHERE ${PUBLISHED} AND ($3::text IS NULL OR b.category = $3)
+     ORDER BY b.published_at DESC
+     LIMIT $1 OFFSET $2`,
+    [limit, offset, category],
+  );
+
+  const total = await db.queryOne<{ count: number }>(
+    `SELECT COUNT(*)::int AS count FROM ipy_e_blog_posts b
+     JOIN ipy_record r ON r.id = b.record_id
+     WHERE ${PUBLISHED} AND ($1::text IS NULL OR b.category = $1)`,
+    [category],
+  );
+
+  res.json({ items: rows.rows, total: total?.count ?? 0 });
+}));
+
+publicRouter.get('/blog/categories', asyncHandler(async (_req, res) => {
+  const rows = await db.query(
+    `SELECT b.category, COUNT(*)::int AS count
+     FROM ipy_e_blog_posts b JOIN ipy_record r ON r.id = b.record_id
+     WHERE ${PUBLISHED} AND b.category IS NOT NULL
+     GROUP BY b.category ORDER BY count DESC`,
+  );
+  res.json({ items: rows.rows });
+}));
+
+publicRouter.get('/blog/:slug', asyncHandler(async (req, res) => {
+  const post = await db.queryOne(
+    `SELECT b.record_id, b.slug, b.title, b.excerpt, b.body, b.category, b.cover_image_url,
+            b.published_at, b.reading_minutes, b.word_count, b.key_takeaway, b.faq,
+            b.seo_title, b.seo_description, b.seo_keywords, b.canonical_url,
+            b.project_id, r.updated_at,
+            u.first_name || ' ' || u.last_name AS author, u.avatar_url AS author_avatar
+     FROM ipy_e_blog_posts b
+     JOIN ipy_record r ON r.id = b.record_id
+     LEFT JOIN ipy_user u ON u.id = r.owner_id
+     WHERE ${PUBLISHED} AND b.slug = $1`,
+    [req.params.slug],
+  );
+  if (!post) throw new NotFoundError('Post not found');
+
+  // Fire-and-forget: a view counter must never delay or fail the response.
+  void db.query(
+    `UPDATE ipy_e_blog_posts SET view_count = view_count + 1 WHERE slug = $1`,
+    [req.params.slug],
+  ).catch(() => undefined);
+
+  const related = await db.query(
+    `SELECT b.slug, b.title, b.excerpt, b.cover_image_url, b.published_at, b.reading_minutes
+     FROM ipy_e_blog_posts b JOIN ipy_record r ON r.id = b.record_id
+     WHERE ${PUBLISHED} AND b.slug <> $1
+       AND (b.category = $2 OR $2 IS NULL)
+     ORDER BY b.published_at DESC LIMIT 3`,
+    [req.params.slug, (post as { category: string | null }).category],
+  );
+
+  res.json({ ...post, related: related.rows });
+}));
+
 publicRouter.get('/filters', asyncHandler(async (_req, res) => {
   const rows = await db.query<{ name: string; value: string; label: string }>(
     `SELECT pl.name, plv.value, plv.label

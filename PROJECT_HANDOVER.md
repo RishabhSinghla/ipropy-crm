@@ -1014,3 +1014,36 @@ replay rejection are verified; the sign/verify round trip is not.
 Google ("Please pass a valid API key") — it was not in Google AI Studio's key
 format (`AIza…`, 39 chars). The `ai_gemini` integration was left inactive so
 the CRM keeps using its rule engines rather than failing every AI call.
+
+### §17.2 — Third session (2026-08-09)
+
+Blog (#11), daily SEO audit (#14) and the Studio (#8).
+
+**Blog.** `blog_posts` is an ordinary module (migration `016`), so it inherits
+views, roles, sharing and workflows. Slug/word-count/reading-time/publish-date
+are derived by the `prepare_blog_post` workflow task, not by a branch in
+recordService — the engine must not learn what a blog post is. Slug generation
+only fills a *blank* slug; the unique index is partial (published rows only).
+Public visibility is enforced in `routes/public.ts`, not the UI.
+
+**SEO audit.** `core/seo/audit.ts`, run daily from the scheduler, guarded on the
+last run rather than a cron expression. It fetches the **live site**; auditing
+our own templates would only confirm the template is what we wrote. Ships
+disabled — set `seo.site_url` in Admin → Settings to switch it on. Proven at
+78/100 across 5 pages against a real `next build`.
+
+**Studio** (`pages/Studio.tsx`, `lib/design.ts`, `lib/designTemplates.ts`).
+Turns a listing into an Instagram/Facebook/WhatsApp post. The preview *is* the
+export: both go through `renderDesign` onto a canvas at full output resolution,
+scaled only by CSS, so there is no second rendering path that could disagree.
+Canvas has no text wrapping, hence `wrapText` — without it a long project name
+runs off the edge, which is the most common way a generated post looks broken.
+
+**Known data issue, not a bug:** the demo seed writes `gallery` URLs pointing at
+attachment ids it never creates, so seeded properties have dangling photos.
+Templates therefore always draw a brand-colour rect *under* the image, so a
+missing photo yields a branded post rather than a near-black one.
+
+**Still not done:** #7/#10/#12/#13 (WhatsApp — Meta approval), #15 (portal
+contracts), #17 (call recording). The Studio covers social-post creation only —
+not video editing or a general design tool.

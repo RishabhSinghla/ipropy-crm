@@ -360,6 +360,69 @@ const delay: TaskHandler = async () => {
   // Delay is expressed via delay_minutes on the task row; nothing to do here.
 };
 
+
+/**
+ * Derive a blog post's URL slug, word count and reading time.
+ *
+ * A workflow task rather than a branch inside recordService: the engine must
+ * not learn what a "blog post" is. Slug generation only ever fills a *blank*
+ * slug — once a post is live its URL is a promise to every inbound link and
+ * share, so a retitle must not silently move it.
+ */
+const prepareBlogPost: TaskHandler = async (_config, ctx) => {
+  const { updateRecord } = await import('../entity/recordService.js');
+  const record = ctx.record as Record<string, unknown>;
+  const updates: Record<string, unknown> = {};
+
+  const title = String(record.title ?? '').trim();
+  const currentSlug = String(record.slug ?? '').trim();
+  if (!currentSlug && title) {
+    updates.slug = await uniqueBlogSlug(slugify(title), ctx.recordId);
+  }
+
+  const body = String(record.body ?? '');
+  if (body) {
+    const words = body.replace(/[#*_>`~\[\]()!-]/g, ' ').split(/\s+/).filter(Boolean).length;
+    updates.word_count = words;
+    // 220 wpm is the usual figure for adults reading non-fiction on screen.
+    updates.reading_minutes = Math.max(1, Math.round(words / 220));
+  }
+
+  // Publishing without a date would leave the post invisible: the public feed
+  // filters on published_at being in the past.
+  if (record.status === 'Published' && !record.published_at) {
+    updates.published_at = new Date().toISOString();
+  }
+
+  if (Object.keys(updates).length === 0) return;
+  // skipWorkflow so this task cannot re-trigger the workflow that ran it.
+  await updateRecord(await systemContext(ctx.user), ctx.module, ctx.recordId, updates, { skipWorkflow: true });
+};
+
+/** Lowercase, ASCII, hyphenated — what a URL and a search engine both want. */
+function slugify(value: string): string {
+  return value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80) || 'post';
+}
+
+/** Appends -2, -3 … so two posts can never claim the same live URL. */
+async function uniqueBlogSlug(base: string, recordId: string): Promise<string> {
+  for (let n = 1; n < 50; n += 1) {
+    const candidate = n === 1 ? base : `${base}-${n}`;
+    const clash = await db.queryOne<{ record_id: string }>(
+      `SELECT record_id FROM ipy_e_blog_posts WHERE slug = $1 AND record_id <> $2`,
+      [candidate, recordId],
+    );
+    if (!clash) return candidate;
+  }
+  return `${base}-${Date.now()}`;
+}
+
 const TASK_HANDLERS: Record<string, TaskHandler> = {
   update_fields: updateFields,
   create_record: createRecordTask,
@@ -373,6 +436,7 @@ const TASK_HANDLERS: Record<string, TaskHandler> = {
   webhook,
   add_tag: addTag,
   ai_action: aiAction,
+  prepare_blog_post: prepareBlogPost,
   trigger_call: triggerCall,
   delay,
 };
