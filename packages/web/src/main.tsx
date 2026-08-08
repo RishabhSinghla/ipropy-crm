@@ -31,12 +31,17 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 );
 
 // Register the service worker (public/sw.js) — this is what makes the CRM
-// installable on a phone and lets the shell open instantly. Production only:
-// in dev it would serve stale bundles and fight Vite's HMR. Failure is
-// non-fatal by design — the app runs perfectly well without it, so a browser
-// that refuses registration (older iOS, private mode) just loses installability.
-if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+// installable on a phone, lets the shell open instantly, and receives push
+// notifications when the app is closed. Failure is non-fatal by design — the
+// app runs perfectly well without it, so a browser that refuses registration
+// (older iOS, private mode) just loses installability and alerts.
+//
+// In dev it registers with `?dev=1`, which the worker reads to switch its
+// caching half off: push has to be testable before the app is deployed, but
+// caching dev bundles would serve stale code and fight Vite's HMR.
+if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    void navigator.serviceWorker.register('/sw.js').catch(() => undefined);
+    const url = import.meta.env.PROD ? '/sw.js' : '/sw.js?dev=1';
+    void navigator.serviceWorker.register(url).catch(() => undefined);
   });
 }

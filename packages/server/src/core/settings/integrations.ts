@@ -29,6 +29,8 @@ import { config } from '../../config.js';
 import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 
+export type AiProvider = 'none' | 'anthropic' | 'gemini' | 'groq' | 'openrouter' | 'openai' | 'ollama';
+
 interface IntegrationRow {
   id: string;
   provider: string;
@@ -62,7 +64,15 @@ export interface ResolvedSettings {
     imap: { host: string; port: number; user: string; password: string };
   };
   ai: {
-    enabled: boolean; apiKey: string; model: string; fastModel: string; maxTokens: number;
+    enabled: boolean;
+    /** 'none' when nothing is configured — every feature falls back to its rule engine. */
+    provider: AiProvider;
+    apiKey: string;
+    /** OpenAI-compatible base URL; empty for Anthropic, which uses its own SDK. */
+    baseUrl: string;
+    model: string;
+    fastModel: string;
+    maxTokens: number;
   };
   stt: {
     provider: 'none' | 'openai'; apiKey: string; baseUrl: string; model: string;
@@ -122,7 +132,9 @@ function decrypt(value: string | undefined | null): string {
 // ---------------------------------------------------------------------------
 
 let rows = new Map<string, IntegrationRow>();
-let snapshot: ResolvedSettings = resolve(rows);
+// Declared after the AI lookup tables below, which `resolve` reads: these are
+// `const`, so calling resolve() any earlier hits their temporal dead zone.
+let snapshot: ResolvedSettings;
 
 async function load(): Promise<Map<string, IntegrationRow>> {
   const res = await db.query<{
@@ -151,13 +163,117 @@ function pick(row: IntegrationRow | undefined, source: 'config' | 'credentials',
   return envFallback;
 }
 
+/**
+ * Which LLM the CRM talks to.
+ *
+ * Anthropic is the reference implementation but not a requirement: every other
+ * provider here speaks the OpenAI chat-completions shape, so one adapter covers
+ * Gemini (via Google's OpenAI-compatible endpoint), Groq, OpenRouter, a local
+ * Ollama, and OpenAI itself. That matters because the free tiers live outside
+ * Anthropic — an operator with no budget can still run every AI feature.
+ *
+ * Order below is deliberate: a paid Anthropic key, if present, is the best
+ * output, then the free tiers by daily quota, then a local model, which costs
+ * nothing but needs a machine to run on. `AI_PROVIDER` pins one explicitly.
+ */
+const AI_PROVIDER_ORDER: Exclude<AiProvider, 'none'>[] = ['anthropic', 'gemini', 'groq', 'openrouter', 'openai', 'ollama'];
+
+const AI_BASE_URLS: Record<Exclude<AiProvider, 'none' | 'anthropic'>, string> = {
+  gemini: 'https://generativelanguage.googleapis.com/v1beta/openai',
+  groq: 'https://api.groq.com/openai/v1',
+  openrouter: 'https://openrouter.ai/api/v1',
+  openai: config.ai.openaiCompatible.baseUrl,
+  ollama: config.ai.ollama.baseUrl,
+};
+
+const AI_ENV_DEFAULTS: Record<Exclude<AiProvider, 'none'>, { apiKey: string; model: string; fastModel: string }> = {
+  anthropic: { apiKey: config.ai.apiKey, model: config.ai.model, fastModel: config.ai.fastModel },
+  gemini: config.ai.gemini,
+  groq: config.ai.groq,
+  openrouter: config.ai.openrouter,
+  openai: {
+    apiKey: config.ai.openaiCompatible.apiKey,
+    model: config.ai.openaiCompatible.model,
+    fastModel: config.ai.openaiCompatible.fastModel,
+  },
+  // Local models authenticate with nothing; the request still wants a string.
+  ollama: { apiKey: 'ollama', model: config.ai.ollama.model, fastModel: config.ai.ollama.fastModel },
+};
+
+function aiCandidate(
+  map: Map<string, IntegrationRow>,
+  provider: Exclude<AiProvider, 'none'>,
+): ResolvedSettings['ai'] | null {
+  const row = map.get(aiRowKey(provider));
+  const env = AI_ENV_DEFAULTS[provider];
+  const apiKey = pick(row, 'credentials', 'apiKey', env.apiKey);
+  // Ollama is the one provider that is legitimately keyless, so it counts as
+  // configured when its row is switched on rather than when a secret exists.
+  const configured = provider === 'ollama'
+    ? Boolean(row?.isActive) || config.ai.provider === 'ollama'
+    : Boolean(apiKey);
+  if (!configured) return null;
+  return {
+    enabled: config.ai.enabled,
+    provider,
+    apiKey,
+    baseUrl: provider === 'anthropic'
+      ? ''
+      : (pick(row, 'config', 'baseUrl', AI_BASE_URLS[provider]) || AI_BASE_URLS[provider]),
+    model: pick(row, 'config', 'model', env.model) || env.model,
+    fastModel: pick(row, 'config', 'fastModel', env.fastModel) || env.fastModel,
+    maxTokens: Number(pick(row, 'config', 'maxTokens', String(config.ai.maxTokens))) || config.ai.maxTokens,
+  };
+}
+
+/**
+ * Settings for one specific provider regardless of which one won resolution —
+ * what the admin panel's "Test connection" needs, since it tests the card the
+ * admin clicked, not whatever the CRM happens to be using.
+ */
+export function getAiProviderSettings(provider: Exclude<AiProvider, 'none'>): ResolvedSettings['ai'] | null {
+  return aiCandidate(rows, provider);
+}
+
+function resolveAi(map: Map<string, IntegrationRow>): ResolvedSettings['ai'] {
+  if (config.ai.provider) {
+    const pinned = aiCandidate(map, config.ai.provider);
+    if (pinned) return pinned;
+  }
+  // An admin who ticks a provider on in the UI outranks the default order.
+  for (const provider of AI_PROVIDER_ORDER) {
+    if (map.get(aiRowKey(provider))?.isActive) {
+      const chosen = aiCandidate(map, provider);
+      if (chosen) return chosen;
+    }
+  }
+  for (const provider of AI_PROVIDER_ORDER) {
+    const chosen = aiCandidate(map, provider);
+    if (chosen) return chosen;
+  }
+
+  return {
+    enabled: config.ai.enabled,
+    provider: 'none',
+    apiKey: '',
+    baseUrl: '',
+    model: config.ai.model,
+    fastModel: config.ai.fastModel,
+    maxTokens: config.ai.maxTokens,
+  };
+}
+
+/** The `ipy_integration.provider` value backing each AI provider. */
+export function aiRowKey(provider: Exclude<AiProvider, 'none'>): string {
+  return provider === 'anthropic' ? 'anthropic' : `ai_${provider}`;
+}
+
 function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
   const wa = map.get('meta_whatsapp');
   const twilio = map.get('twilio');
   const exotel = map.get('exotel');
   const smtp = map.get('smtp');
   const imap = map.get('imap');
-  const anthropic = map.get('anthropic');
   const sttRow = map.get('stt');
   const fb = map.get('facebook_leads');
   const google = map.get('google_ads');
@@ -211,13 +327,7 @@ function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
         password: pick(imap, 'credentials', 'password', config.email.imap.password),
       },
     },
-    ai: {
-      enabled: config.ai.enabled,
-      apiKey: pick(anthropic, 'credentials', 'apiKey', config.ai.apiKey),
-      model: pick(anthropic, 'config', 'model', config.ai.model) || config.ai.model,
-      fastModel: pick(anthropic, 'config', 'fastModel', config.ai.fastModel) || config.ai.fastModel,
-      maxTokens: Number(pick(anthropic, 'config', 'maxTokens', String(config.ai.maxTokens))) || config.ai.maxTokens,
-    },
+    ai: resolveAi(map),
     stt: {
       provider: pick(sttRow, 'config', 'provider', config.stt.provider) === 'openai' ? 'openai' : 'none',
       apiKey: pick(sttRow, 'credentials', 'apiKey', config.stt.apiKey),
@@ -244,6 +354,8 @@ function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
     },
   };
 }
+
+snapshot = resolve(rows);
 
 /** Synchronous — safe to call from anywhere, always returns at least the env-derived defaults. */
 export function getSettings(): ResolvedSettings {
@@ -272,6 +384,11 @@ const SECRET_FIELDS: Record<string, string[]> = {
   smtp: ['password'],
   imap: ['password'],
   anthropic: ['apiKey'],
+  ai_gemini: ['apiKey'],
+  ai_groq: ['apiKey'],
+  ai_openrouter: ['apiKey'],
+  ai_openai: ['apiKey'],
+  ai_ollama: [],
   stt: ['apiKey'],
   facebook_leads: ['appSecret', 'pageAccessToken'],
   google_ads: ['webhookKey'],

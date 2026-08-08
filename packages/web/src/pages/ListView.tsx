@@ -5,7 +5,7 @@ import type { FieldMeta, FilterGroup, ListQuery, ModuleMeta, RecordEnvelope } fr
 import { formatIndianPrice } from '@ipropy/shared';
 import {
   ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, Columns3, Download, Filter,
-  LayoutGrid, List, Plus, RefreshCw, Search, Settings2, Sparkles, Trash2, Upload, Users, X,
+  LayoutGrid, List, MailCheck, Plus, RefreshCw, Search, Settings2, Sparkles, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
@@ -146,6 +146,33 @@ export default function ListView(): JSX.Element {
     if (moduleName && data?.rows) saveListNav(moduleName, data.rows.map((r) => r.id));
   }, [moduleName, data]);
 
+  // Which rows on this page the user has never opened, so they can be shown
+  // the way an unread email is. Asked for separately rather than returned by
+  // the list, because the list endpoint is shared with exports, reports and
+  // the portal, none of which have a reader to be unread for.
+  const pageIds = useMemo(() => (data?.rows ?? []).map((r) => r.id), [data]);
+  const { data: unseenData } = useQuery({
+    queryKey: ['unseen', moduleName, pageIds],
+    queryFn: () => api.unseen(moduleName!, pageIds),
+    enabled: Boolean(moduleName) && pageIds.length > 0,
+    // Always refetch on mount: opening a record marks it seen, and coming
+    // straight back to a cached "still unread" answer is the one moment the
+    // highlight is visibly wrong. The query is a single indexed lookup over
+    // one page of ids, so this is cheap.
+    refetchOnMount: 'always',
+    staleTime: 0,
+  });
+  const unseen = useMemo(() => new Set(unseenData?.unseen ?? []), [unseenData]);
+
+  const markAllSeen = async (): Promise<void> => {
+    if (!moduleName) return;
+    await api.markModuleSeen(moduleName);
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['unseen', moduleName] }),
+      queryClient.invalidateQueries({ queryKey: ['unseen-counts'] }),
+    ]);
+  };
+
   if (!moduleName) return <div />;
 
   if (metaLoading || !meta) {
@@ -254,6 +281,17 @@ export default function ListView(): JSX.Element {
               )}
             </Dropdown>
 
+            {unseen.size > 0 && (
+              <button
+                onClick={() => void markAllSeen()}
+                className="btn-ghost btn-sm text-brand-600 dark:text-brand-400"
+                title="Clear the highlight on records you haven’t opened"
+              >
+                <MailCheck className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Mark all as seen</span>
+              </button>
+            )}
+
             {canCreate && (
               <button onClick={() => setShowQuickCreate(true)} className="btn-primary btn-sm">
                 <Plus className="h-3.5 w-3.5" />
@@ -360,6 +398,7 @@ export default function ListView(): JSX.Element {
                 columns={visibleColumns}
                 fieldMap={fieldMap}
                 selected={selected.has(row.id)}
+                isNew={unseen.has(row.id)}
                 onToggleSelect={(checked) => {
                   const next = new Set(selected);
                   if (checked) next.add(row.id); else next.delete(row.id);
@@ -405,10 +444,17 @@ export default function ListView(): JSX.Element {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {rows.map((row) => (
+              {rows.map((row) => {
+                const isNew = unseen.has(row.id);
+                return (
                 <tr
                   key={row.id}
-                  className="group cursor-pointer bg-white transition-colors hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-800/60"
+                  className={cn(
+                    'group cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60',
+                    isNew
+                      ? 'bg-brand-50/60 dark:bg-brand-950/25'
+                      : 'bg-white dark:bg-slate-900',
+                  )}
                   onClick={() => navigate(`/${moduleName}/${row.id}`)}
                 >
                   <td className="table-cell" onClick={(e) => e.stopPropagation()}>
@@ -430,7 +476,23 @@ export default function ListView(): JSX.Element {
                       return <td key={col} className="table-cell text-muted">—</td>;
                     }
                     return (
-                      <td key={col} className={cn('table-cell', ci === 0 && 'font-medium text-slate-900 dark:text-slate-100')}>
+                      <td
+                        key={col}
+                        className={cn(
+                          'table-cell',
+                          ci === 0 && 'font-medium text-slate-900 dark:text-slate-100',
+                          // Unread weight, like an inbox. Applied to the whole
+                          // row rather than the name alone so the row reads as
+                          // one unit at a glance.
+                          isNew && 'font-semibold text-slate-900 dark:text-white',
+                        )}
+                      >
+                        {ci === 0 && isNew && (
+                          <span
+                            className="mr-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-brand-600 align-middle dark:bg-brand-400"
+                            title="New — you haven’t opened this yet"
+                          />
+                        )}
                         {meta.permissions.edit && isInlineEditable(field) ? (
                           <EditableField
                             module={moduleName}
@@ -456,7 +518,8 @@ export default function ListView(): JSX.Element {
                     );
                   })}
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
           </>
@@ -597,13 +660,15 @@ function defaultColumns(meta: { fields: { name: string; isActive: boolean; displ
  * stacked row instead of a narrow column.
  */
 function MobileRecordCard({
-  row, module, columns, fieldMap, selected, onToggleSelect, onOpen, onSaved,
+  row, module, columns, fieldMap, selected, isNew, onToggleSelect, onOpen, onSaved,
 }: {
   row: RecordEnvelope;
   module: ModuleMeta & { permissions: { edit: boolean }; picklistDependencies: { sourceField: string; targetField: string; mapping: Record<string, string[]> }[] };
   columns: string[];
   fieldMap: Map<string, FieldMeta>;
   selected: boolean;
+  /** never opened by this user — shown with unread weight, like an inbox */
+  isNew: boolean;
   onToggleSelect: (checked: boolean) => void;
   onOpen: () => void;
   onSaved: () => void;
@@ -624,7 +689,7 @@ function MobileRecordCard({
   });
 
   return (
-    <div className="bg-white px-4 py-3 dark:bg-slate-900">
+    <div className={cn('px-4 py-3', isNew ? 'bg-brand-50/60 dark:bg-brand-950/25' : 'bg-white dark:bg-slate-900')}>
       <div className="flex items-start gap-3">
         <input
           type="checkbox"
@@ -634,7 +699,15 @@ function MobileRecordCard({
           aria-label="Select record"
         />
         <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
-          <p className="truncate font-medium text-slate-900 dark:text-slate-100">{row.label}</p>
+          <p className={cn('truncate text-slate-900 dark:text-slate-100', isNew ? 'font-semibold' : 'font-medium')}>
+            {isNew && (
+              <span
+                className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-brand-600 align-middle dark:bg-brand-400"
+                title="New — you haven’t opened this yet"
+              />
+            )}
+            {row.label}
+          </p>
           {row.recordNumber && (
             <p className="mt-0.5 font-mono text-2xs text-muted">{row.recordNumber}</p>
           )}

@@ -12,6 +12,7 @@ import {
   getModulePermission,
 } from '../../core/permissions/index.js';
 import { buildTimeline } from '../../core/entity/timeline.js';
+import { filterUnseen, markModuleSeen } from '../../core/entity/unseen.js';
 import { convertLead } from '../../core/entity/conversion.js';
 import { toCsv } from '../../utils/csv.js';
 
@@ -70,6 +71,29 @@ recordsRouter.get('/:module', asyncHandler(async (req, res) => {
   const input = parseListInput(req);
   const result = await recordService.listRecords(scope, req.params.module, input);
   res.json(result);
+}));
+
+/**
+ * Which of these records this user has not opened yet — the bold-row state.
+ *
+ * Takes ids the caller already holds from a list response, so it inherits that
+ * response's permission filtering instead of re-deriving it. Kept off the list
+ * endpoint itself so exports, reports and widgets don't pay for a join they
+ * have no use for.
+ */
+recordsRouter.post('/:module/unseen', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertModuleAccess(user, req.params.module, 'view');
+  const { ids } = z.object({ ids: z.array(z.string().uuid()).max(500) }).parse(req.body);
+  res.json({ unseen: await filterUnseen(user.id, req.params.module, ids) });
+}));
+
+/** Move this user's watermark to now — "mark all as seen" for one module. */
+recordsRouter.post('/:module/seen', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertModuleAccess(user, req.params.module, 'view');
+  await markModuleSeen(user.id, req.params.module);
+  res.json({ ok: true });
 }));
 
 // POST /search for filters too complex for a query string.

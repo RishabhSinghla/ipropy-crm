@@ -640,6 +640,13 @@ export async function seedIntegrations(conn: Tx): Promise<void> {
     { provider: 'smtp', kind: 'email', label: 'Outbound Email (SMTP)' },
     { provider: 'imap', kind: 'email', label: 'Inbound Email (IMAP)' },
     { provider: 'anthropic', kind: 'ai', label: 'Claude (Anthropic)' },
+    // Alternatives to Anthropic, all spoken to over the OpenAI chat-completions
+    // shape. Several have a free tier, so the AI features work without a budget.
+    { provider: 'ai_gemini', kind: 'ai', label: 'Google Gemini' },
+    { provider: 'ai_groq', kind: 'ai', label: 'Groq' },
+    { provider: 'ai_openrouter', kind: 'ai', label: 'OpenRouter' },
+    { provider: 'ai_openai', kind: 'ai', label: 'OpenAI-compatible' },
+    { provider: 'ai_ollama', kind: 'ai', label: 'Ollama (local)' },
     { provider: 'stt', kind: 'ai', label: 'Speech-to-text (Whisper)' },
     { provider: 's3', kind: 'storage', label: 'S3 Object Storage' },
   ];

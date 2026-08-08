@@ -19,6 +19,10 @@ import { BadRequestError, ForbiddenError, NotFoundError } from '../../utils/erro
 import { assertCapability, canAccessRecord } from '../../core/permissions/index.js';
 import { getDriver, getStorageSettings } from '../../core/storage/index.js';
 import { recordService } from '../../core/entity/recordService.js';
+import { unseenCounts } from '../../core/entity/unseen.js';
+import {
+  deletePushSubscription, ensureVapidKeys, notify, savePushSubscription,
+} from '../../core/notifications/index.js';
 import { registry } from '../../core/metadata/registry.js';
 import { invalidateWorkflows } from '../../core/workflow/engine.js';
 import { runSchedulerNow } from '../../core/workflow/scheduler.js';
@@ -45,6 +49,107 @@ miscRouter.get('/recent', asyncHandler(async (req, res) => {
      FROM ipy_recent_view rv JOIN ipy_record r ON r.id = rv.record_id
      WHERE rv.user_id = $1 AND r.is_deleted = false
      ORDER BY rv.viewed_at DESC LIMIT 15`,
+    [getUser(req).id],
+  );
+  res.json(rows.rows);
+}));
+
+/**
+ * Per-module counts of records this user has not opened yet — the sidebar
+ * badges. Scoped, so the number only counts records the user can actually open.
+ */
+miscRouter.get('/unseen-counts', asyncHandler(async (req, res) => {
+  res.json(await unseenCounts(getScope(req)));
+}));
+
+/**
+ * Branding and the company's own social links.
+ *
+ * Separate from `/api/admin/settings`, which requires the admin.settings
+ * capability — every user needs the sidebar's social bar and the brand line,
+ * and none of this is sensitive. Writes still go through the admin route.
+ */
+miscRouter.get('/brand', asyncHandler(async (_req, res) => {
+  const rows = await db.query<{ key: string; value: unknown }>(
+    `SELECT key, value FROM ipy_setting
+     WHERE key IN ('brand.tagline', 'social.links', 'org.name', 'org.logo_url', 'org.phone', 'org.email')`,
+  );
+  const map = new Map(rows.rows.map((r) => [r.key, r.value]));
+
+  const rawLinks = map.get('social.links');
+  const links = Array.isArray(rawLinks) ? rawLinks as { platform?: string; label?: string; url?: string }[] : [];
+
+  res.json({
+    orgName: (map.get('org.name') as string) ?? 'iPropy',
+    logoUrl: (map.get('org.logo_url') as string) ?? null,
+    phone: (map.get('org.phone') as string) ?? null,
+    email: (map.get('org.email') as string) ?? null,
+    tagline: (map.get('brand.tagline') as string) ?? null,
+    // Only http(s) leaves the server: these are admin-editable and end up in an
+    // href, where a `javascript:` value would run in the app's origin.
+    socialLinks: links
+      .filter((l) => typeof l.url === 'string' && /^https?:\/\//i.test(l.url))
+      .map((l) => ({ platform: String(l.platform ?? 'link'), label: String(l.label ?? l.platform ?? 'Link'), url: l.url as string })),
+  });
+}));
+
+// ---------------------------------------------------------------------------
+// Browser push — one subscription per device, so a person may hold several
+// (laptop Chrome, Android Chrome, iOS home-screen PWA).
+// ---------------------------------------------------------------------------
+
+/** Public VAPID key the browser needs to subscribe. Generated on first request. */
+miscRouter.get('/push/key', asyncHandler(async (_req, res) => {
+  const keys = await ensureVapidKeys();
+  res.json({ publicKey: keys.publicKey });
+}));
+
+miscRouter.post('/push/subscribe', asyncHandler(async (req, res) => {
+  const input = z.object({
+    endpoint: z.string().url(),
+    keys: z.object({ p256dh: z.string().min(1), auth: z.string().min(1) }),
+  }).parse(req.body);
+
+  await savePushSubscription({
+    userId: getUser(req).id,
+    endpoint: input.endpoint,
+    p256dh: input.keys.p256dh,
+    auth: input.keys.auth,
+    userAgent: req.get('user-agent') ?? undefined,
+  });
+  res.json({ ok: true });
+}));
+
+miscRouter.post('/push/unsubscribe', asyncHandler(async (req, res) => {
+  const { endpoint } = z.object({ endpoint: z.string().url() }).parse(req.body);
+  await deletePushSubscription(endpoint);
+  res.json({ ok: true });
+}));
+
+/** Send a test notification to this user's own devices. */
+miscRouter.post('/push/test', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const subs = await db.queryOne<{ count: number }>(
+    `SELECT COUNT(*)::int AS count FROM ipy_push_subscription WHERE user_id = $1`, [user.id],
+  );
+  if (!subs?.count) {
+    res.json({ ok: false, message: 'No devices are subscribed yet — enable notifications first.' });
+    return;
+  }
+  await notify({
+    userId: user.id,
+    kind: 'test',
+    title: 'iPropy test notification',
+    body: 'If you can see this, alerts will reach you when a lead arrives.',
+    link: '/dashboard',
+  });
+  res.json({ ok: true, message: `Sent to ${subs.count} device${subs.count === 1 ? '' : 's'}.` });
+}));
+
+miscRouter.get('/push/devices', asyncHandler(async (req, res) => {
+  const rows = await db.query(
+    `SELECT id, user_agent, created_at, last_used_at
+     FROM ipy_push_subscription WHERE user_id = $1 ORDER BY created_at DESC`,
     [getUser(req).id],
   );
   res.json(rows.rows);
@@ -199,6 +304,11 @@ miscRouter.get('/files/:id', asyncHandler(async (req, res) => {
   // ?size=thumb|medium|large serves a generated derivative when one exists,
   // falling back to the untouched original otherwise (not yet processed, or
   // this attachment never had derivatives — e.g. a PDF).
+  // ?download=1 forces a save instead of an in-tab render. The viewer needs
+  // both: `inline` for the preview iframe, `attachment` for its download
+  // button, and the browser will not re-request the same URL for the other.
+  const disposition = req.query.download === '1' ? 'attachment' : 'inline';
+
   const requestedSize = typeof req.query.size === 'string' ? req.query.size : null;
   const variantKey = requestedSize && VARIANT_SIZES.has(requestedSize) ? file.variants?.[requestedSize] : undefined;
   const storageKey = variantKey ?? file.storage_key;
@@ -211,7 +321,7 @@ miscRouter.get('/files/:id', asyncHandler(async (req, res) => {
     if (!path.startsWith(resolve(storage.localPath))) throw new ForbiddenError();
 
     res.setHeader('Content-Type', mimeType);
-    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(file.file_name)}"`);
+    res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(file.file_name)}"`);
     res.sendFile(path, (err) => {
       if (err) {
         logger.warn({ err, id: req.params.id }, 'file stream failed');

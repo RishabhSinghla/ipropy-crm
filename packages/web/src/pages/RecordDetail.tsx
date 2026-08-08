@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FieldMeta, ModuleMeta, RecordEnvelope, TimelineEntry } from '@ipropy/shared';
 import { formatIndianPrice, relativeTime } from '@ipropy/shared';
 import {
-  Activity, Check, ChevronDown, FileQuestion, ChevronLeft, ChevronRight, Download, Edit3, FileText, LayoutDashboard,
+  Activity, Check, ChevronDown, Eye, FileQuestion, ChevronLeft, ChevronRight, Download, Edit3, FileText, LayoutDashboard,
   Link2, MessageCircle, MoreHorizontal, Paperclip, Phone, Plus, RefreshCw, Search, Send, Sparkles,
   Star, Trash2, UserCheck, X,
 } from 'lucide-react';
@@ -23,6 +23,7 @@ import {
 } from '../components/ui';
 import { ModuleIcon } from '../components/Layout';
 import ConvertLeadModal from '../components/ConvertLeadModal';
+import DocumentViewer, { isPreviewable, type ViewableFile } from '../components/DocumentViewer';
 import ComposeModal from '../components/ComposeModal';
 
 export default function RecordDetail(): JSX.Element {
@@ -158,205 +159,219 @@ export default function RecordDetail(): JSX.Element {
     <div className="mx-auto max-w-[1600px] p-4 sm:p-6">
       {/* Header */}
       <div className="card mb-4 overflow-hidden">
-        <div className="flex flex-wrap items-start gap-4 p-4 sm:p-5">
-          <button onClick={() => navigate(`/${moduleName}`)} className="btn-ghost -ml-2 p-1.5" title="Back">
-            <ChevronLeft className="h-4 w-4" />
-          </button>
+        {/* Mobile-first: navigation, identity and actions are three stacked
+            rows that each own the full width, collapsing to one row from `sm`.
+            The old single flex row could not shrink below the width of the
+            action buttons, so a narrow viewport scrolled sideways. */}
+        <div className="p-4 sm:p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <button onClick={() => navigate(`/${moduleName}`)} className="btn-ghost -ml-2 shrink-0 p-1.5" title="Back">
+              <ChevronLeft className="h-4 w-4" />
+            </button>
 
-          {navIds.length > 0 && (
-            <div className="flex shrink-0 items-center gap-0.5 rounded-lg border border-slate-200 p-0.5 dark:border-slate-700">
-              <button
-                onClick={() => prevId && navigate(`/${moduleName}/${prevId}`)}
-                disabled={!prevId}
-                className="btn-ghost p-1 disabled:cursor-not-allowed disabled:opacity-30"
-                title="Previous (←)"
-              >
-                <ChevronLeft className="h-3.5 w-3.5" />
-              </button>
-              {navIndex >= 0 && (
-                <span className="px-1 text-2xs tnum text-muted">{navIndex + 1} / {navIds.length}</span>
-              )}
-              <button
-                onClick={() => nextId && navigate(`/${moduleName}/${nextId}`)}
-                disabled={!nextId}
-                className="btn-ghost p-1 disabled:cursor-not-allowed disabled:opacity-30"
-                title="Next (→)"
-              >
-                <ChevronRight className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          )}
+            {navIds.length > 0 && (
+              <div className="flex shrink-0 items-center gap-0.5 rounded-lg border border-slate-200 p-0.5 dark:border-slate-700">
+                <button
+                  onClick={() => prevId && navigate(`/${moduleName}/${prevId}`)}
+                  disabled={!prevId}
+                  className="btn-ghost p-1 disabled:cursor-not-allowed disabled:opacity-30"
+                  title="Previous (←)"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </button>
+                {navIndex >= 0 && (
+                  <span className="px-1 text-2xs tnum text-muted">{navIndex + 1} / {navIds.length}</span>
+                )}
+                <button
+                  onClick={() => nextId && navigate(`/${moduleName}/${nextId}`)}
+                  disabled={!nextId}
+                  className="btn-ghost p-1 disabled:cursor-not-allowed disabled:opacity-30"
+                  title="Next (→)"
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
 
-          <Avatar name={record.label} size={48} />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
+            <div className="flex min-w-0 flex-1 items-start gap-3">
+              <Avatar name={record.label} size={48} />
 
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="truncate text-xl font-semibold tracking-tight">{record.label}</h1>
-              {record.recordNumber && (
-                <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-2xs text-muted dark:bg-slate-800">
-                  {record.recordNumber}
-                </span>
-              )}
-              {meta.pipelineField && record.values[meta.pipelineField] != null && (
-                record.can?.edit && isInlineEditable(fieldMap.get(meta.pipelineField)!) ? (
-                  <EditableField
-                    module={moduleName!}
-                    recordId={record.id}
-                    field={fieldMap.get(meta.pipelineField)!}
-                    value={record.values[meta.pipelineField]}
-                    restrictTo={restrictionForField(meta.picklistDependencies, record.values, meta.pipelineField)}
-                    onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void refetch(); }}
-                  />
-                ) : (
-                  <FieldValue
-                    field={fieldMap.get(meta.pipelineField)!}
-                    value={record.values[meta.pipelineField]}
-                  />
-                )
-              )}
-              {fieldMap.get('rating') && (
-                record.can?.edit && isInlineEditable(fieldMap.get('rating')!) ? (
-                  <EditableField
-                    module={moduleName!}
-                    recordId={record.id}
-                    field={fieldMap.get('rating')!}
-                    value={record.values.rating}
-                    display={record.display?.rating}
-                    onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void refetch(); }}
-                  />
-                ) : (
-                  <FieldValue field={fieldMap.get('rating')!} value={record.values.rating} display={record.display?.rating} />
-                )
-              )}
-              {typeof record.values.ai_score === 'number' && (
-                <span className="inline-flex items-center gap-1">
-                  <Sparkles className="h-3 w-3 text-brand-500" />
-                  <ScoreChip score={record.values.ai_score as number} />
-                </span>
-              )}
-              {typeof record.values.ai_risk_score === 'number' && (
-                <span className="inline-flex items-center gap-1 text-2xs text-muted">
-                  Risk <ScoreChip score={record.values.ai_risk_score as number} invert />
-                </span>
-              )}
-            </div>
-
-            {/* Header summary chips */}
-            <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-muted">
-              {(layoutConfig.headerFields ?? []).slice(0, 5).map((name) => {
-                const field = fieldMap.get(name);
-                if (!field || record.values[name] == null || record.values[name] === '') return null;
-                if (name === meta.pipelineField) return null;
-                return (
-                  <span key={name} className="inline-flex items-center gap-1.5">
-                    <span className="text-muted">{field.label}:</span>
-                    {record.can?.edit && isInlineEditable(field) ? (
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="min-w-0 max-w-full truncate text-lg font-semibold tracking-tight sm:text-xl">{record.label}</h1>
+                  {record.recordNumber && (
+                    <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-2xs text-muted dark:bg-slate-800">
+                      {record.recordNumber}
+                    </span>
+                  )}
+                  {meta.pipelineField && record.values[meta.pipelineField] != null && (
+                    record.can?.edit && isInlineEditable(fieldMap.get(meta.pipelineField)!) ? (
                       <EditableField
                         module={moduleName!}
                         recordId={record.id}
-                        field={field}
-                        value={record.values[name]}
-                        display={record.display?.[name]}
-                        compact
-                        restrictTo={restrictionForField(meta.picklistDependencies, record.values, field.name)}
+                        field={fieldMap.get(meta.pipelineField)!}
+                        value={record.values[meta.pipelineField]}
+                        restrictTo={restrictionForField(meta.picklistDependencies, record.values, meta.pipelineField)}
                         onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void refetch(); }}
                       />
                     ) : (
-                      <FieldValue field={field} value={record.values[name]} display={record.display?.[name]} compact />
+                      <FieldValue
+                        field={fieldMap.get(meta.pipelineField)!}
+                        value={record.values[meta.pipelineField]}
+                      />
+                    )
+                  )}
+                  {fieldMap.get('rating') && (
+                    record.can?.edit && isInlineEditable(fieldMap.get('rating')!) ? (
+                      <EditableField
+                        module={moduleName!}
+                        recordId={record.id}
+                        field={fieldMap.get('rating')!}
+                        value={record.values.rating}
+                        display={record.display?.rating}
+                        onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void refetch(); }}
+                      />
+                    ) : (
+                      <FieldValue field={fieldMap.get('rating')!} value={record.values.rating} display={record.display?.rating} />
+                    )
+                  )}
+                  {typeof record.values.ai_score === 'number' && (
+                    <span className="inline-flex items-center gap-1">
+                      <Sparkles className="h-3 w-3 text-brand-500" />
+                      <ScoreChip score={record.values.ai_score as number} />
+                    </span>
+                  )}
+                  {typeof record.values.ai_risk_score === 'number' && (
+                    <span className="inline-flex items-center gap-1 text-2xs text-muted">
+                      Risk <ScoreChip score={record.values.ai_risk_score as number} invert />
+                    </span>
+                  )}
+                </div>
+
+                {/* Header summary chips. Every chip caps its own width and
+                    truncates: header fields carry free text (a last name imported
+                    as "Phone-1786183963173-290" is real data here), and one long
+                    value used to widen the whole card past the viewport. */}
+                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted">
+                  {(layoutConfig.headerFields ?? []).slice(0, 5).map((name) => {
+                    const field = fieldMap.get(name);
+                    if (!field || record.values[name] == null || record.values[name] === '') return null;
+                    if (name === meta.pipelineField) return null;
+                    return (
+                      <span key={name} className="inline-flex min-w-0 max-w-full items-center gap-1.5 truncate">
+                        <span className="shrink-0 text-muted">{field.label}:</span>
+                        {record.can?.edit && isInlineEditable(field) ? (
+                          <EditableField
+                            module={moduleName!}
+                            recordId={record.id}
+                            field={field}
+                            value={record.values[name]}
+                            display={record.display?.[name]}
+                            compact
+                            restrictTo={restrictionForField(meta.picklistDependencies, record.values, field.name)}
+                            onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void refetch(); }}
+                          />
+                        ) : (
+                          <FieldValue field={field} value={record.values[name]} display={record.display?.[name]} compact />
+                        )}
+                      </span>
+                    );
+                  })}
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="text-muted">Owner:</span>
+                    {fieldMap.get('owner_id') && record.can?.edit ? (
+                      <EditableField
+                        module={moduleName!}
+                        recordId={record.id}
+                        field={fieldMap.get('owner_id')!}
+                        value={record.values.owner_id}
+                        display={record.display?.owner_id}
+                        compact
+                        onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void refetch(); }}
+                      />
+                    ) : record.display?.owner_id ? (
+                      <span className="inline-flex items-center gap-1"><Avatar name={record.display.owner_id} size={16} />{record.display.owner_id}</span>
+                    ) : (
+                      <span className="text-muted">Unassigned</span>
                     )}
                   </span>
-                );
-              })}
-              <span className="inline-flex items-center gap-1.5">
-                <span className="text-muted">Owner:</span>
-                {fieldMap.get('owner_id') && record.can?.edit ? (
-                  <EditableField
-                    module={moduleName!}
-                    recordId={record.id}
-                    field={fieldMap.get('owner_id')!}
-                    value={record.values.owner_id}
-                    display={record.display?.owner_id}
-                    compact
-                    onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void refetch(); }}
-                  />
-                ) : record.display?.owner_id ? (
-                  <span className="inline-flex items-center gap-1"><Avatar name={record.display.owner_id} size={16} />{record.display.owner_id}</span>
-                ) : (
-                  <span className="text-muted">Unassigned</span>
-                )}
-              </span>
-              <span className="text-muted">Updated {relativeTime(record.updatedAt)}</span>
+                  <span className="shrink-0 text-muted">Updated {relativeTime(record.updatedAt)}</span>
+                </div>
+              </div>
             </div>
-          </div>
 
-          {/* Actions */}
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => starMutation.mutate(!record.starred)}
-              className="btn-ghost p-2"
-              title={record.starred ? 'Remove from starred' : 'Star this record'}
-            >
-              <Star className={cn('h-4 w-4', record.starred && 'fill-amber-400 text-amber-400')} />
-            </button>
-
-            {phone && (
-              <>
-                <CallButton to={phone} recordId={record.id} module={moduleName!} />
-                <button onClick={() => setCompose('whatsapp')} className="btn-secondary btn-sm" title="WhatsApp">
-                  <MessageCircle className="h-3.5 w-3.5 text-positive" />
-                  <span className="hidden sm:inline">WhatsApp</span>
-                </button>
-              </>
-            )}
-            {email && (
-              <button onClick={() => setCompose('email')} className="btn-secondary btn-sm" title="Email">
-                <Send className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Email</span>
+            {/* Actions. Full width and wrapping below the identity block on a
+                phone; a right-aligned row from `sm` up. */}
+            <div className="flex flex-wrap items-center gap-1.5 sm:shrink-0 sm:justify-end">
+              <button
+                onClick={() => starMutation.mutate(!record.starred)}
+                className="btn-ghost p-2"
+                title={record.starred ? 'Remove from starred' : 'Star this record'}
+              >
+                <Star className={cn('h-4 w-4', record.starred && 'fill-amber-400 text-amber-400')} />
               </button>
-            )}
 
-            {meta.supportsConversion && !record.values.is_converted && (
-              <button onClick={() => setShowConvert(true)} className="btn-primary btn-sm">
-                <UserCheck className="h-3.5 w-3.5" /> Convert
-              </button>
-            )}
-
-            {record.can?.edit && (
-              <Link to={`/${moduleName}/${id}/edit`} className="btn-secondary btn-sm">
-                <Edit3 className="h-3.5 w-3.5" /> Edit
-              </Link>
-            )}
-
-            <Dropdown trigger={<button className="btn-ghost p-2" aria-label="More actions"><MoreHorizontal className="h-4 w-4" /></button>}>
-              {(close) => (
+              {phone && (
                 <>
-                  {aiAvailable && (
-                    <DropdownItem
-                      icon={<Sparkles className="h-3.5 w-3.5" />}
-                      onClick={() => {
-                        close();
-                        void api.summarise(moduleName!, id!)
-                          .then((r) => toast.info('AI summary', r.summary))
-                          .catch((e: Error) => toast.error('Summary failed', e.message));
-                      }}
-                    >
-                      Summarise with AI
-                    </DropdownItem>
-                  )}
-                  {record.can?.delete && (
-                    <DropdownItem
-                      icon={<Trash2 className="h-3.5 w-3.5" />}
-                      danger
-                      onClick={() => { setConfirmDelete(true); close(); }}
-                    >
-                      Delete record
-                    </DropdownItem>
-                  )}
+                  <CallButton to={phone} recordId={record.id} module={moduleName!} />
+                  <button onClick={() => setCompose('whatsapp')} className="btn-secondary btn-sm" title="WhatsApp">
+                    <MessageCircle className="h-3.5 w-3.5 text-positive" />
+                    <span className="hidden sm:inline">WhatsApp</span>
+                  </button>
                 </>
               )}
-            </Dropdown>
+              {email && (
+                <button onClick={() => setCompose('email')} className="btn-secondary btn-sm" title="Email">
+                  <Send className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Email</span>
+                </button>
+              )}
+
+              {meta.supportsConversion && !record.values.is_converted && (
+                <button onClick={() => setShowConvert(true)} className="btn-primary btn-sm">
+                  <UserCheck className="h-3.5 w-3.5" /> Convert
+                </button>
+              )}
+
+              {record.can?.edit && (
+                <Link to={`/${moduleName}/${id}/edit`} className="btn-secondary btn-sm">
+                  <Edit3 className="h-3.5 w-3.5" /> Edit
+                </Link>
+              )}
+
+              <Dropdown trigger={<button className="btn-ghost p-2" aria-label="More actions"><MoreHorizontal className="h-4 w-4" /></button>}>
+                {(close) => (
+                  <>
+                    {aiAvailable && (
+                      <DropdownItem
+                        icon={<Sparkles className="h-3.5 w-3.5" />}
+                        onClick={() => {
+                          close();
+                          void api.summarise(moduleName!, id!)
+                            .then((r) => toast.info('AI summary', r.summary))
+                            .catch((e: Error) => toast.error('Summary failed', e.message));
+                        }}
+                      >
+                        Summarise with AI
+                      </DropdownItem>
+                    )}
+                    {record.can?.delete && (
+                      <DropdownItem
+                        icon={<Trash2 className="h-3.5 w-3.5" />}
+                        danger
+                        onClick={() => { setConfirmDelete(true); close(); }}
+                      >
+                        Delete record
+                      </DropdownItem>
+                    )}
+                  </>
+                )}
+              </Dropdown>
+            </div>
           </div>
-        </div>
+          </div>
 
         <Tabs tabs={tabs} active={tab} onChange={setTab} className="px-4 sm:px-5" />
       </div>
@@ -838,6 +853,25 @@ function FilesTab({ module, id }: { module: string; id: string }): JSX.Element {
     queryFn: () => api.files(id),
   });
   const [uploading, setUploading] = useState(false);
+  const [preview, setPreview] = useState<ViewableFile | null>(null);
+
+  // The API returns snake_case rows; the viewer takes a narrow shape. Both are
+  // needed here — the list still shows uploader and date, which the viewer
+  // has no use for.
+  const raw = useMemo(
+    () => new Map((data ?? []).map((f) => {
+      const row = f as { id: string; size: number; created_at: string; uploaded_by_name: string | null };
+      return [row.id, row];
+    })),
+    [data],
+  );
+  const viewables: ViewableFile[] = useMemo(
+    () => (data ?? []).map((f) => {
+      const row = f as { id: string; file_name: string; size: number; mime_type: string };
+      return { id: row.id, fileName: row.file_name, mimeType: row.mime_type, fileSize: row.size };
+    }),
+    [data],
+  );
 
   const upload = async (file: File): Promise<void> => {
     setUploading(true);
@@ -874,26 +908,51 @@ function FilesTab({ module, id }: { module: string; id: string }): JSX.Element {
         <EmptyState icon={<Paperclip className="h-8 w-8" />} title="No files" body="Attach brochures, KYC documents or agreements." />
       ) : (
         <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-          {data.map((f) => {
-            const file = f as { id: string; file_name: string; size: number; mime_type: string; created_at: string; uploaded_by_name: string | null };
+          {viewables.map((file) => {
+            const meta = raw.get(file.id)!;
+            const previewable = isPreviewable(file);
             return (
               <li key={file.id} className="flex items-center gap-3 p-3">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800">
                   <FileText className="h-4 w-4 text-slate-500" />
                 </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{file.file_name}</p>
-                  <p className="text-2xs text-muted">
-                    {(file.size / 1024).toFixed(0)} KB · {file.uploaded_by_name ?? 'Unknown'} · {relativeTime(file.created_at)}
+                <button
+                  type="button"
+                  onClick={() => setPreview(file)}
+                  className="min-w-0 flex-1 text-left"
+                  title={previewable ? 'Open preview' : 'No in-browser preview — opens with the reason'}
+                >
+                  <p className="truncate text-sm font-medium hover:text-brand-600 dark:hover:text-brand-400">
+                    {file.fileName}
                   </p>
-                </div>
-                <a href={`/api/files/${file.id}`} target="_blank" rel="noreferrer" className="btn-ghost btn-sm">
+                  <p className="text-2xs text-muted">
+                    {(meta.size / 1024).toFixed(0)} KB · {meta.uploaded_by_name ?? 'Unknown'} · {relativeTime(meta.created_at)}
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreview(file)}
+                  className="btn-ghost btn-sm"
+                  aria-label={`Preview ${file.fileName}`}
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                </button>
+                <a href={`/api/files/${file.id}?download=1`} className="btn-ghost btn-sm" aria-label={`Download ${file.fileName}`}>
                   <Download className="h-3.5 w-3.5" />
                 </a>
               </li>
             );
           })}
         </ul>
+      )}
+
+      {preview && (
+        <DocumentViewer
+          file={preview}
+          files={viewables}
+          onNavigate={setPreview}
+          onClose={() => setPreview(null)}
+        />
       )}
     </div>
   );

@@ -160,7 +160,7 @@ export async function ask(
   opts: { contextRecordId?: string; contextModule?: string; threadId?: string } = {},
 ): Promise<AskResult> {
   if (!isAiAvailable()) {
-    return { answer: 'The AI assistant needs an Anthropic API key. Add ANTHROPIC_API_KEY to your environment to enable it.' };
+    return { answer: 'The AI assistant needs an LLM provider. Add one under Admin → Integrations — Google Gemini, Groq and OpenRouter all have a free tier.' };
   }
 
   // Record-scoped question: answer from that record's own context.
@@ -415,7 +415,7 @@ export async function dashboardInsight(
   scope: string,
   customPrompt?: string,
 ): Promise<string> {
-  if (!isAiAvailable()) return 'Add an Anthropic API key to enable AI insights.';
+  if (!isAiAvailable()) return 'Add an LLM provider under Admin → Integrations to enable AI insights.';
 
   const facts: string[] = [];
 

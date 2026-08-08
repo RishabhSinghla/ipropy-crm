@@ -16,11 +16,20 @@
  *             cold start (or a lift with no signal) showing the browser's error
  *             page instead of the app.
  */
-const VERSION = 'ipropy-v1';
+const VERSION = 'ipropy-v2';
 const SHELL = `${VERSION}-shell`;
 const ASSETS = `${VERSION}-assets`;
 
+/*
+ * Registered as `/sw.js?dev=1` by a dev build. Push notifications need a
+ * service worker, and a salesperson should be able to try them before the app
+ * is deployed — but the caching half would serve stale bundles and fight
+ * Vite's HMR, so in dev only the push half runs.
+ */
+const DEV = new URL(self.location.href).searchParams.get('dev') === '1';
+
 self.addEventListener('install', (event) => {
+  if (DEV) { event.waitUntil(self.skipWaiting()); return; }
   event.waitUntil(
     caches.open(SHELL).then((cache) => cache.addAll(['/', '/manifest.webmanifest'])).then(() => self.skipWaiting()),
   );
@@ -36,6 +45,7 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  if (DEV) return;
   const { request } = event;
   if (request.method !== 'GET') return;
 
@@ -66,4 +76,56 @@ self.addEventListener('fetch', (event) => {
       }),
     );
   }
+});
+
+/* -------------------------------------------------------------------------
+ * Push notifications
+ *
+ * This is the half that works when the CRM is closed — the whole point of
+ * push. The payload is written by core/notifications on the server.
+ * ---------------------------------------------------------------------- */
+
+self.addEventListener('push', (event) => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch {
+    // A push with a non-JSON body is not ours; show something rather than
+    // nothing, since the browser will display its own generic notification
+    // anyway if this handler throws.
+    payload = { title: 'iPropy', body: event.data ? event.data.text() : '' };
+  }
+
+  const title = payload.title || 'iPropy';
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body: payload.body || '',
+      icon: '/icons/icon-192.png',
+      badge: '/icons/maskable-192.png',
+      // Same tag replaces an earlier notification for the same record rather
+      // than stacking five alerts about one lead.
+      tag: payload.tag || 'ipropy',
+      renotify: true,
+      data: { link: payload.link || '/' },
+    }),
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const link = (event.notification.data && event.notification.data.link) || '/';
+  const target = new URL(link, self.location.origin).href;
+
+  // Focus an existing tab if the CRM is already open rather than piling up
+  // windows — and navigate it to the record the alert was about.
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+          return client.navigate ? client.navigate(target).then((c) => c && c.focus()) : client.focus();
+        }
+      }
+      return self.clients.openWindow(target);
+    }),
+  );
 });

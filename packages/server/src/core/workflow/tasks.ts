@@ -234,21 +234,20 @@ const assignOwnerTask: TaskHandler = async (config, ctx) => {
 };
 
 const notifyUser: TaskHandler = async (config, ctx) => {
+  const { notifyMany } = await import('../notifications/index.js');
   const scope = await buildMergeScope(ctx);
   const recipients = await resolveRecipients(String(config.to ?? 'record_owner'), ctx);
-  for (const userId of recipients) {
-    await db.query(
-      `INSERT INTO ipy_notification (user_id, kind, title, body, link, record_id)
-       VALUES ($1,'workflow',$2,$3,$4,$5)`,
-      [
-        userId,
-        render(String(config.title ?? 'Workflow notification'), scope),
-        render(String(config.body ?? ''), scope),
-        `/${ctx.module}/${ctx.recordId}`,
-        ctx.recordId,
-      ],
-    );
-  }
+
+  // Goes through notify() rather than a raw INSERT so the same message also
+  // reaches the recipient's phone — a lead assigned at 9pm is worth nothing if
+  // it waits for someone to open the CRM in the morning.
+  await notifyMany(recipients, {
+    kind: String(config.kind ?? 'workflow'),
+    title: render(String(config.title ?? 'Workflow notification'), scope),
+    body: render(String(config.body ?? ''), scope),
+    link: `/${ctx.module}/${ctx.recordId}`,
+    recordId: ctx.recordId,
+  });
 };
 
 const sendWhatsApp: TaskHandler = async (config, ctx) => {

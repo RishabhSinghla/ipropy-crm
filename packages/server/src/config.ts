@@ -64,10 +64,60 @@ export const config = {
 
   ai: {
     enabled: bool('AI_ENABLED', true),
+    /**
+     * Blank means "auto": pick whichever provider actually has a key, in the
+     * priority order in core/settings/integrations.ts. Set explicitly to pin
+     * one. Anything other than `anthropic` is spoken to over the OpenAI
+     * chat-completions shape, which every option here exposes.
+     */
+    provider: str('AI_PROVIDER') as '' | 'anthropic' | 'gemini' | 'groq' | 'openrouter' | 'openai' | 'ollama',
     apiKey: str('ANTHROPIC_API_KEY'),
     model: str('AI_MODEL', 'claude-sonnet-5'),
     fastModel: str('AI_MODEL_FAST', 'claude-haiku-4-5-20251001'),
     maxTokens: num('AI_MAX_TOKENS', 4096),
+
+    // Free / low-cost alternatives. Only one needs to be filled in.
+    gemini: {
+      apiKey: str('GEMINI_API_KEY'),
+      model: str('GEMINI_MODEL', 'gemini-2.5-flash'),
+      fastModel: str('GEMINI_MODEL_FAST', 'gemini-2.5-flash-lite'),
+    },
+    groq: {
+      apiKey: str('GROQ_API_KEY'),
+      model: str('GROQ_MODEL', 'llama-3.3-70b-versatile'),
+      fastModel: str('GROQ_MODEL_FAST', 'llama-3.1-8b-instant'),
+    },
+    openrouter: {
+      apiKey: str('OPENROUTER_API_KEY'),
+      // OpenRouter's auto-router: individual `:free` model ids rotate out
+      // without notice, this one keeps working.
+      model: str('OPENROUTER_MODEL', 'openrouter/free'),
+      fastModel: str('OPENROUTER_MODEL_FAST', 'openrouter/free'),
+    },
+    /** Any other OpenAI-compatible endpoint, incl. a local Ollama or vLLM. */
+    openaiCompatible: {
+      apiKey: str('OPENAI_API_KEY'),
+      baseUrl: str('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
+      model: str('OPENAI_MODEL', 'gpt-4o-mini'),
+      fastModel: str('OPENAI_MODEL_FAST', 'gpt-4o-mini'),
+    },
+    ollama: {
+      baseUrl: str('OLLAMA_BASE_URL', 'http://localhost:11434/v1'),
+      model: str('OLLAMA_MODEL', 'llama3.1'),
+      fastModel: str('OLLAMA_MODEL_FAST', 'llama3.1'),
+    },
+  },
+
+  push: {
+    /**
+     * VAPID keypair. Left blank the server generates one on first use and
+     * stores it — rotating it invalidates every subscription already issued,
+     * so it must be stable, not per-process.
+     */
+    publicKey: str('VAPID_PUBLIC_KEY'),
+    privateKey: str('VAPID_PRIVATE_KEY'),
+    /** Contact the push service can reach you on if a subscription misbehaves. */
+    subject: str('VAPID_SUBJECT', 'mailto:admin@ipropy.com'),
   },
 
   stt: {

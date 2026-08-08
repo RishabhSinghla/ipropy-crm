@@ -17,7 +17,7 @@
     { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
   "shortcuts": [
-    { "name": "Leads & Customers", "url": "/leads" },
+    { "name": "Leads & Contacts", "url": "/leads" },
     { "name": "Site Visits", "url": "/site_visits" },
     { "name": "Inventory", "url": "/properties" }
   ]

@@ -18,7 +18,7 @@ export const MODULES: ModuleDef[] = [
     // One party record for the whole journey: enquiry → prospect → customer.
     // A separate Contacts module would duplicate the person and split their
     // timeline across two ids at conversion.
-    label: 'Leads & Customers',
+    label: 'Leads & Contacts',
     singular: 'Lead',
     table: 'ipy_e_leads',
     icon: 'users',
@@ -320,7 +320,7 @@ export const MODULES: ModuleDef[] = [
       },
     ],
     relations: [
-      { name: 'org_leads', label: 'Leads & Customers', target: 'leads', type: 'one_to_many', foreignField: 'organization_id' },
+      { name: 'org_leads', label: 'Leads & Contacts', target: 'leads', type: 'one_to_many', foreignField: 'organization_id' },
       { name: 'org_projects', label: 'Projects', target: 'projects', type: 'one_to_many', foreignField: 'developer_id' },
       { name: 'org_deals', label: 'Deals', target: 'deals', type: 'one_to_many', foreignField: 'organization_id' },
     ],

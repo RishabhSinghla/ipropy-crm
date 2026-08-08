@@ -207,6 +207,29 @@ publicRouter.get('/properties/:id', asyncHandler(async (req, res) => {
 // what admins have actually configured.
 // ---------------------------------------------------------------------------
 
+/**
+ * Public branding — the sign-in screen renders before anyone is authenticated,
+ * so it cannot use `/api/brand`. Only the outward-facing fields are exposed
+ * here (name, brand line, the accounts already published on the company's own
+ * website); the office phone and inbox stay behind auth on `/api/brand`.
+ */
+publicRouter.get('/brand', asyncHandler(async (_req, res) => {
+  const rows = await db.query<{ key: string; value: unknown }>(
+    `SELECT key, value FROM ipy_setting WHERE key IN ('brand.tagline', 'social.links', 'org.name')`,
+  );
+  const map = new Map(rows.rows.map((r) => [r.key, r.value]));
+  const rawLinks = map.get('social.links');
+  const links = Array.isArray(rawLinks) ? rawLinks as { platform?: string; label?: string; url?: string }[] : [];
+
+  res.json({
+    orgName: (map.get('org.name') as string) ?? 'iPropy',
+    tagline: (map.get('brand.tagline') as string) ?? null,
+    socialLinks: links
+      .filter((l) => typeof l.url === 'string' && /^https?:\/\//i.test(l.url))
+      .map((l) => ({ platform: String(l.platform ?? 'link'), label: String(l.label ?? 'Link'), url: l.url as string })),
+  });
+}));
+
 publicRouter.get('/filters', asyncHandler(async (_req, res) => {
   const rows = await db.query<{ name: string; value: string; label: string }>(
     `SELECT pl.name, plv.value, plv.label

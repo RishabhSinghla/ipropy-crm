@@ -5,7 +5,7 @@ import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, NotFoundError } from '../../utils/errors.js';
 import { assertCapability, canAccessRecord } from '../../core/permissions/index.js';
-import { isAiAvailable } from '../../ai/client.js';
+import { aiStatus, isAiAvailable } from '../../ai/client.js';
 import { isSttConfigured, SttError, transcribeRecording } from '../../core/stt/index.js';
 import { scoreLead } from '../../ai/leadScoring.js';
 import { analyseDeal } from '../../ai/dealRisk.js';
@@ -18,11 +18,12 @@ export const aiRouter = Router();
 aiRouter.use(requireAuth);
 
 aiRouter.get('/status', asyncHandler(async (_req, res) => {
+  const status = aiStatus();
   res.json({
-    available: isAiAvailable(),
-    message: isAiAvailable()
-      ? 'AI features are active.'
-      : 'Set ANTHROPIC_API_KEY to enable AI features. Rule-based scoring and matching still work without it.',
+    ...status,
+    message: status.available
+      ? `AI features are active (${status.provider}, ${status.model}).`
+      : 'No AI provider is configured. Add a key under Admin → Integrations — Google Gemini, Groq and OpenRouter all have a free tier. Rule-based scoring and matching still work without one.',
   });
 }));
 

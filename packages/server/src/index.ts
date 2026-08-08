@@ -9,6 +9,7 @@ import { warmup as warmupIntegrationSettings } from './core/settings/integration
 import { registerWorkflowHandlers } from './core/workflow/engine.js';
 import { startScheduler, stopScheduler } from './core/workflow/scheduler.js';
 import { initRealtime, closeRealtime } from './realtime.js';
+import { aiStatus } from './ai/client.js';
 
 async function main(): Promise<void> {
   logger.info('starting iPropy CRM server…');
@@ -52,8 +53,12 @@ async function main(): Promise<void> {
     logger.info(`iPropy API listening on http://localhost:${config.port}`);
     logger.info(`   health:  http://localhost:${config.port}/api/health`);
     logger.info(`   web app: ${config.appUrl}`);
-    if (!config.ai.apiKey) {
-      logger.warn('   ANTHROPIC_API_KEY is not set — AI features fall back to rule-based behaviour');
+    const ai = aiStatus();
+    if (ai.available) {
+      logger.info(`   AI:      ${ai.provider} — ${ai.model}`);
+    } else {
+      logger.warn('   no AI provider configured — AI features fall back to rule-based behaviour');
+      logger.warn('   set one in Admin → Integrations (Gemini, Groq and OpenRouter have free tiers)');
     }
   });
 

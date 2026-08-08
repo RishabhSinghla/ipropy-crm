@@ -3,8 +3,8 @@ import type { ReactNode } from 'react';
 import type { Ref } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { DashboardWidget, FilterGroup, FilterOperator } from '@ipropy/shared';
-import { formatIndianPrice } from '@ipropy/shared';
+import type { Dashboard, DashboardWidget, FilterGroup, FilterOperator } from '@ipropy/shared';
+import { formatIndianPrice, relativeTime } from '@ipropy/shared';
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart,
   Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -14,23 +14,34 @@ import type { EventCallback, Layout, LayoutItem } from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import {
-  ArrowDownRight, ArrowUpRight, ChevronDown, LayoutDashboard, Sparkles, TrendingUp,
+  ArrowDownRight, ArrowUpRight, Check, ChevronDown, Copy, LayoutDashboard, MoreHorizontal,
+  Pencil, Plus, Sparkles, Star, TrendingUp, Trash2,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { tintedTextVars } from '../lib/color';
 import { cn, renderMarkdown } from '../lib/utils';
-import { Badge, Dropdown, DropdownItem, EmptyState, ScoreChip, Skeleton, Spinner } from '../components/ui';
+import { Badge, ConfirmDialog, Dropdown, DropdownItem, EmptyState, Modal, ScoreChip, Skeleton, Spinner } from '../components/ui';
+import WidgetBuilder from '../components/WidgetBuilder';
 
 const PALETTE = ['#6366f1', '#22c55e', '#f59e0b', '#ec4899', '#0ea5e9', '#a855f7', '#14b8a6', '#f97316', '#64748b', '#ef4444'];
 
 export default function DashboardPage(): JSX.Element {
   const { id } = useParams<{ id?: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { user } = useApp();
   const isDesktop = useMediaQuery('(min-width: 1024px)');
 
   const { data: dashboards } = useQuery({ queryKey: ['dashboards'], queryFn: () => api.dashboards() });
-  const activeId = id ?? dashboards?.find((d) => d.isDefault)?.id ?? dashboards?.[0]?.id;
+
+  // Two dashboards can legitimately be flagged default at once — a personal one
+  // and the team's shared one, since making a dashboard your landing page must
+  // not move everyone else's. The viewer's own choice wins.
+  const activeId = id
+    ?? dashboards?.find((d) => d.isDefault && !d.isShared && d.ownerId === user?.id)?.id
+    ?? dashboards?.find((d) => d.isDefault)?.id
+    ?? dashboards?.[0]?.id;
 
   const { data: dashboard, isLoading } = useQuery({
     queryKey: ['dashboard', activeId],
@@ -38,48 +49,157 @@ export default function DashboardPage(): JSX.Element {
     enabled: Boolean(activeId),
   });
 
+  const [editing, setEditing] = useState(false);
+  const [builderFor, setBuilderFor] = useState<DashboardWidget | null | undefined>(undefined);
+  const [manage, setManage] = useState<ManageMode>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const refresh = (): void => {
+    void queryClient.invalidateQueries({ queryKey: ['dashboards'] });
+    if (activeId) void queryClient.invalidateQueries({ queryKey: ['dashboard', activeId] });
+  };
+
+  const removeWidget = async (widget: DashboardWidget): Promise<void> => {
+    if (!dashboard) return;
+    try {
+      await api.deleteWidget(dashboard.id, widget.id);
+      toast.success(`Removed “${widget.title}”`);
+      refresh();
+    } catch (err) {
+      toast.error('Could not remove the widget', (err as Error).message);
+    }
+  };
+
+  const deleteDashboard = async (): Promise<void> => {
+    if (!dashboard) return;
+    await api.deleteDashboard(dashboard.id);
+    toast.success(`Deleted “${dashboard.name}”`);
+    setConfirmDelete(false);
+    void queryClient.invalidateQueries({ queryKey: ['dashboards'] });
+    navigate('/dashboard');
+  };
+
+  const duplicate = async (): Promise<void> => {
+    if (!dashboard) return;
+    try {
+      const { id: newId } = await api.duplicateDashboard(dashboard.id);
+      toast.success('Copied — this one is yours to change');
+      await queryClient.invalidateQueries({ queryKey: ['dashboards'] });
+      navigate(`/dashboard/${newId}`);
+    } catch (err) {
+      toast.error('Could not duplicate', (err as Error).message);
+    }
+  };
+
+  const makeDefault = async (): Promise<void> => {
+    if (!dashboard) return;
+    try {
+      await api.updateDashboard(dashboard.id, { isDefault: true });
+      toast.success(`“${dashboard.name}” is now the landing dashboard`);
+      refresh();
+    } catch (err) {
+      toast.error('Could not set the default', (err as Error).message);
+    }
+  };
+
   return (
     <div className="p-4 sm:p-6">
       <DigestBanner />
 
-      <div className="mb-4 mt-5 flex flex-wrap items-center gap-3">
-        <div>
+      <div className="mb-4 mt-5 flex flex-wrap items-start gap-3">
+        <div className="min-w-0 flex-1">
           <h1 className="text-xl font-semibold tracking-tight">{dashboard?.name ?? 'Dashboard'}</h1>
           {dashboard?.description && (
             <p className="text-sm text-muted">{dashboard.description}</p>
           )}
           {dashboard?.canEdit && isDesktop && (
             <p className="mt-0.5 text-2xs text-muted">
-              Drag widgets to rearrange · pull the corner handle to resize
+              {editing
+                ? 'Editing — hover a widget to change or remove it. Drag to rearrange, pull the corner to resize.'
+                : 'Drag widgets to rearrange · pull the corner handle to resize'}
             </p>
           )}
         </div>
 
-        {dashboards && dashboards.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2">
           <Dropdown
             align="left"
             trigger={
               <button className="btn-secondary btn-sm">
                 <LayoutDashboard className="h-3.5 w-3.5" />
-                Switch
+                {dashboards && dashboards.length > 1 ? 'Switch' : 'Dashboards'}
                 <ChevronDown className="h-3 w-3" />
               </button>
             }
           >
             {(close) => (
               <>
-                {dashboards.map((d) => (
+                {(dashboards ?? []).map((d) => (
                   <DropdownItem
                     key={d.id}
+                    icon={d.id === activeId ? <Check className="h-3.5 w-3.5" /> : <span className="h-3.5 w-3.5" />}
                     onClick={() => { navigate(`/dashboard/${d.id}`); close(); }}
                   >
-                    {d.name}
+                    <span className="flex items-center gap-1.5">
+                      {d.name}
+                      {d.isDefault && <Badge>Default</Badge>}
+                      {d.isShared && <Badge color="#0ea5e9">Shared</Badge>}
+                    </span>
                   </DropdownItem>
                 ))}
+                <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
+                <DropdownItem icon={<Plus className="h-3.5 w-3.5" />} onClick={() => { setManage({ kind: 'create' }); close(); }}>
+                  New dashboard
+                </DropdownItem>
               </>
             )}
           </Dropdown>
-        )}
+
+          {dashboard?.canEdit && (
+            <button
+              className={cn('btn-sm', editing ? 'btn-primary' : 'btn-secondary')}
+              onClick={() => setEditing((v) => !v)}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              {editing ? 'Done' : 'Customise'}
+            </button>
+          )}
+
+          {dashboard && editing && (
+            <button className="btn-primary btn-sm" onClick={() => setBuilderFor(null)}>
+              <Plus className="h-3.5 w-3.5" /> Add widget
+            </button>
+          )}
+
+          {dashboard && (
+            <Dropdown
+              trigger={<button className="btn-ghost p-2" aria-label="Dashboard actions"><MoreHorizontal className="h-4 w-4" /></button>}
+            >
+              {(close) => (
+                <>
+                  {dashboard.canEdit && (
+                    <DropdownItem icon={<Pencil className="h-3.5 w-3.5" />} onClick={() => { setManage({ kind: 'rename', dashboard }); close(); }}>
+                      Rename &amp; describe
+                    </DropdownItem>
+                  )}
+                  <DropdownItem icon={<Copy className="h-3.5 w-3.5" />} onClick={() => { void duplicate(); close(); }}>
+                    Duplicate
+                  </DropdownItem>
+                  {!dashboard.isDefault && (
+                    <DropdownItem icon={<Star className="h-3.5 w-3.5" />} onClick={() => { void makeDefault(); close(); }}>
+                      Make this my landing page
+                    </DropdownItem>
+                  )}
+                  {dashboard.canEdit && (
+                    <DropdownItem icon={<Trash2 className="h-3.5 w-3.5" />} danger onClick={() => { setConfirmDelete(true); close(); }}>
+                      Delete dashboard
+                    </DropdownItem>
+                  )}
+                </>
+              )}
+            </Dropdown>
+          )}
+        </div>
       </div>
 
       {isLoading || !dashboard ? (
@@ -87,21 +207,36 @@ export default function DashboardPage(): JSX.Element {
           {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-32" />)}
         </div>
       ) : dashboard.widgets.length === 0 ? (
-        <EmptyState icon={<LayoutDashboard className="h-10 w-10" />} title="This dashboard is empty" />
+        <EmptyState
+          icon={<LayoutDashboard className="h-10 w-10" />}
+          title="This dashboard is empty"
+          body={dashboard.canEdit ? 'Add your first widget — a metric, a chart, a list, an embed or a note.' : undefined}
+          action={dashboard.canEdit
+            ? <button className="btn-primary btn-sm" onClick={() => { setEditing(true); setBuilderFor(null); }}><Plus className="h-3.5 w-3.5" /> Add widget</button>
+            : undefined}
+        />
       ) : isDesktop ? (
         <DashboardGrid
           key={dashboard.id}
           widgets={dashboard.widgets}
           canEdit={dashboard.canEdit}
           dashboardId={dashboard.id}
+          editing={editing}
+          onEditWidget={setBuilderFor}
+          onRemoveWidget={(w) => void removeWidget(w)}
         />
       ) : (
-        <div className="grid auto-rows-[minmax(0,auto)] grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-12">
+        // Below `lg` the drag grid is replaced by a flow grid. Two columns, so
+        // narrow tiles (metrics, gauges) pair up instead of eating a screen
+        // each; anything wider than a quarter of the desktop grid still spans
+        // the full width, where charts are readable.
+        <div className="grid auto-rows-[minmax(0,auto)] grid-cols-2 gap-3 lg:grid-cols-12">
           {dashboard.widgets.map((widget) => (
             <div
               key={widget.id}
               className={cn(
                 'min-w-0',
+                widget.w <= 3 ? 'col-span-1' : 'col-span-2',
                 widget.w <= 3 ? 'lg:col-span-3' :
                 widget.w <= 4 ? 'lg:col-span-4' :
                 widget.w <= 5 ? 'lg:col-span-5' :
@@ -109,11 +244,173 @@ export default function DashboardPage(): JSX.Element {
                 widget.w <= 8 ? 'lg:col-span-8' : 'lg:col-span-12',
               )}
             >
-              <Widget widget={widget} />
+              <WidgetFrame
+                widget={widget}
+                editing={editing && dashboard.canEdit}
+                onEdit={() => setBuilderFor(widget)}
+                onRemove={() => void removeWidget(widget)}
+              />
             </div>
           ))}
         </div>
       )}
+
+      {builderFor !== undefined && dashboard && (
+        <WidgetBuilder
+          dashboardId={dashboard.id}
+          widget={builderFor}
+          onClose={() => setBuilderFor(undefined)}
+          onSaved={() => { setBuilderFor(undefined); refresh(); }}
+        />
+      )}
+
+      {manage && (
+        <DashboardSettingsModal
+          mode={manage}
+          onClose={() => setManage(null)}
+          onSaved={(newId) => {
+            setManage(null);
+            void queryClient.invalidateQueries({ queryKey: ['dashboards'] });
+            if (newId) navigate(`/dashboard/${newId}`);
+            else refresh();
+          }}
+        />
+      )}
+
+      <ConfirmDialog
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={deleteDashboard}
+        title={`Delete “${dashboard?.name ?? ''}”?`}
+        body="The dashboard and its widgets are removed permanently. Records and reports are untouched."
+        confirmLabel="Delete"
+        danger
+      />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard create / rename
+// ---------------------------------------------------------------------------
+
+type ManageMode =
+  | { kind: 'create' }
+  | { kind: 'rename'; dashboard: Dashboard & { canEdit: boolean } }
+  | null;
+
+function DashboardSettingsModal({
+  mode, onClose, onSaved,
+}: {
+  mode: NonNullable<ManageMode>;
+  onClose: () => void;
+  onSaved: (newId?: string) => void;
+}): JSX.Element {
+  const { user } = useApp();
+  const existing = mode.kind === 'rename' ? mode.dashboard : null;
+  const [name, setName] = useState(existing?.name ?? '');
+  const [description, setDescription] = useState(existing?.description ?? '');
+  const [isShared, setIsShared] = useState(existing?.isShared ?? false);
+  const [saving, setSaving] = useState(false);
+
+  const save = async (): Promise<void> => {
+    if (!name.trim()) { toast.error('Give the dashboard a name'); return; }
+    setSaving(true);
+    try {
+      if (existing) {
+        await api.updateDashboard(existing.id, { name: name.trim(), description, isShared });
+        toast.success('Dashboard updated');
+        onSaved();
+      } else {
+        const { id } = await api.createDashboard({ name: name.trim(), description, isShared });
+        toast.success('Dashboard created — add your first widget');
+        onSaved(id);
+      }
+    } catch (err) {
+      toast.error('Could not save', (err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={existing ? 'Dashboard settings' : 'New dashboard'}
+      footer={
+        <>
+          <button className="btn-secondary btn-sm" onClick={onClose}>Cancel</button>
+          <button className="btn-primary btn-sm" disabled={saving} onClick={() => void save()}>
+            {saving && <Spinner className="h-3 w-3" />}{existing ? 'Save' : 'Create'}
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <div>
+          <label className="label">Name</label>
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Faridabad sales" autoFocus />
+        </div>
+        <div>
+          <label className="label">Description</label>
+          <input className="input" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What this dashboard is for" />
+        </div>
+        {user?.isAdmin && (
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300"
+              checked={isShared}
+              onChange={(e) => setIsShared(e.target.checked)}
+            />
+            <span>
+              Share with the whole team
+              <span className="block text-2xs text-muted">
+                Everyone sees it, but each person still only sees records they have access to.
+              </span>
+            </span>
+          </label>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+/** A widget plus its edit affordances, which only appear in Customise mode. */
+function WidgetFrame({
+  widget, editing, onEdit, onRemove,
+}: {
+  widget: DashboardWidget;
+  editing: boolean;
+  onEdit: () => void;
+  onRemove: () => void;
+}): JSX.Element {
+  if (!editing) return <Widget widget={widget} />;
+  return (
+    <div className="group relative h-full">
+      {/* data-no-drag so clicking these does not start a grid drag. */}
+      <div data-no-drag className="absolute right-2 top-2 z-10 flex gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+        <button
+          onClick={onEdit}
+          className="rounded-md border border-slate-200 bg-white/95 p-1.5 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/95 dark:hover:bg-slate-800"
+          aria-label={`Edit ${widget.title}`}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+        <button
+          onClick={onRemove}
+          className="rounded-md border border-slate-200 bg-white/95 p-1.5 text-negative shadow-sm hover:bg-red-50 dark:border-slate-700 dark:bg-slate-900/95 dark:hover:bg-red-950/40"
+          aria-label={`Remove ${widget.title}`}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <div className="h-full ring-1 ring-dashed ring-brand-300 dark:ring-brand-700">
+        <Widget widget={widget} />
+      </div>
     </div>
   );
 }
@@ -139,10 +436,13 @@ function useMediaQuery(query: string): boolean {
   return matches;
 }
 
-function DashboardGrid({ widgets, canEdit, dashboardId }: {
+function DashboardGrid({ widgets, canEdit, dashboardId, editing, onEditWidget, onRemoveWidget }: {
   widgets: DashboardWidget[];
   canEdit: boolean;
   dashboardId: string;
+  editing: boolean;
+  onEditWidget: (widget: DashboardWidget) => void;
+  onRemoveWidget: (widget: DashboardWidget) => void;
 }): JSX.Element {
   const { width, containerRef, mounted } = useContainerWidth();
   const queryClient = useQueryClient();
@@ -182,7 +482,12 @@ function DashboardGrid({ widgets, canEdit, dashboardId }: {
         >
           {widgets.map((w) => (
             <div key={w.id} className="h-full min-w-0">
-              <Widget widget={w} />
+              <WidgetFrame
+                widget={w}
+                editing={editing && canEdit}
+                onEdit={() => onEditWidget(w)}
+                onRemove={() => onRemoveWidget(w)}
+              />
             </div>
           ))}
         </GridLayout>
@@ -204,7 +509,10 @@ function DigestBanner(): JSX.Element | null {
 
   return (
     <div className="card overflow-hidden bg-gradient-to-br from-brand-600 to-brand-700 text-white">
-      <div className="flex flex-wrap items-start gap-6 p-5">
+      {/* The stat block used to be shrink-0, which on a phone squeezed the
+          greeting into a three-word-tall column. Below `sm` it now sits under
+          the greeting at full width instead of competing with it. */}
+      <div className="flex flex-col gap-4 p-4 sm:flex-row sm:flex-wrap sm:items-start sm:gap-6 sm:p-5">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-brand-200" />
@@ -231,7 +539,7 @@ function DigestBanner(): JSX.Element | null {
           )}
         </div>
 
-        <div className="grid shrink-0 grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-x-6 gap-y-2 border-t border-white/15 pt-3 sm:shrink-0 sm:grid-cols-4 sm:border-0 sm:pt-0">
           {[
             { label: 'Open leads', value: stats.openLeads },
             { label: 'Visits today', value: stats.visitsToday },
@@ -340,6 +648,18 @@ function Widget({ widget }: { widget: DashboardWidget }): JSX.Element {
       return <TableCard widget={widget} data={d} />;
     case 'ai_insights':
       return <AiInsightCard widget={widget} />;
+    case 'pipeline_forecast':
+      return <ForecastCard widget={widget} data={d} />;
+    case 'heatmap':
+      return <HeatmapCard widget={widget} data={d} />;
+    case 'markdown':
+      return <MarkdownCard widget={widget} />;
+    case 'iframe':
+      return <IframeCard widget={widget} />;
+    case 'activity_feed':
+      return <ActivityFeedCard widget={widget} data={d} />;
+    case 'calendar':
+      return <CalendarCard widget={widget} data={d} />;
     default:
       return (
         <div className="card p-4">
@@ -348,6 +668,223 @@ function Widget({ widget }: { widget: DashboardWidget }): JSX.Element {
         </div>
       );
   }
+}
+
+/**
+ * Weighted pipeline by close month. Two bars per bucket: the weighted number
+ * the business should plan against, and gross behind it — showing only the
+ * weighted figure hides how much is riding on low-probability deals.
+ */
+function ForecastCard({ widget, data }: { widget: DashboardWidget; data: Record<string, unknown> }): JSX.Element {
+  const series = (data.series as Series[] | undefined) ?? [];
+  if (!series.length) return <EmptyWidget title={widget.title} />;
+
+  return (
+    <div className="card h-full p-4">
+      <p className="mb-3 text-sm font-medium">{widget.title}</p>
+      <ChartFrame title={widget.title} series={series} format="currency">
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={series} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-slate-200 dark:text-slate-800" vertical={false} />
+            <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+            <YAxis tick={{ fontSize: 10 }} tickFormatter={(v: number) => shortFormat(v, 'currency')} width={55} />
+            <Tooltip
+              formatter={(v: number, name) => [formatValue(v, 'currency'), name === 'secondary' ? 'Gross' : 'Weighted']}
+              contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
+            />
+            <Bar tabIndex={-1} dataKey="secondary" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
+            <Bar tabIndex={-1} dataKey="value" fill="#6366f1" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </ChartFrame>
+      <p className="mt-2 text-2xs text-muted">Solid = probability-weighted · grey = gross pipeline</p>
+    </div>
+  );
+}
+
+/** Day × hour density, e.g. when enquiries actually arrive. */
+function HeatmapCard({ widget, data }: { widget: DashboardWidget; data: Record<string, unknown> }): JSX.Element {
+  const series = (data.series as Series[] | undefined) ?? [];
+  if (!series.length) return <EmptyWidget title={widget.title} />;
+
+  const byCell = new Map(series.map((s) => [s.key, s.value]));
+  const max = Math.max(...series.map((s) => s.value), 1);
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  // Business hours only — a 24-column grid is unreadable in a dashboard tile
+  // and the 00:00–07:00 band is empty for every real estate team.
+  const hours = Array.from({ length: 15 }, (_, i) => i + 7);
+
+  return (
+    <div className="card h-full overflow-auto p-4">
+      <p className="mb-3 text-sm font-medium">{widget.title}</p>
+      <table className="w-full border-separate border-spacing-[2px]">
+        <tbody>
+          {days.map((day, dow) => (
+            <tr key={day}>
+              <th scope="row" className="pr-1 text-right text-2xs font-normal text-muted">{day}</th>
+              {hours.map((hour) => {
+                const value = byCell.get(`${dow}-${hour}`) ?? 0;
+                return (
+                  <td
+                    key={hour}
+                    title={`${day} ${String(hour).padStart(2, '0')}:00 — ${value}`}
+                    className="h-5 rounded-sm"
+                    style={{
+                      backgroundColor: value ? `rgba(99,102,241,${0.15 + (value / max) * 0.85})` : undefined,
+                      outline: value ? undefined : '1px solid rgb(226 232 240 / 0.6)',
+                    }}
+                  />
+                );
+              })}
+            </tr>
+          ))}
+          <tr>
+            <td />
+            {hours.map((hour) => (
+              <td key={hour} className="pt-1 text-center text-[8px] text-muted tnum">
+                {hour % 3 === 1 ? hour : ''}
+              </td>
+            ))}
+          </tr>
+        </tbody>
+      </table>
+      <p className="sr-only">
+        {series.map((s) => `${s.label}: ${s.value}`).join('. ')}
+      </p>
+    </div>
+  );
+}
+
+function MarkdownCard({ widget }: { widget: DashboardWidget }): JSX.Element {
+  const content = (widget.config.content as string) ?? '';
+  return (
+    <div className="card h-full overflow-auto p-4">
+      <p className="mb-2 text-sm font-medium">{widget.title}</p>
+      {content
+        ? <div className="prose-ai" dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }} />
+        : <p className="py-6 text-center text-xs text-muted">No content yet — edit this widget to add some.</p>}
+    </div>
+  );
+}
+
+function IframeCard({ widget }: { widget: DashboardWidget }): JSX.Element {
+  const url = (widget.config.url as string) ?? '';
+  // Only http(s): a config value reaching `src` would otherwise accept
+  // `javascript:` and run in the app's origin.
+  const safe = /^https?:\/\//i.test(url) ? url : '';
+  return (
+    <div className="card flex h-full flex-col overflow-hidden">
+      <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
+        <p className="truncate text-sm font-medium">{widget.title}</p>
+        {safe && (
+          <a href={safe} target="_blank" rel="noreferrer noopener" className="shrink-0 text-2xs text-brand-600 hover:underline dark:text-brand-400">
+            Open ↗
+          </a>
+        )}
+      </div>
+      {safe ? (
+        <iframe
+          src={safe}
+          title={widget.title}
+          className="min-h-[12rem] flex-1 border-0"
+          sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+          referrerPolicy="no-referrer"
+          loading="lazy"
+        />
+      ) : (
+        <p className="px-4 py-8 text-center text-xs text-muted">
+          {url ? 'Only http(s) URLs can be embedded.' : 'No URL set — edit this widget to add one.'}
+        </p>
+      )}
+    </div>
+  );
+}
+
+interface WidgetRow { id: string; module?: string; label?: string; __display?: Record<string, string>; [key: string]: unknown }
+
+/** Recently touched records, newest first — "what has the team been doing". */
+function ActivityFeedCard({ widget, data }: { widget: DashboardWidget; data: Record<string, unknown> }): JSX.Element {
+  const rows = (data.rows as WidgetRow[] | undefined) ?? [];
+  const module = (widget.config.module as string | undefined) ?? 'leads';
+  if (!rows.length) return <EmptyWidget title={widget.title} />;
+
+  const sortField = (widget.config.sortBy as string) ?? 'last_activity_at';
+
+  return (
+    <div className="card h-full overflow-hidden">
+      <p className="border-b border-slate-100 px-4 py-2.5 text-sm font-medium dark:border-slate-800">{widget.title}</p>
+      <ul className="max-h-72 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800">
+        {rows.map((row) => {
+          const when = row[sortField];
+          return (
+            <li key={row.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/60">
+              <Link to={`/${row.module ?? module}/${row.id}`} className="block px-4 py-2">
+                <p className="truncate text-xs font-medium text-slate-800 dark:text-slate-200">{row.label}</p>
+                <p className="mt-0.5 flex flex-wrap gap-x-2 text-2xs text-muted">
+                  {Object.entries(row.__display ?? {})
+                    .filter(([key]) => key !== sortField)
+                    .slice(0, 2)
+                    .map(([key, value]) => <span key={key}>{value}</span>)}
+                  {typeof when === 'string' && <span>{relativeTime(when)}</span>}
+                </p>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/** Upcoming activities as an agenda, grouped by day. */
+function CalendarCard({ widget, data }: { widget: DashboardWidget; data: Record<string, unknown> }): JSX.Element {
+  const rows = (data.rows as WidgetRow[] | undefined) ?? [];
+  const module = (widget.config.module as string | undefined) ?? 'activities';
+  const dateField = (widget.config.sortBy as string) ?? 'due_date';
+  if (!rows.length) return <EmptyWidget title={widget.title} />;
+
+  const grouped = new Map<string, WidgetRow[]>();
+  for (const row of rows) {
+    const raw = row[dateField];
+    const date = typeof raw === 'string' ? new Date(raw) : null;
+    const key = date && !Number.isNaN(date.getTime())
+      ? date.toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' })
+      : 'No date';
+    grouped.set(key, [...(grouped.get(key) ?? []), row]);
+  }
+
+  return (
+    <div className="card h-full overflow-hidden">
+      <p className="border-b border-slate-100 px-4 py-2.5 text-sm font-medium dark:border-slate-800">{widget.title}</p>
+      <div className="max-h-72 overflow-y-auto px-4 py-2">
+        {[...grouped.entries()].map(([day, list]) => (
+          <div key={day} className="mb-3 last:mb-0">
+            <p className="mb-1 text-2xs font-semibold uppercase tracking-wide text-muted">{day}</p>
+            <ul className="space-y-0.5">
+              {list.map((row) => {
+                const raw = row[dateField];
+                const date = typeof raw === 'string' ? new Date(raw) : null;
+                const time = date && !Number.isNaN(date.getTime())
+                  ? date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+                  : '—';
+                return (
+                  <li key={row.id}>
+                    <Link
+                      to={`/${row.module ?? module}/${row.id}`}
+                      className="flex items-baseline gap-2 rounded px-1 py-0.5 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                    >
+                      <span className="shrink-0 text-2xs text-muted tnum">{time}</span>
+                      <span className="min-w-0 truncate text-xs text-slate-800 dark:text-slate-200">{row.label}</span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function formatValue(value: number, format?: string): string {
@@ -377,7 +914,9 @@ function MetricCard({ widget, data }: { widget: DashboardWidget; data: Record<st
           <span className={cn('font-medium tnum', change >= 0 ? 'text-positive' : 'text-negative')}>
             {change > 0 ? '+' : ''}{change}%
           </span>
-          <span className="text-muted">vs previous period</span>
+          {/* Two tiles share the width on a phone; the caption is the first
+              thing to go rather than wrapping under the number. */}
+          <span className="hidden text-muted sm:inline">vs previous period</span>
         </div>
       )}
     </div>

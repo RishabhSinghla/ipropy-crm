@@ -12,6 +12,7 @@ import {
 } from '../../core/settings/integrations.js';
 import { verifyConnection as verifySmtpConnection } from '../../integrations/email/service.js';
 import { syncInboundEmails, testImapConnection } from '../../integrations/email/inbound.js';
+import { testAiProvider } from '../../ai/client.js';
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth);
@@ -744,13 +745,18 @@ async function testIntegration(provider: string): Promise<{ ok: boolean; message
         if (!result.ok) return { ok: false, message: result.error ?? 'Connection failed.' };
         return { ok: true, message: `Connected — ${result.unseen ?? 0} unseen messages waiting.` };
       }
-      case 'anthropic': {
-        if (!s.ai.apiKey) return { ok: false, message: 'An API key is required.' };
-        const Anthropic = (await import('@anthropic-ai/sdk')).default;
-        const client = new Anthropic({ apiKey: s.ai.apiKey });
-        await client.models.list({ limit: 1 });
-        return { ok: true, message: 'Connected — API key accepted.' };
-      }
+      case 'anthropic':
+        return testAiProvider('anthropic');
+      case 'ai_gemini':
+        return testAiProvider('gemini');
+      case 'ai_groq':
+        return testAiProvider('groq');
+      case 'ai_openrouter':
+        return testAiProvider('openrouter');
+      case 'ai_openai':
+        return testAiProvider('openai');
+      case 'ai_ollama':
+        return testAiProvider('ollama');
       case 'facebook_leads':
         if (!s.leadSources.facebook.pageAccessToken) return { ok: false, message: 'A page access token is required.' };
         return { ok: true, message: 'Page access token is set. Full verification happens on the next inbound lead.' };

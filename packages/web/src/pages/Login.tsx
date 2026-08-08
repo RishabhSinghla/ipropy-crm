@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { Building2, Eye, EyeOff, Sparkles } from 'lucide-react';
 import { useApp } from '../lib/store';
-import { ApiError } from '../lib/api';
+import { ApiError, api } from '../lib/api';
 import { Spinner } from '../components/ui';
 
 export default function Login(): JSX.Element {
@@ -14,6 +15,9 @@ export default function Login(): JSX.Element {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+
+  // Public endpoint: this screen renders before anyone is signed in.
+  const { data: brand } = useQuery({ queryKey: ['public-brand'], queryFn: () => api.publicBrand(), staleTime: Infinity });
 
   if (!loading && user) {
     const from = (location.state as { from?: { pathname: string } })?.from?.pathname ?? (user.channelPartnerId ? '/portal' : '/dashboard');
@@ -49,7 +53,14 @@ export default function Login(): JSX.Element {
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/15 backdrop-blur">
             <Building2 className="h-6 w-6" />
           </div>
-          <span className="text-2xl font-semibold tracking-tight">iPropy</span>
+          <div className="min-w-0">
+            <span className="block text-2xl font-semibold leading-tight tracking-tight">
+              {brand?.orgName ?? 'iPropy'}
+            </span>
+            {brand?.tagline && (
+              <span className="block text-xs uppercase tracking-[0.18em] text-brand-200">{brand.tagline}</span>
+            )}
+          </div>
         </div>
 
         <div className="relative max-w-md">
@@ -88,7 +99,7 @@ export default function Login(): JSX.Element {
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-600 text-white">
               <Building2 className="h-5 w-5" />
             </div>
-            <span className="text-xl font-semibold">iPropy</span>
+            <span className="text-xl font-semibold">{brand?.orgName ?? 'iPropy'}</span>
           </div>
 
           <h2 className="text-2xl font-semibold tracking-tight">Welcome back</h2>
