@@ -117,6 +117,23 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   return text ? JSON.parse(text) as T : (undefined as T);
 }
 
+/**
+ * Add the session token to a same-origin file URL.
+ *
+ * `<img>`, `<iframe>` and `<video>` cannot carry an Authorization header, and
+ * `/api/files/:id` is permission-checked — so embeds use the `?access_token=`
+ * fallback `requireAuth` already supports. External URLs are returned as-is:
+ * sending our token to someone else's host would leak the session.
+ */
+export function authedFileUrl(url: string, params: Record<string, string> = {}): string {
+  if (!url.startsWith('/api/')) return url;
+  const search = new URLSearchParams(params);
+  const token = tokenStore.get();
+  if (token) search.set('access_token', token);
+  const qs = search.toString();
+  return qs ? `${url}${url.includes('?') ? '&' : '?'}${qs}` : url;
+}
+
 const get = <T>(path: string): Promise<T> => request<T>(path);
 const post = <T>(path: string, body?: unknown): Promise<T> => request<T>(path, { method: 'POST', body });
 const patch = <T>(path: string, body?: unknown): Promise<T> => request<T>(path, { method: 'PATCH', body });
@@ -156,10 +173,24 @@ export const api = {
   request,
 
   // --- auth ---------------------------------------------------------------
-  login: (email: string, password: string) =>
+  /** `identifier` is an email address or a mobile number. */
+  login: (identifier: string, password: string) =>
     request<{ token: string; refreshToken: string; user: AuthUser }>('/api/auth/login', {
-      method: 'POST', body: { email, password }, skipRefresh: true,
+      method: 'POST', body: { identifier, password }, skipRefresh: true,
     }),
+
+  // --- passkeys (Face ID / Touch ID / Android biometrics) -------------------
+  passkeyRegisterOptions: () => post<Record<string, unknown>>('/api/auth/passkeys/register/options', {}),
+  passkeyRegisterVerify: (response: unknown, label?: string) =>
+    post('/api/auth/passkeys/register/verify', { response, label }),
+  passkeyLoginOptions: () =>
+    request<Record<string, unknown>>('/api/auth/passkeys/login/options', { method: 'POST', body: {}, skipRefresh: true }),
+  passkeyLoginVerify: (response: unknown) =>
+    request<{ token: string; refreshToken: string; user: AuthUser }>('/api/auth/passkeys/login/verify', {
+      method: 'POST', body: { response }, skipRefresh: true,
+    }),
+  passkeys: () => get<Record<string, unknown>[]>('/api/auth/passkeys'),
+  deletePasskey: (id: string) => del(`/api/auth/passkeys/${id}`),
   logout: () => post('/api/auth/logout', { refreshToken: tokenStore.getRefresh() }),
   me: () => get<AuthUser>('/api/auth/me'),
   updateProfile: (data: Record<string, unknown>) => patch<AuthUser>('/api/auth/me', data),

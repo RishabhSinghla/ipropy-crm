@@ -102,7 +102,9 @@ export default function ModuleManager(): JSX.Element {
                         )}
                         {!module.isActive && <Badge color="#ef4444">Disabled</Badge>}
                       </div>
-                      <p className="mt-0.5 text-2xs text-muted tnum">
+                      {/* Clamped: Leads is referenced by seven other modules,
+                          which on a phone turned one card into a paragraph. */}
+                      <p className="mt-0.5 line-clamp-2 text-2xs text-muted tnum" title={module.dependents.join(', ')}>
                         {module.fieldCount} fields · {module.recordCount.toLocaleString('en-IN')} records
                         {module.dependents.length > 0 && ` · referenced by ${module.dependents.join(', ')}`}
                       </p>

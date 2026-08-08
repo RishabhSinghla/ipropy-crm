@@ -1,5 +1,17 @@
 # Deploying iPropy
 
+## Live
+
+| | URL |
+|---|---|
+| CRM | https://ipropy-crm.onrender.com |
+| Website | https://ipropy-website.vercel.app |
+
+Both verified: health check green, DB connected, CORS allows the website's
+origin, the deployed bundle matches `main`, and the seed admin password is in
+effect (the repo's public default is rejected — `curl`-tested, not just "it
+loaded").
+
 Goal: both apps live on the internet, on free tiers, redeploying automatically
 every time you `git push`. Roughly 30 minutes end to end, almost all of it
 waiting for builds.

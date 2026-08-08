@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, Check, ChevronDown, Info, Loader2, X } from 'lucide-react';
+import { authedFileUrl } from '../lib/api';
 import { avatarBackground, badgeVars } from '../lib/color';
 import { cn } from '../lib/utils';
 import { useToasts } from '../lib/store';
@@ -55,7 +56,20 @@ export function Avatar({
     : '?';
 
   if (src) {
-    return <img src={src} alt={name} width={size} height={size} className={cn('rounded-full object-cover', className)} />;
+    return (
+      <img
+        // Avatars are served from the permission-checked /api/files route, so
+        // the token has to ride in the query string — a plain <img> cannot
+        // send an Authorization header. `thumb` because this is 32px on screen
+        // and the original may be a 4MB phone photo.
+        src={authedFileUrl(src, { size: 'thumb' })}
+        alt={name}
+        width={size}
+        height={size}
+        style={{ width: size, height: size }}
+        className={cn('shrink-0 rounded-full object-cover', className)}
+      />
+    );
   }
   return (
     <div
@@ -211,6 +225,7 @@ export function Dropdown({
 }: { trigger: ReactNode; children: ReactNode | ((close: () => void) => ReactNode); align?: 'left' | 'right'; className?: string }): JSX.Element {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -226,13 +241,53 @@ export function Dropdown({
     };
   }, [open]);
 
+  /**
+   * Nudge the panel back inside the viewport.
+   *
+   * A right-aligned menu is positioned from its trigger, so a wide panel hung
+   * off a button near the screen edge starts at a negative x — on a phone the
+   * notification list lost its first characters off the left of the screen.
+   * CSS alone cannot express "but stay on screen", hence the measure.
+   *
+   * Moves the anchoring offset itself (`right` for a right-aligned panel,
+   * `left` otherwise). Two other approaches were tried and are wrong:
+   * `transform` fights the panel's own open animation, which re-measures
+   * differently every frame and loops forever; `marginLeft` does nothing at
+   * all on an absolutely positioned element pinned by `right`.
+   *
+   * Written straight to the DOM rather than through state, so no measurement
+   * can ever schedule a render.
+   */
+  useLayoutEffect(() => {
+    if (!open) return;
+    const edge = align === 'right' ? 'right' : 'left';
+    const measure = (): void => {
+      const el = panelRef.current;
+      if (!el) return;
+      el.style[edge] = '0px'; // measure unshifted, so this stays idempotent
+      const rect = el.getBoundingClientRect();
+      const margin = 8;
+      const offset = rect.left < margin
+        ? margin - rect.left
+        : rect.right > window.innerWidth - margin
+          ? window.innerWidth - margin - rect.right
+          : 0;
+      // A right-pinned panel moves right by *decreasing* its right offset.
+      el.style[edge] = `${edge === 'right' ? -offset : offset}px`;
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [open, align]);
+
   return (
     <div className="relative" ref={ref}>
       <div onClick={() => setOpen((v) => !v)}>{trigger}</div>
       {open && (
         <div
+          ref={panelRef}
           className={cn(
-            'absolute z-40 mt-1 min-w-[12rem] animate-slide-up overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-float dark:border-slate-700 dark:bg-slate-900',
+            'absolute z-40 mt-1 min-w-[12rem] max-w-[calc(100vw-1rem)] animate-slide-up overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-float dark:border-slate-700 dark:bg-slate-900',
             align === 'right' ? 'right-0' : 'left-0',
             className,
           )}

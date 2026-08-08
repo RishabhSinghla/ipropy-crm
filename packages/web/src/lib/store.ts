@@ -12,7 +12,10 @@ interface AppState {
   telephonyAvailable: boolean;
 
   bootstrap: () => Promise<void>;
-  login: (email: string, password: string) => Promise<void>;
+  /** `identifier` is an email address or a mobile number. */
+  login: (identifier: string, password: string) => Promise<void>;
+  /** Sign in with a device passkey (Face ID / Touch ID / Android biometrics). */
+  loginWithPasskey: () => Promise<void>;
   logout: () => Promise<void>;
   setTheme: (theme: 'light' | 'dark') => void;
   toggleSidebar: () => void;
@@ -28,6 +31,23 @@ function initialTheme(): 'light' | 'dark' {
   const stored = localStorage.getItem('ipropy.theme');
   if (stored === 'dark' || stored === 'light') return stored;
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+/**
+ * Everything a successful sign-in has to do, whichever way it was proved.
+ * Password and passkey differ only in how the token is obtained, so the rest
+ * lives here rather than being written twice and drifting.
+ */
+async function adoptSession(
+  result: { token: string; refreshToken: string; user: AuthUser },
+  set: (partial: Partial<AppState>) => void,
+): Promise<void> {
+  tokenStore.set(result.token);
+  tokenStore.setRefresh(result.refreshToken);
+  const modules = await api.modules();
+  set({ user: result.user, modules });
+  void api.aiStatus().then((s) => set({ aiAvailable: s.available })).catch(() => undefined);
+  void api.telephonyStatus().then((s) => set({ telephonyAvailable: s.configured })).catch(() => undefined);
 }
 
 export const useApp = create<AppState>((set, get) => ({
@@ -64,14 +84,17 @@ export const useApp = create<AppState>((set, get) => ({
     }
   },
 
-  login: async (email, password) => {
-    const result = await api.login(email, password);
-    tokenStore.set(result.token);
-    tokenStore.setRefresh(result.refreshToken);
-    const modules = await api.modules();
-    set({ user: result.user, modules });
-    void api.aiStatus().then((s) => set({ aiAvailable: s.available })).catch(() => undefined);
-    void api.telephonyStatus().then((s) => set({ telephonyAvailable: s.configured })).catch(() => undefined);
+  login: async (identifier, password) => {
+    await adoptSession(await api.login(identifier, password), set);
+  },
+
+  loginWithPasskey: async () => {
+    const { startAuthentication } = await import('@simplewebauthn/browser');
+    const options = await api.passkeyLoginOptions();
+    // The browser shows the biometric prompt here; it rejects if the user
+    // cancels, which the caller treats as "not an error worth shouting about".
+    const assertion = await startAuthentication({ optionsJSON: options as never });
+    await adoptSession(await api.passkeyLoginVerify(assertion), set);
   },
 
   logout: async () => {

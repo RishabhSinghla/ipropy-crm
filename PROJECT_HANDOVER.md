@@ -978,3 +978,39 @@ Branch `feat/dashboard-ai-alerts`, three commits, all verified against the runni
 
 One lead, **LD-00174 "Rohit Verma"**, created to demonstrate the new-lead highlight. Delete it
 whenever. Everything else created during the session was cleaned up.
+
+### §17.1 — Second session (2026-08-09)
+
+Mobile PWA fixes from real screenshots, plus three requested features.
+
+**Fixed:** admin panel used a fixed 14rem rail on phones (≈160px left for
+content); dashboard title collided with its own controls; dropdown panels ran
+off the left edge; report measures row was ~470px unwrappable; Enable/Disable
+"referenced by" line unbounded.
+
+**Dropdown viewport clamping — read the comment in `ui.tsx` before changing it.**
+Two obvious fixes are wrong: `transform` fights the panel's own open animation
+(`slideUp` animates transform), so every measurement differs and React loops
+until it throws "Maximum update depth exceeded"; `marginLeft` does nothing at
+all to an absolutely positioned element pinned by `right`. Moving the anchoring
+offset (`right` / `left`) is what works.
+
+**Added:** platform-coloured social icons; profile photo upload/change/remove;
+sign-in by mobile number; passkeys (Face ID / Touch ID) with usernameless
+sign-in.
+
+**Auth notes.** `phoneKey()` matches on the last ten digits because the same
+number exists as "+919820011000", "098200 11000" and "9820011000" in imported
+data. Passkey RP ID is derived from `APP_URL` — it must be the bare hostname,
+never a port, so a deployment behind a different domain needs `APP_URL` right
+or biometric sign-in silently fails. Signature-counter regression is treated as
+a cloned credential and refused.
+
+**Not verified end-to-end:** the WebAuthn biometric ceremony needs real hardware
+or a CDP virtual authenticator. Endpoints, option shapes, challenge storage and
+replay rejection are verified; the sign/verify round trip is not.
+
+**AI still not configured.** The key supplied on 2026-08-09 was rejected by
+Google ("Please pass a valid API key") — it was not in Google AI Studio's key
+format (`AIza…`, 39 chars). The `ai_gemini` integration was left inactive so
+the CRM keeps using its rule engines rather than failing every AI call.

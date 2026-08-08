@@ -300,7 +300,12 @@ function SocialBar({ collapsed }: { collapsed: boolean }): JSX.Element | null {
           rel="noreferrer noopener"
           title={`${link.label} — opens in a new tab`}
           aria-label={link.label}
-          className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-brand-600 dark:hover:bg-slate-800 dark:hover:text-brand-400"
+          style={{ color: SOCIAL_COLOURS[link.platform] ?? undefined }}
+          className={cn(
+            'rounded-md p-1.5 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800',
+            // Only the fallback needs a colour class; the rest are set inline.
+            !SOCIAL_COLOURS[link.platform] && 'text-slate-400 hover:text-brand-600 dark:hover:text-brand-400',
+          )}
         >
           <SocialIcon platform={link.platform} />
         </a>
@@ -308,6 +313,24 @@ function SocialBar({ collapsed }: { collapsed: boolean }): JSX.Element | null {
     </div>
   );
 }
+
+/**
+ * Each platform's own brand colour, so the row is scannable by hue rather than
+ * by squinting at five near-identical grey glyphs.
+ *
+ * Two are not the official brand value on purpose. X's brand colour is pure
+ * black, which disappears against the dark theme, and Instagram's is a gradient
+ * a single `color` cannot express — so those use the nearest legible solid.
+ */
+const SOCIAL_COLOURS: Record<string, string> = {
+  instagram: '#E4405F', // the magenta the gradient resolves to at a small size
+  facebook: '#1877F2',
+  x: '#71767B', // brand is #000; that is invisible on dark, so X's own grey
+  twitter: '#1DA1F2',
+  linkedin: '#0A66C2',
+  youtube: '#FF0000',
+  whatsapp: '#25D366',
+};
 
 function SocialIcon({ platform }: { platform: string }): JSX.Element {
   const className = 'h-4 w-4';

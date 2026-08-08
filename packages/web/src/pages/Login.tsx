@@ -1,20 +1,30 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Building2, Eye, EyeOff, Sparkles } from 'lucide-react';
+import { Building2, Eye, EyeOff, Fingerprint, Sparkles } from 'lucide-react';
 import { useApp } from '../lib/store';
 import { ApiError, api } from '../lib/api';
 import { Spinner } from '../components/ui';
 
 export default function Login(): JSX.Element {
-  const { user, login, loading } = useApp();
+  const { user, login, loginWithPasskey, loading } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
-  const [email, setEmail] = useState('admin@ipropy.com');
+  const [identifier, setIdentifier] = useState('admin@ipropy.com');
   const [password, setPassword] = useState('Admin@123');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
+  // Only offer biometrics where the browser can actually do it — on iOS that
+  // means the CRM has been added to the Home Screen.
+  const [passkeySupported, setPasskeySupported] = useState(false);
+  useEffect(() => {
+    if (!window.PublicKeyCredential?.isUserVerifyingPlatformAuthenticatorAvailable) return;
+    void window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
+      .then(setPasskeySupported)
+      .catch(() => setPasskeySupported(false));
+  }, []);
 
   // Public endpoint: this screen renders before anyone is signed in.
   const { data: brand } = useQuery({ queryKey: ['public-brand'], queryFn: () => api.publicBrand(), staleTime: Infinity });
@@ -29,7 +39,7 @@ export default function Login(): JSX.Element {
     setError('');
     setBusy(true);
     try {
-      await login(email, password);
+      await login(identifier, password);
       navigate('/dashboard', { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not sign in. Please try again.');
@@ -107,14 +117,18 @@ export default function Login(): JSX.Element {
 
           <form onSubmit={submit} className="mt-8 space-y-4">
             <div>
-              <label className="label" htmlFor="email">Email</label>
+              <label className="label" htmlFor="identifier">Email or mobile number</label>
               <input
-                id="email"
-                type="email"
+                id="identifier"
+                // Not type="email": that would make the browser reject a phone
+                // number before the form is ever submitted.
+                type="text"
+                inputMode="email"
                 className="input"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoComplete="username"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                placeholder="you@ipropy.com or 98765 43210"
+                autoComplete="username webauthn"
                 required
                 autoFocus
               />
@@ -154,6 +168,44 @@ export default function Login(): JSX.Element {
               Sign in
             </button>
           </form>
+
+          {passkeySupported && (
+            <>
+              <div className="my-5 flex items-center gap-3">
+                <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
+                <span className="text-2xs uppercase tracking-wider text-muted">or</span>
+                <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
+              </div>
+
+              <button
+                type="button"
+                className="btn-secondary w-full py-2.5"
+                disabled={passkeyBusy}
+                onClick={async () => {
+                  setError('');
+                  setPasskeyBusy(true);
+                  try {
+                    await loginWithPasskey();
+                    navigate('/dashboard', { replace: true });
+                  } catch (err) {
+                    // Cancelling the biometric prompt throws too; that is a
+                    // decision, not a failure, so it must not look like one.
+                    const name = (err as { name?: string }).name;
+                    if (name !== 'NotAllowedError' && name !== 'AbortError') {
+                      setError(err instanceof ApiError
+                        ? err.message
+                        : 'No passkey is set up on this device yet. Sign in once, then turn it on in Settings → Security.');
+                    }
+                  } finally {
+                    setPasskeyBusy(false);
+                  }
+                }}
+              >
+                {passkeyBusy ? <Spinner /> : <Fingerprint className="h-4 w-4" />}
+                Sign in with Face ID or fingerprint
+              </button>
+            </>
+          )}
 
           <div className="mt-8 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs dark:border-slate-800 dark:bg-slate-900">
             <p className="font-medium text-slate-700 dark:text-slate-300">Demo accounts</p>

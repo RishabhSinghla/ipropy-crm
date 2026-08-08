@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
-import { Bell, BellOff, KeyRound, Monitor, Moon, Save, Sun, User } from 'lucide-react';
+import { Bell, BellOff, Camera, Fingerprint, KeyRound, Monitor, Moon, Save, Sun, User } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
@@ -64,12 +64,12 @@ function ProfileTab(): JSX.Element {
 
   return (
     <div className="card p-5">
-      <div className="mb-5 flex items-center gap-4">
-        <Avatar name={user?.fullName ?? ''} src={user?.avatarUrl} size={56} />
-        <div>
+      <div className="mb-5 flex items-start gap-4">
+        <AvatarPicker />
+        <div className="min-w-0">
           <p className="text-base font-semibold">{user?.fullName}</p>
-          <p className="text-sm text-muted">{user?.email}</p>
-          <div className="mt-1 flex gap-1.5">
+          <p className="truncate text-sm text-muted">{user?.email}</p>
+          <div className="mt-1 flex flex-wrap gap-1.5">
             {user?.roleName && <Badge>{user.roleName}</Badge>}
             {user?.profileName && <Badge color="#6366f1">{user.profileName}</Badge>}
           </div>
@@ -200,6 +200,8 @@ function SecurityTab(): JSX.Element {
 
   return (
     <div className="space-y-4">
+      <PasskeysCard />
+
       <div className="card p-5">
         <p className="mb-3 text-sm font-medium">Change password</p>
         <div className="space-y-3">
@@ -401,4 +403,203 @@ function describeDevice(userAgent: string | null): string {
     : /Chrome\//i.test(userAgent) ? 'Chrome'
     : /Safari\//i.test(userAgent) ? 'Safari' : 'Browser';
   return `${browser} on ${os}`;
+}
+
+/**
+ * Set, replace or remove your own photo.
+ *
+ * The image goes through the same attachment pipeline as any other upload, so
+ * it inherits the derivative generation — `Avatar` then requests the `thumb`
+ * variant rather than pulling a 4MB phone photo down for a 32px circle.
+ * `avatar_url` holds the path; removing simply clears it and the initials
+ * fallback returns, so nothing is orphaned mid-change.
+ */
+function AvatarPicker(): JSX.Element {
+  const { user, bootstrap } = useApp();
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const choose = async (file: File): Promise<void> => {
+    if (!file.type.startsWith('image/')) {
+      toast.error('Choose an image', `${file.name} is not a picture.`);
+      return;
+    }
+    setBusy(true);
+    try {
+      const { url } = await api.uploadFile(file);
+      await api.updateProfile({ avatarUrl: url });
+      await bootstrap();
+      toast.success('Photo updated');
+    } catch (err) {
+      toast.error('Could not update your photo', (err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      await api.updateProfile({ avatarUrl: null });
+      await bootstrap();
+      toast.success('Photo removed');
+    } catch (err) {
+      toast.error('Could not remove your photo', (err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="shrink-0 text-center">
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        disabled={busy}
+        className="group relative block rounded-full"
+        aria-label={user?.avatarUrl ? 'Change your photo' : 'Add a photo'}
+      >
+        <Avatar name={user?.fullName ?? ''} src={user?.avatarUrl} size={64} />
+        <span className="absolute inset-0 flex items-center justify-center rounded-full bg-slate-900/60 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+          {busy ? <Spinner className="h-4 w-4 text-white" /> : <Camera className="h-4 w-4 text-white" />}
+        </span>
+      </button>
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void choose(f);
+          // Reset so picking the same file twice still fires a change event.
+          e.target.value = '';
+        }}
+      />
+
+      <div className="mt-1.5 flex items-center justify-center gap-2 text-2xs">
+        <button type="button" className="text-brand-600 hover:underline dark:text-brand-400" disabled={busy} onClick={() => inputRef.current?.click()}>
+          {user?.avatarUrl ? 'Change' : 'Add photo'}
+        </button>
+        {user?.avatarUrl && (
+          <button type="button" className="text-negative hover:underline" disabled={busy} onClick={() => void remove()}>
+            Remove
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Face ID / Touch ID / Android biometrics, per device.
+ *
+ * A passkey lives in the phone's secure enclave; the fingerprint never reaches
+ * us and the server only holds a public key. It is also phishing-resistant —
+ * the credential is bound to this origin and will not sign for another one —
+ * which is worth more here than the convenience, given what a CRM holds.
+ */
+function PasskeysCard(): JSX.Element {
+  const [supported, setSupported] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const { data: passkeys, refetch } = useQuery({ queryKey: ['passkeys'], queryFn: () => api.passkeys() });
+
+  useEffect(() => {
+    if (!window.PublicKeyCredential?.isUserVerifyingPlatformAuthenticatorAvailable) return;
+    void window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
+      .then(setSupported).catch(() => setSupported(false));
+  }, []);
+
+  const enrol = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      const { startRegistration } = await import('@simplewebauthn/browser');
+      const options = await api.passkeyRegisterOptions();
+      const attestation = await startRegistration({ optionsJSON: options as never });
+      await api.passkeyRegisterVerify(attestation, describeThisDevice());
+      toast.success('This device can now sign you in', 'Face ID, Touch ID or your fingerprint.');
+      await refetch();
+    } catch (err) {
+      const name = (err as { name?: string }).name;
+      // Cancelling the prompt is a choice, not a failure.
+      if (name !== 'NotAllowedError' && name !== 'AbortError') {
+        toast.error('Could not set up biometric sign-in', (err as Error).message);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (id: string): Promise<void> => {
+    await api.deletePasskey(id);
+    toast.success('Device removed');
+    await refetch();
+  };
+
+  return (
+    <div className="card space-y-4 p-5">
+      <div>
+        <p className="text-sm font-medium">Face ID &amp; fingerprint sign-in</p>
+        <p className="mt-1 text-sm text-muted">
+          Sign in with your face or fingerprint instead of typing a password. The scan stays on
+          your device — iPropy only ever receives a key it can check.
+        </p>
+      </div>
+
+      {!supported ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+          This device or browser has no biometric sign-in available. On iPhone and iPad, add
+          iPropy to your Home Screen and open it from there first.
+        </div>
+      ) : (
+        <button className="btn-primary btn-sm" disabled={busy} onClick={() => void enrol()}>
+          {busy ? <Spinner className="h-3 w-3" /> : <Fingerprint className="h-3.5 w-3.5" />}
+          Set up on this device
+        </button>
+      )}
+
+      <div>
+        <p className="mb-2 text-sm font-medium">Devices that can sign in</p>
+        {(passkeys ?? []).length === 0 ? (
+          <p className="text-xs text-muted">None yet.</p>
+        ) : (
+          <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-700">
+            {(passkeys ?? []).map((raw) => {
+              const k = raw as { id: string; device_label: string | null; created_at: string; last_used_at: string | null };
+              return (
+                <li key={k.id} className="flex items-center justify-between gap-3 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-medium">{k.device_label ?? 'Unnamed device'}</p>
+                    <p className="text-2xs text-muted">
+                      added {relativeTime(k.created_at)}
+                      {k.last_used_at ? ` · last used ${relativeTime(k.last_used_at)}` : ' · never used'}
+                    </p>
+                  </div>
+                  <button className="btn-ghost btn-sm shrink-0 text-negative" onClick={() => void remove(k.id)}>
+                    Remove
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** A label the owner will recognise in the device list. */
+function describeThisDevice(): string {
+  const ua = navigator.userAgent;
+  const os = /iPhone/.test(ua) ? 'iPhone'
+    : /iPad/.test(ua) ? 'iPad'
+    : /Android/.test(ua) ? 'Android'
+    : /Macintosh/.test(ua) ? 'Mac'
+    : /Windows/.test(ua) ? 'Windows' : 'This device';
+  const browser = /Edg\//.test(ua) ? 'Edge'
+    : /Chrome\//.test(ua) ? 'Chrome'
+    : /Firefox\//.test(ua) ? 'Firefox'
+    : /Safari\//.test(ua) ? 'Safari' : 'Browser';
+  return `${os} · ${browser}`;
 }
