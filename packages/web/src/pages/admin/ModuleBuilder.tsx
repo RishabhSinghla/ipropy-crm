@@ -55,7 +55,7 @@ export default function ModuleBuilder(): JSX.Element {
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div>
           <h1 className="text-lg font-semibold tracking-tight">Modules & Fields</h1>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted">
             Add fields, rename labels or create entirely new modules. Changes apply everywhere immediately.
           </p>
         </div>
@@ -68,7 +68,7 @@ export default function ModuleBuilder(): JSX.Element {
         {/* Module list */}
         <div className="card h-fit overflow-hidden">
           <div className="border-b border-slate-100 px-3 py-2 dark:border-slate-800">
-            <p className="text-xs font-medium text-slate-500">Modules</p>
+            <p className="text-xs font-medium text-muted">Modules</p>
           </div>
           <div className="max-h-[32rem] overflow-y-auto p-1.5">
             {modules.map((m) => (
@@ -99,7 +99,7 @@ export default function ModuleBuilder(): JSX.Element {
               <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
                 <span style={{ color: meta.color }}><ModuleIcon name={meta.icon} /></span>
                 <p className="text-sm font-medium">{meta.label}</p>
-                <span className="text-2xs text-slate-400 tnum">
+                <span className="text-2xs text-muted tnum">
                   {meta.fields.length} fields · {meta.blocks.length} blocks
                 </span>
                 <button onClick={() => setCreatingField(true)} className="btn-primary btn-sm ml-auto">
@@ -111,7 +111,7 @@ export default function ModuleBuilder(): JSX.Element {
                 {meta.blocks.map((block) => (
                   <div key={block.id}>
                     <div className="bg-slate-50/60 px-4 py-1.5 dark:bg-slate-800/40">
-                      <p className="text-2xs font-semibold uppercase tracking-wide text-slate-500">
+                      <p className="text-2xs font-semibold uppercase tracking-wide text-muted">
                         {block.label}
                       </p>
                     </div>
@@ -123,12 +123,12 @@ export default function ModuleBuilder(): JSX.Element {
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-1.5">
                             <span className="text-sm font-medium">{field.label}</span>
-                            {field.isMandatory && <span className="text-red-500">*</span>}
+                            {field.isMandatory && <span className="text-negative">*</span>}
                             {field.isCustom && <Badge color="#6366f1">Custom</Badge>}
                             {!field.isActive && <Badge color="#94a3b8">Inactive</Badge>}
                             {field.displayType === 'hidden' && <Badge color="#94a3b8">Hidden</Badge>}
                           </div>
-                          <p className="mt-0.5 font-mono text-2xs text-slate-400">
+                          <p className="mt-0.5 font-mono text-2xs text-muted">
                             {field.name} · {field.uitype}
                             {field.config.picklist ? ` (${field.config.picklist})` : ''}
                             {field.config.referenceModules ? ` → ${(field.config.referenceModules as string[]).join('/')}` : ''}
@@ -161,7 +161,7 @@ export default function ModuleBuilder(): JSX.Element {
                       </div>
                     ))}
                     {block.fields.length === 0 && (
-                      <p className="px-4 py-3 text-xs text-slate-400">No fields in this block</p>
+                      <p className="px-4 py-3 text-xs text-muted">No fields in this block</p>
                     )}
                   </div>
                 ))}
@@ -319,7 +319,7 @@ function FieldEditor({
               onChange={(e) => setName(e.target.value)}
               disabled={isEdit}
             />
-            {isEdit && <p className="mt-1 text-2xs text-slate-400">The API name cannot be changed.</p>}
+            {isEdit && <p className="mt-1 text-2xs text-muted">The API name cannot be changed.</p>}
           </div>
         </div>
 
@@ -363,7 +363,7 @@ function FieldEditor({
               placeholder="— Choose an option set —"
               options={Object.keys(picklists ?? {}).map((p) => ({ value: p, label: p.replace(/_/g, ' ') }))}
             />
-            <p className="mt-1 text-2xs text-slate-400">
+            <p className="mt-1 text-2xs text-muted">
               Manage option sets under Admin → Dropdowns.
             </p>
           </div>
@@ -408,7 +408,7 @@ function FieldEditor({
               placeholder="{base_price} + COALESCE({parking_charge},0)"
             />
             {formulaError && <p className="mt-1 text-xs text-red-600">{formulaError}</p>}
-            <p className="mt-1 text-2xs text-slate-400">
+            <p className="mt-1 text-2xs text-muted">
               Reference fields as {'{field_name}'}. Functions: IF, ROUND, SUM, MIN, MAX, CONCAT,
               DAYS_BETWEEN, LAKH, CRORE, PERCENT_OF and more.
             </p>
@@ -424,7 +424,7 @@ function FieldEditor({
               onChange={(e) => setNumberPrefix(e.target.value)}
               placeholder="INV-"
             />
-            <p className="mt-1 text-2xs text-slate-400">
+            <p className="mt-1 text-2xs text-muted">
               Produces {numberPrefix || 'PREFIX-'}00001, {numberPrefix || 'PREFIX-'}00002, …
             </p>
           </div>
@@ -491,7 +491,7 @@ function ModuleCreator({
       }
     >
       <div className="space-y-3">
-        <p className="text-sm text-slate-600 dark:text-slate-400">
+        <p className="text-sm text-muted">
           A new module gets its own table, list views, layouts, permissions and API endpoints —
           exactly like the built-in ones.
         </p>

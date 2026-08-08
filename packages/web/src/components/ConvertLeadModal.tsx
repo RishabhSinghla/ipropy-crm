@@ -75,7 +75,7 @@ export default function ConvertLeadModal({
       }
     >
       <div className="space-y-4">
-        <p className="text-sm text-slate-600 dark:text-slate-400">
+        <p className="text-sm text-muted">
           This record becomes the customer — its entire history stays in one place. Converting moves
           the lifecycle from <strong>Lead</strong> to <strong>Prospect</strong> and opens a deal against it.
         </p>
@@ -107,7 +107,7 @@ export default function ConvertLeadModal({
                   onChange={(e) => setDealAmount(e.target.value ? Number(e.target.value) : null)}
                 />
                 {dealAmount ? (
-                  <p className="mt-1 text-2xs text-slate-500">{formatIndianPrice(dealAmount)}</p>
+                  <p className="mt-1 text-2xs text-muted">{formatIndianPrice(dealAmount)}</p>
                 ) : null}
               </div>
 

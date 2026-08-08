@@ -5,6 +5,7 @@ import { formatArea, formatIndianPrice } from '@ipropy/shared';
 import { Building2, Lock, LockOpen, Sparkles, Unlock } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
+import { badgeVars } from '../lib/color';
 import { cn } from '../lib/utils';
 import { Badge, EmptyState, Modal, Select, Skeleton, Spinner } from '../components/ui';
 import { ReferencePicker } from '../components/FieldRenderer';
@@ -70,12 +71,12 @@ export default function InventoryBoard(): JSX.Element {
     <div className="p-4 sm:p-6">
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600 dark:bg-emerald-950">
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-100 text-positive dark:bg-emerald-950">
             <Building2 className="h-4.5 w-4.5" />
           </span>
           <div>
             <h1 className="text-lg font-semibold tracking-tight">Inventory Board</h1>
-            <p className="text-xs text-slate-500 tnum">{data?.total ?? 0} units</p>
+            <p className="text-xs text-muted tnum">{data?.total ?? 0} units</p>
           </div>
         </div>
 
@@ -97,7 +98,7 @@ export default function InventoryBoard(): JSX.Element {
             <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: STATUS_COLOR[s.status] ?? '#94a3b8' }} />
             <div>
               <p className="text-xs font-medium">{s.status}</p>
-              <p className="text-2xs text-slate-500 tnum">
+              <p className="text-2xs text-muted tnum">
                 {s.count} units · {formatIndianPrice(Number(s.value))}
               </p>
             </div>
@@ -120,7 +121,7 @@ export default function InventoryBoard(): JSX.Element {
                 <div className="space-y-1.5">
                   {tower.floors.map((floor) => (
                     <div key={floor.floor} className="flex items-center gap-2">
-                      <span className="w-14 shrink-0 text-right text-2xs font-medium text-slate-400 tnum">
+                      <span className="w-14 shrink-0 text-right text-2xs font-medium text-muted tnum">
                         Floor {floor.floor}
                       </span>
                       <div className="flex flex-1 flex-wrap gap-1.5">
@@ -129,7 +130,12 @@ export default function InventoryBoard(): JSX.Element {
                             key={unit.id}
                             onClick={() => setSelected(unit)}
                             className="group relative flex h-14 w-20 shrink-0 flex-col justify-center rounded-lg border-2 px-2 text-left transition-all hover:scale-105 hover:shadow-md sm:w-[5.5rem]"
+                            // The tile keeps its full-strength status border —
+                            // that colour coding is the whole point of the
+                            // board. Only the price text switches to the
+                            // derived readable foreground, via .text-tinted.
                             style={{
+                              ...badgeVars(STATUS_COLOR[unit.status] ?? '#94a3b8'),
                               borderColor: STATUS_COLOR[unit.status] ?? '#94a3b8',
                               backgroundColor: `${STATUS_COLOR[unit.status] ?? '#94a3b8'}12`,
                             }}
@@ -137,7 +143,7 @@ export default function InventoryBoard(): JSX.Element {
                           >
                             <span className="truncate text-xs font-semibold tnum">{unit.unit_number}</span>
                             <span className="truncate text-[10px] text-slate-500">{unit.configuration}</span>
-                            <span className="truncate text-[10px] font-medium tnum" style={{ color: STATUS_COLOR[unit.status] }}>
+                            <span className="text-tinted truncate text-[10px] font-medium tnum">
                               {unit.total_price ? shortPrice(unit.total_price) : '—'}
                             </span>
                             {unit.corner_unit && (
@@ -245,7 +251,7 @@ function UnitModal({
             { label: 'Floor', value: unit.floor ?? '—' },
           ].map((item) => (
             <div key={item.label}>
-              <p className="text-2xs uppercase tracking-wide text-slate-400">{item.label}</p>
+              <p className="text-2xs uppercase tracking-wide text-muted">{item.label}</p>
               <p className="mt-0.5 text-sm font-medium">{item.value}</p>
             </div>
           ))}
@@ -293,7 +299,7 @@ function UnitModal({
             {loadingBuyers ? (
               <Skeleton className="h-20 w-full" />
             ) : !buyers?.buyers.length ? (
-              <p className="rounded-lg border border-dashed border-slate-200 py-4 text-center text-xs text-slate-400 dark:border-slate-700">
+              <p className="rounded-lg border border-dashed border-slate-200 py-4 text-center text-xs text-muted dark:border-slate-700">
                 No open leads match this unit's price and configuration.
               </p>
             ) : (
@@ -308,7 +314,7 @@ function UnitModal({
                         </Link>
                         <Badge color={b.score >= 75 ? '#22c55e' : '#f59e0b'}>{b.score}</Badge>
                       </div>
-                      {b.reasons[0] && <p className="mt-0.5 text-2xs text-slate-500">{b.reasons[0]}</p>}
+                      {b.reasons[0] && <p className="mt-0.5 text-2xs text-muted">{b.reasons[0]}</p>}
                     </li>
                   );
                 })}

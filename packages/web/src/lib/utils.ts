@@ -4,16 +4,6 @@ export function cn(...inputs: ClassValue[]): string {
   return clsx(inputs);
 }
 
-/** Tailwind classes for a coloured badge, derived from a hex colour. */
-export function badgeStyle(color: string | null | undefined): React.CSSProperties {
-  if (!color) return {};
-  return {
-    backgroundColor: `${color}18`,
-    color,
-    borderColor: `${color}35`,
-  };
-}
-
 export function debounce<T extends (...args: never[]) => void>(fn: T, ms = 300): T {
   let timer: ReturnType<typeof setTimeout>;
   return ((...args: Parameters<T>) => {

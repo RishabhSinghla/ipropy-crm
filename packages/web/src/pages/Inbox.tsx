@@ -49,7 +49,7 @@ export default function Inbox(): JSX.Element {
       )}>
         <div className="shrink-0 space-y-2 border-b border-slate-200 p-3 dark:border-slate-800">
           <div className="flex items-center gap-2">
-            <MessageCircle className="h-4 w-4 text-emerald-600" />
+            <MessageCircle className="h-4 w-4 text-positive" />
             <h1 className="text-base font-semibold">Inbox</h1>
             <Select
               value={statusFilter}
@@ -103,11 +103,11 @@ export default function Inbox(): JSX.Element {
                     <span className="truncate text-sm font-medium">
                       {conv.contact_name ?? conv.handle}
                     </span>
-                    <span className="shrink-0 text-2xs text-slate-400">
+                    <span className="shrink-0 text-2xs text-muted">
                       {conv.last_message_at ? relativeTime(conv.last_message_at) : ''}
                     </span>
                   </div>
-                  <p className="mt-0.5 line-clamp-1 text-xs text-slate-500">
+                  <p className="mt-0.5 line-clamp-1 text-xs text-muted">
                     {conv.last_message_preview ?? 'No messages yet'}
                   </p>
                   <div className="mt-1 flex items-center gap-1.5">
@@ -224,7 +224,7 @@ function Thread({ conversationId, onBack }: { conversationId: string; onBack: ()
         <Avatar name={conv.contact_name ?? conv.handle} size={36} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">{conv.contact_name ?? conv.handle}</p>
-          <p className="text-2xs text-slate-500 tnum">{conv.handle}</p>
+          <p className="text-2xs text-muted tnum">{conv.handle}</p>
         </div>
 
         {conv.record_id && conv.record_module && (
@@ -255,7 +255,7 @@ function Thread({ conversationId, onBack }: { conversationId: string; onBack: ()
       {conv.ai_summary && (
         <div className="flex shrink-0 items-start gap-2 border-b border-brand-100 bg-brand-50/60 px-4 py-2 dark:border-brand-950 dark:bg-brand-950/30">
           <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-500" />
-          <p className="text-xs text-slate-600 dark:text-slate-400">{conv.ai_summary}</p>
+          <p className="text-xs text-muted">{conv.ai_summary}</p>
         </div>
       )}
 
@@ -272,7 +272,7 @@ function Thread({ conversationId, onBack }: { conversationId: string; onBack: ()
               {msg.template_name && (
                 <p className={cn(
                   'mb-1 text-2xs font-medium uppercase tracking-wide',
-                  msg.direction === 'outbound' ? 'text-emerald-100' : 'text-slate-400',
+                  msg.direction === 'outbound' ? 'text-emerald-100' : 'text-muted',
                 )}>
                   Template · {msg.template_name}
                 </p>
@@ -280,7 +280,7 @@ function Thread({ conversationId, onBack }: { conversationId: string; onBack: ()
               <p className="whitespace-pre-wrap text-sm">{msg.body ?? `[${msg.type}]`}</p>
               <div className={cn(
                 'mt-1 flex items-center justify-end gap-1 text-[10px]',
-                msg.direction === 'outbound' ? 'text-emerald-100' : 'text-slate-400',
+                msg.direction === 'outbound' ? 'text-emerald-100' : 'text-muted',
               )}>
                 {msg.is_ai_generated && <Sparkles className="h-2.5 w-2.5" />}
                 <span className="tnum">

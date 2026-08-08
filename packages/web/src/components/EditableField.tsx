@@ -298,7 +298,7 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
           ) : kind === 'form' ? (
             <div className="w-80 animate-slide-up space-y-2 rounded-xl border border-slate-200 bg-white p-3 shadow-float dark:border-slate-700 dark:bg-slate-900">
               <FieldInput field={field} value={draft} onChange={setDraft} autoFocus error={mandatoryError} />
-              {mandatoryError && <p className="text-2xs text-red-500">{mandatoryError}</p>}
+              {mandatoryError && <p className="text-2xs text-negative">{mandatoryError}</p>}
               <div className="flex justify-end gap-1.5 pt-0.5">
                 <button type="button" className="btn-ghost btn-sm" onClick={closeWithoutSaving}>Cancel</button>
                 <button type="button" className="btn-primary btn-sm" onClick={() => closeAndCommitIfChanged()}>Save</button>
@@ -459,7 +459,7 @@ function InlineTextEditor({
       }}
     >
       <FieldInput field={field} value={draft} onChange={handleChange} autoFocus error={error} />
-      {error && <p className="mt-1 text-2xs text-red-500">{error}</p>}
+      {error && <p className="mt-1 text-2xs text-negative">{error}</p>}
     </div>
   );
 }
@@ -496,7 +496,7 @@ function PicklistPopover({
             {o.value === value && <Check className="h-3.5 w-3.5 shrink-0 text-brand-600" />}
           </button>
         ))}
-        {options.length === 0 && <p className="px-3 py-4 text-center text-xs text-slate-400">No options</p>}
+        {options.length === 0 && <p className="px-3 py-4 text-center text-xs text-muted">No options</p>}
       </div>
       {!field.isMandatory && (
         <>
@@ -504,7 +504,7 @@ function PicklistPopover({
           <button
             type="button"
             onClick={() => onPick(null)}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-slate-400 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-muted transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
           >
             <span className="h-2 w-2 shrink-0 rounded-full border border-dashed border-slate-300 dark:border-slate-600" />
             Clear
@@ -556,13 +556,13 @@ function OwnerPopover({
           <button
             type="button"
             onClick={() => onPick(null)}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-muted hover:bg-slate-50 dark:hover:bg-slate-800"
           >
             Unassigned
           </button>
         )}
         {filteredGroups.length > 0 && (
-          <p className="px-3 pb-0.5 pt-1.5 text-2xs font-semibold uppercase tracking-wide text-slate-400">Teams</p>
+          <p className="px-3 pb-0.5 pt-1.5 text-2xs font-semibold uppercase tracking-wide text-muted">Teams</p>
         )}
         {filteredGroups.map((g) => (
           <button
@@ -577,7 +577,7 @@ function OwnerPopover({
           </button>
         ))}
         {filteredGroups.length > 0 && filteredUsers.length > 0 && (
-          <p className="px-3 pb-0.5 pt-1.5 text-2xs font-semibold uppercase tracking-wide text-slate-400">People</p>
+          <p className="px-3 pb-0.5 pt-1.5 text-2xs font-semibold uppercase tracking-wide text-muted">People</p>
         )}
         {filteredUsers.map((u) => (
           <button
@@ -589,13 +589,13 @@ function OwnerPopover({
             <Avatar name={u.fullName} size={20} />
             <span className="flex-1 truncate">
               {u.fullName}
-              {u.designation && <span className="text-slate-400"> · {u.designation}</span>}
+              {u.designation && <span className="text-muted"> · {u.designation}</span>}
             </span>
             {u.id === value && <Check className="h-3.5 w-3.5 shrink-0 text-brand-600" />}
           </button>
         ))}
         {filteredUsers.length === 0 && filteredGroups.length === 0 && (
-          <p className="px-3 py-4 text-center text-xs text-slate-400">No matches</p>
+          <p className="px-3 py-4 text-center text-xs text-muted">No matches</p>
         )}
       </div>
     </div>

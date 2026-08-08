@@ -86,14 +86,25 @@ npm run db:reset              # DESTRUCTIVE: drops schema, re-migrates, re-seeds
 npm run db:backup             # pg_dump to backups/ (gitignored); retention 14
 npm run db:backup:verify      # restore newest dump into scratch DB, compare counts, drop it
 npm run db:restore <dump>     # DESTRUCTIVE: replaces the live DB (see PROJECT_HANDOVER.md §9)
+npm test                      # unit suites (no DB needed)
+npm run test:integration      # API + recordService against a real throwaway Postgres
+npm run test:e2e              # Playwright against a real browser and the dev stack
 ```
 
 Login: `admin@ipropy.com` / `Admin@123`. Other demo users in `PROJECT_HANDOVER.md` §9.
 
-**Verification:** `npm test` runs the Vitest unit suite (107 tests over the query builder, filter
-evaluator, formula engine and permissions — no DB needed). There is no integration/e2e coverage, so
-verify feature work with `npm run typecheck && npm run build` plus manual API checks against the
-running server.
+**Verification:** three layers, fastest first.
+
+* `npm test` — 132 unit tests, no DB: 107 in `packages/server` (query builder, filter evaluator,
+  formula engine, permissions) and 25 in `packages/web` (`tests/color.test.ts`, the contrast
+  guarantee behind the colour tokens).
+* `npm run test:integration` — creates and drops its own `ipropy_itest` database. Never point it at
+  a database you care about; `vitest.config.ts` deliberately excludes `tests/integration/**` from
+  `npm test` so the unit run cannot touch a real DB.
+* `npm run test:e2e` — Playwright. Runs against the **developer's own database** on purpose, so
+  specs create records with unique markers and never assert on global counts.
+
+`npm run typecheck` must still be clean before finishing any change.
 
 ---
 
@@ -103,6 +114,13 @@ running server.
   `npm run db:seed`. System views/layouts/workflows (`is_system`) are refreshed; user content is not.
 * **Migrations are forward-only**, numbered `00N_name.sql`, each applied in its own transaction and
   recorded in `ipy_migration`. Write them defensively (`IF EXISTS`) so they no-op on a fresh DB.
+* **Colour goes through tokens, not raw palette steps.** Secondary copy is `text-muted`; up/down
+  deltas are `text-positive`/`text-negative`; anything tinted from an admin-chosen hex (badges,
+  status chips, module tiles, metric values) goes through `badgeVars`/`tintedTextVars` in
+  `web/src/lib/color.ts`, never `` `${color}18` `` inline. Painting a raw hue as text on a tint of
+  itself lands around 2–3:1; the helpers keep the hue and move lightness until it clears WCAG AA.
+  `tests/color.test.ts` asserts the ratios and the a11y e2e spec scans both themes, so a regression
+  fails the build rather than shipping.
 * **Comments explain why, not what.** Match surrounding density. Don't narrate obvious code.
 * **British spelling** in user-facing copy: "Organisation", "customise", "prioritise".
 * **Indian real-estate domain**: lakhs/crores (`₹1.45 Cr`), carpet vs super built-up area, RERA,

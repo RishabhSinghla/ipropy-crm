@@ -34,7 +34,7 @@ export default function UsersAdmin(): JSX.Element {
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div>
           <h1 className="text-lg font-semibold tracking-tight">Users</h1>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted">
             A user's role controls which records they see; their profile controls what they can do.
           </p>
         </div>
@@ -71,14 +71,14 @@ export default function UsersAdmin(): JSX.Element {
                           {u.channelPartnerId && <Badge color="#a855f7">Portal</Badge>}
                           {!u.isActive && <Badge color="#94a3b8">Inactive</Badge>}
                         </div>
-                        <p className="truncate text-2xs text-slate-500">{u.email}</p>
+                        <p className="truncate text-2xs text-muted">{u.email}</p>
                       </div>
                     </div>
                   </td>
                   <td className="table-cell text-slate-600 dark:text-slate-400">{u.roleName ?? '—'}</td>
                   <td className="table-cell">{u.profileName ? <Badge>{u.profileName}</Badge> : '—'}</td>
                   <td className="table-cell tnum text-slate-500">{u.extension ?? '—'}</td>
-                  <td className="table-cell text-2xs text-slate-500">
+                  <td className="table-cell text-2xs text-muted">
                     {u.lastLoginAt ? relativeTime(u.lastLoginAt) : 'Never'}
                   </td>
                   <td className="table-cell">
@@ -256,7 +256,7 @@ function UserEditor({
             onChange={(v) => set({ channelPartnerId: v })}
             placeholder="Link a channel partner record…"
           />
-          <p className="mt-1 text-2xs text-slate-500">
+          <p className="mt-1 text-2xs text-muted">
             Linking an account makes it a portal user — after signing in they land on the partner portal.
           </p>
         </div>
@@ -343,7 +343,7 @@ function PasswordReset({ user, onClose }: { user: User; onClose: () => void }): 
         placeholder="At least 8 characters"
         autoFocus
       />
-      <p className="mt-2 text-xs text-slate-500">
+      <p className="mt-2 text-xs text-muted">
         Resetting signs the user out of every device. Share the new password securely.
       </p>
     </Modal>

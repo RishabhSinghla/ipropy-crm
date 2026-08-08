@@ -2,7 +2,7 @@
   "name": "ipropy-crm",
   "version": "1.0.0",
   "private": true,
-  "description": "iPropy \u2014 AI-native, metadata-driven CRM for real estate",
+  "description": "iPropy — AI-native, metadata-driven CRM for real estate",
   "license": "UNLICENSED",
   "workspaces": [
     "packages/shared",
@@ -23,7 +23,7 @@
     "secrets:generate": "bash scripts/gen-secrets.sh",
     "typecheck": "npm run typecheck -w @ipropy/shared && npm run typecheck -w @ipropy/server && npm run typecheck -w @ipropy/web",
     "pretypecheck": "npm run build -w @ipropy/shared",
-    "test": "npm run test -w @ipropy/server",
+    "test": "npm run test -w @ipropy/server && npm run test -w @ipropy/web",
     "pretest": "npm run build -w @ipropy/shared",
     "db:migrate": "npm run db:migrate -w @ipropy/server",
     "db:seed": "npm run db:seed -w @ipropy/server",

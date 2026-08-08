@@ -3,13 +3,21 @@
 @tailwind utilities;
 
 @layer base {
+  /* Text tokens carry a contrast guarantee, which is why secondary copy uses
+     `text-muted` rather than a raw slate step. Every value below clears WCAG
+     AA (4.5:1) against all three surfaces of its own theme — white/slate-50/
+     slate-100 in light, slate-900/950/800 in dark — and that is asserted in
+     tests/color.test.ts so a future palette tweak cannot quietly break it.
+     slate-400, the previous muted colour, is 2.56:1 on white. */
   :root {
     --surface: #ffffff;
     --surface-muted: #f8fafc;
     --surface-raised: #ffffff;
     --border: #e2e8f0;
     --text: #0f172a;
-    --text-muted: #64748b;
+    --text-muted: #5b6b80;
+    --text-positive: #047857;
+    --text-negative: #c81e1e;
   }
 
   .dark {
@@ -19,6 +27,8 @@
     --border: #334155;
     --text: #f1f5f9;
     --text-muted: #94a3b8;
+    --text-positive: #34d399;
+    --text-negative: #f87171;
   }
 
   html, body, #root { height: 100%; }
@@ -81,16 +91,46 @@
            dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500
            dark:disabled:bg-slate-800;
   }
-  .label { @apply mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400; }
+  /* `color` is set from the variable rather than @apply text-muted: @apply is
+     resolved against the Tailwind config loaded when the dev server booted, so
+     a token added to the config needs a restart before @apply can see it. The
+     variable works either way. */
+  .label {
+    @apply mb-1 block text-xs font-medium;
+    color: var(--text-muted);
+  }
 
   .badge {
     @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-2xs font-medium leading-4;
   }
 
+  /* Chips tinted from an admin-chosen hue. lib/color.ts emits both themes'
+     values as custom properties on the element, so the theme is selected here
+     instead of in JS — a table can hold hundreds of these, and none of them
+     needs to subscribe to the theme store or re-render on toggle. */
+  .badge-tinted {
+    background-color: var(--badge-bg);
+    color: var(--badge-fg);
+    border-color: var(--badge-bd);
+  }
+  .dark .badge-tinted {
+    background-color: var(--badge-bg-dark);
+    color: var(--badge-fg-dark);
+    border-color: var(--badge-bd-dark);
+  }
+
+  /* An admin-chosen hue used as text, corrected for contrast. Fed either by
+     badgeVars — for text inside a tinted chip, such as the inventory tiles
+     that keep their full-strength status border — or by tintedTextVars, for
+     text sitting directly on the page surface. */
+  .text-tinted { color: var(--tinted-fg); }
+  .dark .text-tinted { color: var(--tinted-fg-dark); }
+
   .table-cell { @apply whitespace-nowrap px-3 py-2.5 text-sm; }
   .table-head {
     @apply sticky top-0 z-10 whitespace-nowrap bg-slate-50 px-3 py-2 text-left text-2xs font-semibold
-           uppercase tracking-wide text-slate-500 dark:bg-slate-800/80 dark:text-slate-400;
+           uppercase tracking-wide dark:bg-slate-800/80;
+    color: var(--text-muted);
   }
 
   .skeleton {

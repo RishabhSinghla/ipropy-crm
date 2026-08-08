@@ -174,7 +174,7 @@ export default function RecordDetail(): JSX.Element {
                 <ChevronLeft className="h-3.5 w-3.5" />
               </button>
               {navIndex >= 0 && (
-                <span className="px-1 text-2xs tnum text-slate-400">{navIndex + 1} / {navIds.length}</span>
+                <span className="px-1 text-2xs tnum text-muted">{navIndex + 1} / {navIds.length}</span>
               )}
               <button
                 onClick={() => nextId && navigate(`/${moduleName}/${nextId}`)}
@@ -193,7 +193,7 @@ export default function RecordDetail(): JSX.Element {
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="truncate text-xl font-semibold tracking-tight">{record.label}</h1>
               {record.recordNumber && (
-                <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-2xs text-slate-500 dark:bg-slate-800">
+                <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-2xs text-muted dark:bg-slate-800">
                   {record.recordNumber}
                 </span>
               )}
@@ -235,21 +235,21 @@ export default function RecordDetail(): JSX.Element {
                 </span>
               )}
               {typeof record.values.ai_risk_score === 'number' && (
-                <span className="inline-flex items-center gap-1 text-2xs text-slate-500">
+                <span className="inline-flex items-center gap-1 text-2xs text-muted">
                   Risk <ScoreChip score={record.values.ai_risk_score as number} invert />
                 </span>
               )}
             </div>
 
             {/* Header summary chips */}
-            <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-slate-600 dark:text-slate-400">
+            <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-muted">
               {(layoutConfig.headerFields ?? []).slice(0, 5).map((name) => {
                 const field = fieldMap.get(name);
                 if (!field || record.values[name] == null || record.values[name] === '') return null;
                 if (name === meta.pipelineField) return null;
                 return (
                   <span key={name} className="inline-flex items-center gap-1.5">
-                    <span className="text-slate-400">{field.label}:</span>
+                    <span className="text-muted">{field.label}:</span>
                     {record.can?.edit && isInlineEditable(field) ? (
                       <EditableField
                         module={moduleName!}
@@ -268,7 +268,7 @@ export default function RecordDetail(): JSX.Element {
                 );
               })}
               <span className="inline-flex items-center gap-1.5">
-                <span className="text-slate-400">Owner:</span>
+                <span className="text-muted">Owner:</span>
                 {fieldMap.get('owner_id') && record.can?.edit ? (
                   <EditableField
                     module={moduleName!}
@@ -282,10 +282,10 @@ export default function RecordDetail(): JSX.Element {
                 ) : record.display?.owner_id ? (
                   <span className="inline-flex items-center gap-1"><Avatar name={record.display.owner_id} size={16} />{record.display.owner_id}</span>
                 ) : (
-                  <span className="text-slate-400">Unassigned</span>
+                  <span className="text-muted">Unassigned</span>
                 )}
               </span>
-              <span className="text-slate-400">Updated {relativeTime(record.updatedAt)}</span>
+              <span className="text-muted">Updated {relativeTime(record.updatedAt)}</span>
             </div>
           </div>
 
@@ -303,7 +303,7 @@ export default function RecordDetail(): JSX.Element {
               <>
                 <CallButton to={phone} recordId={record.id} module={moduleName!} />
                 <button onClick={() => setCompose('whatsapp')} className="btn-secondary btn-sm" title="WhatsApp">
-                  <MessageCircle className="h-3.5 w-3.5 text-emerald-600" />
+                  <MessageCircle className="h-3.5 w-3.5 text-positive" />
                   <span className="hidden sm:inline">WhatsApp</span>
                 </button>
               </>
@@ -481,7 +481,7 @@ function OverviewTab({
               )}>
                 {fields.map((field) => (
                   <div key={field.name} className={cn(field.config.fullWidth && 'sm:col-span-2')}>
-                    <dt className="text-2xs font-medium uppercase tracking-wide text-slate-400">{field.label}</dt>
+                    <dt className="text-2xs font-medium uppercase tracking-wide text-muted">{field.label}</dt>
                     <dd className="mt-0.5 text-sm">
                       {record.can?.edit && isInlineEditable(field) ? (
                         <EditableField
@@ -571,7 +571,7 @@ function TimelineItem({ entry }: { entry: TimelineEntry }): JSX.Element {
 
   const tone: Record<string, string> = {
     call: 'bg-blue-100 text-blue-600 dark:bg-blue-950 dark:text-blue-400',
-    message: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400',
+    message: 'bg-emerald-100 text-positive dark:bg-emerald-950 dark:text-emerald-400',
     email: 'bg-sky-100 text-sky-600 dark:bg-sky-950 dark:text-sky-400',
     comment: 'bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400',
     ai: 'bg-brand-100 text-brand-600 dark:bg-brand-950 dark:text-brand-400',
@@ -586,20 +586,20 @@ function TimelineItem({ entry }: { entry: TimelineEntry }): JSX.Element {
     <li className="relative">
       <span className={cn(
         'absolute -left-[2.1rem] flex h-6 w-6 items-center justify-center rounded-full ring-4 ring-white dark:ring-slate-900',
-        tone[entry.type] ?? 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
+        tone[entry.type] ?? 'bg-slate-100 text-muted dark:bg-slate-800',
       )}>
         <Icon className="h-3 w-3" />
       </span>
 
       <div className="flex flex-wrap items-baseline gap-x-2">
         <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{entry.title}</p>
-        <span className="text-2xs text-slate-400">
+        <span className="text-2xs text-muted">
           {entry.actorName} · {relativeTime(entry.at)}
         </span>
       </div>
 
       {entry.body && (
-        <p className="mt-0.5 whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-400">{entry.body}</p>
+        <p className="mt-0.5 whitespace-pre-wrap text-sm text-muted">{entry.body}</p>
       )}
 
       {entry.meta?.sentiment != null && (
@@ -804,7 +804,7 @@ function RelatedTab({ meta, module, id }: { meta: ModuleMeta; module: string; id
             {searching ? (
               <div className="flex justify-center py-6"><Spinner /></div>
             ) : results.length === 0 ? (
-              <p className="py-6 text-center text-sm text-slate-400">No matches</p>
+              <p className="py-6 text-center text-sm text-muted">No matches</p>
             ) : (
               results.map((r) => {
                 const alreadyLinked = linkedIds.has(r.id);
@@ -816,7 +816,7 @@ function RelatedTab({ meta, module, id }: { meta: ModuleMeta; module: string; id
                     className="flex w-full items-center gap-2 rounded-lg border border-slate-100 px-3 py-2 text-left text-sm transition-colors hover:border-brand-300 hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-800 dark:hover:border-brand-700 dark:hover:bg-brand-950/40"
                   >
                     <span className="min-w-0 flex-1 truncate font-medium">{r.label}</span>
-                    {r.recordNumber && <span className="font-mono text-2xs text-slate-400">{r.recordNumber}</span>}
+                    {r.recordNumber && <span className="font-mono text-2xs text-muted">{r.recordNumber}</span>}
                     {alreadyLinked
                       ? <Check className="h-3.5 w-3.5 text-brand-500" />
                       : <Plus className="h-3.5 w-3.5 text-slate-400" />}
@@ -883,7 +883,7 @@ function FilesTab({ module, id }: { module: string; id: string }): JSX.Element {
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{file.file_name}</p>
-                  <p className="text-2xs text-slate-500">
+                  <p className="text-2xs text-muted">
                     {(file.size / 1024).toFixed(0)} KB · {file.uploaded_by_name ?? 'Unknown'} · {relativeTime(file.created_at)}
                   </p>
                 </div>
@@ -978,7 +978,7 @@ function AiPanel({
 
         {(!insights || insights.length === 0) && (
           <div className="px-4 py-6 text-center">
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted">
               {aiAvailable ? 'No insights yet.' : 'AI insights use rule-based scoring until an API key is configured.'}
             </p>
             {canAnalyse && (
@@ -1007,11 +1007,11 @@ function AiPanel({
                       <ScoreChip score={m.score} />
                     </div>
                     {m.price && (
-                      <p className="mt-0.5 text-2xs font-semibold text-slate-600 tnum dark:text-slate-400">
+                      <p className="mt-0.5 text-2xs font-semibold tnum text-muted">
                         {formatIndianPrice(m.price)}
                       </p>
                     )}
-                    {m.reasons[0] && <p className="mt-1 text-2xs text-slate-500">{m.reasons[0]}</p>}
+                    {m.reasons[0] && <p className="mt-1 text-2xs text-muted">{m.reasons[0]}</p>}
                   </li>
                 );
               })}
@@ -1068,7 +1068,7 @@ function CommentsPanel({
           }}
         />
         <div className="mt-2 flex items-center justify-between">
-          <span className="text-2xs text-slate-400">⌘↵ to post</span>
+          <span className="text-2xs text-muted">⌘↵ to post</span>
           <button onClick={() => void post()} disabled={!body.trim() || posting} className="btn-primary btn-sm">
             {posting && <Spinner className="h-3 w-3" />} Post
           </button>
@@ -1084,15 +1084,15 @@ function CommentsPanel({
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">
                   <span className="text-xs font-medium">{c.user_name}</span>
-                  <span className="text-2xs text-slate-400">{relativeTime(c.created_at)}</span>
+                  <span className="text-2xs text-muted">{relativeTime(c.created_at)}</span>
                 </div>
-                <p className="mt-0.5 whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-400">{c.body}</p>
+                <p className="mt-0.5 whitespace-pre-wrap text-sm text-muted">{c.body}</p>
               </div>
             </div>
           );
         })}
         {(!data || data.length === 0) && (
-          <p className="px-4 py-6 text-center text-xs text-slate-400">No notes yet</p>
+          <p className="px-4 py-6 text-center text-xs text-muted">No notes yet</p>
         )}
       </div>
     </div>

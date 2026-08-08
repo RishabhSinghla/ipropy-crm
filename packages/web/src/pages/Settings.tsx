@@ -14,7 +14,7 @@ export default function SettingsPage(): JSX.Element {
     <div className="mx-auto max-w-3xl p-4 sm:p-6">
       <div className="mb-4">
         <h1 className="text-lg font-semibold tracking-tight">Settings</h1>
-        <p className="text-sm text-slate-500">Your profile, preferences and security.</p>
+        <p className="text-sm text-muted">Your profile, preferences and security.</p>
       </div>
 
       <Tabs
@@ -64,7 +64,7 @@ function ProfileTab(): JSX.Element {
         <Avatar name={user?.fullName ?? ''} src={user?.avatarUrl} size={56} />
         <div>
           <p className="text-base font-semibold">{user?.fullName}</p>
-          <p className="text-sm text-slate-500">{user?.email}</p>
+          <p className="text-sm text-muted">{user?.email}</p>
           <div className="mt-1 flex gap-1.5">
             {user?.roleName && <Badge>{user.roleName}</Badge>}
             {user?.profileName && <Badge color="#6366f1">{user.profileName}</Badge>}
@@ -84,7 +84,7 @@ function ProfileTab(): JSX.Element {
         <div>
           <label className="label">Phone</label>
           <input className="input tnum" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-          <p className="mt-1 text-2xs text-slate-400">Click-to-call rings this number first.</p>
+          <p className="mt-1 text-2xs text-muted">Click-to-call rings this number first.</p>
         </div>
         <div>
           <label className="label">Extension</label>
@@ -162,7 +162,7 @@ function PreferencesTab({
           <input className="input" value={user?.currency ?? ''} disabled />
         </div>
       </div>
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-muted">
         Timezone, locale and currency are set organisation-wide by an administrator.
       </p>
     </div>
@@ -213,7 +213,7 @@ function SecurityTab(): JSX.Element {
               <input type="password" className="input" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" />
             </div>
           </div>
-          <p className="text-2xs text-slate-500">
+          <p className="text-2xs text-muted">
             At least 8 characters, with upper case, lower case and a number.
           </p>
         </div>
@@ -240,7 +240,7 @@ function SecurityTab(): JSX.Element {
                 <Monitor className="h-4 w-4 shrink-0 text-slate-400" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs">{s.user_agent ?? 'Unknown device'}</p>
-                  <p className="text-2xs text-slate-400 tnum">
+                  <p className="text-2xs text-muted tnum">
                     {s.ip_address} · {new Date(s.created_at).toLocaleString('en-IN')}
                   </p>
                 </div>

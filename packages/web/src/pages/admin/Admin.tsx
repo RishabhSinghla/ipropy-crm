@@ -65,7 +65,7 @@ export default function AdminPage(): JSX.Element {
         <div className="space-y-4">
           {SECTIONS.map((section) => (
             <div key={section.group}>
-              <p className="mb-1 px-3 text-2xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-600">
+              <p className="mb-1 px-3 text-2xs font-semibold uppercase tracking-wider text-muted">
                 {section.group}
               </p>
               <div className="space-y-0.5">

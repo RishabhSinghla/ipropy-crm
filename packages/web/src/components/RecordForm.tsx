@@ -246,7 +246,7 @@ export default function RecordForm({
                   >
                     <label className="label" htmlFor={`f_${field.name}`}>
                       {field.label}
-                      {field.isMandatory && <span className="ml-0.5 text-red-500">*</span>}
+                      {field.isMandatory && <span className="ml-0.5 text-negative">*</span>}
                     </label>
                     <FieldInput
                       id={`f_${field.name}`}
@@ -263,7 +263,7 @@ export default function RecordForm({
                       <p className="mt-1 text-xs text-red-600 dark:text-red-400">{errors[field.name]}</p>
                     )}
                     {!errors[field.name] && field.helpText && field.uitype !== 'boolean' && (
-                      <p className="mt-1 text-xs text-slate-400">{field.helpText}</p>
+                      <p className="mt-1 text-xs text-muted">{field.helpText}</p>
                     )}
                   </div>
                 ))}

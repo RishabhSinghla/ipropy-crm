@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Blocks, Info, Lock, Plus } from 'lucide-react';
 import { api } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
+import { badgeVars } from '../../lib/color';
 import { cn, groupModules } from '../../lib/utils';
 import { Badge, Modal, Skeleton, Spinner, Toggle } from '../../components/ui';
 import { ModuleIcon } from '../../components/Layout';
@@ -53,7 +54,7 @@ export default function ModuleManager(): JSX.Element {
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div>
           <h1 className="text-lg font-semibold tracking-tight">Modules</h1>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted">
             Switch off what you don't use. Disabling hides a module everywhere — nav, search, reports
             and the API — but keeps its data, so re-enabling restores it exactly.
           </p>
@@ -70,7 +71,7 @@ export default function ModuleManager(): JSX.Element {
           {grouped.map(([group, list]) => (
             <div key={group} className="card overflow-hidden">
               <div className="border-b border-slate-100 bg-slate-50/60 px-4 py-2 dark:border-slate-800 dark:bg-slate-800/40">
-                <p className="text-2xs font-semibold uppercase tracking-wide text-slate-500">{group}</p>
+                <p className="text-2xs font-semibold uppercase tracking-wide text-muted">{group}</p>
               </div>
               <ul className="divide-y divide-slate-100 dark:divide-slate-800">
                 {list.map((module) => (
@@ -80,17 +81,17 @@ export default function ModuleManager(): JSX.Element {
                   >
                     <span
                       className={cn(
-                        'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+                        'badge-tinted flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
                         !module.isActive && 'opacity-40',
                       )}
-                      style={{ backgroundColor: `${module.color}18`, color: module.color }}
+                      style={badgeVars(module.color)}
                     >
                       <ModuleIcon name={module.icon} className="h-4.5 w-4.5" />
                     </span>
 
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <span className={cn('text-sm font-medium', !module.isActive && 'text-slate-400')}>
+                        <span className={cn('text-sm font-medium', !module.isActive && 'text-muted')}>
                           {module.label}
                         </span>
                         {module.isCustom && <Badge color="#6366f1">Custom</Badge>}
@@ -101,12 +102,12 @@ export default function ModuleManager(): JSX.Element {
                         )}
                         {!module.isActive && <Badge color="#ef4444">Disabled</Badge>}
                       </div>
-                      <p className="mt-0.5 text-2xs text-slate-500 tnum">
+                      <p className="mt-0.5 text-2xs text-muted tnum">
                         {module.fieldCount} fields · {module.recordCount.toLocaleString('en-IN')} records
                         {module.dependents.length > 0 && ` · referenced by ${module.dependents.join(', ')}`}
                       </p>
                       {!module.isActive && module.disabledReason && (
-                        <p className="mt-0.5 text-2xs italic text-slate-400">“{module.disabledReason}”</p>
+                        <p className="mt-0.5 text-2xs italic text-muted">“{module.disabledReason}”</p>
                       )}
                     </div>
 
@@ -130,7 +131,7 @@ export default function ModuleManager(): JSX.Element {
         </div>
       )}
 
-      <div className="mt-4 flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+      <div className="mt-4 flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs dark:border-slate-800 dark:bg-slate-900 text-muted">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         <div>
           <p>
@@ -193,7 +194,7 @@ export default function ModuleManager(): JSX.Element {
                 onChange={(e) => setReason(e.target.value)}
                 autoFocus
               />
-              <p className="mt-1 text-2xs text-slate-400">
+              <p className="mt-1 text-2xs text-muted">
                 Shown on this screen so colleagues know why it's off.
               </p>
             </div>

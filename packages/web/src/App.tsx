@@ -32,7 +32,7 @@ function RequireAuth({ children }: { children: JSX.Element }): JSX.Element {
       <div className="flex h-screen items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <Spinner className="h-6 w-6 text-brand-600" />
-          <p className="text-sm text-slate-500">Loading iPropy…</p>
+          <p className="text-sm text-muted">Loading iPropy…</p>
         </div>
       </div>
     );

@@ -75,7 +75,7 @@ export default function AiAssistant({
           </div>
           <div className="flex-1">
             <p className="text-sm font-semibold">Ask iPropy</p>
-            <p className="text-2xs text-slate-500">
+            <p className="text-2xs text-muted">
               {aiAvailable ? 'Ask about your pipeline, leads or inventory' : 'Requires an Anthropic API key'}
             </p>
           </div>
@@ -85,7 +85,7 @@ export default function AiAssistant({
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
           {messages.length === 0 && (
             <div className="space-y-3">
-              <p className="text-sm text-slate-600 dark:text-slate-400">
+              <p className="text-sm text-muted">
                 I can query your CRM directly. Every answer runs a real, permission-scoped query —
                 so the numbers are the same ones you'd get from a list view.
               </p>
@@ -94,7 +94,7 @@ export default function AiAssistant({
                   <button
                     key={s}
                     onClick={() => void send(s)}
-                    className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-left text-sm text-slate-600 transition-colors hover:border-brand-300 hover:bg-brand-50 dark:border-slate-700 dark:text-slate-400 dark:hover:border-brand-800 dark:hover:bg-brand-950/40"
+                    className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-left text-sm transition-colors hover:border-brand-300 hover:bg-brand-50 dark:border-slate-700 text-muted dark:hover:border-brand-800 dark:hover:bg-brand-950/40"
                   >
                     {s}
                   </button>
@@ -119,7 +119,7 @@ export default function AiAssistant({
                     {msg.results && msg.results.rows.length > 0 && msg.module && (
                       <div className="mt-3 space-y-1 border-t border-slate-200 pt-2 dark:border-slate-700">
                         <div className="flex items-center justify-between">
-                          <p className="text-2xs font-medium uppercase tracking-wide text-slate-500">
+                          <p className="text-2xs font-medium uppercase tracking-wide text-muted">
                             {msg.results.total} result{msg.results.total === 1 ? '' : 's'}
                           </p>
                           <Link
@@ -146,7 +146,7 @@ export default function AiAssistant({
                           </Link>
                         ))}
                         {msg.results.total > 8 && (
-                          <p className="px-2 text-2xs text-slate-400">…and {msg.results.total - 8} more</p>
+                          <p className="px-2 text-2xs text-muted">…and {msg.results.total - 8} more</p>
                         )}
                       </div>
                     )}
@@ -157,7 +157,7 @@ export default function AiAssistant({
           ))}
 
           {busy && (
-            <div className="flex items-center gap-2 text-sm text-slate-500">
+            <div className="flex items-center gap-2 text-sm text-muted">
               <Spinner /> Thinking…
             </div>
           )}

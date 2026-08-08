@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
+import { tintedTextVars } from '../lib/color';
 import { cn, renderMarkdown } from '../lib/utils';
 import { Badge, Dropdown, DropdownItem, EmptyState, ScoreChip, Skeleton, Spinner } from '../components/ui';
 
@@ -44,10 +45,10 @@ export default function DashboardPage(): JSX.Element {
         <div>
           <h1 className="text-xl font-semibold tracking-tight">{dashboard?.name ?? 'Dashboard'}</h1>
           {dashboard?.description && (
-            <p className="text-sm text-slate-500">{dashboard.description}</p>
+            <p className="text-sm text-muted">{dashboard.description}</p>
           )}
           {dashboard?.canEdit && isDesktop && (
-            <p className="mt-0.5 text-2xs text-slate-400">
+            <p className="mt-0.5 text-2xs text-muted">
               Drag widgets to rearrange · pull the corner handle to resize
             </p>
           )}
@@ -307,7 +308,7 @@ function Widget({ widget }: { widget: DashboardWidget }): JSX.Element {
     return (
       <div className="card p-4">
         <p className="text-sm font-medium">{widget.title}</p>
-        <p className="mt-2 text-xs text-red-500">{(error as Error).message}</p>
+        <p className="mt-2 text-xs text-negative">{(error as Error).message}</p>
       </div>
     );
   }
@@ -342,7 +343,7 @@ function Widget({ widget }: { widget: DashboardWidget }): JSX.Element {
       return (
         <div className="card p-4">
           <p className="text-sm font-medium">{widget.title}</p>
-          <p className="mt-2 text-xs text-slate-400">Widget type “{widget.type}” has no renderer yet.</p>
+          <p className="mt-2 text-xs text-muted">Widget type “{widget.type}” has no renderer yet.</p>
         </div>
       );
   }
@@ -363,19 +364,19 @@ function MetricCard({ widget, data }: { widget: DashboardWidget; data: Record<st
 
   const body = (
     <div className={cn('card h-full p-4 transition-shadow', linkTo && 'hover:shadow-md hover:ring-1 hover:ring-brand-200 dark:hover:ring-brand-800')}>
-      <p className="truncate text-xs font-medium text-slate-500 dark:text-slate-400">{widget.title}</p>
-      <p className="mt-1.5 text-2xl font-semibold tracking-tight tnum" style={{ color }}>
+      <p className="truncate text-xs font-medium text-muted">{widget.title}</p>
+      <p className="text-tinted mt-1.5 text-2xl font-semibold tracking-tight tnum" style={tintedTextVars(color, { large: true })}>
         {formatValue(value, format)}
       </p>
       {change !== undefined && (
         <div className="mt-1.5 flex items-center gap-1 text-xs">
           {change >= 0
-            ? <ArrowUpRight className="h-3.5 w-3.5 text-emerald-600" />
-            : <ArrowDownRight className="h-3.5 w-3.5 text-red-500" />}
-          <span className={cn('font-medium tnum', change >= 0 ? 'text-emerald-600' : 'text-red-500')}>
+            ? <ArrowUpRight className="h-3.5 w-3.5 text-positive" />
+            : <ArrowDownRight className="h-3.5 w-3.5 text-negative" />}
+          <span className={cn('font-medium tnum', change >= 0 ? 'text-positive' : 'text-negative')}>
             {change > 0 ? '+' : ''}{change}%
           </span>
-          <span className="text-slate-400">vs previous period</span>
+          <span className="text-muted">vs previous period</span>
         </div>
       )}
     </div>
@@ -393,15 +394,15 @@ function GaugeCard({ widget, data }: { widget: DashboardWidget; data: Record<str
 
   const body = (
     <div className={cn('card h-full p-4 transition-shadow', linkTo && 'hover:shadow-md hover:ring-1 hover:ring-brand-200 dark:hover:ring-brand-800')}>
-      <p className="truncate text-xs font-medium text-slate-500 dark:text-slate-400">{widget.title}</p>
-      <p className="mt-1.5 text-2xl font-semibold tracking-tight tnum" style={{ color }}>
+      <p className="truncate text-xs font-medium text-muted">{widget.title}</p>
+      <p className="text-tinted mt-1.5 text-2xl font-semibold tracking-tight tnum" style={tintedTextVars(color, { large: true })}>
         {formatValue(value, (data.format as string) ?? 'currency')}
       </p>
       <div className="mt-2">
         <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
           <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
         </div>
-        <p className="mt-1 text-2xs text-slate-500 tnum">
+        <p className="mt-1 text-2xs text-muted tnum">
           {pct.toFixed(0)}% of {formatValue(target, 'currency')} target
         </p>
       </div>
@@ -606,8 +607,8 @@ function FunnelCard({ widget, data }: { widget: DashboardWidget; data: Record<st
                 {i > 0 && (
                   <span className={cn(
                     'text-2xs tnum',
-                    stage.conversionFromPrevious >= 70 ? 'text-emerald-600'
-                      : stage.conversionFromPrevious >= 40 ? 'text-amber-600' : 'text-red-500',
+                    stage.conversionFromPrevious >= 70 ? 'text-positive'
+                      : stage.conversionFromPrevious >= 40 ? 'text-amber-700 dark:text-amber-400' : 'text-negative',
                   )}>
                     {stage.conversionFromPrevious}%
                   </span>
@@ -628,7 +629,7 @@ function FunnelCard({ widget, data }: { widget: DashboardWidget; data: Record<st
         ))}
       </div>
       {stages.length > 1 && (
-        <p className="mt-3 border-t border-slate-100 pt-2 text-2xs text-slate-500 dark:border-slate-800">
+        <p className="mt-3 border-t border-slate-100 pt-2 text-2xs text-muted dark:border-slate-800">
           End-to-end conversion:{' '}
           <span className="font-semibold text-slate-700 tnum dark:text-slate-300">
             {stages[stages.length - 1].conversionFromFirst}%
@@ -693,7 +694,7 @@ function StackedCard({ widget, data }: { widget: DashboardWidget; data: Record<s
       </div>
       <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-2 dark:border-slate-800">
         {allSegments.map((key) => (
-          <span key={key} className="inline-flex items-center gap-1 text-2xs text-slate-500">
+          <span key={key} className="inline-flex items-center gap-1 text-2xs text-muted">
             <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: colorOf.get(key) ?? '#94a3b8' }} />
             {key}
           </span>
@@ -734,7 +735,7 @@ function TableCard({ widget, data }: { widget: DashboardWidget; data: Record<str
                     >
                       {String(row.label ?? '')}
                     </Link>
-                    <div className="mt-0.5 flex flex-wrap gap-x-3 text-2xs text-slate-500">
+                    <div className="mt-0.5 flex flex-wrap gap-x-3 text-2xs text-muted">
                       {columns.slice(1, 4).map((c) => {
                         const v = display[c] ?? row[c];
                         if (v === null || v === undefined || v === '') return null;
@@ -792,7 +793,7 @@ function AiInsightCard({ widget }: { widget: DashboardWidget }): JSX.Element {
       {insight ? (
         <div className="prose-ai" dangerouslySetInnerHTML={{ __html: renderMarkdown(insight) }} />
       ) : (
-        <p className="py-4 text-center text-xs text-slate-400">
+        <p className="py-4 text-center text-xs text-muted">
           Generate an AI read of the live numbers on this dashboard.
         </p>
       )}
@@ -804,7 +805,7 @@ function EmptyWidget({ title }: { title: string }): JSX.Element {
   return (
     <div className="card h-full p-4">
       <p className="text-sm font-medium">{title}</p>
-      <p className="py-8 text-center text-xs text-slate-400">No data for this period</p>
+      <p className="py-8 text-center text-xs text-muted">No data for this period</p>
     </div>
   );
 }

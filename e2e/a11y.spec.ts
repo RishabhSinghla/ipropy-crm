@@ -16,21 +16,31 @@ import { waitForRecords } from './helpers';
 const WCAG = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
 
 async function scan(page: Page) {
-  return new AxeBuilder({ page })
-    .withTags(WCAG)
-    // Contrast is temporarily excluded from the general scan and tracked by
-    // its own test below. Every structural rule — labels, accessible names,
-    // ARIA, landmarks, roles — is enforced here and will fail the build, which
-    // is what stops the fixes made in this pass from silently regressing.
-    // Folding an unfinished long tail of dark-mode colour tokens into the same
-    // assertion would just make all of them permanently red and ignored.
-    .disableRules(['color-contrast'])
-    .analyze();
+  // Contrast is included: colours come from tokens with a proven ratio
+  // (lib/color.ts, tests/color.test.ts), so a regression here is a real bug
+  // rather than a known backlog item.
+  return new AxeBuilder({ page }).withTags(WCAG).analyze();
 }
 
-/** Contrast-only scan, so the outstanding work is visible rather than hidden. */
+/** Contrast-only scan, used for the both-themes sweep below. */
 async function scanContrast(page: Page) {
   return new AxeBuilder({ page }).withTags(WCAG).withRules(['color-contrast']).analyze();
+}
+
+/**
+ * Flip the theme through the real toggle rather than by setting the class.
+ * bootstrap() treats the server-stored user.theme as authoritative, so a
+ * client-only change is reverted by the next full page load — which is exactly
+ * what every page.goto() below does.
+ */
+async function setTheme(page: Page, theme: 'light' | 'dark'): Promise<void> {
+  const isDark = await page.evaluate(() => document.documentElement.classList.contains('dark'));
+  if (isDark === (theme === 'dark')) return;
+  await page.getByRole('button', { name: /toggle theme/i }).click();
+  await page.waitForFunction(
+    (t) => document.documentElement.classList.contains('dark') === (t === 'dark'),
+    theme,
+  );
 }
 
 /** Readable failure output — axe's raw objects are unreadable in CI logs. */
@@ -78,16 +88,39 @@ test.describe('accessibility', () => {
   });
 });
 
-// FIXME(a11y): dark mode still has a tail of muted-text tokens under 4.5:1
-// (mostly slate-500 on slate-900 and slate-400 on slate-700, around 3.4–4.0).
-// Light mode is clean. The right fix is to correct the muted-text tokens
-// centrally rather than patch call sites one at a time, which is a focused
-// design-token pass rather than something to bolt onto this change.
-test.fixme('has no colour-contrast violations in either theme', async ({ page }) => {
-  await page.goto('/leads');
-  await waitForRecords(page);
-  const { violations } = await scanContrast(page);
-  expect(violations, summarise(violations)).toEqual([]);
+/**
+ * Contrast across both themes and the screens people actually live in.
+ *
+ * Kept separate from the per-page scans above because it has to drive the
+ * theme toggle and walk several routes in one session — the shared admin's
+ * theme is a server-side preference, so it must be put back at the end or it
+ * leaks into every other spec.
+ */
+test('has no colour-contrast violations in either theme', async ({ page }) => {
+  test.slow(); // ten full page loads plus two axe passes each
+  const failures: string[] = [];
+
+  for (const theme of ['light', 'dark'] as const) {
+    await page.goto('/dashboard');
+    await expect(page.getByRole('link', { name: /leads & customers/i })).toBeVisible();
+    await setTheme(page, theme);
+
+    for (const route of ['/dashboard', '/leads', '/properties', '/settings']) {
+      await page.goto(route);
+      if (route === '/leads' || route === '/properties') await waitForRecords(page);
+      await expect(page.getByRole('link', { name: /leads & customers/i })).toBeVisible();
+      const { violations } = await scanContrast(page);
+      if (violations.length) failures.push(`\n[${theme}] ${route}${summarise(violations)}`);
+    }
+  }
+
+  // Restore the shared account before asserting, so a failure here cannot
+  // leave every subsequent spec running in the wrong theme.
+  await page.goto('/dashboard');
+  await expect(page.getByRole('link', { name: /leads & customers/i })).toBeVisible();
+  await setTheme(page, 'light');
+
+  expect(failures.join(''), failures.join('')).toBe('');
 });
 
 test.describe('keyboard operation', () => {

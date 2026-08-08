@@ -123,7 +123,7 @@ export default function ComposeModal({
               }))}
             />
             {channel === 'whatsapp' && (
-              <p className="mt-1 text-2xs text-slate-500">
+              <p className="mt-1 text-2xs text-muted">
                 Outside the 24-hour customer service window, WhatsApp only accepts approved templates.
               </p>
             )}
@@ -156,7 +156,7 @@ export default function ComposeModal({
             disabled={Boolean(templateName)}
           />
           {channel === 'whatsapp' && !templateName && (
-            <p className="mt-1 text-2xs text-slate-400 tnum">{body.length} characters</p>
+            <p className="mt-1 text-2xs text-muted tnum">{body.length} characters</p>
           )}
         </div>
       </div>

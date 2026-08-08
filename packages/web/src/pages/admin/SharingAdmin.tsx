@@ -51,7 +51,7 @@ export default function SharingAdmin(): JSX.Element {
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div>
           <h1 className="text-lg font-semibold tracking-tight">Data Sharing</h1>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted">
             The organisation-wide default for each module. Roles widen this upward;
             sharing rules open specific gaps sideways.
           </p>
@@ -96,7 +96,7 @@ export default function SharingAdmin(): JSX.Element {
                       />
                     </td>
                     <td className="table-cell">
-                      <span className="text-xs text-slate-500">{level?.hint}</span>
+                      <span className="text-xs text-muted">{level?.hint}</span>
                     </td>
                   </tr>
                 );
@@ -110,7 +110,7 @@ export default function SharingAdmin(): JSX.Element {
         <div className="card mt-4 overflow-hidden">
           <div className="border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
             <p className="text-sm font-medium">Sharing rules</p>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted">
               Grant one team access to another's records without changing the org-wide default.
             </p>
           </div>
@@ -129,7 +129,7 @@ export default function SharingAdmin(): JSX.Element {
         </div>
       )}
 
-      <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+      <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs dark:border-slate-800 dark:bg-slate-900 text-muted">
         <p className="mb-1.5 font-medium text-slate-700 dark:text-slate-300">How access is decided</p>
         <ol className="list-inside list-decimal space-y-1">
           <li>The user's <strong>profile</strong> must allow the action on the module at all.</li>

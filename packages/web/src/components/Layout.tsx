@@ -78,7 +78,7 @@ export default function Layout(): JSX.Element {
           {grouped.map(([group, list]) => (
             <div key={group}>
               {!sidebarCollapsed && (
-                <p className="mb-1 px-3 text-2xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                <p className="mb-1 px-3 text-2xs font-semibold uppercase tracking-wider text-muted">
                   {group}
                 </p>
               )}
@@ -99,7 +99,7 @@ export default function Layout(): JSX.Element {
 
           <div>
             {!sidebarCollapsed && (
-              <p className="mb-1 px-3 text-2xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              <p className="mb-1 px-3 text-2xs font-semibold uppercase tracking-wider text-muted">
                 Tools
               </p>
             )}
@@ -171,7 +171,7 @@ export default function Layout(): JSX.Element {
                 <>
                   <div className="border-b border-slate-100 px-3 py-2 dark:border-slate-800">
                     <p className="truncate text-sm font-medium">{user?.fullName}</p>
-                    <p className="truncate text-xs text-slate-500">{user?.email}</p>
+                    <p className="truncate text-xs text-muted">{user?.email}</p>
                     {user?.profileName && (
                       <Badge className="mt-1.5">{user.profileName}</Badge>
                     )}
@@ -283,7 +283,7 @@ function NotificationBell(): JSX.Element {
           </div>
           <div className="max-h-96 overflow-y-auto">
             {(data?.notifications ?? []).length === 0 && (
-              <p className="px-3 py-8 text-center text-xs text-slate-400">Nothing new</p>
+              <p className="px-3 py-8 text-center text-xs text-muted">Nothing new</p>
             )}
             {(data?.notifications ?? []).map((n) => {
               const note = n as { id: string; title: string; body: string | null; link: string | null; is_read: boolean; created_at: string };
@@ -301,8 +301,8 @@ function NotificationBell(): JSX.Element {
                   )}
                 >
                   <p className="text-xs font-medium text-slate-800 dark:text-slate-200">{note.title}</p>
-                  {note.body && <p className="mt-0.5 line-clamp-2 text-2xs text-slate-500">{note.body}</p>}
-                  <p className="mt-1 text-2xs text-slate-400">
+                  {note.body && <p className="mt-0.5 line-clamp-2 text-2xs text-muted">{note.body}</p>}
+                  <p className="mt-1 text-2xs text-muted">
                     {new Date(note.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                   </p>
                 </button>
@@ -366,7 +366,7 @@ function GlobalSearch(): JSX.Element {
         onFocus={() => setOpen(true)}
         onChange={(e) => setQuery(e.target.value)}
       />
-      <kbd className="pointer-events-none absolute right-2 top-1/2 hidden -translate-y-1/2 rounded border border-slate-200 px-1.5 py-0.5 text-[10px] text-slate-400 dark:border-slate-700 sm:block">
+      <kbd className="pointer-events-none absolute right-2 top-1/2 hidden -translate-y-1/2 rounded border border-slate-200 px-1.5 py-0.5 text-[10px] text-muted dark:border-slate-700 sm:block">
         ⌘K
       </kbd>
 
@@ -374,7 +374,7 @@ function GlobalSearch(): JSX.Element {
         <div className="absolute z-40 mt-1 max-h-96 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-float dark:border-slate-700 dark:bg-slate-900">
           {loading && <div className="flex justify-center py-6"><Spinner className="text-slate-400" /></div>}
           {!loading && results.length === 0 && (
-            <p className="px-3 py-6 text-center text-xs text-slate-400">No matches for “{query}”</p>
+            <p className="px-3 py-6 text-center text-xs text-muted">No matches for “{query}”</p>
           )}
           {results.map((r) => (
             <button

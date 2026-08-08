@@ -72,7 +72,7 @@ export default function WorkflowAdmin(): JSX.Element {
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div>
           <h1 className="text-lg font-semibold tracking-tight">Workflows</h1>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted">
             Automation that runs when records change or on a schedule. Everything shipped with iPropy
             is an ordinary workflow you can edit or switch off.
           </p>
@@ -120,7 +120,7 @@ export default function WorkflowAdmin(): JSX.Element {
             {Object.entries(byModule).map(([moduleName, list]) => (
               <div key={moduleName} className="card overflow-hidden">
                 <div className="border-b border-slate-100 bg-slate-50/60 px-4 py-2 dark:border-slate-800 dark:bg-slate-800/40">
-                  <p className="text-2xs font-semibold uppercase tracking-wide text-slate-500">
+                  <p className="text-2xs font-semibold uppercase tracking-wide text-muted">
                     {moduleName.replace(/_/g, ' ')}
                   </p>
                 </div>
@@ -142,9 +142,9 @@ export default function WorkflowAdmin(): JSX.Element {
                           {w.is_system && <Badge color="#94a3b8">Built-in</Badge>}
                         </div>
                         {w.description && (
-                          <p className="mt-0.5 text-xs text-slate-500">{w.description}</p>
+                          <p className="mt-0.5 text-xs text-muted">{w.description}</p>
                         )}
-                        <p className="mt-1 text-2xs text-slate-400 tnum">
+                        <p className="mt-1 text-2xs text-muted tnum">
                           {w.run_count > 0 ? `Ran ${w.run_count} times` : 'Never run'}
                           {w.last_run_at && ` · last ${relativeTime(w.last_run_at)}`}
                           {w.next_run_at && ` · next ${relativeTime(w.next_run_at)}`}
@@ -182,7 +182,7 @@ export default function WorkflowAdmin(): JSX.Element {
         <div className="card overflow-hidden">
           <div className="border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
             <p className="text-sm font-medium">Lead assignment rules</p>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted">
               Evaluated in order — the first matching rule assigns the record.
             </p>
           </div>
@@ -190,12 +190,12 @@ export default function WorkflowAdmin(): JSX.Element {
             {((rules ?? []) as { id: string; name: string; strategy: string; module: string; group_name: string | null; is_active: boolean; sequence: number }[])
               .map((r, i) => (
                 <li key={r.id} className="flex items-center gap-3 p-3">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-2xs font-semibold text-slate-500 dark:bg-slate-800">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-2xs font-semibold text-muted dark:bg-slate-800">
                     {i + 1}
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium">{r.name}</p>
-                    <p className="text-2xs text-slate-500">
+                    <p className="text-2xs text-muted">
                       {r.strategy.replace(/_/g, ' ')}
                       {r.group_name && ` → ${r.group_name}`}
                     </p>
@@ -216,7 +216,7 @@ export default function WorkflowAdmin(): JSX.Element {
         <div className="card overflow-hidden">
           <div className="border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
             <p className="text-sm font-medium">Deferred tasks</p>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted">
               Delayed workflow actions — reminders, follow-ups, scheduled messages.
             </p>
           </div>
@@ -237,10 +237,10 @@ export default function WorkflowAdmin(): JSX.Element {
                     <tr key={job.id}>
                       <td className="table-cell">
                         <p className="font-medium">{job.task_name}</p>
-                        <p className="text-2xs text-slate-500">{job.workflow_name}</p>
+                        <p className="text-2xs text-muted">{job.workflow_name}</p>
                       </td>
                       <td className="table-cell text-slate-600 dark:text-slate-400">{job.record_label ?? '—'}</td>
-                      <td className="table-cell text-2xs tnum text-slate-500">{relativeTime(job.run_at)}</td>
+                      <td className="table-cell text-2xs tnum text-muted">{relativeTime(job.run_at)}</td>
                       <td className="table-cell">
                         <Badge color={
                           job.status === 'done' ? '#22c55e'
@@ -250,7 +250,7 @@ export default function WorkflowAdmin(): JSX.Element {
                           {job.status}
                         </Badge>
                         {job.last_error && (
-                          <p className="mt-0.5 max-w-xs truncate text-2xs text-red-500" title={job.last_error}>
+                          <p className="mt-0.5 max-w-xs truncate text-2xs text-negative" title={job.last_error}>
                             {job.last_error}
                           </p>
                         )}
@@ -314,16 +314,16 @@ function WorkflowDetail({ id, onClose }: { id: string; onClose: () => void }): J
         <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16" />)}</div>
       ) : (
         <div className="space-y-4">
-          {wf.description && <p className="text-sm text-slate-600 dark:text-slate-400">{wf.description}</p>}
+          {wf.description && <p className="text-sm text-muted">{wf.description}</p>}
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
-              <p className="text-2xs uppercase tracking-wide text-slate-400">Trigger</p>
+              <p className="text-2xs uppercase tracking-wide text-muted">Trigger</p>
               <p className="mt-0.5 text-sm font-medium">{TRIGGER_LABELS[wf.trigger] ?? wf.trigger}</p>
-              <p className="text-2xs text-slate-500">on {wf.module.replace(/_/g, ' ')}</p>
+              <p className="text-2xs text-muted">on {wf.module.replace(/_/g, ' ')}</p>
             </div>
             <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
-              <p className="text-2xs uppercase tracking-wide text-slate-400">Conditions</p>
+              <p className="text-2xs uppercase tracking-wide text-muted">Conditions</p>
               <p className="mt-0.5 text-sm font-medium tnum">
                 {wf.conditions?.conditions?.length
                   ? `${wf.conditions.conditions.length} condition${wf.conditions.conditions.length === 1 ? '' : 's'} (${wf.conditions.logic})`
@@ -354,7 +354,7 @@ function WorkflowDetail({ id, onClose }: { id: string; onClose: () => void }): J
                       )}
                     </div>
                     {Object.keys(task.config).length > 0 && (
-                      <pre className="mt-1.5 max-h-24 overflow-auto rounded bg-slate-50 p-2 text-2xs text-slate-500 dark:bg-slate-800">
+                      <pre className="mt-1.5 max-h-24 overflow-auto rounded bg-slate-50 p-2 text-2xs text-muted dark:bg-slate-800">
                         {JSON.stringify(task.config, null, 2)}
                       </pre>
                     )}
@@ -711,7 +711,7 @@ function TaskConfigFields({
           <label className="label">To</label>
           <input className="input" value={(task.config.to as string) ?? '{{mobile}}'} onChange={(e) => set({ to: e.target.value })} />
           {task.type === 'send_sms' && (
-            <p className="text-2xs text-slate-400">Requires an SMS provider to be configured — until then this only logs.</p>
+            <p className="text-2xs text-muted">Requires an SMS provider to be configured — until then this only logs.</p>
           )}
         </div>
       );
@@ -747,7 +747,7 @@ function TaskConfigFields({
       );
 
     default:
-      return <p className="text-xs text-slate-400">No extra configuration for this action.</p>;
+      return <p className="text-xs text-muted">No extra configuration for this action.</p>;
   }
 }
 
@@ -974,7 +974,7 @@ function WorkflowComposer({
           </div>
 
           {!tasks.length && (
-            <p className="rounded-lg border border-dashed border-slate-300 p-4 text-center text-xs text-slate-400 dark:border-slate-700">
+            <p className="rounded-lg border border-dashed border-slate-300 p-4 text-center text-xs text-muted dark:border-slate-700">
               No actions yet — add at least one above.
             </p>
           )}

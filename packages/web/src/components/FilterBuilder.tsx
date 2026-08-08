@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { FieldMeta, FilterCondition, FilterGroup, FilterOperator, ModuleMeta } from '@ipropy/shared';
 import { OPERATOR_LABELS, UITYPES, isFilterGroup, operatorTakesValue } from '@ipropy/shared';
 import { Plus, Trash2, X } from 'lucide-react';
+import { badgeVars } from '../lib/color';
 import { cn } from '../lib/utils';
 import { FieldInput } from './FieldRenderer';
 import { Select } from './ui';
@@ -158,7 +159,7 @@ function ConditionRow({
           {condition.operator === 'between' ? (
             <div className="flex items-center gap-1">
               <ValueEditor field={field} value={condition.value} onChange={(v) => onChange({ ...condition, value: v })} />
-              <span className="text-2xs text-slate-400">and</span>
+              <span className="text-2xs text-muted">and</span>
               <ValueEditor field={field} value={condition.value2} onChange={(v) => onChange({ ...condition, value2: v })} />
             </div>
           ) : ['last_n_days', 'next_n_days', 'older_than_n_days'].includes(condition.operator) ? (
@@ -176,7 +177,7 @@ function ConditionRow({
           )}
         </div>
       ) : (
-        <div className="flex items-center px-2 text-xs text-slate-400">—</div>
+        <div className="flex items-center px-2 text-xs text-muted">—</div>
       )}
     </div>
   );
@@ -211,9 +212,11 @@ function MultiValueEditor({
               onClick={() => onChange(active ? list.filter((v) => v !== o.value) : [...list, o.value])}
               className={cn(
                 'rounded px-1.5 py-0.5 text-2xs transition-colors',
-                active ? 'font-medium' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800',
+                active
+                  ? cn('font-medium', o.color && 'badge-tinted')
+                  : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800',
               )}
-              style={active && o.color ? { backgroundColor: `${o.color}20`, color: o.color } : undefined}
+              style={active ? badgeVars(o.color) : undefined}
             >
               {o.label}
             </button>

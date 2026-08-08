@@ -48,7 +48,7 @@ export default function CallsPage(): JSX.Element {
           </span>
           <div>
             <h1 className="text-lg font-semibold tracking-tight">Calls</h1>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted">
               {telephonyAvailable ? 'Click-to-call is active' : 'No telephony provider configured — logs only'}
             </p>
           </div>
@@ -83,7 +83,7 @@ export default function CallsPage(): JSX.Element {
             { label: 'Avg quality', value: stats.avg_quality ? `${stats.avg_quality}/100` : '—' },
           ].map((s) => (
             <div key={s.label} className="card p-3">
-              <p className="text-2xs uppercase tracking-wide text-slate-400">{s.label}</p>
+              <p className="text-2xs uppercase tracking-wide text-muted">{s.label}</p>
               <p className="mt-0.5 text-lg font-semibold tnum">{String(s.value ?? 0)}</p>
             </div>
           ))}
@@ -110,7 +110,7 @@ export default function CallsPage(): JSX.Element {
                     <span className={cn(
                       'flex h-9 w-9 shrink-0 items-center justify-center rounded-full',
                       failed ? 'bg-red-100 text-red-600 dark:bg-red-950'
-                        : call.direction === 'inbound' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950'
+                        : call.direction === 'inbound' ? 'bg-emerald-100 text-positive dark:bg-emerald-950'
                         : 'bg-blue-100 text-blue-600 dark:bg-blue-950',
                     )}>
                       <Icon className="h-4 w-4" />
@@ -132,9 +132,9 @@ export default function CallsPage(): JSX.Element {
                         )}
                       </div>
                       {call.ai_summary && (
-                        <p className="mt-0.5 line-clamp-1 text-xs text-slate-500">{call.ai_summary}</p>
+                        <p className="mt-0.5 line-clamp-1 text-xs text-muted">{call.ai_summary}</p>
                       )}
-                      <p className="mt-0.5 text-2xs text-slate-400 tnum">
+                      <p className="mt-0.5 text-2xs text-muted tnum">
                         {call.agent_name} · {relativeTime(call.started_at)}
                         {call.duration_seconds > 0 && ` · ${Math.floor(call.duration_seconds / 60)}m ${call.duration_seconds % 60}s`}
                       </p>
@@ -220,7 +220,7 @@ function CallModal({ call, onClose }: { call: Call; onClose: () => void }): JSX.
             { label: 'Agent', value: full.agent_name ?? '—' },
           ].map((item) => (
             <div key={item.label}>
-              <p className="text-2xs uppercase tracking-wide text-slate-400">{item.label}</p>
+              <p className="text-2xs uppercase tracking-wide text-muted">{item.label}</p>
               <p className="mt-0.5 text-sm font-medium capitalize">{item.value}</p>
             </div>
           ))}
@@ -240,15 +240,15 @@ function CallModal({ call, onClose }: { call: Call; onClose: () => void }): JSX.
               <p className="text-xs font-medium">AI analysis</p>
               {full.ai_score !== null && <ScoreChip score={full.ai_score} />}
               {full.ai_talk_ratio !== null && (
-                <span className="text-2xs text-slate-500 tnum">Agent talk ratio {full.ai_talk_ratio}%</span>
+                <span className="text-2xs text-muted tnum">Agent talk ratio {full.ai_talk_ratio}%</span>
               )}
             </div>
             <p className="text-sm text-slate-700 dark:text-slate-300">{full.ai_summary}</p>
 
             {full.ai_objections?.length ? (
               <div className="mt-2">
-                <p className="text-2xs font-medium uppercase tracking-wide text-slate-500">Objections</p>
-                <ul className="mt-0.5 list-inside list-disc text-xs text-slate-600 dark:text-slate-400">
+                <p className="text-2xs font-medium uppercase tracking-wide text-muted">Objections</p>
+                <ul className="mt-0.5 list-inside list-disc text-xs text-muted">
                   {full.ai_objections.map((o, i) => <li key={i}>{o}</li>)}
                 </ul>
               </div>
@@ -256,8 +256,8 @@ function CallModal({ call, onClose }: { call: Call; onClose: () => void }): JSX.
 
             {full.ai_next_actions?.length ? (
               <div className="mt-2">
-                <p className="text-2xs font-medium uppercase tracking-wide text-slate-500">Next actions</p>
-                <ul className="mt-0.5 list-inside list-disc text-xs text-slate-600 dark:text-slate-400">
+                <p className="text-2xs font-medium uppercase tracking-wide text-muted">Next actions</p>
+                <ul className="mt-0.5 list-inside list-disc text-xs text-muted">
                   {full.ai_next_actions.map((a, i) => <li key={i}>{a}</li>)}
                 </ul>
               </div>
@@ -290,7 +290,7 @@ function CallModal({ call, onClose }: { call: Call; onClose: () => void }): JSX.
             value={transcript}
             onChange={(e) => setTranscript(e.target.value)}
           />
-          <p className="mt-1 text-2xs text-slate-400">
+          <p className="mt-1 text-2xs text-muted">
             Transcripts arrive automatically when your provider supplies them; otherwise transcribe the recording or paste one here.
           </p>
         </div>
@@ -323,7 +323,7 @@ function CoachingModal({ userId, onClose }: { userId: string; onClose: () => voi
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {Object.entries(report.metrics).map(([key, value]) => (
               <div key={key} className="rounded-lg border border-slate-200 p-2.5 dark:border-slate-700">
-                <p className="text-2xs uppercase tracking-wide text-slate-400">
+                <p className="text-2xs uppercase tracking-wide text-muted">
                   {key.replace(/([A-Z])/g, ' $1').toLowerCase()}
                 </p>
                 <p className="mt-0.5 text-base font-semibold tnum">{value}</p>

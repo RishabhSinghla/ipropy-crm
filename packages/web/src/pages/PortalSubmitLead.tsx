@@ -111,7 +111,7 @@ export default function PortalSubmitLead(): JSX.Element {
           </button>
           <div>
             <h2 className="text-2xl font-semibold">Submit New Enquiry</h2>
-            <p className="text-sm text-slate-500">Enter the prospective buyer's details</p>
+            <p className="text-sm text-muted">Enter the prospective buyer's details</p>
           </div>
         </div>
 
@@ -121,7 +121,7 @@ export default function PortalSubmitLead(): JSX.Element {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className="label">First name <span className="text-red-500">*</span></label>
+                <label className="label">First name <span className="text-negative">*</span></label>
                 <Input
                   value={form.firstName}
                   onChange={(e) => set({ firstName: e.target.value })}
@@ -189,7 +189,7 @@ export default function PortalSubmitLead(): JSX.Element {
                 placeholder="Select a project…"
                 options={[{ value: '', label: '— No project —' }]}
               />
-              <p className="mt-1 text-2xs text-slate-500">Projects list loads from the CRM. Select if the buyer has a specific project in mind.</p>
+              <p className="mt-1 text-2xs text-muted">Projects list loads from the CRM. Select if the buyer has a specific project in mind.</p>
             </div>
 
             <div>

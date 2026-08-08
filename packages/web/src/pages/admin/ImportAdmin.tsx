@@ -72,7 +72,7 @@ export default function ImportAdmin(): JSX.Element {
     <div className="p-4 sm:p-6">
       <div className="mb-4">
         <h1 className="text-lg font-semibold tracking-tight">Import Data</h1>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-muted">
           Bring existing leads, contacts or inventory in from a CSV. Columns are matched to fields automatically.
         </p>
       </div>
@@ -137,7 +137,7 @@ export default function ImportAdmin(): JSX.Element {
         <div className="card mb-4 overflow-hidden">
           <div className="border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
             <p className="text-sm font-medium">Column mapping</p>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted">
               {mappedCount} of {preview.headers.length} columns mapped. Unmapped columns are ignored.
             </p>
           </div>
@@ -147,7 +147,7 @@ export default function ImportAdmin(): JSX.Element {
               <div key={header} className="flex items-center gap-3 px-4 py-2">
                 <div className="w-52 shrink-0">
                   <p className="truncate text-sm font-medium">{header}</p>
-                  <p className="truncate text-2xs text-slate-400">
+                  <p className="truncate text-2xs text-muted">
                     e.g. {preview.sample[0]?.[header] || '(empty)'}
                   </p>
                 </div>
@@ -198,17 +198,17 @@ export default function ImportAdmin(): JSX.Element {
                         {job.status}
                       </Badge>
                       {job.status === 'running' && (
-                        <span className="ml-1.5 text-2xs text-slate-500 tnum">
+                        <span className="ml-1.5 text-2xs text-muted tnum">
                           {job.processed_rows}/{job.total_rows}
                         </span>
                       )}
                     </td>
-                    <td className="table-cell tnum text-emerald-600">{job.created_rows}</td>
+                    <td className="table-cell tnum text-positive">{job.created_rows}</td>
                     <td className="table-cell tnum text-slate-500">{job.skipped_rows}</td>
                     <td className="table-cell tnum">
-                      {job.failed_rows > 0 ? <span className="text-red-500">{job.failed_rows}</span> : '—'}
+                      {job.failed_rows > 0 ? <span className="text-negative">{job.failed_rows}</span> : '—'}
                     </td>
-                    <td className="table-cell text-2xs text-slate-500">{relativeTime(job.created_at)}</td>
+                    <td className="table-cell text-2xs text-muted">{relativeTime(job.created_at)}</td>
                   </tr>
                 ))}
             </tbody>

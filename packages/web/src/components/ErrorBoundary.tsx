@@ -57,13 +57,13 @@ export class ErrorBoundary extends Component<Props, State> {
         </div>
         <div className="max-w-md">
           <h2 className="text-lg font-semibold">Something went wrong on this screen</h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-muted">
             The rest of the app is still fine — you can go back, or reload to try again.
             Nothing you had already saved is affected.
           </p>
           {/* The message is useful when reporting a bug and harmless to show:
               it is a client-side exception, not server data. */}
-          <p className="mt-3 break-words rounded-lg bg-slate-100 px-3 py-2 text-left font-mono text-2xs text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+          <p className="mt-3 break-words rounded-lg bg-slate-100 px-3 py-2 text-left font-mono text-2xs dark:bg-slate-800 text-muted">
             {error.message}
           </p>
         </div>

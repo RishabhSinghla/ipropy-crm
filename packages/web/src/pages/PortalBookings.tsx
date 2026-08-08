@@ -30,7 +30,7 @@ export default function PortalBookings(): JSX.Element {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <h2 className="text-2xl font-semibold">My Bookings</h2>
-            <p className="text-sm text-slate-500">Confirmed bookings attributed to your portal account</p>
+            <p className="text-sm text-muted">Confirmed bookings attributed to your portal account</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
@@ -85,7 +85,7 @@ export default function PortalBookings(): JSX.Element {
                         <td className="table-cell">
                           <div className="font-medium">{String(r.values?.contact_id ?? '—')}</div>
                         </td>
-                        <td className="table-cell text-slate-600 dark:text-slate-400">
+                        <td className="table-cell text-muted">
                           {String(r.values?.project_id ?? '—')} / {String(r.values?.property_id ?? '—')}
                         </td>
                         <td className="table-cell tnum font-medium">{r.values?.agreement_value ? formatIndianPrice(Number(r.values.agreement_value)) : '—'}</td>
@@ -98,7 +98,7 @@ export default function PortalBookings(): JSX.Element {
                             {String(r.values?.status ?? '—')}
                           </Badge>
                         </td>
-                        <td className="table-cell text-2xs text-slate-500">{r.values?.booking_date ? formatDate(String(r.values.booking_date)) : '—'}</td>
+                        <td className="table-cell text-2xs text-muted">{r.values?.booking_date ? formatDate(String(r.values.booking_date)) : '—'}</td>
                         <td className="table-cell"></td>
                       </tr>
                     ))}
@@ -108,12 +108,12 @@ export default function PortalBookings(): JSX.Element {
 
               {totalPages > 1 && (
                 <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900 sm:px-6">
-                  <p className="text-xs text-slate-500 tnum">
+                  <p className="text-xs text-muted tnum">
                     {((page - 1) * pageSize + 1).toLocaleString('en-IN')}–{Math.min(page * pageSize, total).toLocaleString('en-IN')} of {total.toLocaleString('en-IN')}
                   </p>
                   <div className="flex items-center gap-1">
                     <button className="btn-ghost p-1.5 disabled:opacity-30" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}><ChevronLeft className="h-4 w-4" /></button>
-                    <span className="px-2 text-xs text-slate-600 tnum dark:text-slate-400">{page} / {totalPages}</span>
+                    <span className="px-2 text-xs tnum text-muted">{page} / {totalPages}</span>
                     <button className="btn-ghost p-1.5 disabled:opacity-30" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}><ChevronRight className="h-4 w-4" /></button>
                   </div>
                 </div>

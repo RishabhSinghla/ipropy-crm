@@ -15,6 +15,12 @@ export default {
           muted: 'var(--surface-muted)',
           raised: 'var(--surface-raised)',
         },
+        // Semantic text tokens — see the contrast note in styles.css. Use these
+        // for secondary copy and up/down deltas instead of picking a slate or
+        // emerald step by eye; the raw steps are not AA at the sizes used here.
+        muted: 'var(--text-muted)',
+        positive: 'var(--text-positive)',
+        negative: 'var(--text-negative)',
       },
       fontFamily: {
         sans: ['Inter var', 'Inter', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],

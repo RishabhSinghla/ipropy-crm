@@ -69,7 +69,7 @@ export default function PicklistManager(): JSX.Element {
     <div className="p-4 sm:p-6">
       <div className="mb-4">
         <h1 className="text-lg font-semibold tracking-tight">Dropdowns</h1>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-muted">
           Every dropdown in the CRM. Changing an option updates it everywhere the option set is used.
         </p>
       </div>
@@ -99,7 +99,7 @@ export default function PicklistManager(): JSX.Element {
                 )}
               >
                 <span className="truncate">{name.replace(/_/g, ' ')}</span>
-                <span className="shrink-0 text-2xs text-slate-400 tnum">{picklists?.[name]?.length ?? 0}</span>
+                <span className="shrink-0 text-2xs text-muted tnum">{picklists?.[name]?.length ?? 0}</span>
               </button>
             ))}
           </div>
@@ -109,7 +109,7 @@ export default function PicklistManager(): JSX.Element {
           <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
             <ListTree className="h-4 w-4 text-slate-400" />
             <p className="text-sm font-medium capitalize">{selected.replace(/_/g, ' ')}</p>
-            <span className="text-2xs text-slate-400 tnum">{options.length} options</span>
+            <span className="text-2xs text-muted tnum">{options.length} options</span>
             <div className="ml-auto flex gap-2">
               <button
                 onClick={() => {
@@ -186,10 +186,10 @@ export default function PicklistManager(): JSX.Element {
           </div>
 
           {options.length === 0 && (
-            <p className="py-10 text-center text-sm text-slate-400">No options yet</p>
+            <p className="py-10 text-center text-sm text-muted">No options yet</p>
           )}
 
-          <p className="border-t border-slate-100 px-4 py-2 text-2xs text-slate-400 dark:border-slate-800">
+          <p className="border-t border-slate-100 px-4 py-2 text-2xs text-muted dark:border-slate-800">
             Removing an option deactivates it rather than deleting it, so existing records keep their value.
           </p>
         </div>

@@ -11,6 +11,7 @@ import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { saveListNav } from '../lib/listNav';
+import { badgeVars } from '../lib/color';
 import { cn, restrictionForField } from '../lib/utils';
 import { FieldValue } from '../components/FieldRenderer';
 import { EditableField, isInlineEditable } from '../components/EditableField';
@@ -169,14 +170,14 @@ export default function ListView(): JSX.Element {
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2.5">
             <span
-              className="flex h-9 w-9 items-center justify-center rounded-lg"
-              style={{ backgroundColor: `${meta.color}18`, color: meta.color }}
+              className="badge-tinted flex h-9 w-9 items-center justify-center rounded-lg"
+              style={badgeVars(meta.color)}
             >
               <ModuleIcon name={meta.icon} className="h-4.5 w-4.5" />
             </span>
             <div>
               <h1 className="text-lg font-semibold leading-tight tracking-tight">{meta.label}</h1>
-              <p className="text-xs text-slate-500 tnum dark:text-slate-400">
+              <p className="text-xs text-muted tnum">
                 {isFetching && !data ? 'Loading…' : `${(data?.total ?? 0).toLocaleString('en-IN')} records`}
               </p>
             </div>
@@ -426,7 +427,7 @@ export default function ListView(): JSX.Element {
                   {visibleColumns.map((col, ci) => {
                     const field = fieldMap.get(col);
                     if (!field) {
-                      return <td key={col} className="table-cell text-slate-400">—</td>;
+                      return <td key={col} className="table-cell text-muted">—</td>;
                     }
                     return (
                       <td key={col} className={cn('table-cell', ci === 0 && 'font-medium text-slate-900 dark:text-slate-100')}>
@@ -465,7 +466,7 @@ export default function ListView(): JSX.Element {
       {/* Pagination */}
       {displayMode === 'table' && (data?.totalPages ?? 1) > 1 && (
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900 sm:px-6">
-          <p className="text-xs text-slate-500 tnum dark:text-slate-400">
+          <p className="text-xs text-muted tnum">
             {((data!.page - 1) * data!.pageSize + 1).toLocaleString('en-IN')}–
             {Math.min(data!.page * data!.pageSize, data!.total).toLocaleString('en-IN')} of {data!.total.toLocaleString('en-IN')}
           </p>
@@ -478,7 +479,7 @@ export default function ListView(): JSX.Element {
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <span className="px-2 text-xs text-slate-600 tnum dark:text-slate-400">
+            <span className="px-2 text-xs tnum text-muted">
               {data!.page} / {data!.totalPages}
             </span>
             <button
@@ -635,7 +636,7 @@ function MobileRecordCard({
         <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
           <p className="truncate font-medium text-slate-900 dark:text-slate-100">{row.label}</p>
           {row.recordNumber && (
-            <p className="mt-0.5 font-mono text-2xs text-slate-400">{row.recordNumber}</p>
+            <p className="mt-0.5 font-mono text-2xs text-muted">{row.recordNumber}</p>
           )}
         </button>
         <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-300" />
@@ -741,7 +742,7 @@ function KanbanBoard({
             </div>
 
             {amountField && (col.sum ?? 0) > 0 && (
-              <div className="border-b border-slate-200 px-3 py-1.5 text-2xs font-medium text-slate-500 tnum dark:border-slate-800">
+              <div className="border-b border-slate-200 px-3 py-1.5 text-2xs font-medium text-muted tnum dark:border-slate-800">
                 {formatIndianPrice(col.sum!)}
               </div>
             )}
@@ -767,7 +768,7 @@ function KanbanBoard({
                   )}
                   <div className="mt-2 flex items-center justify-between gap-2">
                     {ownerField && (
-                      <span className="truncate text-2xs text-slate-500" onClick={(e) => e.stopPropagation()}>
+                      <span className="truncate text-2xs text-muted" onClick={(e) => e.stopPropagation()}>
                         {module.permissions.edit && isInlineEditable(ownerField) ? (
                           <EditableField
                             module={module.name}
@@ -792,7 +793,7 @@ function KanbanBoard({
                 </div>
               ))}
               {items.length === 0 && (
-                <p className="py-6 text-center text-2xs text-slate-400">Drop here</p>
+                <p className="py-6 text-center text-2xs text-muted">Drop here</p>
               )}
             </div>
           </div>

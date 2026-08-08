@@ -72,7 +72,7 @@ export function FieldValue({
 
     case 'boolean':
       return value
-        ? <Check className="h-4 w-4 text-emerald-600" />
+        ? <Check className="h-4 w-4 text-positive" />
         : <span className="text-slate-300 dark:text-slate-700">—</span>;
 
     case 'date':
@@ -124,7 +124,7 @@ export function FieldValue({
             return <Badge key={String(v)} color={option?.color}>{option?.label ?? String(v)}</Badge>;
           })}
           {compact && list.length > 2 && (
-            <span className="text-2xs text-slate-400">+{list.length - 2}</span>
+            <span className="text-2xs text-muted">+{list.length - 2}</span>
           )}
         </span>
       );
@@ -154,7 +154,7 @@ export function FieldValue({
             <span className="truncate">{display}</span>
           </span>
         )
-        : <span className="text-slate-400">Unassigned</span>;
+        : <span className="text-muted">Unassigned</span>;
 
     case 'address': {
       const a = value as Record<string, unknown>;
@@ -170,7 +170,7 @@ export function FieldValue({
     case 'textarea':
     case 'richtext':
       return compact
-        ? <span className="text-slate-600 dark:text-slate-400">{truncate(String(value), 60)}</span>
+        ? <span className="text-muted">{truncate(String(value), 60)}</span>
         : <span className="whitespace-pre-wrap text-slate-700 dark:text-slate-300">{String(value)}</span>;
 
     case 'image': {
@@ -191,10 +191,10 @@ export function FieldValue({
     }
 
     case 'json':
-      return <code className="text-2xs text-slate-500">{truncate(JSON.stringify(value), compact ? 30 : 120)}</code>;
+      return <code className="text-2xs text-muted">{truncate(JSON.stringify(value), compact ? 30 : 120)}</code>;
 
     case 'autonumber':
-      return <span className="font-mono text-xs text-slate-500 dark:text-slate-400">{String(value)}</span>;
+      return <span className="font-mono text-xs text-muted">{String(value)}</span>;
 
     // Computed fields carry no uitype of their own, so they fell through to
     // the default below and rendered as a bare String() — which is why an
@@ -318,7 +318,7 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
             onChange={(e) => onChange(e.target.checked)}
             disabled={readOnly}
           />
-          <span className="text-sm text-slate-600 dark:text-slate-400">{field.helpText ?? 'Yes'}</span>
+          <span className="text-sm text-muted">{field.helpText ?? 'Yes'}</span>
         </label>
       );
 
@@ -503,7 +503,7 @@ function CurrencyInput({
 
   return (
     <div className="relative">
-      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">₹</span>
+      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted">₹</span>
       <input
         id={id}
         className={cn(className, 'pl-7 tnum')}
@@ -515,7 +515,7 @@ function CurrencyInput({
         placeholder="e.g. 1.5 Cr or 12500000"
       />
       {focused && text && parse(text) !== null && (
-        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-2xs text-slate-400">
+        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-2xs text-muted">
           {formatIndianPrice(parse(text)!)}
         </span>
       )}
@@ -691,7 +691,7 @@ export function MultiSelect({
         className={cn('input flex min-h-[2.375rem] flex-wrap items-center gap-1 py-1.5', disabled && 'bg-slate-50 dark:bg-slate-800')}
         onClick={() => !disabled && setOpen(true)}
       >
-        {value.length === 0 && <span className="text-slate-400">— Select —</span>}
+        {value.length === 0 && <span className="text-muted">— Select —</span>}
         {value.map((v) => {
           const o = options.find((x) => x.value === v);
           return (
@@ -738,7 +738,7 @@ export function MultiSelect({
               {o.label}
             </button>
           ))}
-          {filtered.length === 0 && <p className="px-3 py-4 text-center text-xs text-slate-400">No matches</p>}
+          {filtered.length === 0 && <p className="px-3 py-4 text-center text-xs text-muted">No matches</p>}
         </div>
       )}
     </div>
@@ -763,7 +763,7 @@ export function TagInput({
       ))}
       {!disabled && (
         <input
-          className="min-w-[6rem] flex-1 border-0 bg-transparent p-0 text-sm outline-none placeholder:text-slate-400"
+          className="min-w-[6rem] flex-1 border-0 bg-transparent p-0 text-sm outline-none placeholder:text-muted"
           placeholder={value.length ? '' : 'Add tags…'}
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -864,7 +864,7 @@ export function ReferencePicker({
         onClick={() => !disabled && setOpen((v) => !v)}
       >
         <Search className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-        <span className={cn('flex-1 truncate', !selectedLabel && 'text-slate-400')}>
+        <span className={cn('flex-1 truncate', !selectedLabel && 'text-muted')}>
           {selectedLabel || placeholder || '— Select —'}
         </span>
         {value && !disabled && (
@@ -909,7 +909,7 @@ export function ReferencePicker({
           <div className="max-h-56 overflow-y-auto">
             {loading && <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin text-slate-400" /></div>}
             {!loading && results.length === 0 && (
-              <p className="px-3 py-4 text-center text-xs text-slate-400">No records found</p>
+              <p className="px-3 py-4 text-center text-xs text-muted">No records found</p>
             )}
             {results.map((r) => (
               <button
@@ -919,7 +919,7 @@ export function ReferencePicker({
                 className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800"
               >
                 <span className="truncate">{r.label}</span>
-                {r.recordNumber && <span className="shrink-0 font-mono text-2xs text-slate-400">{r.recordNumber}</span>}
+                {r.recordNumber && <span className="shrink-0 font-mono text-2xs text-muted">{r.recordNumber}</span>}
               </button>
             ))}
           </div>

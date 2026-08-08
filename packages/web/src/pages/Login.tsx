@@ -92,7 +92,7 @@ export default function Login(): JSX.Element {
           </div>
 
           <h2 className="text-2xl font-semibold tracking-tight">Welcome back</h2>
-          <p className="mt-1 text-sm text-slate-500">Sign in to your workspace.</p>
+          <p className="mt-1 text-sm text-muted">Sign in to your workspace.</p>
 
           <form onSubmit={submit} className="mt-8 space-y-4">
             <div>

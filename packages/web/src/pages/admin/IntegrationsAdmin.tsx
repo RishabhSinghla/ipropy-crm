@@ -194,7 +194,7 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
         <p className="text-sm font-medium">{summary.label}</p>
         <Badge color={summary.isActive ? '#22c55e' : '#94a3b8'}>{summary.isActive ? 'Active' : 'Inactive'}</Badge>
         {summary.lastSyncAt && (
-          <span className="text-2xs text-slate-400">verified {relativeTime(summary.lastSyncAt)}</span>
+          <span className="text-2xs text-muted">verified {relativeTime(summary.lastSyncAt)}</span>
         )}
         <Toggle checked={summary.isActive} onChange={(next) => void toggleActive(next)} className="ml-auto" />
       </div>
@@ -289,7 +289,7 @@ export default function IntegrationsAdmin(): JSX.Element {
     <div className="p-4 sm:p-6">
       <div className="mb-4">
         <h1 className="text-lg font-semibold tracking-tight">Integrations</h1>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-muted">
           Configure every provider from here — nothing needs editing in <code>.env</code> or a redeploy.
         </p>
       </div>
@@ -316,7 +316,7 @@ export default function IntegrationsAdmin(): JSX.Element {
               if (!list.length) return null;
               return (
                 <div key={kind}>
-                  <p className="mb-2 text-2xs font-semibold uppercase tracking-wide text-slate-500">
+                  <p className="mb-2 text-2xs font-semibold uppercase tracking-wide text-muted">
                     {KIND_LABELS[kind] ?? kind.replace(/_/g, ' ')}
                   </p>
                   <div className="space-y-3">
@@ -326,7 +326,7 @@ export default function IntegrationsAdmin(): JSX.Element {
               );
             })}
 
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs dark:border-slate-800 dark:bg-slate-900 text-muted">
               <p className="mb-1.5 font-medium text-slate-700 dark:text-slate-300">How this works</p>
               <p>
                 Every integration degrades gracefully — without credentials, messages and calls are still
@@ -354,15 +354,15 @@ export default function IntegrationsAdmin(): JSX.Element {
                       onClick={() => copy(url)}
                       className="btn-ghost btn-sm ml-auto shrink-0"
                     >
-                      {copied === url ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
+                      {copied === url ? <Check className="h-3 w-3 text-positive" /> : <Copy className="h-3 w-3" />}
                       {copied === url ? 'Copied' : 'Copy'}
                     </button>
                   </div>
-                  <code className="mt-1 block break-all rounded bg-slate-50 px-2 py-1 font-mono text-2xs text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                  <code className="mt-1 block break-all rounded bg-slate-50 px-2 py-1 font-mono text-2xs dark:bg-slate-800 text-muted">
                     {url}
                   </code>
                   {endpoint.note && (
-                    <p className="mt-1 text-2xs text-slate-500">{endpoint.note}</p>
+                    <p className="mt-1 text-2xs text-muted">{endpoint.note}</p>
                   )}
                 </li>
               );
@@ -389,7 +389,7 @@ export default function IntegrationsAdmin(): JSX.Element {
                       <Badge color={form.is_active ? '#22c55e' : '#94a3b8'}>
                         {form.is_active ? 'Active' : 'Inactive'}
                       </Badge>
-                      <span className="ml-auto text-2xs text-slate-400 tnum">
+                      <span className="ml-auto text-2xs text-muted tnum">
                         {form.submission_count} submissions
                       </span>
                     </div>
@@ -407,7 +407,7 @@ export default function IntegrationsAdmin(): JSX.Element {
         <div className="card overflow-hidden">
           <div className="border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
             <p className="text-sm font-medium">Raw inbound leads</p>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted">
               Every payload is stored before processing, so a mapping problem never loses a lead.
             </p>
           </div>
@@ -432,8 +432,8 @@ export default function IntegrationsAdmin(): JSX.Element {
                           {row.status}
                         </Badge>
                       </td>
-                      <td className="table-cell text-2xs text-slate-500">{relativeTime(row.received_at)}</td>
-                      <td className="table-cell max-w-xs truncate text-2xs text-red-500">{row.error ?? '—'}</td>
+                      <td className="table-cell text-2xs text-muted">{relativeTime(row.received_at)}</td>
+                      <td className="table-cell max-w-xs truncate text-2xs text-negative">{row.error ?? '—'}</td>
                     </tr>
                   ))}
               </tbody>

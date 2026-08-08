@@ -34,7 +34,7 @@ export default function SystemAdmin(): JSX.Element {
     <div className="p-4 sm:p-6">
       <div className="mb-4">
         <h1 className="text-lg font-semibold tracking-tight">System & Audit</h1>
-        <p className="text-sm text-slate-500">Health, data volumes and the org-wide change log.</p>
+        <p className="text-sm text-muted">Health, data volumes and the org-wide change log.</p>
       </div>
 
       <Tabs
@@ -61,9 +61,9 @@ export default function SystemAdmin(): JSX.Element {
                 { label: 'Uptime', value: `${Math.round(Number(health?.uptimeSeconds ?? 0) / 60)}m` },
               ].map((card) => (
                 <div key={card.label} className="card p-4">
-                  <p className="text-2xs uppercase tracking-wide text-slate-400">{card.label}</p>
+                  <p className="text-2xs uppercase tracking-wide text-muted">{card.label}</p>
                   <p className="mt-1 text-2xl font-semibold tnum">{String(card.value ?? 0)}</p>
-                  {card.hint && <p className="text-2xs text-slate-500">{card.hint}</p>}
+                  {card.hint && <p className="text-2xs text-muted">{card.hint}</p>}
                 </div>
               ))}
             </div>
@@ -90,7 +90,7 @@ export default function SystemAdmin(): JSX.Element {
                 </div>
                 <ul className="divide-y divide-slate-100 dark:divide-slate-800">
                   {Object.entries(queue).length === 0 && (
-                    <li className="px-4 py-6 text-center text-xs text-slate-400">Queue is empty</li>
+                    <li className="px-4 py-6 text-center text-xs text-muted">Queue is empty</li>
                   )}
                   {Object.entries(queue).map(([status, count]) => (
                     <li key={status} className="flex items-center justify-between px-4 py-2">
@@ -140,7 +140,7 @@ export default function SystemAdmin(): JSX.Element {
                         {entry.action}
                       </Badge>
                       <span className="text-sm font-medium">{entry.record_label ?? entry.module_name}</span>
-                      <span className="text-2xs text-slate-500">
+                      <span className="text-2xs text-muted">
                         by {entry.user_name ?? 'System'} · {relativeTime(entry.created_at)}
                         {entry.source !== 'app' && ` · via ${entry.source}`}
                       </span>
@@ -148,13 +148,13 @@ export default function SystemAdmin(): JSX.Element {
                     {entry.changes?.length > 0 && entry.action === 'update' && (
                       <ul className="mt-1 space-y-0.5">
                         {entry.changes.slice(0, 4).map((c, i) => (
-                          <li key={i} className="text-2xs text-slate-500">
+                          <li key={i} className="text-2xs text-muted">
                             <span className="font-medium">{c.label}</span>:{' '}
                             <span className="line-through opacity-60">{fmt(c.from)}</span> → {fmt(c.to)}
                           </li>
                         ))}
                         {entry.changes.length > 4 && (
-                          <li className="text-2xs text-slate-400">…and {entry.changes.length - 4} more</li>
+                          <li className="text-2xs text-muted">…and {entry.changes.length - 4} more</li>
                         )}
                       </ul>
                     )}
@@ -196,7 +196,7 @@ export default function SystemAdmin(): JSX.Element {
                         <td className="table-cell tnum text-slate-500">{row.output_tokens?.toLocaleString('en-IN')}</td>
                         <td className="table-cell tnum text-slate-500">{row.avg_latency_ms}ms</td>
                         <td className="table-cell tnum">
-                          {row.failures > 0 ? <span className="text-red-500">{row.failures}</span> : '—'}
+                          {row.failures > 0 ? <span className="text-negative">{row.failures}</span> : '—'}
                         </td>
                       </tr>
                     ))}

@@ -21,7 +21,7 @@ export default function RolesProfiles(): JSX.Element {
     <div className="p-4 sm:p-6">
       <div className="mb-4">
         <h1 className="text-lg font-semibold tracking-tight">Roles & Profiles</h1>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-muted">
           Roles form the reporting hierarchy and decide <em>whose records</em> a user can see.
           Profiles decide <em>what they can do</em>.
         </p>
@@ -65,7 +65,7 @@ function RolesTab(): JSX.Element {
             {tree.map((role) => <RoleRow key={role.id} role={role} />)}
           </div>
         )}
-        <p className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-500 dark:border-slate-800">
+        <p className="mt-4 border-t border-slate-100 pt-3 text-xs text-muted dark:border-slate-800">
           A user sees records owned by themselves and by everyone below them in this tree.
         </p>
       </div>
@@ -95,7 +95,7 @@ function RoleRow({ role }: { role: RoleNode }): JSX.Element {
         <Shield className="h-3.5 w-3.5 shrink-0 text-slate-400" />
         <span className="text-sm font-medium">{role.name}</span>
         {role.user_count > 0 && (
-          <span className="rounded-full bg-slate-100 px-1.5 text-2xs text-slate-500 tnum dark:bg-slate-800">
+          <span className="rounded-full bg-slate-100 px-1.5 text-2xs text-muted tnum dark:bg-slate-800">
             {role.user_count} user{role.user_count === 1 ? '' : 's'}
           </span>
         )}
@@ -246,7 +246,7 @@ function ProfilesTab(): JSX.Element {
     <div className="grid gap-4 lg:grid-cols-[15rem_minmax(0,1fr)]">
       <div className="card h-fit overflow-hidden">
         <div className="border-b border-slate-100 px-3 py-2 dark:border-slate-800">
-          <p className="text-xs font-medium text-slate-500">Profiles</p>
+          <p className="text-xs font-medium text-muted">Profiles</p>
         </div>
         <div className="p-1.5">
           {isLoading ? (
@@ -266,7 +266,7 @@ function ProfilesTab(): JSX.Element {
                 <span className={cn('truncate text-sm', activeId === p.id && 'font-medium text-brand-700 dark:text-brand-300')}>
                   {p.name}
                 </span>
-                <span className="shrink-0 text-2xs text-slate-400 tnum">{p.user_count}</span>
+                <span className="shrink-0 text-2xs text-muted tnum">{p.user_count}</span>
               </div>
             </button>
           ))}
@@ -322,7 +322,7 @@ function ProfilesTab(): JSX.Element {
         <div className="card overflow-hidden">
           <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
             <p className="text-sm font-medium">Field permissions</p>
-            <span className="text-2xs text-slate-400">
+            <span className="text-2xs text-muted">
               — controls what this profile sees and can edit, field by field
             </span>
             <div className="ml-auto w-56">
@@ -348,7 +348,7 @@ function ProfilesTab(): JSX.Element {
                   <div key={f.name} className="flex items-center gap-3 px-4 py-2">
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm">{f.label}</p>
-                      <p className="font-mono text-2xs text-slate-400">{f.name}</p>
+                      <p className="font-mono text-2xs text-muted">{f.name}</p>
                     </div>
                     <div className="flex shrink-0 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
                       {([
@@ -376,7 +376,7 @@ function ProfilesTab(): JSX.Element {
                 );
               })}
               {fieldModuleMeta.fields.filter((f) => f.isActive).length === 0 && (
-                <p className="px-4 py-6 text-center text-xs text-slate-400">No fields on this module.</p>
+                <p className="px-4 py-6 text-center text-xs text-muted">No fields on this module.</p>
               )}
             </div>
           )}

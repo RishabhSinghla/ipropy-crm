@@ -63,7 +63,7 @@ export default function ReportsPage(): JSX.Element {
     <div className="p-4 sm:p-6">
       <div className="mb-4">
         <h1 className="text-lg font-semibold tracking-tight">Reports</h1>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-muted">
           Build a summary or tabular report over any module, then export it.
         </p>
       </div>

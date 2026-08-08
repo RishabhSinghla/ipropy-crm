@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, Check, ChevronDown, Info, Loader2, X } from 'lucide-react';
+import { badgeVars } from '../lib/color';
 import { cn } from '../lib/utils';
 import { useToasts } from '../lib/store';
 
@@ -24,7 +25,7 @@ export function EmptyState({
       {icon && <div className="text-slate-300 dark:text-slate-700">{icon}</div>}
       <div>
         <p className="text-sm font-medium text-slate-700 dark:text-slate-300">{title}</p>
-        {body && <p className="mt-1 max-w-sm text-sm text-slate-500 dark:text-slate-500">{body}</p>}
+        {body && <p className="mt-1 max-w-sm text-sm text-muted">{body}</p>}
       </div>
       {action}
     </div>
@@ -36,8 +37,10 @@ export function Badge({
 }: { children: ReactNode; color?: string | null; className?: string }): JSX.Element {
   return (
     <span
-      className={cn('badge border', className, !color && 'border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300')}
-      style={color ? { backgroundColor: `${color}18`, color, borderColor: `${color}35` } : undefined}
+      className={cn('badge border', className, color
+        ? 'badge-tinted'
+        : 'border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300')}
+      style={badgeVars(color)}
     >
       {children}
     </span>
@@ -196,7 +199,7 @@ export function ConfirmDialog({
         </>
       }
     >
-      <p className="text-sm text-slate-600 dark:text-slate-400">{body}</p>
+      <p className="text-sm text-muted">{body}</p>
     </Modal>
   );
 }
@@ -292,7 +295,7 @@ export function Tabs({
           {tab.icon}
           {tab.label}
           {tab.count !== undefined && tab.count > 0 && (
-            <span className="rounded-full bg-slate-100 px-1.5 text-2xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+            <span className="rounded-full bg-slate-100 px-1.5 text-2xs font-semibold dark:bg-slate-800 text-muted">
               {tab.count}
             </span>
           )}
@@ -356,13 +359,13 @@ export function ToastHost(): JSX.Element {
           )}
         >
           <div className="mt-0.5 shrink-0">
-            {t.kind === 'success' && <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />}
+            {t.kind === 'success' && <Check className="h-4 w-4 text-positive dark:text-emerald-400" />}
             {t.kind === 'error' && <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400" />}
             {t.kind === 'info' && <Info className="h-4 w-4 text-slate-500" />}
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{t.title}</p>
-            {t.body && <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-400">{t.body}</p>}
+            {t.body && <p className="mt-0.5 text-xs text-muted">{t.body}</p>}
           </div>
           <button onClick={() => dismiss(t.id)} className="shrink-0 text-slate-400 hover:text-slate-600">
             <X className="h-3.5 w-3.5" />
@@ -432,8 +435,8 @@ export function ScoreChip({ score, invert }: { score: number | null | undefined;
   const color = effective >= 75 ? '#22c55e' : effective >= 50 ? '#f59e0b' : effective >= 25 ? '#f97316' : '#ef4444';
   return (
     <span
-      className="inline-flex h-6 min-w-[2.25rem] items-center justify-center rounded-md px-1.5 text-xs font-semibold tnum"
-      style={{ backgroundColor: `${color}1a`, color }}
+      className="badge-tinted inline-flex h-6 min-w-[2.25rem] items-center justify-center rounded-md px-1.5 text-xs font-semibold tnum"
+      style={badgeVars(color)}
       title={invert ? `Risk score ${score}` : `Score ${score}/100`}
     >
       {score}
