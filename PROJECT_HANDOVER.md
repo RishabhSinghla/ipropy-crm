@@ -926,3 +926,55 @@ Teams/People-grouped list), currency inline-text including the race-condition fi
 inline-text, boolean toggle, and reference popover with auto-open search (Interested Project on a
 Lead, confirmed both the write and the resolved display label) — the last three specifically on
 `RecordDetail`'s `OverviewTab`, the surface that was pure read-only before this round.
+
+---
+
+## 17. Session of 2026-08-08 — AI providers, dashboards, alerts, viewer, brand
+
+Branch `feat/dashboard-ai-alerts`, three commits, all verified against the running stack
+(typecheck clean, 149 unit tests green).
+
+### What shipped
+
+| # | Ask | State |
+|---|-----|-------|
+| 4 | Rename module to "Leads & Contacts" | Done — migration `011`; module *name* stays `leads` (URL, API path, relation target) |
+| 2 | AI without an Anthropic key | Done — Gemini/Groq/OpenRouter/OpenAI-compatible/Ollama via one adapter; migration `012` |
+| 1 | Full dashboard customisation | Done — CRUD UI + widget builder + 6 previously-unrenderable widget types |
+| 5 | Mobile UI/UX | Done for `RecordDetail` and `Dashboard`; **not yet audited**: Reports, Inbox, Calls, InventoryBoard, admin pages |
+| 3 | New-lead highlighting + notifications | Done — `ipy_module_seen` watermark + Web Push; migration `013` |
+| 6 | Social links | Done — `social.links` setting, sidebar bar, Admin → Brand & Social; migration `014` |
+| 16 | "Builder Floor = iPropy" | Done — `brand.tagline` setting on sign-in + sidebar |
+| 9 | Universal document viewer | Done — `components/DocumentViewer.tsx` |
+
+### Still open, and why
+
+**Unblocked, just not started:** #11 blog, #8 creative editor, #14 daily SEO/AEO/GEO.
+
+**Blocked on something code cannot supply — say so plainly rather than half-building:**
+
+* **#7/#10/#12/#13 (WhatsApp, AiSensy/ManyChat replica).** Sending on WhatsApp at all requires a
+  Meta-approved business and a dedicated phone number. There is no legal API that mirrors a
+  personal WhatsApp inbox; the libraries claiming to do it get numbers permanently banned. The
+  Cloud API scaffolding in `integrations/whatsapp/` is ready for credentials.
+* **#15 (99acres/MagicBricks/Housing syndication).** No open API for *posting* listings — these are
+  commercial contracts per portal. Inbound lead webhooks for all four already exist and work.
+* **#17 (call recording).** Android has blocked third-party call recording since Android 10. The
+  route that works is server-side recording via cloud telephony (Exotel/Knowlarity, already
+  scaffolded in `integrations/telephony/`). Per-state consent rules apply.
+
+### Verification notes for whoever picks this up
+
+* Push was proven without a real device: VAPID keypair generation + persistence + stability, then
+  `webpush.generateRequestDetails` confirming a signed VAPID `Authorization` header, `aes128gcm`
+  encoding, and that the payload is genuinely encrypted (the lead's name is absent from the wire
+  bytes). Subscribe → test → notification row was exercised over HTTP.
+* The multi-provider AI adapter was proven end-to-end against a local mock OpenAI-compatible
+  server, plus the no-provider degradation path under `env -u ANTHROPIC_API_KEY`.
+* The dashboard widget builder was driven through the real UI (leaderboard grouped by lead source),
+  and the resulting widget's persisted config and data response were read back from the API.
+
+### Test data left behind
+
+One lead, **LD-00174 "Rohit Verma"**, created to demonstrate the new-lead highlight. Delete it
+whenever. Everything else created during the session was cleaned up.

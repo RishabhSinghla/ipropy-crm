@@ -154,3 +154,52 @@ packages/web/src/components/FieldRenderer.tsx      metadata → UI
 * Speech-to-text, email IMAP inbound, rollup fields and the Channel Partner portal shipped as
   graceful-degradation features — they need real credentials/keys to be exercised end-to-end.
 * Dashboard drag-to-resize is wired (react-grid-layout on desktop, persisted via `saveDashboardLayout`).
+* **No LLM provider is configured.** Every AI feature runs on its fallback rule engine until a key
+  is added in Admin → Integrations. Gemini/Groq/OpenRouter have free tiers; see §"AI providers".
+* **Social links in `social.links` were found by web search, not supplied by the business.** Two
+  iPropy Instagram accounts exist. Treat them as unverified until someone confirms each one.
+* Browser push works but **nobody has subscribed a device yet** — Settings → Alerts, per device.
+
+---
+
+## AI providers
+
+`ai/client.ts` has two transports: the Anthropic SDK, and one `fetch` adapter speaking the OpenAI
+chat-completions shape that covers **Gemini, Groq, OpenRouter, any OpenAI-compatible endpoint and a
+local Ollama**. Resolution lives in `core/settings/integrations.ts` (`resolveAi`): an explicitly
+activated provider wins, then `AI_PROVIDER`, then first-with-a-key in `AI_PROVIDER_ORDER`.
+
+Two traps worth knowing:
+
+* **Claude Code's own shell exports `ANTHROPIC_API_KEY`.** A server started from an agent session
+  can therefore look like it has AI configured when `npm run dev` in a normal terminal does not.
+  Use `env -u ANTHROPIC_API_KEY` when testing the no-provider path.
+* `getAiProviderSettings(provider)` exists so the admin panel's "Test connection" tests the card the
+  admin clicked, not whichever provider happens to have won resolution. Don't reach for
+  `getSettings().ai` there.
+
+---
+
+## Notifications
+
+**Never `INSERT INTO ipy_notification` directly.** Everything goes through `notify()` /
+`notifyMany()` in `core/notifications/index.ts`, which writes the row, pings the socket, *and*
+fans out a Web Push to that user's devices. There were nine hand-rolled copies of that INSERT
+before; the remaining ones (scheduler, telephony, lead capture, WhatsApp, AI actions, webhooks,
+comms, records) still need converting — do it as you touch them.
+
+VAPID keys are generated once and stored in `ipy_integration` under provider `web_push`. **Rotating
+them silently invalidates every subscription already issued**, which is why they are not
+per-process and not regenerated on boot.
+
+---
+
+## "New since you last looked"
+
+`core/entity/unseen.ts`. A record is new for a user when it was created after that user's
+`ipy_module_seen` watermark **and** they have never opened it (`ipy_recent_view`). Both halves
+matter: no watermark means first login lights up every historical record; no open-check means a
+lead you already worked stays bold forever.
+
+Deliberately *not* part of `listRecords` — that engine is shared with exports, reports, widgets and
+the portal, none of which have a reader for something to be unread for.
