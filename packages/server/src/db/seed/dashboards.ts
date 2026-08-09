@@ -52,22 +52,6 @@ export const DASHBOARDS: DashboardSeed[] = [
         },
       },
       {
-        type: 'metric', title: 'Bookings (This Month)', x: 6, y: 0, w: 3, h: 2,
-        config: {
-          module: 'bookings', aggregate: 'count', format: 'number', comparePrevious: true,
-          dateField: 'booking_date', color: '#6366f1', drilldown: true,
-          filter: { logic: 'AND', conditions: [{ field: 'booking_date', operator: 'this_month' }, { field: 'status', operator: 'not_equals', value: 'Cancelled' }] },
-        },
-      },
-      {
-        type: 'metric', title: 'Revenue Booked (MTD)', x: 9, y: 0, w: 3, h: 2,
-        config: {
-          module: 'bookings', aggregate: 'sum', aggregateField: 'agreement_value',
-          format: 'currency', comparePrevious: true, dateField: 'booking_date', color: '#22c55e',
-          filter: { logic: 'AND', conditions: [{ field: 'booking_date', operator: 'this_month' }, { field: 'status', operator: 'not_equals', value: 'Cancelled' }] },
-        },
-      },
-      {
         type: 'funnel', title: 'Conversion Funnel', x: 0, y: 2, w: 6, h: 5,
         config: {
           module: 'deals', groupBy: 'stage', aggregate: 'count',
@@ -93,14 +77,6 @@ export const DASHBOARDS: DashboardSeed[] = [
         config: {
           module: 'leads', groupBy: 'lead_source', aggregate: 'count', drilldown: true,
           filter: { logic: 'AND', conditions: [{ field: 'created_at', operator: 'last_n_days', value: 90 }] },
-        },
-      },
-      {
-        type: 'leaderboard', title: 'Top Performers (Bookings)', x: 0, y: 11, w: 6, h: 4,
-        config: {
-          module: 'bookings', groupBy: 'owner_id', aggregate: 'sum', aggregateField: 'agreement_value',
-          format: 'currency', limit: 8,
-          filter: { logic: 'AND', conditions: [{ field: 'booking_date', operator: 'this_quarter' }] },
         },
       },
       {
@@ -139,14 +115,6 @@ export const DASHBOARDS: DashboardSeed[] = [
         },
       },
       {
-        type: 'gauge', title: 'My Target Achievement', x: 9, y: 0, w: 3, h: 2,
-        config: {
-          module: 'bookings', aggregate: 'sum', aggregateField: 'agreement_value', format: 'currency',
-          target: 50000000, color: '#22c55e',
-          filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'is_me' }, { field: 'booking_date', operator: 'this_month' }] },
-        },
-      },
-      {
         type: 'tasks', title: 'Today\'s Tasks', x: 0, y: 2, w: 4, h: 6,
         config: {
           module: 'activities', limit: 15, sortBy: 'due_date', sortDir: 'asc',
@@ -166,7 +134,7 @@ export const DASHBOARDS: DashboardSeed[] = [
         type: 'list', title: 'Priority Leads to Call', x: 8, y: 2, w: 4, h: 6,
         config: {
           module: 'leads', limit: 10, sortBy: 'ai_score', sortDir: 'desc',
-          columns: ['first_name', 'mobile', 'ai_score', 'budget_max'],
+          columns: ['full_name', 'mobile', 'ai_score', 'budget_max'],
           filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'is_me' }, { field: 'is_converted', operator: 'is_false' }, { field: 'ai_score', operator: 'greater_or_equal', value: 60 }] },
         },
       },
@@ -291,60 +259,6 @@ export const DASHBOARDS: DashboardSeed[] = [
     ],
   },
 
-  {
-    name: 'Collections & Finance',
-    description: 'Receivables, overdue instalments and commission payouts.',
-    widgets: [
-      {
-        type: 'metric', title: 'Total Receivable', x: 0, y: 0, w: 3, h: 2,
-        config: {
-          module: 'payments', aggregate: 'sum', aggregateField: 'amount_due', format: 'currency', color: '#3b82f6',
-          filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'not_in', value: ['Paid', 'Waived'] }] },
-        },
-      },
-      {
-        type: 'metric', title: 'Overdue Amount', x: 3, y: 0, w: 3, h: 2,
-        config: {
-          module: 'payments', aggregate: 'sum', aggregateField: 'amount_due', format: 'currency', color: '#ef4444', drilldown: true,
-          filter: { logic: 'AND', conditions: [{ field: 'due_date', operator: 'older_than_n_days', value: 0 }, { field: 'status', operator: 'not_in', value: ['Paid', 'Waived'] }] },
-        },
-      },
-      {
-        type: 'metric', title: 'Collected (MTD)', x: 6, y: 0, w: 3, h: 2,
-        config: {
-          module: 'payments', aggregate: 'sum', aggregateField: 'amount_paid', format: 'currency', color: '#22c55e',
-          filter: { logic: 'AND', conditions: [{ field: 'paid_on', operator: 'this_month' }] },
-        },
-      },
-      {
-        type: 'metric', title: 'Commission Payable', x: 9, y: 0, w: 3, h: 2,
-        config: {
-          module: 'bookings', aggregate: 'sum', aggregateField: 'broker_commission', format: 'currency', color: '#a855f7',
-          filter: { logic: 'AND', conditions: [{ field: 'commission_status', operator: 'in', value: ['Due', 'Invoice Raised', 'Partially Paid'] }] },
-        },
-      },
-      {
-        type: 'bar', title: 'Ageing of Receivables', x: 0, y: 2, w: 6, h: 5,
-        config: { module: 'payments', groupBy: 'status', aggregate: 'sum', aggregateField: 'amount_due', format: 'currency' },
-      },
-      {
-        type: 'line', title: 'Collections Trend', x: 6, y: 2, w: 6, h: 5,
-        config: {
-          module: 'payments', dateField: 'paid_on', interval: 'month', aggregate: 'sum',
-          aggregateField: 'amount_paid', format: 'currency',
-          filter: { logic: 'AND', conditions: [{ field: 'paid_on', operator: 'last_n_days', value: 365 }] },
-        },
-      },
-      {
-        type: 'table', title: 'Overdue Instalments', x: 0, y: 7, w: 12, h: 5,
-        config: {
-          module: 'payments', limit: 25, sortBy: 'due_date', sortDir: 'asc',
-          columns: ['payment_number', 'contact_id', 'booking_id', 'milestone', 'amount_due', 'due_date', 'reminder_count'],
-          filter: { logic: 'AND', conditions: [{ field: 'due_date', operator: 'older_than_n_days', value: 0 }, { field: 'status', operator: 'not_in', value: ['Paid', 'Waived'] }] },
-        },
-      },
-    ],
-  },
 ];
 
 export async function seedDashboards(conn: Tx): Promise<void> {
