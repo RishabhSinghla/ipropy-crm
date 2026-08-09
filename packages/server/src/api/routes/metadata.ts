@@ -42,6 +42,10 @@ metadataRouter.get('/modules', asyncHandler(async (req, res) => {
       supportsConversion: (m as unknown as { supportsConversion?: boolean }).supportsConversion ?? false,
       menuGroup: (m as unknown as { menuGroup?: string }).menuGroup ?? 'CRM',
       showInMenu: (m as unknown as { showInMenu?: boolean }).showInMenu ?? true,
+      // Modules naming the same `settings.tabGroup` render as tabs of one
+      // another — one menu entry for Properties and Projects, say. The UI reads
+      // this generically, so an admin can group custom modules the same way.
+      settings: (m as unknown as { settings?: Record<string, unknown> }).settings ?? {},
       permissions: perm,
     });
   }

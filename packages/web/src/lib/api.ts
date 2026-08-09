@@ -156,6 +156,8 @@ export interface ModuleSummary {
   id: string; name: string; label: string; singularLabel: string;
   icon: string; color: string; sequence: number; isEntity: boolean; isCustom: boolean;
   pipelineField: string | null; menuGroup: string; showInMenu: boolean;
+  /** `tabGroup` makes several modules share one menu entry as tabs. */
+  settings?: { tabGroup?: string; tabOrder?: number; [key: string]: unknown };
   supportsComments: boolean; supportsAttachments: boolean; supportsTags: boolean;
   supportsConversion: boolean;
   permissions: { view: boolean; create: boolean; edit: boolean; delete: boolean; export: boolean; import: boolean };

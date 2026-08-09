@@ -5,6 +5,7 @@ import type { FieldMeta, ModuleMeta, RecordEnvelope, TimelineEntry } from '@ipro
 import { CALL_DISPOSITIONS, formatIndianPrice, relativeTime } from '@ipropy/shared';
 import {
   Activity, Check, ChevronDown, Eye, FileQuestion, ChevronLeft, ChevronRight, Download, Edit3, FileText, LayoutDashboard,
+  PhoneIncoming, PhoneMissed, PhoneOutgoing,
   Link2, MessageCircle, MoreHorizontal, Paperclip, Phone, Plus, RefreshCw, Search, Send, Sparkles,
   Star, Trash2, UserCheck, X,
 } from 'lucide-react';
@@ -161,10 +162,28 @@ export default function RecordDetail(): JSX.Element {
   const phone = String(record.values.mobile ?? record.values.phone ?? record.values.whatsapp_number ?? '');
   const email = String(record.values.email ?? '');
 
+  /**
+   * One flat strip.
+   *
+   * Site visits, deals and activities are no longer modules in the menu — they
+   * are reached through the person they belong to, which is how anyone actually
+   * looks for them. Each gets a tab of its own here rather than hiding behind a
+   * "Related" tab with a second row of tabs inside it.
+   */
+  // Calls belong to people. The companion app syncs the whole team's call log
+  // against whichever lead the number matches, so this is where "did anyone
+  // ring them back?" gets answered — no separate call-centre module.
+  const supportsCalls = moduleName === 'leads';
+
   const tabs = [
     { key: 'overview', label: 'Overview', icon: <LayoutDashboard className="h-3.5 w-3.5" /> },
     { key: 'timeline', label: 'Timeline', icon: <Activity className="h-3.5 w-3.5" /> },
-    ...(meta.relations.length ? [{ key: 'related', label: 'Related', icon: <Link2 className="h-3.5 w-3.5" /> }] : []),
+    ...meta.relations.map((r) => ({
+      key: `rel:${r.name}`,
+      label: r.label,
+      icon: <Link2 className="h-3.5 w-3.5" />,
+    })),
+    ...(supportsCalls ? [{ key: 'calls', label: 'Calls', icon: <Phone className="h-3.5 w-3.5" /> }] : []),
     { key: 'files', label: 'Files', icon: <Paperclip className="h-3.5 w-3.5" /> },
   ];
 
@@ -404,7 +423,13 @@ export default function RecordDetail(): JSX.Element {
             />
           )}
           {tab === 'timeline' && <TimelineTab module={moduleName!} id={id!} />}
-          {tab === 'related' && <RelatedTab meta={meta} module={moduleName!} id={id!} />}
+          {tab.startsWith('rel:') && (
+            <RelatedTab
+              meta={meta} module={moduleName!} id={id!}
+              relationName={tab.slice(4)}
+            />
+          )}
+          {tab === 'calls' && <CallsTab recordId={id!} />}
           {tab === 'files' && <FilesTab module={moduleName!} id={id!} />}
         </div>
 
@@ -648,9 +673,24 @@ function TimelineItem({ entry }: { entry: TimelineEntry }): JSX.Element {
   );
 }
 
-function RelatedTab({ meta, module, id }: { meta: ModuleMeta; module: string; id: string }): JSX.Element {
+/**
+ * One related list.
+ *
+ * `relationName` promotes a list to a tab of its own on the record page. The
+ * old shape was a "Related" tab containing a second row of tabs — two levels of
+ * navigation to reach a site visit, on a page a salesperson opens forty times a
+ * day. Passing the relation in flattens that to one.
+ *
+ * Falls back to its own switcher when no relation is named, so any caller that
+ * still wants the combined view keeps working.
+ */
+function RelatedTab({
+  meta, module, id, relationName,
+}: { meta: ModuleMeta; module: string; id: string; relationName?: string }): JSX.Element {
   const queryClient = useQueryClient();
-  const [active, setActive] = useState(meta.relations[0]?.name ?? '');
+  const [selfActive, setSelfActive] = useState(meta.relations[0]?.name ?? '');
+  const active = relationName ?? selfActive;
+  const setActive = setSelfActive;
   const relation = meta.relations.find((r) => r.name === active);
 
   const { data, isLoading } = useQuery({
@@ -712,7 +752,7 @@ function RelatedTab({ meta, module, id }: { meta: ModuleMeta; module: string; id
   return (
     <div className="card overflow-hidden">
       <div className="flex flex-wrap items-center gap-1 border-b border-slate-100 p-2 dark:border-slate-800">
-        {meta.relations.map((r) => (
+        {!relationName && meta.relations.map((r) => (
           <button
             key={r.name}
             onClick={() => setActive(r.name)}
@@ -1290,5 +1330,79 @@ function CallButton({ to, recordId, module }: { to: string; recordId: string; mo
         </div>
       </Modal>
     </>
+  );
+}
+
+/**
+ * Every call with this person, from any source.
+ *
+ * Cloud telephony, the companion Android app and manually logged calls all land
+ * in the same table, so a rep sees one history rather than having to know which
+ * system a call came through. Recording playback and the outcome sit here too,
+ * because "what happened on the last call" is the question this tab exists to
+ * answer.
+ */
+function CallsTab({ recordId }: { recordId: string }): JSX.Element {
+  const { data, isLoading } = useQuery({
+    queryKey: ['record-calls', recordId],
+    queryFn: () => api.calls({ recordId, limit: 50 }),
+  });
+
+  if (isLoading) {
+    return <div className="card space-y-2 p-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12" />)}</div>;
+  }
+
+  const calls = (data ?? []) as unknown as {
+    id: string; direction: string; status: string; duration_seconds: number;
+    disposition: string | null; notes: string | null; recording_url: string | null;
+    started_at: string; agent_name: string | null;
+  }[];
+
+  if (!calls.length) {
+    return (
+      <div className="card">
+        <EmptyState
+          title="No calls yet"
+          body="Calls appear here automatically once a phone is paired in Settings → Phones, or when logged from the dialer."
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="card divide-y divide-slate-100 dark:divide-slate-800">
+      {calls.map((call) => (
+        <div key={call.id} className="p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {call.direction === 'inbound'
+              ? <PhoneIncoming className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+              : call.direction === 'outbound'
+                ? <PhoneOutgoing className="h-3.5 w-3.5 shrink-0 text-blue-600" />
+                : <PhoneMissed className="h-3.5 w-3.5 shrink-0 text-red-500" />}
+            <span className="text-sm font-medium capitalize">{call.direction}</span>
+            {call.duration_seconds > 0 && (
+              <span className="text-2xs text-muted tnum">
+                {Math.floor(call.duration_seconds / 60)}m {call.duration_seconds % 60}s
+              </span>
+            )}
+            {call.disposition && <Badge color="#0891b2">{call.disposition}</Badge>}
+            <span className="ml-auto text-2xs text-muted">{relativeTime(call.started_at)}</span>
+          </div>
+
+          {call.notes && <p className="mt-1.5 text-sm text-muted">{call.notes}</p>}
+
+          {call.recording_url && (
+            <audio
+              controls
+              preload="none"
+              src={api.recordingUrl(call.id)}
+              className="mt-2 h-8 w-full max-w-md"
+            />
+          )}
+
+          {call.agent_name && <p className="mt-1 text-2xs text-muted">{call.agent_name}</p>}
+        </div>
+      ))}
+    </div>
   );
 }

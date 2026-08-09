@@ -29,8 +29,25 @@ export default function ListView(): JSX.Element {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { moduleByName, user } = useApp();
+  const { moduleByName, modules, user } = useApp();
   const summary = moduleByName(moduleName ?? '');
+
+  /**
+   * Sibling modules that share this one's tab group.
+   *
+   * Properties and Projects are one place with two tabs rather than two menu
+   * entries — a project is a container for units, and being made to choose
+   * before looking at either is friction with no payoff. Read from metadata, so
+   * nothing here knows what "inventory" means and an admin can group a pair of
+   * custom modules the same way.
+   */
+  const groupTabs = useMemo(() => {
+    const group = summary?.settings?.tabGroup;
+    if (!group) return [];
+    return modules
+      .filter((m) => m.settings?.tabGroup === group && m.permissions.view)
+      .sort((a, b) => Number(a.settings?.tabOrder ?? 0) - Number(b.settings?.tabOrder ?? 0));
+  }, [modules, summary?.settings?.tabGroup]);
 
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -253,7 +270,26 @@ export default function ListView(): JSX.Element {
               <ModuleIcon name={meta.icon} className="h-4.5 w-4.5" />
             </span>
             <div>
-              <h1 className="text-lg font-semibold leading-tight tracking-tight">{meta.label}</h1>
+              {groupTabs.length > 1 ? (
+                <div className="flex items-center gap-1">
+                  {groupTabs.map((m) => (
+                    <button
+                      key={m.name}
+                      onClick={() => navigate(`/${m.name}`)}
+                      className={cn(
+                        'rounded-lg px-2 py-0.5 text-lg font-semibold leading-tight tracking-tight transition-colors',
+                        m.name === moduleName
+                          ? 'text-slate-900 dark:text-slate-100'
+                          : 'text-slate-400 hover:text-slate-600 dark:text-slate-600 dark:hover:text-slate-400',
+                      )}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <h1 className="text-lg font-semibold leading-tight tracking-tight">{meta.label}</h1>
+              )}
               <p className="text-xs text-muted tnum">
                 {isFetching && !data ? 'Loading…' : `${(data?.total ?? 0).toLocaleString('en-IN')} records`}
               </p>
