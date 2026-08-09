@@ -7,7 +7,7 @@
  */
 import type { FieldMeta } from '@ipropy/shared';
 import {
-  formatIndianPrice, formatArea, toE164, parseIndianPrice, collectFieldErrors,
+  formatIndianPrice, formatArea, toE164, parseIndianPrice, collectFieldErrors, evaluateFilter,
 } from '@ipropy/shared';
 import { ValidationError } from '../../utils/errors.js';
 
@@ -353,12 +353,26 @@ export function validateValues(
   }
 }
 
-/** Mandatory / uniqueness-independent validation of a whole payload. */
-export function validateRequired(fields: FieldMeta[], values: Record<string, unknown>, isCreate: boolean): void {
+/**
+ * Mandatory / uniqueness-independent validation of a whole payload.
+ *
+ * `merged` is the stored record plus this payload — needed because a field's
+ * "only show when…" condition may depend on a value the payload doesn't carry.
+ */
+export function validateRequired(
+  fields: FieldMeta[],
+  values: Record<string, unknown>,
+  isCreate: boolean,
+  merged: Record<string, unknown> = values,
+): void {
   const errors: { field: string; message: string }[] = [];
   for (const f of fields) {
     if (!f.isMandatory || !f.isActive) continue;
     if (f.displayType === 'hidden') continue;
+    // A field the form was told to hide cannot have been filled in. Requiring
+    // it anyway would reject a save the user had no way to make valid — the
+    // form and the API have to agree on which fields are even on screen.
+    if (f.config.visibleWhen && !evaluateFilter(f.config.visibleWhen, merged)) continue;
     // On update, a field simply absent from the payload keeps its stored value.
     if (!isCreate && !(f.name in values)) continue;
     if (isEmpty(values[f.name])) {

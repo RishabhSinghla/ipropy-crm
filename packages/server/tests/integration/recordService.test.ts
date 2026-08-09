@@ -15,12 +15,50 @@ import {
   transferOwnership, updateRecord, type ServiceContext,
 } from '../../src/core/entity/recordService.js';
 import { db } from '../../src/db/pool.js';
+import { registry } from '../../src/core/metadata/registry.js';
 import { adminContext, contextFor, leadInput, SEEDED } from './fixtures.js';
 
 let admin: ServiceContext;
 
 beforeAll(async () => {
   admin = await adminContext();
+});
+
+describe('conditional visibility', () => {
+  /**
+   * The form hides a field whose `visibleWhen` is unmet. If the API still
+   * demanded it, the user would face a save they had no way to make valid —
+   * the two have to agree on which fields are even on screen.
+   */
+  it('does not require a mandatory field that its own condition hides', async () => {
+    const marker = `Conditional ${Date.now()}`;
+    await db.query(
+      `UPDATE ipy_field
+          SET is_mandatory = true,
+              config = config || '{"visibleWhen":{"logic":"AND","conditions":[{"field":"company","operator":"is_not_empty"}]}}'::jsonb
+        WHERE name = 'designation'
+          AND module_id = (SELECT id FROM ipy_module WHERE name = 'leads')`,
+    );
+    registry.invalidate();
+
+    try {
+      // No company, so Designation is hidden — and must not be demanded.
+      const hidden = await createRecord(admin, 'leads', leadInput({ full_name: `${marker} hidden` }));
+      expect(hidden.id).toBeTruthy();
+
+      // With a company it becomes visible, and mandatory again.
+      await expect(
+        createRecord(admin, 'leads', leadInput({ full_name: `${marker} shown`, company: 'Acme' })),
+      ).rejects.toThrow(/Designation/);
+    } finally {
+      await db.query(
+        `UPDATE ipy_field SET is_mandatory = false, config = config - 'visibleWhen'
+          WHERE name = 'designation'
+            AND module_id = (SELECT id FROM ipy_module WHERE name = 'leads')`,
+      );
+      registry.invalidate();
+    }
+  });
 });
 
 describe('create', () => {

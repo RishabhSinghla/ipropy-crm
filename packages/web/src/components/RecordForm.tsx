@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FieldMeta, ModuleMeta, RecordEnvelope } from '@ipropy/shared';
-import { collectFieldErrors } from '@ipropy/shared';
+import { collectFieldErrors, evaluateFilter } from '@ipropy/shared';
 import { AlertTriangle, ChevronDown, Save, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
@@ -164,6 +164,16 @@ export default function RecordForm({
     });
   };
 
+  /**
+   * "Only show this field when…" — `config.visibleWhen`, evaluated live.
+   *
+   * Same filter grammar and the same evaluator the server uses for workflow
+   * conditions (`evaluateFilter` in shared), so a rule an admin builds once
+   * means the same thing on the form as it does in an automation.
+   */
+  const isVisible = (field: FieldMeta): boolean =>
+    !field.config.visibleWhen || evaluateFilter(field.config.visibleWhen, values);
+
   const restrictionFor = (fieldName: string): string[] | undefined => {
     const dep = (module.picklistDependencies ?? []).find((d) => d.targetField === fieldName);
     if (!dep) return undefined;
@@ -180,6 +190,9 @@ export default function RecordForm({
         const field = fieldMap.get(name);
         if (!field || !field.isMandatory || field.isReadonly) continue;
         if (field.displayType === 'hidden' || field.displayType === 'detail_only') continue;
+        // A field hidden by its own condition cannot be filled in, so requiring
+        // it would deadlock the form on something the user cannot even see.
+        if (!isVisible(field)) continue;
         const v = values[name];
         const empty = v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0);
         if (empty) next[name] = `${field.label} is required`;
@@ -285,7 +298,8 @@ export default function RecordForm({
           .map((name) => fieldMap.get(name))
           .filter((f): f is FieldMeta => Boolean(f))
           .filter((f) => f.isActive && f.displayType !== 'hidden' && f.displayType !== 'detail_only')
-          .filter((f) => !(isCreate && f.displayType === 'readonly' && !f.defaultValue));
+          .filter((f) => !(isCreate && f.displayType === 'readonly' && !f.defaultValue))
+          .filter(isVisible);
 
         if (!fields.length) return null;
 

@@ -1,10 +1,12 @@
 /**
- * Unit tests for core/query/evaluate.ts — the in-memory FilterGroup evaluator
- * used by workflow conditions and conditional visibility. Must stay in step
- * with the SQL builder it mirrors.
+ * Unit tests for the in-memory FilterGroup evaluator, which now lives in
+ * `packages/shared` so the browser can run it too — conditional field
+ * visibility is decided while the user types. Exercised from the server suite
+ * because `shared` has no test runner of its own. Must stay in step with the
+ * SQL builder it mirrors.
  */
 import { describe, expect, it } from 'vitest';
-import { applyOperator, collectFilterFields, evaluateFilter } from '../../src/core/query/evaluate.js';
+import { applyOperator, collectFilterFields, evaluateFilter } from '@ipropy/shared';
 
 describe('evaluateFilter — group logic', () => {
   it('treats an undefined/empty filter as always-true', () => {

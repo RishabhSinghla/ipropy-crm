@@ -743,7 +743,12 @@ async function prepareValues(
   }
 
   // 3. validation
-  validateRequired(module.fields, opts.isCreate ? out.values : input, opts.isCreate);
+  validateRequired(
+    module.fields,
+    opts.isCreate ? out.values : input,
+    opts.isCreate,
+    { ...(opts.existing ?? {}), ...out.values },
+  );
   // Format, range and cross-field rules, against the stored record merged with
   // this payload — a partial update of "budget from" must still be checked
   // against the "budget to" already on the record.

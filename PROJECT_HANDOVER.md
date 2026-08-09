@@ -1168,3 +1168,39 @@ Two of the fixes were real app bugs the suite caught once it could run:
 dev server you started will be used as-is, without the raised `API_RATE_LIMIT`
 the config sets — the suite then trips the 600/min limiter and the mobile
 project fails on an empty shell that looks exactly like a broken drawer.
+
+### §17.4 — Field rules an admin can actually set (2026-08-10)
+
+The engine has always enforced more than the admin panel could express. Adding a
+field gave you a plain box; how it should *behave* was only settable by editing
+`db/seed/modules.ts`. This closes that gap — a "Rules" section on the field
+editor, collapsed by default because most fields need none of it.
+
+* **Only show this field when…** — `config.visibleWhen`. This one was not
+  merely unexposed, it was **never implemented**: the key existed in the types
+  and on `ipy_block`, and nothing evaluated it. `core/query/evaluate.ts` moved
+  to `packages/shared` so the form and the API run the same evaluator, for the
+  reason `collectFieldErrors` already lives there — a second copy drifts.
+* **Compare against another field** — `notAfterField` / `notBeforeField`.
+* **Must look like** — `pattern` + `patternMessage`, behind named presets (PAN,
+  GST, pincode, Aadhaar last-4, IFSC) so nobody writes a regex to validate a
+  PAN. The message matters as much as the pattern: "invalid" tells a user
+  nothing, "A PAN looks like ABCDE1234F" tells them what to type.
+* **The unit and country-code lists** — `unitOptions` / `countryCodes`, editable
+  rather than hardcoded in the seed.
+
+**A hidden field must not block a save.** `validateRequired` now skips a
+mandatory field whose condition is unmet, evaluated against the stored record
+merged with the payload — a rule can depend on a value the payload doesn't
+carry. Covered by an integration test.
+
+**Two bugs found while building this, both pre-existing:**
+
+1. The field editor rebuilt `config` from scratch on save, so editing *any*
+   field's label silently discarded every setting the form doesn't render.
+   Editing Mobile would have wiped its digit rules and country codes. It now
+   starts from the stored config.
+2. `PATCH /api/meta/fields/:id` **merges** config — correct, so a caller
+   patching only `label` cannot wipe validation, but it left no way to *remove*
+   a setting. An explicit `null` now means "delete this key", which is what
+   clearing a rule in the editor sends.
