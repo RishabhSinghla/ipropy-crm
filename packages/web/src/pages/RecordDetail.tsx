@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FieldMeta, ModuleMeta, RecordEnvelope, TimelineEntry } from '@ipropy/shared';
-import { formatIndianPrice, relativeTime } from '@ipropy/shared';
+import { CALL_DISPOSITIONS, formatIndianPrice, relativeTime } from '@ipropy/shared';
 import {
   Activity, Check, ChevronDown, Eye, FileQuestion, ChevronLeft, ChevronRight, Download, Edit3, FileText, LayoutDashboard,
   Link2, MessageCircle, MoreHorizontal, Paperclip, Phone, Plus, RefreshCw, Search, Send, Sparkles,
@@ -1160,27 +1160,120 @@ function CommentsPanel({
 
 function CallButton({ to, recordId, module }: { to: string; recordId: string; module: string }): JSX.Element {
   const [busy, setBusy] = useState(false);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [logOpen, setLogOpen] = useState(false);
+  const [durationMinutes, setDurationMinutes] = useState(1);
+  const [disposition, setDisposition] = useState('Call Back Later');
+  const [notes, setNotes] = useState('');
   const { telephonyAvailable } = useApp();
 
+  useEffect(() => {
+    if (!startedAt) return;
+    const offerLog = (): void => {
+      if (document.visibilityState !== 'visible') return;
+      const elapsed = Math.max(1, Math.round((Date.now() - startedAt) / 60_000));
+      setDurationMinutes(elapsed);
+      setLogOpen(true);
+    };
+    const timer = window.setTimeout(offerLog, 1500);
+    window.addEventListener('focus', offerLog);
+    document.addEventListener('visibilitychange', offerLog);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('focus', offerLog);
+      document.removeEventListener('visibilitychange', offerLog);
+    };
+  }, [startedAt]);
+
+  const call = async (): Promise<void> => {
+    if (!telephonyAvailable) {
+      setStartedAt(Date.now());
+      window.location.href = `tel:${to.replace(/[^\d+]/g, '')}`;
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.call(to, recordId, module);
+      toast.success('Calling…', `Your phone will ring first, then we connect ${to}`);
+    } catch (err) {
+      toast.error('Could not place the call', (err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveManual = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      const connected = !['No Answer', 'Busy', 'Switched Off', 'Not Reachable'].includes(disposition);
+      await api.logCall({
+        to, recordId, module, direction: 'outbound',
+        durationSeconds: connected ? Math.max(1, durationMinutes) * 60 : 0,
+        disposition,
+        notes: notes || undefined,
+      });
+      toast.success('Call logged');
+      setLogOpen(false);
+      setStartedAt(null);
+      setNotes('');
+    } catch (err) {
+      toast.error('Could not log the call', (err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <button
-      className="btn-secondary btn-sm"
-      disabled={busy}
-      title={telephonyAvailable ? `Call ${to}` : 'Configure a telephony provider to enable click-to-call'}
-      onClick={async () => {
-        setBusy(true);
-        try {
-          await api.call(to, recordId, module);
-          toast.success('Calling…', `Your phone will ring first, then we connect ${to}`);
-        } catch (err) {
-          toast.error('Could not place the call', (err as Error).message);
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
-      {busy ? <Spinner className="h-3.5 w-3.5" /> : <Phone className="h-3.5 w-3.5 text-blue-600" />}
-      <span className="hidden sm:inline">Call</span>
-    </button>
+    <>
+      <button
+        className="btn-secondary btn-sm"
+        disabled={busy}
+        title={telephonyAvailable ? `Call ${to}` : `Call ${to} using this phone`}
+        onClick={() => void call()}
+      >
+        {busy ? <Spinner className="h-3.5 w-3.5" /> : <Phone className="h-3.5 w-3.5 text-blue-600" />}
+        <span className="hidden sm:inline">Call</span>
+      </button>
+
+      <Modal
+        open={logOpen}
+        onClose={() => { setLogOpen(false); setStartedAt(null); }}
+        title={`Log call with ${to}`}
+        size="sm"
+        footer={(
+          <>
+            <button className="btn-secondary" onClick={() => { setLogOpen(false); setStartedAt(null); }}>Did not call</button>
+            <button className="btn-primary" disabled={busy} onClick={() => void saveManual()}>
+              {busy && <Spinner className="h-3.5 w-3.5" />} Save call
+            </button>
+          </>
+        )}
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="label">Outcome</label>
+            <select className="input" value={disposition} onChange={(e) => setDisposition(e.target.value)}>
+              {CALL_DISPOSITIONS.map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label">Approximate duration (minutes)</label>
+            <input
+              className="input tnum"
+              type="number"
+              min={0}
+              max={600}
+              value={durationMinutes}
+              onChange={(e) => setDurationMinutes(Math.max(0, Number(e.target.value) || 0))}
+            />
+          </div>
+          <div>
+            <label className="label">Notes (optional)</label>
+            <textarea className="input" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />
+          </div>
+          <p className="text-2xs text-muted">The Android companion fills the number, time and duration automatically when paired.</p>
+        </div>
+      </Modal>
+    </>
   );
 }

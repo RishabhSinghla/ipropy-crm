@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">iPropy Call Sync</string>
+    <string name="tagline">Keeps every call on your phone in the CRM, against the right lead.</string>
+
+    <string name="crm_address">CRM address</string>
+    <string name="url_hint">https://crm.ipropy.com</string>
+    <string name="pairing_token">Pairing token</string>
+    <string name="token_hint">Paste the token from the CRM</string>
+    <string name="token_help">In the CRM: Settings → Phones → Pair a phone. The token is shown once.</string>
+    <string name="import_history">Import existing call history on first sync</string>
+    <string name="history_help">Off by default. When off, only calls made after pairing are sent.</string>
+    <string name="privacy_warning">Use a work phone or work SIM. Android exposes the device call log, so personal calls on the same handset may also sync.</string>
+
+    <string name="pair">Pair this phone</string>
+    <string name="re_pair">Pair again</string>
+    <string name="unpair">Unpair and stop syncing</string>
+    <string name="sync_now">Sync now</string>
+
+    <string name="upload_recordings">Also upload call recordings</string>
+    <string name="recordings_help">Only works if your phone\'s own recorder is switched on in the Phone app. Android does not let any app record calls itself.</string>
+    <string name="choose_recording_folder">Choose recording folder</string>
+    <string name="no_recording_folder">No folder selected. Recording upload is off.</string>
+    <string name="recording_folder_selected">Recording folder access granted.</string>
+    <string name="folder_permission_failed">The phone did not grant access to that folder.</string>
+
+    <string name="not_paired">Not paired yet. Enter your CRM address and token below.</string>
+    <string name="paired_no_sync">Paired. Waiting for the first sync.</string>
+    <string name="checking">Checking…</string>
+    <string name="syncing">Syncing…</string>
+    <string name="synced">Synced</string>
+    <string name="last_sync">Last sync:</string>
+    <string name="paired">Paired</string>
+    <string name="unpaired">Unpaired. Nothing more will be sent.</string>
+    <string name="pairing_failed">Could not pair. Check the address and that the token has not been revoked.</string>
+    <string name="pair_first">Pair this phone first.</string>
+    <string name="enter_both">Enter both the CRM address and the token.</string>
+    <string name="url_needs_scheme">Enter a valid secure address starting with https://</string>
+    <string name="secure_storage_unavailable">This phone\'s secure key storage is unavailable, so the pairing token was not saved.</string>
+    <string name="needs_call_log">Call log access was denied. Without it this app has nothing to sync — grant it in Settings → Apps → iPropy Call Sync → Permissions.</string>
+</resources>

@@ -26,8 +26,9 @@ import { BadRequestError, NotFoundError } from '../../utils/errors.js';
 import { notify } from '../../core/notifications/index.js';
 import { filterOptedOut } from './consent.js';
 import { sendMessage, bindTemplateParams } from './service.js';
-import { queueDeviceSend, renderForRecord } from './deviceSend.js';
+import { queueDeviceSend, renderForValues } from './deviceSend.js';
 import * as provider from './provider.js';
+import type { RecordEnvelope } from '@ipropy/shared';
 
 export type ChannelMode = 'api' | 'device';
 
@@ -37,7 +38,9 @@ export interface CreateBroadcastInput {
   templateName?: string | null;
   bodyText?: string | null;
   module?: string;
-  recordIds: string[];
+  /** Already permission-filtered by recordService at the HTTP boundary. */
+  records: RecordEnvelope[];
+  audience?: Record<string, unknown>;
   campaignId?: string | null;
   scheduledAt?: string | null;
   ratePerSecond?: number;
@@ -60,7 +63,7 @@ export async function createBroadcast(input: CreateBroadcastInput): Promise<{ id
 
   const module = input.module ?? 'leads';
   const { registry } = await import('../../core/metadata/registry.js');
-  const meta = await registry.requireModule(module);
+  await registry.requireModule(module);
 
   const broadcast = await db.queryOne<{ id: string }>(
     `INSERT INTO ipy_broadcast
@@ -70,7 +73,7 @@ export async function createBroadcast(input: CreateBroadcastInput): Promise<{ id
      RETURNING id`,
     [
       input.name, input.channelMode, input.templateName ?? null, input.bodyText ?? null,
-      module, JSON.stringify({ recordIds: input.recordIds.length, module }),
+      module, JSON.stringify(input.audience ?? { records: input.records.length, module }),
       input.campaignId ?? null,
       input.scheduledAt ? 'scheduled' : 'draft',
       input.scheduledAt ?? null,
@@ -80,21 +83,13 @@ export async function createBroadcast(input: CreateBroadcastInput): Promise<{ id
   );
   const broadcastId = broadcast!.id;
 
-  // One query for the whole audience rather than one per record: a 2,000-lead
-  // broadcast was previously 2,000 round trips before a single message moved.
-  const rows = await db.query<Record<string, unknown>>(
-    `SELECT r.id AS record_id, r.label, e.*
-     FROM ipy_record r JOIN ${meta.tableName} e ON e.record_id = r.id
-     WHERE r.id = ANY($1::uuid[]) AND r.is_deleted = false`,
-    [input.recordIds],
-  );
-
   const candidates: { recordId: string; handle: string; name: string; row: Record<string, unknown> }[] = [];
   const skips: { recordId: string; handle: string; name: string; reason: string }[] = [];
 
-  for (const row of rows.rows) {
-    const recordId = String(row.record_id);
-    const name = String(row.label ?? '');
+  for (const record of input.records) {
+    const row = record.values;
+    const recordId = record.id;
+    const name = record.label;
     const handle = String(row.whatsapp_number ?? row.mobile ?? '').trim();
 
     if (!handle) {
@@ -130,7 +125,7 @@ export async function createBroadcast(input: CreateBroadcastInput): Promise<{ id
       : {};
 
     const rendered = input.bodyText
-      ? await renderForRecord(input.bodyText, c.recordId, module)
+      ? await renderForValues(input.bodyText, c.row, c.name)
       : null;
 
     await db.query(
@@ -171,7 +166,9 @@ export async function startBroadcast(broadcastId: string): Promise<void> {
     created_by: string | null; status: string; name: string;
   }>(`SELECT * FROM ipy_broadcast WHERE id = $1`, [broadcastId]);
   if (!broadcast) throw new NotFoundError('Broadcast not found');
-  if (broadcast.status === 'running') return;
+  if (broadcast.status === 'completed' || broadcast.status === 'cancelled') {
+    throw new BadRequestError(`A ${broadcast.status} broadcast cannot be started again`);
+  }
 
   if (broadcast.channel_mode === 'api' && !(await provider.isConfigured())) {
     throw new BadRequestError(
@@ -186,10 +183,19 @@ export async function startBroadcast(broadcastId: string): Promise<void> {
     [broadcastId],
   );
 
+  launchBroadcast(broadcastId);
+}
+
+/** Avoid duplicate loops inside one process; database claims handle other processes. */
+const activeRuns = new Set<string>();
+
+function launchBroadcast(broadcastId: string): void {
+  if (activeRuns.has(broadcastId)) return;
+  activeRuns.add(broadcastId);
   void runBroadcast(broadcastId).catch((err) => {
     logger.error({ err, broadcastId }, 'broadcast run failed');
     void db.query(`UPDATE ipy_broadcast SET status = 'paused', updated_at = now() WHERE id = $1`, [broadcastId]);
-  });
+  }).finally(() => activeRuns.delete(broadcastId));
 }
 
 async function runBroadcast(broadcastId: string): Promise<void> {
@@ -201,9 +207,6 @@ async function runBroadcast(broadcastId: string): Promise<void> {
   if (!broadcast) return;
 
   const delayMs = Math.max(0, 1000 / Math.max(1, Number(broadcast.rate_per_second)));
-  let sent = 0;
-  let failed = 0;
-
   for (;;) {
     // Re-read status each batch so Pause takes effect within a second or two
     // rather than at the end of a two-thousand-person send.
@@ -219,10 +222,17 @@ async function runBroadcast(broadcastId: string): Promise<void> {
       id: string; record_id: string | null; handle: string; name: string | null;
       params: Record<string, string>; rendered_text: string | null;
     }>(
-      `SELECT id, record_id, handle, name, params, rendered_text
-       FROM ipy_broadcast_recipient
-       WHERE broadcast_id = $1 AND status = 'pending'
-       ORDER BY id LIMIT 25`,
+      `UPDATE ipy_broadcast_recipient r
+       SET status = 'processing', claimed_at = now()
+       WHERE r.id IN (
+         SELECT id FROM ipy_broadcast_recipient
+         WHERE broadcast_id = $1
+           AND (status = 'pending'
+             OR (status = 'processing' AND claimed_at < now() - interval '15 minutes'))
+         ORDER BY id LIMIT 25
+         FOR UPDATE SKIP LOCKED
+       )
+       RETURNING r.id, r.record_id, r.handle, r.name, r.params, r.rendered_text`,
       [broadcastId],
     );
     if (!batch.rows.length) break;
@@ -238,13 +248,13 @@ async function runBroadcast(broadcastId: string): Promise<void> {
             name: r.name,
             reason: broadcast.name,
             broadcastId,
+            assignedTo: broadcast.created_by,
           });
           await db.query(
             `UPDATE ipy_broadcast_recipient
-             SET status = $2, error = $3, sent_at = now() WHERE id = $1`,
+             SET status = $2, error = $3, sent_at = now(), claimed_at = NULL WHERE id = $1`,
             [r.id, queued.skipped ? 'blocked' : 'handed_off', queued.skipped ?? null],
           );
-          if (queued.skipped) failed++; else sent++;
         } else {
           const result = await sendMessage({
             to: r.handle,
@@ -256,7 +266,8 @@ async function runBroadcast(broadcastId: string): Promise<void> {
           });
           await db.query(
             `UPDATE ipy_broadcast_recipient
-             SET status = $2, error = $3, message_id = $4, sent_at = now() WHERE id = $1`,
+             SET status = $2, error = $3, message_id = $4, sent_at = now(), claimed_at = NULL
+             WHERE id = $1`,
             [
               r.id,
               result.status === 'sent' ? 'sent' : result.status === 'blocked' ? 'blocked' : 'failed',
@@ -264,13 +275,12 @@ async function runBroadcast(broadcastId: string): Promise<void> {
               result.messageId || null,
             ],
           );
-          if (result.status === 'sent') sent++; else failed++;
         }
       } catch (err) {
-        failed++;
         const message = err instanceof Error ? err.message : String(err);
         await db.query(
-          `UPDATE ipy_broadcast_recipient SET status = 'failed', error = $2 WHERE id = $1`,
+          `UPDATE ipy_broadcast_recipient
+           SET status = 'failed', error = $2, claimed_at = NULL WHERE id = $1`,
           [r.id, message.slice(0, 500)],
         );
         logger.warn({ err, handle: r.handle }, 'broadcast recipient failed');
@@ -280,6 +290,7 @@ async function runBroadcast(broadcastId: string): Promise<void> {
         `UPDATE ipy_broadcast
          SET sent_count = (SELECT count(*) FROM ipy_broadcast_recipient WHERE broadcast_id = $1 AND status IN ('sent','handed_off')),
              failed_count = (SELECT count(*) FROM ipy_broadcast_recipient WHERE broadcast_id = $1 AND status = 'failed'),
+             blocked_count = (SELECT count(*) FROM ipy_broadcast_recipient WHERE broadcast_id = $1 AND status IN ('blocked','skipped')),
              updated_at = now()
          WHERE id = $1`,
         [broadcastId],
@@ -289,9 +300,20 @@ async function runBroadcast(broadcastId: string): Promise<void> {
     }
   }
 
-  await db.query(
-    `UPDATE ipy_broadcast SET status = 'completed', completed_at = now(), updated_at = now() WHERE id = $1`,
+  const totals = await db.queryOne<{ sent: number; failed: number; blocked: number }>(
+    `SELECT
+       count(*) FILTER (WHERE status IN ('sent','handed_off'))::int AS sent,
+       count(*) FILTER (WHERE status = 'failed')::int AS failed,
+       count(*) FILTER (WHERE status IN ('blocked','skipped'))::int AS blocked
+     FROM ipy_broadcast_recipient WHERE broadcast_id = $1`,
     [broadcastId],
+  );
+  await db.query(
+    `UPDATE ipy_broadcast
+     SET status = 'completed', completed_at = now(), sent_count = $2,
+         failed_count = $3, blocked_count = $4, updated_at = now()
+     WHERE id = $1 AND status = 'running'`,
+    [broadcastId, totals?.sent ?? 0, totals?.failed ?? 0, totals?.blocked ?? 0],
   );
 
   if (broadcast.created_by) {
@@ -300,12 +322,12 @@ async function runBroadcast(broadcastId: string): Promise<void> {
       userId: broadcast.created_by,
       kind: 'broadcast',
       title: `Broadcast "${broadcast.name}" finished`,
-      body: `${sent} ${verb}${failed ? `, ${failed} could not be` : ''}.`,
-      link: `/campaigns/${broadcastId}`,
+      body: `${totals?.sent ?? 0} ${verb}${totals?.failed ? `, ${totals.failed} could not be` : ''}.`,
+      link: '/outreach',
     });
   }
 
-  logger.info({ broadcastId, sent, failed, mode: broadcast.channel_mode }, 'broadcast complete');
+  logger.info({ broadcastId, ...totals, mode: broadcast.channel_mode }, 'broadcast complete');
 }
 
 export async function pauseBroadcast(id: string): Promise<void> {
@@ -326,8 +348,9 @@ export async function cancelBroadcast(id: string): Promise<void> {
 export async function runDueBroadcasts(): Promise<number> {
   const due = await db.query<{ id: string }>(
     `SELECT id FROM ipy_broadcast
-     WHERE status = 'scheduled' AND scheduled_at IS NOT NULL AND scheduled_at <= now()
-     LIMIT 5`,
+     WHERE (status = 'scheduled' AND scheduled_at IS NOT NULL AND scheduled_at <= now())
+        OR status = 'running'
+     ORDER BY created_at LIMIT 10`,
   );
   for (const row of due.rows) {
     await startBroadcast(row.id).catch((err) => logger.warn({ err, id: row.id }, 'scheduled broadcast failed to start'));

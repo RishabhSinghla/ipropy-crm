@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
 import {
   Mic, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Sparkles, TrendingUp,
@@ -18,18 +18,145 @@ interface Call {
   ai_next_actions: string[] | null; ai_objections: string[] | null;
   ai_score: number | null; ai_talk_ratio: number | null;
   started_at: string; record_id: string | null; record_module: string | null;
-  record_label: string | null; agent_name: string | null;
+  record_label: string | null; agent_name: string | null; source?: 'api' | 'device' | 'manual';
+}
+
+/**
+ * What happened on the call.
+ *
+ * The single most valuable field in the whole telephony feature and the one
+ * nobody fills in, because the only moment anyone will answer is right after
+ * hanging up. So it is a prompt at the top of the page rather than a field
+ * buried in a modal — and answering it *does* something: a call-back becomes a
+ * task, "Do Not Call" sets the flag every other channel already respects.
+ */
+function DispositionPrompt(): JSX.Element | null {
+  const client = useQueryClient();
+  const [notes, setNotes] = useState('');
+  const [followUp, setFollowUp] = useState('');
+
+  const { data } = useQuery({
+    queryKey: ['needs-disposition'],
+    queryFn: () => api.callsNeedingDisposition(),
+    refetchInterval: 60_000,
+  });
+
+  const { data: options } = useQuery({
+    queryKey: ['picklist', 'call_disposition'],
+    queryFn: () => api.picklist('call_disposition'),
+    staleTime: 600_000,
+  });
+
+  const save = useMutation({
+    mutationFn: ({ id, disposition }: { id: string; disposition: string }) =>
+      api.setDisposition(id, {
+        disposition,
+        notes: notes || undefined,
+        // "Call back later" without a date is a note nobody acts on; default to
+        // tomorrow so the task is real, and let them change it on the task.
+        followUpAt: disposition === 'Call Back Later'
+          ? (followUp || new Date(Date.now() + 86_400_000).toISOString())
+          : null,
+      }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['needs-disposition'] });
+      void client.invalidateQueries({ queryKey: ['calls'] });
+      setNotes('');
+      setFollowUp('');
+      toast.success('Logged');
+    },
+    onError: (err: Error) => toast.error('Could not save the outcome', err.message),
+  });
+
+  const call = (data ?? [])[0] as {
+    id: string; to_number: string; from_number: string; direction: string;
+    duration_seconds: number; record_id: string | null; record_module: string | null;
+    record_label: string | null;
+  } | undefined;
+  if (!call) return null;
+
+  const who = call.record_label ?? (call.direction === 'outbound' ? call.to_number : call.from_number);
+
+  return (
+    <div className="mb-4 rounded-lg border border-brand-200 bg-brand-50/70 p-3 dark:border-brand-900 dark:bg-brand-950/30">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium">
+          How did the call with {who} go?
+          <span className="ml-2 text-2xs font-normal text-muted tnum">
+            {Math.round(call.duration_seconds / 60)} min · {relativeTime(String((call as { started_at?: string }).started_at ?? ''))}
+          </span>
+        </p>
+        {(data?.length ?? 0) > 1 && (
+          <span className="text-2xs text-muted">{(data?.length ?? 1) - 1} more waiting</span>
+        )}
+      </div>
+
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {(options ?? []).map((option) => (
+          <button
+            key={option.value}
+            onClick={() => save.mutate({ id: call.id, disposition: option.value })}
+            disabled={save.isPending}
+            className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium transition-colors hover:border-brand-400 hover:bg-brand-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800"
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
+      <input
+        className="input mt-2 text-xs"
+        placeholder="Anything worth remembering? (optional)"
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+      />
+    </div>
+  );
+}
+
+/** The same choice, inside the call detail, for anything missed at the time. */
+function DispositionPicker({ call }: { call: Call }): JSX.Element {
+  const client = useQueryClient();
+  const [value, setValue] = useState(call.disposition ?? '');
+
+  const { data: options } = useQuery({
+    queryKey: ['picklist', 'call_disposition'],
+    queryFn: () => api.picklist('call_disposition'),
+    staleTime: 600_000,
+  });
+
+  const save = useMutation({
+    mutationFn: (disposition: string) => api.setDisposition(call.id, { disposition }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['calls'] });
+      void client.invalidateQueries({ queryKey: ['needs-disposition'] });
+      toast.success('Outcome saved');
+    },
+  });
+
+  return (
+    <div>
+      <label className="label">Outcome</label>
+      <Select
+        value={value}
+        onChange={(v) => { setValue(v); save.mutate(v); }}
+        placeholder="What happened?"
+        options={(options ?? []).map((o) => ({ value: o.value, label: o.label }))}
+      />
+    </div>
+  );
 }
 
 export default function CallsPage(): JSX.Element {
   const { user, telephonyAvailable } = useApp();
   const [direction, setDirection] = useState('');
+  const [source, setSource] = useState('');
   const [selected, setSelected] = useState<Call | null>(null);
   const [showCoaching, setShowCoaching] = useState(false);
 
   const { data: calls, isLoading } = useQuery({
-    queryKey: ['calls', direction],
-    queryFn: () => api.calls({ direction: direction || undefined, limit: 60 }),
+    queryKey: ['calls', direction, source],
+    queryFn: () => api.calls({ direction: direction || undefined, source: source || undefined, limit: 60 }),
   });
 
   const { data: stats } = useQuery({
@@ -41,6 +168,8 @@ export default function CallsPage(): JSX.Element {
 
   return (
     <div className="p-4 sm:p-6">
+      <DispositionPrompt />
+
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2.5">
           <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-950">
@@ -49,12 +178,25 @@ export default function CallsPage(): JSX.Element {
           <div>
             <h1 className="text-lg font-semibold tracking-tight">Calls</h1>
             <p className="text-xs text-muted">
-              {telephonyAvailable ? 'Click-to-call is active' : 'No telephony provider configured — logs only'}
+              {telephonyAvailable
+                ? 'Cloud click-to-call is active'
+                : 'Phone dialling and Android call-log sync are available'}
             </p>
           </div>
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          <Select
+            value={source}
+            onChange={setSource}
+            placeholder="All sources"
+            options={[
+              { value: 'device', label: 'Phone sync' },
+              { value: 'api', label: 'Cloud / API' },
+              { value: 'manual', label: 'Manual' },
+            ]}
+            className="w-36 py-1.5 text-sm"
+          />
           <Select
             value={direction}
             onChange={setDirection}
@@ -63,6 +205,8 @@ export default function CallsPage(): JSX.Element {
               { value: 'outbound', label: 'Outbound' },
               { value: 'inbound', label: 'Inbound' },
               { value: 'missed', label: 'Missed' },
+              { value: 'rejected', label: 'Rejected' },
+              { value: 'blocked', label: 'Blocked' },
             ]}
             className="w-36 py-1.5 text-sm"
           />
@@ -122,6 +266,8 @@ export default function CallsPage(): JSX.Element {
                           {call.record_label ?? (call.direction === 'inbound' ? call.from_number : call.to_number)}
                         </span>
                         {call.disposition && <Badge>{call.disposition}</Badge>}
+                        {call.source === 'device' && <Badge color="#2563eb">phone sync</Badge>}
+                        {call.source === 'manual' && <Badge color="#64748b">manual</Badge>}
                         {call.ai_sentiment && (
                           <Badge color={
                             call.ai_sentiment === 'positive' ? '#22c55e'
@@ -229,9 +375,14 @@ function CallModal({ call, onClose }: { call: Call; onClose: () => void }): JSX.
         {full.recording_url && (
           <div>
             <p className="label">Recording</p>
-            <audio controls src={full.recording_url} className="w-full" />
+            {/* Streamed through the API, which range-serves it so scrubbing a
+                ten-minute call does not re-download from the start. `<audio>`
+                cannot send an Authorization header, hence the token in the URL. */}
+            <audio controls preload="metadata" src={api.recordingUrl(full.id)} className="w-full" />
           </div>
         )}
+
+        <DispositionPicker call={full} />
 
         {full.ai_summary && (
           <div className="rounded-lg border border-brand-200 bg-brand-50/60 p-3 dark:border-brand-900 dark:bg-brand-950/30">

@@ -14,6 +14,7 @@ import { logger } from '../../utils/logger.js';
 import { BadRequestError, IntegrationError } from '../../utils/errors.js';
 import { bus } from '../../core/events/bus.js';
 import { touchActivity } from '../../core/entity/recordService.js';
+import { notify } from '../../core/notifications/index.js';
 
 export interface PlaceCallInput {
   agentUserId: string;
@@ -167,6 +168,9 @@ export async function placeCall(input: PlaceCallInput): Promise<{ callId: string
   }
 
   const adapter = getAdapter();
+  if (adapter.name === 'none') {
+    throw new BadRequestError('No cloud telephony provider is connected. Use the phone dialler instead.');
+  }
   const callerId = input.callerId
     ?? getSettings().telephony.twilio.callerId
     ?? getSettings().telephony.exotel.callerId
@@ -283,16 +287,14 @@ export async function routeInboundCall(input: InboundCallInput): Promise<Inbound
   }
 
   if (routeToUserId) {
-    await db.query(
-      `INSERT INTO ipy_notification (user_id, kind, title, body, link, record_id)
-       VALUES ($1,'call','Incoming call',$2,$3,$4)`,
-      [
-        routeToUserId,
-        match ? `${match.label} is calling (${from})` : `Unknown number ${from}`,
-        match ? `/${match.module_name}/${match.record_id}` : '/calls',
-        match?.record_id ?? null,
-      ],
-    );
+    await notify({
+      userId: routeToUserId,
+      kind: 'call',
+      title: 'Incoming call',
+      body: match ? `${match.label} is calling (${from})` : `Unknown number ${from}`,
+      link: match ? `/${match.module_name}/${match.record_id}` : '/calls',
+      recordId: match?.record_id ?? null,
+    });
   }
 
   const routeTo = routeToUserId
@@ -463,8 +465,8 @@ export async function logManualCall(input: {
   const row = await db.queryOne<{ id: string }>(
     `INSERT INTO ipy_call
       (direction, from_number, to_number, user_id, record_id, record_module,
-       status, duration_seconds, provider, disposition, notes, started_at, ended_at)
-     VALUES ($1,$2,$3,$4,$5,$6,'completed',$7,'manual',$8,$9, now() - ($7 || ' seconds')::interval, now())
+       status, duration_seconds, provider, source, disposition, notes, started_at, ended_at)
+     VALUES ($1,$2,$3,$4,$5,$6,'completed',$7,'manual','manual',$8,$9, now() - ($7 || ' seconds')::interval, now())
      RETURNING id`,
     [
       input.direction,

@@ -4,8 +4,10 @@ import { db } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { ForbiddenError, NotFoundError } from '../../utils/errors.js';
-import { assertCapability, canAccessRecord } from '../../core/permissions/index.js';
+import { assertCapability, canAccessRecord, hasCapability } from '../../core/permissions/index.js';
 import { isTelephonyConfigured, logManualCall, placeCall } from '../../integrations/telephony/service.js';
+import { recordService } from '../../core/entity/recordService.js';
+import { parseByteRange } from '../../utils/httpRange.js';
 
 export const telephonyRouter = Router();
 telephonyRouter.use(requireAuth);
@@ -24,6 +26,8 @@ telephonyRouter.post('/call', asyncHandler(async (req, res) => {
     to: z.string().min(6),
     recordId: z.string().uuid().nullable().optional(),
     module: z.string().nullable().optional(),
+  }).refine((value) => !value.recordId || Boolean(value.module), {
+    message: 'The record module is required when linking a call',
   }).parse(req.body);
 
   if (input.recordId && input.module) {
@@ -41,6 +45,7 @@ telephonyRouter.post('/call', asyncHandler(async (req, res) => {
 /** Log a call made outside the system. */
 telephonyRouter.post('/log', asyncHandler(async (req, res) => {
   const user = getUser(req);
+  await assertCapability(user, 'telephony.call');
   const input = z.object({
     to: z.string().min(6),
     recordId: z.string().uuid().nullable().optional(),
@@ -49,7 +54,13 @@ telephonyRouter.post('/log', asyncHandler(async (req, res) => {
     durationSeconds: z.number().int().min(0).max(36_000),
     disposition: z.string().optional(),
     notes: z.string().optional(),
+  }).refine((value) => !value.recordId || Boolean(value.module), {
+    message: 'The record module is required when linking a call',
   }).parse(req.body);
+
+  if (input.recordId && input.module) {
+    await recordService.getRecord(getScope(req), input.module, input.recordId);
+  }
 
   res.status(201).json(await logManualCall({
     userId: user.id,
@@ -65,10 +76,11 @@ telephonyRouter.post('/log', asyncHandler(async (req, res) => {
 
 telephonyRouter.get('/calls', asyncHandler(async (req, res) => {
   const user = getUser(req);
-  const { recordId, userId, limit, offset, direction, hasRecording } = z.object({
+  const { recordId, userId, limit, offset, direction, source, hasRecording } = z.object({
     recordId: z.string().uuid().optional(),
     userId: z.string().uuid().optional(),
-    direction: z.enum(['inbound', 'outbound', 'missed']).optional(),
+    direction: z.enum(['inbound', 'outbound', 'missed', 'rejected', 'blocked', 'unknown']).optional(),
+    source: z.enum(['api', 'device', 'manual']).optional(),
     hasRecording: z.coerce.boolean().optional(),
     limit: z.coerce.number().int().max(200).default(50),
     offset: z.coerce.number().int().default(0),
@@ -78,10 +90,14 @@ telephonyRouter.get('/calls', asyncHandler(async (req, res) => {
   const params: unknown[] = [];
   if (recordId) { params.push(recordId); clauses.push(`c.record_id = $${params.length}`); }
   if (direction) { params.push(direction); clauses.push(`c.direction = $${params.length}`); }
+  if (source) { params.push(source); clauses.push(`c.source = $${params.length}`); }
   if (hasRecording) clauses.push(`c.recording_url IS NOT NULL`);
   // A rep sees their own calls unless they can listen to recordings org-wide.
-  const canSeeAll = user.isAdmin || (await import('../../core/permissions/index.js')
-    .then((m) => m.hasCapability(user, 'telephony.listen_recordings')));
+  const canSeeAll = user.isAdmin || await hasCapability(user, 'telephony.listen_recordings');
+  if (userId && userId !== user.id && !canSeeAll) {
+    throw new ForbiddenError('You can only view your own calls');
+  }
+  if (recordId) await assertRecordIdAccess(req, recordId);
   if (userId) { params.push(userId); clauses.push(`c.user_id = $${params.length}`); }
   else if (!canSeeAll) { params.push(user.id); clauses.push(`c.user_id = $${params.length}`); }
   params.push(limit, offset);
@@ -90,7 +106,7 @@ telephonyRouter.get('/calls', asyncHandler(async (req, res) => {
     `SELECT c.id, c.direction, c.from_number, c.to_number, c.status, c.duration_seconds,
             c.recording_url, c.disposition, c.notes, c.ai_summary, c.ai_sentiment,
             c.ai_next_actions, c.ai_objections, c.ai_score, c.ai_talk_ratio,
-            c.started_at, c.ended_at, c.record_id, c.record_module,
+            c.started_at, c.ended_at, c.record_id, c.record_module, c.source, c.device_id,
             r.label AS record_label,
             trim(u.first_name || ' ' || u.last_name) AS agent_name
      FROM ipy_call c
@@ -105,7 +121,7 @@ telephonyRouter.get('/calls', asyncHandler(async (req, res) => {
 }));
 
 telephonyRouter.get('/calls/:id', asyncHandler(async (req, res) => {
-  const row = await db.queryOne(
+  const row = await db.queryOne<Record<string, unknown> & { user_id: string | null }>(
     `SELECT c.*, r.label AS record_label, trim(u.first_name || ' ' || u.last_name) AS agent_name
      FROM ipy_call c
      LEFT JOIN ipy_record r ON r.id = c.record_id
@@ -115,25 +131,34 @@ telephonyRouter.get('/calls/:id', asyncHandler(async (req, res) => {
   );
   if (!row) throw new NotFoundError('Call not found');
 
-  // The recording is the sensitive part — gate it separately from the metadata.
   const user = getUser(req);
-  const canListen = user.isAdmin
-    || (row as { user_id?: string }).user_id === user.id
-    || await import('../../core/permissions/index.js').then((m) => m.hasCapability(user, 'telephony.listen_recordings'));
-  if (!canListen) (row as { recording_url?: string | null }).recording_url = null;
+  const canSeeAll = user.isAdmin || await hasCapability(user, 'telephony.listen_recordings');
+  if (row.user_id !== user.id && !canSeeAll) throw new ForbiddenError('You can only view your own calls');
 
   res.json(row);
 }));
 
 telephonyRouter.patch('/calls/:id', asyncHandler(async (req, res) => {
   const user = getUser(req);
+  await assertCapability(user, 'telephony.call');
   const input = z.object({
     disposition: z.string().optional(),
     notes: z.string().optional(),
     recordId: z.string().uuid().nullable().optional(),
     module: z.string().nullable().optional(),
     transcript: z.string().optional(),
+  }).refine((value) => !value.recordId || Boolean(value.module), {
+    message: 'The record module is required when linking a call',
   }).parse(req.body);
+
+  const existing = await db.queryOne<{ user_id: string | null }>(
+    `SELECT user_id FROM ipy_call WHERE id = $1`, [req.params.id],
+  );
+  if (!existing) throw new NotFoundError('Call not found');
+  if (existing.user_id !== user.id && !user.isAdmin) throw new ForbiddenError('You can only update your own calls');
+  if (input.recordId && input.module) {
+    await recordService.getRecord(getScope(req), input.module, input.recordId);
+  }
 
   const map: Record<string, string> = {
     disposition: 'disposition', notes: 'notes',
@@ -149,12 +174,7 @@ telephonyRouter.patch('/calls/:id', asyncHandler(async (req, res) => {
   }
   if (!sets.length) { res.json({ ok: true }); return; }
 
-  params.push(user.id);
-  await db.query(
-    `UPDATE ipy_call SET ${sets.join(', ')} WHERE id = $1
-     AND (user_id = $${params.length} OR $${params.length} IN (SELECT id FROM ipy_user WHERE is_admin))`,
-    params,
-  );
+  await db.query(`UPDATE ipy_call SET ${sets.join(', ')} WHERE id = $1`, params);
   res.json({ ok: true });
 }));
 
@@ -175,7 +195,7 @@ telephonyRouter.get('/calls/:id/recording', asyncHandler(async (req, res) => {
 
   const canListen = user.isAdmin
     || call.user_id === user.id
-    || await import('../../core/permissions/index.js').then((m) => m.hasCapability(user, 'telephony.listen_recordings'));
+    || await hasCapability(user, 'telephony.listen_recordings');
   if (!canListen) throw new ForbiddenError('You do not have permission to listen to call recordings');
 
   // Provider-hosted recordings (Twilio, Exotel) are absolute URLs we do not
@@ -201,15 +221,15 @@ telephonyRouter.get('/calls/:id/recording', asyncHandler(async (req, res) => {
   // call re-downloads from the start on every drag.
   const range = req.headers.range;
   if (range) {
-    const match = /bytes=(\d*)-(\d*)/.exec(range);
-    const start = match?.[1] ? Number(match[1]) : 0;
-    const end = match?.[2] ? Number(match[2]) : buffer.length - 1;
-    if (start >= buffer.length) {
+    const parsed = parseByteRange(range, buffer.length);
+    if (!parsed.ok) {
       res.status(416).setHeader('Content-Range', `bytes */${buffer.length}`).end();
       return;
     }
+    const { start, end } = parsed;
     res.status(206)
       .setHeader('Content-Range', `bytes ${start}-${end}/${buffer.length}`)
+      .setHeader('Content-Length', String(end - start + 1))
       .setHeader('Accept-Ranges', 'bytes')
       .setHeader('Content-Type', mime)
       .send(buffer.subarray(start, end + 1));
@@ -218,6 +238,7 @@ telephonyRouter.get('/calls/:id/recording', asyncHandler(async (req, res) => {
 
   res.setHeader('Content-Type', mime);
   res.setHeader('Accept-Ranges', 'bytes');
+  res.setHeader('Content-Length', String(buffer.length));
   res.send(buffer);
 }));
 
@@ -230,6 +251,7 @@ telephonyRouter.get('/calls/:id/recording', asyncHandler(async (req, res) => {
  */
 telephonyRouter.get('/needs-disposition', asyncHandler(async (req, res) => {
   const user = getUser(req);
+  await assertCapability(user, 'telephony.call');
   const rows = await db.query(
     `SELECT c.id, c.direction, c.from_number, c.to_number, c.duration_seconds,
             c.started_at, c.record_id, c.record_module, r.label AS record_label
@@ -252,6 +274,7 @@ telephonyRouter.get('/needs-disposition', asyncHandler(async (req, res) => {
  */
 telephonyRouter.post('/calls/:id/disposition', asyncHandler(async (req, res) => {
   const user = getUser(req);
+  await assertCapability(user, 'telephony.call');
   const input = z.object({
     disposition: z.string().min(1).max(60),
     notes: z.string().max(4000).optional(),
@@ -304,12 +327,14 @@ telephonyRouter.post('/calls/:id/disposition', asyncHandler(async (req, res) => 
 
 telephonyRouter.get('/devices', asyncHandler(async (req, res) => {
   const user = getUser(req);
+  await assertCapability(user, 'telephony.call');
   const { listDevices } = await import('../../integrations/telephony/deviceSync.js');
   res.json(await listDevices(user.id, user.isAdmin));
 }));
 
 telephonyRouter.post('/devices', asyncHandler(async (req, res) => {
   const user = getUser(req);
+  await assertCapability(user, 'telephony.call');
   const input = z.object({
     label: z.string().max(60).optional(),
     phoneNumber: z.string().max(20).nullable().optional(),
@@ -329,6 +354,7 @@ telephonyRouter.post('/devices', asyncHandler(async (req, res) => {
 
 telephonyRouter.delete('/devices/:id', asyncHandler(async (req, res) => {
   const user = getUser(req);
+  await assertCapability(user, 'telephony.call');
   const { revokeDevice } = await import('../../integrations/telephony/deviceSync.js');
   await revokeDevice(req.params.id, user.id, user.isAdmin);
   res.json({ ok: true });
@@ -395,7 +421,10 @@ telephonyRouter.delete('/numbers/:id', asyncHandler(async (req, res) => {
 
 telephonyRouter.get('/stats', asyncHandler(async (req, res) => {
   const user = getUser(req);
-  const userId = typeof req.query.userId === 'string' ? req.query.userId : user.id;
+  const requestedUserId = typeof req.query.userId === 'string' ? req.query.userId : user.id;
+  const canSeeAll = user.isAdmin || await hasCapability(user, 'telephony.listen_recordings');
+  if (requestedUserId !== user.id && !canSeeAll) throw new ForbiddenError('You can only view your own call statistics');
+  const userId = requestedUserId;
   const days = Math.min(90, Number(req.query.days) || 7);
 
   const stats = await db.queryOne(
@@ -424,3 +453,12 @@ telephonyRouter.get('/stats', asyncHandler(async (req, res) => {
 
   res.json({ ...stats, byDay: byDay.rows });
 }));
+
+async function assertRecordIdAccess(req: Parameters<typeof getScope>[0], recordId: string): Promise<void> {
+  const record = await db.queryOne<{ module_name: string }>(
+    `SELECT module_name FROM ipy_record WHERE id = $1 AND is_deleted = false`,
+    [recordId],
+  );
+  if (!record) throw new NotFoundError('Record not found');
+  await recordService.getRecord(getScope(req), record.module_name, recordId);
+}

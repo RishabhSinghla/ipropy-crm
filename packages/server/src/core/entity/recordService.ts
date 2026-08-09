@@ -158,15 +158,20 @@ export async function listRecords(
   // saved view filter merges with the ad-hoc filter
   let effectiveFilter = q.filter;
   if (q.view) {
-    const view = await loadView(conn, module.id, q.view);
-    if (view) {
-      effectiveFilter = mergeFilters(view.filter, q.filter);
-      if (!q.sortBy && view.sort_by) {
-        q = { ...q, sortBy: view.sort_by, sortDir: (view.sort_dir as 'asc' | 'desc') ?? 'desc' };
-      }
-      if (!q.columns?.length && Array.isArray(view.columns) && view.columns.length) {
-        q = { ...q, columns: view.columns };
-      }
+    const view = await loadView(
+      conn,
+      module.id,
+      q.view,
+      ctx.user.id,
+      Boolean(ctx.system || ctx.user.isAdmin),
+    );
+    if (!view) throw new NotFoundError('Saved view not found or not available');
+    effectiveFilter = mergeFilters(view.filter, q.filter);
+    if (!q.sortBy && view.sort_by) {
+      q = { ...q, sortBy: view.sort_by, sortDir: (view.sort_dir as 'asc' | 'desc') ?? 'desc' };
+    }
+    if (!q.columns?.length && Array.isArray(view.columns) && view.columns.length) {
+      q = { ...q, columns: view.columns };
     }
   }
 
@@ -948,14 +953,21 @@ interface ViewRow {
   sort_dir: string;
 }
 
-async function loadView(conn: Tx, moduleId: string, viewIdOrName: string): Promise<ViewRow | null> {
+async function loadView(
+  conn: Tx,
+  moduleId: string,
+  viewIdOrName: string,
+  userId: string,
+  unrestricted: boolean,
+): Promise<ViewRow | null> {
   const isUuid = /^[0-9a-f-]{36}$/i.test(viewIdOrName);
   return conn.queryOne<ViewRow>(
     `SELECT id, columns, filter, sort_by, sort_dir
      FROM ipy_view
      WHERE module_id = $1 AND ${isUuid ? 'id = $2::uuid' : 'name = $2'}
+       AND ($3 OR is_system OR is_public OR owner_id = $4)
      LIMIT 1`,
-    [moduleId, viewIdOrName],
+    [moduleId, viewIdOrName, unrestricted, userId],
   );
 }
 

@@ -72,6 +72,12 @@ deviceRouter.post('/calls', asyncHandler(async (req, res) => {
     entries: z.array(entrySchema).max(500),
   }).parse(req.body);
 
+  const now = Date.now();
+  const oldest = now - 10 * 365 * 24 * 60 * 60 * 1000;
+  if (input.entries.some((entry) => entry.timestamp > now + 5 * 60_000 || entry.timestamp < oldest)) {
+    throw new BadRequestError('One or more call timestamps are outside the supported range');
+  }
+
   if (input.appVersion) {
     const { db } = await import('../../db/pool.js');
     await db.query(`UPDATE ipy_device SET app_version = $2 WHERE id = $1`, [device.id, input.appVersion]);
@@ -86,6 +92,7 @@ deviceRouter.post('/recordings', upload.single('audio'), asyncHandler(async (req
   const input = z.object({ externalId: z.string().min(1).max(64) }).parse(req.body);
   const file = req.file;
   if (!file) throw new BadRequestError('No audio file uploaded');
+  if (!file.mimetype.startsWith('audio/')) throw new BadRequestError('The recording must be an audio file');
 
   const result = await attachRecording({
     device,

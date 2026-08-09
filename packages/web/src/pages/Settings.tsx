@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
-import { Bell, BellOff, Camera, Fingerprint, KeyRound, Monitor, Moon, Save, Sun, User } from 'lucide-react';
+import {
+  Bell, BellOff, Camera, Check, Copy, Fingerprint, KeyRound, Monitor, Moon, Plus, Save, Smartphone, Sun, Trash2, User,
+} from 'lucide-react';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { currentSubscription, disablePush, enablePush, permissionState, pushSupport } from '../lib/push';
-import { Avatar, Badge, Select, Skeleton, Spinner, Tabs } from '../components/ui';
+import { Avatar, Badge, ConfirmDialog, EmptyState, Modal, Select, Skeleton, Spinner, Tabs } from '../components/ui';
 
 export default function SettingsPage(): JSX.Element {
   const { user, theme, setTheme } = useApp();
@@ -25,6 +27,7 @@ export default function SettingsPage(): JSX.Element {
           { key: 'preferences', label: 'Preferences', icon: <Monitor className="h-3.5 w-3.5" /> },
           { key: 'alerts', label: 'Alerts', icon: <Bell className="h-3.5 w-3.5" /> },
           { key: 'security', label: 'Security', icon: <KeyRound className="h-3.5 w-3.5" /> },
+          { key: 'phones', label: 'Phones', icon: <Smartphone className="h-3.5 w-3.5" /> },
         ]}
         active={tab}
         onChange={setTab}
@@ -35,6 +38,7 @@ export default function SettingsPage(): JSX.Element {
       {tab === 'preferences' && <PreferencesTab theme={theme} setTheme={setTheme} />}
       {tab === 'alerts' && <AlertsTab />}
       {tab === 'security' && <SecurityTab />}
+      {tab === 'phones' && <PhonesTab />}
     </div>
   );
 }
@@ -602,4 +606,253 @@ function describeThisDevice(): string {
     : /Firefox\//.test(ua) ? 'Firefox'
     : /Safari\//.test(ua) ? 'Safari' : 'Browser';
   return `${os} · ${browser}`;
+}
+
+/**
+ * Phones paired for background call logging.
+ *
+ * The companion app reads the handset's call log and posts batches here, so
+ * calls the team actually makes on their own phones land in the CRM without
+ * anyone opening a dialer inside the app. Pairing returns a one-time token the
+ * key goes into the Android app's "Pair this device" screen; because it is a
+ * bearer credential for an unattended background sync, it is shown exactly
+ * once and only its hash is stored. Revoking a phone kills it immediately.
+ */
+function PhonesTab(): JSX.Element {
+  const { user } = useApp();
+  const [pairOpen, setPairOpen] = useState(false);
+  const [revoking, setRevoking] = useState<{ id: string; label: string } | null>(null);
+  const { data: devices, isLoading, refetch } = useQuery({
+    queryKey: ['device-phones'],
+    queryFn: () => api.devices(),
+  });
+
+  const revokeNow = async (): Promise<void> => {
+    if (!revoking) return;
+    await api.revokeDevice(revoking.id);
+    toast.success('Device revoked', 'It can no longer sync calls.');
+    setRevoking(null);
+    await refetch();
+  };
+
+  return (
+    <div className="card space-y-5 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 max-w-xl">
+          <p className="text-sm font-medium">Call-logging phones</p>
+          <p className="mt-1 text-sm text-muted">
+            Calls made or received on these handsets appear in the CRM automatically — no one has
+            to remember to log anything. Pair with the iPropy Companion app on the phone; the
+            one-time token goes into its "Pair this device" screen.
+          </p>
+        </div>
+        <button className="btn-primary btn-sm shrink-0" onClick={() => setPairOpen(true)}>
+          <Plus className="h-3.5 w-3.5" /> Pair a phone
+        </button>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-2">
+          <Skeleton className="h-14 w-full" />
+          <Skeleton className="h-14 w-full" />
+        </div>
+      ) : (devices ?? []).length === 0 ? (
+        <EmptyState
+          icon={<Smartphone className="h-8 w-8" />}
+          title="No phones paired yet"
+          body="Pair the first handset and every call it makes or takes will show up in the CRM automatically."
+        />
+      ) : (
+        <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-700">
+          {(devices ?? []).map((raw) => {
+            const d = raw as {
+              id: string; label: string | null; platform: string | null;
+              token_preview: string | null; phone_number: string | null; model: string | null;
+              app_version: string | null; is_active: boolean; last_sync_at: string | null;
+              user_name: string | null; call_count: number; created_at: string;
+            };
+            return (
+              <li key={d.id} className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                    <Smartphone className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate text-xs font-medium">{d.label ?? 'Android phone'}</p>
+                      {!d.is_active && <Badge color="red">Revoked</Badge>}
+                    </div>
+                    <p className="text-2xs text-muted">
+                      {d.model ? `${d.model} · ` : ''}
+                      {d.phone_number ? `${d.phone_number} · ` : ''}
+                      {d.app_version ? `v${d.app_version} · ` : ''}
+                      {d.token_preview ? `•• ${d.token_preview} · ` : ''}
+                      {d.user_name && d.user_name !== user?.fullName ? `${d.user_name} · ` : ''}
+                      paired {relativeTime(d.created_at)}
+                      {d.last_sync_at ? ` · synced ${relativeTime(d.last_sync_at)}` : ''}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-3">
+                  <Badge color="#10b981">{d.call_count} calls logged</Badge>
+                  {d.is_active && (
+                    <button
+                      className="btn-ghost btn-sm text-negative"
+                      onClick={() => setRevoking({ id: d.id, label: d.label ?? 'this phone' })}
+                    >
+                      Revoke
+                    </button>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <PairPhoneModal
+        open={pairOpen}
+        onClose={() => setPairOpen(false)}
+        onPaired={() => void refetch()}
+      />
+
+      <ConfirmDialog
+        open={!!revoking}
+        onClose={() => setRevoking(null)}
+        onConfirm={() => revokeNow()}
+        title="Revoke this phone?"
+        confirmLabel="Revoke"
+        body="It will stop syncing calls immediately. Pairing again later needs a fresh token from this screen."
+        danger
+      />
+    </div>
+  );
+}
+
+/**
+ * Pair flow for a call-logging phone.
+ *
+ * The pairing token is a bearer credential for the companion app's background
+ * sync, so two rules apply: (1) it is shown exactly once on this screen, the
+ * server only persists its sha-256 hash, and (2) the modal resets whenever it
+ * opens so a copied token is never left lying around for the next person.
+ */
+function PairPhoneModal({ open, onClose, onPaired }: {
+  open: boolean; onClose: () => void; onPaired: () => void;
+}): JSX.Element {
+  const [form, setForm] = useState({ label: '', phoneNumber: '', model: '' });
+  const [busy, setBusy] = useState(false);
+  const [pairing, setPairing] = useState<{ token: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setForm({ label: '', phoneNumber: '', model: '' });
+    setPairing(null);
+    setCopied(false);
+    setBusy(false);
+  }, [open]);
+
+  const pair = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      const res = await api.pairDevice({
+        label: form.label.trim() || undefined,
+        phoneNumber: form.phoneNumber.trim() || null,
+        model: form.model.trim() || null,
+      });
+      setPairing({ token: res.token });
+      onPaired();
+    } catch (err) {
+      toast.error('Could not pair phone', (err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copyToken = (): void => {
+    if (!pairing) return;
+    void navigator.clipboard.writeText(pairing.token).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => undefined);
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={pairing ? 'Pairing complete' : 'Pair a phone'}
+      size="sm"
+      footer={
+        pairing ? (
+          <button className="btn-primary" onClick={onClose}>Done</button>
+        ) : (
+          <>
+            <button className="btn-secondary" onClick={onClose} disabled={busy}>Cancel</button>
+            <button className="btn-primary" onClick={() => void pair()} disabled={busy}>
+              {busy ? <Spinner /> : <Plus className="h-4 w-4" />} Pair device
+            </button>
+          </>
+        )
+      }
+    >
+      {pairing ? (
+        <div className="space-y-3">
+          <p className="text-sm text-muted">
+            Copy this token into the app now — it is not shown again. It grants the phone access
+            to your call data, so treat it like a password.
+          </p>
+          <div className="relative rounded-lg border border-slate-200 bg-slate-50 p-3 pr-10 dark:border-slate-700 dark:bg-slate-950/60">
+            <code className="block break-all font-mono text-xs">{pairing.token}</code>
+            <button
+              className="btn-ghost btn-sm absolute right-1.5 top-1.5"
+              onClick={copyToken}
+              aria-label="Copy the pairing token"
+            >
+              {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+            </button>
+          </div>
+          <p className="text-2xs text-muted">
+            In <span className="font-medium">iPropy Companion</span> on the phone: tap Pair this
+            device, then paste this token.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div>
+            <label className="label">Name</label>
+            <input
+              className="input"
+              value={form.label}
+              onChange={(e) => setForm({ ...form, label: e.target.value })}
+              placeholder="e.g. Rishabh's main phone"
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="label">Phone number</label>
+            <input
+              className="input tnum"
+              value={form.phoneNumber}
+              onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })}
+              placeholder="+91 98xxx xxxxx"
+            />
+            <p className="mt-1 text-2xs text-muted">
+              Used to match calls to the right lead on the last ten digits.
+            </p>
+          </div>
+          <div>
+            <label className="label">Model</label>
+            <input
+              className="input"
+              value={form.model}
+              onChange={(e) => setForm({ ...form, model: e.target.value })}
+              placeholder="e.g. OnePlus 12R"
+            />
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
 }

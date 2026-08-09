@@ -153,14 +153,16 @@ export async function listPending(userId: string, limit = 100): Promise<PendingD
  * actually pressed send — this is their word for it, which is exactly what a
  * manually logged call has always been.
  */
-export async function markSent(id: string, userId: string): Promise<{ messageId: string | null }> {
+export async function markSent(id: string, userId: string, isAdmin = false): Promise<{ messageId: string | null }> {
   const row = await db.queryOne<{
     handle: string; body: string; record_id: string | null; status: string;
   }>(
-    `UPDATE ipy_device_send SET status = 'sent', completed_at = now()
+    `UPDATE ipy_device_send
+     SET status = 'sent', completed_at = now(), assigned_to = COALESCE(assigned_to, $2)
      WHERE id = $1 AND status IN ('pending','opened')
+       AND (assigned_to = $2 OR assigned_to IS NULL OR $3)
      RETURNING handle, body, record_id, status`,
-    [id],
+    [id, userId, isAdmin],
   );
   if (!row) return { messageId: null };
 
@@ -173,20 +175,24 @@ export async function markSent(id: string, userId: string): Promise<{ messageId:
   return { messageId };
 }
 
-export async function markOpened(id: string): Promise<void> {
+export async function markOpened(id: string, userId: string, isAdmin = false): Promise<void> {
   await db.query(
-    `UPDATE ipy_device_send SET status = 'opened', opened_at = COALESCE(opened_at, now())
-     WHERE id = $1 AND status = 'pending'`,
-    [id],
+    `UPDATE ipy_device_send
+     SET status = 'opened', opened_at = COALESCE(opened_at, now()),
+         assigned_to = COALESCE(assigned_to, $2)
+     WHERE id = $1 AND status = 'pending'
+       AND (assigned_to = $2 OR assigned_to IS NULL OR $3)`,
+    [id, userId, isAdmin],
   );
 }
 
-export async function skip(id: string, reason?: string): Promise<void> {
+export async function skip(id: string, userId: string, isAdmin = false, reason?: string): Promise<void> {
   await db.query(
     `UPDATE ipy_device_send SET status = 'skipped', completed_at = now(),
-            reason = COALESCE($2, reason)
-     WHERE id = $1 AND status IN ('pending','opened')`,
-    [id, reason ?? null],
+            reason = COALESCE($4, reason), assigned_to = COALESCE(assigned_to, $2)
+     WHERE id = $1 AND status IN ('pending','opened')
+       AND (assigned_to = $2 OR assigned_to IS NULL OR $3)`,
+    [id, userId, isAdmin, reason ?? null],
   );
 }
 
@@ -278,6 +284,20 @@ export async function renderForRecord(
     logger.debug({ err, recordId }, 'merge render fell back to org scope');
     return renderTemplate(body, await orgScope());
   }
+}
+
+/** Render from a permission-filtered record envelope supplied by an API route. */
+export async function renderForValues(
+  body: string,
+  values: Record<string, unknown>,
+  label: string,
+): Promise<string> {
+  return renderTemplate(body, {
+    ...(await orgScope()),
+    ...values,
+    first_name: values.first_name || label.split(' ')[0] || 'there',
+    name: label || 'there',
+  });
 }
 
 async function orgScope(): Promise<Record<string, unknown>> {

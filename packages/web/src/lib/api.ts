@@ -99,8 +99,6 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     }
   }
 
-  if (raw) return res as unknown as T;
-
   if (!res.ok) {
     let payload: { message?: string; error?: string; details?: unknown } = {};
     try { payload = await res.json(); } catch { /* non-JSON error body */ }
@@ -111,6 +109,8 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
       payload.details,
     );
   }
+
+  if (raw) return res as unknown as T;
 
   if (res.status === 204) return undefined as T;
   const text = await res.text();
@@ -166,6 +166,70 @@ export interface IntegrationSummary {
   status: string; lastSyncAt: string | null; lastError: string | null;
   config: Record<string, string>;
   credentialFields: Record<string, { set: boolean; preview: string }>;
+}
+
+/** A message the CRM composed, waiting for a human to send it from their phone. */
+export interface DeviceSend {
+  id: string; handle: string; name: string | null; body: string;
+  reason: string | null; recordId: string | null; module: string | null;
+  link: string; createdAt: string;
+}
+
+export interface Broadcast {
+  id: string; name: string; channel_mode: 'api' | 'device';
+  template_name: string | null; body_text?: string | null;
+  status: 'draft' | 'scheduled' | 'running' | 'paused' | 'completed' | 'cancelled';
+  scheduled_at: string | null; total_count: number; sent_count: number;
+  failed_count: number; blocked_count: number;
+  created_at: string; started_at: string | null; completed_at: string | null;
+  created_by_name?: string | null;
+}
+
+export interface BroadcastRecipient {
+  id: string; record_id: string | null; handle: string; name: string | null;
+  status: string; error: string | null; rendered_text: string | null; sent_at: string | null;
+}
+
+export interface Sequence {
+  id: string; name: string; description: string | null; is_active: boolean;
+  module_name: string; enrol_trigger: string; exit_on_reply: boolean;
+  exit_on_status: string[]; quiet_start: number; quiet_end: number;
+  enrolled_count: number; step_count?: number; active_count?: number;
+  created_at: string;
+}
+
+export interface SequenceStep {
+  id: string; sequence: number; delay_minutes: number;
+  channel: 'whatsapp' | 'email' | 'task' | 'sms';
+  template_name: string | null; subject: string | null; body: string | null;
+  buttons: { id: string; title: string }[];
+  fallback_to_device: boolean; is_active: boolean;
+}
+
+export interface AutoReplyRule {
+  id: string; name: string; is_active: boolean; sequence: number;
+  trigger_type: 'keyword' | 'welcome' | 'fallback'; match_type: 'contains' | 'exact';
+  keywords: string[]; reply_text: string;
+  buttons: { id: string; title: string }[];
+  button_routes: Record<string, string>;
+  business_hours_only: boolean; handoff: boolean;
+  media_url: string | null; is_routed_only: boolean; match_count: number;
+}
+
+export interface SavedDesign {
+  id: string; name: string; kind: 'post' | 'reel' | 'brochure';
+  template_key: string | null; record_id: string | null; module_name: string | null;
+  width: number; height: number; thumbnail: string | null;
+  record_label?: string | null; created_by_name?: string | null;
+  created_at: string; updated_at: string;
+}
+
+export interface RenderJob {
+  id: string; kind: 'reel' | 'brochure' | 'image_edit';
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'unsupported';
+  progress: number; error: string | null; output_mime: string | null;
+  record_id: string | null; record_label?: string | null;
+  title?: string | null; created_at: string; finished_at: string | null;
 }
 
 export const api = {
@@ -348,8 +412,86 @@ export const api = {
   emailTemplates: () => get<Record<string, unknown>[]>('/api/comms/email/templates'),
   broadcast: (data: Record<string, unknown>) => post<{ queued: number }>('/api/comms/broadcast', data),
 
+  // --- outreach: device sends, broadcasts, sequences, auto-replies ---------
+  /** Whether WhatsApp can send by itself, or needs a human to tap send. */
+  outreachChannel: () => get<{ apiReady: boolean; mode: 'api' | 'device'; message: string }>('/api/outreach/channel'),
+  deviceQueue: () => get<DeviceSend[]>('/api/outreach/device-queue'),
+  deviceLink: (data: { handle: string; body: string; recordId?: string | null; module?: string; render?: boolean }) =>
+    post<{ link: string; body: string }>('/api/outreach/device-link', data),
+  queueDeviceSend: (data: Record<string, unknown>) =>
+    post<{ id: string; skipped?: string }>('/api/outreach/device-queue', data),
+  deviceSendOpened: (id: string) => post(`/api/outreach/device-queue/${id}/opened`),
+  deviceSendDone: (id: string) => post<{ messageId: string | null }>(`/api/outreach/device-queue/${id}/sent`),
+  deviceSendSkip: (id: string, reason?: string) => post(`/api/outreach/device-queue/${id}/skip`, { reason }),
+  logDeviceSent: (data: { handle: string; body: string; recordId?: string | null; module?: string }) =>
+    post<{ messageId: string | null }>('/api/outreach/device-sent', data),
+
+  broadcasts: () => get<Broadcast[]>('/api/outreach/broadcasts'),
+  broadcast_: (id: string) => get<Broadcast & { recipients: BroadcastRecipient[] }>(`/api/outreach/broadcasts/${id}`),
+  createBroadcast: (data: Record<string, unknown>) =>
+    post<{ id: string; total: number; skipped: number }>('/api/outreach/broadcasts', data),
+  startBroadcast: (id: string) => post(`/api/outreach/broadcasts/${id}/start`),
+  pauseBroadcast: (id: string) => post(`/api/outreach/broadcasts/${id}/pause`),
+  cancelBroadcast: (id: string) => post(`/api/outreach/broadcasts/${id}/cancel`),
+
+  sequences: () => get<Sequence[]>('/api/outreach/sequences'),
+  sequence: (id: string) => get<Sequence & { steps: SequenceStep[]; enrolments: Record<string, unknown>[] }>(`/api/outreach/sequences/${id}`),
+  createSequence: (data: Record<string, unknown>) => post<{ id: string }>('/api/outreach/sequences', data),
+  updateSequence: (id: string, data: Record<string, unknown>) => patch(`/api/outreach/sequences/${id}`, data),
+  deleteSequence: (id: string) => del(`/api/outreach/sequences/${id}`),
+  saveSequenceSteps: (id: string, steps: Record<string, unknown>[]) =>
+    put(`/api/outreach/sequences/${id}/steps`, { steps }),
+  enrolInSequence: (id: string, audience: { recordIds?: string[]; viewId?: string }) =>
+    post<{ enrolled: number; skipped: { recordId: string; reason: string }[] }>(`/api/outreach/sequences/${id}/enrol`, audience),
+  exitEnrolment: (id: string, reason?: string) => post(`/api/outreach/enrolments/${id}/exit`, { reason }),
+  runSequences: () => post<{ ran: number; exited: number }>('/api/outreach/sequences/run'),
+
+  autoReplyRules: () => get<AutoReplyRule[]>('/api/outreach/autoreply'),
+  createAutoReplyRule: (data: Record<string, unknown>) => post<{ id: string }>('/api/outreach/autoreply', data),
+  updateAutoReplyRule: (id: string, data: Record<string, unknown>) => patch(`/api/outreach/autoreply/${id}`, data),
+  deleteAutoReplyRule: (id: string) => del(`/api/outreach/autoreply/${id}`),
+  testAutoReply: (text: string, buttonPayload?: string) =>
+    post<{ matched: boolean; rule?: { id: string; name: string; replyText: string; buttons: { id: string; title: string }[] } }>(
+      '/api/outreach/autoreply/test', { text, buttonPayload }),
+  createWhatsappTemplate: (data: Record<string, unknown>) => post<{ id: string }>('/api/comms/templates', data),
+  deleteWhatsappTemplate: (id: string) => del(`/api/comms/templates/${id}`),
+  syncWhatsappTemplates: () => post<{ synced: number }>('/api/comms/templates/sync', {}),
+
+  // --- studio ---------------------------------------------------------------
+  studioCapabilities: () => get<{
+    video: boolean; music: boolean; imageEdit: boolean; brochure: boolean;
+    presets: { key: string; label: string }[];
+  }>('/api/studio/capabilities'),
+  designs: (params: Record<string, unknown> = {}) => get<SavedDesign[]>(`/api/studio/designs${qs(params)}`),
+  design: (id: string) => get<SavedDesign & { spec: Record<string, unknown> }>(`/api/studio/designs/${id}`),
+  saveDesign: (data: Record<string, unknown>) => post<{ id: string }>('/api/studio/designs', data),
+  updateDesign: (id: string, data: Record<string, unknown>) => patch(`/api/studio/designs/${id}`, data),
+  deleteDesign: (id: string) => del(`/api/studio/designs/${id}`),
+  renders: () => get<RenderJob[]>('/api/studio/renders'),
+  render: (id: string) => get<RenderJob>(`/api/studio/renders/${id}`),
+  renderFile: (id: string) => request<Response>(`/api/studio/renders/${id}/file`, { raw: true }),
+  queueReel: (data: Record<string, unknown>) => post<{ id: string }>('/api/studio/renders/reel', data),
+  queueBrochure: (data: Record<string, unknown>) => post<{ id: string }>('/api/studio/renders/brochure', data),
+  editImage: (file: Blob, preset: string, instruction?: string) => {
+    const form = new FormData();
+    form.append('image', file, 'photo.jpg');
+    form.append('preset', preset);
+    if (instruction) form.append('instruction', instruction);
+    return request<{ ok: boolean; dataUrl?: string; reason?: string }>('/api/studio/image-edit', {
+      method: 'POST', body: form,
+    });
+  },
+
   // --- telephony ----------------------------------------------------------
   telephonyStatus: () => get<{ configured: boolean }>('/api/telephony/status'),
+  callsNeedingDisposition: () => get<Record<string, unknown>[]>('/api/telephony/needs-disposition'),
+  setDisposition: (id: string, data: { disposition: string; notes?: string; followUpAt?: string | null }) =>
+    post(`/api/telephony/calls/${id}/disposition`, data),
+  recordingUrl: (callId: string) => authedFileUrl(`/api/telephony/calls/${callId}/recording`),
+  devices: () => get<Record<string, unknown>[]>('/api/telephony/devices'),
+  pairDevice: (data: { label?: string; phoneNumber?: string | null; model?: string | null }) =>
+    post<{ deviceId: string; token: string; note: string }>('/api/telephony/devices', data),
+  revokeDevice: (id: string) => del(`/api/telephony/devices/${id}`),
   call: (to: string, recordId?: string, module?: string) =>
     post<{ callId: string }>('/api/telephony/call', { to, recordId, module }),
   logCall: (data: Record<string, unknown>) => post('/api/telephony/log', data),

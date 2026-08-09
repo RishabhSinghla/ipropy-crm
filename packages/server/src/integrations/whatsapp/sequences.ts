@@ -65,7 +65,7 @@ export async function enrol(input: {
 }): Promise<{ enrolled: boolean; reason?: string }> {
   const sequence = await db.queryOne<SequenceRow>(
     `SELECT id, name, module_name, exit_on_reply, exit_on_status, quiet_start, quiet_end
-     FROM ipy_sequence WHERE id = $1 AND is_active = true`,
+     FROM ipy_outreach_sequence WHERE id = $1 AND is_active = true`,
     [input.sequenceId],
   );
   if (!sequence) return { enrolled: false, reason: 'Sequence not found or inactive' };
@@ -78,14 +78,14 @@ export async function enrol(input: {
   }
 
   const first = await db.queryOne<{ delay_minutes: number }>(
-    `SELECT delay_minutes FROM ipy_sequence_step
+    `SELECT delay_minutes FROM ipy_outreach_sequence_step
      WHERE sequence_id = $1 AND is_active ORDER BY sequence LIMIT 1`,
     [input.sequenceId],
   );
   if (!first) return { enrolled: false, reason: 'This sequence has no steps yet' };
 
   const row = await db.queryOne<{ id: string }>(
-    `INSERT INTO ipy_sequence_enrolment (sequence_id, record_id, handle, next_run_at, enrolled_by)
+    `INSERT INTO ipy_outreach_sequence_enrolment (sequence_id, record_id, handle, next_run_at, enrolled_by)
      VALUES ($1,$2,$3, now() + ($4 || ' minutes')::interval, $5)
      ON CONFLICT (sequence_id, record_id) DO NOTHING
      RETURNING id`,
@@ -94,7 +94,7 @@ export async function enrol(input: {
   if (!row) return { enrolled: false, reason: 'Already enrolled in this sequence' };
 
   await db.query(
-    `UPDATE ipy_sequence SET enrolled_count = enrolled_count + 1 WHERE id = $1`,
+    `UPDATE ipy_outreach_sequence SET enrolled_count = enrolled_count + 1 WHERE id = $1`,
     [input.sequenceId],
   );
   return { enrolled: true };
@@ -102,9 +102,10 @@ export async function enrol(input: {
 
 export async function exitEnrolment(enrolmentId: string, reason: string): Promise<void> {
   await db.query(
-    `UPDATE ipy_sequence_enrolment
-     SET status = 'exited', exit_reason = $2, next_run_at = NULL, updated_at = now()
-     WHERE id = $1 AND status = 'active'`,
+    `UPDATE ipy_outreach_sequence_enrolment
+     SET status = 'exited', exit_reason = $2, next_run_at = NULL,
+         claimed_at = NULL, updated_at = now()
+     WHERE id = $1 AND status IN ('active','processing')`,
     [enrolmentId, reason],
   );
 }
@@ -118,9 +119,10 @@ export async function exitEnrolment(enrolmentId: string, reason: string): Promis
  */
 export async function exitAllForRecord(recordId: string, reason: string): Promise<number> {
   const result = await db.query(
-    `UPDATE ipy_sequence_enrolment
-     SET status = 'exited', exit_reason = $2, next_run_at = NULL, updated_at = now()
-     WHERE record_id = $1 AND status = 'active'`,
+    `UPDATE ipy_outreach_sequence_enrolment
+     SET status = 'exited', exit_reason = $2, next_run_at = NULL,
+         claimed_at = NULL, updated_at = now()
+     WHERE record_id = $1 AND status IN ('active','processing')`,
     [recordId, reason],
   );
   return result.rowCount ?? 0;
@@ -130,9 +132,11 @@ export async function exitAllForRecord(recordId: string, reason: string): Promis
 export async function exitAllForHandle(handle: string, reason: string): Promise<number> {
   const tail = handle.replace(/\D/g, '').slice(-10);
   const result = await db.query(
-    `UPDATE ipy_sequence_enrolment
-     SET status = 'exited', exit_reason = $2, next_run_at = NULL, updated_at = now()
-     WHERE status = 'active' AND right(regexp_replace(handle, '\\D', '', 'g'), 10) = $1`,
+    `UPDATE ipy_outreach_sequence_enrolment
+     SET status = 'exited', exit_reason = $2, next_run_at = NULL,
+         claimed_at = NULL, updated_at = now()
+     WHERE status IN ('active','processing')
+       AND right(regexp_replace(handle, '\\D', '', 'g'), 10) = $1`,
     [tail, reason],
   );
   return result.rowCount ?? 0;
@@ -149,14 +153,24 @@ export async function runDueEnrolments(limit = 50): Promise<{ ran: number; exite
   let exited = 0;
 
   const due = await db.query<{
-    id: string; sequence_id: string; record_id: string | null; handle: string; current_step: number;
+    id: string; sequence_id: string; record_id: string | null; handle: string;
+    current_step: number; enrolled_by: string | null; created_at: string;
   }>(
-    `SELECT id, sequence_id, record_id, handle, current_step
-     FROM ipy_sequence_enrolment
-     WHERE status = 'active' AND next_run_at IS NOT NULL AND next_run_at <= now()
-     ORDER BY next_run_at
-     LIMIT $1
-     FOR UPDATE SKIP LOCKED`,
+    `UPDATE ipy_outreach_sequence_enrolment e
+     SET status = 'processing', claimed_at = now(), updated_at = now()
+     WHERE e.id IN (
+       SELECT id FROM ipy_outreach_sequence_enrolment
+       WHERE (
+         status = 'active' AND next_run_at IS NOT NULL AND next_run_at <= now()
+       ) OR (
+         status = 'processing' AND claimed_at < now() - interval '15 minutes'
+       )
+       ORDER BY next_run_at NULLS FIRST
+       LIMIT $1
+       FOR UPDATE SKIP LOCKED
+     )
+     RETURNING e.id, e.sequence_id, e.record_id, e.handle, e.current_step,
+               e.enrolled_by, e.created_at`,
     [limit],
   );
 
@@ -167,8 +181,9 @@ export async function runDueEnrolments(limit = 50): Promise<{ ran: number; exite
     } catch (err) {
       logger.warn({ err, enrolmentId: enrolment.id }, 'sequence step failed');
       await db.query(
-        `UPDATE ipy_sequence_enrolment
-         SET last_error = $2, next_run_at = now() + interval '1 hour', updated_at = now()
+        `UPDATE ipy_outreach_sequence_enrolment
+         SET status = 'active', claimed_at = NULL, last_error = $2,
+             next_run_at = now() + interval '1 hour', updated_at = now()
          WHERE id = $1`,
         [enrolment.id, (err instanceof Error ? err.message : String(err)).slice(0, 500)],
       );
@@ -181,11 +196,12 @@ export async function runDueEnrolments(limit = 50): Promise<{ ran: number; exite
 type Outcome = 'ran' | 'exited' | 'deferred';
 
 async function advance(enrolment: {
-  id: string; sequence_id: string; record_id: string | null; handle: string; current_step: number;
+  id: string; sequence_id: string; record_id: string | null; handle: string;
+  current_step: number; enrolled_by: string | null; created_at: string;
 }): Promise<Outcome> {
   const sequence = await db.queryOne<SequenceRow>(
     `SELECT id, name, module_name, exit_on_reply, exit_on_status, quiet_start, quiet_end
-     FROM ipy_sequence WHERE id = $1`,
+     FROM ipy_outreach_sequence WHERE id = $1`,
     [enrolment.sequence_id],
   );
   if (!sequence) {
@@ -200,7 +216,7 @@ async function advance(enrolment: {
     return 'exited';
   }
 
-  if (sequence.exit_on_reply && await hasReplied(enrolment.handle)) {
+  if (sequence.exit_on_reply && await hasReplied(enrolment.handle, enrolment.created_at)) {
     await exitEnrolment(enrolment.id, 'Replied');
     return 'exited';
   }
@@ -219,8 +235,10 @@ async function advance(enrolment: {
   const wait = minutesUntilAwake(sequence.quiet_start, sequence.quiet_end);
   if (wait > 0) {
     await db.query(
-      `UPDATE ipy_sequence_enrolment
-       SET next_run_at = now() + ($2 || ' minutes')::interval, updated_at = now() WHERE id = $1`,
+      `UPDATE ipy_outreach_sequence_enrolment
+       SET status = 'active', claimed_at = NULL,
+           next_run_at = now() + ($2 || ' minutes')::interval, updated_at = now()
+       WHERE id = $1`,
       [enrolment.id, String(wait)],
     );
     return 'deferred';
@@ -230,7 +248,7 @@ async function advance(enrolment: {
 
   const step = await db.queryOne<StepRow>(
     `SELECT id, sequence, delay_minutes, channel, template_name, subject, body, buttons, fallback_to_device
-     FROM ipy_sequence_step
+     FROM ipy_outreach_sequence_step
      WHERE sequence_id = $1 AND is_active AND sequence > $2
      ORDER BY sequence LIMIT 1`,
     [enrolment.sequence_id, enrolment.current_step],
@@ -238,8 +256,9 @@ async function advance(enrolment: {
 
   if (!step) {
     await db.query(
-      `UPDATE ipy_sequence_enrolment
-       SET status = 'completed', next_run_at = NULL, updated_at = now() WHERE id = $1`,
+      `UPDATE ipy_outreach_sequence_enrolment
+       SET status = 'completed', claimed_at = NULL, next_run_at = NULL, updated_at = now()
+       WHERE id = $1`,
       [enrolment.id],
     );
     return 'exited';
@@ -251,7 +270,7 @@ async function advance(enrolment: {
   // could not go out is logged inside runStep; re-running it forever would
   // wedge the enrolment on one unsendable message and starve every step after.
   const next = await db.queryOne<{ delay_minutes: number }>(
-    `SELECT delay_minutes FROM ipy_sequence_step
+    `SELECT delay_minutes FROM ipy_outreach_sequence_step
      WHERE sequence_id = $1 AND is_active AND sequence > $2
      ORDER BY sequence LIMIT 1`,
     [enrolment.sequence_id, step.sequence],
@@ -259,17 +278,18 @@ async function advance(enrolment: {
 
   if (next) {
     await db.query(
-      `UPDATE ipy_sequence_enrolment
-       SET current_step = $2, next_run_at = now() + ($3 || ' minutes')::interval,
+      `UPDATE ipy_outreach_sequence_enrolment
+       SET current_step = $2, status = 'active', claimed_at = NULL,
+           next_run_at = now() + ($3 || ' minutes')::interval,
            last_error = NULL, updated_at = now()
        WHERE id = $1`,
       [enrolment.id, step.sequence, String(next.delay_minutes)],
     );
   } else {
     await db.query(
-      `UPDATE ipy_sequence_enrolment
-       SET current_step = $2, status = 'completed', next_run_at = NULL,
-           last_error = NULL, updated_at = now()
+      `UPDATE ipy_outreach_sequence_enrolment
+       SET current_step = $2, status = 'completed', claimed_at = NULL,
+           next_run_at = NULL, last_error = NULL, updated_at = now()
        WHERE id = $1`,
       [enrolment.id, step.sequence],
     );
@@ -280,7 +300,7 @@ async function advance(enrolment: {
 
 async function runStep(
   step: StepRow,
-  enrolment: { id: string; handle: string; record_id: string | null },
+  enrolment: { id: string; handle: string; record_id: string | null; enrolled_by: string | null },
   sequence: SequenceRow,
 ): Promise<void> {
   const body = step.body
@@ -349,7 +369,7 @@ async function runStep(
  */
 async function sendWhatsAppStep(
   step: StepRow,
-  enrolment: { id: string; handle: string; record_id: string | null },
+  enrolment: { id: string; handle: string; record_id: string | null; enrolled_by: string | null },
   sequence: SequenceRow,
   body: string,
 ): Promise<void> {
@@ -383,6 +403,7 @@ async function sendWhatsAppStep(
       module: sequence.module_name,
       reason: `${sequence.name} — step ${step.sequence}`,
       sequenceId: sequence.id,
+      assignedTo: enrolment.enrolled_by,
     });
     return;
   }
@@ -406,15 +427,16 @@ async function mergeScope(recordId: string | null, module: string): Promise<Reco
 }
 
 /** Any inbound message from this number since it was enrolled counts as a reply. */
-async function hasReplied(handle: string): Promise<boolean> {
+async function hasReplied(handle: string, enrolledAt: string): Promise<boolean> {
   const tail = handle.replace(/\D/g, '').slice(-10);
   const row = await db.queryOne<{ id: string }>(
     `SELECT m.id FROM ipy_message m
      JOIN ipy_conversation c ON c.id = m.conversation_id
      WHERE m.direction = 'inbound'
        AND right(regexp_replace(c.handle, '\\D', '', 'g'), 10) = $1
+       AND m.created_at >= $2
      LIMIT 1`,
-    [tail],
+    [tail, enrolledAt],
   );
   return Boolean(row);
 }
@@ -448,7 +470,7 @@ async function handleForRecord(recordId: string): Promise<string | null> {
 }
 
 export async function requireSequence(id: string): Promise<SequenceRow> {
-  const row = await db.queryOne<SequenceRow>(`SELECT * FROM ipy_sequence WHERE id = $1`, [id]);
+  const row = await db.queryOne<SequenceRow>(`SELECT * FROM ipy_outreach_sequence WHERE id = $1`, [id]);
   if (!row) throw new NotFoundError('Sequence not found');
   return row;
 }

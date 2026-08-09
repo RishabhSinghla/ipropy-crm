@@ -435,14 +435,18 @@ export function ToastHost(): JSX.Element {
 // ---------------------------------------------------------------------------
 
 export function Toggle({
-  checked, onChange, label, disabled, className,
-}: { checked: boolean; onChange: (v: boolean) => void; label?: string; disabled?: boolean; className?: string }): JSX.Element {
+  checked, onChange, label, ariaLabel, disabled, className,
+}: {
+  checked: boolean; onChange: (v: boolean) => void; label?: string; ariaLabel?: string;
+  disabled?: boolean; className?: string;
+}): JSX.Element {
   return (
     <label className={cn('inline-flex cursor-pointer items-center gap-2', disabled && 'cursor-not-allowed opacity-50', className)}>
       <button
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-label={ariaLabel ?? label}
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={cn(

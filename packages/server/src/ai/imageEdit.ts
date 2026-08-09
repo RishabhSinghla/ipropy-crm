@@ -29,8 +29,13 @@ import { logger } from '../utils/logger.js';
  * Pinned to the alias rather than a dated build for the reason migration 018
  * exists: Google retires dated model ids and the alias keeps working.
  */
-const IMAGE_MODEL = 'gemini-2.5-flash-image';
-const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
+const IMAGE_MODELS = [
+  { id: 'gemini-3.1-flash-image', apiVersion: 'v1' },
+  // Existing AI Studio projects may not yet expose 3.1. The older image model
+  // remains a compatibility fallback, but only when Google returns 404.
+  { id: 'gemini-2.5-flash-image', apiVersion: 'v1beta' },
+] as const;
+const ENDPOINT = 'https://generativelanguage.googleapis.com';
 
 /** Gemini rejects oversized inline payloads; a listing photo does not need more. */
 const MAX_EDGE = 2048;
@@ -111,7 +116,7 @@ export async function editImage(input: {
   if (!gemini?.apiKey) {
     return {
       ok: false,
-      reason: 'AI photo editing needs a Google AI Studio key. Add one in Admin → Integrations → Gemini; the free tier covers this.',
+      reason: 'AI photo editing needs a Google AI Studio key. Add one in Admin → Integrations → Gemini.',
     };
   }
 
@@ -130,35 +135,44 @@ export async function editImage(input: {
 
   const started = Date.now();
   try {
-    const res = await fetch(`${ENDPOINT}/${IMAGE_MODEL}:generateContent`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': gemini.apiKey,
-      },
-      body: JSON.stringify({
-        contents: [{
-          role: 'user',
-          parts: [
-            { text: prompt },
-            { inline_data: { mime_type: 'image/jpeg', data: prepared.toString('base64') } },
-          ],
-        }],
-        generationConfig: { responseModalities: ['IMAGE'] },
-      }),
-      signal: AbortSignal.timeout(90_000),
-    });
-
-    const body = await res.json().catch(() => ({})) as {
+    let response: Response | null = null;
+    let body: {
       candidates?: { content?: { parts?: { inlineData?: { data?: string; mimeType?: string }; inline_data?: { data?: string; mime_type?: string } }[] } }[];
       error?: { message?: string; status?: string };
       promptFeedback?: { blockReason?: string };
-    };
+    } = {};
+    let model: string = IMAGE_MODELS[0].id;
+
+    for (const candidate of IMAGE_MODELS) {
+      model = candidate.id;
+      response = await fetch(`${ENDPOINT}/${candidate.apiVersion}/models/${candidate.id}:generateContent`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': gemini.apiKey,
+        },
+        body: JSON.stringify({
+          contents: [{
+            role: 'user',
+            parts: [
+              { text: prompt },
+              { inline_data: { mime_type: 'image/jpeg', data: prepared.toString('base64') } },
+            ],
+          }],
+          generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
+        }),
+        signal: AbortSignal.timeout(90_000),
+      });
+      body = await response.json().catch(() => ({})) as typeof body;
+      if (response.status !== 404 || candidate === IMAGE_MODELS.at(-1)) break;
+    }
+
+    const res = response!;
 
     if (!res.ok) {
       const message = body.error?.message ?? `HTTP ${res.status}`;
-      await logEdit(input, Date.now() - started, false, message);
-      return { ok: false, reason: friendlyError(res.status, message) };
+      await logEdit(input, model, Date.now() - started, false, message);
+      return { ok: false, reason: friendlyError(res.status, message, model) };
     }
 
     if (body.promptFeedback?.blockReason) {
@@ -172,7 +186,7 @@ export async function editImage(input: {
     const base64 = part?.inlineData?.data ?? part?.inline_data?.data;
 
     if (!base64) {
-      await logEdit(input, Date.now() - started, false, 'no image in response');
+      await logEdit(input, model, Date.now() - started, false, 'no image in response');
       return { ok: false, reason: 'The model replied without an image. Try a simpler instruction, or a different photo.' };
     }
 
@@ -181,12 +195,12 @@ export async function editImage(input: {
     // the PDF writer) only ever deals with one format.
     const buffer = await sharp(raw).jpeg({ quality: 92 }).toBuffer();
 
-    await logEdit(input, Date.now() - started, true, null);
+    await logEdit(input, model, Date.now() - started, true, null);
     return { ok: true, result: { buffer, mime: 'image/jpeg' } };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     logger.error({ err }, 'AI image edit failed');
-    await logEdit(input, Date.now() - started, false, message);
+    await logEdit(input, IMAGE_MODELS[0].id, Date.now() - started, false, message);
     return {
       ok: false,
       reason: message.includes('timeout') || message.includes('aborted')
@@ -196,15 +210,15 @@ export async function editImage(input: {
   }
 }
 
-function friendlyError(status: number, message: string): string {
+function friendlyError(status: number, message: string, model: string): string {
   if (status === 401 || status === 403) {
     return 'Google rejected the API key for image editing. Check the key in Admin → Integrations → Gemini.';
   }
   if (status === 404) {
-    return `The image model "${IMAGE_MODEL}" is not available to this key. Image generation is not enabled on every Google AI Studio project.`;
+    return `The image model "${model}" is not available to this key. Image generation is not enabled on every Google AI Studio project.`;
   }
   if (status === 429) {
-    return 'Google\'s free tier rate limit was hit. Wait a minute and try again.';
+    return 'Google\'s image-generation rate limit was hit. Wait a minute and try again.';
   }
   return message;
 }
@@ -212,6 +226,7 @@ function friendlyError(status: number, message: string): string {
 /** Same audit table every other AI call writes to, so cost and usage stay in one place. */
 async function logEdit(
   input: { preset: EditPreset; userId?: string | null },
+  model: string,
   ms: number,
   success: boolean,
   error: string | null,
@@ -219,6 +234,6 @@ async function logEdit(
   await db.query(
     `INSERT INTO ipy_ai_log (feature, model, user_id, latency_ms, success, error)
      VALUES ($1,$2,$3,$4,$5,$6)`,
-    [`image_edit:${input.preset}`, IMAGE_MODEL, input.userId ?? null, ms, success, error],
+    [`image_edit:${input.preset}`, model, input.userId ?? null, ms, success, error],
   ).catch((err) => logger.debug({ err }, 'could not write AI log row'));
 }

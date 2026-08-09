@@ -18,10 +18,11 @@
  */
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import { getDriver } from '../storage/index.js';
 import { logger } from '../../utils/logger.js';
@@ -62,6 +63,8 @@ const DEFAULTS = {
 const FADE = 0.5;
 const TITLE_SECONDS = 2.5;
 const OUTRO_SECONDS = 2.5;
+const MUSIC_TRACK_PATH = fileURLToPath(new URL('../../../assets/music/background.mp3', import.meta.url));
+const MUSIC_VOLUME = 0.16;
 
 let ffmpegAvailable: boolean | null = null;
 
@@ -75,6 +78,15 @@ export async function isFfmpegAvailable(): Promise<boolean> {
     ffmpegAvailable = false;
   }
   return ffmpegAvailable;
+}
+
+export async function isReelMusicAvailable(): Promise<boolean> {
+  try {
+    await stat(MUSIC_TRACK_PATH);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export interface ReelResult {
@@ -94,16 +106,14 @@ export async function renderReel(spec: ReelSpec, jobId: string): Promise<ReelRes
 
   const work = await mkdtemp(join(tmpdir(), 'ipropy-reel-'));
   const driver = await getDriver();
-  const cleanups: (() => Promise<void>)[] = [];
-
   try {
     // --- 1. normalise every photo to the exact canvas ----------------------
     // ffmpeg's zoompan is fussy about mismatched inputs, and a portrait phone
     // photo next to a landscape one otherwise produces a jumping frame. Doing
     // the fit in sharp first means the video filter only ever sees one size.
-    const framePaths: string[] = [];
+    const frames: { path: string; slide: ReelSlide }[] = [];
     for (const [index, slide] of spec.slides.entries()) {
-      const buffer = await loadSlide(slide, driver, cleanups);
+      const buffer = await loadSlide(slide, driver);
       if (!buffer) continue;
 
       const framePath = join(work, `frame-${String(index).padStart(3, '0')}.jpg`);
@@ -111,9 +121,9 @@ export async function renderReel(spec: ReelSpec, jobId: string): Promise<ReelRes
         .resize(width, height, { fit: 'cover', position: 'attention' })
         .jpeg({ quality: 92 })
         .toFile(framePath);
-      framePaths.push(framePath);
+      frames.push({ path: framePath, slide });
     }
-    if (!framePaths.length) throw new Error('None of the photos for this reel could be read');
+    if (!frames.length) throw new Error('None of the photos for this reel could be read');
 
     // --- 2. one clip per photo, with pan/zoom and caption ------------------
     const clips: string[] = [];
@@ -125,11 +135,11 @@ export async function renderReel(spec: ReelSpec, jobId: string): Promise<ReelRes
     );
     clips.push(titlePath);
 
-    for (const [index, framePath] of framePaths.entries()) {
+    for (const [index, frame] of frames.entries()) {
       const clipPath = join(work, `clip-${index}.mp4`);
-      await renderSlideClip(framePath, clipPath, {
+      await renderSlideClip(frame.path, clipPath, {
         width, height, seconds: perSlide,
-        caption: spec.slides[index]?.caption,
+        caption: frame.slide.caption,
         zoomIn: index % 2 === 0,
       }, work);
       clips.push(clipPath);
@@ -144,22 +154,34 @@ export async function renderReel(spec: ReelSpec, jobId: string): Promise<ReelRes
 
     // --- 3. join with crossfades ------------------------------------------
     const joined = join(work, 'joined.mp4');
-    await crossfade(clips, joined, [TITLE_SECONDS, ...framePaths.map(() => perSlide), OUTRO_SECONDS]);
+    await crossfade(clips, joined, [TITLE_SECONDS, ...frames.map(() => perSlide), OUTRO_SECONDS]);
 
     // --- 4. watermark ------------------------------------------------------
-    const final = join(work, 'reel.mp4');
-    await applyWatermark(joined, final, width);
+    const watermarked = join(work, 'watermarked.mp4');
+    await applyWatermark(joined, watermarked, width);
+
+    let final = watermarked;
+    if (spec.music && await isReelMusicAvailable()) {
+      const withMusic = join(work, 'reel.mp4');
+      try {
+        await mixMusic(watermarked, withMusic);
+        final = withMusic;
+      } catch (err) {
+        // A corrupt or unsupported optional audio asset must not discard a
+        // successfully rendered video. Ship the silent cut and log the issue.
+        logger.warn({ err }, 'reel: music mix failed, using the silent cut');
+      }
+    }
 
     const key = `renders/reel-${jobId}.mp4`;
     await driver.save(key, createReadStream(final), 'video/mp4');
 
-    const duration = TITLE_SECONDS + framePaths.length * perSlide + OUTRO_SECONDS
+    const duration = TITLE_SECONDS + frames.length * perSlide + OUTRO_SECONDS
       - FADE * (clips.length - 1);
 
     return { key, mime: 'video/mp4', durationSeconds: Math.round(duration) };
   } finally {
     await rm(work, { recursive: true, force: true });
-    for (const cleanup of cleanups) await cleanup().catch(() => undefined);
   }
 }
 
@@ -168,21 +190,10 @@ export async function renderReel(spec: ReelSpec, jobId: string): Promise<ReelRes
 async function loadSlide(
   slide: ReelSlide,
   driver: Awaited<ReturnType<typeof getDriver>>,
-  cleanups: (() => Promise<void>)[],
 ): Promise<Buffer | null> {
   if (slide.key) {
     const buffer = await driver.read(slide.key);
     if (buffer) return buffer;
-  }
-  if (slide.url && /^https?:\/\//i.test(slide.url)) {
-    try {
-      const res = await fetch(slide.url, { signal: AbortSignal.timeout(15_000) });
-      if (!res.ok) return null;
-      return Buffer.from(await res.arrayBuffer());
-    } catch (err) {
-      logger.warn({ err, url: slide.url }, 'reel: could not fetch slide image');
-      return null;
-    }
   }
   return null;
 }
@@ -273,14 +284,19 @@ async function renderCard(
 ): Promise<void> {
   const { width: w, height: h } = info;
   const titleSize = Math.round(w * 0.085);
-  const titleLines = wrapSvgText(info.title, Math.floor(w / (titleSize * 0.55)));
+  const titleLines = fitLines(info.title, Math.floor(w / (titleSize * 0.55)), 4);
+  const titleStart = h * 0.4;
+  const titleStep = titleSize * 1.15;
+  const titleLast = titleStart + (titleLines.length - 1) * titleStep;
+  const subtitleY = titleLast + titleSize * 1.35;
+  const priceY = info.subtitle ? subtitleY + w * 0.15 : titleLast + w * 0.17;
 
   const svg = `<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
     <rect width="${w}" height="${h}" fill="${escapeXml(info.background)}"/>
     <text x="${w * 0.08}" y="${h * 0.2}" font-family="Helvetica, Arial, sans-serif" font-size="${Math.round(w * 0.032)}" letter-spacing="6" fill="rgba(255,255,255,0.75)">IPROPY</text>
-    ${titleLines.map((line, i) => `<text x="${w * 0.08}" y="${h * 0.44 + i * titleSize * 1.15}" font-family="Helvetica, Arial, sans-serif" font-weight="800" font-size="${titleSize}" fill="#ffffff">${escapeXml(line)}</text>`).join('')}
-    ${info.subtitle ? `<text x="${w * 0.08}" y="${h * 0.44 + titleLines.length * titleSize * 1.15 + w * 0.06}" font-family="Helvetica, Arial, sans-serif" font-size="${Math.round(w * 0.036)}" fill="rgba(255,255,255,0.85)">${escapeXml(info.subtitle)}</text>` : ''}
-    ${info.price ? `<text x="${w * 0.08}" y="${h * 0.72}" font-family="Helvetica, Arial, sans-serif" font-weight="800" font-size="${Math.round(w * 0.07)}" fill="#ffffff">${escapeXml(info.price)}</text>` : ''}
+    ${titleLines.map((line, i) => `<text x="${w * 0.08}" y="${titleStart + i * titleStep}" font-family="Helvetica, Arial, sans-serif" font-weight="800" font-size="${titleSize}" fill="#ffffff">${escapeXml(line)}</text>`).join('')}
+    ${info.subtitle ? `<text x="${w * 0.08}" y="${subtitleY}" font-family="Helvetica, Arial, sans-serif" font-size="${Math.round(w * 0.036)}" fill="rgba(255,255,255,0.85)">${escapeXml(info.subtitle)}</text>` : ''}
+    ${info.price ? `<text x="${w * 0.08}" y="${priceY}" font-family="Helvetica, Arial, sans-serif" font-weight="800" font-size="${Math.round(w * 0.07)}" fill="#ffffff">${escapeXml(info.price)}</text>` : ''}
   </svg>`;
 
   const pngPath = join(work, `${tag}.png`);
@@ -356,6 +372,16 @@ async function applyWatermark(inputPath: string, outputPath: string, width: numb
   }
 }
 
+async function mixMusic(inputPath: string, outputPath: string): Promise<void> {
+  await runFfmpeg([
+    '-y', '-i', inputPath, '-stream_loop', '-1', '-i', MUSIC_TRACK_PATH,
+    '-filter_complex', `[1:a]volume=${MUSIC_VOLUME}[music]`,
+    '-map', '0:v', '-map', '[music]',
+    '-c:v', 'copy', '-c:a', 'aac', '-shortest', '-movflags', '+faststart',
+    outputPath,
+  ]);
+}
+
 /** Direct execFile for the reasons documented in video.ts. */
 function runFfmpeg(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -384,6 +410,15 @@ function wrapSvgText(text: string, maxChars: number): string[] {
   }
   if (line) lines.push(line);
   return lines.slice(0, 4);
+}
+
+function fitLines(text: string, maxChars: number, maxLines: number): string[] {
+  const wrapped = wrapSvgText(text, maxChars);
+  if (wrapped.length <= maxLines) return wrapped;
+  const visible = wrapped.slice(0, maxLines);
+  const last = visible[maxLines - 1];
+  visible[maxLines - 1] = `${last.slice(0, Math.max(1, maxChars - 3)).trimEnd()}...`;
+  return visible;
 }
 
 function escapeXml(s: string): string {

@@ -20,6 +20,15 @@ const BATCH = 1;
 const MAX_ATTEMPTS = 3;
 
 export async function drainRenders(): Promise<number> {
+  // A process can die after claiming a job. It is safe to retry because every
+  // renderer writes to a deterministic job-specific key.
+  await db.query(
+    `UPDATE ipy_render_job
+     SET status = 'queued', started_at = NULL,
+         error = COALESCE(error || E'\n', '') || 'Recovered after an interrupted render'
+     WHERE status = 'running' AND started_at < now() - interval '30 minutes'`,
+  );
+
   const claimed = await db.query<{ id: string; kind: string; spec: Record<string, unknown>; requested_by: string | null; attempts: number }>(
     `UPDATE ipy_render_job SET status = 'running', started_at = now(), attempts = attempts + 1
      WHERE id IN (
@@ -76,7 +85,8 @@ async function runJob(job: {
     const exhausted = job.attempts >= MAX_ATTEMPTS;
     await db.query(
       `UPDATE ipy_render_job
-       SET status = $2, error = $3, finished_at = CASE WHEN $2 = 'failed' THEN now() ELSE NULL END
+       SET status = $2, error = $3, started_at = CASE WHEN $2 = 'queued' THEN NULL ELSE started_at END,
+           finished_at = CASE WHEN $2 = 'failed' THEN now() ELSE NULL END
        WHERE id = $1`,
       [job.id, exhausted ? 'failed' : 'queued', message.slice(0, 1000)],
     );

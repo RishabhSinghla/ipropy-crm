@@ -34,6 +34,8 @@ export interface AutoReplyInput {
   consentAction: 'opt_out' | 'opt_in' | null;
   /** Set when the customer tapped a quick-reply button rather than typing. */
   buttonPayload?: string | null;
+  /** True only for the first inbound message ever stored in this conversation. */
+  isFirstMessage?: boolean;
 }
 
 interface RuleRow {
@@ -76,16 +78,18 @@ export async function runAutoReply(input: AutoReplyInput): Promise<void> {
 
   // 3. Cooldown, keyed on the conversation rather than the message, so a burst
   // of inbound messages produces one reply and not one each.
-  const recent = await db.queryOne<{ id: string }>(
-    `SELECT id FROM ipy_message
-     WHERE conversation_id = $1 AND direction = 'outbound' AND is_auto_reply = true
-       AND created_at > now() - ($2 || ' minutes')::interval
-     LIMIT 1`,
-    [input.conversationId, String(COOLDOWN_MINUTES)],
-  );
-  if (recent) return;
+  if (!input.buttonPayload) {
+    const recent = await db.queryOne<{ id: string }>(
+      `SELECT id FROM ipy_message
+       WHERE conversation_id = $1 AND direction = 'outbound' AND is_auto_reply = true
+         AND created_at > now() - ($2 || ' minutes')::interval
+       LIMIT 1`,
+      [input.conversationId, String(COOLDOWN_MINUTES)],
+    );
+    if (recent) return;
+  }
 
-  const rule = await matchRule(input.text, input.buttonPayload ?? null);
+  const rule = await matchRule(input.text, input.buttonPayload ?? null, input.isFirstMessage ?? false);
   if (!rule) return;
 
   const scope = await mergeScope(input.recordId);
@@ -115,7 +119,11 @@ export async function runAutoReply(input: AutoReplyInput): Promise<void> {
  * — they exist to be reached by a button and would otherwise fire on stray
  * words like "weekend" appearing mid-sentence.
  */
-export async function matchRule(text: string | null, buttonPayload: string | null = null): Promise<RuleRow | null> {
+export async function matchRule(
+  text: string | null,
+  buttonPayload: string | null = null,
+  isFirstMessage = false,
+): Promise<RuleRow | null> {
   if (buttonPayload) {
     const routed = await db.queryOne<RuleRow>(
       `SELECT r.* FROM ipy_autoreply_rule owner
@@ -146,6 +154,10 @@ export async function matchRule(text: string | null, buttonPayload: string | nul
       fallback ??= rule;
       continue;
     }
+    if (rule.trigger_type === 'welcome') {
+      if (isFirstMessage) return rule;
+      continue;
+    }
     if (rule.trigger_type !== 'keyword') continue;
 
     const hit = (rule.keywords ?? []).some((k) => {
@@ -169,17 +181,21 @@ export async function matchRule(text: string | null, buttonPayload: string | nul
  */
 async function handOver(conversationId: string, recordId: string | null, ruleName: string): Promise<void> {
   const owner = recordId
-    ? await db.queryOne<{ owner_id: string | null }>(`SELECT owner_id FROM ipy_record WHERE id = $1`, [recordId])
+    ? await db.queryOne<{ owner_id: string | null; owner_type: string | null }>(
+        `SELECT owner_id, owner_type FROM ipy_record WHERE id = $1`,
+        [recordId],
+      )
     : null;
+  const ownerUserId = owner?.owner_type === 'user' ? owner.owner_id : null;
 
   await db.query(
     `UPDATE ipy_conversation SET assigned_to = $2, status = 'open', updated_at = now() WHERE id = $1`,
-    [conversationId, owner?.owner_id ?? null],
+    [conversationId, ownerUserId],
   );
 
-  if (owner?.owner_id) {
+  if (ownerUserId) {
     await notify({
-      userId: owner.owner_id,
+      userId: ownerUserId,
       kind: 'whatsapp',
       title: 'A WhatsApp chat needs you',
       body: `"${ruleName}" handed this conversation over.`,

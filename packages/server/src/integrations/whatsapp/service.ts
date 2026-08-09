@@ -143,6 +143,11 @@ export async function handleInbound(msg: InboundMessage): Promise<{ conversation
        RETURNING id`,
       [conversationId, msg.type, body, media ? JSON.stringify(media) : null, msg.providerMessageId, now],
     );
+    const inboundCount = await tx.queryOne<{ count: number }>(
+      `SELECT count(*)::int AS count FROM ipy_message
+       WHERE conversation_id = $1 AND direction = 'inbound'`,
+      [conversationId],
+    );
 
     // An inbound message re-opens the 24h free-form window.
     await tx.query(
@@ -221,6 +226,7 @@ export async function handleInbound(msg: InboundMessage): Promise<{ conversation
         recordId: conv?.record_id ?? null,
         consentAction,
         buttonPayload: msg.buttonPayload ?? null,
+        isFirstMessage: inboundCount?.count === 1,
       }).catch((err) => logger.warn({ err }, 'auto-reply failed'));
     });
 

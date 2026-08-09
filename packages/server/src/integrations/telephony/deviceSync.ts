@@ -26,7 +26,6 @@ import { toE164 } from '@ipropy/shared';
 import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { BadRequestError, UnauthorizedError } from '../../utils/errors.js';
-import { touchActivity } from '../../core/entity/recordService.js';
 import { notify } from '../../core/notifications/index.js';
 import { bus } from '../../core/events/bus.js';
 
@@ -190,7 +189,12 @@ export async function syncCalls(device: AuthedDevice, entries: DeviceCallEntry[]
       if (match) result.matched++;
 
       if (match?.recordId) {
-        await touchActivity(match.recordId);
+        await db.query(
+          `UPDATE ipy_record
+           SET last_activity_at = GREATEST(COALESCE(last_activity_at, $2), $2)
+           WHERE id = $1`,
+          [match.recordId, started],
+        );
         if (status === 'completed') {
           await db.query(
             `UPDATE ipy_e_leads
@@ -212,16 +216,19 @@ export async function syncCalls(device: AuthedDevice, entries: DeviceCallEntry[]
           );
         }
 
-        bus.emitAsync('call.ended', {
-          callId: inserted.id, direction, status,
-          recordId: match.recordId, userId: device.userId,
-        });
+        if (Date.now() - started.getTime() <= 10 * 60_000) {
+          bus.emitAsync('call.ended', {
+            callId: inserted.id, direction, status,
+            recordId: match.recordId, userId: device.userId,
+          });
+        }
       }
 
       // An inbound call from a number nobody holds is a lead nobody has. That
       // is the single most valuable thing this sync surfaces, so it gets a
       // notification rather than a row someone might notice later.
-      if (!match && direction === 'inbound' && entry.durationSeconds > 0) {
+      if (!match && direction === 'inbound' && entry.durationSeconds > 0
+          && Date.now() - started.getTime() <= 10 * 60_000) {
         await notify({
           userId: device.userId,
           kind: 'call',
@@ -289,6 +296,9 @@ export async function attachRecording(input: {
   if (input.audio.length > 60 * 1024 * 1024) {
     throw new BadRequestError('That recording is too large to upload');
   }
+  if (!input.mimeType.startsWith('audio/')) {
+    throw new BadRequestError('The recording must be an audio file');
+  }
 
   const { getDriver } = await import('../../core/storage/index.js');
   const driver = await getDriver();
@@ -311,7 +321,7 @@ export async function attachRecording(input: {
 
 function extensionFor(mimeType: string, fileName: string): string {
   const fromName = fileName.split('.').pop()?.toLowerCase();
-  if (fromName && /^[a-z0-9]{2,5}$/.test(fromName)) return fromName;
+  if (fromName && ['mp3', 'm4a', 'mp4', 'amr', 'wav', 'ogg', 'aac', '3gp'].includes(fromName)) return fromName;
   if (mimeType.includes('mpeg')) return 'mp3';
   if (mimeType.includes('mp4') || mimeType.includes('m4a')) return 'm4a';
   if (mimeType.includes('amr')) return 'amr';

@@ -136,6 +136,7 @@ export default function Layout(): JSX.Element {
               </p>
             )}
             <div className="space-y-0.5">
+              <NavItem to="/outreach" icon="send" label="Outreach" collapsed={sidebarCollapsed} badge={<QueueBadge />} />
               <NavItem to="/studio" icon="wand-2" label="Studio" collapsed={sidebarCollapsed} />
               <NavItem to="/inventory" icon="layout-grid" label="Inventory Board" collapsed={sidebarCollapsed} />
               <NavItem to="/reports" icon="bar-chart-3" label="Reports" collapsed={sidebarCollapsed} />
@@ -370,6 +371,27 @@ function InboxBadge(): JSX.Element | null {
   return (
     <span className="rounded-full bg-brand-600 px-1.5 py-0.5 text-2xs font-semibold text-white">
       {unread > 99 ? '99+' : unread}
+    </span>
+  );
+}
+
+/**
+ * How many messages are waiting for a human to tap send.
+ *
+ * Worth a badge rather than a number on a page nobody opens: in one-tap mode
+ * this queue *is* the send, so an unattended queue means nothing went out.
+ */
+function QueueBadge(): JSX.Element | null {
+  const { data } = useQuery({
+    queryKey: ['outreach', 'queue'],
+    queryFn: () => api.deviceQueue(),
+    refetchInterval: 60_000,
+  });
+  const waiting = data?.length ?? 0;
+  if (!waiting) return null;
+  return (
+    <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-2xs font-semibold text-white">
+      {waiting > 99 ? '99+' : waiting}
     </span>
   );
 }
