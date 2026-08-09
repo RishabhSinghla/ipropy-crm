@@ -9,7 +9,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { FieldMeta } from '@ipropy/shared';
-import { formatArea, formatDate, formatDateTime, formatIndianPrice, formatPhone } from '@ipropy/shared';
+import {
+  expectedDigits, formatArea, formatDate, formatDateTime, formatIndianPrice, formatPhone,
+} from '@ipropy/shared';
 import {
   Check, ChevronDown, ExternalLink, ImagePlus, Loader2, Mail, MapPin, Phone, Search, Video, X,
 } from 'lucide-react';
@@ -401,15 +403,44 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
         />
       );
 
-    case 'phone':
+    case 'phone': {
+      // The country code lives in its own field, so this one takes the national
+      // number only — digits, at the length that country actually uses. Showing
+      // the selected code as a fixed prefix is what makes that obvious; without
+      // it people type "+91" again and the number is stored wrong.
+      const code = field.config.digitsFrom
+        ? String(props.formValues?.[String(field.config.digitsFrom)] ?? '')
+        : '';
+      const expected = expectedDigits(field.config, props.formValues);
+
       return (
-        <input
-          id={id}
-          type="tel" className={cn(inputClass, 'tnum')} value={String(value ?? '')}
-          onChange={(e) => onChange(e.target.value || null)} disabled={readOnly}
-          placeholder="+91 98765 43210" autoFocus={autoFocus}
-        />
+        <div className={cn('flex items-stretch', code && 'rounded-lg')}>
+          {code && (
+            <span className="flex shrink-0 items-center rounded-l-lg border border-r-0 border-slate-300 bg-slate-50 px-2.5 text-sm text-muted tnum dark:border-slate-700 dark:bg-slate-800">
+              {code}
+            </span>
+          )}
+          <input
+            id={id}
+            type="tel"
+            inputMode="numeric"
+            className={cn(inputClass, 'tnum', code && 'rounded-l-none')}
+            value={String(value ?? '')}
+            // Stripping non-digits on the way in rather than validating after
+            // the fact: a pasted "+91 98765-43210" becomes the right ten digits
+            // instead of an error the user has to work out how to fix.
+            onChange={(e) => {
+              const digits = e.target.value.replace(/\D/g, '');
+              onChange((expected ? digits.slice(0, expected) : digits) || null);
+            }}
+            disabled={readOnly}
+            maxLength={expected || undefined}
+            placeholder={expected ? '9'.repeat(Math.min(expected, 10)) : '98765 43210'}
+            autoFocus={autoFocus}
+          />
+        </div>
       );
+    }
 
     case 'url':
       return (

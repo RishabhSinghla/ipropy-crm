@@ -549,3 +549,159 @@ export const NULLARY_OPERATORS: FilterOperator[] = [
 export function operatorTakesValue(op: FilterOperator): boolean {
   return !NULLARY_OPERATORS.includes(op);
 }
+
+/**
+ * How many digits a phone field should hold, given the rest of the record.
+ *
+ * Shared because both sides need the same answer and must not disagree: the
+ * form caps typing at this length, and the server rejects anything else. Two
+ * copies of this rule would eventually differ, and the symptom would be a
+ * number a user cannot type but the API insists on.
+ *
+ * Returns 0 when no rule applies — an unmapped country is accepted rather than
+ * measured against India's ten, because refusing to store a number we have no
+ * rule for is worse than storing it.
+ */
+export function expectedDigits(
+  config: FieldConfig | null | undefined,
+  values: Record<string, unknown> | null | undefined,
+): number {
+  if (!config) return 0;
+  if (!config.digits && !config.digitsMap) return 0;
+
+  if (config.digitsFrom && config.digitsMap) {
+    const selector = values?.[config.digitsFrom];
+    if (selector === null || selector === undefined || selector === '') return config.digits ?? 0;
+    return config.digitsMap[String(selector)] ?? 0;
+  }
+  return config.digits ?? 0;
+}
+
+// ---------------------------------------------------------------------------
+// Field validation
+//
+// Lives in `shared` so the form and the API run the *same* code rather than two
+// copies that drift. The server throws on the result; the form renders it under
+// each input. A second implementation would eventually disagree, and the
+// symptom is a value the user cannot type but the API insists on.
+//
+// Returns errors instead of throwing so the caller decides — and returns *all*
+// of them, because a form that reports one problem per submit takes five round
+// trips to fill in.
+// ---------------------------------------------------------------------------
+
+export interface FieldError { field: string; message: string }
+
+/** Local blank test — `isEmpty` lives server-side and is not importable here. */
+function isBlankValue(v: unknown): boolean {
+  return v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0);
+}
+
+export function collectFieldErrors(
+  fields: FieldMeta[],
+  values: Record<string, unknown>,
+  merged: Record<string, unknown>,
+): FieldError[] {
+  const errors: { field: string; message: string }[] = [];
+  const fail = (field: string, message: string): void => { errors.push({ field, message }); };
+
+  for (const f of fields) {
+    if (!f.isActive || !(f.name in values)) continue;
+    const value = values[f.name];
+    // Empty is `validateRequired`'s business; an optional blank field is fine.
+    if (isBlankValue(value)) continue;
+
+    const config = f.config ?? {};
+
+    if (typeof value === 'string') {
+      if (f.maxLength && value.length > f.maxLength) {
+        fail(f.name, `${f.label} cannot be longer than ${f.maxLength} characters`);
+      }
+      if (config.pattern) {
+        try {
+          if (!new RegExp(config.pattern).test(value)) {
+            fail(f.name, config.patternMessage ?? `${f.label} is not in the expected format`);
+          }
+        } catch {
+          // A malformed regex in metadata must not block every save on the
+          // module — treat it as no rule and let the admin panel surface it.
+        }
+      }
+      // The expected digit count can depend on another field — a mobile is 10
+      // digits in India, 9 in the UAE, 8 in Singapore. Reading it from the
+      // record keeps "10 digits" true where it is true without making the
+      // country dropdown decorative.
+      const expected = expectedDigits(config, merged);
+      if (expected) {
+        const digits = value.replace(/\D/g, '');
+        if (digits.length !== expected) {
+          fail(f.name, `${f.label} must be exactly ${expected} digits`);
+        }
+      }
+    }
+
+    switch (f.uitype) {
+      case 'email':
+        // Deliberately loose. Strict RFC 5322 rejects addresses that work, and
+        // the only real test of an address is sending to it.
+        if (typeof value === 'string' && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value)) {
+          fail(f.name, `${f.label} does not look like an email address`);
+        }
+        break;
+
+      case 'url':
+        if (typeof value === 'string' && !/^https?:\/\/[^\s]+$/i.test(value)) {
+          fail(f.name, `${f.label} must start with http:// or https://`);
+        }
+        break;
+
+      case 'phone': {
+        const digits = String(value).replace(/\D/g, '');
+        if (digits.length < 6 || digits.length > 15) {
+          fail(f.name, `${f.label} does not look like a phone number`);
+        }
+        break;
+      }
+
+      case 'integer':
+      case 'decimal':
+      case 'currency':
+      case 'percent':
+      case 'area':
+      case 'score': {
+        const n = Number(value);
+        if (!Number.isFinite(n)) {
+          fail(f.name, `${f.label} must be a number`);
+          break;
+        }
+        if (config.min !== undefined && n < config.min) {
+          fail(f.name, `${f.label} cannot be less than ${config.min}`);
+        }
+        if (config.max !== undefined && n > config.max) {
+          fail(f.name, `${f.label} cannot be more than ${config.max}`);
+        }
+        break;
+      }
+    }
+
+    // Cross-field bounds. Compared against `merged` — the stored record plus
+    // this payload — so editing only "budget from" still checks against the
+    // "budget to" already on the record rather than skipping the rule.
+    for (const [key, compare] of [['notAfterField', 1], ['notBeforeField', -1]] as const) {
+      const otherName = config[key];
+      if (typeof otherName !== 'string') continue;
+      const other = merged[otherName];
+      if (isBlankValue(other)) continue;
+
+      const a = Number(value);
+      const b = Number(other);
+      if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+
+      const otherLabel = fields.find((x) => x.name === otherName)?.label ?? otherName;
+      if (compare === 1 && a > b) fail(f.name, `${f.label} cannot be more than ${otherLabel}`);
+      if (compare === -1 && a < b) fail(f.name, `${f.label} cannot be less than ${otherLabel}`);
+    }
+  }
+
+  return errors;
+}

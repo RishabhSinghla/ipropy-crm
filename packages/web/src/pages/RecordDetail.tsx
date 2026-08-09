@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FieldMeta, ModuleMeta, RecordEnvelope, TimelineEntry } from '@ipropy/shared';
 import { CALL_DISPOSITIONS, formatIndianPrice, relativeTime } from '@ipropy/shared';
@@ -29,6 +29,19 @@ import ComposeModal from '../components/ComposeModal';
 export default function RecordDetail(): JSX.Element {
   const { module: moduleName, id } = useParams<{ module: string; id: string }>();
   const navigate = useNavigate();
+  const [detailParams] = useSearchParams();
+  /**
+   * Where Back goes.
+   *
+   * The list hands over its own URL — filter, sort, search and page included —
+   * so returning lands on exactly the screen the user left. Falls back to the
+   * bare module for links that arrive from elsewhere (a notification, a search
+   * result, a pasted URL).
+   */
+  const returnTo = detailParams.get('return') ?? `/${moduleName}`;
+  const returnQuery = detailParams.get('return')
+    ? `?return=${encodeURIComponent(detailParams.get('return')!)}`
+    : '';
   const queryClient = useQueryClient();
   const { user, aiAvailable } = useApp();
 
@@ -165,14 +178,16 @@ export default function RecordDetail(): JSX.Element {
             action buttons, so a narrow viewport scrolled sideways. */}
         <div className="p-4 sm:p-5">
           <div className="mb-3 flex items-center gap-2">
-            <button onClick={() => navigate(`/${moduleName}`)} className="btn-ghost -ml-2 shrink-0 p-1.5" title="Back">
+            {/* Back to the list *as it was* — the filter, sort and page the
+                user had set — rather than a bare module URL that resets them. */}
+            <button onClick={() => navigate(returnTo)} className="btn-ghost -ml-2 shrink-0 p-1.5" title="Back">
               <ChevronLeft className="h-4 w-4" />
             </button>
 
             {navIds.length > 0 && (
               <div className="flex shrink-0 items-center gap-0.5 rounded-lg border border-slate-200 p-0.5 dark:border-slate-700">
                 <button
-                  onClick={() => prevId && navigate(`/${moduleName}/${prevId}`)}
+                  onClick={() => prevId && navigate(`/${moduleName}/${prevId}${returnQuery}`)}
                   disabled={!prevId}
                   className="btn-ghost p-1 disabled:cursor-not-allowed disabled:opacity-30"
                   title="Previous (←)"
@@ -183,7 +198,7 @@ export default function RecordDetail(): JSX.Element {
                   <span className="px-1 text-2xs tnum text-muted">{navIndex + 1} / {navIds.length}</span>
                 )}
                 <button
-                  onClick={() => nextId && navigate(`/${moduleName}/${nextId}`)}
+                  onClick={() => nextId && navigate(`/${moduleName}/${nextId}${returnQuery}`)}
                   disabled={!nextId}
                   className="btn-ghost p-1 disabled:cursor-not-allowed disabled:opacity-30"
                   title="Next (→)"

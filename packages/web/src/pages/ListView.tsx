@@ -29,7 +29,7 @@ export default function ListView(): JSX.Element {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { moduleByName } = useApp();
+  const { moduleByName, user } = useApp();
   const summary = moduleByName(moduleName ?? '');
 
   const [page, setPage] = useState(1);
@@ -47,10 +47,18 @@ export default function ListView(): JSX.Element {
   const [showColumns, setShowColumns] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  // Reset per-module state when navigating between modules. A `filter` query
-  // param (dashboard drill-through) seeds the filter builder directly, so
-  // clicking a chart segment lands on exactly those records rather than the
-  // whole module.
+  /**
+   * Hydrate from the URL on arrival.
+   *
+   * The list's state lives in the query string, not just in React state, so
+   * opening a lead and coming back returns to the same filter, sort, search and
+   * page rather than resetting to "All Records". Sorting forty leads by
+   * follow-up date, opening the third, and being dumped back at an unsorted
+   * page one is the single most irritating thing a CRM can do.
+   *
+   * Runs on module change only. The sync effect below writes the URL, and if
+   * this depended on `searchParams` the two would drive each other in a loop.
+   */
   useEffect(() => {
     const raw = searchParams.get('filter');
     let seeded = EMPTY_FILTER;
@@ -62,11 +70,18 @@ export default function ListView(): JSX.Element {
         // malformed/tampered query param — fall back to no filter rather than crash
       }
     }
-    setPage(1); setSearch(''); setSearchInput(''); setFilter(seeded);
-    setSelected(new Set()); setSortBy(undefined); setColumns([]);
+    const restoredSearch = searchParams.get('q') ?? '';
+    setPage(Number(searchParams.get('page')) || 1);
+    setSearch(restoredSearch);
+    setSearchInput(restoredSearch);
+    setFilter(seeded);
+    setSelected(new Set());
+    setSortBy(searchParams.get('sort') ?? undefined);
+    setSortDir(searchParams.get('dir') === 'asc' ? 'asc' : 'desc');
+    setColumns([]);
     setViewId(searchParams.get('view') ?? undefined);
-    // The seeded filter is already applied to the list — don't pop the filter
-    // panel open on arrival (dashboard drill-through lands on the records).
+    // A restored filter is already applied — don't pop the panel open on
+    // arrival (dashboard drill-through lands on the records, not the builder).
     setShowFilters(false);
   }, [moduleName]);
 
@@ -97,6 +112,41 @@ export default function ListView(): JSX.Element {
     setSortDir(activeView.sortDir ?? 'desc');
     setDisplayMode(activeView.displayMode === 'kanban' ? 'kanban' : 'table');
   }, [activeView?.id, meta?.id]);
+
+  /**
+   * Mirror the current state back into the URL.
+   *
+   * `replace` rather than push: every keystroke in the search box would
+   * otherwise become a history entry, and Back would walk through them one
+   * character at a time instead of leaving the list.
+   */
+  useEffect(() => {
+    if (!moduleName) return;
+    const next = new URLSearchParams();
+    if (activeView?.id) next.set('view', activeView.id);
+    if (search) next.set('q', search);
+    if (sortBy) next.set('sort', sortBy);
+    if (sortBy && sortDir !== 'desc') next.set('dir', sortDir);
+    if (page > 1) next.set('page', String(page));
+    if (countConditions(filter)) next.set('filter', JSON.stringify(filter));
+
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [moduleName, activeView?.id, search, sortBy, sortDir, page, filter]);
+
+  /** The URL to come back to — handed to every record link and the New button. */
+  const returnTo = `/${moduleName}${searchParams.toString() ? `?${searchParams}` : ''}`;
+
+  /**
+   * Owner defaults to whoever is adding the record. Status and stage come from
+   * their picklist defaults, which the server also applies — set here so the
+   * form shows them rather than revealing them after the save.
+   */
+  const quickCreateDefaults = useMemo(
+    () => (user ? { owner_id: user.id } : {}),
+    [user?.id],
+  );
 
   const groupByField = displayMode === 'kanban'
     ? (activeView?.groupBy ?? meta?.pipelineField ?? undefined)
@@ -404,7 +454,7 @@ export default function ListView(): JSX.Element {
                   if (checked) next.add(row.id); else next.delete(row.id);
                   setSelected(next);
                 }}
-                onOpen={() => navigate(`/${moduleName}/${row.id}`)}
+                onOpen={() => navigate(`/${moduleName}/${row.id}?return=${encodeURIComponent(returnTo)}`)}
                 onSaved={() => invalidateRecordQueries(queryClient, moduleName, row.id)}
               />
             ))}
@@ -455,7 +505,7 @@ export default function ListView(): JSX.Element {
                       ? 'bg-brand-50/60 dark:bg-brand-950/25'
                       : 'bg-white dark:bg-slate-900',
                   )}
-                  onClick={() => navigate(`/${moduleName}/${row.id}`)}
+                  onClick={() => navigate(`/${moduleName}/${row.id}?return=${encodeURIComponent(returnTo)}`)}
                 >
                   <td className="table-cell" onClick={(e) => e.stopPropagation()}>
                     <input
@@ -617,11 +667,14 @@ export default function ListView(): JSX.Element {
           <RecordForm
             module={meta}
             mode="quick_create"
+            initialValues={quickCreateDefaults}
             onSaved={(record) => {
               setShowQuickCreate(false);
               toast.success(`${meta.singularLabel} created`, record.label);
+              // Stay on the list rather than opening the new record. The
+              // refetch puts it in the table the user is already looking at,
+              // and adding a lead is usually one of several in a sitting.
               void refetch();
-              navigate(`/${moduleName}/${record.id}`);
             }}
             onCancel={() => setShowQuickCreate(false)}
           />
