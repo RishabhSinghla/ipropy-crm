@@ -120,7 +120,10 @@ test('every module in the sidebar opens without breaking', async ({ page }) => {
     // trips the 600/min limiter in app.ts and fails with an empty shell that
     // looks like a render bug. Clicking is also what a user actually does.
     await page.locator(`nav a[href="${route}"]`).click();
-    await page.waitForURL(new RegExp(`${route}$`));
+    // Match the *path*, not the end of the URL: a list restores its last view
+    // and sort into the query string on arrival, so `/campaigns$` never matches
+    // once `?view=…&sort=…` lands — a race that passed locally and failed in CI.
+    await page.waitForURL((url) => url.pathname === route);
 
     try {
       await expect(settled(page).first()).toBeVisible({ timeout: 25_000 });
@@ -150,7 +153,7 @@ test('every module opens its first record without breaking', async ({ page }) =>
     // Navigate straight to the record rather than clicking a row. Which cell
     // is safe to click is per-module metadata: cells holding an inline editor
     // swallow the click, and a reference cell renders a link to the *related*
-    // record, so on Activities the obvious choice navigates to /deals/… — a
+    // record, so the obvious choice can navigate somewhere else entirely — a
     // correct app behaviour that has nothing to do with what is under test
     // here. Row-click navigation is covered for Leads in crm.spec.ts; this
     // test is about whether each module's detail page renders.
