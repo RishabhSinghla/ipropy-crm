@@ -10,6 +10,7 @@ import { renderTemplate, toE164 } from '@ipropy/shared';
 import { db, type Tx } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { registry } from '../metadata/registry.js';
+import { withNameParts } from '../entity/nameParts.js';
 import { formatValue } from '../metadata/values.js';
 import { createRecord, updateRecord, type ServiceContext } from '../entity/recordService.js';
 import { assignOwner } from './assignment.js';
@@ -53,7 +54,9 @@ export async function systemContext(user: AuthUser | null): Promise<ServiceConte
  */
 async function buildMergeScope(ctx: TaskContext): Promise<Record<string, unknown>> {
   const module = await registry.getModule(ctx.module);
-  const scope: Record<string, unknown> = { ...ctx.record };
+  // `{{first_name}}` appears in most seeded templates and is now derived from
+  // `full_name` rather than stored — see core/entity/nameParts.ts.
+  const scope: Record<string, unknown> = withNameParts({ ...ctx.record });
 
   if (module) {
     for (const f of module.fields) {

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { db } from '../../db/pool.js';
+import { withNameParts } from '../../core/entity/nameParts.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { ForbiddenError, NotFoundError } from '../../utils/errors.js';
@@ -277,10 +278,7 @@ commsRouter.post('/broadcast', asyncHandler(async (req, res) => {
     if (!handle) continue;
     if (row.do_not_whatsapp === true) continue;
 
-    const params = await wa.bindTemplateParams(input.templateName, {
-      ...row,
-      first_name: row.first_name ?? String(row.label ?? '').split(' ')[0],
-    });
+    const params = await wa.bindTemplateParams(input.templateName, withNameParts(row));
     recipients.push({ handle, params, recordId });
   }
 

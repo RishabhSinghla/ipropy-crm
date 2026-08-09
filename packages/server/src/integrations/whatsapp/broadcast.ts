@@ -22,6 +22,7 @@
  */
 import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
+import { withNameParts } from '../../core/entity/nameParts.js';
 import { BadRequestError, NotFoundError } from '../../utils/errors.js';
 import { notify } from '../../core/notifications/index.js';
 import { filterOptedOut } from './consent.js';
@@ -118,10 +119,7 @@ export async function createBroadcast(input: CreateBroadcastInput): Promise<{ id
     }
 
     const params = input.templateName
-      ? await bindTemplateParams(input.templateName, {
-          ...c.row,
-          first_name: c.row.first_name ?? c.name.split(' ')[0],
-        })
+      ? await bindTemplateParams(input.templateName, withNameParts({ ...c.row, label: c.name }))
       : {};
 
     const rendered = input.bodyText

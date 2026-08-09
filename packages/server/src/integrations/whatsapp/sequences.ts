@@ -21,6 +21,7 @@
  */
 import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
+import { withNameParts } from '../../core/entity/nameParts.js';
 import { NotFoundError } from '../../utils/errors.js';
 import { isOptedOut } from './consent.js';
 import { getOrCreateConversation, isWindowOpen, sendMessage } from './service.js';
@@ -423,7 +424,7 @@ async function mergeScope(recordId: string | null, module: string): Promise<Reco
     [recordId],
   );
   if (!row) return {};
-  return { ...row, first_name: row.first_name ?? String(row.label ?? '').split(' ')[0] };
+  return withNameParts(row);
 }
 
 /** Any inbound message from this number since it was enrolled counts as a reply. */

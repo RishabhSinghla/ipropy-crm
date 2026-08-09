@@ -25,7 +25,11 @@ export const MODULES: ModuleDef[] = [
     color: '#8b5cf6',
     sequence: 10,
     menuGroup: 'Sales',
-    labelFields: ['first_name', 'last_name'],
+    // One name field. Splitting a person into first/last has no payoff on an
+    // Indian property desk — half the enquiries arrive as a single word and the
+    // other half as three — and it doubled the typing on the busiest form here.
+    // The old halves are retired in migration 026, not dropped.
+    labelFields: ['full_name'],
     pipelineField: 'status',
     duplicateCheckFields: ['mobile', 'email'],
     supportsConversion: true,
@@ -35,10 +39,19 @@ export const MODULES: ModuleDef[] = [
         label: 'Basic Information',
         fields: [
           F.autonum('lead_number', 'Record #', 'LD-'),
-          F.pick('salutation', 'Salutation', 'salutation'),
-          F.text('first_name', 'First Name', { mandatory: true, quickCreate: true, searchable: true }),
-          F.text('last_name', 'Last Name', { quickCreate: true, searchable: true }),
-          F.phone('mobile', 'Mobile', { mandatory: true, quickCreate: true }),
+          F.text('full_name', 'Full Name', {
+            mandatory: true, quickCreate: true, searchable: true, maxLength: 120,
+          }),
+          // The country code is its own field so it is a visible choice rather
+          // than a silent +91 default — an NRI buyer stored under the wrong
+          // code never matches on WhatsApp or in the call log again.
+          F.pick('country_code', 'Country', 'country_code', {
+            mandatory: true, quickCreate: true, default: '+91',
+          }),
+          F.phone('mobile', 'Mobile', {
+            mandatory: true, quickCreate: true, maxLength: 10,
+            help: '10 digits, without the country code',
+          }),
           F.email('email', 'Email', { quickCreate: true }),
           F.email('secondary_email', 'Secondary Email'),
           F.phone('alternate_phone', 'Alternate Phone'),
@@ -187,19 +200,16 @@ export const MODULES: ModuleDef[] = [
       { name: 'lead_activities', label: 'Activities', target: 'activities', type: 'one_to_many', foreignField: 'related_to' },
       { name: 'lead_deals', label: 'Deals', target: 'deals', type: 'one_to_many', foreignField: 'contact_id' },
       { name: 'lead_site_visits', label: 'Site Visits', target: 'site_visits', type: 'one_to_many', foreignField: 'lead_id' },
-      { name: 'lead_bookings', label: 'Bookings', target: 'bookings', type: 'one_to_many', foreignField: 'contact_id' },
-      { name: 'lead_payments', label: 'Payments', target: 'payments', type: 'one_to_many', foreignField: 'contact_id' },
-      { name: 'lead_documents', label: 'Documents', target: 'documents', type: 'one_to_many', foreignField: 'related_to' },
     ],
     views: [
       {
         name: 'All Records', isDefault: true, showMetrics: true,
-        columns: ['lead_number', 'first_name', 'last_name', 'mobile', 'lifecycle_stage', 'status', 'lead_source', 'ai_score', 'budget_max', 'owner_id'],
+        columns: ['lead_number', 'full_name', 'mobile', 'lifecycle_stage', 'status', 'lead_source', 'ai_score', 'budget_max', 'owner_id'],
         sortBy: 'created_at',
       },
       {
         name: 'Open Leads', showMetrics: true,
-        columns: ['first_name', 'mobile', 'status', 'ai_score', 'next_followup_at', 'interested_project_id', 'owner_id'],
+        columns: ['full_name', 'mobile', 'status', 'ai_score', 'next_followup_at', 'interested_project_id', 'owner_id'],
         filter: {
           logic: 'AND',
           conditions: [
@@ -211,13 +221,13 @@ export const MODULES: ModuleDef[] = [
       },
       {
         name: 'Customers', showMetrics: true,
-        columns: ['first_name', 'last_name', 'mobile', 'email', 'lifetime_value', 'kyc_status', 'owner_id'],
+        columns: ['full_name', 'mobile', 'email', 'lifetime_value', 'kyc_status', 'owner_id'],
         filter: { logic: 'AND', conditions: [{ field: 'lifecycle_stage', operator: 'equals', value: 'Customer' }] },
         sortBy: 'lifetime_value',
       },
       {
         name: 'My Open Leads', showMetrics: true,
-        columns: ['first_name', 'mobile', 'status', 'ai_score', 'next_followup_at', 'interested_project_id'],
+        columns: ['full_name', 'mobile', 'status', 'ai_score', 'next_followup_at', 'interested_project_id'],
         filter: {
           logic: 'AND',
           conditions: [
@@ -230,31 +240,31 @@ export const MODULES: ModuleDef[] = [
       },
       {
         name: 'Hot Leads',
-        columns: ['first_name', 'mobile', 'ai_score', 'budget_max', 'interested_project_id', 'next_followup_at', 'owner_id'],
+        columns: ['full_name', 'mobile', 'ai_score', 'budget_max', 'interested_project_id', 'next_followup_at', 'owner_id'],
         filter: { logic: 'AND', conditions: [{ field: 'ai_score', operator: 'greater_or_equal', value: 70 }, { field: 'is_converted', operator: 'is_false' }] },
         sortBy: 'ai_score',
       },
       {
         name: 'Today’s Follow-ups',
-        columns: ['first_name', 'mobile', 'status', 'next_followup_at', 'last_contacted_at', 'owner_id'],
+        columns: ['full_name', 'mobile', 'status', 'next_followup_at', 'last_contacted_at', 'owner_id'],
         filter: { logic: 'AND', conditions: [{ field: 'next_followup_at', operator: 'today' }] },
         sortBy: 'next_followup_at', sortDir: 'asc',
       },
       {
         name: 'Overdue Follow-ups',
-        columns: ['first_name', 'mobile', 'status', 'next_followup_at', 'owner_id'],
+        columns: ['full_name', 'mobile', 'status', 'next_followup_at', 'owner_id'],
         filter: { logic: 'AND', conditions: [{ field: 'next_followup_at', operator: 'less_than', value: 'now' }, { field: 'is_converted', operator: 'is_false' }] },
         sortBy: 'next_followup_at', sortDir: 'asc',
       },
       {
         name: 'Uncontacted (24h+)',
-        columns: ['first_name', 'mobile', 'lead_source', 'created_at', 'owner_id'],
+        columns: ['full_name', 'mobile', 'lead_source', 'created_at', 'owner_id'],
         filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'equals', value: 'New' }, { field: 'created_at', operator: 'older_than_n_days', value: 1 }] },
         sortBy: 'created_at', sortDir: 'asc',
       },
       {
         name: 'Pipeline', displayMode: 'kanban', groupBy: 'status',
-        columns: ['first_name', 'mobile', 'ai_score', 'budget_max', 'owner_id'],
+        columns: ['full_name', 'mobile', 'ai_score', 'budget_max', 'owner_id'],
         filter: { logic: 'AND', conditions: [{ field: 'is_converted', operator: 'is_false' }] },
       },
     ],
@@ -273,6 +283,8 @@ export const MODULES: ModuleDef[] = [
     color: '#14b8a6',
     sequence: 30,
     menuGroup: 'Sales',
+    // Reached from the lead it belongs to (migration 025).
+    showInMenu: false,
     labelFields: ['name'],
     duplicateCheckFields: ['name', 'gstin'],
     blocks: [
@@ -342,6 +354,8 @@ export const MODULES: ModuleDef[] = [
     color: '#f59e0b',
     sequence: 40,
     menuGroup: 'Inventory',
+    // Reached from Properties — one Inventory entry, not two.
+    showInMenu: false,
     labelFields: ['name'],
     pipelineField: 'status',
     duplicateCheckFields: ['project_code', 'rera_number'],
@@ -623,6 +637,8 @@ export const MODULES: ModuleDef[] = [
     color: '#ec4899',
     sequence: 60,
     menuGroup: 'Sales',
+    // A tab on the lead. Still fully live, just not a destination.
+    showInMenu: false,
     labelFields: ['name'],
     pipelineField: 'stage',
     blocks: [
@@ -718,6 +734,8 @@ export const MODULES: ModuleDef[] = [
     color: '#f97316',
     sequence: 70,
     menuGroup: 'Sales',
+    // A tab on the lead.
+    showInMenu: false,
     labelFields: ['subject'],
     pipelineField: 'status',
     blocks: [
@@ -800,6 +818,8 @@ export const MODULES: ModuleDef[] = [
     color: '#6366f1',
     sequence: 80,
     menuGroup: 'Sales',
+    // Retired in migration 025 — the business does not use this.
+    showInMenu: false,
     labelFields: ['booking_number'],
     pipelineField: 'status',
     blocks: [
@@ -911,6 +931,8 @@ export const MODULES: ModuleDef[] = [
     color: '#10b981',
     sequence: 90,
     menuGroup: 'Finance',
+    // Retired in migration 025 — the business does not use this.
+    showInMenu: false,
     labelFields: ['payment_number'],
     pipelineField: 'status',
     blocks: [
@@ -984,6 +1006,8 @@ export const MODULES: ModuleDef[] = [
     color: '#a855f7',
     sequence: 100,
     menuGroup: 'Sales',
+    // Retired in migration 025 — the business does not use this.
+    showInMenu: false,
     labelFields: ['name'],
     duplicateCheckFields: ['mobile', 'rera_number'],
     blocks: [
@@ -1149,6 +1173,8 @@ export const MODULES: ModuleDef[] = [
     color: '#3b82f6',
     sequence: 120,
     menuGroup: 'Productivity',
+    // A tab on the lead.
+    showInMenu: false,
     labelFields: ['subject'],
     pipelineField: 'status',
     blocks: [
@@ -1220,6 +1246,8 @@ export const MODULES: ModuleDef[] = [
     color: '#64748b',
     sequence: 130,
     menuGroup: 'Productivity',
+    // Retired in migration 025 — the business does not use this.
+    showInMenu: false,
     labelFields: ['title'],
     blocks: [
       {
@@ -1294,6 +1322,8 @@ export const MODULES: ModuleDef[] = [
     color: '#0ea5e9',
     sequence: 115,
     menuGroup: 'Marketing',
+    // Retired in migration 025 — the business does not use this.
+    showInMenu: false,
     labelFields: ['title'],
     pipelineField: 'status',
     blocks: [
