@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Blocks, Info, Lock, Plus } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { AlertTriangle, Blocks, Info, Lock } from 'lucide-react';
 import { api } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
 import { badgeVars } from '../../lib/color';
@@ -17,6 +18,7 @@ interface ModuleRow {
 
 export default function ModuleManager(): JSX.Element {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const { bootstrap } = useApp();
   const [confirming, setConfirming] = useState<ModuleRow | null>(null);
   const [reason, setReason] = useState('');
@@ -33,6 +35,7 @@ export default function ModuleManager(): JSX.Element {
       const result = await api.toggleModule(module.name, isActive, why);
       toast.success(isActive ? `${module.label} enabled` : `${module.label} disabled`, result.message);
       await queryClient.invalidateQueries({ queryKey: ['all-modules'] });
+      await queryClient.invalidateQueries({ queryKey: ['field-modules'] });
       // Refresh the app shell so the sidebar reflects the change immediately.
       await bootstrap();
     } catch (err) {
@@ -114,6 +117,15 @@ export default function ModuleManager(): JSX.Element {
                     </div>
 
                     <div className="flex shrink-0 items-center gap-2">
+                      <button
+                        type="button"
+                        className="btn-secondary btn-sm"
+                        onClick={() => navigate(`/admin/fields?module=${encodeURIComponent(module.name)}`)}
+                        aria-label={`Manage fields for ${module.label}`}
+                      >
+                        <Blocks className="h-3.5 w-3.5" />
+                        <span className="hidden sm:inline">Fields</span>
+                      </button>
                       {busy === module.name && <Spinner className="h-3.5 w-3.5 text-slate-400" />}
                       <Toggle
                         checked={module.isActive}

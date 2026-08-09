@@ -285,6 +285,10 @@ export const api = {
     disabledReason: string | null; menuGroup: string;
     fieldCount: number; recordCount: number; dependents: string[];
   }[]>('/api/meta/modules/all'),
+  fieldModules: () => get<{
+    id: string; name: string; label: string; icon: string; color: string;
+    isActive: boolean; isCustom: boolean; isEntity: boolean; fieldCount: number;
+  }[]>('/api/meta/modules/field-builder'),
   toggleModule: (name: string, isActive: boolean, reason?: string) =>
     post<{ ok: boolean; message: string }>(`/api/meta/modules/${name}/toggle`, { isActive, reason }),
   createModule: (data: Record<string, unknown>) => post('/api/meta/modules', data),

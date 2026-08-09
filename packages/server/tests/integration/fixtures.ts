@@ -75,13 +75,13 @@ export async function adminContext(): Promise<ServiceContext> {
   return contextFor(row.email);
 }
 
-/** Minimum viable Lead payload — last_name is the only field the module requires. */
+/** Minimum viable Lead payload for the current one-name, split-country-code form. */
 export function leadInput(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   const unique = Math.random().toString(36).slice(2, 10);
   return {
-    first_name: 'Integration',
-    last_name: `Test-${unique}`,
-    mobile: `+9199${Math.floor(1000000 + Math.random() * 8999999)}`,
+    full_name: `Integration Test-${unique}`,
+    country_code: '+91',
+    mobile: `99${Math.floor(10000000 + Math.random() * 89999999)}`,
     ...overrides,
   };
 }

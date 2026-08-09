@@ -101,6 +101,24 @@ metadataRouter.get('/modules/all', asyncHandler(async (req, res) => {
   }));
 }));
 
+/** Minimal all-module index for the field builder, including disabled modules. */
+metadataRouter.get('/modules/field-builder', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.fields');
+  const modules = await registry.getModules({ activeOnly: false });
+
+  res.json(modules.map((m) => ({
+    id: m.id,
+    name: m.name,
+    label: m.label,
+    icon: m.icon,
+    color: m.color,
+    isActive: m.isActive,
+    isCustom: m.isCustom,
+    isEntity: m.isEntity,
+    fieldCount: m.fields.length,
+  })));
+}));
+
 /** Enable or disable a module. Data is retained either way. */
 metadataRouter.post('/modules/:name/toggle', asyncHandler(async (req, res) => {
   const user = getUser(req);
@@ -154,19 +172,20 @@ metadataRouter.post('/modules/:name/toggle', asyncHandler(async (req, res) => {
 /** Full describe for one module: blocks, fields, options, relations, layouts. */
 metadataRouter.get('/modules/:name', asyncHandler(async (req, res) => {
   const user = getUser(req);
-  const module = await registry.requireModule(req.params.name);
-  if (!(await canAccessModule(user, module.name, 'view'))) {
+  const includeInactive = req.query.includeInactive === 'true' && await hasCapability(user, 'admin.fields');
+  const module = await registry.requireModule(req.params.name, { allowDisabled: includeInactive });
+  if (!includeInactive && !(await canAccessModule(user, module.name, 'view'))) {
     throw new NotFoundError(`Unknown module '${req.params.name}'`);
   }
 
   // The field builder needs to see hidden/inactive fields to manage them —
   // every other screen must not, or a field an admin hid is still fetchable
   // by name/label/config one API call away even though its value is stripped.
-  const includeInactive = req.query.includeInactive === 'true' && await hasCapability(user, 'admin.fields');
-
-  const fieldPerms = await getFieldPermissions(user, module.name);
+  const fieldPerms = includeInactive
+    ? new Map(module.fields.map((f) => [f.name, f.isReadonly ? 'readonly' as const : 'editable' as const]))
+    : await getFieldPermissions(user, module.name);
   const visible = (f: { name: string; isActive: boolean; displayType: string }): boolean =>
-    fieldPerms.get(f.name) !== 'hidden' && (includeInactive || (f.isActive && f.displayType !== 'hidden'));
+    includeInactive || (fieldPerms.get(f.name) !== 'hidden' && f.isActive && f.displayType !== 'hidden');
 
   const [layouts, dependencies] = await Promise.all([
     db.query<{ id: string; name: string; type: string; is_default: boolean; config: unknown }>(
@@ -380,7 +399,7 @@ const blockSchema = z.object({
 
 metadataRouter.post('/modules/:name/blocks', asyncHandler(async (req, res) => {
   await assertCapability(getUser(req), 'admin.fields');
-  const module = await registry.requireModule(req.params.name);
+  const module = await registry.requireModule(req.params.name, { allowDisabled: true });
   const input = blockSchema.parse(req.body);
   const seq = input.sequence ?? module.blocks.length;
   const row = await db.queryOne<{ id: string }>(
@@ -479,7 +498,7 @@ function validateFieldConfig(uitype: string, config: Record<string, unknown>): v
 
 metadataRouter.post('/modules/:name/fields', asyncHandler(async (req, res) => {
   await assertCapability(getUser(req), 'admin.fields');
-  const module = await registry.requireModule(req.params.name);
+  const module = await registry.requireModule(req.params.name, { allowDisabled: true });
   const input = fieldSchema.parse(req.body);
   validateFieldConfig(input.uitype, input.config);
 

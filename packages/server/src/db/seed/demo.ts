@@ -326,6 +326,7 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
     if (!reasons.length) reasons.push('Limited qualification signal captured so far');
 
     const isConverted = status === 'Negotiation' && i % 4 === 0;
+    const mobile = `99${String(10000000 + i * 7919).slice(0, 8)}`;
 
     const id = await insertRecord(conn, {
       module: 'leads', label: `${first} ${last}`, ownerId: ownerAt(i), createdBy: admin.id,
@@ -333,10 +334,10 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
       searchText: `${first} ${last} ${source} ${projectDefs[projectIdx].name}`,
       values: {
         salutation: i % 3 === 0 ? 'Mr.' : i % 3 === 1 ? 'Ms.' : 'Mrs.',
-        first_name: first, last_name: last,
-        mobile: `+9199${String(10000000 + i * 7919).slice(0, 8)}`,
+        first_name: first, last_name: last, full_name: `${first} ${last}`,
+        country_code: '+91', mobile,
         email: `${first.toLowerCase()}.${last.toLowerCase()}${i}@example.com`,
-        whatsapp_number: `+9199${String(10000000 + i * 7919).slice(0, 8)}`,
+        whatsapp_number: `+91${mobile}`,
         status, lead_source: source,
         sub_source: source.includes('Ads') ? 'Paid' : 'Organic',
         campaign_id: source.includes('Ads') || source === 'WhatsApp' ? campaignIds[i % campaignIds.length] : null,
@@ -378,15 +379,16 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
     const last = pick(LAST_NAMES, i * 3 + 1);
     const budgetMin = [80 * LAKH, 1.2 * CRORE, 1.8 * CRORE, 2.6 * CRORE][i % 4];
     const projectIdx = i % 3;
+    const mobile = `98${String(30000000 + i * 6317).slice(0, 8)}`;
     const id = await insertRecord(conn, {
       module: 'leads', label: `${first} ${last}`, ownerId: ownerAt(i), createdBy: admin.id,
       numberField: 'lead_number', createdAt: daysAgo(randInt(s, 20, 300)),
       searchText: `${first} ${last} buyer customer ${projectDefs[projectIdx].locality}`,
       values: {
         salutation: i % 2 === 0 ? 'Mr.' : 'Mrs.',
-        first_name: first, last_name: last,
-        mobile: `+9198${String(30000000 + i * 6317).slice(0, 8)}`,
-        whatsapp_number: `+9198${String(30000000 + i * 6317).slice(0, 8)}`,
+        first_name: first, last_name: last, full_name: `${first} ${last}`,
+        country_code: '+91', mobile,
+        whatsapp_number: `+91${mobile}`,
         email: `${first.toLowerCase()}.${last.toLowerCase()}@example.com`,
         // Past the enquiry pipeline: these are prospects and customers.
         status: 'Converted',

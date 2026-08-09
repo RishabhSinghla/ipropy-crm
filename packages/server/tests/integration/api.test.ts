@@ -85,10 +85,11 @@ describe('authentication', () => {
 
 describe('records API', () => {
   it('creates, reads, updates and deletes through HTTP', async () => {
+    const originalName = `API Roundtrip-${Date.now()}`;
     const create = await request(app)
       .post('/api/records/leads')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ first_name: 'Api', last_name: `Roundtrip-${Date.now()}`, mobile: '+919812345678' })
+      .send({ full_name: originalName, country_code: '+91', mobile: '9812345678' })
       .expect(201);
 
     const id = create.body.id as string;
@@ -97,14 +98,14 @@ describe('records API', () => {
     await request(app)
       .patch(`/api/records/leads/${id}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ first_name: 'Renamed' })
+      .send({ full_name: 'Renamed Lead' })
       .expect(200);
 
     const read = await request(app)
       .get(`/api/records/leads/${id}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
-    expect(read.body.values.first_name).toBe('Renamed');
+    expect(read.body.values.full_name).toBe('Renamed Lead');
 
     await request(app)
       .delete(`/api/records/leads/${id}`)
@@ -123,13 +124,11 @@ describe('records API', () => {
     const res = await request(app)
       .post('/api/records/leads')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ first_name: 'NoSurname' })
+      .send({ full_name: 'No Mobile', country_code: '+91' })
       .expect(422);
 
     expect(res.body.error).toBe('validation_error');
-    // `mobile` is the mandatory one. last_name is NOT NULL DEFAULT '' at the
-    // DB level but deliberately not marked mandatory in metadata, so a lead
-    // captured from a webform with only a phone number is still valid.
+    // The one-name form requires both a name and a national mobile number.
     expect(res.body.details.fields.map((f: { field: string }) => f.field)).toContain('mobile');
   });
 
@@ -174,6 +173,177 @@ describe('permission boundaries over HTTP', () => {
   });
 });
 
+describe('metadata field administration', () => {
+  it('adds and removes a custom field, and safely hides and restores a built-in field', async () => {
+    const fieldModules = await request(app)
+      .get('/api/meta/modules/field-builder')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(fieldModules.body.some((m: { name: string }) => m.name === 'leads')).toBe(true);
+
+    await request(app)
+      .get('/api/meta/modules/field-builder')
+      .set('Authorization', `Bearer ${executiveToken}`)
+      .expect(403);
+
+    const before = await request(app)
+      .get('/api/meta/modules/leads?includeInactive=true')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    const blockId = before.body.blocks[0]?.id as string | undefined;
+    expect(blockId).toBeTruthy();
+
+    const name = `qa_removable_${Date.now().toString(36)}`;
+    let customId: string | undefined;
+    const builtIn = before.body.fields.find((f: {
+      name: string; isCustom: boolean; isActive: boolean; isMandatory: boolean;
+    }) => !f.isCustom && f.isActive && !f.isMandatory
+      && !['lead_number', 'full_name', 'mobile'].includes(f.name)) as
+      | { id: string; name: string; displayType: string }
+      | undefined;
+    expect(builtIn).toBeTruthy();
+
+    try {
+      const created = await request(app)
+        .post('/api/meta/modules/leads/fields')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ name, label: 'QA removable field', uitype: 'string', blockId, config: {} })
+        .expect(201);
+      customId = created.body.id as string;
+      expect(customId).toBeTruthy();
+
+      const withCustom = await request(app)
+        .get('/api/meta/modules/leads?includeInactive=true')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(withCustom.body.fields.some((f: { name: string }) => f.name === name)).toBe(true);
+
+      const removed = await request(app)
+        .delete(`/api/meta/fields/${customId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(removed.body.deleted).toBe(true);
+      customId = undefined;
+
+      const hidden = await request(app)
+        .delete(`/api/meta/fields/${builtIn!.id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(hidden.body.deactivated).toBe(true);
+
+      const hiddenDescribe = await request(app)
+        .get('/api/meta/modules/leads?includeInactive=true')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(hiddenDescribe.body.fields.find((f: { name: string }) => f.name === builtIn!.name))
+        .toMatchObject({ isActive: false, displayType: 'hidden' });
+
+      await request(app)
+        .patch(`/api/meta/fields/${builtIn!.id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ isActive: true })
+        .expect(200);
+
+      const restored = await request(app)
+        .get('/api/meta/modules/leads')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(restored.body.fields.some((f: { name: string }) => f.name === builtIn!.name)).toBe(true);
+    } finally {
+      if (customId) {
+        await request(app)
+          .delete(`/api/meta/fields/${customId}`)
+          .set('Authorization', `Bearer ${adminToken}`);
+      }
+      if (builtIn) {
+        await request(app)
+          .patch(`/api/meta/fields/${builtIn.id}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ isActive: true, displayType: builtIn.displayType });
+      }
+    }
+  });
+
+  it('keeps field management available while a module is disabled', async () => {
+    const suffix = Date.now().toString(36);
+    const moduleName = `qa_fields_${suffix}`;
+    let moduleCreated = false;
+    let fieldId: string | undefined;
+
+    try {
+      await request(app)
+        .post('/api/meta/modules')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          name: moduleName,
+          label: 'QA Disabled Modules',
+          singularLabel: 'QA Disabled Module',
+          icon: 'box',
+          color: '#6366f1',
+          menuGroup: 'Custom',
+          showInMenu: false,
+        })
+        .expect(201);
+      moduleCreated = true;
+
+      await request(app)
+        .post(`/api/meta/modules/${moduleName}/toggle`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ isActive: false, reason: 'Integration verification' })
+        .expect(200);
+
+      const modules = await request(app)
+        .get('/api/meta/modules/field-builder')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(modules.body.find((m: { name: string }) => m.name === moduleName))
+        .toMatchObject({ isActive: false });
+
+      const described = await request(app)
+        .get(`/api/meta/modules/${moduleName}?includeInactive=true`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      const blockId = described.body.blocks[0]?.id as string | undefined;
+      expect(blockId).toBeTruthy();
+
+      const createdField = await request(app)
+        .post(`/api/meta/modules/${moduleName}/fields`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          name: 'qa_disabled_field',
+          label: 'QA Disabled Field',
+          uitype: 'string',
+          blockId,
+          config: {},
+        })
+        .expect(201);
+      fieldId = createdField.body.id as string;
+      expect(fieldId).toBeTruthy();
+
+      await request(app)
+        .delete(`/api/meta/fields/${fieldId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      fieldId = undefined;
+    } finally {
+      if (fieldId) {
+        await request(app)
+          .delete(`/api/meta/fields/${fieldId}`)
+          .set('Authorization', `Bearer ${adminToken}`);
+      }
+      if (moduleCreated) {
+        await request(app)
+          .post(`/api/meta/modules/${moduleName}/toggle`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ isActive: true });
+        await request(app)
+          .delete(`/api/meta/modules/${moduleName}?force=true`)
+          .set('Authorization', `Bearer ${adminToken}`);
+      }
+    }
+  });
+});
+
 describe('public API', () => {
   it('serves projects with no authentication', async () => {
     const res = await request(app).get('/api/public/projects').expect(200);
@@ -181,7 +351,8 @@ describe('public API', () => {
   });
 
   it('exposes only whitelisted fields, never internal ones', async () => {
-    const res = await request(app).get('/api/public/projects').expect(200);
+    const res = await request(app).get('/api/public/projects');
+    expect(res.status, res.text).toBe(200);
     const project = res.body.items[0];
     if (!project) return;
 
@@ -225,8 +396,8 @@ describe('outreach automation API', () => {
     const prepared = await request(app)
       .post('/api/outreach/device-link')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ handle: '+91 99999 91234', body: 'Hi there, shall I share the floor plan?', render: false })
-      .expect(200);
+      .send({ handle: '+91 99999 91234', body: 'Hi there, shall I share the floor plan?', render: false });
+    expect(prepared.status, prepared.text).toBe(200);
     expect(prepared.body.link).toBe(
       'https://wa.me/919999991234?text=Hi%20there%2C%20shall%20I%20share%20the%20floor%20plan%3F',
     );
@@ -357,8 +528,8 @@ describe('Android companion API', () => {
     const retry = await request(app)
       .post('/api/device/calls')
       .set('Authorization', `Bearer ${deviceToken}`)
-      .send(payload)
-      .expect(200);
+      .send(payload);
+    expect(retry.status, retry.text).toBe(200);
     expect(retry.body).toMatchObject({ received: 1, created: 0, duplicates: 1, skipped: 0 });
 
     const calls = await request(app)
