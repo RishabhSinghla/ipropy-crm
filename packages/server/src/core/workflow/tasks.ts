@@ -32,7 +32,7 @@ type TaskHandler = (config: Record<string, unknown>, ctx: TaskContext) => Promis
  * ServiceContext is marked `system`, which bypasses permission checks — this is
  * the only place that happens outside integrations.
  */
-async function systemContext(user: AuthUser | null): Promise<ServiceContext> {
+export async function systemContext(user: AuthUser | null): Promise<ServiceContext> {
   const actor: AuthUser = user ?? {
     id: '00000000-0000-0000-0000-000000000000',
     email: 'system@ipropy', firstName: 'iPropy', lastName: 'Automation',

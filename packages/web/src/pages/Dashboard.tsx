@@ -1097,6 +1097,7 @@ function LineCard({
   // standalone component.
   const clickableDot = (props: { cx?: number; cy?: number; index?: number }): JSX.Element => (
     <circle
+      key={`point-${props.index ?? 'active'}`}
       cx={props.cx}
       cy={props.cy}
       r={3.5}

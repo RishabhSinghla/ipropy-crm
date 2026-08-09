@@ -220,6 +220,167 @@ describe('public API', () => {
   });
 });
 
+describe('outreach automation API', () => {
+  it('prepares and completes a one-tap WhatsApp queue item', async () => {
+    const prepared = await request(app)
+      .post('/api/outreach/device-link')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ handle: '+91 99999 91234', body: 'Hi there, shall I share the floor plan?', render: false })
+      .expect(200);
+    expect(prepared.body.link).toBe(
+      'https://wa.me/919999991234?text=Hi%20there%2C%20shall%20I%20share%20the%20floor%20plan%3F',
+    );
+
+    const queued = await request(app)
+      .post('/api/outreach/device-queue')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ handle: '+91 99999 91234', body: 'Queue integration message', reason: 'Integration test' })
+      .expect(201);
+    const id = queued.body.id as string;
+    expect(id).toBeTruthy();
+
+    const pending = await request(app)
+      .get('/api/outreach/device-queue')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(pending.body.some((item: { id: string; link: string }) => (
+      item.id === id && item.link.startsWith('https://wa.me/919999991234?text=')
+    ))).toBe(true);
+
+    await request(app)
+      .post(`/api/outreach/device-queue/${id}/opened`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    const sent = await request(app)
+      .post(`/api/outreach/device-queue/${id}/sent`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(sent.body).toHaveProperty('messageId');
+
+    const after = await request(app)
+      .get('/api/outreach/device-queue')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(after.body.some((item: { id: string }) => item.id === id)).toBe(false);
+  });
+
+  it('creates, edits and deletes a multi-step follow-up sequence', async () => {
+    const created = await request(app)
+      .post('/api/outreach/sequences')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: `Integration sequence ${Date.now()}`, moduleName: 'leads' })
+      .expect(201);
+
+    const id = created.body.id as string;
+    expect(id).toBeTruthy();
+
+    await request(app)
+      .put(`/api/outreach/sequences/${id}/steps`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        steps: [
+          { sequence: 1, delayMinutes: 60, channel: 'whatsapp', body: 'First follow-up', fallbackToDevice: true },
+          { sequence: 2, delayMinutes: 1440, channel: 'task', body: 'Call the lead', fallbackToDevice: false },
+        ],
+      })
+      .expect(200);
+
+    await request(app)
+      .patch(`/api/outreach/sequences/${id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ isActive: true, quietStart: 22, quietEnd: 8 })
+      .expect(200);
+
+    const detail = await request(app)
+      .get(`/api/outreach/sequences/${id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(detail.body.is_active).toBe(true);
+    expect(detail.body.quiet_start).toBe(22);
+    expect(detail.body.steps).toHaveLength(2);
+    expect(detail.body.steps.map((step: { sequence: number }) => step.sequence)).toEqual([1, 2]);
+
+    const list = await request(app)
+      .get('/api/outreach/sequences')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(list.body.some((sequence: { id: string; step_count: string }) => (
+      sequence.id === id && Number(sequence.step_count) === 2
+    ))).toBe(true);
+
+    await request(app)
+      .delete(`/api/outreach/sequences/${id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+  });
+});
+
+describe('Android companion API', () => {
+  it('pairs, authenticates, deduplicates call logs and revokes a phone', async () => {
+    const paired = await request(app)
+      .post('/api/telephony/devices')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ label: 'Integration phone', phoneNumber: '+919800000001', model: 'Test handset' })
+      .expect(201);
+
+    const deviceId = paired.body.deviceId as string;
+    const deviceToken = paired.body.token as string;
+    expect(deviceId).toBeTruthy();
+    expect(deviceToken).toBeTruthy();
+
+    const ping = await request(app)
+      .get('/api/device/ping')
+      .set('Authorization', `Bearer ${deviceToken}`)
+      .expect(200);
+    expect(ping.body.deviceId).toBe(deviceId);
+
+    const externalId = `integration-${Date.now()}`;
+    const payload = {
+      appVersion: '1.0-test',
+      entries: [{
+        externalId,
+        number: '+919812345678',
+        type: 2,
+        timestamp: Date.now() - 60_000,
+        durationSeconds: 42,
+        contactName: 'Integration lead',
+      }],
+    };
+
+    const first = await request(app)
+      .post('/api/device/calls')
+      .set('Authorization', `Bearer ${deviceToken}`)
+      .send(payload)
+      .expect(200);
+    expect(first.body).toMatchObject({ received: 1, created: 1, duplicates: 0, skipped: 0 });
+
+    const retry = await request(app)
+      .post('/api/device/calls')
+      .set('Authorization', `Bearer ${deviceToken}`)
+      .send(payload)
+      .expect(200);
+    expect(retry.body).toMatchObject({ received: 1, created: 0, duplicates: 1, skipped: 0 });
+
+    const calls = await request(app)
+      .get('/api/telephony/calls?limit=200')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(calls.body.some((call: { device_id: string; source: string }) => (
+      call.device_id === deviceId && call.source === 'device'
+    ))).toBe(true);
+
+    await request(app)
+      .delete(`/api/telephony/devices/${deviceId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    await request(app)
+      .get('/api/device/ping')
+      .set('Authorization', `Bearer ${deviceToken}`)
+      .expect(401);
+  });
+});
+
 /**
  * The general /api budget is keyed per signed-in user, not per IP.
  *

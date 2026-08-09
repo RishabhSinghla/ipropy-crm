@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The brand's dark base, so the icon reads as iPropy on a home screen. -->
+    <color name="ic_launcher_background">#191510</color>
+</resources>

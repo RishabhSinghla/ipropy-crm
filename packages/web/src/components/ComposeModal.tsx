@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { RecordEnvelope } from '@ipropy/shared';
-import { Send, Sparkles } from 'lucide-react';
+import { Check, ExternalLink, ListPlus, Send, Sparkles } from 'lucide-react';
 import { api, request } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { Modal, Select, Spinner } from './ui';
@@ -21,14 +21,24 @@ export default function ComposeModal({
   const [templateName, setTemplateName] = useState('');
   const [sending, setSending] = useState(false);
   const [drafting, setDrafting] = useState(false);
+  const [handedOffBody, setHandedOffBody] = useState<string | null>(null);
 
   const to = channel === 'whatsapp'
     ? String(record.values.whatsapp_number ?? record.values.mobile ?? '')
     : String(record.values.email ?? '');
 
+  const { data: whatsappChannel, isLoading: channelLoading } = useQuery({
+    queryKey: ['outreach', 'channel'],
+    queryFn: () => api.outreachChannel(),
+    enabled: channel === 'whatsapp',
+    staleTime: 60_000,
+  });
+  const deviceMode = channel === 'whatsapp' && whatsappChannel?.apiReady === false;
+
   const { data: templates } = useQuery({
     queryKey: [channel === 'whatsapp' ? 'wa-templates' : 'email-templates'],
     queryFn: () => (channel === 'whatsapp' ? api.whatsappTemplates() : api.emailTemplates()),
+    enabled: channel === 'email' || whatsappChannel?.apiReady === true,
   });
 
   // Preview the template body when one is picked.
@@ -61,6 +71,25 @@ export default function ComposeModal({
     setSending(true);
     try {
       if (channel === 'whatsapp') {
+        if (deviceMode) {
+          // Open synchronously so Safari/Chrome treat this as a user gesture;
+          // awaiting the personalised link first would trigger popup blocking.
+          const popup = window.open('about:blank', '_blank');
+          if (popup) popup.opener = null;
+          try {
+            const prepared = await api.deviceLink({
+              handle: to, body, recordId: record.id, module, render: true,
+            });
+            if (popup) popup.location.href = prepared.link;
+            else window.location.href = prepared.link;
+            setHandedOffBody(prepared.body);
+            toast.info('WhatsApp opened', 'Press send there, then confirm here so the CRM timeline stays accurate.');
+          } catch (err) {
+            popup?.close();
+            throw err;
+          }
+          return;
+        }
         await api.startConversation({
           to,
           ...(templateName ? { templateName } : { text: body }),
@@ -80,6 +109,39 @@ export default function ComposeModal({
     }
   };
 
+  const confirmDeviceSend = async (): Promise<void> => {
+    if (!handedOffBody) return;
+    setSending(true);
+    try {
+      await api.logDeviceSent({ handle: to, body: handedOffBody, recordId: record.id, module });
+      toast.success('WhatsApp logged as sent', to);
+      onSent();
+    } catch (err) {
+      toast.error('Could not log the message', (err as Error).message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const addToQueue = async (): Promise<void> => {
+    setSending(true);
+    try {
+      const result = await api.queueDeviceSend({
+        handle: to, body, recordId: record.id, module, name: record.label,
+        reason: 'Queued from record',
+      });
+      if (result.skipped) toast.error('Message not queued', result.skipped);
+      else {
+        toast.success('Added to your WhatsApp send queue');
+        onSent();
+      }
+    } catch (err) {
+      toast.error('Could not queue the message', (err as Error).message);
+    } finally {
+      setSending(false);
+    }
+  };
+
   return (
     <Modal
       open
@@ -89,13 +151,29 @@ export default function ComposeModal({
       footer={
         <>
           <button className="btn-secondary" onClick={onClose} disabled={sending}>Cancel</button>
-          <button
-            className="btn-primary"
-            onClick={() => void send()}
-            disabled={sending || (!body.trim() && !templateName) || !to}
-          >
-            {sending ? <Spinner /> : <Send className="h-4 w-4" />} Send
-          </button>
+          {deviceMode && !handedOffBody && (
+            <button
+              className="btn-secondary"
+              onClick={() => void addToQueue()}
+              disabled={sending || !body.trim() || !to}
+            >
+              <ListPlus className="h-4 w-4" /> Add to queue
+            </button>
+          )}
+          {handedOffBody ? (
+            <button className="btn-primary" onClick={() => void confirmDeviceSend()} disabled={sending}>
+              {sending ? <Spinner /> : <Check className="h-4 w-4" />} I sent it
+            </button>
+          ) : (
+            <button
+              className="btn-primary"
+              onClick={() => void send()}
+              disabled={sending || channelLoading || (!body.trim() && !templateName) || !to}
+            >
+              {sending ? <Spinner /> : deviceMode ? <ExternalLink className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+              {deviceMode ? 'Open WhatsApp' : 'Send'}
+            </button>
+          )}
         </>
       }
     >
@@ -110,7 +188,7 @@ export default function ComposeModal({
           )}
         </div>
 
-        {templates && templates.length > 0 && (
+        {!deviceMode && templates && templates.length > 0 && (
           <div>
             <label className="label">Template (optional)</label>
             <Select
@@ -159,6 +237,15 @@ export default function ComposeModal({
             <p className="mt-1 text-2xs text-muted tnum">{body.length} characters</p>
           )}
         </div>
+
+        {deviceMode && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+            <p className="font-medium">One-tap WhatsApp mode</p>
+            <p className="mt-0.5">
+              The CRM personalises this message and opens it in your WhatsApp. You press send; delivery is not claimed automatically.
+            </p>
+          </div>
+        )}
       </div>
     </Modal>
   );

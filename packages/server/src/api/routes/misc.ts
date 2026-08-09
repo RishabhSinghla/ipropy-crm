@@ -376,6 +376,16 @@ miscRouter.delete('/files/:id', asyncHandler(async (req, res) => {
 }));
 
 miscRouter.get('/records/:recordId/files', asyncHandler(async (req, res) => {
+  const scope = getScope(req);
+  const record = await db.queryOne<{ module_name: string }>(
+    `SELECT module_name FROM ipy_record WHERE id = $1 AND is_deleted = false`,
+    [req.params.recordId],
+  );
+  if (!record) throw new NotFoundError('Record not found');
+  if (!(await canAccessRecord(scope, record.module_name, req.params.recordId, 'view'))) {
+    throw new ForbiddenError();
+  }
+
   const rows = await db.query(
     `SELECT a.id, a.file_name, a.mime_type, a.size, a.category, a.created_at,
             trim(u.first_name || ' ' || u.last_name) AS uploaded_by_name
