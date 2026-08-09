@@ -11,9 +11,11 @@ import { logger } from '../../utils/logger.js';
 import { BadRequestError, NotFoundError } from '../../utils/errors.js';
 import { bus } from '../../core/events/bus.js';
 import { touchActivity } from '../../core/entity/recordService.js';
+import { notify } from '../../core/notifications/index.js';
 import * as provider from './provider.js';
 import { detectConsentKeyword, maySend, recordConsent } from './consent.js';
 import { runAutoReply } from './autoreply.js';
+import { exitAllForHandle } from './sequences.js';
 
 const WINDOW_HOURS = 24;
 
@@ -170,17 +172,14 @@ export async function handleInbound(msg: InboundMessage): Promise<{ conversation
     }
 
     if (conv?.assigned_to) {
-      await tx.query(
-        `INSERT INTO ipy_notification (user_id, kind, title, body, link, record_id)
-         VALUES ($1,'whatsapp',$2,$3,$4,$5)`,
-        [
-          conv.assigned_to,
-          `New WhatsApp from ${msg.profileName ?? msg.from}`,
-          (body ?? '').slice(0, 200),
-          `/inbox/${conversationId}`,
-          conv.record_id,
-        ],
-      );
+      await notify({
+        userId: conv.assigned_to,
+        kind: 'whatsapp',
+        title: `New WhatsApp from ${msg.profileName ?? msg.from}`,
+        body: (body ?? '').slice(0, 200),
+        link: `/inbox/${conversationId}`,
+        recordId: conv.record_id,
+      }, tx);
     }
 
     bus.emitAsync('message.received', {
@@ -208,12 +207,20 @@ export async function handleInbound(msg: InboundMessage): Promise<{ conversation
     // an open transaction risks holding a row lock across a network call to
     // Meta (see CLAUDE.md on emitting inside transactions).
     onCommit(tx, async () => {
+      // Someone who replies is now in a conversation with a person. Any drip
+      // sequence still aimed at them has to stop before the next scheduler
+      // tick, or they get a canned follow-up on top of a live exchange — the
+      // single most common way marketing automation reads as spam.
+      await exitAllForHandle(msg.from, 'Replied on WhatsApp')
+        .catch((err) => logger.warn({ err }, 'could not exit sequences on reply'));
+
       await runAutoReply({
         conversationId,
         handle: msg.from,
         text: body,
         recordId: conv?.record_id ?? null,
         consentAction,
+        buttonPayload: msg.buttonPayload ?? null,
       }).catch((err) => logger.warn({ err }, 'auto-reply failed'));
     });
 
@@ -343,8 +350,9 @@ export async function sendMessage(input: SendMessageInput): Promise<{ messageId:
   const message = await db.queryOne<{ id: string }>(
     `INSERT INTO ipy_message
       (conversation_id, direction, channel, type, body, template_name, template_params,
-       status, error_message, provider_message_id, provider, sent_by, is_ai_generated, workflow_id, campaign_id)
-     VALUES ($1,'outbound','whatsapp',$2,$3,$4,$5,$6,$7,$8,'meta',$9,$10,$11,$12)
+       status, error_message, provider_message_id, provider, sent_by, is_ai_generated,
+       workflow_id, campaign_id, sent_via)
+     VALUES ($1,'outbound','whatsapp',$2,$3,$4,$5,$6,$7,$8,'meta',$9,$10,$11,$12,'api')
      RETURNING id`,
     [
       conversationId, type, body,

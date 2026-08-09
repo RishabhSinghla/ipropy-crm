@@ -46,7 +46,10 @@ async function tick(): Promise<void> {
     await Promise.allSettled([
       drainQueue(),
       drainMediaQueue(),
+      drainRenderQueue(),
       runScheduledWorkflows(),
+      runSequences(),
+      startDueBroadcasts(),
       housekeeping(),
       maybeRunSeoAudit(),
     ]);
@@ -54,6 +57,44 @@ async function tick(): Promise<void> {
     logger.error({ err }, 'scheduler tick failed');
   } finally {
     running = false;
+  }
+}
+
+/**
+ * Advance drip sequences whose next step has come due.
+ *
+ * Dynamically imported like the other optional subsystems, so a broken
+ * sequence module can never stop the queue from draining.
+ */
+async function runSequences(): Promise<void> {
+  try {
+    const { runDueEnrolments } = await import('../../integrations/whatsapp/sequences.js');
+    const result = await runDueEnrolments();
+    if (result.ran || result.exited) {
+      logger.debug({ ...result }, 'sequences advanced');
+    }
+  } catch (err) {
+    logger.error({ err }, 'sequence run failed');
+  }
+}
+
+/** Kick off broadcasts whose scheduled time has arrived. */
+async function startDueBroadcasts(): Promise<void> {
+  try {
+    const { runDueBroadcasts } = await import('../../integrations/whatsapp/broadcast.js');
+    await runDueBroadcasts();
+  } catch (err) {
+    logger.error({ err }, 'scheduled broadcast dispatch failed');
+  }
+}
+
+/** Render reels and brochures queued by the studio. */
+async function drainRenderQueue(): Promise<void> {
+  try {
+    const { drainRenders } = await import('../media/renderQueue.js');
+    await drainRenders();
+  } catch (err) {
+    logger.error({ err }, 'render queue failed');
   }
 }
 

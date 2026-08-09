@@ -20,6 +20,9 @@ import { viewsRouter } from './api/routes/views.js';
 import { dashboardsRouter, reportsRouter } from './api/routes/dashboards.js';
 import { adminRouter } from './api/routes/admin.js';
 import { commsRouter } from './api/routes/comms.js';
+import { outreachRouter } from './api/routes/outreach.js';
+import { studioRouter } from './api/routes/studio.js';
+import { deviceRouter } from './api/routes/device.js';
 import { telephonyRouter } from './api/routes/telephony.js';
 import { aiRouter } from './api/routes/ai.js';
 import { webhooksRouter } from './api/routes/webhooks.js';
@@ -146,6 +149,9 @@ export function createApp(): Express {
   // webhooks authenticate themselves, the public API is intentionally open.
   app.use('/api/webhooks', webhooksRouter);
   app.use('/api/public', publicRouter);
+  // The phone companion app authenticates with its own long-lived device token,
+  // not a user session, so it sits alongside webhooks rather than behind requireAuth.
+  app.use('/api/device', deviceRouter);
 
   app.use('/api/auth', authRouter);
   // Mounted separately from authRouter: its sign-in half is public, and
@@ -157,6 +163,8 @@ export function createApp(): Express {
   app.use('/api/reports', reportsRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api/comms', commsRouter);
+  app.use('/api/outreach', outreachRouter);
+  app.use('/api/studio', studioRouter);
   app.use('/api/telephony', telephonyRouter);
   app.use('/api/ai', aiRouter);
   app.use('/api/portal', portalRouter);
