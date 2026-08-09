@@ -83,6 +83,31 @@ export function formatPhone(value: string | null | undefined): string {
   return value;
 }
 
+/**
+ * A number the way a person reads it: "+91 98115 33636".
+ *
+ * The code and the national number are stored apart (see `toInternational`),
+ * but nobody wants to read them apart — a lead's mobile should look like one
+ * value everywhere it is displayed, not a "Country" chip next to a bare ten
+ * digits. Grouping follows the length, so a nine-digit UAE number does not get
+ * India's 5-5 split.
+ */
+export function formatPhoneWithCode(
+  countryCode: string | null | undefined,
+  national: string | null | undefined,
+): string {
+  const digits = (national ?? '').replace(/\D/g, '');
+  if (!digits) return '—';
+  const code = (countryCode ?? '').trim();
+  const grouped = digits.length === 10
+    ? `${digits.slice(0, 5)} ${digits.slice(5)}`
+    : digits.length > 6
+      ? `${digits.slice(0, digits.length - 4)} ${digits.slice(-4)}`
+      : digits;
+  if (!code) return formatPhone(digits);
+  return `${code.startsWith('+') ? code : `+${code}`} ${grouped}`;
+}
+
 /** Normalise a phone number to E.164 for WhatsApp/telephony providers. */
 export function toE164(value: string | null | undefined, defaultCountry = '91'): string | null {
   if (!value) return null;

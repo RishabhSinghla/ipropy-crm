@@ -136,8 +136,8 @@ export async function runWidget(
       }, conn, type);
     case 'calendar':
       return runTable(ctx, {
-        module: 'activities', sortBy: 'due_date', sortDir: 'asc', limit: 15,
-        columns: ['due_date', 'activity_type', 'owner_id', 'status'],
+        module: 'leads', sortBy: 'next_followup_at', sortDir: 'asc', limit: 15,
+        columns: ['next_followup_at', 'full_name', 'owner_id', 'status'],
         ...config,
       }, conn, type);
     case 'markdown':

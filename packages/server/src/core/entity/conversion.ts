@@ -89,7 +89,6 @@ export async function mergeRecords(
       await tx.query(`UPDATE ipy_call SET record_id = $1 WHERE record_id = $2`, [primaryId, dupId]);
       await tx.query(`UPDATE ipy_email_log SET record_id = $1 WHERE record_id = $2`, [primaryId, dupId]);
       await tx.query(`UPDATE ipy_ai_insight SET record_id = $1 WHERE record_id = $2`, [primaryId, dupId]);
-      await tx.query(`UPDATE ipy_e_activities SET related_to = $1 WHERE related_to = $2`, [primaryId, dupId]);
       // Deals, bookings and payments all reference the party record.
       // A conversation is keyed on (channel, handle); if the survivor already has
       // one for that handle, drop the duplicate's rather than violating the unique key.

@@ -52,7 +52,7 @@ async function moduleRoutes(page: Page): Promise<string[]> {
   await expect(page.getByRole('link', { name: /leads & customers/i })).toBeVisible();
 
   const routes = await page.evaluate(() => {
-    const skip = new Set(['/dashboard', '/settings', '/inbox', '/calls', '/reports', '/inventory', '/portal']);
+    const skip = new Set(['/dashboard', '/settings', '/inbox', '/calls', '/reports', '/portal']);
     return [...document.querySelectorAll<HTMLAnchorElement>('nav a[href]')]
       .map((a) => new URL(a.href).pathname)
       .filter((p) => /^\/[a-z_]+$/.test(p) && !skip.has(p))

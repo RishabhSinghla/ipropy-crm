@@ -58,7 +58,7 @@ export default function Studio(): JSX.Element {
     queryKey: ['studio-properties', search],
     queryFn: () => api.list('properties', {
       page: 1, pageSize: 12, search: search || undefined,
-      columns: ['name', 'project_id', 'configuration', 'carpet_area', 'facing', 'floor', 'base_price', 'total_price', 'gallery', 'status'],
+      columns: ['name', 'project_name', 'configuration', 'carpet_area', 'facing', 'floor', 'base_price', 'total_price', 'gallery', 'status'],
     }),
   });
 

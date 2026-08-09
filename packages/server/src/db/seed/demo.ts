@@ -3,7 +3,7 @@ import type { SeededUser } from './rbac.js';
 import { nextNumber } from '../../core/entity/numbering.js';
 
 /**
- * Demo dataset — a plausible mid-size developer with three live projects.
+ * Demo dataset — a plausible mid-size developer with three live developments.
  * Written directly against the tables (rather than through the record service)
  * so seeding stays fast and does not depend on an authenticated context.
  */
@@ -121,7 +121,11 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
   const ownerAt = (i: number): string => salesUsers[i % salesUsers.length].id;
 
   // -------------------------------------------------------------------------
-  // Projects
+  // Developments
+  //
+  // Projects are no longer a module. These definitions still drive the demo
+  // inventory's names, rates and localities — they simply no longer become
+  // records of their own; each unit carries its development's name.
   // -------------------------------------------------------------------------
   const projectDefs = [
     {
@@ -155,30 +159,6 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
       connectivity: [{ place: 'EON IT Park', distance: '1.1 km' }, { place: 'Pune Airport', distance: '7.8 km' }, { place: 'Magarpatta City', distance: '5.4 km' }],
     },
   ];
-
-  const projectIds: string[] = [];
-  for (const [i, p] of projectDefs.entries()) {
-    const id = await insertRecord(conn, {
-      module: 'projects', label: p.name, ownerId: ownerAt(i), createdBy: admin.id,
-      numberField: 'project_code', createdAt: p.launch,
-      searchText: `${p.name} ${p.city} ${p.locality} ${p.configs.join(' ')}`,
-      values: {
-        name: p.name, status: p.status, project_type: p.type,
-        city: p.city, locality: p.locality, state: p.city === 'Bengaluru' ? 'Karnataka' : 'Maharashtra',
-        country: 'India', latitude: p.lat, longitude: p.lng, micro_market: i === 1 ? 'IT Corridor' : 'Prime',
-        rera_number: p.rera, rera_expiry: isoDate(daysAhead(700)),
-        total_towers: p.towers, total_floors: p.floors, total_units: p.units,
-        total_land_area: 4.2 + i, land_area_unit: 'acre', open_area_percent: 62 + i * 4,
-        price_min: p.priceMin, price_max: p.priceMax, rate_per_sqft: p.rate,
-        configurations: p.configs, amenities: p.amenities, usps: p.usps,
-        connectivity: p.connectivity,
-        launch_date: isoDate(p.launch), possession_date: isoDate(p.possession),
-        completion_percent: p.completion, broker_commission_pct: 2,
-        description: `${p.name} — a ${p.type.toLowerCase()} development in ${p.locality}, ${p.city}. ${p.usps[0]}.`,
-      },
-    });
-    projectIds.push(id);
-  }
 
   // -------------------------------------------------------------------------
   // Inventory
@@ -218,7 +198,7 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
         searchText: `${p.name} ${tower} ${unitNo} ${config} ${p.locality}`,
         values: {
           name: `${p.name} — Tower ${tower}, Unit ${unitNo}`,
-          project_id: projectIds[pi], status, property_type: config === 'Commercial' ? 'Office Space' : 'Apartment',
+          project_name: p.name, status, property_type: config === 'Commercial' ? 'Office Space' : 'Apartment',
           configuration: config, tower: `Tower ${tower}`, floor, unit_number: unitNo,
           facing: pick(facings, u), corner_unit: u % 7 === 0, vastu_compliant: u % 3 !== 0,
           carpet_area: carpet, built_up_area: Math.round(carpet * 1.18),
@@ -243,13 +223,6 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
       });
       propertyIds.push({ id, projectIdx: pi, price: total, config, status });
     }
-
-    // Keep the project rollups honest with the inventory we just created.
-    const counts = propertyIds.filter((x) => x.projectIdx === pi);
-    await conn.query(
-      `UPDATE ipy_e_projects SET available_units = $2, booked_units = $3 WHERE record_id = $1`,
-      [projectIds[pi], counts.filter((c) => c.status === 'Available').length, counts.filter((c) => c.status === 'Booked' || c.status === 'Sold').length],
-    );
   }
 
   // -------------------------------------------------------------------------
@@ -269,7 +242,7 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
       numberField: 'campaign_number', createdAt: daysAgo(120 - i * 15),
       values: {
         name: c.name, campaign_type: c.type, status: i < 3 ? 'Active' : 'Completed',
-        project_id: projectIds[c.project], start_date: isoDate(daysAgo(120 - i * 15)),
+        start_date: isoDate(daysAgo(120 - i * 15)),
         end_date: isoDate(daysAhead(i < 3 ? 45 : -10)),
         budget: c.budget, actual_cost: c.spend,
         impressions: c.impressions, clicks: c.clicks,
@@ -341,13 +314,13 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
         status, lead_source: source,
         sub_source: source.includes('Ads') ? 'Paid' : 'Organic',
         campaign_id: source.includes('Ads') || source === 'WhatsApp' ? campaignIds[i % campaignIds.length] : null,
-        interested_project_id: projectIds[projectIdx],
+        interested_project: projectDefs[projectIdx].name,
         property_type: 'Apartment',
         configuration: [pick(configs, i), pick(configs, i + 1)],
         purpose: i % 5 === 0 ? 'Investment' : 'Buy',
         budget_min: budgetMin, budget_max: budgetMax,
         preferred_locations: [projectDefs[projectIdx].locality],
-        carpet_area_min: 650, carpet_area_max: 1400,
+        area: 1000, area_unit: 'sqft',
         possession_timeline: timeline,
         funding_type: i % 3 === 0 ? 'Self Funded' : i % 3 === 1 ? 'Home Loan' : 'Loan Pre-Approved',
         loan_required: i % 3 !== 0,
@@ -420,39 +393,6 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
     customerIds.push(id);
   }
 
-  // -------------------------------------------------------------------------
-  // Activities
-  // -------------------------------------------------------------------------
-  const actTypes = ['Call', 'Follow Up', 'Meeting', 'Site Visit', 'WhatsApp', 'Documentation'];
-  for (let i = 0; i < 45; i++) {
-    const s = i + 3000;
-    const related = leadIds[i % leadIds.length];
-    const relatedModule = 'leads';
-    const type = pick(actTypes, i);
-    const isOverdue = i % 5 === 0;
-    const isDone = i % 3 === 0;
-    const due = isDone ? daysAgo(randInt(s, 1, 20)) : isOverdue ? daysAgo(randInt(s, 1, 6)) : daysAhead(randInt(s, 0, 10));
-    const relLabel = await conn.queryOne<{ label: string }>(`SELECT label FROM ipy_record WHERE id = $1`, [related]);
-
-    await insertRecord(conn, {
-      module: 'activities', label: `${type}: ${relLabel?.label ?? ''}`,
-      ownerId: ownerAt(i), createdBy: admin.id,
-      numberField: 'activity_number', createdAt: daysAgo(randInt(s, 1, 40)),
-      values: {
-        subject: `${type}: ${relLabel?.label ?? 'Follow up'}`,
-        activity_type: type,
-        status: isDone ? 'Completed' : isOverdue ? 'Not Started' : 'Not Started',
-        priority: isOverdue ? 'High' : pick(['Medium', 'High', 'Low'], i),
-        related_to: related, related_module: relatedModule,
-        start_at: due, end_at: new Date(due.getTime() + 30 * 60_000),
-        due_date: isoDate(due),
-        completed_at: isDone ? due : null,
-        outcome: isDone ? pick(['Spoke to the buyer, revisit planned', 'Not reachable, will retry', 'Shared cost sheet on WhatsApp', 'Documents collected'], i) : null,
-        is_ai_generated: i % 6 === 0,
-        description: `Auto-created follow-up for ${relLabel?.label ?? 'the record'}.`,
-      },
-    });
-  }
 
   // -------------------------------------------------------------------------
   // Conversations, messages and calls

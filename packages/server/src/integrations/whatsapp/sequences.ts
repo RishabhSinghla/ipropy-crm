@@ -331,28 +331,18 @@ async function runStep(
     }
     case 'task': {
       // A step a machine should not do on its own — "ring them and ask about
-      // the loan" — becomes a real task on the owner's list. Written through
-      // recordService like every other record in the system, never with a
-      // hand-rolled INSERT into the entity table.
+      // the loan" — lands on the owner as a dated follow-up with the step's
+      // text on the record's timeline.
       if (!enrolment.record_id) break;
-      const { createRecord } = await import('../../core/entity/recordService.js');
-      const { systemContext } = await import('../../core/workflow/tasks.js');
-      const owner = await db.queryOne<{ owner_id: string | null }>(
-        `SELECT owner_id FROM ipy_record WHERE id = $1`, [enrolment.record_id],
-      );
-      const due = new Date(Date.now() + 60 * 60_000);
-      await createRecord(await systemContext(null), 'activities', {
-        subject: step.subject ?? `${sequence.name} — step ${step.sequence}`,
-        activity_type: 'Task',
-        status: 'Not Started',
-        priority: 'Medium',
-        related_to: enrolment.record_id,
-        related_module: sequence.module_name,
-        start_at: due.toISOString(),
-        due_date: due.toISOString().slice(0, 10),
-        description: body,
-        owner_id: owner?.owner_id ?? null,
-      }, { skipDuplicateCheck: true });
+      const { scheduleFollowUp } = await import('../../core/workflow/followUp.js');
+      await scheduleFollowUp({
+        recordId: enrolment.record_id,
+        module: sequence.module_name,
+        on: new Date(Date.now() + 60 * 60_000),
+        reason: step.subject ?? `${sequence.name} — step ${step.sequence}`,
+        notes: body,
+        onlyIfSooner: true,
+      });
       break;
     }
     case 'sms':

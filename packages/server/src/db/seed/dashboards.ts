@@ -86,11 +86,13 @@ export const DASHBOARDS: DashboardSeed[] = [
         },
       },
       {
-        type: 'tasks', title: 'Today\'s Tasks', x: 0, y: 2, w: 4, h: 6,
+        // "What is on today" is the leads whose own follow-up date is today —
+        // Activities was a second record type holding the same fact.
+        type: 'tasks', title: 'Today\'s Follow-ups', x: 0, y: 2, w: 4, h: 6,
         config: {
-          module: 'activities', limit: 15, sortBy: 'due_date', sortDir: 'asc',
-          columns: ['subject', 'activity_type', 'priority', 'due_date', 'related_to'],
-          filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'is_me' }, { field: 'due_date', operator: 'today' }, { field: 'status', operator: 'not_equals', value: 'Completed' }] },
+          module: 'leads', limit: 15, sortBy: 'ai_score', sortDir: 'desc',
+          columns: ['full_name', 'mobile', 'status', 'next_followup_at'],
+          filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'is_me' }, { field: 'next_followup_at', operator: 'today' }, { field: 'is_converted', operator: 'is_false' }] },
         },
       },
       {
@@ -145,7 +147,7 @@ export const DASHBOARDS: DashboardSeed[] = [
       },
       {
         type: 'inventory_status', title: 'Stock by Project', x: 0, y: 2, w: 7, h: 6,
-        config: { module: 'properties', groupBy: 'project_id', stackBy: 'status', limit: 10 },
+        config: { module: 'properties', groupBy: 'project_name', stackBy: 'status', limit: 10 },
       },
       {
         type: 'pie', title: 'Availability by Configuration', x: 7, y: 2, w: 5, h: 6,
@@ -158,7 +160,7 @@ export const DASHBOARDS: DashboardSeed[] = [
         type: 'table', title: 'Blocked Units Expiring Soon', x: 0, y: 8, w: 12, h: 4,
         config: {
           module: 'properties', limit: 15, sortBy: 'blocked_until', sortDir: 'asc',
-          columns: ['name', 'project_id', 'configuration', 'total_price', 'blocked_until', 'blocked_for_lead_id'],
+          columns: ['name', 'project_name', 'configuration', 'total_price', 'blocked_until', 'blocked_for_lead_id'],
           filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'in', value: ['Held', 'Blocked'] }, { field: 'blocked_until', operator: 'next_n_days', value: 7 }] },
         },
       },

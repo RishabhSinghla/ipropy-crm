@@ -38,7 +38,6 @@ export interface NormalizedLead {
   subSource?: string;
   message?: string;
   projectName?: string;
-  projectId?: string;
   configuration?: string[];
   budgetMin?: number;
   budgetMax?: number;
@@ -98,10 +97,7 @@ export async function captureLead(
       return { status: 'duplicate', recordId: existing.record_id, message: 'Merged into the existing enquiry' };
     }
 
-    const [projectId, campaignId] = await Promise.all([
-      resolveProject(normalized),
-      resolveCampaign(normalized),
-    ]);
+    const campaignId = await resolveCampaign(normalized);
 
     const values: Record<string, unknown> = {
       first_name: normalized.firstName || 'Unknown',
@@ -112,7 +108,7 @@ export async function captureLead(
       status: 'New',
       lead_source: normalized.source,
       sub_source: normalized.subSource ?? null,
-      interested_project_id: projectId,
+      interested_project: normalized.projectName ?? null,
       campaign_id: campaignId,
       configuration: normalized.configuration ?? [],
       preferred_locations: normalized.locations ?? [],
@@ -214,21 +210,6 @@ async function enrichExistingLead(recordId: string, normalized: NormalizedLead):
      FROM ipy_record r WHERE r.id = $1 AND r.owner_id IS NOT NULL`,
     [recordId, normalized.source],
   );
-}
-
-async function resolveProject(n: NormalizedLead): Promise<string | null> {
-  if (n.projectId) return n.projectId;
-  if (!n.projectName) return null;
-  const row = await db.queryOne<{ record_id: string }>(
-    `SELECT p.record_id FROM ipy_e_projects p JOIN ipy_record r ON r.id = p.record_id
-     WHERE r.is_deleted = false AND lower(p.name) = lower($1)
-     UNION ALL
-     SELECT p.record_id FROM ipy_e_projects p JOIN ipy_record r ON r.id = p.record_id
-     WHERE r.is_deleted = false AND p.name ILIKE '%' || $1 || '%'
-     LIMIT 1`,
-    [n.projectName],
-  );
-  return row?.record_id ?? null;
 }
 
 async function resolveCampaign(n: NormalizedLead): Promise<string | null> {

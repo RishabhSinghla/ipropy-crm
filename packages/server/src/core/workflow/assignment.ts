@@ -162,13 +162,15 @@ async function pickFromPool(
     }
 
     case 'least_busy': {
-      // Fewest open tasks due today — good for "who can call right now".
+      // Fewest follow-ups already due — "who can call right now". Reads the
+      // lead's own next-follow-up date now that Activities is gone; same
+      // question, one table fewer.
       const counts = await db.query<{ owner_id: string; count: number }>(
         `SELECT r.owner_id, COUNT(*)::int AS count
-         FROM ipy_e_activities a
-         JOIN ipy_record r ON r.id = a.record_id
-         WHERE r.owner_id = ANY($1::uuid[]) AND a.status <> 'Completed'
-           AND a.due_date <= CURRENT_DATE AND r.is_deleted = false
+         FROM ipy_e_leads l
+         JOIN ipy_record r ON r.id = l.record_id
+         WHERE r.owner_id = ANY($1::uuid[]) AND r.is_deleted = false
+           AND l.next_followup_at IS NOT NULL AND l.next_followup_at <= CURRENT_DATE
          GROUP BY 1`,
         [pool],
       );

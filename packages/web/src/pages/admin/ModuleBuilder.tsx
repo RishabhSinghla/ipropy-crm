@@ -16,7 +16,9 @@ export default function ModuleBuilder(): JSX.Element {
   const [editingField, setEditingField] = useState<FieldMeta | null>(null);
   const [creatingField, setCreatingField] = useState(false);
   const [creatingModule, setCreatingModule] = useState(false);
-  const [deleteField, setDeleteField] = useState<FieldMeta | null>(null);
+  // Two different destructive actions, so the dialog has to know which one.
+  // "hide" is reversible and keeps the data; "delete" drops the column.
+  const [pendingRemoval, setPendingRemoval] = useState<{ field: FieldMeta; mode: 'hide' | 'delete' } | null>(null);
 
   const { data: fieldModules = [], isLoading: isModulesLoading } = useQuery({
     queryKey: ['field-modules'],
@@ -49,10 +51,17 @@ export default function ModuleBuilder(): JSX.Element {
   };
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => api.deleteField(id),
+    mutationFn: ({ id, permanent }: { id: string; permanent: boolean }) => api.deleteField(id, permanent),
     onSuccess: (result) => {
-      const r = result as { deactivated?: boolean };
-      toast.success(r.deactivated ? 'Field hidden' : 'Field deleted');
+      const r = result as { deactivated?: boolean; hadValues?: number };
+      toast.success(
+        r.deactivated ? 'Field hidden' : 'Field deleted',
+        r.deactivated
+          ? 'It is off every screen but its data is intact — restore it any time.'
+          : r.hadValues
+            ? `Removed along with ${r.hadValues} stored value(s).`
+            : undefined,
+      );
       invalidateModule();
     },
     onError: (err: Error) => toast.error('Could not remove the field', err.message),
@@ -166,7 +175,12 @@ export default function ModuleBuilder(): JSX.Element {
                             <Edit3 className="h-3.5 w-3.5" />
                             <span className="hidden xl:inline">Edit</span>
                           </button>
-                          {!field.isCustom && !field.isActive ? (
+                          {/* Hide and Delete are separate answers to separate
+                              questions — "not on my screens" and "gone". They
+                              used to be one button whose meaning depended on
+                              whether the field happened to be custom, which is
+                              not something an administrator should have to know. */}
+                          {!field.isActive ? (
                             <button
                               onClick={() => unhideMutation.mutate(field.id)}
                               disabled={unhideMutation.isPending}
@@ -179,15 +193,24 @@ export default function ModuleBuilder(): JSX.Element {
                             </button>
                           ) : (
                             <button
-                              onClick={() => setDeleteField(field)}
-                              className="btn-ghost btn-sm gap-1 px-2 text-slate-400 hover:text-red-600"
-                              title={field.isCustom ? 'Delete field permanently' : 'Remove field from screens'}
-                              aria-label={`Remove ${field.label}`}
+                              onClick={() => setPendingRemoval({ field, mode: 'hide' })}
+                              className="btn-ghost btn-sm gap-1 px-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                              title="Take off every screen, keeping the data"
+                              aria-label={`Hide ${field.label}`}
                             >
-                              {field.isCustom ? <Trash2 className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
-                              <span className="hidden xl:inline">Remove</span>
+                              <EyeOff className="h-3.5 w-3.5" />
+                              <span className="hidden xl:inline">Hide</span>
                             </button>
                           )}
+                          <button
+                            onClick={() => setPendingRemoval({ field, mode: 'delete' })}
+                            className="btn-ghost btn-sm gap-1 px-2 text-slate-400 hover:text-red-600"
+                            title="Delete the field and its data permanently"
+                            aria-label={`Delete ${field.label}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            <span className="hidden xl:inline">Delete</span>
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -229,14 +252,19 @@ export default function ModuleBuilder(): JSX.Element {
       )}
 
       <ConfirmDialog
-        open={Boolean(deleteField)}
-        onClose={() => setDeleteField(null)}
-        onConfirm={() => deleteMutation.mutateAsync(deleteField!.id)}
-        title={deleteField?.isCustom ? `Delete “${deleteField.label}”?` : `Hide “${deleteField?.label}”?`}
-        body={deleteField?.isCustom
-          ? 'The field and all of its stored values will be permanently removed.'
-          : 'Built-in fields cannot be deleted. This hides the field from every screen; you can re-enable it later.'}
-        confirmLabel={deleteField?.isCustom ? 'Delete' : 'Hide'}
+        open={Boolean(pendingRemoval)}
+        onClose={() => setPendingRemoval(null)}
+        onConfirm={() => deleteMutation.mutateAsync({
+          id: pendingRemoval!.field.id,
+          permanent: pendingRemoval!.mode === 'delete',
+        })}
+        title={pendingRemoval?.mode === 'delete'
+          ? `Delete “${pendingRemoval.field.label}” permanently?`
+          : `Hide “${pendingRemoval?.field.label}”?`}
+        body={pendingRemoval?.mode === 'delete'
+          ? 'The field, every value stored in it, and its place in any view or layout are all removed. This cannot be undone — and it stays deleted when the app is next updated.'
+          : 'The field comes off every screen but keeps its data, and you can restore it from this page at any time.'}
+        confirmLabel={pendingRemoval?.mode === 'delete' ? 'Delete permanently' : 'Hide'}
         danger
       />
     </div>

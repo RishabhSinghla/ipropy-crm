@@ -46,7 +46,7 @@ const WORKFLOWS: WorkflowSeed[] = [
         config: {
           to: '{{mobile}}',
           template: 'lead_welcome',
-          fallbackText: 'Hi {{first_name}}, thanks for your interest in {{interested_project_id__display}}. I am {{owner_name}} from iPropy. When would be a good time to call you?',
+          fallbackText: 'Hi {{first_name}}, thanks for your interest in {{interested_project}}. I am {{owner_name}} from iPropy. When would be a good time to call you?',
           skipIf: { logic: 'AND', conditions: [{ field: 'mobile', operator: 'is_empty' }] },
         },
       },
@@ -120,7 +120,7 @@ const WORKFLOWS: WorkflowSeed[] = [
     name: 'Re-score on engagement',
     description: 'Recomputes the AI score whenever the lead\'s status or requirement changes.',
     trigger: 'on_field_change',
-    watchFields: ['status', 'budget_max', 'possession_timeline', 'interested_project_id', 'funding_type'],
+    watchFields: ['status', 'budget_max', 'possession_timeline', 'interested_project', 'funding_type'],
     tasks: [{ type: 'ai_action', name: 'Re-score', config: { action: 'score_lead', writeTo: { score: 'ai_score', grade: 'ai_grade', reasons: 'ai_score_reasons' } } }],
   },
 
@@ -317,7 +317,7 @@ const WHATSAPP_TEMPLATES: TemplateSeed[] = [
     body: 'Hi {{1}}, thank you for enquiring about {{2}}. I\'m {{3}} from {{4}} and I\'ll be helping you find the right home.\n\nCould you share a good time to call you today?',
     footer: 'Reply STOP to opt out',
     buttons: [{ type: 'QUICK_REPLY', text: 'Call me now' }, { type: 'QUICK_REPLY', text: 'Send details' }],
-    variables: { '1': 'record.first_name', '2': 'record.interested_project_id__display', '3': 'owner.first_name', '4': 'org.name' },
+    variables: { '1': 'record.first_name', '2': 'record.interested_project', '3': 'owner.first_name', '4': 'org.name' },
   },
   {
     name: 'lead_nurture', category: 'MARKETING',
@@ -331,13 +331,13 @@ const WHATSAPP_TEMPLATES: TemplateSeed[] = [
     header: 'Site visit confirmed',
     body: 'Hi {{1}}, your site visit to {{2}} is confirmed for {{3}}.\n\nAddress: {{4}}\nYour host: {{5}} ({{6}})\n\nSee you there!',
     buttons: [{ type: 'URL', text: 'Get directions', url: 'https://maps.google.com/?q={{1}}' }],
-    variables: { '1': 'contact.first_name', '2': 'record.project_id__display', '3': 'record.scheduled_at', '4': 'project.address', '5': 'owner.full_name', '6': 'owner.phone' },
+    variables: { '1': 'contact.first_name', '2': 'record.project_name', '3': 'record.scheduled_at', '4': 'project.address', '5': 'owner.full_name', '6': 'owner.phone' },
   },
   {
     name: 'site_visit_reminder', category: 'UTILITY',
     body: 'Reminder: your visit to {{1}} is in 2 hours, at {{2}}. {{3}} will meet you at the site office.\n\nNeed to reschedule?',
     buttons: [{ type: 'QUICK_REPLY', text: 'On my way' }, { type: 'QUICK_REPLY', text: 'Reschedule' }],
-    variables: { '1': 'record.project_id__display', '2': 'record.scheduled_at', '3': 'owner.first_name' },
+    variables: { '1': 'record.project_name', '2': 'record.scheduled_at', '3': 'owner.first_name' },
   },
   {
     name: 'site_visit_thankyou', category: 'UTILITY',
@@ -347,13 +347,13 @@ const WHATSAPP_TEMPLATES: TemplateSeed[] = [
       { type: 'QUICK_REPLY', text: 'Need to think' },
       { type: 'QUICK_REPLY', text: 'Not for me' },
     ],
-    variables: { '1': 'contact.first_name', '2': 'record.project_id__display' },
+    variables: { '1': 'contact.first_name', '2': 'record.project_name' },
   },
   {
     name: 'booking_confirmation', category: 'UTILITY',
     header: 'Congratulations on your new home!',
     body: 'Dear {{1}}, your booking for {{2}} at {{3}} is confirmed.\n\nBooking ID: {{4}}\nAgreement value: {{5}}\n\nOur CRM team will reach out with the documentation checklist shortly.',
-    variables: { '1': 'contact.first_name', '2': 'record.property_id__display', '3': 'record.project_id__display', '4': 'record.booking_number', '5': 'record.agreement_value' },
+    variables: { '1': 'contact.first_name', '2': 'record.property_id__display', '3': 'record.project_name', '4': 'record.booking_number', '5': 'record.agreement_value' },
   },
   {
     name: 'payment_reminder', category: 'UTILITY',
@@ -403,7 +403,7 @@ export async function seedTemplates(conn: Tx): Promise<void> {
       name: 'booking_welcome',
       subject: 'Welcome home — your booking {{record.booking_number}} is confirmed',
       body: `<p>Dear {{contact.first_name}},</p>
-<p>Congratulations on booking <strong>{{record.property_id__display}}</strong> at <strong>{{record.project_id__display}}</strong>.</p>
+<p>Congratulations on booking <strong>{{record.property_id__display}}</strong> at <strong>{{record.project_name}}</strong>.</p>
 <table cellpadding="6" style="border-collapse:collapse">
   <tr><td><strong>Booking ID</strong></td><td>{{record.booking_number}}</td></tr>
   <tr><td><strong>Agreement value</strong></td><td>{{record.agreement_value}}</td></tr>

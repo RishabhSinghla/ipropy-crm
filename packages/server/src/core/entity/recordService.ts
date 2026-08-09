@@ -14,7 +14,7 @@ import type {
   ModuleMeta,
   RecordEnvelope,
 } from '@ipropy/shared';
-import { UITYPES } from '@ipropy/shared';
+import { UITYPES, formatArea, formatPhoneWithCode } from '@ipropy/shared';
 import { db, onCommit, transaction, type Tx } from '../../db/pool.js';
 import { BadRequestError, ConflictError, NotFoundError, ValidationError } from '../../utils/errors.js';
 import { logger } from '../../utils/logger.js';
@@ -384,7 +384,14 @@ async function resolveDisplayValues(
     if (f.uitype === 'reference') recordIds.add(String(v));
     else if (f.uitype === 'multireference' && Array.isArray(v)) v.forEach((x) => recordIds.add(String(x)));
     else if (f.uitype === 'user' || f.uitype === 'owner') userIds.add(String(v));
-    else display[f.name] = formatValue(f, v);
+    else if (f.uitype === 'phone' && f.config.digitsFrom) {
+      // The code lives in its own column but reads as part of the number, so
+      // it is joined here — once, server-side — rather than in each of the
+      // list, detail, kanban and export renderers.
+      display[f.name] = formatPhoneWithCode(String(values[String(f.config.digitsFrom)] ?? ''), String(v));
+    } else if (f.uitype === 'area' && f.config.unitField) {
+      display[f.name] = formatArea(Number(v), String(values[String(f.config.unitField)] ?? f.config.unit ?? 'sqft'));
+    } else display[f.name] = formatValue(f, v);
   }
   if (values.owner_id) userIds.add(String(values.owner_id));
   if (values.created_by) userIds.add(String(values.created_by));

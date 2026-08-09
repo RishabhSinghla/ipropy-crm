@@ -2,8 +2,7 @@
  * Unified record timeline.
  *
  * Merges audit entries, comments, WhatsApp/SMS messages, calls, emails,
- * activities, site visits, payments, attachments and AI insights into one
- * chronological feed. This is what makes the contact view "interactive" — every
+ * attachments and AI insights into one chronological feed. This is what makes the contact view "interactive" — every
  * interaction with a person lands in the same place regardless of channel.
  */
 import type { TimelineEntry } from '@ipropy/shared';
@@ -24,7 +23,7 @@ export async function buildTimeline(
   const wanted = opts.types?.length ? new Set(opts.types) : null;
   const want = (t: string): boolean => !wanted || wanted.has(t);
 
-  const [audit, comments, messages, calls, emails, activities, attachments, insights] =
+  const [audit, comments, messages, calls, emails, attachments, insights] =
     await Promise.all([
       want('audit')
         ? conn.query<AuditRow>(
@@ -81,21 +80,6 @@ export async function buildTimeline(
             [recordId, limit],
           )
         : empty<EmailRow>(),
-
-      want('task')
-        ? conn.query<ActivityRow>(
-            `SELECT r.id::text, a.subject, a.activity_type, a.status, a.priority,
-                    a.due_date, a.start_at, a.completed_at, a.outcome, a.is_ai_generated,
-                    r.created_at, r.owner_id,
-                    trim(u.first_name || ' ' || u.last_name) AS user_name
-             FROM ipy_e_activities a
-             JOIN ipy_record r ON r.id = a.record_id
-             LEFT JOIN ipy_user u ON u.id = r.owner_id
-             WHERE a.related_to = $1 AND r.is_deleted = false
-             ORDER BY r.created_at DESC LIMIT $2`,
-            [recordId, limit],
-          )
-        : empty<ActivityRow>(),
 
       want('attachment')
         ? conn.query<AttachmentRow>(
@@ -189,19 +173,6 @@ export async function buildTimeline(
     });
   }
 
-  for (const r of activities.rows) {
-    entries.push({
-      id: `activity-${r.id}`, type: 'task', at: r.completed_at ?? r.start_at ?? r.created_at,
-      actorId: r.owner_id, actorName: r.user_name ?? 'Unassigned',
-      title: `${r.activity_type}: ${r.subject}`,
-      body: r.outcome ?? (r.status === 'Completed' ? 'Completed' : `Due ${r.due_date ?? 'unscheduled'}`),
-      icon: r.status === 'Completed' ? 'check-circle-2' : 'circle-dashed',
-      meta: { status: r.status, priority: r.priority, type: r.activity_type, isAi: r.is_ai_generated, recordId: r.id },
-    });
-  }
-
-
-
   for (const r of attachments.rows) {
     entries.push({
       id: `file-${r.id}`, type: 'attachment', at: r.created_at,
@@ -255,7 +226,6 @@ interface CommentRow { id: string; body: string; created_at: string; user_id: st
 interface MessageRow { id: string; direction: string; channel: string; type: string; body: string | null; status: string; is_ai_generated: boolean; created_at: string; sent_by: string | null; user_name: string | null; media: unknown }
 interface CallRow { id: string; direction: string; status: string; duration_seconds: number; disposition: string | null; recording_url: string | null; ai_summary: string | null; ai_sentiment: string | null; started_at: string; user_id: string | null; user_name: string | null; from_number: string; to_number: string }
 interface EmailRow { id: string; subject: string | null; direction: string; status: string; to_addresses: unknown; opened_at: string | null; open_count: number; created_at: string; sent_by: string | null; user_name: string | null }
-interface ActivityRow { id: string; subject: string; activity_type: string; status: string; priority: string; due_date: string | null; start_at: string | null; completed_at: string | null; outcome: string | null; is_ai_generated: boolean; created_at: string; owner_id: string | null; user_name: string | null }
 interface VisitRow { id: string; subject: string; status: string; scheduled_at: string; interest_level: string | null; feedback: string | null; ai_summary: string | null; ai_sentiment: string | null; owner_id: string | null; user_name: string | null }
 interface PaymentRow { id: string; milestone: string | null; status: string; amount_due: number; amount_paid: number; paid_on: string | null; due_date: string | null; receipt_number: string | null; created_at: string }
 interface AttachmentRow { id: string; file_name: string; mime_type: string; size: number; created_at: string; uploaded_by: string | null; user_name: string | null }

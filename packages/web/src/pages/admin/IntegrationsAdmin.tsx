@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
 import {
-  Check, CheckCircle2, Copy, Download, Globe, Loader2, MessageCircle, Phone, Plug, Sparkles, Webhook, X, XCircle,
+  ArrowRight, Check, CheckCircle2, Copy, Download, ExternalLink, Globe, HardDrive, Loader2,
+  Mail, MessageCircle, Phone, Plug, Settings2, Sparkles, Webhook, Wand2, X, XCircle,
 } from 'lucide-react';
 import { api, type IntegrationSummary } from '../../lib/api';
 import { toast } from '../../lib/store';
 import { cn } from '../../lib/utils';
-import { Badge, EmptyState, Skeleton, Spinner, Tabs, Toggle } from '../../components/ui';
+import { Badge, EmptyState, Modal, Skeleton, Spinner, Tabs, Toggle } from '../../components/ui';
 
 const API_BASE = window.location.origin;
 
@@ -174,6 +175,486 @@ const PROVIDER_HINTS: Record<string, { text: string; href?: string; linkLabel?: 
     linkLabel: 'Install Ollama',
   },
 };
+
+// ---------------------------------------------------------------------------
+// Guided setup
+//
+// The card view below asks for "Phone Number ID" and "Webhook Verify Token" —
+// fine if you already know what those are, useless if you don't, which is most
+// people running a property desk. This layer sits on top of exactly the same
+// save/test endpoints and turns each provider into a short, ordered set of
+// plain-English steps: fetch this one value from that one screen, paste it
+// here, copy this URL over there. Nothing is invented that we can generate
+// ourselves — verify tokens and webhook keys are produced for the user rather
+// than demanded from them.
+// ---------------------------------------------------------------------------
+
+interface GuideStep {
+  title: string;
+  /** Plain-English instruction. No jargon that isn't defined on the step itself. */
+  help: string;
+  /** A value to collect — must be a key in that provider's PROVIDER_FIELDS. */
+  field?: string;
+  /** A webhook path to hand over, copy-button included. */
+  copyPath?: string;
+  /** Where to find the value being asked for. */
+  href?: string;
+  linkLabel?: string;
+  /** Fill this field with a generated secret instead of asking for one. */
+  generate?: boolean;
+}
+
+interface Guide {
+  /** What connecting this actually gets you, in the user's terms. */
+  outcome: string;
+  minutes: number;
+  steps: GuideStep[];
+}
+
+const GUIDES: Record<string, Guide> = {
+  meta_whatsapp: {
+    outcome: 'Send and receive WhatsApp messages from the Inbox, and run campaigns.',
+    minutes: 10,
+    steps: [
+      {
+        title: 'Open your WhatsApp account on Meta',
+        help: 'Sign in to Meta for Developers, open your app, and go to WhatsApp → API Setup. Everything below is on that one screen.',
+        href: 'https://developers.facebook.com/apps',
+        linkLabel: 'Open Meta for Developers',
+      },
+      { title: 'Copy the Phone Number ID', help: 'On the API Setup screen, under "From", copy the long number labelled Phone number ID.', field: 'phoneNumberId' },
+      { title: 'Copy the Business Account ID', help: 'Just below it, labelled WhatsApp Business Account ID.', field: 'businessAccountId' },
+      { title: 'Create a permanent access token', help: 'Business Settings → Users → System Users → Add, give it the whatsapp_business_messaging permission, then Generate token. The temporary token on the API Setup screen expires in 24 hours — do not use that one.', field: 'accessToken' },
+      { title: 'Copy the App Secret', help: 'App Settings → Basic → App Secret → Show. This lets us verify that messages really came from Meta.', field: 'appSecret' },
+      { title: 'We made you a verify token', help: 'Meta asks for a password of your choosing when you set up the webhook. Here is one — you will paste it into Meta in the next step.', field: 'verifyToken', generate: true },
+      { title: 'Point Meta at us', help: 'WhatsApp → Configuration → Edit. Paste the URL below as the Callback URL and the verify token above as the Verify Token, then tick the "messages" field.', copyPath: '/api/webhooks/whatsapp' },
+    ],
+  },
+  twilio: {
+    outcome: 'Click a phone number in the CRM and your phone rings, then connects the customer. Calls are logged and recorded.',
+    minutes: 5,
+    steps: [
+      { title: 'Open your Twilio console', help: 'Sign in to Twilio. The first two values are on the dashboard you land on.', href: 'https://console.twilio.com', linkLabel: 'Open Twilio' },
+      { title: 'Copy the Account SID', help: 'On the dashboard, under Account Info.', field: 'accountSid' },
+      { title: 'Copy the Auth Token', help: 'Same panel — click Show to reveal it.', field: 'authToken' },
+      { title: 'Which number should customers see?', help: 'One of your Twilio numbers, with the country code. Phone Numbers → Manage → Active numbers.', field: 'callerId' },
+      { title: 'Tell Twilio where to report calls', help: 'Phone Numbers → your number → Voice Configuration. Paste this as the webhook for incoming calls.', copyPath: '/api/webhooks/telephony/twilio/incoming' },
+    ],
+  },
+  exotel: {
+    outcome: 'Click-to-call and call recording through Exotel, the common choice for Indian numbers.',
+    minutes: 5,
+    steps: [
+      { title: 'Open your Exotel dashboard', help: 'Sign in, then go to Settings → API Settings.', href: 'https://my.exotel.com', linkLabel: 'Open Exotel' },
+      { title: 'Copy the Account SID', help: 'On the API Settings page.', field: 'sid' },
+      { title: 'Copy the API Key', help: 'Same page. Create one if there is none yet.', field: 'apiKey' },
+      { title: 'Copy the API Token', help: 'Shown beside the key.', field: 'apiToken' },
+      { title: 'Which number should customers see?', help: 'Your Exovirtual number, with the country code.', field: 'callerId' },
+      { title: 'Tell Exotel where to report calls', help: 'Paste this as the status callback URL on your ExoPhone.', copyPath: '/api/webhooks/telephony/exotel/status' },
+    ],
+  },
+  smtp: {
+    outcome: 'Send email from the CRM using your own address, so replies come back to you.',
+    minutes: 4,
+    steps: [
+      { title: 'Find your mail provider\'s SMTP details', help: 'Google Workspace: smtp.gmail.com, port 587. Microsoft 365: smtp.office365.com, port 587. Otherwise ask whoever set up your email.' },
+      { title: 'SMTP host', help: 'The server address from the step above.', field: 'host' },
+      { title: 'Port', help: '587 for almost everyone. Use 465 only if your provider says so.', field: 'port' },
+      { title: 'Username', help: 'Usually the full email address you are sending from.', field: 'user' },
+      { title: 'Password', help: 'For Gmail and Microsoft 365 this must be an app password, not your normal one — your account password will be rejected.', field: 'password', href: 'https://myaccount.google.com/apppasswords', linkLabel: 'Create a Gmail app password' },
+      { title: 'What should recipients see?', help: 'The name and address your email appears to come from, e.g. iPropy Realty <sales@yourdomain.com>.', field: 'from' },
+    ],
+  },
+  imap: {
+    outcome: 'Replies to your emails appear against the right lead automatically.',
+    minutes: 3,
+    steps: [
+      { title: 'Find your provider\'s IMAP details', help: 'Google Workspace: imap.gmail.com, port 993. Microsoft 365: outlook.office365.com, port 993.' },
+      { title: 'IMAP host', help: 'The server address from the step above.', field: 'host' },
+      { title: 'Port', help: '993 for almost everyone.', field: 'port' },
+      { title: 'Username', help: 'The full email address of the inbox to read.', field: 'user' },
+      { title: 'Password', help: 'An app password again, not the account password.', field: 'password' },
+    ],
+  },
+  ai_gemini: {
+    outcome: 'Lead scoring, reply drafting and the Ask AI assistant start using a real model instead of the built-in rules.',
+    minutes: 2,
+    steps: [
+      { title: 'Get a free key from Google AI Studio', help: 'Sign in with a Google account and press "Create API key". No card is needed. Note that Google may use free-tier prompts to improve their models.', href: 'https://aistudio.google.com/apikey', linkLabel: 'Get a free key' },
+      { title: 'Paste the key', help: 'It starts with "AIza". Nothing else is needed — we pick sensible models for you.', field: 'apiKey' },
+    ],
+  },
+  ai_groq: {
+    outcome: 'The fastest of the free AI options — good when replies need to feel instant.',
+    minutes: 2,
+    steps: [
+      { title: 'Get a free key from Groq', help: 'Sign in and press "Create API Key". No card is needed.', href: 'https://console.groq.com/keys', linkLabel: 'Get a free key' },
+      { title: 'Paste the key', help: 'It starts with "gsk_".', field: 'apiKey' },
+    ],
+  },
+  ai_openrouter: {
+    outcome: 'One key, many models. Free tier available.',
+    minutes: 2,
+    steps: [
+      { title: 'Get a key from OpenRouter', help: 'Sign in and create a key.', href: 'https://openrouter.ai/keys', linkLabel: 'Get a key' },
+      { title: 'Paste the key', help: 'It starts with "sk-or-".', field: 'apiKey' },
+    ],
+  },
+  anthropic: {
+    outcome: 'The highest-quality AI answers. Paid — billing must be set up on the Anthropic console first.',
+    minutes: 2,
+    steps: [
+      { title: 'Create a key', help: 'Sign in to the Anthropic console, add billing, then create an API key.', href: 'https://console.anthropic.com/settings/keys', linkLabel: 'Get a key' },
+      { title: 'Paste the key', help: 'It starts with "sk-ant-".', field: 'apiKey' },
+    ],
+  },
+  ai_openai: {
+    outcome: 'Use OpenAI, or any service that speaks the same format (Together, Fireworks, a self-hosted model).',
+    minutes: 3,
+    steps: [
+      { title: 'Create a key', help: 'On the OpenAI platform, or on whichever compatible service you use.', href: 'https://platform.openai.com/api-keys', linkLabel: 'Get an OpenAI key' },
+      { title: 'Paste the key', help: 'It starts with "sk-".', field: 'apiKey' },
+      { title: 'Where does it live?', help: 'Leave blank for OpenAI itself. For another service, paste the base URL they give you.', field: 'baseUrl' },
+    ],
+  },
+  ai_ollama: {
+    outcome: 'AI that runs on this machine. Free, and nothing leaves the building.',
+    minutes: 5,
+    steps: [
+      { title: 'Install Ollama', help: 'Download it, then run "ollama serve" and "ollama pull llama3.1" in a terminal.', href: 'https://ollama.com/download', linkLabel: 'Install Ollama' },
+      { title: 'Where is it running?', help: 'Leave the default unless you moved it.', field: 'baseUrl' },
+      { title: 'Which model did you pull?', help: 'The name you used with "ollama pull", e.g. llama3.1.', field: 'model' },
+    ],
+  },
+  facebook_leads: {
+    outcome: 'Leads from your Facebook and Instagram lead-ad forms arrive in the CRM the moment someone submits.',
+    minutes: 8,
+    steps: [
+      { title: 'Open your app on Meta', help: 'Meta for Developers → your app → Settings → Basic.', href: 'https://developers.facebook.com/apps', linkLabel: 'Open Meta for Developers' },
+      { title: 'Copy the App ID', help: 'At the top of Settings → Basic.', field: 'appId' },
+      { title: 'Copy the App Secret', help: 'Just below it — press Show.', field: 'appSecret' },
+      { title: 'Create a page access token', help: 'Graph API Explorer → pick your Page → request the leads_retrieval and pages_show_list permissions → Generate. Then extend it to a long-lived token.', field: 'pageAccessToken' },
+      { title: 'We made you a verify token', help: 'Meta asks for a password of your choosing. Here is one — paste it into Meta in the next step.', field: 'verifyToken', generate: true },
+      { title: 'Point Meta at us', help: 'Webhooks → Page → Subscribe to the "leadgen" field, using this callback URL and the verify token above.', copyPath: '/api/webhooks/leads/facebook' },
+    ],
+  },
+  google_ads: {
+    outcome: 'Leads from Google lead-form extensions arrive in the CRM automatically.',
+    minutes: 4,
+    steps: [
+      { title: 'We made you a key', help: 'This is the password Google will send with each lead so we know it is really them.', field: 'webhookKey', generate: true },
+      { title: 'Paste both into Google Ads', help: 'Your lead form asset → Lead delivery option → Webhook. Use the URL below and the key above.', copyPath: '/api/webhooks/leads/google' },
+    ],
+  },
+  webform: {
+    outcome: 'A form on your own website posts straight into the CRM.',
+    minutes: 3,
+    steps: [
+      { title: 'We made you a key', help: 'Your website sends this with each submission so strangers cannot post fake leads.', field: 'key', generate: true },
+      { title: 'Post to this URL', help: 'Send the form as JSON with a header X-Webform-Key set to the key above. Give both to whoever maintains your website.', copyPath: '/api/webhooks/leads/generic' },
+    ],
+  },
+  s3: {
+    outcome: 'Photos and documents are stored in your own cloud bucket rather than on this server.',
+    minutes: 6,
+    steps: [
+      { title: 'Switch the driver on', help: 'Type "s3" here. Leaving it as "local" keeps files on this machine, which is fine for a single server.', field: 'driver' },
+      { title: 'Bucket name', help: 'The bucket you created in AWS S3, or in any S3-compatible service.', field: 'bucket' },
+      { title: 'Region', help: 'ap-south-1 for Mumbai.', field: 'region' },
+      { title: 'Access Key ID', help: 'From an IAM user with read/write on that bucket only.', field: 'accessKeyId' },
+      { title: 'Secret Access Key', help: 'Shown once when the key is created — if you did not save it, make a new key.', field: 'secretAccessKey' },
+    ],
+  },
+};
+
+/**
+ * What each connector is *for*, grouped by the job rather than by the
+ * technology. Someone looking to reach customers on WhatsApp should not have
+ * to know that the answer is filed under "messaging".
+ */
+const CATALOGUE: { title: string; blurb: string; icon: typeof MessageCircle; providers: string[] }[] = [
+  {
+    title: 'Message customers on WhatsApp',
+    blurb: 'Two-way chat in the Inbox, plus templates and campaigns.',
+    icon: MessageCircle,
+    providers: ['meta_whatsapp'],
+  },
+  {
+    title: 'Make and record calls',
+    blurb: 'Click a number to call, with the recording saved against the lead.',
+    icon: Phone,
+    providers: ['twilio', 'exotel'],
+  },
+  {
+    title: 'Capture leads automatically',
+    blurb: 'Ads, portals and your own website feed straight into Leads.',
+    icon: Globe,
+    providers: ['facebook_leads', 'google_ads', 'webform'],
+  },
+  {
+    title: 'Send and receive email',
+    blurb: 'Send from your own address; replies land on the right lead.',
+    icon: Mail,
+    providers: ['smtp', 'imap'],
+  },
+  {
+    title: 'Turn on AI',
+    blurb: 'Lead scoring, reply drafting and the assistant. Free options available.',
+    icon: Sparkles,
+    providers: ['ai_gemini', 'ai_groq', 'ai_openrouter', 'ai_openai', 'ai_ollama', 'anthropic'],
+  },
+  {
+    title: 'Store files in your own cloud',
+    blurb: 'Optional — files live on this server otherwise.',
+    icon: HardDrive,
+    providers: ['s3'],
+  },
+];
+
+/** A token the user would otherwise have to invent. Long enough to be unguessable. */
+function generateSecret(): string {
+  const bytes = new Uint8Array(18);
+  crypto.getRandomValues(bytes);
+  return `ipropy-${Array.from(bytes, (b) => b.toString(36).padStart(2, '0')).join('').slice(0, 28)}`;
+}
+
+function ConnectWizard({
+  summary, onClose,
+}: { summary: IntegrationSummary; onClose: () => void }): JSX.Element {
+  const queryClient = useQueryClient();
+  const guide = GUIDES[summary.provider];
+  const fields = PROVIDER_FIELDS[summary.provider] ?? [];
+  const fieldMap = new Map(fields.map((f) => [f.key, f]));
+
+  const [step, setStep] = useState(0);
+  const [values, setValues] = useState<Record<string, string>>(() => {
+    const initial: Record<string, string> = {};
+    for (const f of fields) {
+      initial[f.key] = f.source === 'config' ? (summary.config[f.key] ?? '') : '';
+    }
+    // Anything we can produce ourselves is produced up front, so the step that
+    // shows it is a "copy this" rather than a "think of something".
+    for (const s of guide?.steps ?? []) {
+      if (s.generate && s.field && !initial[s.field]) initial[s.field] = generateSecret();
+    }
+    return initial;
+  });
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  if (!guide) {
+    return (
+      <Modal open onClose={onClose} title={`Connect ${summary.label}`} size="md">
+        <p className="text-sm text-muted">
+          This provider has no guided setup yet — use the detailed settings instead.
+        </p>
+      </Modal>
+    );
+  }
+
+  const current = guide.steps[step];
+  const isLast = step === guide.steps.length - 1;
+  const field = current.field ? fieldMap.get(current.field) : undefined;
+  const savedPreview = field?.secret ? summary.credentialFields[field.key] : undefined;
+
+  const copy = (text: string): void => {
+    void navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  const finish = async (): Promise<void> => {
+    setBusy(true);
+    setResult(null);
+    try {
+      const configPatch: Record<string, string> = {};
+      const credentialsPatch: Record<string, string> = {};
+      for (const f of fields) {
+        const v = values[f.key] ?? '';
+        if (f.source === 'config') configPatch[f.key] = v;
+        else if (v) credentialsPatch[f.key] = v; // blank = leave what's saved
+      }
+      await api.saveIntegration(summary.provider, { config: configPatch, credentials: credentialsPatch, isActive: true });
+
+      // Test straight away. "Saved" is not the same as "working", and finding
+      // out at the point of setup beats finding out when a lead goes missing.
+      if (TESTABLE.has(summary.provider)) {
+        const test = await api.testIntegration(summary.provider);
+        setResult(test);
+        if (test.ok) toast.success(`${summary.label} connected`);
+      } else {
+        setResult({ ok: true, message: 'Saved and switched on.' });
+        toast.success(`${summary.label} connected`);
+      }
+      await queryClient.invalidateQueries({ queryKey: ['integrations'] });
+    } catch (err) {
+      setResult({ ok: false, message: (err as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`Connect ${summary.label}`}
+      size="md"
+      footer={(
+        <>
+          <span className="mr-auto text-2xs text-muted">
+            Step {step + 1} of {guide.steps.length}
+          </span>
+          {step > 0 && (
+            <button className="btn-secondary" disabled={busy} onClick={() => { setStep(step - 1); setResult(null); }}>
+              Back
+            </button>
+          )}
+          {isLast ? (
+            <button className="btn-primary" disabled={busy} onClick={() => void finish()}>
+              {busy && <Spinner className="h-3.5 w-3.5" />}
+              {result?.ok ? 'Done' : 'Connect'}
+            </button>
+          ) : (
+            <button className="btn-primary" onClick={() => setStep(step + 1)}>
+              Next <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </>
+      )}
+    >
+      <div className="space-y-4">
+        <div className="rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs dark:border-brand-900 dark:bg-brand-950/40">
+          <p className="font-medium text-brand-800 dark:text-brand-200">{guide.outcome}</p>
+          <p className="mt-0.5 text-brand-700/80 dark:text-brand-300/80">
+            About {guide.minutes} minutes. You can stop and come back — nothing is lost until you press Connect.
+          </p>
+        </div>
+
+        <div className="flex gap-1">
+          {guide.steps.map((s, i) => (
+            <span
+              key={s.title}
+              className={cn(
+                'h-1 flex-1 rounded-full transition-colors',
+                i <= step ? 'bg-brand-500' : 'bg-slate-200 dark:bg-slate-700',
+              )}
+            />
+          ))}
+        </div>
+
+        <div>
+          <h3 className="text-sm font-semibold">{current.title}</h3>
+          <p className="mt-1 text-sm text-muted">{current.help}</p>
+
+          {current.href && (
+            <a
+              href={current.href}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:underline dark:text-brand-400"
+            >
+              {current.linkLabel ?? 'Open'} <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          )}
+
+          {current.copyPath && (
+            <div className="mt-3">
+              <label className="label">Copy this URL</label>
+              <div className="flex items-stretch gap-2">
+                <code className="min-w-0 flex-1 truncate rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 font-mono text-2xs dark:border-slate-700 dark:bg-slate-800">
+                  {API_BASE}{current.copyPath}
+                </code>
+                <button className="btn-secondary btn-sm shrink-0" onClick={() => copy(`${API_BASE}${current.copyPath}`)}>
+                  {copied ? <Check className="h-3.5 w-3.5 text-positive" /> : <Copy className="h-3.5 w-3.5" />}
+                  {copied ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {field && (
+            <div className="mt-3">
+              <label className="label" htmlFor={`wiz_${field.key}`}>{field.label}</label>
+              <div className="flex items-stretch gap-2">
+                <input
+                  id={`wiz_${field.key}`}
+                  type={field.secret && !current.generate ? 'password' : 'text'}
+                  className="input min-w-0 flex-1"
+                  value={values[field.key] ?? ''}
+                  autoFocus
+                  onChange={(e) => setValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                  placeholder={savedPreview?.set ? `Saved (${savedPreview.preview}) — leave blank to keep` : field.placeholder}
+                />
+                {current.generate && (
+                  <button
+                    className="btn-secondary btn-sm shrink-0"
+                    onClick={() => copy(values[field.key] ?? '')}
+                  >
+                    {copied ? <Check className="h-3.5 w-3.5 text-positive" /> : <Copy className="h-3.5 w-3.5" />}
+                    {copied ? 'Copied' : 'Copy'}
+                  </button>
+                )}
+              </div>
+              {current.generate && (
+                <button
+                  className="mt-1.5 text-2xs text-brand-600 hover:underline dark:text-brand-400"
+                  onClick={() => setValues((prev) => ({ ...prev, [field.key]: generateSecret() }))}
+                >
+                  Generate a different one
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {result && (
+          <div className={cn(
+            'flex items-start gap-1.5 rounded-lg border p-2.5 text-xs',
+            result.ok
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-400'
+              : 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-400',
+          )}>
+            {result.ok ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" /> : <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+            <span>
+              {result.message}
+              {!result.ok && ' — go back and check the values, or use the detailed settings.'}
+            </span>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+/** One tile in the catalogue: what it does, whether it's on, and one button. */
+function ConnectorTile({
+  summary, onConnect,
+}: { summary: IntegrationSummary; onConnect: () => void }): JSX.Element {
+  const guide = GUIDES[summary.provider];
+  const connected = summary.isActive && !summary.lastError;
+
+  return (
+    <div className="flex flex-col rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+      <div className="mb-1 flex items-center gap-2">
+        <span className={cn('h-2 w-2 shrink-0 rounded-full', connected ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700')} />
+        <p className="min-w-0 flex-1 truncate text-sm font-medium">{summary.label}</p>
+        {connected && <Badge color="#22c55e">Connected</Badge>}
+        {summary.lastError && <Badge color="#ef4444">Needs attention</Badge>}
+      </div>
+
+      <p className="mb-3 flex-1 text-xs text-muted">
+        {guide?.outcome ?? 'Configure this provider.'}
+      </p>
+
+      <button onClick={onConnect} className={cn('btn-sm w-full', connected ? 'btn-secondary' : 'btn-primary')}>
+        <Wand2 className="h-3.5 w-3.5" />
+        {connected ? 'Reconnect' : `Connect${guide ? ` · ${guide.minutes} min` : ''}`}
+      </button>
+    </div>
+  );
+}
 
 function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element {
   const queryClient = useQueryClient();
@@ -344,8 +825,9 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
 }
 
 export default function IntegrationsAdmin(): JSX.Element {
-  const [tab, setTab] = useState('providers');
+  const [tab, setTab] = useState('connect');
   const [copied, setCopied] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState<IntegrationSummary | null>(null);
 
   const { data: integrations, isLoading } = useQuery({
     queryKey: ['integrations'],
@@ -379,13 +861,15 @@ export default function IntegrationsAdmin(): JSX.Element {
       <div className="mb-4">
         <h1 className="text-lg font-semibold tracking-tight">Integrations</h1>
         <p className="text-sm text-muted">
-          Configure every provider from here — nothing needs editing in <code>.env</code> or a redeploy.
+          Pick what you want to do and follow the steps. Nothing needs editing in
+          a config file, and nothing needs a redeploy.
         </p>
       </div>
 
       <Tabs
         tabs={[
-          { key: 'providers', label: 'Providers', icon: <Plug className="h-3.5 w-3.5" /> },
+          { key: 'connect', label: 'Connect', icon: <Wand2 className="h-3.5 w-3.5" /> },
+          { key: 'providers', label: 'All settings', icon: <Settings2 className="h-3.5 w-3.5" /> },
           { key: 'webhooks', label: 'Webhook URLs', icon: <Webhook className="h-3.5 w-3.5" /> },
           { key: 'webforms', label: 'Web forms', icon: <Globe className="h-3.5 w-3.5" /> },
           { key: 'inbox', label: 'Lead inbox', icon: <Sparkles className="h-3.5 w-3.5" /> },
@@ -394,6 +878,64 @@ export default function IntegrationsAdmin(): JSX.Element {
         onChange={setTab}
         className="mb-4"
       />
+
+      {tab === 'connect' && (
+        isLoading ? (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-28" />)}
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {CATALOGUE.map((group) => {
+              const list = group.providers
+                .map((name) => (integrations ?? []).find((i) => i.provider === name))
+                .filter((i): i is IntegrationSummary => Boolean(i));
+              if (!list.length) return null;
+              const connected = list.filter((i) => i.isActive && !i.lastError).length;
+
+              return (
+                <div key={group.title}>
+                  <div className="mb-2 flex items-center gap-2">
+                    <group.icon className="h-4 w-4 shrink-0 text-slate-400" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">{group.title}</p>
+                      <p className="text-xs text-muted">{group.blurb}</p>
+                    </div>
+                    {connected > 0 && (
+                      <Badge className="ml-auto shrink-0" color="#22c55e">
+                        {connected} connected
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {list.map((summary) => (
+                      <ConnectorTile
+                        key={summary.provider}
+                        summary={summary}
+                        onConnect={() => setConnecting(summary)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs dark:border-slate-800 dark:bg-slate-900 text-muted">
+              <p className="mb-1.5 font-medium text-slate-700 dark:text-slate-300">If something will not connect</p>
+              <p>
+                Every integration degrades gracefully — without it, messages and calls are still logged
+                in the CRM, so nothing is lost while you sort it out. The guided steps cover the common
+                path; "All settings" has every field if your provider needs something unusual. Secrets
+                are encrypted before they are stored and are never sent back to the browser.
+              </p>
+            </div>
+          </div>
+        )
+      )}
+
+      {connecting && (
+        <ConnectWizard summary={connecting} onClose={() => setConnecting(null)} />
+      )}
 
       {tab === 'providers' && (
         isLoading ? (

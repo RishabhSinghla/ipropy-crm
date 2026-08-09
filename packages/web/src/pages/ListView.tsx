@@ -552,6 +552,7 @@ export default function ListView(): JSX.Element {
                             value={row.values[col]}
                             display={row.display?.[col]}
                             compact
+                            siblings={row.values}
                             restrictTo={restrictionForField(meta.picklistDependencies, row.values, field.name)}
                             linkTo={field.uitype === 'reference' ? row.display?.[`${col}__module`] : undefined}
                             onSaved={() => invalidateRecordQueries(queryClient, moduleName, row.id)}
@@ -785,6 +786,7 @@ function MobileRecordCard({
                       value={row.values[col]}
                       display={row.display?.[col]}
                       compact
+                      siblings={row.values}
                       restrictTo={restrictionForField(module.picklistDependencies, row.values, field.name)}
                       linkTo={field.uitype === 'reference' ? row.display?.[`${col}__module`] : undefined}
                       onSaved={onSaved}

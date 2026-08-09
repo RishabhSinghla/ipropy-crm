@@ -64,26 +64,14 @@ export async function processAttachment(attachmentId: string): Promise<void> {
 
 /**
  * A video's title card shows the property it's actually of — name, price,
- * location — pulled live so it's never stale. Only projects/properties
- * carry that; anything else (e.g. a document module attachment) gets no
- * title card, which processVideo treats as "skip that step", not an error.
+ * location — pulled live so it's never stale. Only properties carry that;
+ * anything else gets no title card, which processVideo treats as "skip that
+ * step", not an error.
  */
 async function getTitleCardInfo(recordId: string): Promise<TitleCardInfo | null> {
-  const project = await db.queryOne<{ name: string; city: string | null; locality: string | null; price_min: number | null; price_max: number | null }>(
-    `SELECT name, city, locality, price_min, price_max FROM ipy_e_projects WHERE record_id = $1`,
-    [recordId],
-  );
-  if (project) {
-    return {
-      title: project.name,
-      subtitle: [project.locality, project.city].filter(Boolean).join(', '),
-      price: project.price_min ? `From ${formatIndianPrice(project.price_min)}` : undefined,
-    };
-  }
-
   const unit = await db.queryOne<{ name: string; project_name: string | null; city: string | null; locality: string | null; total_price: number | null; configuration: string | null }>(
-    `SELECT u.name, pr.name AS project_name, u.city, u.locality, u.total_price, u.configuration
-     FROM ipy_e_properties u LEFT JOIN ipy_e_projects pr ON pr.record_id = u.project_id
+    `SELECT u.name, u.project_name, u.city, u.locality, u.total_price, u.configuration
+     FROM ipy_e_properties u
      WHERE u.record_id = $1`,
     [recordId],
   );

@@ -45,7 +45,7 @@ export default function RecordDetail(): JSX.Element {
   const queryClient = useQueryClient();
   const { user, aiAvailable } = useApp();
 
-  const [tab, setTab] = useState('overview');
+  const [tab, setTab] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [compose, setCompose] = useState<'whatsapp' | 'email' | null>(null);
 
@@ -64,6 +64,28 @@ export default function RecordDetail(): JSX.Element {
   // Join this record's realtime room so workflow/AI writes that land after the
   // response (lead scoring, lifecycle promotion) appear without a refresh.
   useWatchRecord(id);
+
+  /**
+   * Which tab this module opens on, and which fields the header summarises.
+   *
+   * Both live in the module's default detail layout, so an administrator sets
+   * them per module in Admin → Layouts rather than a developer hard-coding
+   * "overview" here. `tab` therefore starts null and adopts the configured
+   * value on first load — resolving it eagerly would flash Overview first.
+   */
+  const layoutConfig = useMemo(
+    () => ((meta?.layouts?.find((l) => l.type === 'detail' && l.is_default)?.config ?? {}) as {
+      blocks?: { key: string; label: string; columns: number; collapsed?: boolean; fields: string[] }[];
+      headerFields?: string[];
+      relatedLists?: string[];
+      defaultTab?: string;
+    }),
+    [meta],
+  );
+
+  useEffect(() => {
+    if (tab === null && meta) setTab(layoutConfig.defaultTab || 'overview');
+  }, [tab, meta, layoutConfig.defaultTab]);
 
   // Prev/next through whatever list the user last viewed for this module —
   // populated by ListView, read here so opening a record doesn't need to
@@ -138,7 +160,7 @@ export default function RecordDetail(): JSX.Element {
     );
   }
 
-  if (isLoading || !meta || !record) {
+  if (isLoading || !meta || !record || tab === null) {
     return (
       <div className="space-y-4 p-4 sm:p-6">
         <Skeleton className="h-24 w-full" />
@@ -150,23 +172,14 @@ export default function RecordDetail(): JSX.Element {
     );
   }
 
-  const layoutConfig = (meta.layouts?.find((l) => l.type === 'detail' && l.is_default)?.config ?? {}) as {
-    blocks?: { key: string; label: string; columns: number; collapsed?: boolean; fields: string[] }[];
-    headerFields?: string[];
-    relatedLists?: string[];
-  };
-
   const fieldMap = new Map(meta.fields.map((f) => [f.name, f]));
   const phone = String(record.values.mobile ?? record.values.phone ?? record.values.whatsapp_number ?? '');
   const email = String(record.values.email ?? '');
 
   /**
-   * One flat strip.
-   *
-   * Site visits, deals and activities are no longer modules in the menu — they
-   * are reached through the person they belong to, which is how anyone actually
-   * looks for them. Each gets a tab of its own here rather than hiding behind a
-   * "Related" tab with a second row of tabs inside it.
+   * One flat strip: whatever related lists the module declares get a tab each,
+   * rather than hiding behind a "Related" tab with a second row of tabs inside
+   * it. Which of these opens first is the layout's `defaultTab`.
    */
   // Calls belong to people. The companion app syncs the whole team's call log
   // against whichever lead the number matches, so this is where "did anyone
@@ -184,6 +197,11 @@ export default function RecordDetail(): JSX.Element {
     ...(supportsCalls ? [{ key: 'calls', label: 'Calls', icon: <Phone className="h-3.5 w-3.5" /> }] : []),
     { key: 'files', label: 'Files', icon: <Paperclip className="h-3.5 w-3.5" /> },
   ];
+
+  // A configured default tab can outlive what it named — an admin deletes the
+  // related list it pointed at and every record of the module then opens on a
+  // tab that isn't in the strip, showing an empty body with nothing selected.
+  const activeTab = tabs.some((t) => t.key === tab) ? tab : 'overview';
 
   return (
     <div className="mx-auto max-w-[1600px] p-4 sm:p-6">
@@ -287,9 +305,10 @@ export default function RecordDetail(): JSX.Element {
                     as "Phone-1786183963173-290" is real data here), and one long
                     value used to widen the whole card past the viewport. */}
                 <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted">
-                  {(layoutConfig.headerFields ?? []).slice(0, 5).map((name) => {
+                  {(layoutConfig.headerFields ?? []).map((name) => {
                     const field = fieldMap.get(name);
-                    if (!field || record.values[name] == null || record.values[name] === '') return null;
+                    if (!field || !field.isActive || field.displayType === 'hidden') return null;
+                    if (record.values[name] == null || record.values[name] === '') return null;
                     if (name === meta.pipelineField) return null;
                     return (
                       <span key={name} className="inline-flex min-w-0 max-w-full items-center gap-1.5 truncate">
@@ -302,6 +321,7 @@ export default function RecordDetail(): JSX.Element {
                             value={record.values[name]}
                             display={record.display?.[name]}
                             compact
+                            siblings={record.values}
                             restrictTo={restrictionForField(meta.picklistDependencies, record.values, field.name)}
                             onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void refetch(); }}
                           />
@@ -399,13 +419,13 @@ export default function RecordDetail(): JSX.Element {
           </div>
           </div>
 
-        <Tabs tabs={tabs} active={tab} onChange={setTab} className="px-4 sm:px-5" />
+        <Tabs tabs={tabs} active={activeTab} onChange={setTab} className="px-4 sm:px-5" />
       </div>
 
       {/* Body */}
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
-          {tab === 'overview' && (
+          {activeTab === 'overview' && (
             <OverviewTab
               meta={meta}
               record={record}
@@ -414,20 +434,23 @@ export default function RecordDetail(): JSX.Element {
               onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void refetch(); }}
             />
           )}
-          {tab === 'timeline' && <TimelineTab module={moduleName!} id={id!} />}
-          {tab.startsWith('rel:') && (
+          {activeTab === 'timeline' && <TimelineTab module={moduleName!} id={id!} />}
+          {activeTab.startsWith('rel:') && (
             <RelatedTab
               meta={meta} module={moduleName!} id={id!}
-              relationName={tab.slice(4)}
+              relationName={activeTab.slice(4)}
             />
           )}
-          {tab === 'calls' && <CallsTab recordId={id!} />}
-          {tab === 'files' && <FilesTab module={moduleName!} id={id!} />}
+          {activeTab === 'calls' && <CallsTab recordId={id!} />}
+          {activeTab === 'files' && <FilesTab module={moduleName!} id={id!} />}
         </div>
 
+        {/* Notes first. A rep opening a lead needs the last thing a colleague
+            wrote before anything a model inferred, and the AI panel grows with
+            however many insights exist — below it, notes were often offscreen. */}
         <div className="space-y-4">
-          <AiPanel module={moduleName!} record={record} meta={meta} />
           <CommentsPanel module={moduleName!} id={id!} currentUser={user?.fullName ?? ''} />
+          <AiPanel module={moduleName!} record={record} meta={meta} />
         </div>
       </div>
 
@@ -524,6 +547,7 @@ function OverviewTab({
                           field={field}
                           value={record.values[field.name]}
                           display={record.display?.[field.name]}
+                          siblings={record.values}
                           restrictTo={restrictionForField(meta.picklistDependencies, record.values, field.name)}
                           linkTo={field.uitype === 'reference' ? record.display?.[`${field.name}__module`] : undefined}
                           onSaved={onSaved}

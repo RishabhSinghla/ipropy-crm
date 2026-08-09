@@ -200,7 +200,7 @@ Answer in 2-5 sentences, in plain British English. Be specific: name records and
     const stats = digest?.stats;
     return {
       answer: stats
-        ? `I could not reach the AI provider just now. From your data directly: ${stats.openLeads} open leads, ${stats.overdueFollowups} overdue follow-ups, ${stats.visitsToday} visits today.`
+        ? `I could not reach the AI provider just now. From your data directly: ${stats.openLeads} open leads, ${stats.overdueFollowups} overdue follow-ups, ${stats.dueToday} due today.`
         : 'I could not reach the AI provider just now. Check Admin → Integrations.',
     };
   }
@@ -326,7 +326,7 @@ export interface DailyDigest {
 export async function dailyDigest(ctx: ServiceContext): Promise<DailyDigest | null> {
   const userId = ctx.user.id;
 
-  const [overdueFollowups, todayVisits, hotLeads, overdueTasks, stats] = await Promise.all([
+  const [overdueFollowups, todayFollowups, hotLeads, stats] = await Promise.all([
     listRecords(ctx, 'leads', {
       filter: { logic: 'AND', conditions: [
         { field: 'owner_id', operator: 'is_me' },
@@ -336,14 +336,15 @@ export async function dailyDigest(ctx: ServiceContext): Promise<DailyDigest | nu
       sortBy: 'ai_score', sortDir: 'desc', pageSize: 5,
     }).catch(() => null),
 
-    // Site visits are activities of type "Site Visit" since migration 030.
-    listRecords(ctx, 'activities', {
+    // Due today. Activities are gone, so "what is on today" is the leads whose
+    // own follow-up date lands today rather than a separate task record.
+    listRecords(ctx, 'leads', {
       filter: { logic: 'AND', conditions: [
         { field: 'owner_id', operator: 'is_me' },
-        { field: 'activity_type', operator: 'equals', value: 'Site Visit' },
-        { field: 'start_at', operator: 'today' },
+        { field: 'next_followup_at', operator: 'today' },
+        { field: 'is_converted', operator: 'is_false' },
       ] },
-      sortBy: 'start_at', sortDir: 'asc', pageSize: 5,
+      sortBy: 'ai_score', sortDir: 'desc', pageSize: 5,
     }).catch(() => null),
 
     listRecords(ctx, 'leads', {
@@ -356,15 +357,6 @@ export async function dailyDigest(ctx: ServiceContext): Promise<DailyDigest | nu
     }).catch(() => null),
 
 
-    listRecords(ctx, 'activities', {
-      filter: { logic: 'AND', conditions: [
-        { field: 'owner_id', operator: 'is_me' },
-        { field: 'due_date', operator: 'older_than_n_days', value: 0 },
-        { field: 'status', operator: 'not_in', value: ['Completed', 'Cancelled'] },
-      ] },
-      pageSize: 5,
-    }).catch(() => null),
-
     db.queryOne<{ open_leads: number }>(
       `SELECT
         (SELECT COUNT(*)::int FROM ipy_e_leads l JOIN ipy_record r ON r.id = l.record_id
@@ -375,11 +367,11 @@ export async function dailyDigest(ctx: ServiceContext): Promise<DailyDigest | nu
 
   const priorities: DailyDigest['priorities'] = [];
 
-  for (const v of todayVisits?.rows ?? []) {
+  for (const l of todayFollowups?.rows ?? []) {
     priorities.push({
-      title: `Site visit: ${v.label}`,
-      reason: `Scheduled ${new Date(String(v.values.scheduled_at)).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} today`,
-      recordId: v.id, module: 'activities',
+      title: `Due today: ${l.label}`,
+      reason: `Score ${l.values.ai_score ?? '—'} · follow up today`,
+      recordId: l.id, module: 'leads',
     });
   }
   for (const l of overdueFollowups?.rows ?? []) {
@@ -400,9 +392,8 @@ export async function dailyDigest(ctx: ServiceContext): Promise<DailyDigest | nu
 
   const digestStats = {
     openLeads: stats?.open_leads ?? 0,
-    visitsToday: todayVisits?.total ?? 0,
+    dueToday: todayFollowups?.total ?? 0,
     overdueFollowups: overdueFollowups?.total ?? 0,
-    overdueTasks: overdueTasks?.total ?? 0,
   };
 
   const hour = new Date().getHours();
@@ -412,7 +403,7 @@ export async function dailyDigest(ctx: ServiceContext): Promise<DailyDigest | nu
     return {
       greeting,
       priorities: priorities.slice(0, 6),
-      summary: `You have ${digestStats.visitsToday} site visit(s) today, ${digestStats.overdueFollowups} overdue follow-up(s) and ${digestStats.openLeads} open lead(s).`,
+      summary: `You have ${digestStats.dueToday} follow-up(s) due today, ${digestStats.overdueFollowups} overdue and ${digestStats.openLeads} open lead(s).`,
       stats: digestStats,
     };
   }

@@ -60,7 +60,9 @@ export function FieldValue({
       return <span className="font-medium tnum">{formatIndianPrice(Number(value))}</span>;
 
     case 'area':
-      return <span className="tnum">{formatArea(Number(value), (field.config.unit as string) ?? 'sqft')}</span>;
+      // `display` carries the unit when the field has one of its own
+      // (config.unitField); a fixed-unit area falls back to config.unit.
+      return <span className="tnum">{display || formatArea(Number(value), (field.config.unit as string) ?? 'sqft')}</span>;
 
     case 'percent':
       return <span className="tnum">{Number(value).toFixed(field.config.decimals as number ?? 1)}%</span>;
@@ -91,13 +93,21 @@ export function FieldValue({
         </a>
       );
 
-    case 'phone':
+    case 'phone': {
+      // The server joins the country code onto the number (see
+      // resolveDisplayValues), so this shows one value — "+91 98115 33636" —
+      // instead of a bare ten digits beside a separate Country chip.
+      const shown = display || formatPhone(String(value));
       return (
-        <a href={`tel:${value}`} className="inline-flex items-center gap-1 text-brand-600 hover:underline dark:text-brand-400 tnum">
+        <a
+          href={`tel:${shown.replace(/[^\d+]/g, '') || value}`}
+          className="inline-flex items-center gap-1 text-brand-600 hover:underline dark:text-brand-400 tnum"
+        >
           {!compact && <Phone className="h-3 w-3" />}
-          {formatPhone(String(value))}
+          {shown}
         </a>
       );
+    }
 
     case 'url':
       return (
@@ -234,6 +244,17 @@ export interface FieldInputProps {
   disabled?: boolean;
   /** other values in the form, for dependent picklists and visibility rules */
   formValues?: Record<string, unknown>;
+  /**
+   * Write to a *different* field of the same record.
+   *
+   * A couple of controls own two stored values: a mobile carries its country
+   * code, an area carries its unit. Both read better as one control with a
+   * dropdown welded to it than as two form rows, which is how every other site
+   * presents them — so the control needs a way to write the companion field.
+   * Callers that cannot do that (an inline edit of a single cell) simply omit
+   * it and the companion renders as a static prefix/suffix.
+   */
+  onChangeOther?: (field: string, value: unknown) => void;
   /** allowed values when a dependency narrows this picklist */
   restrictTo?: string[];
   autoFocus?: boolean;
@@ -288,10 +309,26 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
         />
       );
 
+    // An area whose unit is a field of its own gets the combined control; one
+    // with a fixed unit is just a number, like the rest of this group.
+    case 'area':
+      if (field.config.unitField) return <AreaInput {...props} readOnly={readOnly} className={inputClass} />;
+      return (
+        <input
+          id={id}
+          type="number"
+          className={cn(inputClass, 'tnum')}
+          value={value === null || value === undefined ? '' : String(value)}
+          step="any"
+          onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
+          disabled={readOnly}
+          autoFocus={autoFocus}
+        />
+      );
+
     case 'integer':
     case 'decimal':
     case 'percent':
-    case 'area':
     case 'score':
       return (
         <input
@@ -404,27 +441,56 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
       );
 
     case 'phone': {
-      // The country code lives in its own field, so this one takes the national
-      // number only — digits, at the length that country actually uses. Showing
-      // the selected code as a fixed prefix is what makes that obvious; without
-      // it people type "+91" again and the number is stored wrong.
-      const code = field.config.digitsFrom
-        ? String(props.formValues?.[String(field.config.digitsFrom)] ?? '')
-        : '';
+      /**
+       * One control: country code, then the national number.
+       *
+       * The code is a separate stored field — that part is deliberate, since a
+       * silent +91 makes an NRI buyer unreachable — but it is not a separate
+       * *question*. Every site that asks for a mobile puts the code in a small
+       * dropdown welded to the left of the box, so this does too. Where the
+       * caller can't write a second field (an inline edit of just this cell) it
+       * degrades to the code as a static prefix, which is still what stops
+       * people typing "+91" into the number itself.
+       */
+      const codeField = field.config.digitsFrom ? String(field.config.digitsFrom) : '';
+      const code = codeField ? String(props.formValues?.[codeField] ?? '') : '';
+      const codes = field.config.countryCodes ?? [];
+      const editableCode = Boolean(codeField && codes.length && props.onChangeOther && !readOnly);
       const expected = expectedDigits(field.config, props.formValues);
 
       return (
-        <div className={cn('flex items-stretch', code && 'rounded-lg')}>
-          {code && (
+        <div className="flex items-stretch">
+          {editableCode ? (
+            <div className="relative shrink-0">
+              <select
+                aria-label="Country code"
+                className="input w-[5.75rem] appearance-none rounded-r-none border-r-0 pl-2.5 pr-6 text-sm tnum"
+                value={code}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  props.onChangeOther!(codeField, next);
+                  // Re-clip the number to the new country's length, otherwise
+                  // switching India → Singapore leaves ten digits in a field
+                  // the API will reject for being two too long.
+                  const limit = (field.config.digitsMap ?? {})[next] ?? 0;
+                  const digits = String(value ?? '').replace(/\D/g, '');
+                  if (limit && digits.length > limit) onChange(digits.slice(0, limit));
+                }}
+              >
+                {codes.map((c) => <option key={c.value} value={c.value}>{c.value}</option>)}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+            </div>
+          ) : code ? (
             <span className="flex shrink-0 items-center rounded-l-lg border border-r-0 border-slate-300 bg-slate-50 px-2.5 text-sm text-muted tnum dark:border-slate-700 dark:bg-slate-800">
               {code}
             </span>
-          )}
+          ) : null}
           <input
             id={id}
             type="tel"
             inputMode="numeric"
-            className={cn(inputClass, 'tnum', code && 'rounded-l-none')}
+            className={cn(inputClass, 'tnum', (code || editableCode) && 'rounded-l-none')}
             value={String(value ?? '')}
             // Stripping non-digits on the way in rather than validating after
             // the fact: a pasted "+91 98765-43210" becomes the right ten digits
@@ -504,6 +570,55 @@ function toLocalInput(iso: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Area — a number with its unit welded to the right
+//
+// An area without its unit is not a number anyone can act on: 1,200 is a
+// generous flat in sq.ft and a plot in sq.yd. Asking for the unit as its own
+// form row invites people to skip it, so it lives inside the control, the way
+// every property portal presents it. The unit is still an ordinary field
+// (`config.unitField`), so it reports, filters and imports like one.
+// ---------------------------------------------------------------------------
+
+function AreaInput({
+  field, value, onChange, onChangeOther, formValues, readOnly, className, id,
+}: FieldInputProps & { readOnly: boolean; className: string }): JSX.Element {
+  const unitField = String(field.config.unitField);
+  const options = field.config.unitOptions ?? [
+    { value: 'sqft', label: 'Sq.ft.' },
+    { value: 'sqyd', label: 'Sq.yd.' },
+  ];
+  const unit = String(formValues?.[unitField] ?? field.config.unit ?? options[0]?.value ?? 'sqft');
+
+  return (
+    <div className="flex items-stretch">
+      <input
+        id={id}
+        type="number"
+        min={0}
+        step="any"
+        className={cn(className, 'tnum rounded-r-none')}
+        value={value === null || value === undefined ? '' : String(value)}
+        onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
+        disabled={readOnly}
+        placeholder="e.g. 1200"
+      />
+      <div className="relative shrink-0">
+        <select
+          aria-label={`${field.label} unit`}
+          className="input w-[6.25rem] appearance-none rounded-l-none border-l-0 pl-2.5 pr-6 text-sm"
+          value={unit}
+          disabled={readOnly || !onChangeOther}
+          onChange={(e) => onChangeOther?.(unitField, e.target.value)}
+        >
+          {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Currency — accepts "1.5 cr" and shows the parsed value
 // ---------------------------------------------------------------------------
 
@@ -555,7 +670,7 @@ function CurrencyInput({
 }
 
 // ---------------------------------------------------------------------------
-// Gallery — the 'image' uitype. config.multiple: true (projects/properties'
+// Gallery — the 'image' uitype. config.multiple: true (a property's
 // gallery fields) stores an array of /api/files/:id URLs and accepts several
 // photos/videos at once (the plain <input accept="image/*,video/*" multiple>
 // is what makes iOS Safari offer "Take Photo or Video / Photo Library" —

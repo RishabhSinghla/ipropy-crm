@@ -1,51 +1,110 @@
-import { useState } from 'react';
+/**
+ * Ad-hoc reporting over any module.
+ *
+ * The controls are derived from the chosen module's metadata, which is the
+ * whole point — but that also means they must be *rederived* when the module
+ * changes. They previously were not: the page opened on a hard-coded `deals`
+ * module that no longer exists, grouped by a `stage` field that no longer
+ * exists, and measured an `amount` field that no longer exists, so the module
+ * select showed the wrong label and both dropdowns underneath rendered blank.
+ * Every default here now comes from the metadata that is actually loaded.
+ */
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { formatIndianPrice } from '@ipropy/shared';
-import { BarChart3, Download, Play, Plus, Table2 } from 'lucide-react';
+import type { FieldMeta } from '@ipropy/shared';
+import { BarChart3, Download, Play, Plus, X } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { EmptyState, Select, Skeleton, Spinner } from '../components/ui';
 import { toCsvDownload } from '../lib/download';
 
-type Aggregate = { field: string; fn: 'count' | 'sum' | 'avg' | 'min' | 'max'; label?: string };
+type AggregateFn = 'count' | 'sum' | 'avg' | 'min' | 'max';
+type Aggregate = { field: string; fn: AggregateFn; label?: string };
+
+const GROUPABLE = ['picklist', 'reference', 'owner', 'user', 'boolean', 'string', 'date'];
+const NUMERIC = ['currency', 'integer', 'decimal', 'percent', 'area', 'score'];
+
+const FN_LABELS: Record<AggregateFn, string> = {
+  count: 'Count of', sum: 'Sum of', avg: 'Average of', min: 'Lowest', max: 'Highest',
+};
 
 export default function ReportsPage(): JSX.Element {
   const { modules } = useApp();
-  const [moduleName, setModuleName] = useState('deals');
+  const entityModules = useMemo(() => modules.filter((m) => m.isEntity), [modules]);
+
+  const [moduleName, setModuleName] = useState('');
   const [type, setType] = useState<'tabular' | 'summary'>('summary');
-  const [groupBy, setGroupBy] = useState<string[]>(['stage']);
-  const [aggregates, setAggregates] = useState<Aggregate[]>([
-    { field: 'amount', fn: 'sum', label: 'Total value' },
-    { field: 'amount', fn: 'count', label: 'Deals' },
-  ]);
+  const [groupBy, setGroupBy] = useState<string[]>([]);
+  const [aggregates, setAggregates] = useState<Aggregate[]>([]);
   const [columns, setColumns] = useState<string[]>([]);
   const [result, setResult] = useState<{ rows: Record<string, unknown>[]; columns: string[]; totals?: Record<string, number> } | null>(null);
   const [running, setRunning] = useState(false);
 
-  const { data: meta } = useQuery({
+  // Modules arrive asynchronously, so the first real module is adopted once
+  // rather than guessed at in the initialiser.
+  useEffect(() => {
+    if (!moduleName && entityModules.length) setModuleName(entityModules[0].name);
+  }, [moduleName, entityModules]);
+
+  const { data: meta, isLoading: metaLoading } = useQuery({
     queryKey: ['module', moduleName],
     queryFn: () => api.module(moduleName),
+    enabled: Boolean(moduleName),
   });
 
   const groupableFields = (meta?.fields ?? []).filter(
-    (f) => f.isActive && ['picklist', 'reference', 'owner', 'user', 'boolean', 'string'].includes(f.uitype),
+    (f) => f.isActive && f.displayType !== 'hidden' && GROUPABLE.includes(f.uitype),
   );
   const numericFields = (meta?.fields ?? []).filter(
-    (f) => f.isActive && ['currency', 'integer', 'decimal', 'percent', 'area', 'score'].includes(f.uitype),
+    (f) => f.isActive && f.displayType !== 'hidden' && NUMERIC.includes(f.uitype),
   );
+  const tabularFields = (meta?.fields ?? []).filter((f) => f.isActive && f.displayType !== 'hidden');
+
+  /**
+   * Sensible starting point for whichever module is loaded: group by its
+   * pipeline field (Status on a lead), count the records, and total the first
+   * money field if it has one.
+   */
+  useEffect(() => {
+    if (!meta) return;
+    const pipeline = meta.pipelineField && groupableFields.some((f) => f.name === meta.pipelineField)
+      ? meta.pipelineField
+      : groupableFields[0]?.name;
+    setGroupBy(pipeline ? [pipeline] : []);
+
+    const money = numericFields.find((f) => f.uitype === 'currency');
+    setAggregates([
+      { field: money?.name ?? numericFields[0]?.name ?? '', fn: 'count', label: `${meta.label} count` },
+      ...(money ? [{ field: money.name, fn: 'sum' as const, label: `Total ${money.label.toLowerCase()}` }] : []),
+    ]);
+    setColumns(tabularFields.slice(0, 8).map((f) => f.name));
+    setResult(null);
+  }, [meta?.id]);
 
   const run = async (): Promise<void> => {
+    if (!moduleName) return;
+    if (type === 'summary' && !groupBy.length) {
+      toast.error('Pick something to group by', 'A summary report needs at least one grouping.');
+      return;
+    }
     setRunning(true);
     try {
       const spec = {
         module: moduleName,
         type,
         columns: type === 'tabular'
-          ? (columns.length ? columns : (meta?.fields ?? []).slice(0, 8).map((f) => f.name))
+          ? (columns.length ? columns : tabularFields.slice(0, 8).map((f) => f.name))
           : [],
         groupBy: type === 'summary' ? groupBy : [],
-        aggregates: type === 'summary' ? aggregates : [],
+        // COUNT does not read a field, but the API still expects one named;
+        // any valid field will do, so an empty measure never blocks the run.
+        aggregates: type === 'summary'
+          ? aggregates
+              .filter((a) => a.fn === 'count' || a.field)
+              .map((a) => ({ ...a, field: a.field || numericFields[0]?.name || 'id' }))
+          : [],
         filter: { logic: 'AND', conditions: [] },
       };
       setResult(await api.runReport(spec));
@@ -57,7 +116,11 @@ export default function ReportsPage(): JSX.Element {
   };
 
   const fieldLabel = (name: string): string =>
-    (meta?.fields ?? []).find((f) => f.name === name)?.label ?? name;
+    (meta?.fields ?? []).find((f) => f.name === name)?.label
+      ?? aggregates.find((a) => a.label === name)?.label
+      ?? name;
+
+  const canRun = Boolean(moduleName) && (type === 'tabular' || groupBy.length > 0);
 
   return (
     <div className="p-4 sm:p-6">
@@ -68,14 +131,15 @@ export default function ReportsPage(): JSX.Element {
         </p>
       </div>
 
-      <div className="card mb-4 p-4">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="card mb-4 overflow-hidden">
+        <div className="grid gap-4 p-4 sm:grid-cols-2">
           <div>
             <label className="label">Module</label>
             <Select
               value={moduleName}
-              onChange={(v) => { setModuleName(v); setGroupBy([]); setResult(null); }}
-              options={modules.filter((m) => m.isEntity).map((m) => ({ value: m.name, label: m.label }))}
+              onChange={(v) => { setModuleName(v); setResult(null); }}
+              options={entityModules.map((m) => ({ value: m.name, label: m.label }))}
+              className="w-full"
             />
           </div>
 
@@ -85,85 +149,123 @@ export default function ReportsPage(): JSX.Element {
               value={type}
               onChange={(v) => { setType(v as typeof type); setResult(null); }}
               options={[
-                { value: 'summary', label: 'Summary (grouped)' },
-                { value: 'tabular', label: 'Tabular (raw rows)' },
+                { value: 'summary', label: 'Summary — grouped totals' },
+                { value: 'tabular', label: 'Tabular — one row per record' },
               ]}
+              className="w-full"
             />
           </div>
-
-          {type === 'summary' && (
-            <div className="lg:col-span-2">
-              <label className="label">Group by</label>
-              <div className="flex flex-wrap gap-1 rounded-lg border border-slate-200 p-1.5 dark:border-slate-700">
-                {groupableFields.slice(0, 14).map((f) => {
-                  const active = groupBy.includes(f.name);
-                  return (
-                    <button
-                      key={f.name}
-                      onClick={() => setGroupBy(active ? groupBy.filter((g) => g !== f.name) : [...groupBy, f.name])}
-                      className={cn(
-                        'rounded px-2 py-0.5 text-xs transition-colors',
-                        active
-                          ? 'bg-brand-100 font-medium text-brand-700 dark:bg-brand-950 dark:text-brand-300'
-                          : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800',
-                      )}
-                    >
-                      {f.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
         </div>
 
-        {type === 'summary' && (
-          <div className="mt-3">
-            <label className="label">Measures</label>
-            <div className="space-y-1.5">
-              {/* Three fixed-width controls plus a button came to ~470px in a
-                  non-wrapping row, which scrolled a phone sideways. They now
-                  share the line and wrap. */}
-              {aggregates.map((agg, i) => (
-                <div key={i} className="flex flex-wrap items-center gap-2">
-                  <Select
-                    value={agg.fn}
-                    onChange={(fn) => setAggregates(aggregates.map((a, j) => j === i ? { ...a, fn: fn as Aggregate['fn'] } : a))}
-                    options={['count', 'sum', 'avg', 'min', 'max'].map((f) => ({ value: f, label: f.toUpperCase() }))}
-                    className="w-24 py-1.5 text-xs sm:w-28"
-                  />
-                  <Select
-                    value={agg.field}
-                    onChange={(field) => setAggregates(aggregates.map((a, j) => j === i ? { ...a, field } : a))}
-                    options={numericFields.map((f) => ({ value: f.name, label: f.label }))}
-                    className="min-w-[8rem] flex-1 py-1.5 text-xs sm:w-44 sm:flex-none"
-                  />
-                  <input
-                    className="input min-w-[7rem] flex-1 py-1.5 text-xs sm:w-40 sm:flex-none"
-                    placeholder="Column label"
-                    value={agg.label ?? ''}
-                    onChange={(e) => setAggregates(aggregates.map((a, j) => j === i ? { ...a, label: e.target.value } : a))}
-                  />
+        {metaLoading || !meta ? (
+          <div className="px-4 pb-4"><Skeleton className="h-24 w-full" /></div>
+        ) : type === 'summary' ? (
+          <div className="space-y-4 border-t border-slate-100 p-4 dark:border-slate-800">
+            <div>
+              <label className="label">Group by</label>
+              <p className="mb-1.5 text-2xs text-muted">
+                One row per distinct value. Add a second to break each group down further.
+              </p>
+              <div className="space-y-1.5">
+                {groupBy.map((name, i) => (
+                  <div key={`${name}-${i}`} className="flex items-center gap-2">
+                    <Select
+                      value={name}
+                      onChange={(v) => setGroupBy(groupBy.map((g, j) => (j === i ? v : g)))}
+                      options={groupableFields.map((f) => ({ value: f.name, label: f.label }))}
+                      className="min-w-0 flex-1 py-1.5 text-sm sm:max-w-xs"
+                    />
+                    <button
+                      onClick={() => setGroupBy(groupBy.filter((_, j) => j !== i))}
+                      className="btn-ghost btn-sm shrink-0 text-slate-400 hover:text-red-500"
+                      aria-label={`Remove grouping ${fieldLabel(name)}`}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+                {groupBy.length === 0 && (
+                  <p className="rounded-lg border border-dashed border-slate-200 px-3 py-2 text-xs text-muted dark:border-slate-700">
+                    Pick a field to group by before running the report.
+                  </p>
+                )}
+                {groupBy.length < 2 && (
                   <button
-                    onClick={() => setAggregates(aggregates.filter((_, j) => j !== i))}
-                    className="btn-ghost btn-sm text-slate-400"
+                    onClick={() => {
+                      const next = groupableFields.find((f) => !groupBy.includes(f.name));
+                      if (next) setGroupBy([...groupBy, next.name]);
+                    }}
+                    disabled={groupableFields.every((f) => groupBy.includes(f.name))}
+                    className="btn-secondary btn-sm disabled:opacity-40"
                   >
-                    ×
+                    <Plus className="h-3 w-3" /> Grouping
                   </button>
-                </div>
-              ))}
-              <button
-                onClick={() => setAggregates([...aggregates, { field: numericFields[0]?.name ?? '', fn: 'sum' }])}
-                className="btn-secondary btn-sm"
-              >
-                <Plus className="h-3 w-3" /> Measure
-              </button>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label className="label">Measures</label>
+              <p className="mb-1.5 text-2xs text-muted">
+                What to work out for each group. Count needs no field.
+              </p>
+              <div className="space-y-1.5">
+                {aggregates.map((agg, i) => (
+                  <MeasureRow
+                    key={i}
+                    aggregate={agg}
+                    numericFields={numericFields}
+                    onChange={(next) => setAggregates(aggregates.map((a, j) => (j === i ? next : a)))}
+                    onRemove={() => setAggregates(aggregates.filter((_, j) => j !== i))}
+                  />
+                ))}
+                {aggregates.length === 0 && (
+                  <p className="rounded-lg border border-dashed border-slate-200 px-3 py-2 text-xs text-muted dark:border-slate-700">
+                    No measures — the report will show the groups alone.
+                  </p>
+                )}
+                <button
+                  onClick={() => setAggregates([...aggregates, {
+                    field: numericFields[0]?.name ?? '',
+                    fn: numericFields.length ? 'sum' : 'count',
+                  }])}
+                  className="btn-secondary btn-sm"
+                >
+                  <Plus className="h-3 w-3" /> Measure
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="border-t border-slate-100 p-4 dark:border-slate-800">
+            <label className="label">Columns</label>
+            <p className="mb-1.5 text-2xs text-muted">
+              {columns.length} of {tabularFields.length} selected.
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {tabularFields.map((f) => {
+                const active = columns.includes(f.name);
+                return (
+                  <button
+                    key={f.name}
+                    onClick={() => setColumns(active ? columns.filter((c) => c !== f.name) : [...columns, f.name])}
+                    className={cn(
+                      'rounded-full px-2.5 py-1 text-xs transition-colors',
+                      active
+                        ? 'bg-brand-100 font-medium text-brand-700 dark:bg-brand-950 dark:text-brand-300'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700',
+                    )}
+                  >
+                    {f.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
 
-        <div className="mt-3 flex justify-end gap-2">
-          {result && (
+        <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 px-4 py-3 dark:border-slate-800">
+          {result && result.rows.length > 0 && (
             <button
               onClick={() => toCsvDownload(result.rows, `${moduleName}-report.csv`)}
               className="btn-secondary"
@@ -171,7 +273,7 @@ export default function ReportsPage(): JSX.Element {
               <Download className="h-4 w-4" /> Export CSV
             </button>
           )}
-          <button onClick={() => void run()} disabled={running} className="btn-primary">
+          <button onClick={() => void run()} disabled={running || !canRun} className="btn-primary">
             {running ? <Spinner /> : <Play className="h-4 w-4" />} Run report
           </button>
         </div>
@@ -182,10 +284,15 @@ export default function ReportsPage(): JSX.Element {
           <EmptyState
             icon={<BarChart3 className="h-10 w-10" />}
             title="No report yet"
-            body="Choose a module and grouping, then run the report."
+            body={type === 'summary'
+              ? 'Choose a module and a grouping, then run the report.'
+              : 'Choose a module and its columns, then run the report.'}
           />
         ) : result.rows.length === 0 ? (
-          <EmptyState title="No matching data" />
+          <EmptyState
+            title="No matching data"
+            body="No records in this module produced a row. Try a different grouping."
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -201,16 +308,9 @@ export default function ReportsPage(): JSX.Element {
                   <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/60">
                     {result.columns.map((c) => {
                       const value = row[c];
-                      const isMoney = c.toLowerCase().includes('value') || c.toLowerCase().includes('amount');
                       return (
                         <td key={c} className={cn('table-cell', typeof value === 'number' && 'tnum font-medium')}>
-                          {value === null || value === undefined || value === ''
-                            ? <span className="text-slate-300">—</span>
-                            : typeof value === 'number' && isMoney
-                              ? formatIndianPrice(value)
-                              : typeof value === 'number'
-                                ? new Intl.NumberFormat('en-IN', { maximumFractionDigits: 1 }).format(value)
-                                : String(value)}
+                          {formatCell(value, c)}
                         </td>
                       );
                     })}
@@ -222,11 +322,7 @@ export default function ReportsPage(): JSX.Element {
                   <tr className="border-t-2 border-slate-200 bg-slate-50 font-semibold dark:border-slate-700 dark:bg-slate-800">
                     {result.columns.map((c, i) => (
                       <td key={c} className="table-cell tnum">
-                        {i === 0 ? 'Total' : result.totals?.[c] !== undefined
-                          ? (c.toLowerCase().includes('value') || c.toLowerCase().includes('amount')
-                              ? formatIndianPrice(result.totals[c])
-                              : new Intl.NumberFormat('en-IN').format(result.totals[c]))
-                          : ''}
+                        {i === 0 ? 'Total' : result.totals?.[c] !== undefined ? formatCell(result.totals[c], c) : ''}
                       </td>
                     ))}
                   </tr>
@@ -238,4 +334,86 @@ export default function ReportsPage(): JSX.Element {
       </div>
     </div>
   );
+}
+
+/**
+ * One measure: the function, the field it reads, and what to call the column.
+ *
+ * The field select is hidden for COUNT because counting rows does not read a
+ * field — leaving it visible was the main reason the row looked broken when the
+ * selected field wasn't in the list.
+ */
+function MeasureRow({
+  aggregate, numericFields, onChange, onRemove,
+}: {
+  aggregate: Aggregate;
+  numericFields: FieldMeta[];
+  onChange: (next: Aggregate) => void;
+  onRemove: () => void;
+}): JSX.Element {
+  const needsField = aggregate.fn !== 'count';
+  const fieldOptions = numericFields.map((f) => ({ value: f.name, label: f.label }));
+  const missing = needsField && aggregate.field && !numericFields.some((f) => f.name === aggregate.field);
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Select
+        value={aggregate.fn}
+        onChange={(fn) => {
+          const next = fn as AggregateFn;
+          onChange({
+            ...aggregate,
+            fn: next,
+            // Moving off COUNT with nothing chosen would leave a blank select.
+            field: next === 'count' ? aggregate.field : (aggregate.field || numericFields[0]?.name || ''),
+          });
+        }}
+        options={(Object.keys(FN_LABELS) as AggregateFn[])
+          .filter((fn) => fn === 'count' || numericFields.length > 0)
+          .map((fn) => ({ value: fn, label: FN_LABELS[fn] }))}
+        className="w-32 shrink-0 py-1.5 text-xs"
+      />
+
+      {needsField && (
+        <Select
+          value={missing ? '' : aggregate.field}
+          placeholder={missing ? 'Field no longer exists — pick another' : 'Pick a field'}
+          onChange={(field) => onChange({ ...aggregate, field })}
+          options={fieldOptions}
+          className={cn('min-w-[9rem] flex-1 py-1.5 text-xs sm:w-48 sm:flex-none', missing && 'border-red-400')}
+        />
+      )}
+      {!needsField && <span className="text-xs text-muted">records</span>}
+
+      <input
+        className="input min-w-[7rem] flex-1 py-1.5 text-xs sm:w-44 sm:flex-none"
+        placeholder="Column heading"
+        aria-label="Column heading"
+        value={aggregate.label ?? ''}
+        onChange={(e) => onChange({ ...aggregate, label: e.target.value })}
+      />
+
+      <button
+        onClick={onRemove}
+        className="btn-ghost btn-sm shrink-0 text-slate-400 hover:text-red-500"
+        aria-label="Remove measure"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+/** Money reads as ₹ crores; every other number as a plain Indian-grouped figure. */
+function formatCell(value: unknown, column: string): JSX.Element | string {
+  if (value === null || value === undefined || value === '') {
+    return <span className="text-slate-300 dark:text-slate-700">—</span>;
+  }
+  if (typeof value !== 'number') return String(value);
+  const key = column.toLowerCase();
+  const isMoney = key.includes('value') || key.includes('amount') || key.includes('budget')
+    || key.includes('price') || key.includes('revenue') || key.includes('cost');
+  return isMoney
+    ? formatIndianPrice(value)
+    : new Intl.NumberFormat('en-IN', { maximumFractionDigits: 1 }).format(value);
 }

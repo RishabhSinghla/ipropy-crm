@@ -545,7 +545,7 @@ function DigestBanner(): JSX.Element | null {
         <div className="grid grid-cols-2 gap-x-6 gap-y-2 border-t border-white/15 pt-3 sm:shrink-0 sm:grid-cols-4 sm:border-0 sm:pt-0">
           {[
             { label: 'Open leads', value: stats.openLeads },
-            { label: 'Visits today', value: stats.visitsToday },
+            { label: 'Due today', value: stats.dueToday },
             { label: 'Overdue', value: stats.overdueFollowups },
             { label: 'Pipeline', value: stats.pipelineValue, currency: true },
           ].map((s) => (
@@ -839,11 +839,11 @@ function ActivityFeedCard({ widget, data }: { widget: DashboardWidget; data: Rec
   );
 }
 
-/** Upcoming activities as an agenda, grouped by day. */
+/** Upcoming follow-ups as an agenda, grouped by day. */
 function CalendarCard({ widget, data }: { widget: DashboardWidget; data: Record<string, unknown> }): JSX.Element {
   const rows = (data.rows as WidgetRow[] | undefined) ?? [];
-  const module = (widget.config.module as string | undefined) ?? 'activities';
-  const dateField = (widget.config.sortBy as string) ?? 'due_date';
+  const module = (widget.config.module as string | undefined) ?? 'leads';
+  const dateField = (widget.config.sortBy as string) ?? 'next_followup_at';
   if (!rows.length) return <EmptyWidget title={widget.title} />;
 
   const grouped = new Map<string, WidgetRow[]>();

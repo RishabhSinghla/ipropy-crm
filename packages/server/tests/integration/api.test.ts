@@ -345,6 +345,9 @@ describe('metadata field administration', () => {
 });
 
 describe('public API', () => {
+  // /api/public/projects still exists for the customer-facing website, but a
+  // "project" is now an aggregate over the units that share a project_name
+  // rather than a record of its own — see api/routes/public.ts.
   it('serves projects with no authentication', async () => {
     const res = await request(app).get('/api/public/projects').expect(200);
     expect(Array.isArray(res.body.items)).toBe(true);
@@ -370,9 +373,9 @@ describe('public API', () => {
 
   it('hides records that are not published to the web', async () => {
     const { rows } = await db.query<{ count: string }>(
-      `SELECT count(*) AS count FROM ipy_e_projects p
+      `SELECT count(DISTINCT btrim(p.project_name)) AS count FROM ipy_e_properties p
          JOIN ipy_record r ON r.id = p.record_id
-        WHERE r.is_deleted = false
+        WHERE r.is_deleted = false AND p.project_name IS NOT NULL
           AND COALESCE((p.custom_fields->>'publish_to_web')::boolean, true) = false`,
     );
     const unpublished = Number(rows[0].count);
@@ -381,8 +384,9 @@ describe('public API', () => {
     const total = res.body.total as number;
 
     const { rows: allRows } = await db.query<{ count: string }>(
-      `SELECT count(*) AS count FROM ipy_e_projects p
-         JOIN ipy_record r ON r.id = p.record_id WHERE r.is_deleted = false`,
+      `SELECT count(DISTINCT btrim(p.project_name)) AS count FROM ipy_e_properties p
+         JOIN ipy_record r ON r.id = p.record_id
+        WHERE r.is_deleted = false AND p.project_name IS NOT NULL`,
     );
     // The public list is at most "everything minus the explicitly unpublished"
     // — status filtering narrows it further, which is why this is an

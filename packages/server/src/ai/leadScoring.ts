@@ -23,9 +23,6 @@ interface LeadContext {
   messageCount: number;
   inboundMessages: number;
   lastMessages: string[];
-  siteVisits: number;
-  completedVisits: number;
-  visitFeedback: string | null;
   ageDays: number;
   hoursToFirstContact: number | null;
   matchingInventory: number;
@@ -40,7 +37,7 @@ async function loadContext(recordId: string): Promise<LeadContext | null> {
   );
   if (!lead) return null;
 
-  const [calls, messages, visits, inventory] = await Promise.all([
+  const [calls, messages, inventory] = await Promise.all([
     db.queryOne<{ total: number; answered: number; last_summary: string | null }>(
       `SELECT COUNT(*)::int AS total,
               COUNT(*) FILTER (WHERE status = 'completed')::int AS answered,
@@ -55,19 +52,6 @@ async function loadContext(recordId: string): Promise<LeadContext | null> {
               COALESCE(array_agg(m.body ORDER BY m.created_at DESC) FILTER (WHERE m.body IS NOT NULL), '{}') AS recent
        FROM ipy_message m JOIN ipy_conversation c ON c.id = m.conversation_id
        WHERE c.record_id = $1`,
-      [recordId],
-    ),
-    // Site visits were a module of their own until migration 030. The signal
-    // now comes from activities of type "Site Visit" against the same lead.
-    db.queryOne<{ total: number; completed: number; feedback: string | null }>(
-      `SELECT COUNT(*)::int AS total,
-              COUNT(*) FILTER (WHERE a.status = 'Completed')::int AS completed,
-              (SELECT a2.outcome FROM ipy_e_activities a2 JOIN ipy_record r2 ON r2.id = a2.record_id
-                WHERE a2.related_to = $1 AND a2.activity_type = 'Site Visit'
-                  AND a2.outcome IS NOT NULL AND r2.is_deleted = false
-                ORDER BY a2.start_at DESC LIMIT 1) AS feedback
-       FROM ipy_e_activities a JOIN ipy_record r ON r.id = a.record_id
-       WHERE a.related_to = $1 AND a.activity_type = 'Site Visit' AND r.is_deleted = false`,
       [recordId],
     ),
     countMatchingInventory(lead),
@@ -87,9 +71,6 @@ async function loadContext(recordId: string): Promise<LeadContext | null> {
     messageCount: messages?.total ?? 0,
     inboundMessages: messages?.inbound ?? 0,
     lastMessages: (messages?.recent ?? []).slice(0, 6),
-    siteVisits: visits?.total ?? 0,
-    completedVisits: visits?.completed ?? 0,
-    visitFeedback: visits?.feedback ?? null,
     ageDays,
     hoursToFirstContact: lastContacted ? (lastContacted.getTime() - createdAt.getTime()) / 3_600_000 : null,
     matchingInventory: inventory,
@@ -169,27 +150,22 @@ function applyRules(ctx: LeadContext): RuleOutcome {
   }
   breakdown.budget = budgetScore;
 
-  // Engagement.
+  // Engagement — now the strongest intent signal available.
+  //
+  // Site visits used to carry up to 28 points here and were the clearest
+  // signal of all. With that module gone the weight moves onto two-way contact
+  // rather than simply disappearing, which would have deflated every score by
+  // a quarter and made Grade A unreachable.
   let engagement = 0;
-  if (ctx.answeredCalls > 0) { engagement += 8; reasons.push(`${ctx.answeredCalls} answered call(s)`); }
-  if (ctx.answeredCalls >= 2) engagement += 4;
-  if (ctx.inboundMessages > 0) { engagement += 6; reasons.push(`${ctx.inboundMessages} inbound message(s) — actively responding`); }
+  if (ctx.answeredCalls > 0) { engagement += 14; reasons.push(`${ctx.answeredCalls} answered call(s)`); }
+  if (ctx.answeredCalls >= 2) engagement += 8;
+  if (ctx.inboundMessages > 0) { engagement += 10; reasons.push(`${ctx.inboundMessages} inbound message(s) — actively responding`); }
+  if (ctx.inboundMessages >= 3) engagement += 6;
   if (ctx.callCount >= 4 && ctx.answeredCalls === 0) {
     engagement -= 10;
     risks.push(`${ctx.callCount} call attempts with no answer`);
   }
   breakdown.engagement = engagement;
-
-  // Site visits — the clearest intent signal there is.
-  let visitScore = 0;
-  if (ctx.completedVisits > 0) {
-    visitScore = 20 + (ctx.completedVisits - 1) * 8;
-    reasons.push(`${ctx.completedVisits} completed site visit(s)`);
-  } else if (ctx.siteVisits > 0) {
-    visitScore = 10;
-    reasons.push('Site visit scheduled');
-  }
-  breakdown.siteVisits = visitScore;
 
   // Funding readiness.
   const funding = String(v.funding_type ?? '');
@@ -203,7 +179,7 @@ function applyRules(ctx: LeadContext): RuleOutcome {
   if (v.mobile) completeness += 3;
   if (Array.isArray(v.configuration) && v.configuration.length) completeness += 2;
   if (Array.isArray(v.preferred_locations) && v.preferred_locations.length) completeness += 2;
-  if (v.interested_project_id) completeness += 3;
+  if (v.interested_project) completeness += 3;
   breakdown.completeness = completeness;
 
   // Recency decay — a stale lead is worth less regardless of its profile.
@@ -318,11 +294,10 @@ Lead age: ${ctx.ageDays.toFixed(1)} days
 Calls: ${ctx.callCount} attempted, ${ctx.answeredCalls} answered
 Hours to first contact: ${ctx.hoursToFirstContact?.toFixed(1) ?? 'never contacted'}
 Messages: ${ctx.messageCount} total, ${ctx.inboundMessages} inbound from the buyer
-Site visits: ${ctx.siteVisits} scheduled, ${ctx.completedVisits} completed
 Matching available inventory: ${ctx.matchingInventory} units
 
 ${ctx.lastCallSummary ? `## Last call summary\n${ctx.lastCallSummary}\n` : ''}
-${ctx.visitFeedback ? `## Site visit feedback\n${ctx.visitFeedback}\n` : ''}
+
 ${ctx.lastMessages.length ? `## Recent messages (newest first)\n${ctx.lastMessages.map((m) => `- ${m}`).join('\n')}\n` : ''}
 
 ## Rule-based baseline
@@ -388,8 +363,8 @@ function defaultActions(ctx: LeadContext, score: number): string[] {
   const actions: string[] = [];
   if (ctx.callCount === 0) actions.push('Call now — this lead has never been contacted.');
   else if (ctx.answeredCalls === 0) actions.push('Try WhatsApp — repeated calls have gone unanswered.');
-  if (ctx.completedVisits === 0 && score >= 55) actions.push('Push for a site visit; it is the strongest conversion step.');
-  if (ctx.completedVisits > 0 && score >= 60) actions.push('Share a cost sheet and propose a revisit with the family.');
+  if (score >= 55 && ctx.answeredCalls === 0) actions.push('Push for a site visit; it is the strongest conversion step.');
+  if (score >= 60 && ctx.answeredCalls > 0) actions.push('Share a cost sheet and propose a visit with the family.');
   if (ctx.matchingInventory === 0 && Number(ctx.values.budget_max ?? 0) > 0) {
     actions.push('No inventory fits the stated budget — re-qualify the budget or offer another project.');
   }

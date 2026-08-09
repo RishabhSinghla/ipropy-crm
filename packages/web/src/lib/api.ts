@@ -275,6 +275,8 @@ export const api = {
     get<{ id: string; name: string; config: Record<string, unknown> }>(`/api/meta/modules/${module}/layout/${type}`),
   layouts: (module: string) => get<Record<string, unknown>[]>(`/api/meta/modules/${module}/layouts`),
   saveLayout: (id: string, data: Record<string, unknown>) => put(`/api/meta/layouts/${id}`, data),
+  createLayout: (module: string, data: Record<string, unknown>) =>
+    post<{ id: string }>(`/api/meta/modules/${module}/layouts`, data),
   picklists: () => get<Record<string, { value: string; label: string; color: string | null }[]>>('/api/meta/picklists'),
   picklist: (name: string) => get<{ value: string; label: string; color: string | null }[]>(`/api/meta/picklists/${name}`),
   savePicklistValues: (name: string, values: unknown[]) => put(`/api/meta/picklists/${name}/values`, { values }),
@@ -296,7 +298,11 @@ export const api = {
   deleteModule: (name: string, force = false) => del(`/api/meta/modules/${name}${force ? '?force=true' : ''}`),
   createField: (module: string, data: Record<string, unknown>) => post(`/api/meta/modules/${module}/fields`, data),
   updateField: (id: string, data: Record<string, unknown>) => patch(`/api/meta/fields/${id}`, data),
-  deleteField: (id: string) => del(`/api/meta/fields/${id}`),
+  /** `permanent` drops the column and its data; otherwise the field is only hidden. */
+  deleteField: (id: string, permanent = false) =>
+    del<{ ok: boolean; deactivated?: boolean; deleted?: boolean; hadValues?: number }>(
+      `/api/meta/fields/${id}${permanent ? '?permanent=true' : ''}`,
+    ),
   reorderFields: (fields: { id: string; blockId: string; sequence: number }[]) =>
     post('/api/meta/fields/reorder', { fields }),
   createBlock: (module: string, data: Record<string, unknown>) => post(`/api/meta/modules/${module}/blocks`, data),
@@ -571,9 +577,6 @@ export const api = {
   },
   deleteFile: (id: string) => del(`/api/files/${id}`),
   tags: () => get<{ id: string; name: string; color: string; usage_count: number }[]>('/api/tags'),
-  inventoryBoard: (projectId: string) =>
-    get<{ summary: Record<string, unknown>[]; total: number; towers: Record<string, unknown>[] }>(`/api/inventory/${projectId}`),
-  blockUnit: (propertyId: string, data: Record<string, unknown>) => post(`/api/inventory/${propertyId}/block`, data),
   importPreview: (module: string, file: File) => {
     const form = new FormData();
     form.append('file', file);

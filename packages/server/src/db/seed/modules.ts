@@ -9,6 +9,33 @@ import { F, type ModuleDef } from './helpers.js';
  * integration touchpoints (documented in README).
  */
 
+/**
+ * Codes offered by the dropdown inside a Mobile field.
+ *
+ * Mirrors the `country_code` picklist (migration 026) — the picklist is what
+ * the value is validated against, this is what the phone control lists, since
+ * that control has only its own field's metadata to work from.
+ */
+const COUNTRY_CODES = [
+  { value: '+91', label: 'India +91' },
+  { value: '+971', label: 'UAE +971' },
+  { value: '+966', label: 'Saudi Arabia +966' },
+  { value: '+974', label: 'Qatar +974' },
+  { value: '+968', label: 'Oman +968' },
+  { value: '+965', label: 'Kuwait +965' },
+  { value: '+973', label: 'Bahrain +973' },
+  { value: '+65', label: 'Singapore +65' },
+  { value: '+61', label: 'Australia +61' },
+  { value: '+44', label: 'United Kingdom +44' },
+  { value: '+1', label: 'USA / Canada +1' },
+];
+
+/** The two units an Indian buyer's requirement is ever quoted in. */
+const AREA_UNITS = [
+  { value: 'sqft', label: 'Sq.ft.' },
+  { value: 'sqyd', label: 'Sq.yd.' },
+];
+
 export const MODULES: ModuleDef[] = [
   // =========================================================================
   // LEADS
@@ -42,11 +69,14 @@ export const MODULES: ModuleDef[] = [
           F.text('full_name', 'Full Name', {
             mandatory: true, quickCreate: true, searchable: true, maxLength: 120,
           }),
-          // The country code is its own field so it is a visible choice rather
-          // than a silent +91 default — an NRI buyer stored under the wrong
-          // code never matches on WhatsApp or in the call log again.
-          F.pick('country_code', 'Country', 'country_code', {
-            mandatory: true, quickCreate: true, default: '+91',
+          // The country code stays a stored field of its own — a silent +91
+          // default sends an NRI buyer's WhatsApp to a stranger in India — but
+          // it is not a form row of its own. `displayType: 'hidden'` keeps it
+          // out of the layout while the Mobile control renders it as the
+          // dropdown welded to the left of the number, the way every other
+          // site asks for a phone.
+          F.pick('country_code', 'Country Code', 'country_code', {
+            mandatory: true, default: '+91', displayType: 'hidden',
           }),
           F.phone('mobile', 'Mobile', {
             mandatory: true, quickCreate: true, maxLength: 10,
@@ -60,8 +90,9 @@ export const MODULES: ModuleDef[] = [
                 '+91': 10, '+971': 9, '+966': 9, '+974': 8, '+968': 8,
                 '+965': 8, '+973': 8, '+65': 8, '+61': 9, '+44': 10, '+1': 10,
               },
+              countryCodes: COUNTRY_CODES,
             },
-            help: '10 digits, without the country code',
+            help: 'Pick the country code, then the number without it',
           }),
           F.email('email', 'Email', { quickCreate: true }),
           F.email('secondary_email', 'Secondary Email'),
@@ -83,7 +114,10 @@ export const MODULES: ModuleDef[] = [
         name: 'requirement',
         label: 'Requirement',
         fields: [
-          F.ref('interested_project_id', 'Interested Project', ['projects'], { quickCreate: true }),
+          // Was a lookup at the Projects module. Projects are gone, but "which
+          // development are they after" is still the first thing a rep asks, so
+          // it survives as free text rather than as a second record to create.
+          F.text('interested_project', 'Interested In', { quickCreate: true, searchable: true }),
           F.pick('property_type', 'Property Type', 'property_type'),
           F.multipick('configuration', 'Configuration', 'configuration'),
           F.pick('purpose', 'Purpose', 'purpose'),
@@ -91,8 +125,13 @@ export const MODULES: ModuleDef[] = [
           F.money('budget_max', 'Budget (Max)', { quickCreate: true, config: { min: 0 } }),
           F.pick('budget_band', 'Budget Band', 'budget_band'),
           F.multipick('preferred_locations', 'Preferred Locations', 'locality'),
-          F.area('carpet_area_min', 'Carpet Area (Min)', { config: { min: 0, notAfterField: 'carpet_area_max' } }),
-          F.area('carpet_area_max', 'Carpet Area (Max)', { config: { min: 0 } }),
+          // One area with its own unit, not a min/max pair. A buyer says "about
+          // 1200 sq.ft", not "between 1100 and 1300 carpet" — the range was two
+          // fields collecting one answer, and neither carried the unit.
+          F.area('area', 'Area', {
+            config: { min: 0, unitField: 'area_unit', unitOptions: AREA_UNITS },
+          }),
+          F.pick('area_unit', 'Area Unit', 'area_unit', { default: 'sqft', displayType: 'hidden' }),
           F.pick('possession_timeline', 'Possession Timeline', 'purchase_timeline'),
           F.pick('funding_type', 'Funding Type', 'funding_type'),
           F.bool('loan_required', 'Loan Required'),
@@ -124,7 +163,7 @@ export const MODULES: ModuleDef[] = [
           F.score('ai_score', 'AI Score', { help: 'Predicted likelihood to convert, 0-100' }),
           F.pick('ai_grade', 'AI Grade', 'ai_grade', { readonly: true }),
           F.json('ai_score_reasons', 'Score Drivers', { readonly: true, displayType: 'detail_only' }),
-          F.datetime('ai_scored_at', 'Last Scored', { readonly: true }),
+          F.date('ai_scored_at', 'Last Scored', { readonly: true }),
           F.textarea('qualification_notes', 'Qualification Notes'),
         ],
       },
@@ -132,8 +171,11 @@ export const MODULES: ModuleDef[] = [
         name: 'follow_up',
         label: 'Follow Up',
         fields: [
-          F.datetime('next_followup_at', 'Next Follow-up'),
-          F.datetime('last_contacted_at', 'Last Contacted', { readonly: true }),
+          // Dates, not date-times. A follow-up is planned for a *day* on a
+          // property desk; the clock time was noise the user had to dismiss on
+          // every edit, and a stray 05:48 pm read as a commitment nobody made.
+          F.date('next_followup_at', 'Next Follow-up'),
+          F.date('last_contacted_at', 'Last Contacted', { readonly: true }),
           F.num('contact_attempts', 'Contact Attempts', { readonly: true }),
           F.num('first_response_secs', 'First Response (sec)', { readonly: true, displayType: 'detail_only' }),
         ],
@@ -184,7 +226,7 @@ export const MODULES: ModuleDef[] = [
           F.score('engagement_score', 'Engagement Score'),
           F.money('lifetime_value', 'Lifetime Value', { readonly: true }),
           F.bool('is_converted', 'Converted', { readonly: true }),
-          F.datetime('converted_at', 'Converted On', { readonly: true }),
+          F.date('converted_at', 'Converted On', { readonly: true }),
           F.pick('lost_reason', 'Lost Reason', 'lost_reason'),
           F.pick('junk_reason', 'Junk Reason', 'junk_reason'),
         ],
@@ -203,9 +245,7 @@ export const MODULES: ModuleDef[] = [
         ],
       },
     ],
-    relations: [
-      { name: 'lead_activities', label: 'Activities', target: 'activities', type: 'one_to_many', foreignField: 'related_to' },
-    ],
+    relations: [],
     views: [
       {
         name: 'All Records', isDefault: true, showMetrics: true,
@@ -214,7 +254,7 @@ export const MODULES: ModuleDef[] = [
       },
       {
         name: 'Open Leads', showMetrics: true,
-        columns: ['full_name', 'mobile', 'status', 'ai_score', 'next_followup_at', 'interested_project_id', 'owner_id'],
+        columns: ['full_name', 'mobile', 'status', 'ai_score', 'next_followup_at', 'owner_id'],
         filter: {
           logic: 'AND',
           conditions: [
@@ -232,7 +272,7 @@ export const MODULES: ModuleDef[] = [
       },
       {
         name: 'My Open Leads', showMetrics: true,
-        columns: ['full_name', 'mobile', 'status', 'ai_score', 'next_followup_at', 'interested_project_id'],
+        columns: ['full_name', 'mobile', 'status', 'ai_score', 'next_followup_at'],
         filter: {
           logic: 'AND',
           conditions: [
@@ -245,7 +285,7 @@ export const MODULES: ModuleDef[] = [
       },
       {
         name: 'Hot Leads',
-        columns: ['full_name', 'mobile', 'ai_score', 'budget_max', 'interested_project_id', 'next_followup_at', 'owner_id'],
+        columns: ['full_name', 'mobile', 'ai_score', 'budget_max', 'next_followup_at', 'owner_id'],
         filter: { logic: 'AND', conditions: [{ field: 'ai_score', operator: 'greater_or_equal', value: 70 }, { field: 'is_converted', operator: 'is_false' }] },
         sortBy: 'ai_score',
       },
@@ -281,133 +321,6 @@ export const MODULES: ModuleDef[] = [
   // =========================================================================
 
   // =========================================================================
-  // PROJECTS
-  // =========================================================================
-  {
-    name: 'projects',
-    label: 'Projects',
-    singular: 'Project',
-    table: 'ipy_e_projects',
-    icon: 'landmark',
-    color: '#f59e0b',
-    sequence: 40,
-    menuGroup: 'Inventory',
-    // Reached from Properties — one Inventory entry, not two.
-    showInMenu: false,
-    labelFields: ['name'],
-    pipelineField: 'status',
-    duplicateCheckFields: ['project_code', 'rera_number'],
-    blocks: [
-      {
-        name: 'project_information',
-        label: 'Project Information',
-        fields: [
-          F.autonum('project_code', 'Project Code', 'PRJ-'),
-          F.text('name', 'Project Name', { mandatory: true, quickCreate: true, searchable: true }),
-          F.pick('status', 'Status', 'project_status', { mandatory: true, quickCreate: true }),
-          F.pick('project_type', 'Project Type', 'project_type', { quickCreate: true }),
-          F.owner(),
-        ],
-      },
-      {
-        name: 'location',
-        label: 'Location',
-        fields: [
-          F.pick('city', 'City', 'city', { quickCreate: true, searchable: true }),
-          F.pick('locality', 'Locality', 'locality', { quickCreate: true, searchable: true }),
-          F.pick('micro_market', 'Micro Market', 'micro_market'),
-          F.pick('state', 'State', 'state'),
-          F.text('country', 'Country', { default: 'India' }),
-          F.text('pincode', 'Pincode'),
-          F.address('address', 'Full Address'),
-          F.dec('latitude', 'Latitude'),
-          F.dec('longitude', 'Longitude'),
-          F.json('connectivity', 'Connectivity', { help: 'Nearby landmarks with distances — used by AI pitches' }),
-        ],
-      },
-      {
-        name: 'compliance',
-        label: 'RERA & Approvals',
-        fields: [
-          F.text('rera_number', 'RERA Number'),
-          F.date('rera_expiry', 'RERA Expiry'),
-          F.json('approvals', 'Approvals'),
-        ],
-      },
-      {
-        name: 'scale',
-        label: 'Project Scale',
-        fields: [
-          F.dec('total_land_area', 'Total Land Area'),
-          F.text('land_area_unit', 'Land Area Unit', { default: 'acre' }),
-          F.num('total_towers', 'Total Towers'),
-          F.num('total_floors', 'Total Floors'),
-          F.num('total_units', 'Total Units'),
-          F.rollup('available_units', 'Available Units', 'project_properties', 'count', {
-            filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'equals', value: 'Available' }] },
-          }),
-          F.rollup('booked_units', 'Booked Units', 'project_properties', 'count', {
-            filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'in', value: ['Booked', 'Sold'] }] },
-          }),
-          F.rollup('total_inventory', 'Total Inventory', 'project_properties', 'count'),
-          F.pct('open_area_percent', 'Open Area %'),
-        ],
-      },
-      {
-        name: 'commercials',
-        label: 'Commercials',
-        fields: [
-          F.money('price_min', 'Price (Min)', { quickCreate: true, config: { min: 0, notAfterField: 'price_max' } }),
-          F.money('price_max', 'Price (Max)', { quickCreate: true, config: { min: 0 } }),
-          F.money('rate_per_sqft', 'Rate per sq.ft'),
-          F.multipick('configurations', 'Configurations', 'configuration'),
-          F.pct('broker_commission_pct', 'Broker Commission %'),
-        ],
-      },
-      {
-        name: 'timeline',
-        label: 'Timeline',
-        fields: [
-          F.date('launch_date', 'Launch Date'),
-          F.date('possession_date', 'Possession Date'),
-          F.pct('completion_percent', 'Construction Progress %'),
-        ],
-      },
-      {
-        name: 'marketing',
-        label: 'Marketing Collateral',
-        collapsed: true,
-        fields: [
-          F.multipick('amenities', 'Amenities', 'amenities'),
-          F.json('usps', 'USPs', { help: 'Selling points the AI assistant will use in pitches' }),
-          F.url('brochure_url', 'Brochure'),
-          F.url('video_url', 'Video'),
-          F.url('virtual_tour_url', 'Virtual Tour'),
-          F.url('master_plan_url', 'Master Plan'),
-          F.image('gallery', 'Gallery', { config: { multiple: true } }),
-          F.json('floor_plans', 'Floor Plans'),
-          F.bool('publish_to_web', 'Show on Website', {
-            storage: 'json', default: true, quickCreate: true,
-            help: 'Whether this project appears on the public property website, in addition to the usual status-based visibility.',
-          }),
-        ],
-      },
-      { name: 'more', label: 'Description', collapsed: true, fields: [F.textarea('description', 'Description', { searchable: true })] },
-    ],
-    relations: [
-      { name: 'project_properties', label: 'Inventory', target: 'properties', type: 'one_to_many', foreignField: 'project_id' },
-      { name: 'project_leads', label: 'Leads', target: 'leads', type: 'one_to_many', foreignField: 'interested_project_id' },
-      { name: 'project_campaigns', label: 'Campaigns', target: 'campaigns', type: 'one_to_many', foreignField: 'project_id' },
-    ],
-    views: [
-      { name: 'All Projects', isDefault: true, columns: ['project_code', 'name', 'status', 'city', 'locality', 'price_min', 'price_max', 'available_units', 'possession_date'], sortBy: 'created_at' },
-      { name: 'Active Inventory', columns: ['name', 'city', 'locality', 'available_units', 'booked_units', 'price_min', 'possession_date'], filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'in', value: ['New Launch', 'Under Construction', 'Nearing Possession', 'Ready To Move'] }] } },
-      { name: 'By Status', displayMode: 'kanban', groupBy: 'status', columns: ['name', 'city', 'available_units', 'price_min'] },
-      { name: 'Map View', displayMode: 'map', columns: ['name', 'city', 'locality', 'price_min', 'status'] },
-    ],
-  },
-
-  // =========================================================================
   // PROPERTIES / UNITS
   // =========================================================================
   {
@@ -429,7 +342,9 @@ export const MODULES: ModuleDef[] = [
         fields: [
           F.autonum('property_code', 'Property Code', 'UNIT-'),
           F.text('name', 'Unit Name', { mandatory: true, quickCreate: true, searchable: true, help: 'e.g. "Tower A — 1204"' }),
-          F.ref('project_id', 'Project', ['projects'], { quickCreate: true }),
+          // Projects are no longer a module — a unit carries its development's
+          // name itself. Plain text, so it needs no second record to exist.
+          F.text('project_name', 'Project', { quickCreate: true, searchable: true }),
           F.pick('status', 'Status', 'property_status', { mandatory: true, quickCreate: true }),
           F.pick('property_type', 'Property Type', 'property_type', { quickCreate: true }),
           F.pick('configuration', 'Configuration', 'configuration', { quickCreate: true }),
@@ -514,7 +429,7 @@ export const MODULES: ModuleDef[] = [
         fields: [
           F.pick('possession_status', 'Possession Status', 'possession_status'),
           F.date('possession_date', 'Possession Date'),
-          F.datetime('blocked_until', 'Blocked Until'),
+          F.date('blocked_until', 'Blocked Until'),
           { name: 'blocked_by', label: 'Blocked By', uitype: 'user', column: 'blocked_by', readonly: true },
           F.ref('blocked_for_lead_id', 'Blocked For', ['leads']),
           F.bool('is_resale', 'Resale Unit'),
@@ -547,11 +462,11 @@ export const MODULES: ModuleDef[] = [
     relations: [
     ],
     views: [
-      { name: 'All Inventory', isDefault: true, columns: ['property_code', 'name', 'project_id', 'configuration', 'carpet_area', 'total_price', 'status', 'floor', 'facing'], sortBy: 'created_at' },
-      { name: 'Available Units', showMetrics: true, columns: ['name', 'project_id', 'configuration', 'carpet_area', 'total_price', 'floor', 'facing'], filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'equals', value: 'Available' }] }, sortBy: 'total_price', sortDir: 'asc' },
-      { name: 'Inventory Board', displayMode: 'kanban', groupBy: 'status', columns: ['name', 'project_id', 'configuration', 'total_price'] },
-      { name: 'Blocked Units', columns: ['name', 'project_id', 'blocked_until', 'blocked_for_lead_id', 'blocked_by'], filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'in', value: ['Held', 'Blocked'] }] } },
-      { name: 'Premium Units', columns: ['name', 'project_id', 'configuration', 'total_price', 'facing', 'status'], filter: { logic: 'AND', conditions: [{ field: 'total_price', operator: 'greater_or_equal', value: 20000000 }] }, sortBy: 'total_price' },
+      { name: 'All Inventory', isDefault: true, columns: ['property_code', 'name', 'project_name', 'configuration', 'carpet_area', 'total_price', 'status', 'floor', 'facing'], sortBy: 'created_at' },
+      { name: 'Available Units', showMetrics: true, columns: ['name', 'project_name', 'configuration', 'carpet_area', 'total_price', 'floor', 'facing'], filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'equals', value: 'Available' }] }, sortBy: 'total_price', sortDir: 'asc' },
+      { name: 'By Status', displayMode: 'kanban', groupBy: 'status', columns: ['name', 'project_name', 'configuration', 'total_price'] },
+      { name: 'Blocked Units', columns: ['name', 'project_name', 'blocked_until', 'blocked_for_lead_id', 'blocked_by'], filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'in', value: ['Held', 'Blocked'] }] } },
+      { name: 'Premium Units', columns: ['name', 'project_name', 'configuration', 'total_price', 'facing', 'status'], filter: { logic: 'AND', conditions: [{ field: 'total_price', operator: 'greater_or_equal', value: 20000000 }] }, sortBy: 'total_price' },
     ],
   },
 
@@ -599,7 +514,6 @@ export const MODULES: ModuleDef[] = [
           F.pick('campaign_type', 'Type', 'campaign_type', { quickCreate: true }),
           F.pick('status', 'Status', 'campaign_status', { mandatory: true, quickCreate: true }),
           F.text('channel', 'Channel'),
-          F.ref('project_id', 'Project', ['projects'], { quickCreate: true }),
           F.date('start_date', 'Start Date', { quickCreate: true }),
           F.date('end_date', 'End Date'),
           F.owner(),
@@ -655,79 +569,6 @@ export const MODULES: ModuleDef[] = [
       { name: 'All Campaigns', isDefault: true, columns: ['campaign_number', 'name', 'campaign_type', 'status', 'start_date', 'budget', 'leads_generated', 'cost_per_lead', 'roi_percent'], sortBy: 'start_date' },
       { name: 'Active Campaigns', showMetrics: true, columns: ['name', 'campaign_type', 'leads_generated', 'qualified_leads', 'actual_cost', 'cost_per_lead'], filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'equals', value: 'Active' }] } },
       { name: 'ROI Leaderboard', columns: ['name', 'actual_cost', 'revenue_generated', 'roi_percent', 'bookings'], sortBy: 'roi_percent' },
-    ],
-  },
-
-  // =========================================================================
-  // ACTIVITIES
-  // =========================================================================
-  {
-    name: 'activities',
-    label: 'Activities',
-    singular: 'Activity',
-    table: 'ipy_e_activities',
-    icon: 'calendar-check',
-    color: '#3b82f6',
-    sequence: 120,
-    menuGroup: 'Productivity',
-    // A tab on the lead.
-    showInMenu: false,
-    labelFields: ['subject'],
-    pipelineField: 'status',
-    blocks: [
-      {
-        name: 'activity_information',
-        label: 'Activity Information',
-        fields: [
-          F.autonum('activity_number', 'Activity #', 'ACT-'),
-          F.text('subject', 'Subject', { mandatory: true, quickCreate: true, searchable: true }),
-          F.pick('activity_type', 'Type', 'activity_type', { mandatory: true, quickCreate: true }),
-          F.pick('status', 'Status', 'activity_status', { mandatory: true, quickCreate: true }),
-          F.pick('priority', 'Priority', 'priority', { quickCreate: true }),
-          F.owner(),
-        ],
-      },
-      {
-        name: 'scheduling',
-        label: 'Scheduling',
-        fields: [
-          F.datetime('start_at', 'Start', { quickCreate: true }),
-          F.datetime('end_at', 'End'),
-          F.date('due_date', 'Due Date', { quickCreate: true }),
-          F.bool('all_day', 'All Day'),
-          F.text('location', 'Location'),
-          F.num('reminder_minutes', 'Reminder (min before)'),
-          F.bool('is_recurring', 'Recurring'),
-          F.json('recurrence', 'Recurrence Rule', { displayType: 'detail_only' }),
-        ],
-      },
-      {
-        name: 'related',
-        label: 'Related To',
-        fields: [
-          F.ref('related_to', 'Related Record', ['leads', 'properties', 'projects'], { quickCreate: true }),
-          F.text('related_module', 'Related Module', { displayType: 'hidden' }),
-          F.ref('contact_id', 'Buyer', ['leads']),
-          F.json('participants', 'Participants'),
-        ],
-      },
-      {
-        name: 'outcome',
-        label: 'Outcome',
-        fields: [
-          F.datetime('completed_at', 'Completed At', { readonly: true }),
-          F.textarea('outcome', 'Outcome'),
-          F.bool('is_ai_generated', 'Created by AI', { readonly: true }),
-          F.textarea('description', 'Description', { searchable: true }),
-        ],
-      },
-    ],
-    views: [
-      { name: 'All Activities', isDefault: true, columns: ['subject', 'activity_type', 'status', 'priority', 'due_date', 'related_to', 'owner_id'], sortBy: 'due_date' },
-      { name: 'My Tasks Today', showMetrics: true, columns: ['subject', 'activity_type', 'priority', 'due_date', 'related_to'], filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'is_me' }, { field: 'due_date', operator: 'today' }, { field: 'status', operator: 'not_equals', value: 'Completed' }] }, sortBy: 'priority' },
-      { name: 'Overdue', showMetrics: true, columns: ['subject', 'activity_type', 'due_date', 'related_to', 'owner_id'], filter: { logic: 'AND', conditions: [{ field: 'due_date', operator: 'less_than', value: 'now' }, { field: 'status', operator: 'not_in', value: ['Completed', 'Cancelled'] }] }, sortBy: 'due_date', sortDir: 'asc' },
-      { name: 'Calendar', displayMode: 'calendar', columns: ['subject', 'start_at', 'end_at', 'activity_type'], sortBy: 'start_at', sortDir: 'asc' },
-      { name: 'By Status', displayMode: 'kanban', groupBy: 'status', columns: ['subject', 'activity_type', 'due_date', 'owner_id'] },
     ],
   },
 

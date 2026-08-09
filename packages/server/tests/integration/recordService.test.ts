@@ -111,28 +111,28 @@ describe('update', () => {
 
 describe('JSON-storage fields', () => {
   it('round-trips a value stored in custom_fields JSONB', async () => {
-    // publish_to_web is storage:'json' on projects — the other half of the
+    // publish_to_web is storage:'json' on properties — the other half of the
     // column/JSON split the query builder has to resolve.
-    const project = await createRecord(admin, 'projects', {
-      name: `Integration Project ${Date.now()}`,
-      status: 'New Launch',
+    const unit = await createRecord(admin, 'properties', {
+      name: `Integration Unit ${Date.now()}`,
+      status: 'Available',
       publish_to_web: false,
     });
 
-    const fetched = await getRecord(admin, 'projects', project.id);
+    const fetched = await getRecord(admin, 'properties', unit.id);
     expect(fetched?.values.publish_to_web).toBe(false);
 
-    await updateRecord(admin, 'projects', project.id, { publish_to_web: true });
-    const after = await getRecord(admin, 'projects', project.id);
+    await updateRecord(admin, 'properties', unit.id, { publish_to_web: true });
+    const after = await getRecord(admin, 'properties', unit.id);
     expect(after?.values.publish_to_web).toBe(true);
   });
 
   it('filters on a JSON-storage field through the SQL builder', async () => {
     const marker = `JsonFilter ${Date.now()}`;
-    await createRecord(admin, 'projects', { name: `${marker} A`, status: 'New Launch', publish_to_web: true });
-    await createRecord(admin, 'projects', { name: `${marker} B`, status: 'New Launch', publish_to_web: false });
+    await createRecord(admin, 'properties', { name: `${marker} A`, status: 'Available', publish_to_web: true });
+    await createRecord(admin, 'properties', { name: `${marker} B`, status: 'Available', publish_to_web: false });
 
-    const result = await listRecords(admin, 'projects', {
+    const result = await listRecords(admin, 'properties', {
       search: marker,
       filter: { logic: 'AND', conditions: [{ field: 'publish_to_web', operator: 'equals', value: true }] },
     });

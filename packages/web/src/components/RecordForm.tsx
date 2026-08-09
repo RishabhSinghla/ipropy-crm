@@ -208,6 +208,14 @@ export default function RecordForm({
     try {
       // Only send fields the form actually rendered, plus the owner.
       const rendered = new Set(blocks.flatMap((b) => b.fields));
+      // Controls that own a companion field (a mobile's country code, an
+      // area's unit) render it inside themselves, so it never appears in the
+      // layout's field list — and without this the edit would be dropped here.
+      for (const name of [...rendered]) {
+        const cfg = fieldMap.get(name)?.config;
+        if (cfg?.digitsFrom) rendered.add(String(cfg.digitsFrom));
+        if (cfg?.unitField) rendered.add(String(cfg.unitField));
+      }
       const payload: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(values)) {
         if (rendered.has(key) || key === 'owner_id') payload[key] = value;
@@ -315,6 +323,7 @@ export default function RecordForm({
                       field={field}
                       value={values[field.name]}
                       onChange={(v) => setValue(field.name, v)}
+                      onChangeOther={setValue}
                       error={errors[field.name]}
                       formValues={values}
                       restrictTo={restrictionFor(field.name)}

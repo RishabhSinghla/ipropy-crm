@@ -23,7 +23,6 @@ export const publicRouter = Router();
 // Only records in these statuses are shown to the public, regardless of
 // whatever else the query filters on. Matches the CRM's own "Active
 // Inventory" / "Available Units" system views (db/seed/modules.ts).
-const PUBLIC_PROJECT_STATUSES = ['New Launch', 'Under Construction', 'Nearing Possession', 'Ready To Move'];
 const PUBLIC_PROPERTY_STATUS = 'Available';
 
 // publish_to_web (db/seed/modules.ts) is a JSON-storage custom field,
@@ -34,10 +33,10 @@ const publishClause = (alias: string) => `(${alias}.custom_fields->>'publish_to_
 
 // Never build ORDER BY from raw query input — a fixed whitelist keeps it injection-safe.
 const PROJECT_SORTS: Record<string, string> = {
-  possession: 'p.possession_date ASC NULLS LAST',
-  price_asc: 'p.price_min ASC NULLS LAST',
-  price_desc: 'p.price_max DESC NULLS LAST',
-  newest: 'p.launch_date DESC NULLS LAST',
+  possession: 'MIN(u.possession_date) ASC NULLS LAST',
+  price_asc: 'MIN(u.total_price) ASC NULLS LAST',
+  price_desc: 'MAX(u.total_price) DESC NULLS LAST',
+  newest: 'MAX(u.created_at) DESC NULLS LAST',
 };
 const PROPERTY_SORTS: Record<string, string> = {
   price_asc: 'u.total_price ASC NULLS LAST',
@@ -46,20 +45,67 @@ const PROPERTY_SORTS: Record<string, string> = {
   possession: 'u.possession_date ASC NULLS LAST',
 };
 
+/**
+ * A "project" is now derived, not stored.
+ *
+ * The Projects module was removed from the CRM; each unit carries its
+ * development's name instead. The website's project pages, sitemap and
+ * structured data all key off this shape, so it is preserved exactly —
+ * aggregated from the units that belong to the development. `id` is a slug of
+ * the name rather than a record id, which is a better public URL anyway.
+ *
+ * Columns a project used to own on its own (RERA number, USPs, master plan,
+ * construction progress) have nowhere to come from and are returned null so
+ * the response shape does not change under the site's feet.
+ */
 const PROJECT_FIELDS = `
-  p.record_id AS id, p.name, p.status, p.project_type,
-  p.city, p.locality, p.micro_market, p.state, p.address, p.latitude, p.longitude,
-  p.rera_number, p.rera_expiry,
-  p.total_land_area, p.land_area_unit, p.total_towers, p.total_floors, p.total_units,
-  p.available_units, p.booked_units, p.open_area_percent,
-  p.price_min, p.price_max, p.rate_per_sqft, p.configurations,
-  p.launch_date, p.possession_date, p.completion_percent,
-  p.amenities, p.usps, p.brochure_url, p.video_url, p.virtual_tour_url,
-  p.master_plan_url, p.gallery, p.floor_plans, p.connectivity, p.description
+  lower(regexp_replace(btrim(u.project_name), '[^a-zA-Z0-9]+', '-', 'g')) AS id,
+  MIN(u.project_name) AS name,
+  MIN(u.possession_status) AS status,
+  MIN(u.property_type) AS project_type,
+  MIN(u.city) AS city, MIN(u.locality) AS locality,
+  NULL::text AS micro_market, NULL::text AS state, NULL::jsonb AS address,
+  AVG(u.latitude) AS latitude, AVG(u.longitude) AS longitude,
+  NULL::text AS rera_number, NULL::date AS rera_expiry,
+  NULL::numeric AS total_land_area, NULL::text AS land_area_unit,
+  COUNT(DISTINCT u.tower)::int AS total_towers,
+  MAX(u.floor)::int AS total_floors,
+  COUNT(*)::int AS total_units,
+  COUNT(*)::int AS available_units, 0 AS booked_units, NULL::numeric AS open_area_percent,
+  MIN(u.total_price) AS price_min, MAX(u.total_price) AS price_max,
+  AVG(u.rate_per_sqft) AS rate_per_sqft,
+  COALESCE(jsonb_agg(DISTINCT u.configuration) FILTER (WHERE u.configuration IS NOT NULL), '[]'::jsonb) AS configurations,
+  NULL::date AS launch_date, MIN(u.possession_date) AS possession_date,
+  NULL::numeric AS completion_percent,
+  COALESCE(jsonb_agg(DISTINCT a.amenity) FILTER (WHERE a.amenity IS NOT NULL), '[]'::jsonb) AS amenities,
+  '[]'::jsonb AS usps, NULL::text AS brochure_url,
+  MIN(u.video_url) AS video_url, MIN(u.virtual_tour_url) AS virtual_tour_url,
+  NULL::text AS master_plan_url,
+  COALESCE(jsonb_agg(DISTINCT g.image) FILTER (WHERE g.image IS NOT NULL), '[]'::jsonb) AS gallery,
+  '[]'::jsonb AS floor_plans, '[]'::jsonb AS connectivity,
+  MIN(u.description) AS description
 `;
 
+/**
+ * Units feeding a derived project. `amenities` and `gallery` are JSONB arrays,
+ * so they are unnested to be aggregated distinctly across the development.
+ */
+const PROJECT_FROM = `
+  FROM ipy_e_properties u
+  LEFT JOIN LATERAL jsonb_array_elements_text(COALESCE(u.amenities, '[]'::jsonb)) AS a(amenity) ON true
+  LEFT JOIN LATERAL jsonb_array_elements_text(COALESCE(u.gallery, '[]'::jsonb)) AS g(image) ON true
+`;
+
+/** Every derived project query shares these: published, available, named. */
+const PROJECT_BASE_CONDS = (): string[] =>
+  [`u.status = $1`, publishClause('u'), `u.project_name IS NOT NULL`, `btrim(u.project_name) <> ''`];
+
+const PROJECT_GROUP = `GROUP BY lower(regexp_replace(btrim(u.project_name), '[^a-zA-Z0-9]+', '-', 'g'))`;
+
 const PROPERTY_FIELDS = `
-  u.record_id AS id, u.name, u.project_id, pr.name AS project_name,
+  u.record_id AS id, u.name,
+  lower(regexp_replace(btrim(u.project_name), '[^a-zA-Z0-9]+', '-', 'g')) AS project_id,
+  u.project_name,
   u.status, u.property_type, u.configuration,
   u.tower, u.wing, u.floor, u.facing, u.view_description, u.corner_unit, u.vastu_compliant,
   u.carpet_area, u.built_up_area, u.super_built_up_area, u.plot_area, u.balcony_area, u.terrace_area, u.area_unit,
@@ -76,17 +122,17 @@ const PROPERTY_FIELDS = `
 // ---------------------------------------------------------------------------
 
 publicRouter.get('/projects', asyncHandler(async (req, res) => {
-  const conds: string[] = [`p.status = ANY($1)`, publishClause('p')];
-  const params: unknown[] = [PUBLIC_PROJECT_STATUSES];
+  const conds = PROJECT_BASE_CONDS();
+  const params: unknown[] = [PUBLIC_PROPERTY_STATUS];
 
   const push = (sql: string, value: unknown) => { params.push(value); conds.push(sql.replace('?', `$${params.length}`)); };
 
-  if (req.query.city) push(`p.city = ?`, String(req.query.city));
-  if (req.query.locality) push(`p.locality = ?`, String(req.query.locality));
-  if (req.query.configuration) push(`p.configurations @> ?::jsonb`, JSON.stringify([String(req.query.configuration)]));
-  if (req.query.minPrice) push(`p.price_max >= ?`, Number(req.query.minPrice));
-  if (req.query.maxPrice) push(`p.price_min <= ?`, Number(req.query.maxPrice));
-  if (req.query.possessionBy) push(`p.possession_date <= ?`, String(req.query.possessionBy));
+  if (req.query.city) push(`u.city = ?`, String(req.query.city));
+  if (req.query.locality) push(`u.locality = ?`, String(req.query.locality));
+  if (req.query.configuration) push(`u.configuration = ?`, String(req.query.configuration));
+  if (req.query.minPrice) push(`u.total_price >= ?`, Number(req.query.minPrice));
+  if (req.query.maxPrice) push(`u.total_price <= ?`, Number(req.query.maxPrice));
+  if (req.query.possessionBy) push(`u.possession_date <= ?`, String(req.query.possessionBy));
 
   const limit = Math.min(48, Number(req.query.limit) || 24);
   const offset = Math.max(0, Number(req.query.offset) || 0);
@@ -97,14 +143,16 @@ publicRouter.get('/projects', asyncHandler(async (req, res) => {
   const [rows, count] = await Promise.all([
     db.query(
       `SELECT ${PROJECT_FIELDS}
-       FROM ipy_e_projects p
+       ${PROJECT_FROM}
        WHERE ${conds.join(' AND ')}
+       ${PROJECT_GROUP}
        ORDER BY ${sort}
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params,
     ),
     db.queryOne<{ count: number }>(
-      `SELECT COUNT(*)::int AS count FROM ipy_e_projects p WHERE ${conds.join(' AND ')}`,
+      `SELECT COUNT(DISTINCT btrim(u.project_name))::int AS count
+       FROM ipy_e_properties u WHERE ${conds.join(' AND ')}`,
       params.slice(0, -2),
     ),
   ]);
@@ -112,30 +160,33 @@ publicRouter.get('/projects', asyncHandler(async (req, res) => {
 }));
 
 publicRouter.get('/projects/:id', asyncHandler(async (req, res) => {
-  const project = await db.queryOne(
+  const slug = `lower(regexp_replace(btrim(u.project_name), '[^a-zA-Z0-9]+', '-', 'g')) = $2`;
+
+  const project = await db.queryOne<{ name: string; city: string | null }>(
     `SELECT ${PROJECT_FIELDS}
-     FROM ipy_e_projects p
-     WHERE p.record_id = $1 AND p.status = ANY($2) AND ${publishClause('p')}`,
-    [req.params.id, PUBLIC_PROJECT_STATUSES],
+     ${PROJECT_FROM}
+     WHERE ${[...PROJECT_BASE_CONDS(), slug].join(' AND ')}
+     ${PROJECT_GROUP}`,
+    [PUBLIC_PROPERTY_STATUS, req.params.id],
   );
   if (!project) throw new NotFoundError('Project not found');
 
   const units = await db.query(
     `SELECT ${PROPERTY_FIELDS}
      FROM ipy_e_properties u
-     LEFT JOIN ipy_e_projects pr ON pr.record_id = u.project_id
-     WHERE u.project_id = $1 AND u.status = $2 AND ${publishClause('u')}
+     WHERE ${[...PROJECT_BASE_CONDS(), slug].join(' AND ')}
      ORDER BY u.total_price ASC NULLS LAST`,
-    [req.params.id, PUBLIC_PROPERTY_STATUS],
+    [PUBLIC_PROPERTY_STATUS, req.params.id],
   );
 
   const similar = await db.query(
     `SELECT ${PROJECT_FIELDS}
-     FROM ipy_e_projects p
-     WHERE p.record_id <> $1 AND p.status = ANY($2) AND p.city = $3 AND ${publishClause('p')}
-     ORDER BY p.possession_date ASC NULLS LAST
+     ${PROJECT_FROM}
+     WHERE ${[...PROJECT_BASE_CONDS(), `u.city = $2`, `btrim(u.project_name) <> $3`].join(' AND ')}
+     ${PROJECT_GROUP}
+     ORDER BY MIN(u.possession_date) ASC NULLS LAST
      LIMIT 4`,
-    [req.params.id, PUBLIC_PROJECT_STATUSES, (project as { city: string | null }).city],
+    [PUBLIC_PROPERTY_STATUS, project.city, project.name],
   );
 
   res.json({
@@ -155,7 +206,7 @@ publicRouter.get('/properties', asyncHandler(async (req, res) => {
 
   const push = (sql: string, value: unknown) => { params.push(value); conds.push(sql.replace('?', `$${params.length}`)); };
 
-  if (req.query.project) push(`u.project_id = ?`, String(req.query.project));
+  if (req.query.project) push(`lower(regexp_replace(btrim(u.project_name), '[^a-zA-Z0-9]+', '-', 'g')) = ?`, String(req.query.project));
   if (req.query.city) push(`u.city = ?`, String(req.query.city));
   if (req.query.configuration) push(`u.configuration = ?`, String(req.query.configuration));
   if (req.query.bedrooms) push(`u.bedrooms = ?`, Number(req.query.bedrooms));
@@ -172,7 +223,6 @@ publicRouter.get('/properties', asyncHandler(async (req, res) => {
     db.query(
       `SELECT ${PROPERTY_FIELDS}
        FROM ipy_e_properties u
-       LEFT JOIN ipy_e_projects pr ON pr.record_id = u.project_id
        WHERE ${conds.join(' AND ')}
        ORDER BY ${sort}
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -190,7 +240,6 @@ publicRouter.get('/properties/:id', asyncHandler(async (req, res) => {
   const unit = await db.queryOne(
     `SELECT ${PROPERTY_FIELDS}
      FROM ipy_e_properties u
-     LEFT JOIN ipy_e_projects pr ON pr.record_id = u.project_id
      WHERE u.record_id = $1 AND u.status = $2 AND ${publishClause('u')}`,
     [req.params.id, PUBLIC_PROPERTY_STATUS],
   );
@@ -254,16 +303,16 @@ publicRouter.get('/filters', asyncHandler(async (_req, res) => {
 // query rather than the site looping a `city=` filter per picklist value.
 publicRouter.get('/cities', asyncHandler(async (_req, res) => {
   const rows = await db.query<{ city: string; project_count: number; unit_count: number; price_min: number | null; price_max: number | null }>(
-    `SELECT p.city,
-            COUNT(DISTINCT p.record_id)::int AS project_count,
-            COALESCE(SUM(p.available_units), 0)::int AS unit_count,
-            MIN(p.price_min) AS price_min,
-            MAX(p.price_max) AS price_max
-     FROM ipy_e_projects p
-     WHERE p.status = ANY($1) AND ${publishClause('p')} AND p.city IS NOT NULL
-     GROUP BY p.city
+    `SELECT u.city,
+            COUNT(DISTINCT btrim(u.project_name))::int AS project_count,
+            COUNT(*)::int AS unit_count,
+            MIN(u.total_price) AS price_min,
+            MAX(u.total_price) AS price_max
+     FROM ipy_e_properties u
+     WHERE u.status = $1 AND ${publishClause('u')} AND u.city IS NOT NULL
+     GROUP BY u.city
      ORDER BY project_count DESC`,
-    [PUBLIC_PROJECT_STATUSES],
+    [PUBLIC_PROPERTY_STATUS],
   );
   res.json({ items: rows.rows });
 }));
@@ -290,10 +339,8 @@ publicRouter.get('/media/:attachmentId', asyncHandler(async (req, res) => {
   if (!file?.record_id) throw new NotFoundError('File not found');
 
   const visible = await db.queryOne(
-    `SELECT 1 FROM ipy_e_projects WHERE record_id = $1 AND status = ANY($2) AND ${publishClause('ipy_e_projects')}
-     UNION ALL
-     SELECT 1 FROM ipy_e_properties WHERE record_id = $1 AND status = $3 AND ${publishClause('ipy_e_properties')}`,
-    [file.record_id, PUBLIC_PROJECT_STATUSES, PUBLIC_PROPERTY_STATUS],
+    `SELECT 1 FROM ipy_e_properties WHERE record_id = $1 AND status = $2 AND ${publishClause('ipy_e_properties')}`,
+    [file.record_id, PUBLIC_PROPERTY_STATUS],
   );
   if (!visible) throw new NotFoundError('File not found');
 

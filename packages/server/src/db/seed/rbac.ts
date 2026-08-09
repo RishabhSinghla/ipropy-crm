@@ -77,7 +77,7 @@ interface ProfileDef {
   fieldOverrides?: Record<string, Record<string, 'hidden' | 'readonly'>>;
 }
 
-const ALL = ['leads', 'projects', 'properties', 'campaigns', 'activities'];
+const ALL = ['leads', 'properties', 'campaigns'];
 
 function perms(
   modules: string[],
@@ -117,7 +117,6 @@ const PROFILES: ProfileDef[] = [
     modules: {
       ...perms(ALL, [true, true, true, false, true, false]),
       properties: [true, false, true, false, true, false],
-      projects: [true, false, false, false, true, false],
       payments: [true, false, false, false, false, false],
     },
   },
@@ -129,7 +128,6 @@ const PROFILES: ProfileDef[] = [
       leads: [true, true, true, false, false, false],
       contacts: [true, true, true, false, false, false],
       organizations: [true, true, true, false, false, false],
-      projects: [true, false, false, false, false, false],
       properties: [true, false, false, false, false, false],
       deals: [true, true, true, false, false, false],
       site_visits: [true, true, true, false, false, false],
@@ -137,7 +135,6 @@ const PROFILES: ProfileDef[] = [
       payments: [true, false, false, false, false, false],
       channel_partners: [true, false, false, false, false, false],
       campaigns: [true, false, false, false, false, false],
-      activities: [true, true, true, true, false, false],
       documents: [true, true, true, false, false, false],
     },
     fieldOverrides: {
@@ -153,10 +150,8 @@ const PROFILES: ProfileDef[] = [
     modules: {
       leads: [true, true, true, false, false, false],
       contacts: [true, true, true, false, false, false],
-      projects: [true, false, false, false, false, false],
       properties: [true, false, false, false, false, false],
       site_visits: [true, true, true, false, false, false],
-      activities: [true, true, true, true, false, false],
       deals: [true, false, false, false, false, false],
       campaigns: [true, false, false, false, false, false],
       organizations: [true, false, false, false, false, false],
@@ -178,7 +173,6 @@ const PROFILES: ProfileDef[] = [
       leads: [true, false, false, false, false, false],
       contacts: [true, true, true, false, true, false],
       organizations: [true, true, true, false, false, false],
-      projects: [true, false, false, false, false, false],
       properties: [true, false, true, false, false, false],
       deals: [true, false, true, false, false, false],
       site_visits: [true, true, true, false, false, false],
@@ -186,7 +180,6 @@ const PROFILES: ProfileDef[] = [
       payments: [true, true, true, false, true, true],
       channel_partners: [true, false, false, false, false, false],
       campaigns: [false, false, false, false, false, false],
-      activities: [true, true, true, true, false, false],
       documents: [true, true, true, true, true, false],
     },
   },
@@ -198,11 +191,9 @@ const PROFILES: ProfileDef[] = [
       leads: [true, true, true, false, true, true],
       contacts: [true, false, false, false, true, false],
       campaigns: [true, true, true, true, true, false],
-      projects: [true, false, false, false, false, false],
       properties: [true, false, false, false, false, false],
       deals: [true, false, false, false, true, false],
       site_visits: [true, false, false, false, false, false],
-      activities: [true, true, true, true, false, false],
       documents: [true, true, true, false, false, false],
       organizations: [true, false, false, false, false, false],
       bookings: [true, false, false, false, false, false],
@@ -221,7 +212,6 @@ const PROFILES: ProfileDef[] = [
       leads: [false, false, false, false, false, false],
       contacts: [true, false, false, false, true, false],
       organizations: [true, false, false, false, true, false],
-      projects: [true, false, false, false, false, false],
       properties: [true, false, false, false, true, false],
       deals: [true, false, false, false, true, false],
       site_visits: [false, false, false, false, false, false],
@@ -229,7 +219,6 @@ const PROFILES: ProfileDef[] = [
       payments: [true, true, true, true, true, true],
       channel_partners: [true, false, true, false, true, false],
       campaigns: [true, false, false, false, true, false],
-      activities: [true, true, true, true, false, false],
       documents: [true, true, true, false, true, false],
     },
   },
@@ -239,7 +228,6 @@ const PROFILES: ProfileDef[] = [
     capabilities: ['ai.use'],
     modules: {
       leads: [true, true, true, false, false, false],
-      projects: [true, false, false, false, false, false],
       properties: [true, false, false, false, false, false],
       site_visits: [true, true, false, false, false, false],
       contacts: [false, false, false, false, false, false],
@@ -249,7 +237,6 @@ const PROFILES: ProfileDef[] = [
       payments: [false, false, false, false, false, false],
       channel_partners: [false, false, false, false, false, false],
       campaigns: [false, false, false, false, false, false],
-      activities: [true, true, true, false, false, false],
       documents: [true, false, false, false, false, false],
     },
     fieldOverrides: {
@@ -319,7 +306,6 @@ const SHARING_DEFAULTS: Record<string, string> = {
   leads: 'private',
   contacts: 'private',
   organizations: 'public_read',
-  projects: 'public_read',
   properties: 'public_read',
   deals: 'private',
   site_visits: 'private',
@@ -327,7 +313,6 @@ const SHARING_DEFAULTS: Record<string, string> = {
   payments: 'private',
   channel_partners: 'public_read',
   campaigns: 'public_read',
-  activities: 'private',
   documents: 'private',
 };
 

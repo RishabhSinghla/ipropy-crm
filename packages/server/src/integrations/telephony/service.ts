@@ -246,9 +246,9 @@ export async function routeInboundCall(input: InboundCallInput): Promise<Inbound
 
   const virtualNumber = await db.queryOne<{
     route_to_user_id: string | null; route_to_group_id: string | null;
-    campaign_id: string | null; project_id: string | null; lead_source: string | null;
+    campaign_id: string | null; lead_source: string | null;
   }>(
-    `SELECT route_to_user_id, route_to_group_id, campaign_id, project_id, lead_source
+    `SELECT route_to_user_id, route_to_group_id, campaign_id, lead_source
      FROM ipy_virtual_number WHERE number = $1 AND is_active`,
     [toE164(input.to) ?? input.to],
   );
@@ -315,7 +315,7 @@ export async function routeInboundCall(input: InboundCallInput): Promise<Inbound
 
 async function createLeadFromCall(
   from: string,
-  virtualNumber: { campaign_id: string | null; project_id: string | null; lead_source: string | null },
+  virtualNumber: { campaign_id: string | null; lead_source: string | null },
   callId: string,
   ownerId: string | null,
   conn: Tx = db,
@@ -342,7 +342,6 @@ async function createLeadFromCall(
         status: 'New',
         lead_source: virtualNumber.lead_source ?? 'Cold Call',
         campaign_id: virtualNumber.campaign_id,
-        interested_project_id: virtualNumber.project_id,
         owner_id: ownerId,
         description: `Auto-created from an inbound call to a tracked number.`,
       },

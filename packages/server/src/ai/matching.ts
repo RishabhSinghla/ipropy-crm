@@ -16,10 +16,11 @@ export interface Requirement {
   budgetMax?: number | null;
   configurations?: string[];
   locations?: string[];
-  carpetAreaMin?: number | null;
-  carpetAreaMax?: number | null;
+  /** One stated area, with the unit it was quoted in. */
+  area?: number | null;
+  areaUnit?: string | null;
   possessionTimeline?: string | null;
-  projectId?: string | null;
+  projectName?: string | null;
   purpose?: string | null;
   facing?: string[];
   vastuRequired?: boolean;
@@ -41,9 +42,7 @@ interface PropertyRow {
   possession_status: string | null;
   city: string | null;
   locality: string | null;
-  project_id: string | null;
   project_name: string | null;
-  project_status: string | null;
   amenities: string[] | null;
   corner_unit: boolean;
   bedrooms: number | null;
@@ -53,7 +52,7 @@ interface PropertyRow {
 export async function loadRequirement(recordId: string): Promise<Requirement | null> {
   const lead = await db.queryOne<Record<string, unknown>>(
     `SELECT budget_min, budget_max, configuration, preferred_locations,
-            carpet_area_min, carpet_area_max, possession_timeline, interested_project_id, purpose
+            area, area_unit, possession_timeline, interested_project, purpose
      FROM ipy_e_leads WHERE record_id = $1`,
     [recordId],
   );
@@ -63,10 +62,10 @@ export async function loadRequirement(recordId: string): Promise<Requirement | n
       budgetMax: lead.budget_max as number | null,
       configurations: (lead.configuration as string[]) ?? [],
       locations: (lead.preferred_locations as string[]) ?? [],
-      carpetAreaMin: lead.carpet_area_min as number | null,
-      carpetAreaMax: lead.carpet_area_max as number | null,
+      area: lead.area as number | null,
+      areaUnit: (lead.area_unit as string | null) ?? 'sqft',
       possessionTimeline: lead.possession_timeline as string | null,
-      projectId: lead.interested_project_id as string | null,
+      projectName: lead.interested_project as string | null,
       purpose: lead.purpose as string | null,
     };
   }
@@ -82,20 +81,18 @@ async function candidateInventory(req: Requirement, limit = 60): Promise<Propert
   const res = await db.query<PropertyRow>(
     `SELECT p.record_id, r.label, p.name, p.configuration, p.carpet_area, p.total_price,
             p.base_price, p.floor, p.facing, p.vastu_compliant, p.status,
-            p.possession_date, p.possession_status, p.city, p.locality, p.project_id,
-            p.amenities, p.corner_unit, p.bedrooms,
-            pr.name AS project_name, pr.status AS project_status
+            p.possession_date, p.possession_status, p.city, p.locality,
+            p.amenities, p.corner_unit, p.bedrooms, p.project_name
      FROM ipy_e_properties p
      JOIN ipy_record r ON r.id = p.record_id
-     LEFT JOIN ipy_e_projects pr ON pr.record_id = p.project_id
      WHERE r.is_deleted = false
        AND p.status = 'Available'
        AND ($1::numeric IS NULL OR COALESCE(p.total_price, p.base_price) <= $1)
        AND ($2::numeric IS NULL OR COALESCE(p.total_price, p.base_price) >= $2)
-       AND ($3::uuid IS NULL OR p.project_id = $3)
+       AND ($3::text IS NULL OR p.project_name ILIKE $3)
      ORDER BY COALESCE(p.total_price, p.base_price) ASC
      LIMIT $4`,
-    [maxPrice, minPrice, req.projectId ?? null, limit],
+    [maxPrice, minPrice, req.projectName ?? null, limit],
   );
   return res.rows;
 }
@@ -157,23 +154,25 @@ function scoreProperty(row: PropertyRow, req: Requirement): ScoredProperty {
     else { score -= 10; mismatches.push(`${row.locality ?? row.city ?? 'Location'} is outside the preferred areas`); }
   }
 
-  // Carpet area.
-  if (row.carpet_area) {
-    if (req.carpetAreaMin && row.carpet_area < req.carpetAreaMin) {
-      score -= 8;
-      mismatches.push(`${formatArea(row.carpet_area)} is below the ${formatArea(req.carpetAreaMin)} minimum`);
-    } else if (req.carpetAreaMax && row.carpet_area > req.carpetAreaMax * 1.15) {
-      score -= 3;
-    } else if (req.carpetAreaMin || req.carpetAreaMax) {
+  // Area. The buyer states one figure, so it is read as "about this much":
+  // 15% either side counts as a match, well under is a miss.
+  if (row.carpet_area && req.area) {
+    const ratio = row.carpet_area / req.area;
+    if (ratio >= 0.85 && ratio <= 1.15) {
       score += 8;
-      reasons.push(`${formatArea(row.carpet_area)} carpet area is within the requested range`);
+      reasons.push(`${formatArea(row.carpet_area)} is about the ${formatArea(req.area)} asked for`);
+    } else if (ratio < 0.85) {
+      score -= 8;
+      mismatches.push(`${formatArea(row.carpet_area)} is smaller than the ${formatArea(req.area)} asked for`);
+    } else {
+      score -= 3;
     }
   }
 
   // Possession alignment — an urgent buyer cannot wait three years.
   const urgent = ['Immediate', 'Within 1 Month', '1-3 Months'].includes(req.possessionTimeline ?? '');
   if (urgent) {
-    if (row.possession_status === 'Ready To Move' || row.project_status === 'Ready To Move') {
+    if (row.possession_status === 'Ready To Move') {
       score += 14;
       reasons.push('Ready to move — matches an urgent timeline');
     } else if (row.possession_date) {
@@ -199,7 +198,7 @@ function scoreProperty(row: PropertyRow, req: Requirement): ScoredProperty {
 
   // Investors weigh rental yield and entry price over lifestyle fit.
   if (req.purpose === 'Investment') {
-    if (row.project_status === 'New Launch' || row.project_status === 'Pre Launch') {
+    if (row.possession_status === 'New Launch') {
       score += 6;
       reasons.push('Early-stage pricing suits an investment purpose');
     }
@@ -281,14 +280,14 @@ async function addNarrative(
 - Budget: ${req.budgetMin ? formatIndianPrice(req.budgetMin) : '—'} to ${req.budgetMax ? formatIndianPrice(req.budgetMax) : '—'}
 - Configuration: ${req.configurations?.join(', ') || '—'}
 - Preferred locations: ${req.locations?.join(', ') || '—'}
-- Carpet area: ${req.carpetAreaMin ?? '—'} to ${req.carpetAreaMax ?? '—'} sq.ft
+- Area: ${req.area ?? '—'} ${req.areaUnit ?? 'sqft'}
 - Timeline: ${req.possessionTimeline ?? '—'}
 - Purpose: ${req.purpose ?? 'Buy'}
 
 Here are the shortlisted units with their computed fit scores:
 
 ${scored.map((s, i) => `### ${i + 1}. ${s.row.label} (score ${s.score})
-- Project: ${s.row.project_name ?? '—'} (${s.row.project_status ?? '—'})
+- Project: ${s.row.project_name ?? '—'}
 - Configuration: ${s.row.configuration ?? '—'}, ${s.row.carpet_area ?? '—'} sq.ft carpet
 - Price: ${formatIndianPrice(s.row.total_price ?? s.row.base_price ?? 0)}
 - Floor ${s.row.floor ?? '—'}, ${s.row.facing ?? '—'} facing${s.row.corner_unit ? ', corner unit' : ''}
@@ -348,8 +347,7 @@ export async function matchBuyersForProperty(propertyId: string, limit = 10): Pr
   const property = await db.queryOne<PropertyRow>(
     `SELECT p.record_id, r.label, p.name, p.configuration, p.carpet_area, p.total_price, p.base_price,
             p.floor, p.facing, p.vastu_compliant, p.status, p.possession_date, p.possession_status,
-            p.city, p.locality, p.project_id, p.amenities, p.corner_unit, p.bedrooms,
-            NULL AS project_name, NULL AS project_status
+            p.city, p.locality, p.amenities, p.corner_unit, p.bedrooms, p.project_name
      FROM ipy_e_properties p JOIN ipy_record r ON r.id = p.record_id
      WHERE p.record_id = $1`,
     [propertyId],

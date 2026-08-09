@@ -14,6 +14,7 @@ import { withNameParts } from '../entity/nameParts.js';
 import { formatValue } from '../metadata/values.js';
 import { createRecord, updateRecord, type ServiceContext } from '../entity/recordService.js';
 import { assignOwner } from './assignment.js';
+import { scheduleFollowUp } from './followUp.js';
 
 export interface TaskContext {
   workflowId: string;
@@ -191,32 +192,33 @@ const createRecordTask: TaskHandler = async (config, ctx) => {
   await createRecord(svc, targetModule, values, { skipDuplicateCheck: true });
 };
 
+/**
+ * Schedule a follow-up.
+ *
+ * Was "create an Activity record". With that module gone the action writes the
+ * due date onto the record itself, notes the reason on its timeline and pings
+ * the owner — see core/workflow/followUp.ts. Existing workflow configurations
+ * keep working: `subject`, `description` and `dueInMinutes` mean what they
+ * always did.
+ */
 const createTaskAction: TaskHandler = async (config, ctx) => {
-  const svc = await systemContext(ctx.user);
   const scope = await buildMergeScope(ctx);
-
   const dueMinutes = Number(config.dueInMinutes ?? 60);
-  const due = new Date(Date.now() + dueMinutes * 60_000);
 
   let ownerId = ctx.record.owner_id as string | null;
   if (config.assignTo && config.assignTo !== 'record_owner') {
     ownerId = await resolvePrincipal(String(config.assignTo), ctx);
   }
 
-  await createRecord(svc, 'activities', {
-    subject: render(String(config.subject ?? 'Follow up'), scope),
-    activity_type: config.activity_type ?? 'Task',
-    status: 'Not Started',
-    priority: config.priority ?? 'Medium',
-    related_to: ctx.recordId,
-    related_module: ctx.module,
-    contact_id: ctx.record.contact_id ?? null,
-    start_at: due.toISOString(),
-    due_date: due.toISOString().slice(0, 10),
-    description: render(String(config.description ?? ''), scope),
-    is_ai_generated: Boolean(config.isAiGenerated),
-    owner_id: ownerId,
-  }, { skipDuplicateCheck: true });
+  await scheduleFollowUp({
+    recordId: ctx.recordId,
+    module: ctx.module,
+    on: new Date(Date.now() + dueMinutes * 60_000),
+    reason: render(String(config.subject ?? 'Follow up'), scope),
+    notes: config.description ? render(String(config.description), scope) : null,
+    ownerId,
+    authorId: ownerId,
+  });
 };
 
 const assignOwnerTask: TaskHandler = async (config, ctx) => {

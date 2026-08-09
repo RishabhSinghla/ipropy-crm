@@ -37,6 +37,13 @@ export const PICKLISTS: PicklistDef[] = [
   { name: 'project_status', label: 'Project Status', values: PROJECT_STATUS.map((s) => ({ ...s })) },
   { name: 'project_type', label: 'Project Type', values: ['Residential', 'Commercial', 'Mixed Use', 'Plotted Development', 'Township', 'Industrial', 'Hospitality'] },
   { name: 'purpose', label: 'Purpose', values: [...PURPOSE] },
+  // The unit half of an Area field. A picklist rather than free text so it
+  // groups, filters and reports — but rendered inside the area control, not as
+  // a dropdown of its own.
+  { name: 'area_unit', label: 'Area Unit', values: [
+    { value: 'sqft', label: 'Sq.ft.', isDefault: true },
+    { value: 'sqyd', label: 'Sq.yd.' },
+  ] },
   { name: 'budget_band', label: 'Budget Band', values: [...BUDGET_BANDS] },
   { name: 'purchase_timeline', label: 'Purchase Timeline', values: [...TIMELINE_OPTIONS] },
   { name: 'funding_type', label: 'Funding Type', values: [...FUNDING_TYPE] },
@@ -197,7 +204,7 @@ export async function seedPicklists(conn: Tx): Promise<void> {
 
 /** Wire the City → Locality dependency for every module that has both fields. */
 export async function seedPicklistDependencies(conn: Tx): Promise<void> {
-  const modules = ['projects', 'properties', 'leads'];
+  const modules = ['properties', 'leads'];
   for (const moduleName of modules) {
     const mod = await conn.queryOne<{ id: string }>(`SELECT id FROM ipy_module WHERE name = $1`, [moduleName]);
     if (!mod) continue;

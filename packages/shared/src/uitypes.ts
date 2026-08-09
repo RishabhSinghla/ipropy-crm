@@ -410,6 +410,23 @@ export interface FieldConfig {
   digitsFrom?: string;
   /** Digit count per value of `digitsFrom`; `digits` is the fallback. */
   digitsMap?: Record<string, number>;
+  /**
+   * Country codes offered inside the phone control itself.
+   *
+   * `digitsFrom` names the field the code is *stored* in; this is what the
+   * dropdown attached to the number input lists. Carried on the phone field
+   * rather than read from the other field's picklist so the control needs
+   * nothing but its own metadata — it renders the same in a form, a list cell
+   * and an inline edit, none of which have the sibling field to hand.
+   */
+  countryCodes?: { value: string; label: string }[];
+  /**
+   * area: name of the field holding the unit, rendered as a dropdown beside
+   * the number. `unit` stays the fallback for areas with a fixed unit.
+   */
+  unitField?: string;
+  /** area: units the `unitField` dropdown offers. */
+  unitOptions?: { value: string; label: string }[];
 
   [key: string]: unknown;
 }

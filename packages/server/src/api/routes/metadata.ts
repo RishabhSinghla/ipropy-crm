@@ -8,6 +8,7 @@ import { BadRequestError, ConflictError, NotFoundError } from '../../utils/error
 import { registry } from '../../core/metadata/registry.js';
 import { assertCapability, canAccessModule, getFieldPermissions, getModulePermission, hasCapability, invalidatePermissions } from '../../core/permissions/index.js';
 import { FORMULA_FUNCTIONS, validateFormula } from '../../core/entity/formula.js';
+import { quoteIdent } from '../../core/query/builder.js';
 import { previewNumber } from '../../core/entity/numbering.js';
 
 export const metadataRouter = Router();
@@ -610,31 +611,120 @@ metadataRouter.post('/fields/reorder', asyncHandler(async (req, res) => {
   res.json({ ok: true });
 }));
 
+/**
+ * Fields the engine reads by name. Deleting one does not hide a column, it
+ * breaks the module: without a label field a record has no title anywhere in
+ * the app, and without `record_id` the payload row cannot be joined at all.
+ * Refused with the reason and the setting to change first, rather than
+ * accepted and discovered later.
+ */
+async function structuralBlocker(
+  moduleName: string,
+  fieldName: string,
+): Promise<string | null> {
+  const module = await registry.getModule(moduleName);
+  if (!module) return null;
+  if (fieldName === 'record_id') return 'it is the record identifier itself';
+  if (module.labelFields.includes(fieldName)) {
+    return `it forms this module's record name — change the naming fields first`;
+  }
+  if (module.pipelineField === fieldName) {
+    return `it is this module's pipeline field — pick a different one first`;
+  }
+  return null;
+}
+
 metadataRouter.delete('/fields/:id', asyncHandler(async (req, res) => {
-  await assertCapability(getUser(req), 'admin.fields');
-  const field = await db.queryOne<{ is_custom: boolean; storage: string; column_name: string; module_id: string }>(
-    `SELECT is_custom, storage, column_name, module_id FROM ipy_field WHERE id = $1`, [req.params.id],
+  const user = getUser(req);
+  await assertCapability(user, 'admin.fields');
+  const permanent = req.query.permanent === 'true';
+
+  const field = await db.queryOne<{ name: string; label: string; is_custom: boolean; storage: string; column_name: string; module_id: string }>(
+    `SELECT name, label, is_custom, storage, column_name, module_id FROM ipy_field WHERE id = $1`, [req.params.id],
   );
   if (!field) throw new NotFoundError('Field not found');
 
-  if (!field.is_custom) {
-    // Built-in fields stay in the schema; deactivating hides them everywhere.
+  const module = await registry.getModuleById(field.module_id);
+
+  // Hide: reversible, keeps the data, the default for a seeded field.
+  if (!field.is_custom && !permanent) {
     await db.query(`UPDATE ipy_field SET is_active = false, display_type = 'hidden' WHERE id = $1`, [req.params.id]);
     invalidateAll();
     res.json({ ok: true, deactivated: true });
     return;
   }
 
-  const module = await registry.getModuleById(field.module_id);
-  await transaction(async (tx) => {
-    await tx.query(`DELETE FROM ipy_field WHERE id = $1`, [req.params.id]);
-    // Reclaim the stored values so the JSONB doesn't accumulate dead keys.
-    if (module && field.storage === 'json') {
-      await tx.query(`UPDATE ${module.tableName} SET custom_fields = custom_fields - $1`, [field.column_name]);
+  if (module) {
+    const blocker = await structuralBlocker(module.name, field.name);
+    if (blocker) {
+      throw new BadRequestError(`“${field.label}” cannot be deleted because ${blocker}.`);
     }
+  }
+
+  /**
+   * Delete: the field and its stored values both go.
+   *
+   * A seeded field also gets a tombstone. `db:seed` rebuilds every module from
+   * db/seed/modules.ts, so without one the row would be recreated on the next
+   * run — the delete would appear to work and then quietly undo itself.
+   */
+  let hadValues = 0;
+  if (module) {
+    const counted = await db.queryOne<{ count: string }>(
+      field.storage === 'json'
+        ? `SELECT COUNT(*)::text AS count FROM ${module.tableName} WHERE custom_fields ? $1`
+        : `SELECT COUNT(*)::text AS count FROM ${module.tableName} WHERE ${quoteIdent(field.column_name)} IS NOT NULL`,
+      field.storage === 'json' ? [field.column_name] : [],
+    ).catch(() => null);
+    hadValues = Number(counted?.count ?? 0);
+  }
+
+  await transaction(async (tx) => {
+    if (!field.is_custom && module) {
+      await tx.query(
+        `INSERT INTO ipy_field_tombstone (module_name, field_name, deleted_by, storage, column_name, had_values)
+         VALUES ($1,$2,$3,$4,$5,$6)
+         ON CONFLICT (module_name, field_name) DO UPDATE
+           SET deleted_at = now(), deleted_by = EXCLUDED.deleted_by, had_values = EXCLUDED.had_values`,
+        [module.name, field.name, user.id, field.storage, field.column_name, hadValues],
+      );
+    }
+
+    await tx.query(`DELETE FROM ipy_field WHERE id = $1`, [req.params.id]);
+
+    if (module && field.storage === 'json') {
+      // Reclaim the stored values so the JSONB doesn't accumulate dead keys.
+      await tx.query(`UPDATE ${module.tableName} SET custom_fields = custom_fields - $1`, [field.column_name]);
+    } else if (module && field.storage === 'column') {
+      // The column has to go too, not just its metadata: several are NOT NULL
+      // with no default, so leaving one behind with nothing to populate it
+      // makes every subsequent insert fail.
+      await tx.query(`ALTER TABLE ${module.tableName} DROP COLUMN IF EXISTS ${quoteIdent(field.column_name)}`);
+    }
+
+    // Saved views, layouts and dashboard widgets naming it would render a
+    // blank column or an empty section from here on.
+    await tx.query(
+      `UPDATE ipy_view SET columns = COALESCE((
+         SELECT jsonb_agg(c) FROM jsonb_array_elements_text(columns) AS c WHERE c <> $2
+       ), '[]'::jsonb)
+       WHERE module_id = $1 AND columns ? $2`,
+      [field.module_id, field.name],
+    );
+    await tx.query(
+      `UPDATE ipy_layout SET config = jsonb_set(config, '{blocks}', COALESCE((
+         SELECT jsonb_agg(b || jsonb_build_object('fields', COALESCE((
+           SELECT jsonb_agg(f) FROM jsonb_array_elements_text(b->'fields') AS f WHERE f <> $2
+         ), '[]'::jsonb)))
+         FROM jsonb_array_elements(config->'blocks') AS b
+       ), '[]'::jsonb))
+       WHERE module_id = $1 AND config ? 'blocks'`,
+      [field.module_id, field.name],
+    );
   });
+
   invalidateAll();
-  res.json({ ok: true, deleted: true });
+  res.json({ ok: true, deleted: true, hadValues });
 }));
 
 metadataRouter.post('/fields/validate-formula', asyncHandler(async (req, res) => {
@@ -804,7 +894,14 @@ metadataRouter.put('/layouts/:id', asyncHandler(async (req, res) => {
     const sets: string[] = [];
     const params: unknown[] = [req.params.id];
     if (input.name !== undefined) { params.push(input.name); sets.push(`name = $${params.length}`); }
-    if (input.config !== undefined) { params.push(JSON.stringify(input.config)); sets.push(`config = $${params.length}`); }
+    if (input.config !== undefined) {
+      params.push(JSON.stringify(input.config));
+      sets.push(`config = $${params.length}`);
+      // Editing a layout takes it out of the seed's hands. `db:seed` rewrites
+      // every default layout it owns on each run, which would silently undo
+      // the sections, header fields and default tab an admin just arranged.
+      sets.push('is_customised = true');
+    }
     if (input.isDefault !== undefined) { params.push(input.isDefault); sets.push(`is_default = $${params.length}`); }
     if (sets.length) {
       await tx.query(`UPDATE ipy_layout SET ${sets.join(', ')}, updated_at = now() WHERE id = $1`, params);
