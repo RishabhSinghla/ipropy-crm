@@ -60,14 +60,31 @@ Vtiger (at `../vtigercrm`) is an **architecture reference only**. No Vtiger code
 * **`ipy_record` is the shared id space.** Every `*_id` reference (including `contact_id`) points at
   `ipy_record(id)`, never at a payload table. This is why the Contacts→Leads merge preserved every
   foreign key without repointing.
-* **There is no separate Contacts module.** Leads is the single party record (labelled "Leads &
-  Contacts") carrying
+* **There are three modules:** `leads` (labelled "Leads & Contacts"), `properties`, `campaigns`.
+  Migrations `030` and `031` removed the other ten. Do not reintroduce one to hold a field —
+  Projects and Activities both died because they existed only to carry a value the lead or the unit
+  could hold itself.
+* **There is no separate Contacts module.** Leads is the single party record carrying
   `lifecycle_stage`: `Lead → Prospect → Customer → Past Customer`. Conversion promotes the record
-  **in place** and opens a Deal — it does not create a second person.
-* **Core modules** (`leads`, `activities`) have `is_core = true` and cannot be disabled.
+  **in place** — it does not create a second person.
+* **A follow-up is a date on the record, not a task record.** `core/workflow/followUp.ts` is the one
+  definition of "chase them on `<date>`" — it writes the date, a timeline note and a notification.
+  Every caller that used to create an Activity goes through it.
+* **Core modules** (`leads`) have `is_core = true` and cannot be disabled.
 * **Fields live in two places:** `ipy_field.storage` is `'column'` (real column, real index) or
   `'json'` (key in `custom_fields` JSONB). The query builder resolves both. Admin-created fields are
   always `'json'` — that is why adding a field needs no DDL.
+* **A field with `config.__record` lives on `ipy_record`, not the module's payload table.** `owner_id`
+  is the one that matters. Creating a same-named column on the payload table does **not** error — it
+  shadows the real one in `SELECT r.*, p.*`, and every record silently reads back as unassigned.
+  This has been hit once; `seed/helpers.ts ensureColumn` guards against it.
+* **Deleting a seeded field needs a tombstone.** The seed rebuilds every module on each run, so a
+  deleted `ipy_field` row comes straight back. `ipy_field_tombstone` (migration `032`) is what makes
+  the deletion durable, and `upsertModule`/`seedDefaultLayouts` consult it. A permanent delete also
+  drops the column: several are `NOT NULL` with no default, so metadata-only deletion breaks inserts.
+* **A layout an admin edited is off-limits to the seed.** `ipy_layout.is_customised` is set by
+  `PUT /api/meta/layouts/:id`; `seedDefaultLayouts` skips those rows. Without it, re-seeding silently
+  undoes the sections, header fields and default tab somebody arranged.
 * **One filter grammar, two engines:** `core/query/builder.ts` → SQL (lists, widgets, reports);
   `core/query/evaluate.ts` → in-memory (workflow conditions, conditional visibility). Keep them in
   step.

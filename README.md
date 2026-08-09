@@ -64,8 +64,8 @@ ipy_record  ──   ipy_e_<module>                    the data itself
   `t.column` or `t.custom_fields->>'key'` transparently — so **adding a field never runs DDL**, and a
   custom field filters, sorts and reports exactly like a built-in one.
 
-There is **no per-module CRUD code anywhere in this repo.** One `recordService` serves all thirteen
-seeded modules and every module an admin creates afterwards.
+There is **no per-module CRUD code anywhere in this repo.** One `recordService` serves every seeded
+module and every module an admin creates afterwards.
 
 ### Field types
 
@@ -96,14 +96,18 @@ permissions strip values from the API response, not just from the UI.
 
 | | |
 |---|---|
-| **Sales** | Leads & Contacts · Organisations · Deals · Site Visits · Bookings · Channel Partners |
-| **Inventory** | Projects · Properties/Units |
+| **Sales** | Leads & Contacts |
+| **Inventory** | Properties/Units |
 | **Marketing** | Campaigns |
-| **Finance** | Payments |
-| **Productivity** | Activities · Documents |
 
-430 fields, 54 dropdown option sets, 30+ system views, 5 dashboards, 17 workflows — all seeded and all
-editable from the admin panel.
+Three, and the count has come down twice on purpose. The CRM started with
+thirteen; migrations `030` and `031` removed ten of them. Each one died the same
+way — it existed to hold a value the lead or the unit could hold itself, so a
+salesperson had to create a second record to record one fact. A project became
+the unit's `project_name`; an activity became the lead's follow-up date.
+
+160 fields, 58 dropdown option sets, system views, 5 dashboards and 7 workflows —
+all seeded and all editable from the admin panel.
 
 ### One party record: Leads & Contacts
 
@@ -114,11 +118,9 @@ from first enquiry to repeat buyer:
 Lead  →  Prospect  →  Customer  →  Past Customer
 ```
 
-Conversion doesn't copy the person into a second module — it advances the same record's stage and
-opens a Deal against it. The consequence is that every call, WhatsApp thread, site visit, booking and
-file stays on **one id** for the whole relationship, instead of splitting at conversion. The stage
-advances automatically: a completed site visit promotes a Lead to Prospect; a booking promotes a
-Prospect to Customer (both are ordinary, editable workflows).
+Conversion doesn't copy the person into a second module — it advances the same record's stage. The
+consequence is that every call, WhatsApp thread, note and file stays on **one id** for the whole
+relationship, instead of splitting at conversion.
 
 Migration `004` performs this merge on an existing database: it widens the leads table, moves each
 contact's record across (every `contact_id` FK targets the shared record table, so nothing repoints),
@@ -131,8 +133,8 @@ bookings / 21 payments still resolving, zero orphans.
 **Admin → Modules** lists every module with its field and record counts and lets you switch off what
 you don't use. Disabling hides a module everywhere — navigation, global search, reports and the API
 (the endpoint 404s) — but **keeps its data**, so re-enabling restores it exactly. Each module shows
-which others reference it (a lookup dependency), and **Leads** and **Activities** are marked core and
-cannot be disabled because the rest of the CRM reads from them.
+which others reference it (a lookup dependency), and **Leads** is marked core and cannot be disabled
+because the rest of the CRM reads from it.
 
 ### Screens
 
@@ -140,13 +142,12 @@ cannot be disabled because the rest of the CRM reads from them.
 |---|---|
 | **Dashboard** | 5 seeded dashboards. Metric tiles with period-over-period deltas, funnel with cumulative conversion, stacked inventory, leaderboards, AI insight tiles. |
 | **List view** | Metadata-driven table + drag-and-drop kanban, saved views with live counts, nested AND/OR filter builder, column chooser, bulk edit/reassign/delete, CSV export. |
-| **Record detail** | Header summary, tabbed Overview / Timeline / Related / Files, AI sidebar, notes, one-click call and WhatsApp. |
-| **Timeline** | Calls, WhatsApp, email, notes, tasks, site visits, payments, files, field changes and AI insights merged into one feed. |
+| **Record detail** | Header summary (fields chosen per module in the layout designer), tabbed Overview / Timeline / Calls / Files, notes and AI sidebar, one-click call and WhatsApp. |
+| **Timeline** | Calls, WhatsApp, email, notes, files, field changes and AI insights merged into one feed. |
 | **Inbox** | WhatsApp threads with the 24-hour window enforced, delivery receipts, AI reply suggestions. |
 | **Calls** | Call log with recordings, AI summary/sentiment/objections, and a coaching report. |
-| **Inventory board** | Tower × floor stack plan, colour-coded by status, block/release a unit, "which buyers match this unit". |
 | **Reports** | Ad-hoc summary and tabular reports with grouping, measures and CSV export. |
-| **Admin** | Module & field builder, drag-drop layout designer, dropdown editor, users, roles, profiles, sharing, workflows, integrations, import, audit log. |
+| **Admin** | Module & field builder (hide or permanently delete a field), layout designer (sections, header chips, default tab), dropdown editor, users, roles, profiles, sharing, workflows, guided integration setup, import, audit log. |
 
 ### Automation
 

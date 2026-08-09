@@ -49,7 +49,7 @@ function watchConsole(page: Page): string[] {
 /** Module routes from the sidebar — one path segment, excluding the tools. */
 async function moduleRoutes(page: Page): Promise<string[]> {
   await page.goto('/dashboard');
-  await expect(page.getByRole('link', { name: /leads & customers/i })).toBeVisible();
+  await expect(page.getByRole('link', { name: /leads & contacts/i })).toBeVisible();
 
   const routes = await page.evaluate(() => {
     const skip = new Set(['/dashboard', '/settings', '/inbox', '/calls', '/reports', '/portal']);
@@ -61,7 +61,12 @@ async function moduleRoutes(page: Page): Promise<string[]> {
 
   // Guard against the selector silently matching nothing, which would let this
   // pass while checking zero modules.
-  expect(routes.length, `expected several module routes, got ${JSON.stringify(routes)}`).toBeGreaterThan(5);
+  // Three modules plus the tool pages. The threshold used to be >5, written
+  // when there were thirteen modules — it now asserts on a product decision
+  // (how many modules exist) rather than on the nav working. What matters is
+  // that the sidebar lists the modules at all.
+  expect(routes, `expected the module routes, got ${JSON.stringify(routes)}`)
+    .toEqual(expect.arrayContaining(['/leads', '/properties', '/campaigns']));
   return routes;
 }
 
@@ -170,6 +175,6 @@ test('every module opens its first record without breaking', async ({ page }) =>
 
   // If seed data ever stops populating, every module would be skipped and this
   // test would pass having opened nothing.
-  expect(opened, 'no module had a record to open').toBeGreaterThan(3);
+  expect(opened, 'no module had a record to open').toBeGreaterThan(0);
   expect(broken.join('\n'), broken.join('\n')).toBe('');
 });

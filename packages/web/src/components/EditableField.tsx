@@ -390,7 +390,10 @@ function FloatingEditor({
 }): JSX.Element {
   const MARGIN = 8;
   const GAP = 6;
-  const [style, setStyle] = useState<CSSProperties>({ position: 'fixed', top: 0, left: 0, visibility: 'hidden' });
+  // Transparent, not hidden, for the one frame before it is measured:
+  // `visibility: hidden` makes everything inside unfocusable, so the editor's
+  // autoFocus silently did nothing and clicking a field left no cursor in it.
+  const [style, setStyle] = useState<CSSProperties>({ position: 'fixed', top: 0, left: 0, opacity: 0 });
 
   useLayoutEffect(() => {
     const place = (): void => {
@@ -414,7 +417,7 @@ function FloatingEditor({
       }
       top = Math.max(MARGIN, Math.min(top, window.innerHeight - panel.height - MARGIN));
 
-      setStyle({ position: 'fixed', top, left, zIndex: 50, visibility: 'visible' });
+      setStyle({ position: 'fixed', top, left, zIndex: 50, opacity: 1 });
     };
 
     place();
@@ -599,12 +602,22 @@ function PicklistPopover({
   }, [field.options, restrictTo, value]);
 
   return (
-    <div className="w-max min-w-[12rem] max-w-xs animate-slide-up overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-float dark:border-slate-700 dark:bg-slate-900">
+    // `listbox`/`option` is what this actually is. A screen reader previously
+    // heard a stack of unrelated buttons, and — now the panel is portalled to
+    // the end of <body> — "the button that says New" no longer distinguishes an
+    // option from a table cell showing the same value.
+    <div
+      role="listbox"
+      aria-label={field.label}
+      className="w-max min-w-[12rem] max-w-xs animate-slide-up overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-float dark:border-slate-700 dark:bg-slate-900"
+    >
       <div className="max-h-72 overflow-y-auto">
         {options.map((o) => (
           <button
             key={o.value}
             type="button"
+            role="option"
+            aria-selected={o.value === value}
             onClick={() => onPick(o.value)}
             className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
           >

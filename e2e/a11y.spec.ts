@@ -133,13 +133,13 @@ test('has no colour-contrast violations in either theme', async ({ page }) => {
 
   for (const theme of ['light', 'dark'] as const) {
     await page.goto('/dashboard');
-    await expect(page.getByRole('link', { name: /leads & customers/i })).toBeVisible();
+    await expect(page.getByRole('link', { name: /leads & contacts/i })).toBeVisible();
     await setTheme(page, theme);
 
     for (const route of ['/dashboard', '/leads', '/properties', '/settings']) {
       await page.goto(route);
       if (route === '/leads' || route === '/properties') await waitForRecords(page);
-      await expect(page.getByRole('link', { name: /leads & customers/i })).toBeVisible();
+      await expect(page.getByRole('link', { name: /leads & contacts/i })).toBeVisible();
       const { violations } = await scanContrast(page);
       if (violations.length) failures.push(`\n[${theme}] ${route}${summarise(violations)}`);
     }
@@ -148,7 +148,7 @@ test('has no colour-contrast violations in either theme', async ({ page }) => {
   // Restore the shared account before asserting, so a failure here cannot
   // leave every subsequent spec running in the wrong theme.
   await page.goto('/dashboard');
-  await expect(page.getByRole('link', { name: /leads & customers/i })).toBeVisible();
+  await expect(page.getByRole('link', { name: /leads & contacts/i })).toBeVisible();
   await setTheme(page, 'light');
 
   expect(failures.join(''), failures.join('')).toBe('');
@@ -159,7 +159,7 @@ test.describe('keyboard operation', () => {
     await page.goto('/dashboard');
     // Wait for the shell: before it renders, RequireAuth shows only a spinner
     // and the skip link does not exist yet.
-    await expect(page.getByRole('link', { name: /leads & customers/i })).toBeVisible();
+    await expect(page.getByRole('link', { name: /leads & contacts/i })).toBeVisible();
 
     // A skip link must be the first focusable thing on the page, or a keyboard
     // user tabs through the entire sidebar on every single page load.

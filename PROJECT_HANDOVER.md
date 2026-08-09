@@ -43,10 +43,10 @@ adds WhatsApp, telephony, portal lead capture and an AI layer.
 | Dashboard drill-through | Every widget type (metric, gauge, bar, line, area, pie, donut, funnel, stacked, table) clicks through to a correctly pre-filtered record list; funnel uses cumulative stage semantics, filter panel stays closed on arrival |
 
 **Verified live metrics (current database):**
-77 tables · 12 modules · 430 fields · 54 picklists · 54 views · 36 layouts · 17 workflows ·
-5 dashboards / 39 widgets · 17 roles · 9 profiles · 12 users · ~310 demo records.
-9 migrations applied. Backup/restore runbook verified (dump restores to a scratch DB with identical
-counts). Codebase has grown by ~15 files / ~3,500 lines this session (see §7).
+91 tables · 3 modules · 160 fields · 58 picklists · 17 views · 9 layouts · 7 workflows ·
+5 dashboards / 23 widgets · 17 roles · 9 profiles · 13 users · 254 records.
+32 migrations applied. Backup/restore runbook verified (dump restores to a scratch DB with identical
+counts). The module count falls rather than rises on purpose — see §5.
 
 ---
 
@@ -216,27 +216,29 @@ generic lead capture, email open pixel).
 
 ---
 
-## 5. Modules completed
+## 5. Modules
 
-All 12 are seeded and fully editable at runtime.
+Three, all seeded and fully editable at runtime. The count has come down twice
+on purpose: migration `030` removed eight modules, `031` removed the last two
+that were only reachable from inside another record.
 
 | Module | Group | Notes |
 |---|---|---|
-| **Leads & Contacts** | Sales | **Core.** Single party record; lifecycle Lead→Prospect→Customer→Past Customer. 82 fields, 11 blocks, 6 relations. |
-| Organisations | Sales | Developers, corporates, investors |
-| Deals | Sales | Pipeline with stage probability, AI risk scoring |
-| Site Visits | Sales | Scheduling, feedback, AI summary/sentiment; promotes lifecycle to Prospect |
-| Bookings | Sales | Payment plan generation; promotes lifecycle to Customer |
-| Channel Partners | Sales | Brokers, commission slabs, performance rollups, **partner portal (self-serve lead submit, bookings view, commission tracking)** |
-| Projects | Inventory | RERA, towers, amenities, USPs, connectivity |
-| Properties/Units | Inventory | Full pricing breakdown, formula-computed all-inclusive price |
-| Campaigns | Marketing | Spend, attribution keys, formula-computed CPL and ROI |
-| Payments | Finance | Milestone instalments, overdue tracking, reminders |
-| **Activities** | Productivity | **Core.** Tasks/calls/meetings, polymorphic `related_to` |
-| Documents | Productivity | Typed documents, share tokens, AI extraction fields |
+| **Leads & Contacts** | Sales | **Core.** The single party record; lifecycle Lead→Prospect→Customer→Past Customer. Carries the requirement, the follow-up date, calls, notes and timeline. |
+| Properties | Inventory | Units. Full pricing breakdown, formula-computed all-inclusive price. Each carries its development's name (`project_name`) as text. |
+| Campaigns | Marketing | Spend, attribution keys, formula-computed CPL and ROI. |
 
-**Core modules** (`is_core = true`): `leads`, `activities` — cannot be disabled; the rest of the CRM
-reads from them.
+**Core modules** (`is_core = true`): `leads`. It cannot be disabled — the rest of
+the CRM reads from it.
+
+**What the removed modules became**
+
+| Was | Now |
+|---|---|
+| Projects | `properties.project_name`, plus `leads.interested_project` as free text. The public website's `/api/public/projects` aggregates units by name, so its pages, sitemap and structured data still work. |
+| Activities | A follow-up date on the lead (`next_followup_at`), a note on its timeline and a notification. One definition, `core/workflow/followUp.ts`. |
+| Site Visits | Nothing. They were folded into Activities by `030` and went with it. The lead score no longer has a site-visit input — see §17.3. |
+| Deals, Bookings, Payments, Organisations, Channel Partners, Documents, Blog | Removed in `030`. |
 
 ---
 
@@ -1047,3 +1049,122 @@ missing photo yields a branded post rather than a near-black one.
 **Still not done:** #7/#10/#12/#13 (WhatsApp — Meta approval), #15 (portal
 contracts), #17 (call recording). The Studio covers social-post creation only —
 not video editing or a general design tool.
+
+### §17.3 — Fourth session (2026-08-09)
+
+Thirteen items from Rishabh, plus a permanent-delete for fields. The theme is
+subtraction: fewer modules, and each field asking its question once.
+
+**Projects and Activities are gone** (migration `031`). Payload rows are copied
+to `ipy_e_activities_archive` / `ipy_e_projects_archive` before the delete —
+207 activities and 6 projects here — because the amount of data was small enough
+that keeping it costs nothing and a wrong call costs a restore. Nothing reads
+those tables; drop them by hand once you are sure.
+
+What that touched, and why each was not simply deleted:
+
+* **Follow-ups.** Activities' real job was "chase this person on `<date>`", which
+  the lead already records. `core/workflow/followUp.ts` is now the single
+  definition, used by the workflow `create_task` action, call analysis, WhatsApp
+  sequences and a logged callback. It writes the date, a note on the timeline so
+  the reason survives, and a notification.
+* **Lead scoring.** Site visits carried up to 28 of 100 points and had no store
+  left. Removing the input outright would have deflated every score by a quarter
+  and made Grade A unreachable, so that weight moved onto answered calls and
+  inbound messages (`ai/leadScoring.ts`).
+* **The public website.** It is built around Projects — pages, sitemap,
+  JSON-LD, compare. `/api/public/projects` therefore still exists but aggregates
+  the units sharing a `project_name`; `id` is a slug of the name. Fields a
+  project owned alone (RERA number, USPs, brochure, construction progress) now
+  return null, so those parts of the site render empty.
+* **Assignment.** `least_busy` counted open activities due today; it now counts
+  leads whose own follow-up date has arrived.
+
+**Fields on a lead**
+
+* Carpet Area (Min) + (Max) → one **Area** with its unit beside it. Existing
+  ranges collapsed to their midpoint. The unit is a real field (`area_unit`)
+  rendered inside the control, so it still reports and filters.
+* **Country code** stopped being a form row and became the dropdown attached to
+  Mobile. It is still stored separately — a silent +91 sends an NRI buyer's
+  WhatsApp to a stranger — and the server joins the two into one display value
+  in `resolveDisplayValues`, so every list, detail and export agrees.
+* Follow-up / last contacted / scored / converted are **DATE** columns now.
+
+**Admin controls for things that were hard-coded**
+
+* Layout Designer: sections (add, rename, reorder, delete), the header's summary
+  chips, and which tab a record opens on. Saving sets `ipy_layout.is_customised`
+  and `db:seed` skips those, which is what stops a re-seed undoing the work.
+* **Fields can be deleted for real.** Previously "Remove" only deactivated a
+  seeded field, because `db:seed` rebuilds every module and the row came
+  straight back. Migration `032` adds `ipy_field_tombstone`; the seed consults
+  it. Delete drops the column too — several are `NOT NULL` with no default, so
+  metadata-only deletion breaks every insert. A module's naming or pipeline
+  field refuses, with the reason.
+
+**Two traps this session paid for**
+
+1. **`config.__record` fields live on `ipy_record`, not the payload table.**
+   The seed grew an `ensureColumn` helper that recreates a column the metadata
+   expects; it happily added `owner_id` to `ipy_e_leads`, which does not error —
+   it *shadows* the real column in `SELECT r.*, p.*`, and every new record read
+   back as unassigned. Integration tests caught it. `ensureColumn` now skips
+   `__record` fields.
+2. **`git stash` leaves `packages/shared/dist` stale.** The server then fails to
+   boot on a missing export. Rebuild shared before starting dev after a stash.
+
+**Also fixed**
+
+* Inline-edit popovers were absolutely positioned inside cards with
+  `overflow-hidden`, so a picklist near a card's edge lost its options behind
+  it. They portal to `<body>` and flip above when there is no room below. The
+  anchor must be the wrapper, not the inner `display: contents` div — that has
+  no box, so `getBoundingClientRect()` is all zeros and the panel lands in the
+  top-left corner.
+* Reports opened on `deals`, grouped by `stage` and measured `amount` — none of
+  which had existed since `030`, which is why three dropdowns rendered blank.
+  Every default now derives from the loaded metadata.
+* Integrations has a **Connect** tab: pick the outcome, follow numbered steps,
+  paste one value per step. Verify tokens and webhook keys are generated rather
+  than demanded, and saving runs the provider's own test. The field-by-field
+  view remains as "All settings".
+* Inventory Board removed — page, routes, nav, and its two API endpoints.
+
+**Still open:** #7/#10/#12/#13 (WhatsApp — Meta approval), #15 (portal
+contracts), #17 (call recording). No LLM key is configured, so every AI feature
+runs on its fallback rule engine.
+
+**E2E suite repaired.** It had been red on `main` for two sessions and nobody
+noticed, because the failures were all in the *tests*, not the app:
+
+* `helpers.ts` filled a field labelled `Email`; the label became "Email or
+  mobile number" when sign-in by phone shipped, so `auth.setup` timed out and
+  took all 21 tests with it.
+* Nine specs looked for a "Leads & Customers" nav link, renamed to "Leads &
+  Contacts" by migration `011`.
+* Two filled `first name` / `last name`, retired by migration `026`.
+* The lead-creation specs built a mobile as `+919${Date.now().slice(-9)}` —
+  twelve digits, clipped to ten, which discards the digits that made it unique
+  and trips the duplicate check on the second run.
+* Both expected quick-create to open the new record; it deliberately stays on
+  the list (see ListView's `onSaved`).
+* `modules.spec` asserted `routes.length > 5`, written when there were thirteen
+  modules. It now names the three it expects, so it tests the nav rather than a
+  product decision.
+
+Two of the fixes were real app bugs the suite caught once it could run:
+
+* The portalled inline editor rendered its first frame `visibility: hidden` to
+  measure itself — and **nothing inside a `visibility: hidden` element can take
+  focus**, so autoFocus silently failed and clicking a field left no cursor.
+  It uses `opacity: 0` for that frame instead.
+* The picklist popover was a stack of plain buttons. Portalled to the end of
+  `<body>`, "the button that says New" matched a table cell before it matched an
+  option. It is now `role="listbox"` / `role="option"` with `aria-selected`,
+  which is what it always should have been for screen readers.
+
+**Running e2e locally:** stop `npm run dev` first. `reuseExistingServer` means a
+dev server you started will be used as-is, without the raised `API_RATE_LIMIT`
+the config sets — the suite then trips the 600/min limiter and the mobile
+project fails on an empty shell that looks exactly like a broken drawer.

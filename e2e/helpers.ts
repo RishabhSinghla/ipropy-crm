@@ -21,7 +21,10 @@ export const ADMIN_PASSWORD = process.env.E2E_PASSWORD ?? 'Admin@123';
  */
 export async function login(page: Page): Promise<void> {
   await page.goto('/login');
-  await page.getByLabel('Email', { exact: true }).fill(ADMIN_EMAIL);
+  // The field accepts an email *or* a mobile number since sign-in by phone
+  // shipped, and its label says so — an exact match on 'Email' silently stopped
+  // matching anything and took the whole suite down with it.
+  await page.getByLabel('Email or mobile number', { exact: true }).fill(ADMIN_EMAIL);
   // Exact, because the show/hide toggle carries aria-label="Show password" and
   // a loose /password/i matches both, which Playwright rejects as ambiguous.
   await page.getByLabel('Password', { exact: true }).fill(ADMIN_PASSWORD);
@@ -44,6 +47,23 @@ export function unique(prefix: string): string {
  */
 export async function waitForRecords(page: Page): Promise<void> {
   await expect(editableCells(page).first()).toBeVisible({ timeout: 30_000 });
+}
+
+/**
+ * Which column is this, by its header?
+ *
+ * List columns are metadata an administrator can reorder or remove, so a
+ * hardcoded `td.nth(6)` asserts on a layout decision rather than on behaviour —
+ * and fails as a mystery the day someone rearranges a view.
+ */
+export async function columnIndex(page: Page, header: string): Promise<number> {
+  const headers = page.locator('thead th');
+  await expect(headers.first()).toBeVisible({ timeout: 30_000 });
+  const labels = await headers.allTextContents();
+  const index = labels.findIndex((t) => t.trim().toLowerCase() === header.toLowerCase());
+  expect(index, `no "${header}" column — found: ${labels.map((l) => l.trim()).join(', ')}`)
+    .toBeGreaterThan(-1);
+  return index;
 }
 
 /**
