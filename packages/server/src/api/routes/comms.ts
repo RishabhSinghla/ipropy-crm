@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { db } from '../../db/pool.js';
+import { toInternational } from '@ipropy/shared';
 import { withNameParts } from '../../core/entity/nameParts.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
@@ -274,7 +275,10 @@ commsRouter.post('/broadcast', asyncHandler(async (req, res) => {
       [recordId],
     );
     if (!row) continue;
-    const handle = String(row.whatsapp_number ?? row.mobile ?? '');
+    const handle = toInternational(
+      String(row.country_code ?? ''),
+      String(row.whatsapp_number ?? row.mobile ?? ''),
+    ) ?? '';
     if (!handle) continue;
     if (row.do_not_whatsapp === true) continue;
 

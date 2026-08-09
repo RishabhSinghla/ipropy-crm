@@ -382,6 +382,35 @@ export interface FieldConfig {
   placeholder?: string;
   /** integrations may mark fields as synced */
   externalKey?: string;
+
+  // --- validation ----------------------------------------------------------
+  // Declared here rather than coded into the engine, so a rule like "budget
+  // from cannot exceed budget to" is metadata an admin can change, not an
+  // `if (module === 'leads')` in recordService.
+
+  /** numeric / currency / area: inclusive lower bound. */
+  min?: number;
+  /** numeric / currency / area: inclusive upper bound. */
+  max?: number;
+  /** text: a regular expression the value must match. */
+  pattern?: string;
+  /** The message shown when `pattern` fails — a regex is not an explanation. */
+  patternMessage?: string;
+  /** This value must be <= the named field's value ("budget from" ≤ "budget to"). */
+  notAfterField?: string;
+  /** This value must be >= the named field's value. */
+  notBeforeField?: string;
+  /** Exact number of digits, after stripping non-digits (an Indian mobile: 10). */
+  digits?: number;
+  /**
+   * Name of the field that selects which digit count applies — for a mobile,
+   * the country. Without this a flat "10 digits" rule makes the country
+   * dropdown pointless, since a UAE number is 9 and a Singapore one is 8.
+   */
+  digitsFrom?: string;
+  /** Digit count per value of `digitsFrom`; `digits` is the fallback. */
+  digitsMap?: Record<string, number>;
+
   [key: string]: unknown;
 }
 

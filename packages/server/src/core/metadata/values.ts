@@ -5,7 +5,7 @@
  * becomes a JS value, so the record service, importer, workflow engine and AI
  * tools all agree on what a "date" or a "currency" is.
  */
-import type { FieldMeta } from '@ipropy/shared';
+import type { FieldConfig, FieldMeta } from '@ipropy/shared';
 import { formatIndianPrice, formatArea, toE164, parseIndianPrice } from '@ipropy/shared';
 import { ValidationError } from '../../utils/errors.js';
 
@@ -62,10 +62,21 @@ export function coerceValue(field: FieldMeta, raw: unknown): unknown {
 
     case 'phone': {
       const s = String(raw).trim();
-      // Store as given but normalise obvious Indian 10-digit input to E.164 so
-      // WhatsApp/telephony lookups match without per-call cleaning.
-      const e164 = toE164(s);
-      return e164 ?? s;
+      // Stored as digits, without a country code.
+      //
+      // This used to force E.164 with a +91 default, which is wrong now that
+      // `country_code` is its own field: it would turn a UAE lead's ten digits
+      // into an Indian number and quietly make them unreachable. Every lookup
+      // in this codebase already matches on the last ten digits, so digits-only
+      // storage changes no query — and `toInternational()` puts the code back
+      // when something actually needs to dial.
+      //
+      // A number typed with an explicit `+` keeps its code: that is the caller
+      // telling us the country, and discarding it would lose information the
+      // field cannot recover.
+      const digits = s.replace(/\D/g, '');
+      if (!digits) return null;
+      return s.startsWith('+') ? `+${digits}` : digits;
     }
 
     case 'url': {
@@ -311,6 +322,151 @@ export function formatValue(field: FieldMeta, value: unknown, display?: string):
     }
     default:
       return String(value);
+  }
+}
+
+/**
+ * Format, range and cross-field validation.
+ *
+ * Runs on the server on every write, which is the only place it counts — the
+ * form's copy of these rules is for fast feedback, not for safety, and the API
+ * is reachable without it.
+ *
+ * Every rule is read from field metadata (`max_length`, `config.min`,
+ * `config.pattern`, `config.notAfterField`, …). Nothing here knows what a lead
+ * or a budget is, so an admin adding a field gets validation without a deploy,
+ * and the engine never grows a `if (module === 'leads')`.
+ *
+ * Errors accumulate rather than throwing on the first one: a form that reports
+ * one problem per submit takes five round trips to fill in.
+ */
+/**
+ * How many digits this value should have, given the rest of the record.
+ *
+ * Returns 0 when no rule applies, so an unknown country is accepted rather than
+ * measured against India's ten — refusing to store a number we simply have no
+ * rule for would be worse than storing it.
+ */
+function expectedDigits(config: FieldConfig, merged: Record<string, unknown>): number {
+  if (!config.digits && !config.digitsMap) return 0;
+
+  if (config.digitsFrom && config.digitsMap) {
+    const selector = merged[config.digitsFrom];
+    if (selector === null || selector === undefined || selector === '') return config.digits ?? 0;
+    const mapped = config.digitsMap[String(selector)];
+    return mapped ?? 0;
+  }
+  return config.digits ?? 0;
+}
+
+export function validateValues(
+  fields: FieldMeta[],
+  values: Record<string, unknown>,
+  merged: Record<string, unknown>,
+): void {
+  const errors: { field: string; message: string }[] = [];
+  const fail = (field: string, message: string): void => { errors.push({ field, message }); };
+
+  for (const f of fields) {
+    if (!f.isActive || !(f.name in values)) continue;
+    const value = values[f.name];
+    // Empty is `validateRequired`'s business; an optional blank field is fine.
+    if (isEmpty(value)) continue;
+
+    const config = f.config ?? {};
+
+    if (typeof value === 'string') {
+      if (f.maxLength && value.length > f.maxLength) {
+        fail(f.name, `${f.label} cannot be longer than ${f.maxLength} characters`);
+      }
+      if (config.pattern) {
+        try {
+          if (!new RegExp(config.pattern).test(value)) {
+            fail(f.name, config.patternMessage ?? `${f.label} is not in the expected format`);
+          }
+        } catch {
+          // A malformed regex in metadata must not block every save on the
+          // module — treat it as no rule and let the admin panel surface it.
+        }
+      }
+      // The expected digit count can depend on another field — a mobile is 10
+      // digits in India, 9 in the UAE, 8 in Singapore. Reading it from the
+      // record keeps "10 digits" true where it is true without making the
+      // country dropdown decorative.
+      const expected = expectedDigits(config, merged);
+      if (expected) {
+        const digits = value.replace(/\D/g, '');
+        if (digits.length !== expected) {
+          fail(f.name, `${f.label} must be exactly ${expected} digits`);
+        }
+      }
+    }
+
+    switch (f.uitype) {
+      case 'email':
+        // Deliberately loose. Strict RFC 5322 rejects addresses that work, and
+        // the only real test of an address is sending to it.
+        if (typeof value === 'string' && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value)) {
+          fail(f.name, `${f.label} does not look like an email address`);
+        }
+        break;
+
+      case 'url':
+        if (typeof value === 'string' && !/^https?:\/\/[^\s]+$/i.test(value)) {
+          fail(f.name, `${f.label} must start with http:// or https://`);
+        }
+        break;
+
+      case 'phone': {
+        const digits = String(value).replace(/\D/g, '');
+        if (digits.length < 6 || digits.length > 15) {
+          fail(f.name, `${f.label} does not look like a phone number`);
+        }
+        break;
+      }
+
+      case 'integer':
+      case 'decimal':
+      case 'currency':
+      case 'percent':
+      case 'area':
+      case 'score': {
+        const n = Number(value);
+        if (!Number.isFinite(n)) {
+          fail(f.name, `${f.label} must be a number`);
+          break;
+        }
+        if (config.min !== undefined && n < config.min) {
+          fail(f.name, `${f.label} cannot be less than ${config.min}`);
+        }
+        if (config.max !== undefined && n > config.max) {
+          fail(f.name, `${f.label} cannot be more than ${config.max}`);
+        }
+        break;
+      }
+    }
+
+    // Cross-field bounds. Compared against `merged` — the stored record plus
+    // this payload — so editing only "budget from" still checks against the
+    // "budget to" already on the record rather than skipping the rule.
+    for (const [key, compare] of [['notAfterField', 1], ['notBeforeField', -1]] as const) {
+      const otherName = config[key];
+      if (typeof otherName !== 'string') continue;
+      const other = merged[otherName];
+      if (isEmpty(other)) continue;
+
+      const a = Number(value);
+      const b = Number(other);
+      if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+
+      const otherLabel = fields.find((x) => x.name === otherName)?.label ?? otherName;
+      if (compare === 1 && a > b) fail(f.name, `${f.label} cannot be more than ${otherLabel}`);
+      if (compare === -1 && a < b) fail(f.name, `${f.label} cannot be less than ${otherLabel}`);
+    }
+  }
+
+  if (errors.length) {
+    throw new ValidationError(errors.map((e) => e.message).join('; '), { fields: errors });
   }
 }
 

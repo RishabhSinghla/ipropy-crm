@@ -328,20 +328,31 @@ export async function seedDefaultLayouts(conn: Tx, def: ModuleDef): Promise<void
   }
 }
 
+/**
+ * Merge a builder's own config with the caller's.
+ *
+ * `{ ...extra }` replaces `config` wholesale, so `F.money('x','X',{config:{min:0}})`
+ * silently dropped `currency: 'INR'` and the field stopped formatting as rupees.
+ * Every builder that sets a config of its own goes through here instead.
+ */
+function withConfig(base: FieldConfig, extra: Partial<FieldDef>): Partial<FieldDef> {
+  return { ...extra, config: { ...base, ...(extra.config ?? {}) } };
+}
+
 /** Convenience builders so field definitions stay one-liners. */
 export const F = {
   text: (name: string, label: string, extra: Partial<FieldDef> = {}): FieldDef =>
     ({ name, label, uitype: 'string', column: name, ...extra }),
   area: (name: string, label: string, extra: Partial<FieldDef> = {}): FieldDef =>
-    ({ name, label, uitype: 'area', column: name, config: { unit: 'sqft' }, ...extra }),
+    ({ name, label, uitype: 'area', column: name, ...withConfig({ unit: 'sqft' }, extra) }),
   money: (name: string, label: string, extra: Partial<FieldDef> = {}): FieldDef =>
-    ({ name, label, uitype: 'currency', column: name, config: { currency: 'INR' }, ...extra }),
+    ({ name, label, uitype: 'currency', column: name, ...withConfig({ currency: 'INR' }, extra) }),
   pick: (name: string, label: string, picklist: string, extra: Partial<FieldDef> = {}): FieldDef =>
-    ({ name, label, uitype: 'picklist', column: name, config: { picklist, colored: true }, ...extra }),
+    ({ name, label, uitype: 'picklist', column: name, ...withConfig({ picklist, colored: true }, extra) }),
   multipick: (name: string, label: string, picklist: string, extra: Partial<FieldDef> = {}): FieldDef =>
-    ({ name, label, uitype: 'multipicklist', column: name, config: { picklist }, ...extra }),
+    ({ name, label, uitype: 'multipicklist', column: name, ...withConfig({ picklist }, extra) }),
   ref: (name: string, label: string, modules: string[], extra: Partial<FieldDef> = {}): FieldDef =>
-    ({ name, label, uitype: 'reference', column: name, config: { referenceModules: modules }, ...extra }),
+    ({ name, label, uitype: 'reference', column: name, ...withConfig({ referenceModules: modules }, extra) }),
   num: (name: string, label: string, extra: Partial<FieldDef> = {}): FieldDef =>
     ({ name, label, uitype: 'integer', column: name, ...extra }),
   rollup: (
@@ -374,9 +385,9 @@ export const F = {
   url: (name: string, label: string, extra: Partial<FieldDef> = {}): FieldDef =>
     ({ name, label, uitype: 'url', column: name, ...extra }),
   textarea: (name: string, label: string, extra: Partial<FieldDef> = {}): FieldDef =>
-    ({ name, label, uitype: 'textarea', column: name, config: { fullWidth: true, rows: 4 }, ...extra }),
+    ({ name, label, uitype: 'textarea', column: name, ...withConfig({ fullWidth: true, rows: 4 }, extra) }),
   address: (name: string, label: string, extra: Partial<FieldDef> = {}): FieldDef =>
-    ({ name, label, uitype: 'address', column: name, config: { fullWidth: true }, ...extra }),
+    ({ name, label, uitype: 'address', column: name, ...withConfig({ fullWidth: true }, extra) }),
   json: (name: string, label: string, extra: Partial<FieldDef> = {}): FieldDef =>
     ({ name, label, uitype: 'json', column: name, ...extra }),
   tags: (name: string, label: string, extra: Partial<FieldDef> = {}): FieldDef =>
@@ -386,7 +397,7 @@ export const F = {
   autonum: (name: string, label: string, prefix: string, extra: Partial<FieldDef> = {}): FieldDef =>
     ({
       name, label, uitype: 'autonumber', column: name, readonly: true, searchable: true,
-      config: { numbering: { prefix, digits: 5, start: 1 } }, ...extra,
+      ...withConfig({ numbering: { prefix, digits: 5, start: 1 } }, extra),
     }),
   owner: (): FieldDef =>
     ({ name: 'owner_id', label: 'Assigned To', uitype: 'owner', column: 'owner_id', storage: 'column', config: { __record: true } as FieldConfig, quickCreate: true }),

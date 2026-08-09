@@ -6,7 +6,7 @@
  * the queue and the admin UI pick it up without further changes.
  */
 import type { AuthUser } from '@ipropy/shared';
-import { renderTemplate, toE164 } from '@ipropy/shared';
+import { renderTemplate, toE164, toInternational } from '@ipropy/shared';
 import { db, type Tx } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { registry } from '../metadata/registry.js';
@@ -536,15 +536,16 @@ async function resolvePhone(
     for (const key of ['contact_id', 'lead_id', 'related_to']) {
       const refId = ctx.record[key];
       if (!refId) continue;
-      const phone = await db.queryOne<{ mobile: string | null }>(
-        `SELECT COALESCE(l.whatsapp_number, l.mobile) AS mobile FROM ipy_e_leads l WHERE l.record_id = $1`,
+      const phone = await db.queryOne<{ mobile: string | null; country_code: string | null }>(
+        `SELECT COALESCE(l.whatsapp_number, l.mobile) AS mobile, l.country_code
+           FROM ipy_e_leads l WHERE l.record_id = $1`,
         [refId],
       );
-      if (phone?.mobile) return toE164(phone.mobile);
+      if (phone?.mobile) return toInternational(phone.country_code, phone.mobile);
     }
     // Fall back to the record's own number.
     const own = ctx.record.whatsapp_number ?? ctx.record.mobile;
-    return own ? toE164(String(own)) : null;
+    return own ? toInternational(String(ctx.record.country_code ?? ''), String(own)) : null;
   }
 
   const rendered = spec.includes('{{') ? render(spec, scope) : (ctx.record[spec] ? String(ctx.record[spec]) : spec);

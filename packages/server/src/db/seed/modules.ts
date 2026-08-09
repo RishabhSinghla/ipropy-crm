@@ -50,6 +50,17 @@ export const MODULES: ModuleDef[] = [
           }),
           F.phone('mobile', 'Mobile', {
             mandatory: true, quickCreate: true, maxLength: 10,
+            // National-number length per country. India is ten — which is what
+            // the business asked for — without making an NRI buyer's UAE
+            // number unenterable.
+            config: {
+              digits: 10,
+              digitsFrom: 'country_code',
+              digitsMap: {
+                '+91': 10, '+971': 9, '+966': 9, '+974': 8, '+968': 8,
+                '+965': 8, '+973': 8, '+65': 8, '+61': 9, '+44': 10, '+1': 10,
+              },
+            },
             help: '10 digits, without the country code',
           }),
           F.email('email', 'Email', { quickCreate: true }),
@@ -77,12 +88,12 @@ export const MODULES: ModuleDef[] = [
           F.pick('property_type', 'Property Type', 'property_type'),
           F.multipick('configuration', 'Configuration', 'configuration'),
           F.pick('purpose', 'Purpose', 'purpose'),
-          F.money('budget_min', 'Budget (Min)', { quickCreate: true }),
-          F.money('budget_max', 'Budget (Max)', { quickCreate: true }),
+          F.money('budget_min', 'Budget (Min)', { quickCreate: true, config: { min: 0, notAfterField: 'budget_max' } }),
+          F.money('budget_max', 'Budget (Max)', { quickCreate: true, config: { min: 0 } }),
           F.pick('budget_band', 'Budget Band', 'budget_band'),
           F.multipick('preferred_locations', 'Preferred Locations', 'locality'),
-          F.area('carpet_area_min', 'Carpet Area (Min)'),
-          F.area('carpet_area_max', 'Carpet Area (Max)'),
+          F.area('carpet_area_min', 'Carpet Area (Min)', { config: { min: 0, notAfterField: 'carpet_area_max' } }),
+          F.area('carpet_area_max', 'Carpet Area (Max)', { config: { min: 0 } }),
           F.pick('possession_timeline', 'Possession Timeline', 'purchase_timeline'),
           F.pick('funding_type', 'Funding Type', 'funding_type'),
           F.bool('loan_required', 'Loan Required'),
@@ -420,8 +431,8 @@ export const MODULES: ModuleDef[] = [
         name: 'commercials',
         label: 'Commercials',
         fields: [
-          F.money('price_min', 'Price (Min)', { quickCreate: true }),
-          F.money('price_max', 'Price (Max)', { quickCreate: true }),
+          F.money('price_min', 'Price (Min)', { quickCreate: true, config: { min: 0, notAfterField: 'price_max' } }),
+          F.money('price_max', 'Price (Max)', { quickCreate: true, config: { min: 0 } }),
           F.money('rate_per_sqft', 'Rate per sq.ft'),
           F.multipick('configurations', 'Configurations', 'configuration'),
           F.pct('broker_commission_pct', 'Broker Commission %'),

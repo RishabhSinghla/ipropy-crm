@@ -20,7 +20,9 @@ import { BadRequestError, ConflictError, NotFoundError, ValidationError } from '
 import { logger } from '../../utils/logger.js';
 import { emit } from '../events/bus.js';
 import { registry } from '../metadata/registry.js';
-import { coerceValue, formatValue, fromDbValue, isEmpty, toDbValue, validateRequired } from '../metadata/values.js';
+import {
+  coerceValue, formatValue, fromDbValue, isEmpty, toDbValue, validateRequired, validateValues,
+} from '../metadata/values.js';
 import {
   ENTITY_ALIAS,
   RECORD_ALIAS,
@@ -735,6 +737,10 @@ async function prepareValues(
 
   // 3. validation
   validateRequired(module.fields, opts.isCreate ? out.values : input, opts.isCreate);
+  // Format, range and cross-field rules, against the stored record merged with
+  // this payload — a partial update of "budget from" must still be checked
+  // against the "budget to" already on the record.
+  validateValues(module.fields, out.values, { ...(opts.existing ?? {}), ...out.values });
 
   // 4. uniqueness
   for (const field of module.fields) {

@@ -20,6 +20,7 @@
  * job. A sequence that quietly drops half its steps looks like it is working.
  */
 import { db } from '../../db/pool.js';
+import { toInternational } from '@ipropy/shared';
 import { logger } from '../../utils/logger.js';
 import { withNameParts } from '../../core/entity/nameParts.js';
 import { NotFoundError } from '../../utils/errors.js';
@@ -464,10 +465,10 @@ export function minutesUntilAwake(quietStart: number, quietEnd: number, now = ne
 }
 
 async function handleForRecord(recordId: string): Promise<string | null> {
-  const row = await db.queryOne<{ whatsapp_number: string | null; mobile: string | null }>(
-    `SELECT whatsapp_number, mobile FROM ipy_e_leads WHERE record_id = $1`, [recordId],
+  const row = await db.queryOne<{ whatsapp_number: string | null; mobile: string | null; country_code: string | null }>(
+    `SELECT whatsapp_number, mobile, country_code FROM ipy_e_leads WHERE record_id = $1`, [recordId],
   );
-  return row?.whatsapp_number || row?.mobile || null;
+  return toInternational(row?.country_code, row?.whatsapp_number || row?.mobile);
 }
 
 export async function requireSequence(id: string): Promise<SequenceRow> {

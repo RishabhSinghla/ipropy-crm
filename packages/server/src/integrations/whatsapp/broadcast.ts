@@ -21,6 +21,7 @@
  * the two is in use is a setting, not a rewrite.
  */
 import { db } from '../../db/pool.js';
+import { toInternational } from '@ipropy/shared';
 import { logger } from '../../utils/logger.js';
 import { withNameParts } from '../../core/entity/nameParts.js';
 import { BadRequestError, NotFoundError } from '../../utils/errors.js';
@@ -91,7 +92,12 @@ export async function createBroadcast(input: CreateBroadcastInput): Promise<{ id
     const row = record.values;
     const recordId = record.id;
     const name = record.label;
-    const handle = String(row.whatsapp_number ?? row.mobile ?? '').trim();
+    // The lead stores a country code and ten digits separately; a broadcast
+    // needs the dialable form or an NRI buyer's message goes to India.
+    const handle = toInternational(
+      String(row.country_code ?? ''),
+      String(row.whatsapp_number ?? row.mobile ?? ''),
+    ) ?? '';
 
     if (!handle) {
       skips.push({ recordId, handle: '', name, reason: 'No WhatsApp number on the record' });
