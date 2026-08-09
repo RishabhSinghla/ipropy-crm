@@ -77,8 +77,7 @@ interface ProfileDef {
   fieldOverrides?: Record<string, Record<string, 'hidden' | 'readonly'>>;
 }
 
-const ALL = ['leads', 'organizations', 'projects', 'properties', 'deals',
-  'site_visits', 'bookings', 'payments', 'channel_partners', 'campaigns', 'activities', 'documents'];
+const ALL = ['leads', 'projects', 'properties', 'campaigns', 'activities'];
 
 function perms(
   modules: string[],
@@ -361,7 +360,6 @@ interface UserDef {
   extension?: string;
   designation?: string;
   /** name of the channel_partners record to link — turns the account into a portal user */
-  channelPartner?: string;
 }
 
 export const DEMO_USERS: UserDef[] = [
@@ -374,8 +372,8 @@ export const DEMO_USERS: UserDef[] = [
   { email: 'divya.patel@ipropy.com', first: 'Divya', last: 'Patel', role: 'Marketing Executive', profile: 'Marketing', phone: '+919820011007', extension: '107', designation: 'Marketing Manager' },
   { email: 'sanjay.iyer@ipropy.com', first: 'Sanjay', last: 'Iyer', role: 'Accounts Executive', profile: 'Finance', phone: '+919820011008', extension: '108', designation: 'Accounts Manager' },
   { email: 'kiran.desai@ipropy.com', first: 'Kiran', last: 'Desai', role: 'Channel Partner Manager', profile: 'Sales Manager', phone: '+919820011009', extension: '109', designation: 'Channel Partner Manager' },
-  { email: 'rakesh.bhandari@ipropy.com', first: 'Rakesh', last: 'Bhandari', role: 'Channel Partner', profile: 'Channel Partner (Portal)', phone: '+919820011010', designation: 'Partner — Bhandari Realty Advisors', channelPartner: 'Rakesh Bhandari' },
-  { email: 'sunita.menon@ipropy.com', first: 'Sunita', last: 'Menon', role: 'Channel Partner', profile: 'Channel Partner (Portal)', phone: '+919820011011', designation: 'Partner — Menon Properties', channelPartner: 'Sunita Menon' },
+  { email: 'rakesh.bhandari@ipropy.com', first: 'Rakesh', last: 'Bhandari', role: 'Channel Partner', profile: 'Channel Partner (Portal)', phone: '+919820011010', designation: 'Partner — Bhandari Realty Advisors' },
+  { email: 'sunita.menon@ipropy.com', first: 'Sunita', last: 'Menon', role: 'Channel Partner', profile: 'Channel Partner (Portal)', phone: '+919820011011', designation: 'Partner — Menon Properties' },
 ];
 
 /**

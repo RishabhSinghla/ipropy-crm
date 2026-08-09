@@ -29,16 +29,6 @@ interface WorkflowSeed {
 
 const WORKFLOWS: WorkflowSeed[] = [
   // --- Blog ------------------------------------------------------------------
-  {
-    module: 'blog_posts',
-    name: 'Prepare blog post',
-    description: 'Fills in the URL slug, word count, reading time and publish date. Runs on every save so a post is always publishable.',
-    trigger: 'on_create_or_modify',
-    executionMode: 'always',
-    tasks: [
-      { type: 'prepare_blog_post', name: 'Derive slug, reading time and publish date', config: {} },
-    ],
-  },
   // --- Lead intake -----------------------------------------------------------
   {
     module: 'leads',
@@ -135,155 +125,10 @@ const WORKFLOWS: WorkflowSeed[] = [
   },
 
   // --- Site visits -----------------------------------------------------------
-  {
-    module: 'site_visits',
-    name: 'Site visit confirmation',
-    description: 'Sends the client a confirmation with location and pickup details as soon as a visit is scheduled.',
-    trigger: 'on_create',
-    tasks: [
-      { type: 'send_whatsapp', name: 'Send confirmation', config: { to: 'related_contact_mobile', template: 'site_visit_confirmation' } },
-      { type: 'update_fields', name: 'Mark confirmation sent', config: { values: { confirmation_sent: true } } },
-    ],
-  },
-  {
-    module: 'site_visits',
-    name: 'Site visit reminder (T-2h)',
-    description: 'Reminds the client and the rep two hours before the visit.',
-    trigger: 'on_create',
-    conditions: { logic: 'AND', conditions: [{ field: 'status', operator: 'in', value: ['Scheduled', 'Confirmed'] }] },
-    tasks: [
-      {
-        type: 'send_whatsapp', name: 'Client reminder',
-        delayField: 'scheduled_at', delayDirection: 'before', delayMinutes: 120,
-        config: { to: 'related_contact_mobile', template: 'site_visit_reminder' },
-      },
-      {
-        type: 'notify_user', name: 'Rep reminder',
-        delayField: 'scheduled_at', delayDirection: 'before', delayMinutes: 120,
-        config: { to: 'record_owner', title: 'Site visit in 2 hours', body: '{{subject}} at {{scheduled_at}}' },
-      },
-    ],
-  },
-  {
-    module: 'site_visits',
-    name: 'Post-visit follow-up',
-    description: 'Captures feedback and drafts the next step after a completed visit.',
-    trigger: 'on_field_change',
-    watchFields: ['status'],
-    conditions: { logic: 'AND', conditions: [{ field: 'status', operator: 'equals', value: 'Completed' }] },
-    tasks: [
-      { type: 'ai_action', name: 'Summarise the visit', delayMinutes: 30, config: { action: 'summarise_visit', writeTo: { summary: 'ai_summary', sentiment: 'ai_sentiment' } } },
-      { type: 'send_whatsapp', name: 'Thank-you + feedback ask', delayMinutes: 120, config: { to: 'related_contact_mobile', template: 'site_visit_thankyou' } },
-      { type: 'create_task', name: 'Follow-up call', delayMinutes: 0, config: { subject: 'Post-visit follow-up: {{subject}}', activity_type: 'Follow Up', priority: 'High', dueInMinutes: 1440, assignTo: 'record_owner' } },
-      {
-        type: 'update_fields', name: 'Promote to Prospect',
-        config: { targetRecord: 'lead_id', targetModule: 'leads', advanceLifecycle: 'Prospect' },
-      },
-    ],
-  },
 
   // --- Deals -----------------------------------------------------------------
-  {
-    module: 'deals',
-    name: 'Sync stage probability',
-    description: 'Keeps probability, win/loss flags and stage timers in step with the stage picklist.',
-    trigger: 'on_field_change',
-    watchFields: ['stage'],
-    tasks: [{ type: 'update_fields', name: 'Apply stage metadata', config: { applyStageMeta: true } }],
-  },
-  {
-    module: 'deals',
-    name: 'Analyse deal risk nightly',
-    description: 'Scores open deals for stall risk and writes a recommended next action.',
-    trigger: 'scheduled',
-    schedule: { frequency: 'daily', time: '02:00' },
-    conditions: { logic: 'AND', conditions: [{ field: 'is_won', operator: 'is_false' }, { field: 'is_lost', operator: 'is_false' }] },
-    tasks: [{ type: 'ai_action', name: 'Risk analysis', config: { action: 'analyse_deal', writeTo: { score: 'ai_risk_score', reasons: 'ai_risk_reasons', nextAction: 'ai_next_action', forecast: 'ai_forecast_close' } } }],
-  },
-  {
-    module: 'deals',
-    name: 'Stalled deal alert',
-    description: 'Flags deals that have not moved stage in 14 days.',
-    trigger: 'scheduled',
-    schedule: { frequency: 'daily', time: '09:00' },
-    conditions: {
-      logic: 'AND',
-      conditions: [
-        { field: 'is_won', operator: 'is_false' },
-        { field: 'is_lost', operator: 'is_false' },
-        { field: 'stage_changed_at', operator: 'older_than_n_days', value: 14 },
-      ],
-    },
-    tasks: [
-      { type: 'notify_user', name: 'Alert owner', config: { to: 'record_owner', title: 'Deal is stalling', body: '{{name}} has been in {{stage}} for over 14 days.' } },
-      { type: 'create_task', name: 'Revive task', config: { subject: 'Revive stalled deal: {{name}}', activity_type: 'Follow Up', priority: 'High', dueInMinutes: 480, assignTo: 'record_owner' } },
-    ],
-  },
-  {
-    module: 'deals',
-    name: 'Hold unit on token',
-    description: 'Blocks the linked unit for 7 days when a token is received.',
-    trigger: 'on_field_change',
-    watchFields: ['stage'],
-    conditions: { logic: 'AND', conditions: [{ field: 'stage', operator: 'equals', value: 'Token Received' }, { field: 'property_id', operator: 'is_not_empty' }] },
-    tasks: [{ type: 'update_fields', name: 'Block the unit', config: { targetRecord: 'property_id', targetModule: 'properties', values: { status: 'Blocked' }, setBlockedUntilDays: 7 } }],
-  },
 
   // --- Bookings & payments ---------------------------------------------------
-  {
-    module: 'bookings',
-    name: 'Booking confirmation pack',
-    description: 'Congratulates the customer, marks the unit sold and starts the documentation checklist.',
-    trigger: 'on_create',
-    tasks: [
-      { type: 'update_fields', name: 'Mark unit booked', config: { targetRecord: 'property_id', targetModule: 'properties', values: { status: 'Booked' } } },
-      {
-        type: 'update_fields', name: 'Promote buyer to Customer',
-        config: { targetRecord: 'contact_id', targetModule: 'leads', advanceLifecycle: 'Customer' },
-      },
-      { type: 'send_whatsapp', name: 'Congratulate the customer', config: { to: 'related_contact_mobile', template: 'booking_confirmation' } },
-      { type: 'send_email', name: 'Email the cost sheet', config: { to: 'related_contact_email', template: 'booking_welcome' } },
-      { type: 'create_record', name: 'Generate payment schedule', config: { action: 'generate_payment_schedule' } },
-      { type: 'create_task', name: 'Collect KYC', config: { subject: 'Collect KYC for {{booking_number}}', activity_type: 'Documentation', priority: 'High', dueInMinutes: 2880, assignTo: 'record_owner' } },
-    ],
-  },
-  {
-    module: 'payments',
-    name: 'Payment due reminder',
-    description: 'Reminds the customer 3 days before an instalment falls due.',
-    trigger: 'scheduled',
-    schedule: { frequency: 'daily', time: '10:00' },
-    conditions: {
-      logic: 'AND',
-      conditions: [
-        { field: 'due_date', operator: 'next_n_days', value: 3 },
-        { field: 'status', operator: 'not_in', value: ['Paid', 'Waived'] },
-      ],
-    },
-    tasks: [
-      { type: 'send_whatsapp', name: 'Due reminder', config: { to: 'related_contact_mobile', template: 'payment_reminder' } },
-      { type: 'update_fields', name: 'Track reminder', config: { incrementFields: { reminder_count: 1 }, values: { last_reminder_at: '{{now}}' } } },
-    ],
-  },
-  {
-    module: 'payments',
-    name: 'Overdue payment escalation',
-    description: 'Escalates to collections once an instalment is 7 days late.',
-    trigger: 'scheduled',
-    schedule: { frequency: 'daily', time: '11:00' },
-    conditions: {
-      logic: 'AND',
-      conditions: [
-        { field: 'due_date', operator: 'older_than_n_days', value: 7 },
-        { field: 'status', operator: 'not_in', value: ['Paid', 'Waived'] },
-      ],
-    },
-    tasks: [
-      { type: 'update_fields', name: 'Mark overdue', config: { values: { status: 'Overdue' } } },
-      { type: 'send_whatsapp', name: 'Overdue notice', config: { to: 'related_contact_mobile', template: 'payment_overdue' } },
-      { type: 'notify_user', name: 'Alert collections', config: { to: 'group:Post-Sales & Collections', title: 'Overdue instalment', body: '{{payment_number}} — {{amount_due}} due since {{due_date}}' } },
-    ],
-  },
 
   // --- Inventory -------------------------------------------------------------
   {

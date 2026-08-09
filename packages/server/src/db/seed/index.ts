@@ -93,35 +93,6 @@ export async function seed(): Promise<void> {
     }
   }
 
-  // Link portal demo users to their channel_partner records. Partners are
-  // only ever linked by the seeded name→email pairing, never by user input.
-  if (config.seed.demoData) {
-    await transaction(async (tx) => {
-      let linked = 0;
-      for (const u of DEMO_USERS) {
-        if (!u.channelPartner) continue;
-        const row = await tx.queryOne<{ id: string }>(
-          `SELECT u.id
-           FROM ipy_user u
-           JOIN ipy_e_channel_partners p ON lower(p.name) = lower($2)
-           WHERE lower(u.email) = lower($1)
-             AND (u.channel_partner_id IS NULL OR u.channel_partner_id <> p.record_id)
-           LIMIT 1`,
-          [u.email, u.channelPartner],
-        );
-        if (!row) continue;
-        await tx.query(
-          `UPDATE ipy_user SET channel_partner_id = (
-             SELECT p.record_id FROM ipy_e_channel_partners p WHERE lower(p.name) = lower($2)
-           ) WHERE id = $1`,
-          [row.id, u.channelPartner],
-        );
-        linked += 1;
-      }
-      if (linked > 0) logger.info(`  portal users linked ✓ (${linked})`);
-    });
-  }
-
   registry.invalidate();
 
   logger.info('');

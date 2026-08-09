@@ -30,7 +30,7 @@ export default function Login(): JSX.Element {
   const { data: brand } = useQuery({ queryKey: ['public-brand'], queryFn: () => api.publicBrand(), staleTime: Infinity });
 
   if (!loading && user) {
-    const from = (location.state as { from?: { pathname: string } })?.from?.pathname ?? (user.channelPartnerId ? '/portal' : '/dashboard');
+    const from = (location.state as { from?: { pathname: string } })?.from?.pathname ?? '/dashboard';
     return <Navigate to={from} replace />;
   }
 

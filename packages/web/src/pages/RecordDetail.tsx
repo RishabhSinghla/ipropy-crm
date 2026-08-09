@@ -23,7 +23,6 @@ import {
   ScoreChip, Skeleton, Spinner, Tabs,
 } from '../components/ui';
 import { ModuleIcon } from '../components/Layout';
-import ConvertLeadModal from '../components/ConvertLeadModal';
 import DocumentViewer, { isPreviewable, type ViewableFile } from '../components/DocumentViewer';
 import ComposeModal from '../components/ComposeModal';
 
@@ -48,7 +47,6 @@ export default function RecordDetail(): JSX.Element {
 
   const [tab, setTab] = useState('overview');
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [showConvert, setShowConvert] = useState(false);
   const [compose, setCompose] = useState<'whatsapp' | 'email' | null>(null);
 
   const { data: meta } = useQuery({
@@ -363,12 +361,6 @@ export default function RecordDetail(): JSX.Element {
                 </button>
               )}
 
-              {meta.supportsConversion && !record.values.is_converted && (
-                <button onClick={() => setShowConvert(true)} className="btn-primary btn-sm">
-                  <UserCheck className="h-3.5 w-3.5" /> Convert
-                </button>
-              )}
-
               {record.can?.edit && (
                 <Link to={`/${moduleName}/${id}/edit`} className="btn-secondary btn-sm">
                   <Edit3 className="h-3.5 w-3.5" /> Edit
@@ -448,19 +440,6 @@ export default function RecordDetail(): JSX.Element {
         confirmLabel="Delete"
         danger
       />
-
-      {showConvert && (
-        <ConvertLeadModal
-          record={record}
-          onClose={() => setShowConvert(false)}
-          onConverted={(result) => {
-            setShowConvert(false);
-            toast.success('Lead converted');
-            void refetch();
-            if (result.dealId) navigate(`/deals/${result.dealId}`);
-          }}
-        />
-      )}
 
       {compose && (
         <ComposeModal

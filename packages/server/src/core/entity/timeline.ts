@@ -24,7 +24,7 @@ export async function buildTimeline(
   const wanted = opts.types?.length ? new Set(opts.types) : null;
   const want = (t: string): boolean => !wanted || wanted.has(t);
 
-  const [audit, comments, messages, calls, emails, activities, visits, payments, attachments, insights] =
+  const [audit, comments, messages, calls, emails, activities, attachments, insights] =
     await Promise.all([
       want('audit')
         ? conn.query<AuditRow>(
@@ -96,32 +96,6 @@ export async function buildTimeline(
             [recordId, limit],
           )
         : empty<ActivityRow>(),
-
-      want('site_visit')
-        ? conn.query<VisitRow>(
-            `SELECT r.id::text, v.subject, v.status, v.scheduled_at, v.interest_level,
-                    v.feedback, v.ai_summary, v.ai_sentiment, r.owner_id,
-                    trim(u.first_name || ' ' || u.last_name) AS user_name
-             FROM ipy_e_site_visits v
-             JOIN ipy_record r ON r.id = v.record_id
-             LEFT JOIN ipy_user u ON u.id = r.owner_id
-             WHERE (v.lead_id = $1 OR v.contact_id = $1 OR v.deal_id = $1) AND r.is_deleted = false
-             ORDER BY v.scheduled_at DESC LIMIT $2`,
-            [recordId, limit],
-          )
-        : empty<VisitRow>(),
-
-      want('payment')
-        ? conn.query<PaymentRow>(
-            `SELECT r.id::text, p.milestone, p.status, p.amount_due, p.amount_paid,
-                    p.paid_on, p.due_date, p.receipt_number, r.created_at
-             FROM ipy_e_payments p
-             JOIN ipy_record r ON r.id = p.record_id
-             WHERE (p.booking_id = $1 OR p.contact_id = $1) AND r.is_deleted = false
-             ORDER BY COALESCE(p.paid_on, p.due_date) DESC LIMIT $2`,
-            [recordId, limit],
-          )
-        : empty<PaymentRow>(),
 
       want('attachment')
         ? conn.query<AttachmentRow>(
@@ -226,29 +200,7 @@ export async function buildTimeline(
     });
   }
 
-  for (const r of visits.rows) {
-    entries.push({
-      id: `visit-${r.id}`, type: 'site_visit', at: r.scheduled_at,
-      actorId: r.owner_id, actorName: r.user_name ?? 'Unassigned',
-      title: `Site visit · ${r.status}${r.interest_level ? ` · ${r.interest_level} interest` : ''}`,
-      body: r.ai_summary ?? r.feedback ?? r.subject,
-      icon: 'map-pinned',
-      meta: { status: r.status, interestLevel: r.interest_level, sentiment: r.ai_sentiment, recordId: r.id },
-    });
-  }
 
-  for (const r of payments.rows) {
-    entries.push({
-      id: `payment-${r.id}`, type: 'payment', at: r.paid_on ?? r.due_date ?? r.created_at,
-      actorId: null, actorName: 'Finance',
-      title: `${r.milestone ?? 'Instalment'} · ${r.status}`,
-      body: r.status === 'Paid'
-        ? `₹${Number(r.amount_paid).toLocaleString('en-IN')} received${r.receipt_number ? ` · receipt ${r.receipt_number}` : ''}`
-        : `₹${Number(r.amount_due).toLocaleString('en-IN')} due`,
-      icon: r.status === 'Paid' ? 'receipt-indian-rupee' : 'alert-circle',
-      meta: { status: r.status, amountDue: r.amount_due, amountPaid: r.amount_paid, recordId: r.id },
-    });
-  }
 
   for (const r of attachments.rows) {
     entries.push({

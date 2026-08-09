@@ -57,13 +57,17 @@ async function loadContext(recordId: string): Promise<LeadContext | null> {
        WHERE c.record_id = $1`,
       [recordId],
     ),
+    // Site visits were a module of their own until migration 030. The signal
+    // now comes from activities of type "Site Visit" against the same lead.
     db.queryOne<{ total: number; completed: number; feedback: string | null }>(
       `SELECT COUNT(*)::int AS total,
-              COUNT(*) FILTER (WHERE v.status = 'Completed')::int AS completed,
-              (SELECT feedback FROM ipy_e_site_visits WHERE lead_id = $1 AND feedback IS NOT NULL
-               ORDER BY scheduled_at DESC LIMIT 1) AS feedback
-       FROM ipy_e_site_visits v JOIN ipy_record r ON r.id = v.record_id
-       WHERE v.lead_id = $1 AND r.is_deleted = false`,
+              COUNT(*) FILTER (WHERE a.status = 'Completed')::int AS completed,
+              (SELECT a2.outcome FROM ipy_e_activities a2 JOIN ipy_record r2 ON r2.id = a2.record_id
+                WHERE a2.related_to = $1 AND a2.activity_type = 'Site Visit'
+                  AND a2.outcome IS NOT NULL AND r2.is_deleted = false
+                ORDER BY a2.start_at DESC LIMIT 1) AS feedback
+       FROM ipy_e_activities a JOIN ipy_record r ON r.id = a.record_id
+       WHERE a.related_to = $1 AND a.activity_type = 'Site Visit' AND r.is_deleted = false`,
       [recordId],
     ),
     countMatchingInventory(lead),

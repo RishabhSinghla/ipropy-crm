@@ -326,7 +326,7 @@ export interface DailyDigest {
 export async function dailyDigest(ctx: ServiceContext): Promise<DailyDigest | null> {
   const userId = ctx.user.id;
 
-  const [overdueFollowups, todayVisits, hotLeads, atRiskDeals, overdueTasks, stats] = await Promise.all([
+  const [overdueFollowups, todayVisits, hotLeads, overdueTasks, stats] = await Promise.all([
     listRecords(ctx, 'leads', {
       filter: { logic: 'AND', conditions: [
         { field: 'owner_id', operator: 'is_me' },
@@ -336,12 +336,14 @@ export async function dailyDigest(ctx: ServiceContext): Promise<DailyDigest | nu
       sortBy: 'ai_score', sortDir: 'desc', pageSize: 5,
     }).catch(() => null),
 
-    listRecords(ctx, 'site_visits', {
+    // Site visits are activities of type "Site Visit" since migration 030.
+    listRecords(ctx, 'activities', {
       filter: { logic: 'AND', conditions: [
         { field: 'owner_id', operator: 'is_me' },
-        { field: 'scheduled_at', operator: 'today' },
+        { field: 'activity_type', operator: 'equals', value: 'Site Visit' },
+        { field: 'start_at', operator: 'today' },
       ] },
-      sortBy: 'scheduled_at', sortDir: 'asc', pageSize: 5,
+      sortBy: 'start_at', sortDir: 'asc', pageSize: 5,
     }).catch(() => null),
 
     listRecords(ctx, 'leads', {
@@ -353,15 +355,6 @@ export async function dailyDigest(ctx: ServiceContext): Promise<DailyDigest | nu
       sortBy: 'ai_score', sortDir: 'desc', pageSize: 5,
     }).catch(() => null),
 
-    listRecords(ctx, 'deals', {
-      filter: { logic: 'AND', conditions: [
-        { field: 'owner_id', operator: 'is_me' },
-        { field: 'ai_risk_score', operator: 'greater_or_equal', value: 60 },
-        { field: 'is_won', operator: 'is_false' },
-        { field: 'is_lost', operator: 'is_false' },
-      ] },
-      sortBy: 'amount', sortDir: 'desc', pageSize: 5,
-    }).catch(() => null),
 
     listRecords(ctx, 'activities', {
       filter: { logic: 'AND', conditions: [
@@ -372,19 +365,11 @@ export async function dailyDigest(ctx: ServiceContext): Promise<DailyDigest | nu
       pageSize: 5,
     }).catch(() => null),
 
-    db.queryOne<{ open_leads: number; open_deals: number; pipeline_value: number; mtd_bookings: number }>(
+    db.queryOne<{ open_leads: number }>(
       `SELECT
         (SELECT COUNT(*)::int FROM ipy_e_leads l JOIN ipy_record r ON r.id = l.record_id
-         WHERE r.owner_id = $1 AND r.is_deleted = false AND l.is_converted = false
-           AND l.status NOT IN ('Junk','Lost')) AS open_leads,
-        (SELECT COUNT(*)::int FROM ipy_e_deals d JOIN ipy_record r ON r.id = d.record_id
-         WHERE r.owner_id = $1 AND r.is_deleted = false AND d.is_won = false AND d.is_lost = false) AS open_deals,
-        (SELECT COALESCE(SUM(d.amount),0)::numeric FROM ipy_e_deals d JOIN ipy_record r ON r.id = d.record_id
-         WHERE r.owner_id = $1 AND r.is_deleted = false AND d.is_won = false AND d.is_lost = false) AS pipeline_value,
-        (SELECT COUNT(*)::int FROM ipy_e_bookings b JOIN ipy_record r ON r.id = b.record_id
-         WHERE r.owner_id = $1 AND r.is_deleted = false
-           AND b.booking_date >= date_trunc('month', CURRENT_DATE)) AS mtd_bookings`,
-      [userId],
+         WHERE r.owner_id = $1 AND r.is_deleted = false AND l.status NOT IN ('Won','Lost','Junk')) AS open_leads`,
+      [ctx.user.id],
     ),
   ]);
 
@@ -394,7 +379,7 @@ export async function dailyDigest(ctx: ServiceContext): Promise<DailyDigest | nu
     priorities.push({
       title: `Site visit: ${v.label}`,
       reason: `Scheduled ${new Date(String(v.values.scheduled_at)).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} today`,
-      recordId: v.id, module: 'site_visits',
+      recordId: v.id, module: 'activities',
     });
   }
   for (const l of overdueFollowups?.rows ?? []) {
@@ -402,13 +387,6 @@ export async function dailyDigest(ctx: ServiceContext): Promise<DailyDigest | nu
       title: `Overdue follow-up: ${l.label}`,
       reason: `Score ${l.values.ai_score ?? '—'} · due ${new Date(String(l.values.next_followup_at)).toLocaleDateString('en-IN')}`,
       recordId: l.id, module: 'leads',
-    });
-  }
-  for (const d of atRiskDeals?.rows ?? []) {
-    priorities.push({
-      title: `At-risk deal: ${d.label}`,
-      reason: String(d.values.ai_next_action ?? `Risk score ${d.values.ai_risk_score}`),
-      recordId: d.id, module: 'deals',
     });
   }
   for (const l of hotLeads?.rows ?? []) {
@@ -422,9 +400,6 @@ export async function dailyDigest(ctx: ServiceContext): Promise<DailyDigest | nu
 
   const digestStats = {
     openLeads: stats?.open_leads ?? 0,
-    openDeals: stats?.open_deals ?? 0,
-    pipelineValue: Number(stats?.pipeline_value ?? 0),
-    bookingsThisMonth: stats?.mtd_bookings ?? 0,
     visitsToday: todayVisits?.total ?? 0,
     overdueFollowups: overdueFollowups?.total ?? 0,
     overdueTasks: overdueTasks?.total ?? 0,
@@ -437,7 +412,7 @@ export async function dailyDigest(ctx: ServiceContext): Promise<DailyDigest | nu
     return {
       greeting,
       priorities: priorities.slice(0, 6),
-      summary: `You have ${digestStats.visitsToday} site visit(s) today, ${digestStats.overdueFollowups} overdue follow-up(s) and ${digestStats.openDeals} open deals worth ₹${(digestStats.pipelineValue / 10_000_000).toFixed(2)} Cr.`,
+      summary: `You have ${digestStats.visitsToday} site visit(s) today, ${digestStats.overdueFollowups} overdue follow-up(s) and ${digestStats.openLeads} open lead(s).`,
       stats: digestStats,
     };
   }
@@ -480,9 +455,7 @@ export async function dashboardInsight(
   if (scope === 'sales_overview' || !scope) {
     const widgets: { label: string; type: string; config: Record<string, unknown> }[] = [
       { label: 'Leads this month', type: 'metric', config: { module: 'leads', aggregate: 'count', dateField: 'created_at', comparePrevious: true, filter: { logic: 'AND', conditions: [{ field: 'created_at', operator: 'this_month' }] } } },
-      { label: 'Pipeline by stage', type: 'bar', config: { module: 'deals', groupBy: 'stage', aggregate: 'sum', aggregateField: 'amount', filter: { logic: 'AND', conditions: [{ field: 'is_won', operator: 'is_false' }, { field: 'is_lost', operator: 'is_false' }] } } },
       { label: 'Leads by source', type: 'donut', config: { module: 'leads', groupBy: 'lead_source', aggregate: 'count', filter: { logic: 'AND', conditions: [{ field: 'created_at', operator: 'last_n_days', value: 90 }] } } },
-      { label: 'Bookings this month', type: 'metric', config: { module: 'bookings', aggregate: 'sum', aggregateField: 'agreement_value', dateField: 'booking_date', comparePrevious: true, filter: { logic: 'AND', conditions: [{ field: 'booking_date', operator: 'this_month' }] } } },
       { label: 'Available inventory', type: 'metric', config: { module: 'properties', aggregate: 'count', filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'equals', value: 'Available' }] } } },
     ];
     for (const w of widgets) {

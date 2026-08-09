@@ -66,11 +66,13 @@ async function buildContext(recordId: string, module: string): Promise<RecordCon
        ORDER BY started_at DESC LIMIT 3`,
       [recordId],
     ),
+    // Site visits are activities now (migration 030), not a module.
     db.query<{ status: string; feedback: string | null; interest_level: string | null; scheduled_at: string }>(
-      `SELECT v.status, v.feedback, v.interest_level, v.scheduled_at
-       FROM ipy_e_site_visits v JOIN ipy_record r ON r.id = v.record_id
-       WHERE (v.lead_id = $1 OR v.contact_id = $1 OR v.deal_id = $1) AND r.is_deleted = false
-       ORDER BY v.scheduled_at DESC LIMIT 3`,
+      `SELECT a.status, a.outcome AS feedback, NULL::text AS interest_level,
+              a.start_at AS scheduled_at
+       FROM ipy_e_activities a JOIN ipy_record r ON r.id = a.record_id
+       WHERE a.related_to = $1 AND a.activity_type = 'Site Visit' AND r.is_deleted = false
+       ORDER BY a.start_at DESC LIMIT 3`,
       [recordId],
     ),
   ]);

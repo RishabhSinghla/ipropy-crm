@@ -4,7 +4,7 @@
  * One in-process tick handles three jobs:
  *   1. drain the deferred task queue (delayed workflow tasks)
  *   2. run scheduled workflows whose next_run_at has come due
- *   3. housekeeping — SLA breaches, activity reminders, stage timers
+ *   3. housekeeping — SLA breaches, activity reminders, window expiry
  *
  * Queue rows are claimed with FOR UPDATE SKIP LOCKED, so running more than one
  * server instance is safe without an external queue.
@@ -387,7 +387,6 @@ function computeNextRun(schedule: ScheduledRow['schedule']): Date {
 
 async function housekeeping(): Promise<void> {
   await Promise.allSettled([
-    updateStageTimers(),
     checkSlaBreaches(),
     sendActivityReminders(),
     expireWhatsAppWindows(),
@@ -411,14 +410,6 @@ async function pollInboundEmail(): Promise<void> {
   if (result.imported > 0 || result.errors.length) {
     logger.info({ ...result }, 'inbound email sync');
   }
-}
-
-/** Keep days_in_stage honest without touching the record service. */
-async function updateStageTimers(): Promise<void> {
-  await db.query(`
-    UPDATE ipy_e_deals SET days_in_stage = GREATEST(0, EXTRACT(DAY FROM now() - stage_changed_at)::int)
-    WHERE stage_changed_at IS NOT NULL AND is_won = false AND is_lost = false
-  `);
 }
 
 async function checkSlaBreaches(): Promise<void> {

@@ -522,7 +522,7 @@ async function runStacked(ctx: ScopeContext, config: WidgetConfig, conn: Tx): Pr
 
 /** Weighted pipeline: sum(amount × probability) bucketed by expected close month. */
 async function runForecast(ctx: ScopeContext, config: WidgetConfig, conn: Tx): Promise<WidgetResult> {
-  const moduleName = config.module ?? 'deals';
+  const moduleName = config.module ?? 'leads';
   const module = await registry.requireModule(moduleName);
   const amountField = module.fields.find((f) => f.name === (config.aggregateField ?? 'amount'));
   const probField = module.fields.find((f) => f.name === 'probability');

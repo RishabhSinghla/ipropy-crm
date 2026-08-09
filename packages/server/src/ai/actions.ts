@@ -7,7 +7,6 @@ import { db } from '../db/pool.js';
 import { logger } from '../utils/logger.js';
 import type { TaskContext } from '../core/workflow/tasks.js';
 import { scoreLead } from './leadScoring.js';
-import { analyseDeal } from './dealRisk.js';
 import { matchForRecord } from './matching.js';
 import { draftMessage, summariseRecord } from './drafting.js';
 import { saveInsight, complete, isAiAvailable, REAL_ESTATE_SYSTEM } from './client.js';
@@ -26,14 +25,6 @@ export async function runAiWorkflowAction(
       const result = await scoreLead(ctx.recordId);
       if (result) {
         logger.debug({ recordId: ctx.recordId, score: result.score }, 'workflow scored lead');
-      }
-      break;
-    }
-
-    case 'analyse_deal': {
-      const result = await analyseDeal(ctx.recordId);
-      if (result && Object.keys(writeTo).length) {
-        logger.debug({ recordId: ctx.recordId, risk: result.riskScore }, 'workflow analysed deal');
       }
       break;
     }
@@ -133,7 +124,7 @@ async function writeBack(ctx: TaskContext, fieldName: string | undefined, value:
     avatarUrl: null, phone: null, isAdmin: true, isActive: true,
     roleId: null, roleName: null, profileId: null, profileName: null, groupIds: [],
     timezone: 'Asia/Kolkata', locale: 'en-IN', currency: 'INR',
-    theme: 'system' as const, defaultDashboardId: null, extension: null, channelPartnerId: null, lastLoginAt: null,
+    theme: 'system' as const, defaultDashboardId: null, extension: null, lastLoginAt: null,
   };
 
   await updateRecord(

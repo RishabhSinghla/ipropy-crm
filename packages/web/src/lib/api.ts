@@ -323,8 +323,6 @@ export const api = {
   audit: (module: string, id: string) => get<Record<string, unknown>[]>(`/api/records/${module}/${id}/audit`),
   checkDuplicates: (module: string, values: Record<string, unknown>, excludeId?: string) =>
     post<{ id: string; label: string; matchedOn: string[] }[]>(`/api/records/${module}/check-duplicates`, { values, excludeId }),
-  convert: (module: string, id: string, options: Record<string, unknown>) =>
-    post<{ contactId: string; dealId: string | null; organizationId: string | null }>(`/api/records/${module}/${id}/convert`, options),
   massUpdate: (module: string, ids: string[], values: Record<string, unknown>) =>
     post<{ updated: number; failed: unknown[] }>(`/api/records/${module}/mass-update`, { ids, values }),
   massDelete: (module: string, ids: string[]) =>
@@ -591,17 +589,4 @@ export const api = {
   createWebform: (data: Record<string, unknown>) => post<{ id: string; publicKey: string; endpoint: string }>('/api/webforms', data),
   leadInbox: (status?: string) => get<Record<string, unknown>[]>(`/api/lead-inbox${qs({ status })}`),
 
-  // --- partner portal ------------------------------------------------------
-  portalOverview: () =>
-    get<{ partner: Record<string, unknown>; stats: {
-      leads: number; siteVisits: number; bookings: number; agreementValue: number; commission: number;
-    } }>('/api/portal/overview'),
-  portalLeads: (page = 1, pageSize = 25) =>
-    get<{ rows: { id: string; label: string; values: Record<string, unknown> }[]; total: number; page: number; pageSize: number }>(
-      `/api/portal/leads${qs({ page, pageSize })}`),
-  portalBookings: (page = 1, pageSize = 25) =>
-    get<{ rows: { id: string; label: string; values: Record<string, unknown> }[]; total: number; page: number; pageSize: number }>(
-      `/api/portal/bookings${qs({ page, pageSize })}`),
-  portalSubmitLead: (data: Record<string, unknown>) =>
-    post<{ status: 'created' | 'duplicate' | 'failed'; recordId: string | null; message?: string }>('/api/portal/leads', data),
 };

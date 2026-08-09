@@ -329,7 +329,7 @@ async function createLeadFromCall(
       isAdmin: true, isActive: true, roleId: null, roleName: null,
       profileId: null, profileName: null, groupIds: [],
       timezone: 'Asia/Kolkata', locale: 'en-IN', currency: 'INR',
-      theme: 'system' as const, defaultDashboardId: null, extension: null, channelPartnerId: null, lastLoginAt: null,
+      theme: 'system' as const, defaultDashboardId: null, extension: null, lastLoginAt: null,
     };
 
     const lead = await createRecord(

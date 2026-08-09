@@ -56,7 +56,7 @@ export default function ComposeModal({
       const result = await api.draft({
         channel, recordId: record.id, module,
         goal: 'Move this conversation to the next step.',
-        includeProperties: ['leads', 'contacts', 'deals'].includes(module),
+        includeProperties: module === 'leads',
       });
       setBody(result.body);
       if (result.subject) setSubject(result.subject);

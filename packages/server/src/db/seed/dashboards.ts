@@ -44,28 +44,6 @@ export const DASHBOARDS: DashboardSeed[] = [
         },
       },
       {
-        type: 'metric', title: 'Site Visits (This Month)', x: 3, y: 0, w: 3, h: 2,
-        config: {
-          module: 'site_visits', aggregate: 'count', format: 'number', comparePrevious: true,
-          dateField: 'scheduled_at', color: '#f97316', drilldown: true,
-          filter: { logic: 'AND', conditions: [{ field: 'scheduled_at', operator: 'this_month' }, { field: 'status', operator: 'equals', value: 'Completed' }] },
-        },
-      },
-      {
-        type: 'funnel', title: 'Conversion Funnel', x: 0, y: 2, w: 6, h: 5,
-        config: {
-          module: 'deals', groupBy: 'stage', aggregate: 'count',
-          stages: ['Enquiry', 'Site Visit', 'Revisit', 'Negotiation', 'Token Received', 'Agreement', 'Booked'],
-        },
-      },
-      {
-        type: 'bar', title: 'Pipeline Value by Stage', x: 6, y: 2, w: 6, h: 5,
-        config: {
-          module: 'deals', groupBy: 'stage', aggregate: 'sum', aggregateField: 'amount',
-          format: 'currency', filter: OPEN_DEAL_FILTER, drilldown: true,
-        },
-      },
-      {
         type: 'line', title: 'Lead Volume Trend', x: 0, y: 7, w: 8, h: 4,
         config: {
           module: 'leads', dateField: 'created_at', interval: 'week', aggregate: 'count',
@@ -108,26 +86,11 @@ export const DASHBOARDS: DashboardSeed[] = [
         },
       },
       {
-        type: 'metric', title: 'My Open Deals', x: 6, y: 0, w: 3, h: 2,
-        config: {
-          module: 'deals', aggregate: 'sum', aggregateField: 'amount', format: 'currency', color: '#ec4899',
-          filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'is_me' }, { field: 'is_won', operator: 'is_false' }, { field: 'is_lost', operator: 'is_false' }] },
-        },
-      },
-      {
         type: 'tasks', title: 'Today\'s Tasks', x: 0, y: 2, w: 4, h: 6,
         config: {
           module: 'activities', limit: 15, sortBy: 'due_date', sortDir: 'asc',
           columns: ['subject', 'activity_type', 'priority', 'due_date', 'related_to'],
           filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'is_me' }, { field: 'due_date', operator: 'today' }, { field: 'status', operator: 'not_equals', value: 'Completed' }] },
-        },
-      },
-      {
-        type: 'list', title: 'Site Visits Today', x: 4, y: 2, w: 4, h: 6,
-        config: {
-          module: 'site_visits', limit: 10, sortBy: 'scheduled_at', sortDir: 'asc',
-          columns: ['subject', 'scheduled_at', 'project_id', 'status'],
-          filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'is_me' }, { field: 'scheduled_at', operator: 'today' }] },
         },
       },
       {
@@ -253,7 +216,7 @@ export const DASHBOARDS: DashboardSeed[] = [
         type: 'table', title: 'Campaign ROI', x: 0, y: 7, w: 12, h: 5,
         config: {
           module: 'campaigns', limit: 20, sortBy: 'roi_percent', sortDir: 'desc',
-          columns: ['name', 'campaign_type', 'actual_cost', 'leads_generated', 'cost_per_lead', 'bookings', 'revenue_generated', 'roi_percent'],
+          columns: ['name', 'campaign_type', 'actual_cost', 'leads_generated', 'cost_per_lead', 'revenue_generated', 'roi_percent'],
         },
       },
     ],

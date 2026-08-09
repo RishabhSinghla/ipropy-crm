@@ -121,30 +121,6 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
   const ownerAt = (i: number): string => salesUsers[i % salesUsers.length].id;
 
   // -------------------------------------------------------------------------
-  // Developers
-  // -------------------------------------------------------------------------
-  const developers = [
-    { name: 'Skyline Developers Pvt Ltd', city: 'Mumbai', rera: 'P51800012345', website: 'https://skylinedev.example.com' },
-    { name: 'Verdant Habitat LLP', city: 'Bengaluru', rera: 'PRM/KA/RERA/1251/446', website: 'https://verdanthabitat.example.com' },
-    { name: 'Meridian Infra Group', city: 'Pune', rera: 'P52100019876', website: 'https://meridianinfra.example.com' },
-  ];
-  const developerIds: string[] = [];
-  for (const [i, d] of developers.entries()) {
-    const id = await insertRecord(conn, {
-      module: 'organizations', label: d.name, ownerId: admin.id, createdBy: admin.id,
-      numberField: 'org_number', createdAt: daysAgo(400 - i * 20),
-      values: {
-        name: d.name, org_type: 'Developer', industry: 'Real Estate',
-        website: d.website, rera_registration: d.rera, rating: 'Hot',
-        phone: `+9122${40000000 + i * 111}`, email: `contact@${d.name.split(' ')[0].toLowerCase()}.example.com`,
-        billing_address: { city: d.city, state: d.city === 'Mumbai' ? 'Maharashtra' : d.city === 'Pune' ? 'Maharashtra' : 'Karnataka', country: 'India' },
-        description: `${d.name} is a RERA-registered developer with an active portfolio in ${d.city}.`,
-      },
-    });
-    developerIds.push(id);
-  }
-
-  // -------------------------------------------------------------------------
   // Projects
   // -------------------------------------------------------------------------
   const projectDefs = [
@@ -187,7 +163,7 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
       numberField: 'project_code', createdAt: p.launch,
       searchText: `${p.name} ${p.city} ${p.locality} ${p.configs.join(' ')}`,
       values: {
-        name: p.name, developer_id: developerIds[p.dev], status: p.status, project_type: p.type,
+        name: p.name, status: p.status, project_type: p.type,
         city: p.city, locality: p.locality, state: p.city === 'Bengaluru' ? 'Karnataka' : 'Maharashtra',
         country: 'India', latitude: p.lat, longitude: p.lng, micro_market: i === 1 ? 'IT Corridor' : 'Prime',
         rera_number: p.rera, rera_expiry: isoDate(daysAhead(700)),
@@ -198,7 +174,7 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
         connectivity: p.connectivity,
         launch_date: isoDate(p.launch), possession_date: isoDate(p.possession),
         completion_percent: p.completion, broker_commission_pct: 2,
-        description: `${p.name} by ${developers[p.dev].name} — a ${p.type.toLowerCase()} development in ${p.locality}, ${p.city}. ${p.usps[0]}.`,
+        description: `${p.name} — a ${p.type.toLowerCase()} development in ${p.locality}, ${p.city}. ${p.usps[0]}.`,
       },
     });
     projectIds.push(id);
@@ -274,39 +250,6 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
       `UPDATE ipy_e_projects SET available_units = $2, booked_units = $3 WHERE record_id = $1`,
       [projectIds[pi], counts.filter((c) => c.status === 'Available').length, counts.filter((c) => c.status === 'Booked' || c.status === 'Sold').length],
     );
-  }
-
-  // -------------------------------------------------------------------------
-  // Channel partners
-  // -------------------------------------------------------------------------
-  const partners = [
-    { name: 'Rakesh Bhandari', firm: 'Bhandari Realty Advisors', type: 'Brokerage Firm', city: 'Mumbai', tier: 'Platinum', bookings: 14, sales: 42 * CRORE },
-    { name: 'Sunita Menon', firm: 'Menon Properties', type: 'Individual Broker', city: 'Bengaluru', tier: 'Gold', bookings: 8, sales: 16 * CRORE },
-    { name: 'PropVista Digital', firm: 'PropVista Media LLP', type: 'Digital Marketer', city: 'Pune', tier: 'Silver', bookings: 4, sales: 7 * CRORE },
-    { name: 'Imran Qureshi', firm: 'Skyline Associates', type: 'Individual Broker', city: 'Mumbai', tier: 'Gold', bookings: 6, sales: 19 * CRORE },
-  ];
-  const partnerIds: string[] = [];
-  for (const [i, cp] of partners.entries()) {
-    const leads = cp.bookings * randInt(i + 20, 8, 14);
-    const id = await insertRecord(conn, {
-      module: 'channel_partners', label: cp.name, ownerId: ownerAt(i), createdBy: admin.id,
-      numberField: 'partner_number', createdAt: daysAgo(500 - i * 40),
-      values: {
-        name: cp.name, firm_name: cp.firm, partner_type: cp.type, contact_person: cp.name,
-        mobile: `+9198${20000000 + i * 4321}`, email: `${cp.name.split(' ')[0].toLowerCase()}@${cp.firm.split(' ')[0].toLowerCase()}.example.com`,
-        city: cp.city, status: 'Active', tier: cp.tier,
-        rera_number: `A5180000${1000 + i}`, gstin: `27AABCU${9603}R1Z${i}`,
-        onboarded_on: isoDate(daysAgo(500 - i * 40)), agreement_expiry: isoDate(daysAhead(180 - i * 40)),
-        commission_percent: cp.tier === 'Platinum' ? 2.5 : cp.tier === 'Gold' ? 2 : 1.5,
-        commission_slab: [{ min: 0, max: 5 * CRORE, pct: 1.5 }, { min: 5 * CRORE, max: 20 * CRORE, pct: 2 }, { min: 20 * CRORE, max: null, pct: 2.5 }],
-        leads_submitted: leads, site_visits_done: Math.round(leads * 0.45), bookings_closed: cp.bookings,
-        total_sales_value: cp.sales, conversion_rate: Math.round((cp.bookings / leads) * 1000) / 10,
-        commission_earned: Math.round(cp.sales * 0.02), commission_paid: Math.round(cp.sales * 0.014),
-        rating: cp.tier === 'Platinum' ? 5 : cp.tier === 'Gold' ? 4 : 3,
-        portal_access: true,
-      },
-    });
-    partnerIds.push(id);
   }
 
   // -------------------------------------------------------------------------
@@ -397,7 +340,6 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
         status, lead_source: source,
         sub_source: source.includes('Ads') ? 'Paid' : 'Organic',
         campaign_id: source.includes('Ads') || source === 'WhatsApp' ? campaignIds[i % campaignIds.length] : null,
-        channel_partner_id: source === 'Channel Partner' ? partnerIds[i % partnerIds.length] : null,
         interested_project_id: projectIds[projectIdx],
         property_type: 'Apartment',
         configuration: [pick(configs, i), pick(configs, i + 1)],
@@ -477,213 +419,13 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
   }
 
   // -------------------------------------------------------------------------
-  // Deals
-  // -------------------------------------------------------------------------
-  const stages = ['Enquiry', 'Site Visit', 'Revisit', 'Negotiation', 'Token Received', 'Agreement', 'Booked', 'Lost'];
-  const stageProb: Record<string, number> = { Enquiry: 10, 'Site Visit': 25, Revisit: 40, Negotiation: 60, 'Token Received': 80, Agreement: 90, Booked: 100, Lost: 0 };
-
-  const dealIds: { id: string; stage: string; contactId: string; propertyId: string; projectIdx: number; amount: number }[] = [];
-  for (let i = 0; i < 28; i++) {
-    const s = i + 900;
-    const stage = pick(stages, i);
-    const contactId = customerIds[i % customerIds.length];
-    const projectIdx = i % 3;
-    const candidates = propertyIds.filter((p) => p.projectIdx === projectIdx);
-    const property = candidates[i % candidates.length];
-    const amount = property.price;
-    const discountPct = stage === 'Negotiation' || stage === 'Token Received' ? randInt(s, 2, 6) : 0;
-    const isWon = stage === 'Booked';
-    const isLost = stage === 'Lost';
-    const stageChanged = daysAgo(randInt(s * 2, 1, 45));
-
-    const riskDrivers: string[] = [];
-    let risk = 20;
-    const daysStale = Math.round((Date.now() - stageChanged.getTime()) / 86_400_000);
-    if (daysStale > 21) { risk += 30; riskDrivers.push(`No stage movement in ${daysStale} days`); }
-    if (stage === 'Negotiation' && discountPct > 4) { risk += 20; riskDrivers.push(`Discount ask of ${discountPct}% is above the approved band`); }
-    if (i % 5 === 0) { risk += 15; riskDrivers.push('Competitor project shortlisted by the buyer'); }
-    if (i % 7 === 0) { risk += 12; riskDrivers.push('Home loan sanction still pending'); }
-    risk = Math.min(95, risk);
-
-    const contactLabel = await conn.queryOne<{ label: string }>(`SELECT label FROM ipy_record WHERE id = $1`, [contactId]);
-    const dealName = `${contactLabel?.label ?? 'Buyer'} — ${projectDefs[projectIdx].name}`;
-
-    const id = await insertRecord(conn, {
-      module: 'deals', label: dealName, ownerId: ownerAt(i), createdBy: admin.id,
-      numberField: 'deal_number', createdAt: daysAgo(randInt(s, 10, 120)),
-      searchText: dealName,
-      values: {
-        name: dealName, contact_id: contactId, project_id: projectIds[projectIdx],
-        property_id: property.id, stage, probability: stageProb[stage],
-        amount, discount_percent: discountPct,
-        discount_amount: Math.round((amount * discountPct) / 100),
-        negotiated_price: discountPct ? Math.round(amount * (1 - discountPct / 100)) : null,
-        expected_close_date: isoDate(daysAhead(randInt(s * 3, -10, 60))),
-        actual_close_date: isWon ? isoDate(daysAgo(randInt(s, 1, 30))) : null,
-        lead_source: pick(sources, i),
-        channel_partner_id: i % 4 === 0 ? partnerIds[i % partnerIds.length] : null,
-        campaign_id: campaignIds[i % campaignIds.length],
-        stage_changed_at: stageChanged, days_in_stage: daysStale,
-        is_won: isWon, is_lost: isLost,
-        lost_reason: isLost ? pick(['Budget Mismatch', 'Bought Elsewhere', 'Loan Rejected', 'Possession Timeline'], i) : null,
-        ai_risk_score: isWon || isLost ? null : risk,
-        ai_risk_reasons: isWon || isLost ? [] : riskDrivers,
-        ai_next_action: isWon || isLost ? null
-          : risk > 60 ? 'Call today to re-establish urgency and offer a limited-period price lock.'
-          : 'Share a comparison sheet against the competing project and propose a revisit this weekend.',
-        ai_analysed_at: daysAgo(1),
-        next_followup_at: isWon || isLost ? null : daysAhead(randInt(s * 5, 0, 7)),
-        description: `${property.config} at ${projectDefs[projectIdx].name}.`,
-      },
-    });
-    dealIds.push({ id, stage, contactId, propertyId: property.id, projectIdx, amount });
-  }
-
-  // -------------------------------------------------------------------------
-  // Site visits
-  // -------------------------------------------------------------------------
-  const visitStatuses = ['Scheduled', 'Confirmed', 'Completed', 'No Show', 'Rescheduled'];
-  for (let i = 0; i < 34; i++) {
-    const s = i + 1300;
-    const status = i < 8 ? pick(['Scheduled', 'Confirmed'], i) : pick(visitStatuses, i);
-    const projectIdx = i % 3;
-    const scheduled = status === 'Scheduled' || status === 'Confirmed'
-      ? daysAhead(randInt(s, 0, 12))
-      : daysAgo(randInt(s, 1, 60));
-    const isDone = status === 'Completed';
-    const leadId = leadIds[i % leadIds.length];
-    const leadLabel = await conn.queryOne<{ label: string }>(`SELECT label FROM ipy_record WHERE id = $1`, [leadId]);
-    const interest = isDone ? pick(['Very High', 'High', 'Medium', 'Low'], i) : null;
-
-    await insertRecord(conn, {
-      module: 'site_visits',
-      label: `${leadLabel?.label ?? 'Visitor'} — ${projectDefs[projectIdx].name}`,
-      ownerId: ownerAt(i), createdBy: admin.id,
-      numberField: 'visit_number', createdAt: daysAgo(randInt(s, 1, 70)),
-      values: {
-        subject: `${leadLabel?.label ?? 'Visitor'} — ${projectDefs[projectIdx].name}`,
-        lead_id: leadId,
-        contact_id: i % 3 === 0 ? customerIds[i % customerIds.length] : null,
-        deal_id: i % 4 === 0 ? dealIds[i % dealIds.length].id : null,
-        project_id: projectIds[projectIdx],
-        status, visit_type: i % 5 === 0 ? 'Revisit' : 'First Visit',
-        scheduled_at: scheduled, duration_minutes: 90,
-        actual_start: isDone ? scheduled : null,
-        actual_end: isDone ? new Date(scheduled.getTime() + 90 * 60_000) : null,
-        attendees_count: randInt(s * 2, 1, 4),
-        pickup_required: i % 6 === 0,
-        interest_level: interest,
-        feedback: isDone
-          ? pick([
-              'Liked the layout and the view. Concerned about the possession timeline.',
-              'Very positive on amenities. Wants a corner unit on a higher floor.',
-              'Budget is tight — asked what discount is possible on a spot booking.',
-              'Comparing against a competing project nearby. Will revert in a week.',
-              'Family loved the sample flat. Loan eligibility is the only open point.',
-            ], i)
-          : null,
-        objections: isDone ? [pick(['Price Too High', 'Possession Timeline', 'Location Not Suitable'], i)] : [],
-        next_step: isDone ? pick(['Send cost sheet', 'Arrange revisit with family', 'Connect with loan desk', 'Share competitor comparison'], i) : null,
-        rating: isDone ? randInt(s * 3, 3, 5) : null,
-        ai_sentiment: isDone ? (interest === 'Very High' || interest === 'High' ? 'positive' : interest === 'Low' ? 'negative' : 'neutral') : null,
-        ai_summary: isDone ? 'Buyer engaged well during the walkthrough; main friction is price versus possession date.' : null,
-        confirmation_sent: true,
-        reminder_sent: status !== 'Scheduled',
-      },
-    });
-  }
-
-  // -------------------------------------------------------------------------
-  // Bookings + payments
-  // -------------------------------------------------------------------------
-  const wonDeals = dealIds.filter((d) => d.stage === 'Booked');
-  for (const [i, deal] of wonDeals.entries()) {
-    const s = i + 2000;
-    const agreementValue = Math.round(deal.amount * 0.96);
-    const token = 5 * LAKH;
-    const bookingAmount = Math.round(agreementValue * 0.1);
-    const received = token + bookingAmount;
-    const bookingDate = daysAgo(randInt(s, 5, 150));
-    const bookingStatus = pick(['Token', 'Booked', 'Agreement Signed', 'Registered'], i);
-
-    const contactLabel = await conn.queryOne<{ label: string }>(`SELECT label FROM ipy_record WHERE id = $1`, [deal.contactId]);
-
-    const bookingId = await insertRecord(conn, {
-      module: 'bookings', label: contactLabel?.label ?? 'Booking',
-      ownerId: ownerAt(i), createdBy: admin.id,
-      numberField: 'booking_number', createdAt: bookingDate,
-      values: {
-        deal_id: deal.id, contact_id: deal.contactId,
-        project_id: projectIds[deal.projectIdx], property_id: deal.propertyId,
-        status: bookingStatus, booking_date: isoDate(bookingDate),
-        agreement_value: agreementValue,
-        total_consideration: Math.round(agreementValue * 1.11),
-        token_amount: token, booking_amount: bookingAmount,
-        amount_received: received, amount_due: agreementValue - received,
-        discount_amount: Math.round(deal.amount * 0.04),
-        gst_amount: Math.round(agreementValue * 0.05),
-        stamp_duty: Math.round(agreementValue * 0.06),
-        registration_fee: 30_000,
-        payment_plan: pick(['Construction Linked Plan (CLP)', 'Down Payment Plan', 'Flexi Payment Plan'], i),
-        loan_required: i % 3 !== 0,
-        loan_bank: i % 3 !== 0 ? pick(['HDFC Bank', 'ICICI Bank', 'SBI', 'Axis Bank', 'LIC Housing Finance'], i) : null,
-        loan_amount: i % 3 !== 0 ? Math.round(agreementValue * 0.75) : null,
-        loan_status: i % 3 !== 0 ? pick(['Applied', 'Under Process', 'Sanctioned', 'Disbursed'], i) : null,
-        agreement_date: ['Agreement Signed', 'Registered'].includes(bookingStatus) ? isoDate(new Date(bookingDate.getTime() + 20 * 86_400_000)) : null,
-        registration_date: bookingStatus === 'Registered' ? isoDate(new Date(bookingDate.getTime() + 45 * 86_400_000)) : null,
-        kyc_complete: i % 3 !== 1,
-        documents_pending: i % 3 === 1 ? ['PAN Card', 'Address Proof'] : [],
-        broker_commission: Math.round(agreementValue * 0.02),
-        commission_status: pick(['Due', 'Invoice Raised', 'Paid'], i),
-      },
-    });
-
-    // Payment milestones for a construction-linked plan.
-    const milestones = [
-      { name: 'On Booking', pct: 10, offset: 0 },
-      { name: 'On Agreement', pct: 20, offset: 30 },
-      { name: 'On Plinth Completion', pct: 15, offset: 120 },
-      { name: 'On 5th Slab', pct: 15, offset: 210 },
-      { name: 'On 10th Slab', pct: 15, offset: 300 },
-      { name: 'On Brickwork', pct: 10, offset: 390 },
-      { name: 'On Possession', pct: 15, offset: 480 },
-    ];
-    for (const [j, m] of milestones.entries()) {
-      const dueDate = new Date(bookingDate.getTime() + m.offset * 86_400_000);
-      const due = Math.round((agreementValue * m.pct) / 100);
-      const isPast = dueDate.getTime() < Date.now();
-      const paid = isPast && j < 3;
-      const overdue = isPast && !paid;
-
-      await insertRecord(conn, {
-        module: 'payments', label: `${contactLabel?.label ?? 'Payment'} — ${m.name}`,
-        ownerId: ownerAt(7), createdBy: admin.id,
-        numberField: 'payment_number', createdAt: bookingDate,
-        values: {
-          booking_id: bookingId, contact_id: deal.contactId, project_id: projectIds[deal.projectIdx],
-          milestone: m.name, installment_no: j + 1,
-          status: paid ? 'Paid' : overdue ? 'Overdue' : 'Pending',
-          due_date: isoDate(dueDate), amount_due: due,
-          amount_paid: paid ? due : 0,
-          paid_on: paid ? isoDate(new Date(dueDate.getTime() - 2 * 86_400_000)) : null,
-          payment_mode: paid ? pick(['NEFT', 'RTGS', 'Cheque', 'Home Loan Disbursement'], j) : null,
-          reference_number: paid ? `UTR${String(100000000 + i * 1000 + j)}` : null,
-          receipt_number: paid ? `RCP/${new Date().getFullYear()}/${String(i * 10 + j).padStart(4, '0')}` : null,
-          reminder_count: overdue ? randInt(s + j, 1, 4) : 0,
-          last_reminder_at: overdue ? daysAgo(randInt(s + j, 1, 10)) : null,
-        },
-      });
-    }
-  }
-
-  // -------------------------------------------------------------------------
   // Activities
   // -------------------------------------------------------------------------
   const actTypes = ['Call', 'Follow Up', 'Meeting', 'Site Visit', 'WhatsApp', 'Documentation'];
   for (let i = 0; i < 45; i++) {
     const s = i + 3000;
-    const related = i % 2 === 0 ? leadIds[i % leadIds.length] : dealIds[i % dealIds.length].id;
-    const relatedModule = i % 2 === 0 ? 'leads' : 'deals';
+    const related = leadIds[i % leadIds.length];
+    const relatedModule = 'leads';
     const type = pick(actTypes, i);
     const isOverdue = i % 5 === 0;
     const isDone = i % 3 === 0;
