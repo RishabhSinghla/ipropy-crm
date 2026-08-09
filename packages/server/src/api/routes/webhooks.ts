@@ -324,8 +324,10 @@ webhooksRouter.post('/forms/:publicKey', asyncHandler(async (req, res) => {
     source: String(form.defaults?.lead_source ?? 'Website'),
     subSource: form.defaults?.sub_source ? String(form.defaults.sub_source) : undefined,
     message: payload.message ? String(payload.message) : undefined,
-    projectId: form.defaults?.interested_project_id ? String(form.defaults.interested_project_id) : undefined,
-    projectName: payload.project ? String(payload.project) : undefined,
+    // What the visitor picked wins over the form's own default.
+    projectName: payload.project
+      ? String(payload.project)
+      : form.defaults?.interested_project ? String(form.defaults.interested_project) : undefined,
     landingPage: payload.page_url ? String(payload.page_url) : (req.headers.referer as string | undefined),
     ipAddress: req.ip,
     utm: {

@@ -13,17 +13,12 @@ const ListView = lazy(() => import('./pages/ListView'));
 const RecordDetail = lazy(() => import('./pages/RecordDetail'));
 const RecordEdit = lazy(() => import('./pages/RecordEdit'));
 const Inbox = lazy(() => import('./pages/Inbox'));
-const InventoryBoard = lazy(() => import('./pages/InventoryBoard'));
 const Studio = lazy(() => import('./pages/Studio'));
 const Outreach = lazy(() => import('./pages/Outreach'));
 const CallsPage = lazy(() => import('./pages/Calls'));
 const ReportsPage = lazy(() => import('./pages/Reports'));
 const SettingsPage = lazy(() => import('./pages/Settings'));
 const AdminPage = lazy(() => import('./pages/admin/Admin'));
-const PortalDashboard = lazy(() => import('./pages/PortalDashboard'));
-const PortalLeads = lazy(() => import('./pages/PortalLeads'));
-const PortalBookings = lazy(() => import('./pages/PortalBookings'));
-const PortalSubmitLead = lazy(() => import('./pages/PortalSubmitLead'));
 
 function RequireAuth({ children }: { children: JSX.Element }): JSX.Element {
   const { user, loading } = useApp();
@@ -77,8 +72,6 @@ export default function App(): JSX.Element {
               <Route path="reports" element={<ReportsPage />} />
               <Route path="studio" element={<Studio />} />
               <Route path="outreach" element={<Outreach />} />
-              <Route path="inventory" element={<InventoryBoard />} />
-              <Route path="inventory/:projectId" element={<InventoryBoard />} />
 
               <Route path="settings" element={<SettingsPage />} />
               <Route path="admin/*" element={<AdminPage />} />
@@ -90,14 +83,6 @@ export default function App(): JSX.Element {
               <Route path=":module/:id/edit" element={<RecordEdit />} />
             </Route>
 
-            {/* Partner Portal routes — must come before the catch-all :module route. */}
-            <Route path="/portal" element={<RequireAuth><PortalDashboard /></RequireAuth>}>
-              <Route index element={<Navigate to="/portal/overview" replace />} />
-              <Route path="overview" element={<PortalDashboard />} />
-              <Route path="leads" element={<PortalLeads />} />
-              <Route path="leads/new" element={<PortalSubmitLead />} />
-              <Route path="bookings" element={<PortalBookings />} />
-            </Route>
 
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

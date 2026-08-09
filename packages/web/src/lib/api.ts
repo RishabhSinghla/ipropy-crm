@@ -156,6 +156,8 @@ export interface ModuleSummary {
   id: string; name: string; label: string; singularLabel: string;
   icon: string; color: string; sequence: number; isEntity: boolean; isCustom: boolean;
   pipelineField: string | null; menuGroup: string; showInMenu: boolean;
+  /** `tabGroup` makes several modules share one menu entry as tabs. */
+  settings?: { tabGroup?: string; tabOrder?: number; [key: string]: unknown };
   supportsComments: boolean; supportsAttachments: boolean; supportsTags: boolean;
   supportsConversion: boolean;
   permissions: { view: boolean; create: boolean; edit: boolean; delete: boolean; export: boolean; import: boolean };
@@ -273,6 +275,8 @@ export const api = {
     get<{ id: string; name: string; config: Record<string, unknown> }>(`/api/meta/modules/${module}/layout/${type}`),
   layouts: (module: string) => get<Record<string, unknown>[]>(`/api/meta/modules/${module}/layouts`),
   saveLayout: (id: string, data: Record<string, unknown>) => put(`/api/meta/layouts/${id}`, data),
+  createLayout: (module: string, data: Record<string, unknown>) =>
+    post<{ id: string }>(`/api/meta/modules/${module}/layouts`, data),
   picklists: () => get<Record<string, { value: string; label: string; color: string | null }[]>>('/api/meta/picklists'),
   picklist: (name: string) => get<{ value: string; label: string; color: string | null }[]>(`/api/meta/picklists/${name}`),
   savePicklistValues: (name: string, values: unknown[]) => put(`/api/meta/picklists/${name}/values`, { values }),
@@ -283,6 +287,10 @@ export const api = {
     disabledReason: string | null; menuGroup: string;
     fieldCount: number; recordCount: number; dependents: string[];
   }[]>('/api/meta/modules/all'),
+  fieldModules: () => get<{
+    id: string; name: string; label: string; icon: string; color: string;
+    isActive: boolean; isCustom: boolean; isEntity: boolean; fieldCount: number;
+  }[]>('/api/meta/modules/field-builder'),
   toggleModule: (name: string, isActive: boolean, reason?: string) =>
     post<{ ok: boolean; message: string }>(`/api/meta/modules/${name}/toggle`, { isActive, reason }),
   createModule: (data: Record<string, unknown>) => post('/api/meta/modules', data),
@@ -290,7 +298,11 @@ export const api = {
   deleteModule: (name: string, force = false) => del(`/api/meta/modules/${name}${force ? '?force=true' : ''}`),
   createField: (module: string, data: Record<string, unknown>) => post(`/api/meta/modules/${module}/fields`, data),
   updateField: (id: string, data: Record<string, unknown>) => patch(`/api/meta/fields/${id}`, data),
-  deleteField: (id: string) => del(`/api/meta/fields/${id}`),
+  /** `permanent` drops the column and its data; otherwise the field is only hidden. */
+  deleteField: (id: string, permanent = false) =>
+    del<{ ok: boolean; deactivated?: boolean; deleted?: boolean; hadValues?: number }>(
+      `/api/meta/fields/${id}${permanent ? '?permanent=true' : ''}`,
+    ),
   reorderFields: (fields: { id: string; blockId: string; sequence: number }[]) =>
     post('/api/meta/fields/reorder', { fields }),
   createBlock: (module: string, data: Record<string, unknown>) => post(`/api/meta/modules/${module}/blocks`, data),
@@ -321,8 +333,6 @@ export const api = {
   audit: (module: string, id: string) => get<Record<string, unknown>[]>(`/api/records/${module}/${id}/audit`),
   checkDuplicates: (module: string, values: Record<string, unknown>, excludeId?: string) =>
     post<{ id: string; label: string; matchedOn: string[] }[]>(`/api/records/${module}/check-duplicates`, { values, excludeId }),
-  convert: (module: string, id: string, options: Record<string, unknown>) =>
-    post<{ contactId: string; dealId: string | null; organizationId: string | null }>(`/api/records/${module}/${id}/convert`, options),
   massUpdate: (module: string, ids: string[], values: Record<string, unknown>) =>
     post<{ updated: number; failed: unknown[] }>(`/api/records/${module}/mass-update`, { ids, values }),
   massDelete: (module: string, ids: string[]) =>
@@ -337,7 +347,11 @@ export const api = {
     `/api/records/${module}/export${qs({ ...query, filter: query.filter, access_token: tokenStore.get() })}`,
 
   // --- views --------------------------------------------------------------
-  views: (module: string, withCounts = false) => get<(CustomView & { count?: number })[]>(`/api/views/${module}${qs({ withCounts })}`),
+  views: (module: string, withCounts = false, includeInactive = false) =>
+    get<(CustomView & { count?: number; isActive?: boolean; isSystem?: boolean })[]>(
+      `/api/views/${module}${qs({ withCounts, includeInactive })}`),
+  reorderViews: (module: string, ids: string[]) => post(`/api/views/${module}/reorder`, { ids }),
+  duplicateView: (module: string, id: string) => post<{ id: string }>(`/api/views/${module}/${id}/duplicate`, {}),
   createView: (module: string, data: Record<string, unknown>) => post<{ id: string }>(`/api/views/${module}`, data),
   updateView: (module: string, id: string, data: Record<string, unknown>) => put(`/api/views/${module}/${id}`, data),
   deleteView: (module: string, id: string) => del(`/api/views/${module}/${id}`),
@@ -563,9 +577,6 @@ export const api = {
   },
   deleteFile: (id: string) => del(`/api/files/${id}`),
   tags: () => get<{ id: string; name: string; color: string; usage_count: number }[]>('/api/tags'),
-  inventoryBoard: (projectId: string) =>
-    get<{ summary: Record<string, unknown>[]; total: number; towers: Record<string, unknown>[] }>(`/api/inventory/${projectId}`),
-  blockUnit: (propertyId: string, data: Record<string, unknown>) => post(`/api/inventory/${propertyId}/block`, data),
   importPreview: (module: string, file: File) => {
     const form = new FormData();
     form.append('file', file);
@@ -585,17 +596,4 @@ export const api = {
   createWebform: (data: Record<string, unknown>) => post<{ id: string; publicKey: string; endpoint: string }>('/api/webforms', data),
   leadInbox: (status?: string) => get<Record<string, unknown>[]>(`/api/lead-inbox${qs({ status })}`),
 
-  // --- partner portal ------------------------------------------------------
-  portalOverview: () =>
-    get<{ partner: Record<string, unknown>; stats: {
-      leads: number; siteVisits: number; bookings: number; agreementValue: number; commission: number;
-    } }>('/api/portal/overview'),
-  portalLeads: (page = 1, pageSize = 25) =>
-    get<{ rows: { id: string; label: string; values: Record<string, unknown> }[]; total: number; page: number; pageSize: number }>(
-      `/api/portal/leads${qs({ page, pageSize })}`),
-  portalBookings: (page = 1, pageSize = 25) =>
-    get<{ rows: { id: string; label: string; values: Record<string, unknown> }[]; total: number; page: number; pageSize: number }>(
-      `/api/portal/bookings${qs({ page, pageSize })}`),
-  portalSubmitLead: (data: Record<string, unknown>) =>
-    post<{ status: 'created' | 'duplicate' | 'failed'; recordId: string | null; message?: string }>('/api/portal/leads', data),
 };

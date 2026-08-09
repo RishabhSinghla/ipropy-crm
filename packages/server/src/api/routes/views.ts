@@ -23,6 +23,8 @@ const viewSchema = z.object({
   isPublic: z.boolean().default(false),
   isDefault: z.boolean().default(false),
   showMetrics: z.boolean().default(false),
+  isActive: z.boolean().default(true),
+  sequence: z.number().int().min(0).max(9999).default(0),
 });
 
 function rowToView(r: Record<string, unknown>): Record<string, unknown> {
@@ -32,6 +34,7 @@ function rowToView(r: Record<string, unknown>): Record<string, unknown> {
     ownerId: r.owner_id, columns: r.columns, filter: r.filter,
     sortBy: r.sort_by, sortDir: r.sort_dir, displayMode: r.display_mode,
     groupBy: r.group_by, showMetrics: r.show_metrics, sequence: r.sequence,
+    isActive: r.is_active,
   };
 }
 
@@ -45,8 +48,9 @@ viewsRouter.get('/:module', asyncHandler(async (req, res) => {
     `SELECT v.*, m.name AS module_name FROM ipy_view v
      JOIN ipy_module m ON m.id = v.module_id
      WHERE v.module_id = $1 AND (v.is_system OR v.is_public OR v.owner_id = $2)
-     ORDER BY v.is_system DESC, v.sequence, v.name`,
-    [module.id, user.id],
+       AND (v.is_active OR $3)
+     ORDER BY v.sequence, v.is_system DESC, v.name`,
+    [module.id, user.id, user.isAdmin && req.query.includeInactive === 'true'],
   );
 
   const views = rows.rows.map(rowToView);
@@ -111,6 +115,7 @@ viewsRouter.put('/:module/:id', asyncHandler(async (req, res) => {
   const map: Record<string, string> = {
     name: 'name', description: 'description', sortBy: 'sort_by', sortDir: 'sort_dir',
     displayMode: 'display_mode', groupBy: 'group_by', isPublic: 'is_public', showMetrics: 'show_metrics',
+    isActive: 'is_active', sequence: 'sequence',
   };
   const sets: string[] = [];
   const params: unknown[] = [req.params.id];
@@ -154,8 +159,12 @@ viewsRouter.delete('/:module/:id', asyncHandler(async (req, res) => {
     `SELECT owner_id, is_system FROM ipy_view WHERE id = $1`, [req.params.id],
   );
   if (!view) throw new NotFoundError('View not found');
-  if (view.is_system) throw new ForbiddenError('System views cannot be deleted');
-  if (view.owner_id !== user.id && !user.isAdmin) throw new ForbiddenError('You can only delete views you created');
+  if (view.is_system && !user.isAdmin) {
+    throw new ForbiddenError('Built-in views can only be removed by an administrator');
+  }
+  if (!view.is_system && view.owner_id !== user.id && !user.isAdmin) {
+    throw new ForbiddenError('You can only delete views you created');
+  }
 
   await db.query(`DELETE FROM ipy_view WHERE id = $1`, [req.params.id]);
   res.json({ ok: true });
@@ -179,4 +188,25 @@ viewsRouter.post('/:module/:id/duplicate', asyncHandler(async (req, res) => {
     ],
   );
   res.status(201).json({ id: row?.id });
+}));
+
+/**
+ * Reorder the view tabs.
+ *
+ * The strip's order is the first thing anyone notices about a list, and the
+ * seeded order is a guess about how this desk works. Sent as a whole list
+ * rather than per-view moves so the result cannot end up with two views
+ * claiming the same position.
+ */
+viewsRouter.post('/:module/reorder', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  if (!user.isAdmin) throw new ForbiddenError('Only an administrator can reorder the shared view tabs');
+
+  const input = z.object({ ids: z.array(z.string().uuid()).max(100) }).parse(req.body);
+  await transaction(async (tx) => {
+    for (const [index, id] of input.ids.entries()) {
+      await tx.query(`UPDATE ipy_view SET sequence = $2, updated_at = now() WHERE id = $1`, [id, index * 10]);
+    }
+  });
+  res.json({ ok: true });
 }));

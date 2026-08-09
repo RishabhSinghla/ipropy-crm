@@ -115,7 +115,71 @@ export async function upsertPicklist(conn: Tx, def: PicklistDef): Promise<string
   return picklistId;
 }
 
+/**
+ * Fields an administrator deleted for good (migration 032).
+ *
+ * The seed is the reason a "delete" on a built-in field could not previously
+ * stick: this function rebuilds every module from the definitions below, so a
+ * deleted row came straight back on the next run. Consulting the tombstones
+ * makes the deletion durable across re-seeds and redeploys.
+ */
+async function tombstonedFields(conn: Tx, moduleName: string): Promise<Set<string>> {
+  const rows = await conn.query<{ field_name: string }>(
+    `SELECT field_name FROM ipy_field_tombstone WHERE module_name = $1`,
+    [moduleName],
+  );
+  return new Set(rows.rows.map((r) => r.field_name));
+}
+
+/**
+ * SQL type behind each column-backed uitype.
+ *
+ * Mirrors what migrations 002 onwards actually created — verified against the
+ * live schema, not guessed. Only used to re-create a column that metadata says
+ * should exist but the database is missing.
+ */
+const COLUMN_TYPES: Record<string, string> = {
+  string: 'TEXT', textarea: 'TEXT', richtext: 'TEXT', email: 'TEXT', phone: 'TEXT',
+  url: 'TEXT', autonumber: 'TEXT', image: 'TEXT', time: 'TEXT',
+  integer: 'INTEGER', score: 'INTEGER',
+  decimal: 'NUMERIC', currency: 'NUMERIC', percent: 'NUMERIC', area: 'NUMERIC',
+  boolean: 'BOOLEAN', date: 'DATE', datetime: 'TIMESTAMPTZ',
+  reference: 'UUID', owner: 'UUID', user: 'UUID',
+  json: 'JSONB', address: 'JSONB', multipicklist: 'JSONB', multireference: 'JSONB', tags: 'JSONB',
+  picklist: 'TEXT',
+};
+
+/**
+ * Put back a column the metadata expects but the table does not have.
+ *
+ * Permanently deleting a built-in field drops its column; if the tombstone is
+ * later removed, the seed restores the metadata row and the field would
+ * otherwise point at nothing — every read and write against it erroring. The
+ * metadata is the source of truth here, so the schema is made to match it.
+ *
+ * Deliberately additive only: `ADD COLUMN IF NOT EXISTS`, always nullable,
+ * never altering or dropping anything. Migrations remain the only thing that
+ * changes an existing column.
+ */
+async function ensureColumn(conn: Tx, table: string, column: string, field: FieldDef): Promise<void> {
+  // Some fields are stored on `ipy_record`, not on the module's payload table
+  // — `owner_id` above all. Creating a same-named column on the payload table
+  // does not fail; it shadows the real one in `SELECT r.*, p.*` and every
+  // record silently reads back as unassigned.
+  if (field.config?.__record) return;
+
+  const type = COLUMN_TYPES[field.uitype];
+  if (!type) return;
+  const exists = await conn.queryOne<{ one: number }>(
+    `SELECT 1 AS one FROM information_schema.columns WHERE table_name = $1 AND column_name = $2`,
+    [table, column],
+  );
+  if (exists) return;
+  await conn.query(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS "${column}" ${type}`);
+}
+
 export async function upsertModule(conn: Tx, def: ModuleDef): Promise<string> {
+  const deleted = await tombstonedFields(conn, def.name);
   const row = await conn.queryOne<{ id: string }>(
     `INSERT INTO ipy_module
       (name, label, singular_label, table_name, icon, color, sequence, menu_group,
@@ -153,7 +217,9 @@ export async function upsertModule(conn: Tx, def: ModuleDef): Promise<string> {
 
     let fieldSeq = 0;
     for (const f of block.fields) {
+      if (deleted.has(f.name)) continue;
       const storage = f.storage ?? (f.column ? 'column' : 'json');
+      if (storage === 'column') await ensureColumn(conn, def.table, f.column ?? f.name, f);
       await conn.query(
         `INSERT INTO ipy_field
           (module_id, block_id, name, label, uitype, storage, column_name, sequence,
@@ -260,10 +326,21 @@ export async function upsertViews(conn: Tx, moduleName: string, views: ViewDef[]
   }
 }
 
-/** Build a default detail layout from the module's blocks. */
+/**
+ * Build a default detail layout from the module's blocks.
+ *
+ * Skips any layout an administrator has edited (`is_customised`). Sections,
+ * header fields and the default tab are all admin controls now, so re-running
+ * the seed after a schema change must not quietly undo somebody's arrangement
+ * — which is exactly what the unconditional UPDATE here used to do.
+ */
 export async function seedDefaultLayouts(conn: Tx, def: ModuleDef): Promise<void> {
   const mod = await conn.queryOne<{ id: string }>(`SELECT id FROM ipy_module WHERE name = $1`, [def.name]);
   if (!mod) return;
+
+  const deleted = await tombstonedFields(conn, def.name);
+  const visible = (fields: FieldDef[]): FieldDef[] =>
+    fields.filter((f) => f.displayType !== 'hidden' && !deleted.has(f.name));
 
   const layoutConfig = {
     blocks: def.blocks.map((b) => ({
@@ -271,28 +348,24 @@ export async function seedDefaultLayouts(conn: Tx, def: ModuleDef): Promise<void
       label: b.label,
       columns: (b.columns ?? 2) as 1 | 2 | 3,
       collapsed: b.collapsed ?? false,
-      fields: b.fields.filter((f) => f.displayType !== 'hidden').map((f) => f.name),
+      fields: visible(b.fields).map((f) => f.name),
     })),
-    headerFields: def.blocks[0]?.fields.slice(0, 4).map((f) => f.name) ?? [],
+    headerFields: visible(def.blocks[0]?.fields ?? []).slice(0, 4).map((f) => f.name),
     relatedLists: (def.relations ?? []).map((r) => r.name),
-    tabs: [
-      { key: 'overview', label: 'Overview', icon: 'layout-dashboard' },
-      { key: 'timeline', label: 'Timeline', icon: 'activity' },
-      { key: 'related', label: 'Related', icon: 'link-2' },
-      { key: 'conversations', label: 'Conversations', icon: 'message-circle' },
-      { key: 'files', label: 'Files', icon: 'paperclip' },
-    ],
+    /** Which tab a record opens on. Admin-settable in the Layout Designer. */
+    defaultTab: 'overview',
     sidebar: [
+      { type: 'notes', title: 'Notes' },
       { type: 'ai_insights', title: 'AI Insights' },
-      { type: 'next_actions', title: 'Next Best Actions' },
     ],
   };
 
   for (const type of ['detail', 'edit'] as const) {
-    const existing = await conn.queryOne<{ id: string }>(
-      `SELECT id FROM ipy_layout WHERE module_id = $1 AND type = $2 AND is_default = true`,
+    const existing = await conn.queryOne<{ id: string; is_customised: boolean }>(
+      `SELECT id, is_customised FROM ipy_layout WHERE module_id = $1 AND type = $2 AND is_default = true`,
       [mod.id, type],
     );
+    if (existing?.is_customised) continue;
     if (existing) {
       await conn.query(`UPDATE ipy_layout SET config = $2, updated_at = now() WHERE id = $1`, [
         existing.id, JSON.stringify(layoutConfig),
@@ -307,7 +380,8 @@ export async function seedDefaultLayouts(conn: Tx, def: ModuleDef): Promise<void
   }
 
   // Quick-create shows only the fields flagged for it.
-  const quickFields = def.blocks.flatMap((b) => b.fields).filter((f) => f.quickCreate).map((f) => f.name);
+  const quickFields = def.blocks.flatMap((b) => b.fields)
+    .filter((f) => f.quickCreate && !deleted.has(f.name)).map((f) => f.name);
   if (quickFields.length) {
     const quickConfig = {
       blocks: [{ key: 'quick', label: `New ${def.singular}`, columns: 2 as const, fields: quickFields }],
@@ -328,20 +402,31 @@ export async function seedDefaultLayouts(conn: Tx, def: ModuleDef): Promise<void
   }
 }
 
+/**
+ * Merge a builder's own config with the caller's.
+ *
+ * `{ ...extra }` replaces `config` wholesale, so `F.money('x','X',{config:{min:0}})`
+ * silently dropped `currency: 'INR'` and the field stopped formatting as rupees.
+ * Every builder that sets a config of its own goes through here instead.
+ */
+function withConfig(base: FieldConfig, extra: Partial<FieldDef>): Partial<FieldDef> {
+  return { ...extra, config: { ...base, ...(extra.config ?? {}) } };
+}
+
 /** Convenience builders so field definitions stay one-liners. */
 export const F = {
   text: (name: string, label: string, extra: Partial<FieldDef> = {}): FieldDef =>
     ({ name, label, uitype: 'string', column: name, ...extra }),
   area: (name: string, label: string, extra: Partial<FieldDef> = {}): FieldDef =>
-    ({ name, label, uitype: 'area', column: name, config: { unit: 'sqft' }, ...extra }),
+    ({ name, label, uitype: 'area', column: name, ...withConfig({ unit: 'sqft' }, extra) }),
   money: (name: string, label: string, extra: Partial<FieldDef> = {}): FieldDef =>
-    ({ name, label, uitype: 'currency', column: name, config: { currency: 'INR' }, ...extra }),
+    ({ name, label, uitype: 'currency', column: name, ...withConfig({ currency: 'INR' }, extra) }),
   pick: (name: string, label: string, picklist: string, extra: Partial<FieldDef> = {}): FieldDef =>
-    ({ name, label, uitype: 'picklist', column: name, config: { picklist, colored: true }, ...extra }),
+    ({ name, label, uitype: 'picklist', column: name, ...withConfig({ picklist, colored: true }, extra) }),
   multipick: (name: string, label: string, picklist: string, extra: Partial<FieldDef> = {}): FieldDef =>
-    ({ name, label, uitype: 'multipicklist', column: name, config: { picklist }, ...extra }),
+    ({ name, label, uitype: 'multipicklist', column: name, ...withConfig({ picklist }, extra) }),
   ref: (name: string, label: string, modules: string[], extra: Partial<FieldDef> = {}): FieldDef =>
-    ({ name, label, uitype: 'reference', column: name, config: { referenceModules: modules }, ...extra }),
+    ({ name, label, uitype: 'reference', column: name, ...withConfig({ referenceModules: modules }, extra) }),
   num: (name: string, label: string, extra: Partial<FieldDef> = {}): FieldDef =>
     ({ name, label, uitype: 'integer', column: name, ...extra }),
   rollup: (
@@ -374,9 +459,9 @@ export const F = {
   url: (name: string, label: string, extra: Partial<FieldDef> = {}): FieldDef =>
     ({ name, label, uitype: 'url', column: name, ...extra }),
   textarea: (name: string, label: string, extra: Partial<FieldDef> = {}): FieldDef =>
-    ({ name, label, uitype: 'textarea', column: name, config: { fullWidth: true, rows: 4 }, ...extra }),
+    ({ name, label, uitype: 'textarea', column: name, ...withConfig({ fullWidth: true, rows: 4 }, extra) }),
   address: (name: string, label: string, extra: Partial<FieldDef> = {}): FieldDef =>
-    ({ name, label, uitype: 'address', column: name, config: { fullWidth: true }, ...extra }),
+    ({ name, label, uitype: 'address', column: name, ...withConfig({ fullWidth: true }, extra) }),
   json: (name: string, label: string, extra: Partial<FieldDef> = {}): FieldDef =>
     ({ name, label, uitype: 'json', column: name, ...extra }),
   tags: (name: string, label: string, extra: Partial<FieldDef> = {}): FieldDef =>
@@ -386,7 +471,7 @@ export const F = {
   autonum: (name: string, label: string, prefix: string, extra: Partial<FieldDef> = {}): FieldDef =>
     ({
       name, label, uitype: 'autonumber', column: name, readonly: true, searchable: true,
-      config: { numbering: { prefix, digits: 5, start: 1 } }, ...extra,
+      ...withConfig({ numbering: { prefix, digits: 5, start: 1 } }, extra),
     }),
   owner: (): FieldDef =>
     ({ name: 'owner_id', label: 'Assigned To', uitype: 'owner', column: 'owner_id', storage: 'column', config: { __record: true } as FieldConfig, quickCreate: true }),

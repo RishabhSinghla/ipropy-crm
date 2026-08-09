@@ -23,6 +23,7 @@
 import { renderTemplate, toE164 } from '@ipropy/shared';
 import { db, type Tx } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
+import { withNameParts } from '../../core/entity/nameParts.js';
 import { BadRequestError } from '../../utils/errors.js';
 import { touchActivity } from '../../core/entity/recordService.js';
 import { getOrCreateConversation, resolveHandle } from './service.js';
@@ -271,14 +272,12 @@ export async function renderForRecord(
     if (!row) return renderTemplate(body, await orgScope());
 
     const label = String(row.label ?? '');
+    // `first_name` / `last_name` are derived from `full_name` rather than
+    // stored — see core/entity/nameParts.ts. `orgScope` supplies the "there"
+    // fallback so a greeting never reads "Hi ,".
     return renderTemplate(body, {
       ...(await orgScope()),
-      ...row,
-      // The commonest token in every message anyone writes, and the one most
-      // likely to be blank on an imported record — fall back to the label so a
-      // greeting never reads "Hi ,".
-      first_name: row.first_name || label.split(' ')[0] || 'there',
-      name: label,
+      ...withNameParts({ ...row, label }),
     });
   } catch (err) {
     logger.debug({ err, recordId }, 'merge render fell back to org scope');
@@ -294,9 +293,7 @@ export async function renderForValues(
 ): Promise<string> {
   return renderTemplate(body, {
     ...(await orgScope()),
-    ...values,
-    first_name: values.first_name || label.split(' ')[0] || 'there',
-    name: label || 'there',
+    ...withNameParts({ ...values, label }),
   });
 }
 

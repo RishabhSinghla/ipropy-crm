@@ -6,13 +6,15 @@
  * the queue and the admin UI pick it up without further changes.
  */
 import type { AuthUser } from '@ipropy/shared';
-import { renderTemplate, toE164 } from '@ipropy/shared';
+import { renderTemplate, toE164, toInternational } from '@ipropy/shared';
 import { db, type Tx } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { registry } from '../metadata/registry.js';
+import { withNameParts } from '../entity/nameParts.js';
 import { formatValue } from '../metadata/values.js';
 import { createRecord, updateRecord, type ServiceContext } from '../entity/recordService.js';
 import { assignOwner } from './assignment.js';
+import { scheduleFollowUp } from './followUp.js';
 
 export interface TaskContext {
   workflowId: string;
@@ -40,7 +42,7 @@ export async function systemContext(user: AuthUser | null): Promise<ServiceConte
     isAdmin: true, isActive: true, roleId: null, roleName: null,
     profileId: null, profileName: null, groupIds: [],
     timezone: 'Asia/Kolkata', locale: 'en-IN', currency: 'INR',
-    theme: 'system', defaultDashboardId: null, extension: null, channelPartnerId: null, lastLoginAt: null,
+    theme: 'system', defaultDashboardId: null, extension: null, lastLoginAt: null,
   };
   return { user: actor, subordinateIds: [], groupIds: [], system: true, source: 'workflow' };
 }
@@ -53,7 +55,9 @@ export async function systemContext(user: AuthUser | null): Promise<ServiceConte
  */
 async function buildMergeScope(ctx: TaskContext): Promise<Record<string, unknown>> {
   const module = await registry.getModule(ctx.module);
-  const scope: Record<string, unknown> = { ...ctx.record };
+  // `{{first_name}}` appears in most seeded templates and is now derived from
+  // `full_name` rather than stored — see core/entity/nameParts.ts.
+  const scope: Record<string, unknown> = withNameParts({ ...ctx.record });
 
   if (module) {
     for (const f of module.fields) {
@@ -175,12 +179,6 @@ const createRecordTask: TaskHandler = async (config, ctx) => {
   const svc = await systemContext(ctx.user);
   const scope = await buildMergeScope(ctx);
 
-  // Booking → payment schedule is common enough to be a first-class action.
-  if (config.action === 'generate_payment_schedule') {
-    await generatePaymentSchedule(ctx);
-    return;
-  }
-
   const targetModule = String(config.module ?? '');
   if (!targetModule) return;
 
@@ -194,32 +192,33 @@ const createRecordTask: TaskHandler = async (config, ctx) => {
   await createRecord(svc, targetModule, values, { skipDuplicateCheck: true });
 };
 
+/**
+ * Schedule a follow-up.
+ *
+ * Was "create an Activity record". With that module gone the action writes the
+ * due date onto the record itself, notes the reason on its timeline and pings
+ * the owner — see core/workflow/followUp.ts. Existing workflow configurations
+ * keep working: `subject`, `description` and `dueInMinutes` mean what they
+ * always did.
+ */
 const createTaskAction: TaskHandler = async (config, ctx) => {
-  const svc = await systemContext(ctx.user);
   const scope = await buildMergeScope(ctx);
-
   const dueMinutes = Number(config.dueInMinutes ?? 60);
-  const due = new Date(Date.now() + dueMinutes * 60_000);
 
   let ownerId = ctx.record.owner_id as string | null;
   if (config.assignTo && config.assignTo !== 'record_owner') {
     ownerId = await resolvePrincipal(String(config.assignTo), ctx);
   }
 
-  await createRecord(svc, 'activities', {
-    subject: render(String(config.subject ?? 'Follow up'), scope),
-    activity_type: config.activity_type ?? 'Task',
-    status: 'Not Started',
-    priority: config.priority ?? 'Medium',
-    related_to: ctx.recordId,
-    related_module: ctx.module,
-    contact_id: ctx.record.contact_id ?? null,
-    start_at: due.toISOString(),
-    due_date: due.toISOString().slice(0, 10),
-    description: render(String(config.description ?? ''), scope),
-    is_ai_generated: Boolean(config.isAiGenerated),
-    owner_id: ownerId,
-  }, { skipDuplicateCheck: true });
+  await scheduleFollowUp({
+    recordId: ctx.recordId,
+    module: ctx.module,
+    on: new Date(Date.now() + dueMinutes * 60_000),
+    reason: render(String(config.subject ?? 'Follow up'), scope),
+    notes: config.description ? render(String(config.description), scope) : null,
+    ownerId,
+    authorId: ownerId,
+  });
 };
 
 const assignOwnerTask: TaskHandler = async (config, ctx) => {
@@ -361,68 +360,6 @@ const delay: TaskHandler = async () => {
 };
 
 
-/**
- * Derive a blog post's URL slug, word count and reading time.
- *
- * A workflow task rather than a branch inside recordService: the engine must
- * not learn what a "blog post" is. Slug generation only ever fills a *blank*
- * slug — once a post is live its URL is a promise to every inbound link and
- * share, so a retitle must not silently move it.
- */
-const prepareBlogPost: TaskHandler = async (_config, ctx) => {
-  const { updateRecord } = await import('../entity/recordService.js');
-  const record = ctx.record as Record<string, unknown>;
-  const updates: Record<string, unknown> = {};
-
-  const title = String(record.title ?? '').trim();
-  const currentSlug = String(record.slug ?? '').trim();
-  if (!currentSlug && title) {
-    updates.slug = await uniqueBlogSlug(slugify(title), ctx.recordId);
-  }
-
-  const body = String(record.body ?? '');
-  if (body) {
-    const words = body.replace(/[#*_>`~\[\]()!-]/g, ' ').split(/\s+/).filter(Boolean).length;
-    updates.word_count = words;
-    // 220 wpm is the usual figure for adults reading non-fiction on screen.
-    updates.reading_minutes = Math.max(1, Math.round(words / 220));
-  }
-
-  // Publishing without a date would leave the post invisible: the public feed
-  // filters on published_at being in the past.
-  if (record.status === 'Published' && !record.published_at) {
-    updates.published_at = new Date().toISOString();
-  }
-
-  if (Object.keys(updates).length === 0) return;
-  // skipWorkflow so this task cannot re-trigger the workflow that ran it.
-  await updateRecord(await systemContext(ctx.user), ctx.module, ctx.recordId, updates, { skipWorkflow: true });
-};
-
-/** Lowercase, ASCII, hyphenated — what a URL and a search engine both want. */
-function slugify(value: string): string {
-  return value
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80) || 'post';
-}
-
-/** Appends -2, -3 … so two posts can never claim the same live URL. */
-async function uniqueBlogSlug(base: string, recordId: string): Promise<string> {
-  for (let n = 1; n < 50; n += 1) {
-    const candidate = n === 1 ? base : `${base}-${n}`;
-    const clash = await db.queryOne<{ record_id: string }>(
-      `SELECT record_id FROM ipy_e_blog_posts WHERE slug = $1 AND record_id <> $2`,
-      [candidate, recordId],
-    );
-    if (!clash) return candidate;
-  }
-  return `${base}-${Date.now()}`;
-}
-
 const TASK_HANDLERS: Record<string, TaskHandler> = {
   update_fields: updateFields,
   create_record: createRecordTask,
@@ -436,7 +373,6 @@ const TASK_HANDLERS: Record<string, TaskHandler> = {
   webhook,
   add_tag: addTag,
   ai_action: aiAction,
-  prepare_blog_post: prepareBlogPost,
   trigger_call: triggerCall,
   delay,
 };
@@ -533,15 +469,16 @@ async function resolvePhone(
     for (const key of ['contact_id', 'lead_id', 'related_to']) {
       const refId = ctx.record[key];
       if (!refId) continue;
-      const phone = await db.queryOne<{ mobile: string | null }>(
-        `SELECT COALESCE(l.whatsapp_number, l.mobile) AS mobile FROM ipy_e_leads l WHERE l.record_id = $1`,
+      const phone = await db.queryOne<{ mobile: string | null; country_code: string | null }>(
+        `SELECT COALESCE(l.whatsapp_number, l.mobile) AS mobile, l.country_code
+           FROM ipy_e_leads l WHERE l.record_id = $1`,
         [refId],
       );
-      if (phone?.mobile) return toE164(phone.mobile);
+      if (phone?.mobile) return toInternational(phone.country_code, phone.mobile);
     }
     // Fall back to the record's own number.
     const own = ctx.record.whatsapp_number ?? ctx.record.mobile;
-    return own ? toE164(String(own)) : null;
+    return own ? toInternational(String(ctx.record.country_code ?? ''), String(own)) : null;
   }
 
   const rendered = spec.includes('{{') ? render(spec, scope) : (ctx.record[spec] ? String(ctx.record[spec]) : spec);
@@ -572,40 +509,6 @@ async function resolveEmail(
 // ---------------------------------------------------------------------------
 // Payment schedule generation
 // ---------------------------------------------------------------------------
-
-/**
- * Expand a booking's payment plan into individual Payment records so
- * collections has something to chase and dashboards have real receivables.
- */
-async function generatePaymentSchedule(ctx: TaskContext, conn: Tx = db): Promise<void> {
-  const svc = await systemContext(ctx.user);
-  const agreementValue = Number(ctx.record.agreement_value ?? 0);
-  if (!agreementValue) return;
-
-  const existing = await conn.queryOne<{ count: number }>(
-    `SELECT COUNT(*)::int AS count FROM ipy_e_payments WHERE booking_id = $1`, [ctx.recordId],
-  );
-  if ((existing?.count ?? 0) > 0) return;
-
-  const custom = ctx.record.payment_schedule as { milestone: string; percent: number; offsetDays?: number }[] | null;
-  const milestones = custom?.length ? custom : DEFAULT_MILESTONES;
-  const bookingDate = ctx.record.booking_date ? new Date(String(ctx.record.booking_date)) : new Date();
-
-  for (const [i, m] of milestones.entries()) {
-    const due = new Date(bookingDate.getTime() + (m.offsetDays ?? i * 90) * 86_400_000);
-    await createRecord(svc, 'payments', {
-      booking_id: ctx.recordId,
-      contact_id: ctx.record.contact_id,
-      project_id: ctx.record.project_id,
-      milestone: m.milestone,
-      installment_no: i + 1,
-      status: 'Pending',
-      due_date: due.toISOString().slice(0, 10),
-      amount_due: Math.round((agreementValue * m.percent) / 100),
-      owner_id: ctx.record.owner_id,
-    }, { skipDuplicateCheck: true, skipWorkflow: true });
-  }
-}
 
 const DEFAULT_MILESTONES = [
   { milestone: 'On Booking', percent: 10, offsetDays: 0 },

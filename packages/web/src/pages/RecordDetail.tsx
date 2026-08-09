@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FieldMeta, ModuleMeta, RecordEnvelope, TimelineEntry } from '@ipropy/shared';
 import { CALL_DISPOSITIONS, formatIndianPrice, relativeTime } from '@ipropy/shared';
 import {
   Activity, Check, ChevronDown, Eye, FileQuestion, ChevronLeft, ChevronRight, Download, Edit3, FileText, LayoutDashboard,
+  PhoneIncoming, PhoneMissed, PhoneOutgoing,
   Link2, MessageCircle, MoreHorizontal, Paperclip, Phone, Plus, RefreshCw, Search, Send, Sparkles,
   Star, Trash2, UserCheck, X,
 } from 'lucide-react';
@@ -22,19 +23,30 @@ import {
   ScoreChip, Skeleton, Spinner, Tabs,
 } from '../components/ui';
 import { ModuleIcon } from '../components/Layout';
-import ConvertLeadModal from '../components/ConvertLeadModal';
 import DocumentViewer, { isPreviewable, type ViewableFile } from '../components/DocumentViewer';
 import ComposeModal from '../components/ComposeModal';
 
 export default function RecordDetail(): JSX.Element {
   const { module: moduleName, id } = useParams<{ module: string; id: string }>();
   const navigate = useNavigate();
+  const [detailParams] = useSearchParams();
+  /**
+   * Where Back goes.
+   *
+   * The list hands over its own URL — filter, sort, search and page included —
+   * so returning lands on exactly the screen the user left. Falls back to the
+   * bare module for links that arrive from elsewhere (a notification, a search
+   * result, a pasted URL).
+   */
+  const returnTo = detailParams.get('return') ?? `/${moduleName}`;
+  const returnQuery = detailParams.get('return')
+    ? `?return=${encodeURIComponent(detailParams.get('return')!)}`
+    : '';
   const queryClient = useQueryClient();
   const { user, aiAvailable } = useApp();
 
-  const [tab, setTab] = useState('overview');
+  const [tab, setTab] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [showConvert, setShowConvert] = useState(false);
   const [compose, setCompose] = useState<'whatsapp' | 'email' | null>(null);
 
   const { data: meta } = useQuery({
@@ -52,6 +64,28 @@ export default function RecordDetail(): JSX.Element {
   // Join this record's realtime room so workflow/AI writes that land after the
   // response (lead scoring, lifecycle promotion) appear without a refresh.
   useWatchRecord(id);
+
+  /**
+   * Which tab this module opens on, and which fields the header summarises.
+   *
+   * Both live in the module's default detail layout, so an administrator sets
+   * them per module in Admin → Layouts rather than a developer hard-coding
+   * "overview" here. `tab` therefore starts null and adopts the configured
+   * value on first load — resolving it eagerly would flash Overview first.
+   */
+  const layoutConfig = useMemo(
+    () => ((meta?.layouts?.find((l) => l.type === 'detail' && l.is_default)?.config ?? {}) as {
+      blocks?: { key: string; label: string; columns: number; collapsed?: boolean; fields: string[] }[];
+      headerFields?: string[];
+      relatedLists?: string[];
+      defaultTab?: string;
+    }),
+    [meta],
+  );
+
+  useEffect(() => {
+    if (tab === null && meta) setTab(layoutConfig.defaultTab || 'overview');
+  }, [tab, meta, layoutConfig.defaultTab]);
 
   // Prev/next through whatever list the user last viewed for this module —
   // populated by ListView, read here so opening a record doesn't need to
@@ -126,7 +160,7 @@ export default function RecordDetail(): JSX.Element {
     );
   }
 
-  if (isLoading || !meta || !record) {
+  if (isLoading || !meta || !record || tab === null) {
     return (
       <div className="space-y-4 p-4 sm:p-6">
         <Skeleton className="h-24 w-full" />
@@ -138,22 +172,36 @@ export default function RecordDetail(): JSX.Element {
     );
   }
 
-  const layoutConfig = (meta.layouts?.find((l) => l.type === 'detail' && l.is_default)?.config ?? {}) as {
-    blocks?: { key: string; label: string; columns: number; collapsed?: boolean; fields: string[] }[];
-    headerFields?: string[];
-    relatedLists?: string[];
-  };
-
   const fieldMap = new Map(meta.fields.map((f) => [f.name, f]));
   const phone = String(record.values.mobile ?? record.values.phone ?? record.values.whatsapp_number ?? '');
   const email = String(record.values.email ?? '');
 
+  /**
+   * One flat strip: whatever related lists the module declares get a tab each,
+   * rather than hiding behind a "Related" tab with a second row of tabs inside
+   * it. Which of these opens first is the layout's `defaultTab`.
+   */
+  // Calls belong to people. The companion app syncs the whole team's call log
+  // against whichever lead the number matches, so this is where "did anyone
+  // ring them back?" gets answered — no separate call-centre module.
+  const supportsCalls = moduleName === 'leads';
+
   const tabs = [
     { key: 'overview', label: 'Overview', icon: <LayoutDashboard className="h-3.5 w-3.5" /> },
     { key: 'timeline', label: 'Timeline', icon: <Activity className="h-3.5 w-3.5" /> },
-    ...(meta.relations.length ? [{ key: 'related', label: 'Related', icon: <Link2 className="h-3.5 w-3.5" /> }] : []),
+    ...meta.relations.map((r) => ({
+      key: `rel:${r.name}`,
+      label: r.label,
+      icon: <Link2 className="h-3.5 w-3.5" />,
+    })),
+    ...(supportsCalls ? [{ key: 'calls', label: 'Calls', icon: <Phone className="h-3.5 w-3.5" /> }] : []),
     { key: 'files', label: 'Files', icon: <Paperclip className="h-3.5 w-3.5" /> },
   ];
+
+  // A configured default tab can outlive what it named — an admin deletes the
+  // related list it pointed at and every record of the module then opens on a
+  // tab that isn't in the strip, showing an empty body with nothing selected.
+  const activeTab = tabs.some((t) => t.key === tab) ? tab : 'overview';
 
   return (
     <div className="mx-auto max-w-[1600px] p-4 sm:p-6">
@@ -165,14 +213,16 @@ export default function RecordDetail(): JSX.Element {
             action buttons, so a narrow viewport scrolled sideways. */}
         <div className="p-4 sm:p-5">
           <div className="mb-3 flex items-center gap-2">
-            <button onClick={() => navigate(`/${moduleName}`)} className="btn-ghost -ml-2 shrink-0 p-1.5" title="Back">
+            {/* Back to the list *as it was* — the filter, sort and page the
+                user had set — rather than a bare module URL that resets them. */}
+            <button onClick={() => navigate(returnTo)} className="btn-ghost -ml-2 shrink-0 p-1.5" title="Back">
               <ChevronLeft className="h-4 w-4" />
             </button>
 
             {navIds.length > 0 && (
               <div className="flex shrink-0 items-center gap-0.5 rounded-lg border border-slate-200 p-0.5 dark:border-slate-700">
                 <button
-                  onClick={() => prevId && navigate(`/${moduleName}/${prevId}`)}
+                  onClick={() => prevId && navigate(`/${moduleName}/${prevId}${returnQuery}`)}
                   disabled={!prevId}
                   className="btn-ghost p-1 disabled:cursor-not-allowed disabled:opacity-30"
                   title="Previous (←)"
@@ -183,7 +233,7 @@ export default function RecordDetail(): JSX.Element {
                   <span className="px-1 text-2xs tnum text-muted">{navIndex + 1} / {navIds.length}</span>
                 )}
                 <button
-                  onClick={() => nextId && navigate(`/${moduleName}/${nextId}`)}
+                  onClick={() => nextId && navigate(`/${moduleName}/${nextId}${returnQuery}`)}
                   disabled={!nextId}
                   className="btn-ghost p-1 disabled:cursor-not-allowed disabled:opacity-30"
                   title="Next (→)"
@@ -255,9 +305,10 @@ export default function RecordDetail(): JSX.Element {
                     as "Phone-1786183963173-290" is real data here), and one long
                     value used to widen the whole card past the viewport. */}
                 <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted">
-                  {(layoutConfig.headerFields ?? []).slice(0, 5).map((name) => {
+                  {(layoutConfig.headerFields ?? []).map((name) => {
                     const field = fieldMap.get(name);
-                    if (!field || record.values[name] == null || record.values[name] === '') return null;
+                    if (!field || !field.isActive || field.displayType === 'hidden') return null;
+                    if (record.values[name] == null || record.values[name] === '') return null;
                     if (name === meta.pipelineField) return null;
                     return (
                       <span key={name} className="inline-flex min-w-0 max-w-full items-center gap-1.5 truncate">
@@ -270,6 +321,7 @@ export default function RecordDetail(): JSX.Element {
                             value={record.values[name]}
                             display={record.display?.[name]}
                             compact
+                            siblings={record.values}
                             restrictTo={restrictionForField(meta.picklistDependencies, record.values, field.name)}
                             onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void refetch(); }}
                           />
@@ -329,12 +381,6 @@ export default function RecordDetail(): JSX.Element {
                 </button>
               )}
 
-              {meta.supportsConversion && !record.values.is_converted && (
-                <button onClick={() => setShowConvert(true)} className="btn-primary btn-sm">
-                  <UserCheck className="h-3.5 w-3.5" /> Convert
-                </button>
-              )}
-
               {record.can?.edit && (
                 <Link to={`/${moduleName}/${id}/edit`} className="btn-secondary btn-sm">
                   <Edit3 className="h-3.5 w-3.5" /> Edit
@@ -373,13 +419,13 @@ export default function RecordDetail(): JSX.Element {
           </div>
           </div>
 
-        <Tabs tabs={tabs} active={tab} onChange={setTab} className="px-4 sm:px-5" />
+        <Tabs tabs={tabs} active={activeTab} onChange={setTab} className="px-4 sm:px-5" />
       </div>
 
       {/* Body */}
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
-          {tab === 'overview' && (
+          {activeTab === 'overview' && (
             <OverviewTab
               meta={meta}
               record={record}
@@ -388,14 +434,23 @@ export default function RecordDetail(): JSX.Element {
               onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void refetch(); }}
             />
           )}
-          {tab === 'timeline' && <TimelineTab module={moduleName!} id={id!} />}
-          {tab === 'related' && <RelatedTab meta={meta} module={moduleName!} id={id!} />}
-          {tab === 'files' && <FilesTab module={moduleName!} id={id!} />}
+          {activeTab === 'timeline' && <TimelineTab module={moduleName!} id={id!} />}
+          {activeTab.startsWith('rel:') && (
+            <RelatedTab
+              meta={meta} module={moduleName!} id={id!}
+              relationName={activeTab.slice(4)}
+            />
+          )}
+          {activeTab === 'calls' && <CallsTab recordId={id!} />}
+          {activeTab === 'files' && <FilesTab module={moduleName!} id={id!} />}
         </div>
 
+        {/* Notes first. A rep opening a lead needs the last thing a colleague
+            wrote before anything a model inferred, and the AI panel grows with
+            however many insights exist — below it, notes were often offscreen. */}
         <div className="space-y-4">
-          <AiPanel module={moduleName!} record={record} meta={meta} />
           <CommentsPanel module={moduleName!} id={id!} currentUser={user?.fullName ?? ''} />
+          <AiPanel module={moduleName!} record={record} meta={meta} />
         </div>
       </div>
 
@@ -408,19 +463,6 @@ export default function RecordDetail(): JSX.Element {
         confirmLabel="Delete"
         danger
       />
-
-      {showConvert && (
-        <ConvertLeadModal
-          record={record}
-          onClose={() => setShowConvert(false)}
-          onConverted={(result) => {
-            setShowConvert(false);
-            toast.success('Lead converted');
-            void refetch();
-            if (result.dealId) navigate(`/deals/${result.dealId}`);
-          }}
-        />
-      )}
 
       {compose && (
         <ComposeModal
@@ -505,6 +547,7 @@ function OverviewTab({
                           field={field}
                           value={record.values[field.name]}
                           display={record.display?.[field.name]}
+                          siblings={record.values}
                           restrictTo={restrictionForField(meta.picklistDependencies, record.values, field.name)}
                           linkTo={field.uitype === 'reference' ? record.display?.[`${field.name}__module`] : undefined}
                           onSaved={onSaved}
@@ -633,9 +676,24 @@ function TimelineItem({ entry }: { entry: TimelineEntry }): JSX.Element {
   );
 }
 
-function RelatedTab({ meta, module, id }: { meta: ModuleMeta; module: string; id: string }): JSX.Element {
+/**
+ * One related list.
+ *
+ * `relationName` promotes a list to a tab of its own on the record page. The
+ * old shape was a "Related" tab containing a second row of tabs — two levels of
+ * navigation to reach a site visit, on a page a salesperson opens forty times a
+ * day. Passing the relation in flattens that to one.
+ *
+ * Falls back to its own switcher when no relation is named, so any caller that
+ * still wants the combined view keeps working.
+ */
+function RelatedTab({
+  meta, module, id, relationName,
+}: { meta: ModuleMeta; module: string; id: string; relationName?: string }): JSX.Element {
   const queryClient = useQueryClient();
-  const [active, setActive] = useState(meta.relations[0]?.name ?? '');
+  const [selfActive, setSelfActive] = useState(meta.relations[0]?.name ?? '');
+  const active = relationName ?? selfActive;
+  const setActive = setSelfActive;
   const relation = meta.relations.find((r) => r.name === active);
 
   const { data, isLoading } = useQuery({
@@ -697,7 +755,7 @@ function RelatedTab({ meta, module, id }: { meta: ModuleMeta; module: string; id
   return (
     <div className="card overflow-hidden">
       <div className="flex flex-wrap items-center gap-1 border-b border-slate-100 p-2 dark:border-slate-800">
-        {meta.relations.map((r) => (
+        {!relationName && meta.relations.map((r) => (
           <button
             key={r.name}
             onClick={() => setActive(r.name)}
@@ -1275,5 +1333,79 @@ function CallButton({ to, recordId, module }: { to: string; recordId: string; mo
         </div>
       </Modal>
     </>
+  );
+}
+
+/**
+ * Every call with this person, from any source.
+ *
+ * Cloud telephony, the companion Android app and manually logged calls all land
+ * in the same table, so a rep sees one history rather than having to know which
+ * system a call came through. Recording playback and the outcome sit here too,
+ * because "what happened on the last call" is the question this tab exists to
+ * answer.
+ */
+function CallsTab({ recordId }: { recordId: string }): JSX.Element {
+  const { data, isLoading } = useQuery({
+    queryKey: ['record-calls', recordId],
+    queryFn: () => api.calls({ recordId, limit: 50 }),
+  });
+
+  if (isLoading) {
+    return <div className="card space-y-2 p-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12" />)}</div>;
+  }
+
+  const calls = (data ?? []) as unknown as {
+    id: string; direction: string; status: string; duration_seconds: number;
+    disposition: string | null; notes: string | null; recording_url: string | null;
+    started_at: string; agent_name: string | null;
+  }[];
+
+  if (!calls.length) {
+    return (
+      <div className="card">
+        <EmptyState
+          title="No calls yet"
+          body="Calls appear here automatically once a phone is paired in Settings → Phones, or when logged from the dialer."
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="card divide-y divide-slate-100 dark:divide-slate-800">
+      {calls.map((call) => (
+        <div key={call.id} className="p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {call.direction === 'inbound'
+              ? <PhoneIncoming className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+              : call.direction === 'outbound'
+                ? <PhoneOutgoing className="h-3.5 w-3.5 shrink-0 text-blue-600" />
+                : <PhoneMissed className="h-3.5 w-3.5 shrink-0 text-red-500" />}
+            <span className="text-sm font-medium capitalize">{call.direction}</span>
+            {call.duration_seconds > 0 && (
+              <span className="text-2xs text-muted tnum">
+                {Math.floor(call.duration_seconds / 60)}m {call.duration_seconds % 60}s
+              </span>
+            )}
+            {call.disposition && <Badge color="#0891b2">{call.disposition}</Badge>}
+            <span className="ml-auto text-2xs text-muted">{relativeTime(call.started_at)}</span>
+          </div>
+
+          {call.notes && <p className="mt-1.5 text-sm text-muted">{call.notes}</p>}
+
+          {call.recording_url && (
+            <audio
+              controls
+              preload="none"
+              src={api.recordingUrl(call.id)}
+              className="mt-2 h-8 w-full max-w-md"
+            />
+          )}
+
+          {call.agent_name && <p className="mt-1 text-2xs text-muted">{call.agent_name}</p>}
+        </div>
+      ))}
+    </div>
   );
 }

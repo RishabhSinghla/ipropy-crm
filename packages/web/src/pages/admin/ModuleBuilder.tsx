@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import type { FieldMeta } from '@ipropy/shared';
 import { UITYPE_LIST } from '@ipropy/shared';
-import { Blocks, Edit3, Eye, Lock, Plus, Trash2 } from 'lucide-react';
+import { Blocks, Edit3, Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
 import { cn } from '../../lib/utils';
@@ -11,12 +12,28 @@ import { ModuleIcon } from '../../components/Layout';
 
 export default function ModuleBuilder(): JSX.Element {
   const queryClient = useQueryClient();
-  const { modules } = useApp();
-  const [selectedModule, setSelectedModule] = useState(modules[0]?.name ?? 'leads');
+  const [searchParams, setSearchParams] = useSearchParams();
   const [editingField, setEditingField] = useState<FieldMeta | null>(null);
   const [creatingField, setCreatingField] = useState(false);
   const [creatingModule, setCreatingModule] = useState(false);
-  const [deleteField, setDeleteField] = useState<FieldMeta | null>(null);
+  // Two different destructive actions, so the dialog has to know which one.
+  // "hide" is reversible and keeps the data; "delete" drops the column.
+  const [pendingRemoval, setPendingRemoval] = useState<{ field: FieldMeta; mode: 'hide' | 'delete' } | null>(null);
+
+  const { data: fieldModules = [], isLoading: isModulesLoading } = useQuery({
+    queryKey: ['field-modules'],
+    queryFn: () => api.fieldModules(),
+  });
+  const requestedModule = searchParams.get('module');
+  const selectedModule = requestedModule && fieldModules.some((m) => m.name === requestedModule)
+    ? requestedModule
+    : (fieldModules[0]?.name ?? '');
+
+  const selectModule = (name: string): void => {
+    const next = new URLSearchParams(searchParams);
+    next.set('module', name);
+    setSearchParams(next, { replace: true });
+  };
 
   // Distinct query key from the app-wide ['module', name] used by record
   // screens: this one includes hidden/inactive fields so they can be found
@@ -24,18 +41,27 @@ export default function ModuleBuilder(): JSX.Element {
   const { data: meta, isLoading } = useQuery({
     queryKey: ['module', selectedModule, 'builder'],
     queryFn: () => api.module(selectedModule, { includeInactive: true }),
+    enabled: Boolean(selectedModule),
   });
 
   const invalidateModule = (): void => {
     void queryClient.invalidateQueries({ queryKey: ['module', selectedModule, 'builder'] });
     void queryClient.invalidateQueries({ queryKey: ['module', selectedModule] });
+    void queryClient.invalidateQueries({ queryKey: ['field-modules'] });
   };
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => api.deleteField(id),
+    mutationFn: ({ id, permanent }: { id: string; permanent: boolean }) => api.deleteField(id, permanent),
     onSuccess: (result) => {
-      const r = result as { deactivated?: boolean };
-      toast.success(r.deactivated ? 'Field hidden' : 'Field deleted');
+      const r = result as { deactivated?: boolean; hadValues?: number };
+      toast.success(
+        r.deactivated ? 'Field hidden' : 'Field deleted',
+        r.deactivated
+          ? 'It is off every screen but its data is intact — restore it any time.'
+          : r.hadValues
+            ? `Removed along with ${r.hadValues} stored value(s).`
+            : undefined,
+      );
       invalidateModule();
     },
     onError: (err: Error) => toast.error('Could not remove the field', err.message),
@@ -56,7 +82,7 @@ export default function ModuleBuilder(): JSX.Element {
         <div>
           <h1 className="text-lg font-semibold tracking-tight">Modules & Fields</h1>
           <p className="text-sm text-muted">
-            Add fields, rename labels or create entirely new modules. Changes apply everywhere immediately.
+            Add, edit, remove or restore fields on any module. Changes apply everywhere immediately.
           </p>
         </div>
         <button onClick={() => setCreatingModule(true)} className="btn-primary btn-sm ml-auto">
@@ -71,10 +97,13 @@ export default function ModuleBuilder(): JSX.Element {
             <p className="text-xs font-medium text-muted">Modules</p>
           </div>
           <div className="max-h-[32rem] overflow-y-auto p-1.5">
-            {modules.map((m) => (
+            {isModulesLoading && Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="mb-1 h-8" />
+            ))}
+            {fieldModules.map((m) => (
               <button
                 key={m.name}
-                onClick={() => setSelectedModule(m.name)}
+                onClick={() => selectModule(m.name)}
                 className={cn(
                   'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors',
                   selectedModule === m.name
@@ -85,6 +114,7 @@ export default function ModuleBuilder(): JSX.Element {
                 <span style={{ color: m.color }}><ModuleIcon name={m.icon} /></span>
                 <span className="flex-1 truncate">{m.label}</span>
                 {m.isCustom && <Badge>Custom</Badge>}
+                {!m.isActive && <Badge color="#ef4444">Disabled</Badge>}
               </button>
             ))}
           </div>
@@ -136,27 +166,51 @@ export default function ModuleBuilder(): JSX.Element {
                         </div>
 
                         <div className="flex shrink-0 items-center gap-1">
-                          <button onClick={() => setEditingField(field)} className="btn-ghost p-1.5" title="Edit">
+                          <button
+                            onClick={() => setEditingField(field)}
+                            className="btn-ghost btn-sm gap-1 px-2"
+                            title="Edit field"
+                            aria-label={`Edit ${field.label}`}
+                          >
                             <Edit3 className="h-3.5 w-3.5" />
+                            <span className="hidden xl:inline">Edit</span>
                           </button>
-                          {!field.isCustom && !field.isActive ? (
+                          {/* Hide and Delete are separate answers to separate
+                              questions — "not on my screens" and "gone". They
+                              used to be one button whose meaning depended on
+                              whether the field happened to be custom, which is
+                              not something an administrator should have to know. */}
+                          {!field.isActive ? (
                             <button
                               onClick={() => unhideMutation.mutate(field.id)}
                               disabled={unhideMutation.isPending}
-                              className="btn-ghost p-1.5 text-slate-400 hover:text-emerald-600"
+                              className="btn-ghost btn-sm gap-1 px-2 text-slate-400 hover:text-emerald-600"
                               title="Show field again"
+                              aria-label={`Restore ${field.label}`}
                             >
                               <Eye className="h-3.5 w-3.5" />
+                              <span className="hidden xl:inline">Restore</span>
                             </button>
                           ) : (
                             <button
-                              onClick={() => setDeleteField(field)}
-                              className="btn-ghost p-1.5 text-slate-400 hover:text-red-600"
-                              title={field.isCustom ? 'Delete field' : 'Hide field'}
+                              onClick={() => setPendingRemoval({ field, mode: 'hide' })}
+                              className="btn-ghost btn-sm gap-1 px-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                              title="Take off every screen, keeping the data"
+                              aria-label={`Hide ${field.label}`}
                             >
-                              {field.isCustom ? <Trash2 className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+                              <EyeOff className="h-3.5 w-3.5" />
+                              <span className="hidden xl:inline">Hide</span>
                             </button>
                           )}
+                          <button
+                            onClick={() => setPendingRemoval({ field, mode: 'delete' })}
+                            className="btn-ghost btn-sm gap-1 px-2 text-slate-400 hover:text-red-600"
+                            title="Delete the field and its data permanently"
+                            aria-label={`Delete ${field.label}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            <span className="hidden xl:inline">Delete</span>
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -189,22 +243,28 @@ export default function ModuleBuilder(): JSX.Element {
           onClose={() => setCreatingModule(false)}
           onCreated={(name) => {
             setCreatingModule(false);
-            setSelectedModule(name);
+            selectModule(name);
             toast.success('Module created', 'Reload to see it in the sidebar.');
             void queryClient.invalidateQueries({ queryKey: ['modules'] });
+            void queryClient.invalidateQueries({ queryKey: ['field-modules'] });
           }}
         />
       )}
 
       <ConfirmDialog
-        open={Boolean(deleteField)}
-        onClose={() => setDeleteField(null)}
-        onConfirm={() => deleteMutation.mutateAsync(deleteField!.id)}
-        title={deleteField?.isCustom ? `Delete “${deleteField.label}”?` : `Hide “${deleteField?.label}”?`}
-        body={deleteField?.isCustom
-          ? 'The field and all of its stored values will be permanently removed.'
-          : 'Built-in fields cannot be deleted. This hides the field from every screen; you can re-enable it later.'}
-        confirmLabel={deleteField?.isCustom ? 'Delete' : 'Hide'}
+        open={Boolean(pendingRemoval)}
+        onClose={() => setPendingRemoval(null)}
+        onConfirm={() => deleteMutation.mutateAsync({
+          id: pendingRemoval!.field.id,
+          permanent: pendingRemoval!.mode === 'delete',
+        })}
+        title={pendingRemoval?.mode === 'delete'
+          ? `Delete “${pendingRemoval.field.label}” permanently?`
+          : `Hide “${pendingRemoval?.field.label}”?`}
+        body={pendingRemoval?.mode === 'delete'
+          ? 'The field, every value stored in it, and its place in any view or layout are all removed. This cannot be undone — and it stays deleted when the app is next updated.'
+          : 'The field comes off every screen but keeps its data, and you can restore it from this page at any time.'}
+        confirmLabel={pendingRemoval?.mode === 'delete' ? 'Delete permanently' : 'Hide'}
         danger
       />
     </div>

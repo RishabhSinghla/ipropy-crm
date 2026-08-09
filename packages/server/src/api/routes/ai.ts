@@ -8,7 +8,6 @@ import { assertCapability, canAccessRecord } from '../../core/permissions/index.
 import { aiStatus, isAiAvailable } from '../../ai/client.js';
 import { isSttConfigured, SttError, transcribeRecording } from '../../core/stt/index.js';
 import { scoreLead } from '../../ai/leadScoring.js';
-import { analyseDeal } from '../../ai/dealRisk.js';
 import { matchForRecord, matchProperties, matchBuyersForProperty, loadRequirement } from '../../ai/matching.js';
 import { draftMessage, summariseRecord } from '../../ai/drafting.js';
 import { analyseTranscript, coachingReport } from '../../ai/callAnalysis.js';
@@ -36,14 +35,6 @@ aiRouter.post('/score-lead/:id', asyncHandler(async (req, res) => {
   if (!(await canAccessRecord(scope, 'leads', req.params.id, 'view'))) throw new NotFoundError();
   const result = await scoreLead(req.params.id);
   if (!result) throw new NotFoundError('Lead not found');
-  res.json(result);
-}));
-
-aiRouter.post('/analyse-deal/:id', asyncHandler(async (req, res) => {
-  const scope = getScope(req);
-  if (!(await canAccessRecord(scope, 'deals', req.params.id, 'view'))) throw new NotFoundError();
-  const result = await analyseDeal(req.params.id);
-  if (!result) throw new NotFoundError('Deal not found');
   res.json(result);
 }));
 

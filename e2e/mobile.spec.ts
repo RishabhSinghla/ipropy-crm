@@ -27,7 +27,7 @@ test.describe('phone', () => {
     // hidden-check for the wrong reason.
     const openButton = page.getByRole('button', { name: 'Open menu' });
     await expect(openButton).toBeVisible();
-    const leadsLink = page.getByRole('link', { name: /leads & customers/i });
+    const leadsLink = page.getByRole('link', { name: /leads & contacts/i });
     await expect(leadsLink).toBeAttached();
 
     // toBeInViewport, not toBeHidden: the drawer is moved off-canvas with
@@ -79,23 +79,23 @@ test.describe('phone', () => {
     await expect(dialog).toBeVisible();
 
     const surname = unique('Phone');
-    await dialog.getByLabel(/first name/i).fill('Mobile');
-    await dialog.getByLabel(/last name/i).fill(surname);
-    // Mobile is duplicate-checked, so it must be unique per run.
-    await dialog.getByLabel(/^mobile/i).fill(`+919${String(Date.now()).slice(-9)}`);
+    // One name field since migration 026, and the mobile takes the national
+    // number only — ten digits, unique per run because it is duplicate-checked.
+    await dialog.getByLabel(/full name/i).fill(`Mobile ${surname}`);
+    await dialog.getByLabel(/^mobile/i).fill(`9${String(Date.now()).slice(-9)}`);
     // Both are mandatory on the quick-create layout.
     await dialog.getByLabel(/lifecycle stage/i).selectOption({ index: 1 });
     await dialog.getByLabel(/pipeline status/i).selectOption({ index: 1 });
     await dialog.getByRole('button', { name: /create lead/i }).click();
 
-    await expect(page.getByRole('heading', { name: `Mobile ${surname}` })).toBeVisible({ timeout: 30_000 });
+    // Quick-create stays on the list by design — see ListView's onSaved.
+    await expect(dialog).toBeHidden({ timeout: 30_000 });
 
     // And it comes back in the card list — the mobile-only render path.
     await page.goto('/leads');
     await page.getByPlaceholder(/search leads/i).fill(surname);
-    // The card shows the record's joined label, not the separate name columns
-    // the desktop table splits it into — and `visible=true` matters because
-    // that table is still in the DOM at this width, just display:none.
+    // `visible=true` matters: the desktop table is still in the DOM at this
+    // width, just display:none, so the text matches twice.
     await expect(
       page.getByText(`Mobile ${surname}`).locator('visible=true').first(),
     ).toBeVisible({ timeout: 30_000 });
@@ -113,7 +113,7 @@ test.describe('phone', () => {
     // Scan again with the drawer open: it is the one piece of UI that only
     // exists at this width, so it is the one axe has never seen.
     await page.getByRole('button', { name: 'Open menu' }).click();
-    await expect(page.getByRole('link', { name: /leads & customers/i })).toBeVisible();
+    await expect(page.getByRole('link', { name: /leads & contacts/i })).toBeVisible();
     const open = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
       .analyze();

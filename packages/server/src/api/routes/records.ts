@@ -13,7 +13,6 @@ import {
 } from '../../core/permissions/index.js';
 import { buildTimeline } from '../../core/entity/timeline.js';
 import { filterUnseen, markModuleSeen } from '../../core/entity/unseen.js';
-import { convertLead } from '../../core/entity/conversion.js';
 import { toCsv } from '../../utils/csv.js';
 
 export const recordsRouter = Router();
@@ -512,32 +511,6 @@ recordsRouter.get('/:module/:id/audit', asyncHandler(async (req, res) => {
     [req.params.id],
   );
   res.json(rows.rows);
-}));
-
-// ---------------------------------------------------------------------------
-// Lead conversion
-// ---------------------------------------------------------------------------
-
-recordsRouter.post('/:module/:id/convert', asyncHandler(async (req, res) => {
-  const scope = getScope(req);
-  const module = await registry.requireModule(req.params.module);
-  const supportsConversion = (module as unknown as { supportsConversion?: boolean }).supportsConversion;
-  if (!supportsConversion) throw new BadRequestError(`${module.label} cannot be converted`);
-  await assertModuleAccess(scope.user, req.params.module, 'edit');
-
-  const options = z.object({
-    createContact: z.boolean().default(true),
-    createOrganization: z.boolean().default(false),
-    createDeal: z.boolean().default(true),
-    dealName: z.string().optional(),
-    dealAmount: z.number().optional(),
-    dealStage: z.string().optional(),
-    expectedCloseDate: z.string().optional(),
-    propertyId: z.string().uuid().optional(),
-    ownerId: z.string().uuid().optional(),
-  }).parse(req.body ?? {});
-
-  res.json(await convertLead(scope, req.params.id, options));
 }));
 
 // ---------------------------------------------------------------------------

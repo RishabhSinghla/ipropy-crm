@@ -2,8 +2,7 @@
  * Unified record timeline.
  *
  * Merges audit entries, comments, WhatsApp/SMS messages, calls, emails,
- * activities, site visits, payments, attachments and AI insights into one
- * chronological feed. This is what makes the contact view "interactive" — every
+ * attachments and AI insights into one chronological feed. This is what makes the contact view "interactive" — every
  * interaction with a person lands in the same place regardless of channel.
  */
 import type { TimelineEntry } from '@ipropy/shared';
@@ -24,7 +23,7 @@ export async function buildTimeline(
   const wanted = opts.types?.length ? new Set(opts.types) : null;
   const want = (t: string): boolean => !wanted || wanted.has(t);
 
-  const [audit, comments, messages, calls, emails, activities, visits, payments, attachments, insights] =
+  const [audit, comments, messages, calls, emails, attachments, insights] =
     await Promise.all([
       want('audit')
         ? conn.query<AuditRow>(
@@ -81,47 +80,6 @@ export async function buildTimeline(
             [recordId, limit],
           )
         : empty<EmailRow>(),
-
-      want('task')
-        ? conn.query<ActivityRow>(
-            `SELECT r.id::text, a.subject, a.activity_type, a.status, a.priority,
-                    a.due_date, a.start_at, a.completed_at, a.outcome, a.is_ai_generated,
-                    r.created_at, r.owner_id,
-                    trim(u.first_name || ' ' || u.last_name) AS user_name
-             FROM ipy_e_activities a
-             JOIN ipy_record r ON r.id = a.record_id
-             LEFT JOIN ipy_user u ON u.id = r.owner_id
-             WHERE a.related_to = $1 AND r.is_deleted = false
-             ORDER BY r.created_at DESC LIMIT $2`,
-            [recordId, limit],
-          )
-        : empty<ActivityRow>(),
-
-      want('site_visit')
-        ? conn.query<VisitRow>(
-            `SELECT r.id::text, v.subject, v.status, v.scheduled_at, v.interest_level,
-                    v.feedback, v.ai_summary, v.ai_sentiment, r.owner_id,
-                    trim(u.first_name || ' ' || u.last_name) AS user_name
-             FROM ipy_e_site_visits v
-             JOIN ipy_record r ON r.id = v.record_id
-             LEFT JOIN ipy_user u ON u.id = r.owner_id
-             WHERE (v.lead_id = $1 OR v.contact_id = $1 OR v.deal_id = $1) AND r.is_deleted = false
-             ORDER BY v.scheduled_at DESC LIMIT $2`,
-            [recordId, limit],
-          )
-        : empty<VisitRow>(),
-
-      want('payment')
-        ? conn.query<PaymentRow>(
-            `SELECT r.id::text, p.milestone, p.status, p.amount_due, p.amount_paid,
-                    p.paid_on, p.due_date, p.receipt_number, r.created_at
-             FROM ipy_e_payments p
-             JOIN ipy_record r ON r.id = p.record_id
-             WHERE (p.booking_id = $1 OR p.contact_id = $1) AND r.is_deleted = false
-             ORDER BY COALESCE(p.paid_on, p.due_date) DESC LIMIT $2`,
-            [recordId, limit],
-          )
-        : empty<PaymentRow>(),
 
       want('attachment')
         ? conn.query<AttachmentRow>(
@@ -215,41 +173,6 @@ export async function buildTimeline(
     });
   }
 
-  for (const r of activities.rows) {
-    entries.push({
-      id: `activity-${r.id}`, type: 'task', at: r.completed_at ?? r.start_at ?? r.created_at,
-      actorId: r.owner_id, actorName: r.user_name ?? 'Unassigned',
-      title: `${r.activity_type}: ${r.subject}`,
-      body: r.outcome ?? (r.status === 'Completed' ? 'Completed' : `Due ${r.due_date ?? 'unscheduled'}`),
-      icon: r.status === 'Completed' ? 'check-circle-2' : 'circle-dashed',
-      meta: { status: r.status, priority: r.priority, type: r.activity_type, isAi: r.is_ai_generated, recordId: r.id },
-    });
-  }
-
-  for (const r of visits.rows) {
-    entries.push({
-      id: `visit-${r.id}`, type: 'site_visit', at: r.scheduled_at,
-      actorId: r.owner_id, actorName: r.user_name ?? 'Unassigned',
-      title: `Site visit · ${r.status}${r.interest_level ? ` · ${r.interest_level} interest` : ''}`,
-      body: r.ai_summary ?? r.feedback ?? r.subject,
-      icon: 'map-pinned',
-      meta: { status: r.status, interestLevel: r.interest_level, sentiment: r.ai_sentiment, recordId: r.id },
-    });
-  }
-
-  for (const r of payments.rows) {
-    entries.push({
-      id: `payment-${r.id}`, type: 'payment', at: r.paid_on ?? r.due_date ?? r.created_at,
-      actorId: null, actorName: 'Finance',
-      title: `${r.milestone ?? 'Instalment'} · ${r.status}`,
-      body: r.status === 'Paid'
-        ? `₹${Number(r.amount_paid).toLocaleString('en-IN')} received${r.receipt_number ? ` · receipt ${r.receipt_number}` : ''}`
-        : `₹${Number(r.amount_due).toLocaleString('en-IN')} due`,
-      icon: r.status === 'Paid' ? 'receipt-indian-rupee' : 'alert-circle',
-      meta: { status: r.status, amountDue: r.amount_due, amountPaid: r.amount_paid, recordId: r.id },
-    });
-  }
-
   for (const r of attachments.rows) {
     entries.push({
       id: `file-${r.id}`, type: 'attachment', at: r.created_at,
@@ -303,7 +226,6 @@ interface CommentRow { id: string; body: string; created_at: string; user_id: st
 interface MessageRow { id: string; direction: string; channel: string; type: string; body: string | null; status: string; is_ai_generated: boolean; created_at: string; sent_by: string | null; user_name: string | null; media: unknown }
 interface CallRow { id: string; direction: string; status: string; duration_seconds: number; disposition: string | null; recording_url: string | null; ai_summary: string | null; ai_sentiment: string | null; started_at: string; user_id: string | null; user_name: string | null; from_number: string; to_number: string }
 interface EmailRow { id: string; subject: string | null; direction: string; status: string; to_addresses: unknown; opened_at: string | null; open_count: number; created_at: string; sent_by: string | null; user_name: string | null }
-interface ActivityRow { id: string; subject: string; activity_type: string; status: string; priority: string; due_date: string | null; start_at: string | null; completed_at: string | null; outcome: string | null; is_ai_generated: boolean; created_at: string; owner_id: string | null; user_name: string | null }
 interface VisitRow { id: string; subject: string; status: string; scheduled_at: string; interest_level: string | null; feedback: string | null; ai_summary: string | null; ai_sentiment: string | null; owner_id: string | null; user_name: string | null }
 interface PaymentRow { id: string; milestone: string | null; status: string; amount_due: number; amount_paid: number; paid_on: string | null; due_date: string | null; receipt_number: string | null; created_at: string }
 interface AttachmentRow { id: string; file_name: string; mime_type: string; size: number; created_at: string; uploaded_by: string | null; user_name: string | null }

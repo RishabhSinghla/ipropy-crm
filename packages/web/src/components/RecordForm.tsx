@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FieldMeta, ModuleMeta, RecordEnvelope } from '@ipropy/shared';
+import { collectFieldErrors } from '@ipropy/shared';
 import { AlertTriangle, ChevronDown, Save, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
@@ -22,6 +23,42 @@ interface LayoutBlock {
   columns: number;
   collapsed?: boolean;
   fields: string[];
+}
+
+/**
+ * The existing record, shown right under the field that matched it.
+ *
+ * The banner at the top of the form is easy to scroll past while typing. This
+ * puts "you already have this person" beside the number that proves it, with a
+ * link to open them — which is almost always what the user actually wanted.
+ */
+function DuplicateHint({
+  matches, module, label,
+}: {
+  matches: { id: string; label: string; matchedOn: string[] }[] | undefined;
+  module: string;
+  label: string;
+}): JSX.Element | null {
+  if (!matches?.length) return null;
+  return (
+    <div className="mt-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 dark:border-amber-800 dark:bg-amber-950/50">
+      <p className="text-2xs font-medium text-amber-900 dark:text-amber-200">
+        This {label.toLowerCase()} is already on {matches.length === 1 ? 'a record' : 'other records'}:
+      </p>
+      <ul className="mt-0.5 space-y-0.5">
+        {matches.slice(0, 3).map((m) => (
+          <li key={m.id}>
+            <Link
+              to={`/${module}/${m.id}`}
+              className="text-xs font-medium text-amber-900 underline underline-offset-2 hover:text-amber-700 dark:text-amber-200"
+            >
+              {m.label}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 export default function RecordForm({
@@ -82,9 +119,26 @@ export default function RecordForm({
       void api.checkDuplicates(module.name, relevant, record?.id)
         .then(setDuplicates)
         .catch(() => setDuplicates([]));
-    }, 600);
+    }, 400);
     return () => clearTimeout(timer);
   }, [module.duplicateCheckFields?.join(','), ...(module.duplicateCheckFields ?? []).map((f) => values[f])]);
+
+  /**
+   * Duplicates grouped by the field that matched.
+   *
+   * Shown under the input rather than only in a banner at the top: someone
+   * typing a number they have already saved should see the existing person
+   * right there, next to what they typed, while they can still change course.
+   */
+  const duplicatesByField = useMemo(() => {
+    const out = new Map<string, typeof duplicates>();
+    for (const dup of duplicates) {
+      for (const name of dup.matchedOn) {
+        out.set(name, [...(out.get(name) ?? []), dup]);
+      }
+    }
+    return out;
+  }, [duplicates]);
 
   const setValue = (name: string, value: unknown): void => {
     setValues((prev) => {
@@ -120,6 +174,7 @@ export default function RecordForm({
 
   const validate = (): boolean => {
     const next: Record<string, string> = {};
+
     for (const block of blocks) {
       for (const name of block.fields) {
         const field = fieldMap.get(name);
@@ -130,6 +185,13 @@ export default function RecordForm({
         if (empty) next[name] = `${field.label} is required`;
       }
     }
+
+    // Format, range and cross-field rules — the same code the server runs, so
+    // the form can never accept something the API will reject, or vice versa.
+    for (const err of collectFieldErrors(module.fields, values, { ...(record?.values ?? {}), ...values })) {
+      next[err.field] ??= err.message;
+    }
+
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -146,6 +208,14 @@ export default function RecordForm({
     try {
       // Only send fields the form actually rendered, plus the owner.
       const rendered = new Set(blocks.flatMap((b) => b.fields));
+      // Controls that own a companion field (a mobile's country code, an
+      // area's unit) render it inside themselves, so it never appears in the
+      // layout's field list — and without this the edit would be dropped here.
+      for (const name of [...rendered]) {
+        const cfg = fieldMap.get(name)?.config;
+        if (cfg?.digitsFrom) rendered.add(String(cfg.digitsFrom));
+        if (cfg?.unitField) rendered.add(String(cfg.unitField));
+      }
       const payload: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(values)) {
         if (rendered.has(key) || key === 'owner_id') payload[key] = value;
@@ -253,6 +323,7 @@ export default function RecordForm({
                       field={field}
                       value={values[field.name]}
                       onChange={(v) => setValue(field.name, v)}
+                      onChangeOther={setValue}
                       error={errors[field.name]}
                       formValues={values}
                       restrictTo={restrictionFor(field.name)}
@@ -262,6 +333,11 @@ export default function RecordForm({
                     {errors[field.name] && (
                       <p className="mt-1 text-xs text-red-600 dark:text-red-400">{errors[field.name]}</p>
                     )}
+                    <DuplicateHint
+                      matches={duplicatesByField.get(field.name)}
+                      module={module.name}
+                      label={field.label}
+                    />
                     {!errors[field.name] && field.helpText && field.uitype !== 'boolean' && (
                       <p className="mt-1 text-xs text-muted">{field.helpText}</p>
                     )}

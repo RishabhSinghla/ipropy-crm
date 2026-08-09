@@ -25,17 +25,17 @@ beforeAll(async () => {
 
 describe('create', () => {
   it('round-trips a record and derives its label from labelFields', async () => {
-    const created = await createRecord(admin, 'leads', leadInput({ first_name: 'Asha', last_name: 'Verma' }));
+    const created = await createRecord(admin, 'leads', leadInput({ full_name: 'Asha Verma' }));
 
     expect(created.id).toBeTruthy();
     expect(created.module).toBe('leads');
     expect(created.label).toBe('Asha Verma');
-    expect(created.values.first_name).toBe('Asha');
+    expect(created.values.full_name).toBe('Asha Verma');
 
     // Re-read rather than trusting the create response — this is what catches
     // a value that was returned from memory but never actually persisted.
     const fetched = await getRecord(admin, 'leads', created.id);
-    expect(fetched?.values.last_name).toBe('Verma');
+    expect(fetched?.values.full_name).toBe('Asha Verma');
   });
 
   it('allocates a record number from the module autonumber', async () => {
@@ -50,9 +50,7 @@ describe('create', () => {
   });
 
   it('rejects a missing mandatory field', async () => {
-    // `mobile` is the mandatory field on Leads (last_name is NOT NULL at the
-    // DB level but intentionally not mandatory in metadata).
-    await expect(createRecord(admin, 'leads', { first_name: 'NoMobile', last_name: 'Present' }))
+    await expect(createRecord(admin, 'leads', { full_name: 'No Mobile', country_code: '+91' }))
       .rejects.toThrow();
   });
 
@@ -77,18 +75,18 @@ describe('create', () => {
 
 describe('update', () => {
   it('persists a change and leaves untouched fields alone', async () => {
-    const created = await createRecord(admin, 'leads', leadInput({ first_name: 'Before', company: 'Acme Realty' }));
-    await updateRecord(admin, 'leads', created.id, { first_name: 'After' });
+    const created = await createRecord(admin, 'leads', leadInput({ full_name: 'Before Name', company: 'Acme Realty' }));
+    await updateRecord(admin, 'leads', created.id, { full_name: 'After Name' });
 
     const fetched = await getRecord(admin, 'leads', created.id);
-    expect(fetched?.values.first_name).toBe('After');
+    expect(fetched?.values.full_name).toBe('After Name');
     expect(fetched?.values.company).toBe('Acme Realty');
   });
 
   it('recomputes the label when a label field changes', async () => {
-    const created = await createRecord(admin, 'leads', leadInput({ first_name: 'Old', last_name: 'Name' }));
-    const updated = await updateRecord(admin, 'leads', created.id, { last_name: 'Changed' });
-    expect(updated.label).toBe('Old Changed');
+    const created = await createRecord(admin, 'leads', leadInput({ full_name: 'Old Name' }));
+    const updated = await updateRecord(admin, 'leads', created.id, { full_name: 'Changed Name' });
+    expect(updated.label).toBe('Changed Name');
   });
 
   it('writes an audit row naming the field, the old value and the new', async () => {
@@ -113,28 +111,28 @@ describe('update', () => {
 
 describe('JSON-storage fields', () => {
   it('round-trips a value stored in custom_fields JSONB', async () => {
-    // publish_to_web is storage:'json' on projects — the other half of the
+    // publish_to_web is storage:'json' on properties — the other half of the
     // column/JSON split the query builder has to resolve.
-    const project = await createRecord(admin, 'projects', {
-      name: `Integration Project ${Date.now()}`,
-      status: 'New Launch',
+    const unit = await createRecord(admin, 'properties', {
+      name: `Integration Unit ${Date.now()}`,
+      status: 'Available',
       publish_to_web: false,
     });
 
-    const fetched = await getRecord(admin, 'projects', project.id);
+    const fetched = await getRecord(admin, 'properties', unit.id);
     expect(fetched?.values.publish_to_web).toBe(false);
 
-    await updateRecord(admin, 'projects', project.id, { publish_to_web: true });
-    const after = await getRecord(admin, 'projects', project.id);
+    await updateRecord(admin, 'properties', unit.id, { publish_to_web: true });
+    const after = await getRecord(admin, 'properties', unit.id);
     expect(after?.values.publish_to_web).toBe(true);
   });
 
   it('filters on a JSON-storage field through the SQL builder', async () => {
     const marker = `JsonFilter ${Date.now()}`;
-    await createRecord(admin, 'projects', { name: `${marker} A`, status: 'New Launch', publish_to_web: true });
-    await createRecord(admin, 'projects', { name: `${marker} B`, status: 'New Launch', publish_to_web: false });
+    await createRecord(admin, 'properties', { name: `${marker} A`, status: 'Available', publish_to_web: true });
+    await createRecord(admin, 'properties', { name: `${marker} B`, status: 'Available', publish_to_web: false });
 
-    const result = await listRecords(admin, 'projects', {
+    const result = await listRecords(admin, 'properties', {
       search: marker,
       filter: { logic: 'AND', conditions: [{ field: 'publish_to_web', operator: 'equals', value: true }] },
     });
@@ -158,7 +156,7 @@ describe('list and filter', () => {
 
   it('applies a filter as SQL, not in memory', async () => {
     const marker = `Filterable-${Date.now()}`;
-    await createRecord(admin, 'leads', leadInput({ last_name: marker, company: 'Nagpur Realty' }));
+    await createRecord(admin, 'leads', leadInput({ full_name: marker, company: 'Nagpur Realty' }));
 
     const result = await listRecords(admin, 'leads', {
       filter: { logic: 'AND', conditions: [{ field: 'company', operator: 'equals', value: 'Nagpur Realty' }] },
@@ -192,18 +190,18 @@ describe('soft delete and restore', () => {
   });
 
   it('brings a record back on restore', async () => {
-    const created = await createRecord(admin, 'leads', leadInput({ last_name: 'Restorable' }));
+    const created = await createRecord(admin, 'leads', leadInput({ full_name: 'Restorable Lead' }));
     await deleteRecord(admin, 'leads', created.id);
     await restoreRecord(admin, 'leads', created.id);
 
     const fetched = await getRecord(admin, 'leads', created.id);
-    expect(fetched?.values.last_name).toBe('Restorable');
+    expect(fetched?.values.full_name).toBe('Restorable Lead');
   });
 
   it('excludes deleted records from lists and counts', async () => {
     const marker = `Deletable-${Date.now()}`;
-    const a = await createRecord(admin, 'leads', leadInput({ last_name: marker }));
-    await createRecord(admin, 'leads', leadInput({ last_name: marker }));
+    const a = await createRecord(admin, 'leads', leadInput({ full_name: `${marker} A` }));
+    await createRecord(admin, 'leads', leadInput({ full_name: `${marker} B` }));
 
     const before = await listRecords(admin, 'leads', { search: marker });
     await deleteRecord(admin, 'leads', a.id);
@@ -219,7 +217,7 @@ describe('bulk operations', () => {
     const marker = `Bulk-${Date.now()}`;
     const ids = [];
     for (let i = 0; i < 3; i++) {
-      ids.push((await createRecord(admin, 'leads', leadInput({ last_name: marker }))).id);
+      ids.push((await createRecord(admin, 'leads', leadInput({ full_name: `${marker}-${i}` }))).id);
     }
 
     const result = await massUpdate(admin, 'leads', ids, { company: 'Surat Realty' });

@@ -14,13 +14,15 @@ import type {
   ModuleMeta,
   RecordEnvelope,
 } from '@ipropy/shared';
-import { UITYPES } from '@ipropy/shared';
+import { UITYPES, formatArea, formatPhoneWithCode } from '@ipropy/shared';
 import { db, onCommit, transaction, type Tx } from '../../db/pool.js';
 import { BadRequestError, ConflictError, NotFoundError, ValidationError } from '../../utils/errors.js';
 import { logger } from '../../utils/logger.js';
 import { emit } from '../events/bus.js';
 import { registry } from '../metadata/registry.js';
-import { coerceValue, formatValue, fromDbValue, isEmpty, toDbValue, validateRequired } from '../metadata/values.js';
+import {
+  coerceValue, formatValue, fromDbValue, isEmpty, toDbValue, validateRequired, validateValues,
+} from '../metadata/values.js';
 import {
   ENTITY_ALIAS,
   RECORD_ALIAS,
@@ -382,7 +384,14 @@ async function resolveDisplayValues(
     if (f.uitype === 'reference') recordIds.add(String(v));
     else if (f.uitype === 'multireference' && Array.isArray(v)) v.forEach((x) => recordIds.add(String(x)));
     else if (f.uitype === 'user' || f.uitype === 'owner') userIds.add(String(v));
-    else display[f.name] = formatValue(f, v);
+    else if (f.uitype === 'phone' && f.config.digitsFrom) {
+      // The code lives in its own column but reads as part of the number, so
+      // it is joined here — once, server-side — rather than in each of the
+      // list, detail, kanban and export renderers.
+      display[f.name] = formatPhoneWithCode(String(values[String(f.config.digitsFrom)] ?? ''), String(v));
+    } else if (f.uitype === 'area' && f.config.unitField) {
+      display[f.name] = formatArea(Number(v), String(values[String(f.config.unitField)] ?? f.config.unit ?? 'sqft'));
+    } else display[f.name] = formatValue(f, v);
   }
   if (values.owner_id) userIds.add(String(values.owner_id));
   if (values.created_by) userIds.add(String(values.created_by));
@@ -735,6 +744,10 @@ async function prepareValues(
 
   // 3. validation
   validateRequired(module.fields, opts.isCreate ? out.values : input, opts.isCreate);
+  // Format, range and cross-field rules, against the stored record merged with
+  // this payload — a partial update of "budget from" must still be checked
+  // against the "budget to" already on the record.
+  validateValues(module.fields, out.values, { ...(opts.existing ?? {}), ...out.values });
 
   // 4. uniqueness
   for (const field of module.fields) {

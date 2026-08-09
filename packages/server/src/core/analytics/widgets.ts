@@ -136,8 +136,8 @@ export async function runWidget(
       }, conn, type);
     case 'calendar':
       return runTable(ctx, {
-        module: 'activities', sortBy: 'due_date', sortDir: 'asc', limit: 15,
-        columns: ['due_date', 'activity_type', 'owner_id', 'status'],
+        module: 'leads', sortBy: 'next_followup_at', sortDir: 'asc', limit: 15,
+        columns: ['next_followup_at', 'full_name', 'owner_id', 'status'],
         ...config,
       }, conn, type);
     case 'markdown':
@@ -522,7 +522,7 @@ async function runStacked(ctx: ScopeContext, config: WidgetConfig, conn: Tx): Pr
 
 /** Weighted pipeline: sum(amount × probability) bucketed by expected close month. */
 async function runForecast(ctx: ScopeContext, config: WidgetConfig, conn: Tx): Promise<WidgetResult> {
-  const moduleName = config.module ?? 'deals';
+  const moduleName = config.module ?? 'leads';
   const module = await registry.requireModule(moduleName);
   const amountField = module.fields.find((f) => f.name === (config.aggregateField ?? 'amount'));
   const probField = module.fields.find((f) => f.name === 'probability');

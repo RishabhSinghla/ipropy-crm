@@ -250,8 +250,6 @@ export interface AuthUser {
   defaultDashboardId: string | null;
   /** telephony extension for click-to-call */
   extension: string | null;
-  /** linked channel_partners record — makes this account a portal user */
-  channelPartnerId: string | null;
   lastLoginAt: string | null;
 }
 

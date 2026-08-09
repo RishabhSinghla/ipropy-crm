@@ -219,33 +219,24 @@ async function createFollowUpTasks(
   userId: string | null,
 ): Promise<void> {
   if (!actions.length || !module) return;
-  const { createRecord } = await import('../core/entity/recordService.js');
-  const systemUser = await getSystemActor();
+  const { scheduleFollowUp } = await import('../core/workflow/followUp.js');
   const owner = await db.queryOne<{ owner_id: string | null }>(
     `SELECT owner_id FROM ipy_record WHERE id = $1`, [recordId],
   );
 
-  // Cap at three so a chatty transcript doesn't bury the rep in tasks.
-  for (const action of actions.slice(0, 3)) {
-    await createRecord(
-      { user: systemUser, subordinateIds: [], groupIds: [], system: true, source: 'ai_call_analysis' },
-      'activities',
-      {
-        subject: action.slice(0, 200),
-        activity_type: 'Follow Up',
-        status: 'Not Started',
-        priority: 'High',
-        related_to: recordId,
-        related_module: module,
-        due_date: new Date(Date.now() + 86_400_000).toISOString().slice(0, 10),
-        start_at: new Date(Date.now() + 86_400_000).toISOString(),
-        is_ai_generated: true,
-        description: 'Created automatically from call analysis.',
-        owner_id: owner?.owner_id ?? userId,
-      },
-      { skipDuplicateCheck: true, skipWorkflow: true },
-    ).catch((err) => logger.warn({ err }, 'failed to create AI follow-up task'));
-  }
+  // One follow-up, listing what the call actually committed to. This used to
+  // create up to three task records; three rows all due tomorrow against the
+  // same lead was noise, and the lead only has one next-follow-up date anyway.
+  await scheduleFollowUp({
+    recordId,
+    module,
+    on: new Date(Date.now() + 86_400_000),
+    reason: 'Next steps from the last call',
+    notes: actions.slice(0, 5).map((a) => `• ${a.slice(0, 200)}`).join('\n'),
+    ownerId: owner?.owner_id ?? userId,
+    authorId: owner?.owner_id ?? userId,
+    onlyIfSooner: true,
+  });
 }
 
 async function getSystemActor() {
@@ -261,7 +252,7 @@ async function getSystemActor() {
     avatarUrl: null, phone: null, isAdmin: true, isActive: true,
     roleId: null, roleName: null, profileId: null, profileName: null, groupIds: [],
     timezone: 'Asia/Kolkata', locale: 'en-IN', currency: 'INR',
-    theme: 'system' as const, defaultDashboardId: null, extension: null, channelPartnerId: null, lastLoginAt: null,
+    theme: 'system' as const, defaultDashboardId: null, extension: null, lastLoginAt: null,
   };
 }
 

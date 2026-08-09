@@ -4,7 +4,7 @@
  * One in-process tick handles three jobs:
  *   1. drain the deferred task queue (delayed workflow tasks)
  *   2. run scheduled workflows whose next_run_at has come due
- *   3. housekeeping — SLA breaches, activity reminders, stage timers
+ *   3. housekeeping — SLA breaches, activity reminders, window expiry
  *
  * Queue rows are claimed with FOR UPDATE SKIP LOCKED, so running more than one
  * server instance is safe without an external queue.
@@ -387,9 +387,7 @@ function computeNextRun(schedule: ScheduledRow['schedule']): Date {
 
 async function housekeeping(): Promise<void> {
   await Promise.allSettled([
-    updateStageTimers(),
     checkSlaBreaches(),
-    sendActivityReminders(),
     expireWhatsAppWindows(),
     pruneOldQueueRows(),
     pollInboundEmail(),
@@ -411,14 +409,6 @@ async function pollInboundEmail(): Promise<void> {
   if (result.imported > 0 || result.errors.length) {
     logger.info({ ...result }, 'inbound email sync');
   }
-}
-
-/** Keep days_in_stage honest without touching the record service. */
-async function updateStageTimers(): Promise<void> {
-  await db.query(`
-    UPDATE ipy_e_deals SET days_in_stage = GREATEST(0, EXTRACT(DAY FROM now() - stage_changed_at)::int)
-    WHERE stage_changed_at IS NOT NULL AND is_won = false AND is_lost = false
-  `);
 }
 
 async function checkSlaBreaches(): Promise<void> {
@@ -448,37 +438,6 @@ async function checkSlaBreaches(): Promise<void> {
         row.record_id,
       ],
     );
-  }
-}
-
-/** Fire activity reminders N minutes before the start time. */
-async function sendActivityReminders(): Promise<void> {
-  const due = await db.query<{ record_id: string; subject: string; owner_id: string | null; start_at: string }>(
-    `SELECT a.record_id, a.subject, r.owner_id, a.start_at
-     FROM ipy_e_activities a JOIN ipy_record r ON r.id = a.record_id
-     WHERE a.reminder_minutes IS NOT NULL
-       AND a.reminder_sent = false
-       AND a.status <> 'Completed'
-       AND a.start_at IS NOT NULL
-       AND a.start_at - (a.reminder_minutes || ' minutes')::interval <= now()
-       AND a.start_at > now()
-       AND r.is_deleted = false
-     LIMIT 200`,
-  );
-
-  for (const a of due.rows) {
-    if (a.owner_id) {
-      await db.query(
-        `INSERT INTO ipy_notification (user_id, kind, title, body, link, record_id)
-         VALUES ($1,'reminder','Upcoming: ' || $2, $3, $4, $5)`,
-        [
-          a.owner_id, a.subject,
-          `Starts at ${new Date(a.start_at).toLocaleString('en-IN')}`,
-          `/activities/${a.record_id}`, a.record_id,
-        ],
-      );
-    }
-    await db.query(`UPDATE ipy_e_activities SET reminder_sent = true WHERE record_id = $1`, [a.record_id]);
   }
 }
 

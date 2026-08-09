@@ -1,10 +1,24 @@
-import { useEffect, useState } from 'react';
+/**
+ * Layout Designer — what a record page looks like, as data.
+ *
+ * Three things are editable here, and all three used to be hard-coded:
+ *
+ *   * the sections and the fields inside them (drag, plus add/rename/reorder/delete);
+ *   * the summary chips in the record header;
+ *   * which tab a record opens on.
+ *
+ * Saving marks the layout as customised, which stops `db:seed` rewriting it on
+ * the next schema change — see seed/helpers.ts.
+ */
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { GripVertical, LayoutTemplate, Save, Trash2 } from 'lucide-react';
+import {
+  ChevronDown, ChevronUp, GripVertical, Plus, Save, Trash2, X,
+} from 'lucide-react';
 import { api } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
 import { cn } from '../../lib/utils';
-import { Badge, EmptyState, Select, Skeleton, Spinner } from '../../components/ui';
+import { Badge, Select, Skeleton, Spinner } from '../../components/ui';
 
 interface LayoutBlock {
   key: string;
@@ -14,12 +28,27 @@ interface LayoutBlock {
   fields: string[];
 }
 
+interface DesignerConfig {
+  blocks: LayoutBlock[];
+  headerFields: string[];
+  defaultTab: string;
+}
+
+/** Tabs the record page can open on. Relation tabs are appended per module. */
+const BASE_TABS = [
+  { value: 'overview', label: 'Overview' },
+  { value: 'timeline', label: 'Timeline' },
+  { value: 'files', label: 'Files' },
+];
+
 export default function LayoutDesigner(): JSX.Element {
   const queryClient = useQueryClient();
   const { modules } = useApp();
   const [moduleName, setModuleName] = useState(modules[0]?.name ?? 'leads');
   const [layoutType, setLayoutType] = useState<'detail' | 'edit' | 'quick_create'>('detail');
   const [blocks, setBlocks] = useState<LayoutBlock[]>([]);
+  const [headerFields, setHeaderFields] = useState<string[]>([]);
+  const [defaultTab, setDefaultTab] = useState('overview');
   const [layoutId, setLayoutId] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -39,27 +68,43 @@ export default function LayoutDesigner(): JSX.Element {
     const layout = (layouts ?? []).find(
       (l) => (l as { type: string; is_default: boolean }).type === layoutType
         && (l as { is_default: boolean }).is_default,
-    ) as { id: string; config: { blocks?: LayoutBlock[] } } | undefined;
+    ) as { id: string; config: Partial<DesignerConfig> } | undefined;
 
     if (layout) {
       setLayoutId(layout.id);
       setBlocks(layout.config.blocks ?? []);
+      setHeaderFields(layout.config.headerFields ?? []);
+      setDefaultTab(layout.config.defaultTab ?? 'overview');
     } else if (meta) {
-      // Fall back to the module's block structure so there's always something to edit.
+      // Fall back to the module's block structure so there's always something
+      // to edit — saving then creates the layout rather than refusing.
       setLayoutId(null);
       setBlocks(meta.blocks.map((b) => ({
         key: b.name, label: b.label, columns: b.columns,
         collapsed: b.isCollapsed, fields: b.fields.map((f) => f.name),
       })));
+      setHeaderFields(meta.blocks[0]?.fields.slice(0, 4).map((f) => f.name) ?? []);
+      setDefaultTab('overview');
     }
     setDirty(false);
   }, [layouts, layoutType, meta?.id]);
 
-  const fieldMap = new Map((meta?.fields ?? []).map((f) => [f.name, f]));
-  const usedFields = new Set(blocks.flatMap((b) => b.fields));
-  const availableFields = (meta?.fields ?? []).filter(
-    (f) => f.isActive && f.displayType !== 'hidden' && !usedFields.has(f.name),
+  const fieldMap = useMemo(
+    () => new Map((meta?.fields ?? []).map((f) => [f.name, f])),
+    [meta?.fields],
   );
+
+  const placeable = (meta?.fields ?? []).filter((f) => f.isActive && f.displayType !== 'hidden');
+  const usedFields = new Set(blocks.flatMap((b) => b.fields));
+  const availableFields = placeable.filter((f) => !usedFields.has(f.name));
+
+  const tabOptions = [
+    ...BASE_TABS,
+    ...(meta?.relations ?? []).map((r) => ({ value: `rel:${r.name}`, label: r.label })),
+    ...(moduleName === 'leads' ? [{ value: 'calls', label: 'Calls' }] : []),
+  ];
+
+  const touch = (): void => setDirty(true);
 
   const move = (fromBlock: string, field: string, toBlock: string, toIndex: number): void => {
     setBlocks((prev) => {
@@ -71,25 +116,65 @@ export default function LayoutDesigner(): JSX.Element {
       to.fields.splice(toIndex, 0, field);
       return next;
     });
-    setDirty(true);
+    touch();
+  };
+
+  const moveSection = (index: number, delta: number): void => {
+    setBlocks((prev) => {
+      const target = index + delta;
+      if (target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+    touch();
+  };
+
+  const addSection = (): void => {
+    // Keyed on time rather than the label so renaming a section never collides
+    // with another one, and so two "New section"s can coexist while being named.
+    const key = `section_${Date.now().toString(36)}`;
+    setBlocks((prev) => [...prev, { key, label: 'New section', columns: 2, fields: [] }]);
+    touch();
+  };
+
+  const removeSection = (key: string): void => {
+    setBlocks((prev) => prev.filter((b) => b.key !== key));
+    touch();
   };
 
   const save = async (): Promise<void> => {
-    if (!layoutId) {
-      toast.error('No saved layout', 'This module has no stored layout to update yet.');
-      return;
-    }
     setSaving(true);
     try {
       const existing = (layouts ?? []).find((l) => (l as { id: string }).id === layoutId) as
         { config: Record<string, unknown> } | undefined;
-      await api.saveLayout(layoutId, {
-        config: { ...(existing?.config ?? {}), blocks },
-      });
+      const config = {
+        ...(existing?.config ?? {}),
+        blocks,
+        // Only the detail view has a header strip and tabs; keeping them off the
+        // edit/quick-create configs avoids writing keys nothing will read.
+        ...(layoutType === 'detail' ? { headerFields, defaultTab } : {}),
+      };
+
+      if (layoutId) {
+        await api.saveLayout(layoutId, { config });
+      } else {
+        const created = await api.createLayout(moduleName, {
+          name: `Default ${layoutType.replace('_', ' ')} layout`,
+          type: layoutType,
+          isDefault: true,
+          config,
+        });
+        setLayoutId(created.id);
+      }
+
       toast.success('Layout saved');
       setDirty(false);
       void queryClient.invalidateQueries({ queryKey: ['layouts', moduleName] });
       void queryClient.invalidateQueries({ queryKey: ['layout', moduleName] });
+      // The record page reads header fields and the default tab off the module
+      // describe, so that has to be refetched too or the change won't show.
+      void queryClient.invalidateQueries({ queryKey: ['module', moduleName] });
     } catch (err) {
       toast.error('Could not save the layout', (err as Error).message);
     } finally {
@@ -99,15 +184,15 @@ export default function LayoutDesigner(): JSX.Element {
 
   return (
     <div className="p-4 sm:p-6">
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div>
+      <div className="mb-4 flex flex-wrap items-start gap-3">
+        <div className="min-w-0">
           <h1 className="text-lg font-semibold tracking-tight">Layout Designer</h1>
           <p className="text-sm text-muted">
-            Drag fields between sections to change how records are displayed and edited.
+            Arrange the sections, fields, header chips and opening tab of a record page.
           </p>
         </div>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           <Select
             value={moduleName}
             onChange={setModuleName}
@@ -134,28 +219,83 @@ export default function LayoutDesigner(): JSX.Element {
         <Skeleton className="h-96 w-full" />
       ) : (
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_16rem]">
-          {/* Blocks */}
           <div className="space-y-3">
-            {blocks.map((block) => (
+            {layoutType === 'detail' && (
+              <HeaderStripEditor
+                value={headerFields}
+                options={placeable.map((f) => ({ value: f.name, label: f.label }))}
+                defaultTab={defaultTab}
+                tabOptions={tabOptions}
+                onChange={(next) => { setHeaderFields(next); touch(); }}
+                onDefaultTabChange={(next) => { setDefaultTab(next); touch(); }}
+              />
+            )}
+
+            {blocks.map((block, index) => (
               <div key={block.key} className="card overflow-hidden">
-                <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-4 py-2 dark:border-slate-800 dark:bg-slate-800/40">
+                <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-3 py-2 dark:border-slate-800 dark:bg-slate-800/40">
+                  <div className="flex shrink-0 flex-col">
+                    <button
+                      onClick={() => moveSection(index, -1)}
+                      disabled={index === 0}
+                      className="btn-ghost p-0.5 disabled:opacity-25"
+                      title="Move section up"
+                      aria-label={`Move ${block.label} up`}
+                    >
+                      <ChevronUp className="h-3 w-3" />
+                    </button>
+                    <button
+                      onClick={() => moveSection(index, 1)}
+                      disabled={index === blocks.length - 1}
+                      className="btn-ghost p-0.5 disabled:opacity-25"
+                      title="Move section down"
+                      aria-label={`Move ${block.label} down`}
+                    >
+                      <ChevronDown className="h-3 w-3" />
+                    </button>
+                  </div>
+
                   <input
-                    className="flex-1 border-0 bg-transparent p-0 text-sm font-medium outline-none"
+                    className="min-w-0 flex-1 rounded border-0 bg-transparent p-0 text-sm font-medium outline-none focus:ring-0"
                     value={block.label}
+                    aria-label="Section name"
                     onChange={(e) => {
                       setBlocks((prev) => prev.map((b) => b.key === block.key ? { ...b, label: e.target.value } : b));
-                      setDirty(true);
+                      touch();
                     }}
                   />
+
+                  <label className="flex shrink-0 items-center gap-1 text-2xs text-muted">
+                    <input
+                      type="checkbox"
+                      className="h-3 w-3 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                      checked={Boolean(block.collapsed)}
+                      onChange={(e) => {
+                        setBlocks((prev) => prev.map((b) => b.key === block.key ? { ...b, collapsed: e.target.checked } : b));
+                        touch();
+                      }}
+                    />
+                    Collapsed
+                  </label>
+
                   <Select
                     value={String(block.columns)}
                     onChange={(v) => {
                       setBlocks((prev) => prev.map((b) => b.key === block.key ? { ...b, columns: Number(v) } : b));
-                      setDirty(true);
+                      touch();
                     }}
                     options={[1, 2, 3].map((n) => ({ value: String(n), label: `${n} column${n > 1 ? 's' : ''}` }))}
-                    className="w-28 py-1 text-xs"
+                    className="w-28 shrink-0 py-1 text-xs"
                   />
+
+                  <button
+                    onClick={() => removeSection(block.key)}
+                    className="btn-ghost shrink-0 p-1 text-slate-400 hover:text-red-500"
+                    title="Delete this section — its fields go back to the unplaced list"
+                    aria-label={`Delete section ${block.label}`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
                 </div>
 
                 <div
@@ -170,7 +310,7 @@ export default function LayoutDesigner(): JSX.Element {
                     'grid gap-1.5',
                     block.columns === 1 ? 'grid-cols-1' : block.columns === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2',
                   )}>
-                    {block.fields.map((fieldName, index) => {
+                    {block.fields.map((fieldName, fieldIndex) => {
                       const field = fieldMap.get(fieldName);
                       return (
                         <div
@@ -183,7 +323,7 @@ export default function LayoutDesigner(): JSX.Element {
                             e.stopPropagation();
                             e.preventDefault();
                             if (dragging && dragging.field !== fieldName) {
-                              move(dragging.block, dragging.field, block.key, index);
+                              move(dragging.block, dragging.field, block.key, fieldIndex);
                               setDragging(null);
                             }
                           }}
@@ -199,7 +339,7 @@ export default function LayoutDesigner(): JSX.Element {
                             onClick={() => {
                               setBlocks((prev) => prev.map((b) =>
                                 b.key === block.key ? { ...b, fields: b.fields.filter((f) => f !== fieldName) } : b));
-                              setDirty(true);
+                              touch();
                             }}
                             className="shrink-0 text-slate-300 hover:text-red-500"
                             title="Remove from layout"
@@ -216,6 +356,10 @@ export default function LayoutDesigner(): JSX.Element {
                 </div>
               </div>
             ))}
+
+            <button onClick={addSection} className="btn-secondary btn-sm">
+              <Plus className="h-3.5 w-3.5" /> Add section
+            </button>
           </div>
 
           {/* Available fields */}
@@ -246,13 +390,102 @@ export default function LayoutDesigner(): JSX.Element {
           </div>
         </div>
       )}
+    </div>
+  );
+}
 
-      {!layoutId && !isLoading && (
-        <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
-          This module has no saved {layoutType.replace('_', ' ')} layout yet — you're seeing its default
-          block structure. Saving requires a stored layout; re-run the seed to create one.
-        </p>
-      )}
+/**
+ * The strip of key-value chips beside a record's name, and the tab it opens on.
+ *
+ * Both were fixed in code — the header always showed the first four fields of
+ * the first section, and every record opened on Overview. On a lead the useful
+ * four are not the first four, and a desk that lives in the timeline wants to
+ * land there.
+ */
+function HeaderStripEditor({
+  value, options, defaultTab, tabOptions, onChange, onDefaultTabChange,
+}: {
+  value: string[];
+  options: { value: string; label: string }[];
+  defaultTab: string;
+  tabOptions: { value: string; label: string }[];
+  onChange: (next: string[]) => void;
+  onDefaultTabChange: (next: string) => void;
+}): JSX.Element {
+  const labelOf = (name: string): string => options.find((o) => o.value === name)?.label ?? name;
+  const unused = options.filter((o) => !value.includes(o.value));
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="border-b border-slate-100 bg-slate-50/60 px-3 py-2 dark:border-slate-800 dark:bg-slate-800/40">
+        <p className="text-sm font-medium">Record header</p>
+      </div>
+
+      <div className="space-y-3 p-3">
+        <div>
+          <label className="label">Summary fields</label>
+          <p className="mb-1.5 text-2xs text-muted">
+            Shown as chips beside the record name. Order is the order they appear in.
+          </p>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {value.map((name, i) => (
+              <span
+                key={name}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-800"
+              >
+                <button
+                  onClick={() => {
+                    const next = [...value];
+                    [next[i - 1], next[i]] = [next[i], next[i - 1]];
+                    onChange(next);
+                  }}
+                  disabled={i === 0}
+                  className="text-slate-300 hover:text-slate-500 disabled:opacity-25"
+                  aria-label={`Move ${labelOf(name)} left`}
+                >
+                  <ChevronUp className="h-3 w-3 -rotate-90" />
+                </button>
+                <span className="font-medium">{labelOf(name)}</span>
+                <button
+                  onClick={() => onChange(value.filter((v) => v !== name))}
+                  className="text-slate-300 hover:text-red-500"
+                  aria-label={`Remove ${labelOf(name)} from the header`}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+            {value.length === 0 && (
+              <span className="text-xs text-muted">No summary fields — only the name and owner will show.</span>
+            )}
+          </div>
+
+          {unused.length > 0 && (
+            <div className="mt-2 flex items-center gap-2">
+              <Select
+                value=""
+                placeholder="Add a field…"
+                onChange={(v) => v && onChange([...value, v])}
+                options={unused}
+                className="w-56 py-1.5 text-xs"
+              />
+            </div>
+          )}
+        </div>
+
+        <div>
+          <label className="label" htmlFor="default-tab">Opens on</label>
+          <Select
+            value={defaultTab}
+            onChange={onDefaultTabChange}
+            options={tabOptions}
+            className="w-56 py-1.5 text-sm"
+          />
+          <p className="mt-1 text-2xs text-muted">
+            The tab shown when someone opens a record of this module.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

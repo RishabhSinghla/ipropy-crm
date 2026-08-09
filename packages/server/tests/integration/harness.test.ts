@@ -31,10 +31,10 @@ describe('integration harness', () => {
     // The column/JSON split is where most engine bugs live, so the suite needs
     // at least one of each to be meaningful. They are not on the same module:
     // seeded fields are all real columns, and the only JSON-storage fields are
-    // the admin-style ones added later (publish_to_web on projects/properties).
-    const projects = await registry.requireModule('projects');
-    expect(projects.fields.some((f) => f.storage === 'column')).toBe(true);
-    expect(projects.fields.some((f) => f.storage === 'json')).toBe(true);
+    // the admin-style ones added later (publish_to_web on properties).
+    const properties = await registry.requireModule('properties');
+    expect(properties.fields.some((f) => f.storage === 'column')).toBe(true);
+    expect(properties.fields.some((f) => f.storage === 'json')).toBe(true);
   });
 
   it('builds a real scope context for a seeded user', async () => {

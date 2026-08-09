@@ -544,7 +544,7 @@ function TaskConfigFields({
             className="input"
             value={(task.config.module as string) ?? ''}
             onChange={(e) => set({ module: e.target.value })}
-            placeholder="module API name, e.g. activities"
+            placeholder="module API name, e.g. leads"
           />
           <label className="label mt-2">Field values</label>
           {rows.map(([field, val], i) => (

@@ -44,44 +44,6 @@ export const DASHBOARDS: DashboardSeed[] = [
         },
       },
       {
-        type: 'metric', title: 'Site Visits (This Month)', x: 3, y: 0, w: 3, h: 2,
-        config: {
-          module: 'site_visits', aggregate: 'count', format: 'number', comparePrevious: true,
-          dateField: 'scheduled_at', color: '#f97316', drilldown: true,
-          filter: { logic: 'AND', conditions: [{ field: 'scheduled_at', operator: 'this_month' }, { field: 'status', operator: 'equals', value: 'Completed' }] },
-        },
-      },
-      {
-        type: 'metric', title: 'Bookings (This Month)', x: 6, y: 0, w: 3, h: 2,
-        config: {
-          module: 'bookings', aggregate: 'count', format: 'number', comparePrevious: true,
-          dateField: 'booking_date', color: '#6366f1', drilldown: true,
-          filter: { logic: 'AND', conditions: [{ field: 'booking_date', operator: 'this_month' }, { field: 'status', operator: 'not_equals', value: 'Cancelled' }] },
-        },
-      },
-      {
-        type: 'metric', title: 'Revenue Booked (MTD)', x: 9, y: 0, w: 3, h: 2,
-        config: {
-          module: 'bookings', aggregate: 'sum', aggregateField: 'agreement_value',
-          format: 'currency', comparePrevious: true, dateField: 'booking_date', color: '#22c55e',
-          filter: { logic: 'AND', conditions: [{ field: 'booking_date', operator: 'this_month' }, { field: 'status', operator: 'not_equals', value: 'Cancelled' }] },
-        },
-      },
-      {
-        type: 'funnel', title: 'Conversion Funnel', x: 0, y: 2, w: 6, h: 5,
-        config: {
-          module: 'deals', groupBy: 'stage', aggregate: 'count',
-          stages: ['Enquiry', 'Site Visit', 'Revisit', 'Negotiation', 'Token Received', 'Agreement', 'Booked'],
-        },
-      },
-      {
-        type: 'bar', title: 'Pipeline Value by Stage', x: 6, y: 2, w: 6, h: 5,
-        config: {
-          module: 'deals', groupBy: 'stage', aggregate: 'sum', aggregateField: 'amount',
-          format: 'currency', filter: OPEN_DEAL_FILTER, drilldown: true,
-        },
-      },
-      {
         type: 'line', title: 'Lead Volume Trend', x: 0, y: 7, w: 8, h: 4,
         config: {
           module: 'leads', dateField: 'created_at', interval: 'week', aggregate: 'count',
@@ -93,14 +55,6 @@ export const DASHBOARDS: DashboardSeed[] = [
         config: {
           module: 'leads', groupBy: 'lead_source', aggregate: 'count', drilldown: true,
           filter: { logic: 'AND', conditions: [{ field: 'created_at', operator: 'last_n_days', value: 90 }] },
-        },
-      },
-      {
-        type: 'leaderboard', title: 'Top Performers (Bookings)', x: 0, y: 11, w: 6, h: 4,
-        config: {
-          module: 'bookings', groupBy: 'owner_id', aggregate: 'sum', aggregateField: 'agreement_value',
-          format: 'currency', limit: 8,
-          filter: { logic: 'AND', conditions: [{ field: 'booking_date', operator: 'this_quarter' }] },
         },
       },
       {
@@ -132,41 +86,20 @@ export const DASHBOARDS: DashboardSeed[] = [
         },
       },
       {
-        type: 'metric', title: 'My Open Deals', x: 6, y: 0, w: 3, h: 2,
+        // "What is on today" is the leads whose own follow-up date is today —
+        // Activities was a second record type holding the same fact.
+        type: 'tasks', title: 'Today\'s Follow-ups', x: 0, y: 2, w: 4, h: 6,
         config: {
-          module: 'deals', aggregate: 'sum', aggregateField: 'amount', format: 'currency', color: '#ec4899',
-          filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'is_me' }, { field: 'is_won', operator: 'is_false' }, { field: 'is_lost', operator: 'is_false' }] },
-        },
-      },
-      {
-        type: 'gauge', title: 'My Target Achievement', x: 9, y: 0, w: 3, h: 2,
-        config: {
-          module: 'bookings', aggregate: 'sum', aggregateField: 'agreement_value', format: 'currency',
-          target: 50000000, color: '#22c55e',
-          filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'is_me' }, { field: 'booking_date', operator: 'this_month' }] },
-        },
-      },
-      {
-        type: 'tasks', title: 'Today\'s Tasks', x: 0, y: 2, w: 4, h: 6,
-        config: {
-          module: 'activities', limit: 15, sortBy: 'due_date', sortDir: 'asc',
-          columns: ['subject', 'activity_type', 'priority', 'due_date', 'related_to'],
-          filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'is_me' }, { field: 'due_date', operator: 'today' }, { field: 'status', operator: 'not_equals', value: 'Completed' }] },
-        },
-      },
-      {
-        type: 'list', title: 'Site Visits Today', x: 4, y: 2, w: 4, h: 6,
-        config: {
-          module: 'site_visits', limit: 10, sortBy: 'scheduled_at', sortDir: 'asc',
-          columns: ['subject', 'scheduled_at', 'project_id', 'status'],
-          filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'is_me' }, { field: 'scheduled_at', operator: 'today' }] },
+          module: 'leads', limit: 15, sortBy: 'ai_score', sortDir: 'desc',
+          columns: ['full_name', 'mobile', 'status', 'next_followup_at'],
+          filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'is_me' }, { field: 'next_followup_at', operator: 'today' }, { field: 'is_converted', operator: 'is_false' }] },
         },
       },
       {
         type: 'list', title: 'Priority Leads to Call', x: 8, y: 2, w: 4, h: 6,
         config: {
           module: 'leads', limit: 10, sortBy: 'ai_score', sortDir: 'desc',
-          columns: ['first_name', 'mobile', 'ai_score', 'budget_max'],
+          columns: ['full_name', 'mobile', 'ai_score', 'budget_max'],
           filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'is_me' }, { field: 'is_converted', operator: 'is_false' }, { field: 'ai_score', operator: 'greater_or_equal', value: 60 }] },
         },
       },
@@ -214,7 +147,7 @@ export const DASHBOARDS: DashboardSeed[] = [
       },
       {
         type: 'inventory_status', title: 'Stock by Project', x: 0, y: 2, w: 7, h: 6,
-        config: { module: 'properties', groupBy: 'project_id', stackBy: 'status', limit: 10 },
+        config: { module: 'properties', groupBy: 'project_name', stackBy: 'status', limit: 10 },
       },
       {
         type: 'pie', title: 'Availability by Configuration', x: 7, y: 2, w: 5, h: 6,
@@ -227,7 +160,7 @@ export const DASHBOARDS: DashboardSeed[] = [
         type: 'table', title: 'Blocked Units Expiring Soon', x: 0, y: 8, w: 12, h: 4,
         config: {
           module: 'properties', limit: 15, sortBy: 'blocked_until', sortDir: 'asc',
-          columns: ['name', 'project_id', 'configuration', 'total_price', 'blocked_until', 'blocked_for_lead_id'],
+          columns: ['name', 'project_name', 'configuration', 'total_price', 'blocked_until', 'blocked_for_lead_id'],
           filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'in', value: ['Held', 'Blocked'] }, { field: 'blocked_until', operator: 'next_n_days', value: 7 }] },
         },
       },
@@ -285,66 +218,12 @@ export const DASHBOARDS: DashboardSeed[] = [
         type: 'table', title: 'Campaign ROI', x: 0, y: 7, w: 12, h: 5,
         config: {
           module: 'campaigns', limit: 20, sortBy: 'roi_percent', sortDir: 'desc',
-          columns: ['name', 'campaign_type', 'actual_cost', 'leads_generated', 'cost_per_lead', 'bookings', 'revenue_generated', 'roi_percent'],
+          columns: ['name', 'campaign_type', 'actual_cost', 'leads_generated', 'cost_per_lead', 'revenue_generated', 'roi_percent'],
         },
       },
     ],
   },
 
-  {
-    name: 'Collections & Finance',
-    description: 'Receivables, overdue instalments and commission payouts.',
-    widgets: [
-      {
-        type: 'metric', title: 'Total Receivable', x: 0, y: 0, w: 3, h: 2,
-        config: {
-          module: 'payments', aggregate: 'sum', aggregateField: 'amount_due', format: 'currency', color: '#3b82f6',
-          filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'not_in', value: ['Paid', 'Waived'] }] },
-        },
-      },
-      {
-        type: 'metric', title: 'Overdue Amount', x: 3, y: 0, w: 3, h: 2,
-        config: {
-          module: 'payments', aggregate: 'sum', aggregateField: 'amount_due', format: 'currency', color: '#ef4444', drilldown: true,
-          filter: { logic: 'AND', conditions: [{ field: 'due_date', operator: 'older_than_n_days', value: 0 }, { field: 'status', operator: 'not_in', value: ['Paid', 'Waived'] }] },
-        },
-      },
-      {
-        type: 'metric', title: 'Collected (MTD)', x: 6, y: 0, w: 3, h: 2,
-        config: {
-          module: 'payments', aggregate: 'sum', aggregateField: 'amount_paid', format: 'currency', color: '#22c55e',
-          filter: { logic: 'AND', conditions: [{ field: 'paid_on', operator: 'this_month' }] },
-        },
-      },
-      {
-        type: 'metric', title: 'Commission Payable', x: 9, y: 0, w: 3, h: 2,
-        config: {
-          module: 'bookings', aggregate: 'sum', aggregateField: 'broker_commission', format: 'currency', color: '#a855f7',
-          filter: { logic: 'AND', conditions: [{ field: 'commission_status', operator: 'in', value: ['Due', 'Invoice Raised', 'Partially Paid'] }] },
-        },
-      },
-      {
-        type: 'bar', title: 'Ageing of Receivables', x: 0, y: 2, w: 6, h: 5,
-        config: { module: 'payments', groupBy: 'status', aggregate: 'sum', aggregateField: 'amount_due', format: 'currency' },
-      },
-      {
-        type: 'line', title: 'Collections Trend', x: 6, y: 2, w: 6, h: 5,
-        config: {
-          module: 'payments', dateField: 'paid_on', interval: 'month', aggregate: 'sum',
-          aggregateField: 'amount_paid', format: 'currency',
-          filter: { logic: 'AND', conditions: [{ field: 'paid_on', operator: 'last_n_days', value: 365 }] },
-        },
-      },
-      {
-        type: 'table', title: 'Overdue Instalments', x: 0, y: 7, w: 12, h: 5,
-        config: {
-          module: 'payments', limit: 25, sortBy: 'due_date', sortDir: 'asc',
-          columns: ['payment_number', 'contact_id', 'booking_id', 'milestone', 'amount_due', 'due_date', 'reminder_count'],
-          filter: { logic: 'AND', conditions: [{ field: 'due_date', operator: 'older_than_n_days', value: 0 }, { field: 'status', operator: 'not_in', value: ['Paid', 'Waived'] }] },
-        },
-      },
-    ],
-  },
 ];
 
 export async function seedDashboards(conn: Tx): Promise<void> {

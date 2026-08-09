@@ -45,7 +45,7 @@ async function buildContext(recordId: string, module: string): Promise<RecordCon
 
   const summary = await buildRecordSummary(recordId, module);
 
-  const [owner, org, messages, calls, visits] = await Promise.all([
+  const [owner, org, messages, calls] = await Promise.all([
     record.owner_id
       ? db.queryOne<{ name: string; phone: string | null; designation: string | null }>(
           `SELECT trim(first_name || ' ' || last_name) AS name, phone, designation FROM ipy_user WHERE id = $1`,
@@ -66,13 +66,6 @@ async function buildContext(recordId: string, module: string): Promise<RecordCon
        ORDER BY started_at DESC LIMIT 3`,
       [recordId],
     ),
-    db.query<{ status: string; feedback: string | null; interest_level: string | null; scheduled_at: string }>(
-      `SELECT v.status, v.feedback, v.interest_level, v.scheduled_at
-       FROM ipy_e_site_visits v JOIN ipy_record r ON r.id = v.record_id
-       WHERE (v.lead_id = $1 OR v.contact_id = $1 OR v.deal_id = $1) AND r.is_deleted = false
-       ORDER BY v.scheduled_at DESC LIMIT 3`,
-      [recordId],
-    ),
   ]);
 
   const parts: string[] = [];
@@ -86,13 +79,6 @@ async function buildContext(recordId: string, module: string): Promise<RecordCon
       .map((c) => `- ${new Date(c.started_at).toLocaleDateString('en-IN')}: ${c.ai_summary ?? c.disposition}`)
       .join('\n')}`);
   }
-  if (visits.rows.length) {
-    parts.push(`Site visits:\n${visits.rows
-      .map((v) => `- ${new Date(v.scheduled_at).toLocaleDateString('en-IN')} — ${v.status}${
-        v.interest_level ? `, interest: ${v.interest_level}` : ''}${v.feedback ? `. Feedback: ${v.feedback}` : ''}`)
-      .join('\n')}`);
-  }
-
   return {
     label: record.label,
     summary,

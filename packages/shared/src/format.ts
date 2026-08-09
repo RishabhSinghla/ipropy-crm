@@ -83,6 +83,31 @@ export function formatPhone(value: string | null | undefined): string {
   return value;
 }
 
+/**
+ * A number the way a person reads it: "+91 98115 33636".
+ *
+ * The code and the national number are stored apart (see `toInternational`),
+ * but nobody wants to read them apart — a lead's mobile should look like one
+ * value everywhere it is displayed, not a "Country" chip next to a bare ten
+ * digits. Grouping follows the length, so a nine-digit UAE number does not get
+ * India's 5-5 split.
+ */
+export function formatPhoneWithCode(
+  countryCode: string | null | undefined,
+  national: string | null | undefined,
+): string {
+  const digits = (national ?? '').replace(/\D/g, '');
+  if (!digits) return '—';
+  const code = (countryCode ?? '').trim();
+  const grouped = digits.length === 10
+    ? `${digits.slice(0, 5)} ${digits.slice(5)}`
+    : digits.length > 6
+      ? `${digits.slice(0, digits.length - 4)} ${digits.slice(-4)}`
+      : digits;
+  if (!code) return formatPhone(digits);
+  return `${code.startsWith('+') ? code : `+${code}`} ${grouped}`;
+}
+
 /** Normalise a phone number to E.164 for WhatsApp/telephony providers. */
 export function toE164(value: string | null | undefined, defaultCountry = '91'): string | null {
   if (!value) return null;
@@ -92,6 +117,38 @@ export function toE164(value: string | null | undefined, defaultCountry = '91'):
   if (digits.length === 10) return `+${defaultCountry}${digits}`;
   if (digits.length > 10) return `+${digits}`;
   return null;
+}
+
+/**
+ * Combine a stored country code with a national number.
+ *
+ * Leads keep the two apart — `country_code` is a field the user picks and
+ * `mobile` is ten digits — because a silent +91 default sends an NRI buyer's
+ * WhatsApp to a stranger in India. Anything that needs a dialable number (a
+ * wa.me link, a Cloud API send, a click-to-call) has to put them back together,
+ * and this is the one place that knows how.
+ *
+ * Falls back to `toE164` when no code is supplied, so records written before
+ * the split and modules without a country field still work.
+ */
+export function toInternational(
+  countryCode: string | null | undefined,
+  national: string | null | undefined,
+): string | null {
+  const digits = (national ?? '').replace(/\D/g, '');
+  if (!digits) return null;
+
+  // Already carries a country code — trust it over the field, since a number
+  // stored in full is either legacy data or came from the provider itself.
+  if ((national ?? '').trim().startsWith('+')) return `+${digits}`;
+
+  const code = (countryCode ?? '').replace(/\D/g, '');
+  if (!code) return toE164(digits);
+
+  // A number that already begins with its own country code must not get a
+  // second one: "+9191..." is how a lead becomes unreachable.
+  if (digits.startsWith(code) && digits.length > code.length + 6) return `+${digits}`;
+  return `+${code}${digits}`;
 }
 
 export function formatDate(value: string | Date | null | undefined, locale = 'en-IN'): string {

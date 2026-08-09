@@ -49,10 +49,10 @@ function watchConsole(page: Page): string[] {
 /** Module routes from the sidebar — one path segment, excluding the tools. */
 async function moduleRoutes(page: Page): Promise<string[]> {
   await page.goto('/dashboard');
-  await expect(page.getByRole('link', { name: /leads & customers/i })).toBeVisible();
+  await expect(page.getByRole('link', { name: /leads & contacts/i })).toBeVisible();
 
   const routes = await page.evaluate(() => {
-    const skip = new Set(['/dashboard', '/settings', '/inbox', '/calls', '/reports', '/inventory', '/portal']);
+    const skip = new Set(['/dashboard', '/settings', '/inbox', '/calls', '/reports', '/portal']);
     return [...document.querySelectorAll<HTMLAnchorElement>('nav a[href]')]
       .map((a) => new URL(a.href).pathname)
       .filter((p) => /^\/[a-z_]+$/.test(p) && !skip.has(p))
@@ -61,7 +61,12 @@ async function moduleRoutes(page: Page): Promise<string[]> {
 
   // Guard against the selector silently matching nothing, which would let this
   // pass while checking zero modules.
-  expect(routes.length, `expected several module routes, got ${JSON.stringify(routes)}`).toBeGreaterThan(5);
+  // Three modules plus the tool pages. The threshold used to be >5, written
+  // when there were thirteen modules — it now asserts on a product decision
+  // (how many modules exist) rather than on the nav working. What matters is
+  // that the sidebar lists the modules at all.
+  expect(routes, `expected the module routes, got ${JSON.stringify(routes)}`)
+    .toEqual(expect.arrayContaining(['/leads', '/properties', '/campaigns']));
   return routes;
 }
 
@@ -115,7 +120,10 @@ test('every module in the sidebar opens without breaking', async ({ page }) => {
     // trips the 600/min limiter in app.ts and fails with an empty shell that
     // looks like a render bug. Clicking is also what a user actually does.
     await page.locator(`nav a[href="${route}"]`).click();
-    await page.waitForURL(new RegExp(`${route}$`));
+    // Match the *path*, not the end of the URL: a list restores its last view
+    // and sort into the query string on arrival, so `/campaigns$` never matches
+    // once `?view=…&sort=…` lands — a race that passed locally and failed in CI.
+    await page.waitForURL((url) => url.pathname === route);
 
     try {
       await expect(settled(page).first()).toBeVisible({ timeout: 25_000 });
@@ -145,7 +153,7 @@ test('every module opens its first record without breaking', async ({ page }) =>
     // Navigate straight to the record rather than clicking a row. Which cell
     // is safe to click is per-module metadata: cells holding an inline editor
     // swallow the click, and a reference cell renders a link to the *related*
-    // record, so on Activities the obvious choice navigates to /deals/… — a
+    // record, so the obvious choice can navigate somewhere else entirely — a
     // correct app behaviour that has nothing to do with what is under test
     // here. Row-click navigation is covered for Leads in crm.spec.ts; this
     // test is about whether each module's detail page renders.
@@ -170,6 +178,6 @@ test('every module opens its first record without breaking', async ({ page }) =>
 
   // If seed data ever stops populating, every module would be skipped and this
   // test would pass having opened nothing.
-  expect(opened, 'no module had a record to open').toBeGreaterThan(3);
+  expect(opened, 'no module had a record to open').toBeGreaterThan(0);
   expect(broken.join('\n'), broken.join('\n')).toBe('');
 });

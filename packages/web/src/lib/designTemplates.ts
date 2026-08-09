@@ -368,7 +368,7 @@ export function listingFromProperty(
   if (record.floor) facts.push(`Floor ${record.floor}`);
 
   const locality = [record.locality, record.city].filter(Boolean).join(', ');
-  const project = display?.project_id ?? record.project_name ?? '';
+  const project = record.project_name ?? '';
 
   return {
     title: String(record.name ?? record.unit_number ?? 'Property'),

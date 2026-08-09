@@ -47,11 +47,6 @@ export async function resolveHandle(handle: string, conn: Tx = db): Promise<Reso
        WHERE r.is_deleted = false
          AND (right(regexp_replace(COALESCE(l.whatsapp_number,''), '\\D', '', 'g'), 10) = $1
            OR right(regexp_replace(COALESCE(l.mobile,''), '\\D', '', 'g'), 10) = $1)
-       UNION ALL
-       SELECT r.id, r.module_name, r.label, r.owner_id, 3, r.updated_at
-       FROM ipy_e_channel_partners p JOIN ipy_record r ON r.id = p.record_id
-       WHERE r.is_deleted = false
-         AND right(regexp_replace(COALESCE(p.mobile,''), '\\D', '', 'g'), 10) = $1
      ) matches
      ORDER BY rank, updated_at DESC
      LIMIT 1`,

@@ -23,7 +23,8 @@
  * pulse-error keyframes in tailwind.config.js. A failed save reverts the
  * value and explains why via toast, rather than silently dropping the edit.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import type { FieldMeta } from '@ipropy/shared';
 import {
   Check, ChevronDown, Loader2, Pencil,
@@ -70,6 +71,15 @@ export interface EditableFieldProps {
   compact?: boolean;
   /** dependent-picklist restriction, resolved from the module's picklistDependencies against the record's current values */
   restrictTo?: string[];
+  /**
+   * The rest of the record's values.
+   *
+   * Only needed by the controls that own a companion field — a mobile and its
+   * country code, an area and its unit. Passing it lets those edit both halves
+   * in one popover and save them in one request; omitting it degrades the
+   * companion to a read-only prefix/suffix.
+   */
+  siblings?: Record<string, unknown>;
   /** module of a reference field's target, so its read state can still link through (edit affordance becomes a separate pencil icon) */
   linkTo?: string;
   onSaved?: (value: unknown, display?: string) => void;
@@ -77,10 +87,12 @@ export interface EditableFieldProps {
 
 export function EditableField(props: EditableFieldProps): JSX.Element {
   const {
-    module, recordId, field, value, display, compact, restrictTo, linkTo, onSaved,
+    module, recordId, field, value, display, compact, restrictTo, siblings, linkTo, onSaved,
   } = props;
 
   const [localValue, setLocalValue] = useState(value);
+  /** Pending edits to companion fields (country code, area unit), saved with the value. */
+  const [otherDraft, setOtherDraft] = useState<Record<string, unknown>>({});
   const [localDisplay, setLocalDisplay] = useState(display);
   const [status, setStatus] = useState<Status>('idle');
   const [flashKey, setFlashKey] = useState(0);
@@ -88,6 +100,7 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
   const [draft, setDraft] = useState<unknown>(value);
   const editRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const commitSeq = useRef(0);
 
   /** Put focus back on the trigger after closing, so Tab order isn't lost. */
@@ -108,8 +121,9 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
     const seq = ++commitSeq.current;
     setStatus('saving');
     try {
-      const saved = await api.update(module, recordId, { [field.name]: next });
+      const saved = await api.update(module, recordId, { ...otherDraft, [field.name]: next });
       if (commitSeq.current !== seq) return; // superseded by a later edit
+      setOtherDraft({});
       const savedValue = saved.values[field.name];
       const savedDisplay = saved.display?.[field.name];
       setLocalValue(savedValue);
@@ -135,19 +149,23 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
   function openEdit(): void {
     if (status === 'saving') return;
     setDraft(localValue);
+    setOtherDraft({});
     setEditing(true);
   }
 
   function closeWithoutSaving(): void {
     setEditing(false);
     setDraft(localValue);
+    setOtherDraft({});
     restoreFocus();
   }
 
   function closeAndCommitIfChanged(nextDraft: unknown = draft): void {
     if (field.isMandatory && isEmptyValue(nextDraft)) return; // stay open — inline error is already visible
     setEditing(false);
-    if (deepEqual(nextDraft, localValue)) return;
+    // A changed companion field is a change even when the number itself is
+    // untouched — switching +91 to +971 has to save.
+    if (deepEqual(nextDraft, localValue) && !Object.keys(otherDraft).length) return;
     const previous = localValue;
     setLocalValue(nextDraft);
     void commit(nextDraft, previous);
@@ -175,7 +193,12 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
   useEffect(() => {
     if (!editing) return;
     const onDocClick = (e: MouseEvent): void => {
-      if (editRef.current && !editRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      // The editor is portalled to <body>, so "outside" has to mean outside
+      // *both* the trigger and the floating panel — testing the trigger alone
+      // would treat every click on an option as a dismissal.
+      const inside = editRef.current?.contains(target) || panelRef.current?.contains(target);
+      if (editRef.current && !inside) {
         // Address/JSON are compound, explicit-save values — a stray outside
         // click shouldn't half-commit a partial edit.
         if (field.uitype === 'address' || field.uitype === 'json') closeWithoutSaving();
@@ -273,21 +296,29 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
   );
 
   return (
-    <div className="relative inline-block" ref={editing ? editRef : undefined} onClick={(e) => e.stopPropagation()}>
+    // `editRef` is always attached, not only while editing: it is both the
+    // "did the click land inside me" test *and* the box the floating editor
+    // measures against. The inner wrapper below cannot serve as that anchor —
+    // `display: contents` produces no box at all, so its getBoundingClientRect
+    // is all zeros and every popover would open in the top-left corner.
+    <div className="relative inline-block" ref={editRef} onClick={(e) => e.stopPropagation()}>
       {/* Always rendered, even mid-edit: it is what reserves the cell's width,
           so opening an editor can't resize a table column and reflow the page. */}
       <div ref={triggerRef} className="contents">{readState}</div>
 
       {editing && (
-        <div
+        <FloatingEditor
+          anchorRef={editRef}
+          panelRef={panelRef}
+          coversValue={coversValue}
           className={cn(
-            // Absolute so the editor is painted over the layout rather than
-            // participating in it — the row keeps its exact geometry.
-            'absolute left-0 z-40',
-            coversValue ? 'top-1/2 -translate-y-1/2' : 'top-full mt-1.5',
             kind === 'text' && (field.uitype === 'textarea' || field.uitype === 'richtext'
               ? 'w-72'
-              : compact ? 'w-40' : 'w-52'),
+              // Two controls side by side (code + number, area + unit) need
+              // more than a bare text field's width.
+              : field.uitype === 'phone' || (field.uitype === 'area' && field.config.unitField)
+                ? 'w-64'
+                : compact ? 'w-40' : 'w-52'),
             kind === 'control' && (field.uitype === 'tags' ? 'w-56' : 'w-64'),
           )}
         >
@@ -321,13 +352,92 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
               field={field}
               draft={draft}
               setDraft={setDraft}
+              formValues={{ ...siblings, ...otherDraft }}
+              onChangeOther={siblings ? (name, v) => setOtherDraft((prev) => ({ ...prev, [name]: v })) : undefined}
               error={mandatoryError}
               onCommit={closeAndCommitIfChanged}
             />
           )}
-        </div>
+        </FloatingEditor>
       )}
     </div>
+  );
+}
+
+/**
+ * The open editor, painted over the page from a portal.
+ *
+ * It used to be an absolutely-positioned child of the field, which meant every
+ * ancestor with `overflow-hidden` clipped it — and the detail page wraps each
+ * section in exactly that, so a picklist near the bottom of a card lost its last
+ * options behind the card's edge (list tables did the same horizontally). A
+ * portal escapes the clip entirely; the cost is that position must be measured
+ * rather than inherited, which is what this does: pin to the trigger, flip above
+ * when there isn't room below, and clamp to the viewport on both axes.
+ *
+ * Re-measures on scroll (capturing, so inner scroll containers count too) and
+ * on resize, so the panel tracks the field instead of floating away from it.
+ */
+function FloatingEditor({
+  anchorRef, panelRef, coversValue, className, children,
+}: {
+  anchorRef: React.RefObject<HTMLElement>;
+  panelRef: React.RefObject<HTMLDivElement>;
+  /** the editor draws its own input box, so it sits *on* the value rather than under it */
+  coversValue: boolean;
+  className?: string;
+  children: React.ReactNode;
+}): JSX.Element {
+  const MARGIN = 8;
+  const GAP = 6;
+  // Transparent, not hidden, for the one frame before it is measured:
+  // `visibility: hidden` makes everything inside unfocusable, so the editor's
+  // autoFocus silently did nothing and clicking a field left no cursor in it.
+  const [style, setStyle] = useState<CSSProperties>({ position: 'fixed', top: 0, left: 0, opacity: 0 });
+
+  useLayoutEffect(() => {
+    const place = (): void => {
+      const anchor = anchorRef.current?.getBoundingClientRect();
+      const panel = panelRef.current?.getBoundingClientRect();
+      if (!anchor || !panel) return;
+
+      const left = Math.max(
+        MARGIN,
+        Math.min(anchor.left, window.innerWidth - panel.width - MARGIN),
+      );
+
+      let top: number;
+      if (coversValue) {
+        top = anchor.top + anchor.height / 2 - panel.height / 2;
+      } else {
+        const below = anchor.bottom + GAP;
+        const fitsBelow = below + panel.height <= window.innerHeight - MARGIN;
+        const roomAbove = anchor.top - MARGIN;
+        top = fitsBelow || roomAbove < panel.height ? below : anchor.top - GAP - panel.height;
+      }
+      top = Math.max(MARGIN, Math.min(top, window.innerHeight - panel.height - MARGIN));
+
+      setStyle({ position: 'fixed', top, left, zIndex: 50, opacity: 1 });
+    };
+
+    place();
+    // The panel's own content can settle a frame late (an async options list, a
+    // focused input growing), so measure once more after paint.
+    const raf = requestAnimationFrame(place);
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [anchorRef, panelRef, coversValue]);
+
+  return createPortal(
+    <div ref={panelRef} style={style} className={cn('max-w-[calc(100vw-1rem)]', className)}>
+      {children}
+    </div>,
+    document.body,
   );
 }
 
@@ -413,11 +523,13 @@ function EditTrigger({
 // ---------------------------------------------------------------------------
 
 function InlineTextEditor({
-  field, draft, setDraft, error, onCommit,
+  field, draft, setDraft, formValues, onChangeOther, error, onCommit,
 }: {
   field: FieldMeta;
   draft: unknown;
   setDraft: (v: unknown) => void;
+  formValues?: Record<string, unknown>;
+  onChangeOther?: (field: string, value: unknown) => void;
   error?: string;
   onCommit: (draft: unknown) => void;
 }): JSX.Element {
@@ -458,7 +570,15 @@ function InlineTextEditor({
         }
       }}
     >
-      <FieldInput field={field} value={draft} onChange={handleChange} autoFocus error={error} />
+      <FieldInput
+        field={field}
+        value={draft}
+        onChange={handleChange}
+        onChangeOther={onChangeOther}
+        formValues={formValues}
+        autoFocus
+        error={error}
+      />
       {error && <p className="mt-1 text-2xs text-negative">{error}</p>}
     </div>
   );
@@ -482,12 +602,22 @@ function PicklistPopover({
   }, [field.options, restrictTo, value]);
 
   return (
-    <div className="w-max min-w-[12rem] max-w-xs animate-slide-up overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-float dark:border-slate-700 dark:bg-slate-900">
+    // `listbox`/`option` is what this actually is. A screen reader previously
+    // heard a stack of unrelated buttons, and — now the panel is portalled to
+    // the end of <body> — "the button that says New" no longer distinguishes an
+    // option from a table cell showing the same value.
+    <div
+      role="listbox"
+      aria-label={field.label}
+      className="w-max min-w-[12rem] max-w-xs animate-slide-up overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-float dark:border-slate-700 dark:bg-slate-900"
+    >
       <div className="max-h-72 overflow-y-auto">
         {options.map((o) => (
           <button
             key={o.value}
             type="button"
+            role="option"
+            aria-selected={o.value === value}
             onClick={() => onPick(o.value)}
             className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
           >

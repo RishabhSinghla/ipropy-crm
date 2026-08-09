@@ -20,7 +20,9 @@
  * job. A sequence that quietly drops half its steps looks like it is working.
  */
 import { db } from '../../db/pool.js';
+import { toInternational } from '@ipropy/shared';
 import { logger } from '../../utils/logger.js';
+import { withNameParts } from '../../core/entity/nameParts.js';
 import { NotFoundError } from '../../utils/errors.js';
 import { isOptedOut } from './consent.js';
 import { getOrCreateConversation, isWindowOpen, sendMessage } from './service.js';
@@ -329,28 +331,18 @@ async function runStep(
     }
     case 'task': {
       // A step a machine should not do on its own — "ring them and ask about
-      // the loan" — becomes a real task on the owner's list. Written through
-      // recordService like every other record in the system, never with a
-      // hand-rolled INSERT into the entity table.
+      // the loan" — lands on the owner as a dated follow-up with the step's
+      // text on the record's timeline.
       if (!enrolment.record_id) break;
-      const { createRecord } = await import('../../core/entity/recordService.js');
-      const { systemContext } = await import('../../core/workflow/tasks.js');
-      const owner = await db.queryOne<{ owner_id: string | null }>(
-        `SELECT owner_id FROM ipy_record WHERE id = $1`, [enrolment.record_id],
-      );
-      const due = new Date(Date.now() + 60 * 60_000);
-      await createRecord(await systemContext(null), 'activities', {
-        subject: step.subject ?? `${sequence.name} — step ${step.sequence}`,
-        activity_type: 'Task',
-        status: 'Not Started',
-        priority: 'Medium',
-        related_to: enrolment.record_id,
-        related_module: sequence.module_name,
-        start_at: due.toISOString(),
-        due_date: due.toISOString().slice(0, 10),
-        description: body,
-        owner_id: owner?.owner_id ?? null,
-      }, { skipDuplicateCheck: true });
+      const { scheduleFollowUp } = await import('../../core/workflow/followUp.js');
+      await scheduleFollowUp({
+        recordId: enrolment.record_id,
+        module: sequence.module_name,
+        on: new Date(Date.now() + 60 * 60_000),
+        reason: step.subject ?? `${sequence.name} — step ${step.sequence}`,
+        notes: body,
+        onlyIfSooner: true,
+      });
       break;
     }
     case 'sms':
@@ -423,7 +415,7 @@ async function mergeScope(recordId: string | null, module: string): Promise<Reco
     [recordId],
   );
   if (!row) return {};
-  return { ...row, first_name: row.first_name ?? String(row.label ?? '').split(' ')[0] };
+  return withNameParts(row);
 }
 
 /** Any inbound message from this number since it was enrolled counts as a reply. */
@@ -463,10 +455,10 @@ export function minutesUntilAwake(quietStart: number, quietEnd: number, now = ne
 }
 
 async function handleForRecord(recordId: string): Promise<string | null> {
-  const row = await db.queryOne<{ whatsapp_number: string | null; mobile: string | null }>(
-    `SELECT whatsapp_number, mobile FROM ipy_e_leads WHERE record_id = $1`, [recordId],
+  const row = await db.queryOne<{ whatsapp_number: string | null; mobile: string | null; country_code: string | null }>(
+    `SELECT whatsapp_number, mobile, country_code FROM ipy_e_leads WHERE record_id = $1`, [recordId],
   );
-  return row?.whatsapp_number || row?.mobile || null;
+  return toInternational(row?.country_code, row?.whatsapp_number || row?.mobile);
 }
 
 export async function requireSequence(id: string): Promise<SequenceRow> {

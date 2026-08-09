@@ -122,7 +122,7 @@ export async function runSeoAudit(): Promise<SeoAuditResult | null> {
   }
 
   const posts = await db.query<{ slug: string }>(
-    `SELECT b.slug FROM ipy_e_blog_posts b JOIN ipy_record r ON r.id = b.record_id
+    `SELECT NULL::text AS slug WHERE false -- blog removed in migration 030
      WHERE r.is_deleted = false AND b.status = 'Published' AND b.slug IS NOT NULL
        AND b.published_at <= now() AND b.noindex = false
      ORDER BY b.published_at DESC LIMIT 40`,

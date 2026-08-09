@@ -6,7 +6,9 @@
  * tools all agree on what a "date" or a "currency" is.
  */
 import type { FieldMeta } from '@ipropy/shared';
-import { formatIndianPrice, formatArea, toE164, parseIndianPrice } from '@ipropy/shared';
+import {
+  formatIndianPrice, formatArea, toE164, parseIndianPrice, collectFieldErrors,
+} from '@ipropy/shared';
 import { ValidationError } from '../../utils/errors.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -62,10 +64,21 @@ export function coerceValue(field: FieldMeta, raw: unknown): unknown {
 
     case 'phone': {
       const s = String(raw).trim();
-      // Store as given but normalise obvious Indian 10-digit input to E.164 so
-      // WhatsApp/telephony lookups match without per-call cleaning.
-      const e164 = toE164(s);
-      return e164 ?? s;
+      // Stored as digits, without a country code.
+      //
+      // This used to force E.164 with a +91 default, which is wrong now that
+      // `country_code` is its own field: it would turn a UAE lead's ten digits
+      // into an Indian number and quietly make them unreachable. Every lookup
+      // in this codebase already matches on the last ten digits, so digits-only
+      // storage changes no query — and `toInternational()` puts the code back
+      // when something actually needs to dial.
+      //
+      // A number typed with an explicit `+` keeps its code: that is the caller
+      // telling us the country, and discarding it would lose information the
+      // field cannot recover.
+      const digits = s.replace(/\D/g, '');
+      if (!digits) return null;
+      return s.startsWith('+') ? `+${digits}` : digits;
     }
 
     case 'url': {
@@ -311,6 +324,32 @@ export function formatValue(field: FieldMeta, value: unknown, display?: string):
     }
     default:
       return String(value);
+  }
+}
+
+/**
+ * Format, range and cross-field validation.
+ *
+ * Runs on the server on every write, which is the only place it counts — the
+ * form's copy of these rules is for fast feedback, not for safety, and the API
+ * is reachable without it.
+ *
+ * Every rule is read from field metadata (`max_length`, `config.min`,
+ * `config.pattern`, `config.notAfterField`, …). Nothing here knows what a lead
+ * or a budget is, so an admin adding a field gets validation without a deploy,
+ * and the engine never grows a `if (module === 'leads')`.
+ *
+ * Errors accumulate rather than throwing on the first one: a form that reports
+ * one problem per submit takes five round trips to fill in.
+ */
+export function validateValues(
+  fields: FieldMeta[],
+  values: Record<string, unknown>,
+  merged: Record<string, unknown>,
+): void {
+  const errors = collectFieldErrors(fields, values, merged);
+  if (errors.length) {
+    throw new ValidationError(errors.map((e) => e.message).join('; '), { fields: errors });
   }
 }
 
