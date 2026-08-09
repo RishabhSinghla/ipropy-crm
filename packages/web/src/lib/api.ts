@@ -337,7 +337,11 @@ export const api = {
     `/api/records/${module}/export${qs({ ...query, filter: query.filter, access_token: tokenStore.get() })}`,
 
   // --- views --------------------------------------------------------------
-  views: (module: string, withCounts = false) => get<(CustomView & { count?: number })[]>(`/api/views/${module}${qs({ withCounts })}`),
+  views: (module: string, withCounts = false, includeInactive = false) =>
+    get<(CustomView & { count?: number; isActive?: boolean; isSystem?: boolean })[]>(
+      `/api/views/${module}${qs({ withCounts, includeInactive })}`),
+  reorderViews: (module: string, ids: string[]) => post(`/api/views/${module}/reorder`, { ids }),
+  duplicateView: (module: string, id: string) => post<{ id: string }>(`/api/views/${module}/${id}/duplicate`, {}),
   createView: (module: string, data: Record<string, unknown>) => post<{ id: string }>(`/api/views/${module}`, data),
   updateView: (module: string, id: string, data: Record<string, unknown>) => put(`/api/views/${module}/${id}`, data),
   deleteView: (module: string, id: string) => del(`/api/views/${module}/${id}`),

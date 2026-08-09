@@ -2,7 +2,7 @@ import { Suspense, lazy } from 'react';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {
   Activity, Blocks, Database, GitBranch, Globe, KeyRound, Layers, LayoutTemplate,
-  ListTree, Plug, Settings2, Shield, Sliders, Sparkles, ToggleLeft, Users, Workflow,
+  Columns3, ListTree, Plug, Settings2, Shield, Sliders, Sparkles, ToggleLeft, Users, Workflow,
 } from 'lucide-react';
 import { Spinner } from '../../components/ui';
 import { cn } from '../../lib/utils';
@@ -19,6 +19,7 @@ const IntegrationsAdmin = lazy(() => import('./IntegrationsAdmin'));
 const SystemAdmin = lazy(() => import('./SystemAdmin'));
 const ImportAdmin = lazy(() => import('./ImportAdmin'));
 const BrandAdmin = lazy(() => import('./BrandAdmin'));
+const ViewsAdmin = lazy(() => import('./ViewsAdmin'));
 
 const SECTIONS = [
   {
@@ -27,6 +28,7 @@ const SECTIONS = [
       { path: 'modules', label: 'Enable / Disable', icon: ToggleLeft, element: <ModuleManager /> },
       { path: 'fields', label: 'Modules & Fields', icon: Blocks, element: <ModuleBuilder /> },
       { path: 'layouts', label: 'Layout Designer', icon: LayoutTemplate, element: <LayoutDesigner /> },
+      { path: 'views', label: 'List View Tabs', icon: Columns3, element: <ViewsAdmin /> },
       { path: 'picklists', label: 'Dropdowns', icon: ListTree, element: <PicklistManager /> },
     ],
   },
