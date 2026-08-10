@@ -150,8 +150,19 @@ is generous in one direction and strict in the other:
 | cancelled / completed | cancelled | suspended |
 | anything else | unchanged | unchanged |
 
-Suspension sets a status and nothing else. No data is touched, and `resume` is
-immediate.
+**Suspension actually stops service.** A customer's CRM is its own process
+against its own database and knows nothing about the control plane, so a status
+in the customer list could not by itself stop anyone working — for a while, it
+did not. `setTenantService` now writes a flag into the customer's own database
+(`ipy_setting`, key `service.status`) and their app reads it and answers `402`
+on every API route but its health check. That includes their public listings
+feed: a suspended customer should not keep collecting leads nobody will follow
+up.
+
+No data is touched and `resume` is immediate. The write is best-effort — if
+their database is unreachable the decision is still recorded, the console and
+the command line both say the customer's app has not been told yet, and the next
+sweep closes the gap.
 
 Things worth knowing:
 
@@ -164,9 +175,14 @@ Things worth knowing:
 * **Retries are expected, not exceptional.** Razorpay redelivers until it gets a
   2xx, so every event is claimed once in `ctl_webhook_event`. Verified: the same
   delivery twice extends the period once.
-* **The grace period is enforced by `lapse`, not by the gateway.** `halted`
-  arrives days late, after Razorpay finishes retrying. `lapse` is our own clock
-  and should run daily. Customers marked `invoiced` are exempt.
+* **The grace period is enforced by our own clock, not by the gateway.**
+  `halted` arrives days late, after Razorpay finishes retrying — and for a trial
+  or a cancelled card it never arrives at all, because there is no live mandate
+  to halt. The control plane therefore sweeps for expired customers every six
+  hours while it runs (`startLapseSweep`), and `npm run tenant -- lapse` does it
+  on demand. Customers marked `invoiced` are exempt. This lives in the process
+  rather than a CI cron so the control database's connection string does not
+  have to become a repository secret.
 * **Sign-up queues, it never provisions.** Every approval creates a database that
   costs money, so the public form records a request, rate-limited to 5 an hour,
   and off entirely unless `CONTROL_SIGNUPS_OPEN=true`. A human runs `approve`.
@@ -180,7 +196,10 @@ Roughly in the order it will hurt.
    per database *and* a registry cache per database — the two module-level
    `let`s above become maps keyed by customer. Do not do this before it is
    forced.
-2. **Nobody has run a rupee through it.** The gateway code is written and its
+2. **Nobody has run a rupee through it.** (The plumbing around it is now covered:
+   `tests/integration/control.test.ts` provisions a real customer into a real database and drives
+   the webhook shapes through it, and `controlApi.test.ts` covers who may reach the console. What
+   remains unproven is Razorpay's own event names and payloads.) The gateway code is written and its
    logic is tested, but every test uses a signed fixture rather than Razorpay.
    Before a customer is charged: create the merchant account, run
    `billing-setup`, point a test-mode webhook at the control plane and put one
@@ -236,3 +255,7 @@ not a different field list, and should be refused politely until they are not.
   egress; the isolation argument still applies to leaked object URLs.
 * **How the scheduler behaves per customer.** In-process today, scanning up to
   5,000 records a tick. Fine for one desk, unclear at fifty.
+* **A suspended customer sees a bare error, not a page.** The API answers 402
+  with a sentence; the web app shows it wherever it shows an API error. A proper
+  "your account is paused, here is who to call" screen is a small piece of work
+  and worth doing before the first customer is ever suspended.

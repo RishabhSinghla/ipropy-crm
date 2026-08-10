@@ -7,6 +7,7 @@ import pinoHttp from 'pino-http';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { config } from './config.js';
+import { getServiceStatus } from './core/serviceStatus.js';
 import { logger } from './utils/logger.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
 import { verifyAccessToken } from './middleware/auth.js';
@@ -141,6 +142,27 @@ export function createApp(): Express {
       uptimeSeconds: Math.round(process.uptime()),
       timestamp: new Date().toISOString(),
     });
+  });
+
+  /**
+   * A paused account answers nothing but its health check.
+   *
+   * Mounted above every route on purpose, including the webhooks and the public
+   * API: "we have stopped serving you" has to mean all of it, or a suspended
+   * customer keeps taking leads through their website and wonders why nobody
+   * follows them up. 402 rather than 403 — this is about payment, and the web
+   * app shows the message as-is.
+   */
+  app.use('/api', (req, res, next) => {
+    void getServiceStatus()
+      .then((status) => {
+        if (!status.suspended) {
+          next();
+          return;
+        }
+        res.status(402).json({ error: 'service_paused', message: status.message });
+      })
+      .catch(next);
   });
 
   // --- routes ---------------------------------------------------------------

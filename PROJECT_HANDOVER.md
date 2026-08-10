@@ -563,7 +563,9 @@ counts are `ipy_migration`, `ipy_user`, `ipy_record`, `ipy_module`, `ipy_field`.
 **Vitest is in the repo.** `packages/server/tests/` holds 155 unit tests over the highest-risk pure
 logic — `query/builder`, `query/evaluate`, `entity/formula`, `validation` and `permissions` (the DB
 and metadata registry are stubbed; no Postgres needed), and `packages/web/tests/` a further 42.
-Beyond those: 52 integration tests against a real throwaway Postgres, and 22 Playwright e2e specs.
+Beyond those: 90 integration tests against real throwaway Postgres databases — including the
+control plane, which provisions an actual customer, migrates and seeds their database and drives
+Razorpay's webhook shapes through it — and 22 Playwright e2e specs.
 The smoke scripts (`smoke.mjs`, `verify-merge.mjs`)
 referenced by older handovers lived in a session scratchpad and were never recovered — do not assume
 they still exist.

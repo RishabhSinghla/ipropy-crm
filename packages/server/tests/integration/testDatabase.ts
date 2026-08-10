@@ -15,6 +15,33 @@ const DEFAULT_ADMIN_URL = 'postgres://ipropy:ipropy@localhost:5432/postgres';
 
 export const TEST_DATABASE_NAME = 'ipropy_itest';
 
+/**
+ * The control plane's own scratch database.
+ *
+ * Separate from the one above for the same reason it is separate in production:
+ * `openControlPool` refuses to run when the customer list and a customer share
+ * a database, so a suite that pointed both at one would only ever test the
+ * refusal.
+ */
+export const TEST_CONTROL_DATABASE_NAME = 'ipropy_itest_control';
+
+export function testControlDatabaseUrl(): string {
+  const base = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? DEFAULT_ADMIN_URL;
+  const url = new URL(base);
+  url.pathname = `/${TEST_CONTROL_DATABASE_NAME}`;
+  return url.toString();
+}
+
+/** A third database, for provisioning a customer *into* during the control tests. */
+export const TEST_TENANT_DATABASE_NAME = 'ipropy_itest_tenant';
+
+export function testTenantDatabaseUrl(): string {
+  const base = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? DEFAULT_ADMIN_URL;
+  const url = new URL(base);
+  url.pathname = `/${TEST_TENANT_DATABASE_NAME}`;
+  return url.toString();
+}
+
 /** Connection string for the scratch database itself. */
 export function testDatabaseUrl(): string {
   const base = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? DEFAULT_ADMIN_URL;

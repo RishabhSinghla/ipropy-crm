@@ -41,6 +41,17 @@ export interface Tenant {
 /** What `list` returns — same shape without the secret, so it is safe to print. */
 export type TenantSummary = Omit<Tenant, 'databaseUrl'>;
 
+/**
+ * A timestamp as an ISO-8601 string.
+ *
+ * `pg` hands back a `Date` for timestamptz, so every one of these fields was
+ * typed `string` and held a `Date` at runtime. Nothing crashed — JSON turns a
+ * Date into this exact format on the way out — but comparing two of them, or
+ * calling a string method on one, quietly did the wrong thing. The mappers now
+ * convert once, at the edge, so the type is true everywhere inside.
+ */
+export type IsoTimestamp = string;
+
 export interface TenantEvent {
   id: string;
   tenantId: string;

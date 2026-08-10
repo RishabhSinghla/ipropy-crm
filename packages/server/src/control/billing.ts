@@ -15,6 +15,7 @@ import { logger } from '../utils/logger.js';
 import { resolvePlan } from './plans.js';
 import { openControlPool } from './store.js';
 import * as store from './store.js';
+import { setTenantService } from './service.js';
 import type { WebhookEvent } from './razorpay.js';
 
 export type SubscriptionStatus =
@@ -35,7 +36,13 @@ export interface Subscription {
 
 interface Row {
   tenant_id: string; plan_key: string; razorpay_subscription_id: string | null;
-  status: SubscriptionStatus; serves_until: string | null; last_payment_at: string | null;
+  status: SubscriptionStatus; serves_until: string | Date | null; last_payment_at: string | Date | null;
+}
+
+/** pg returns a Date for timestamptz; `Subscription` promises an ISO string. */
+function iso(value: string | Date | null): string | null {
+  if (value === null) return null;
+  return value instanceof Date ? value.toISOString() : value;
 }
 
 const toSubscription = (row: Row): Subscription => ({
@@ -43,8 +50,8 @@ const toSubscription = (row: Row): Subscription => ({
   planKey: row.plan_key,
   razorpaySubscriptionId: row.razorpay_subscription_id,
   status: row.status,
-  servesUntil: row.serves_until,
-  lastPaymentAt: row.last_payment_at,
+  servesUntil: iso(row.serves_until),
+  lastPaymentAt: iso(row.last_payment_at),
 });
 
 export async function getSubscription(tenantId: string): Promise<Subscription | null> {
@@ -246,7 +253,9 @@ export async function handleRazorpayEvent(body: WebhookEvent, eventId: string): 
   );
 
   if (decision.tenantStatus) {
-    await store.setStatus(row.tenant_id, decision.tenantStatus);
+    // Through setTenantService so their app is actually paused or restored,
+    // not merely relabelled here.
+    await setTenantService(row.tenant_id, decision.tenantStatus, `billing:${kind}`);
   }
   await store.recordEvent(row.tenant_id, `billing:${kind}`, decision.note);
 
@@ -276,9 +285,47 @@ export async function suspendLapsed(now = new Date()): Promise<string[]> {
   );
 
   for (const row of res.rows) {
-    await store.setStatus(row.tenant_id, 'suspended');
-    await store.recordEvent(row.tenant_id, 'billing:lapsed', 'paid period ended');
+    await setTenantService(row.tenant_id, 'suspended', 'billing:lapsed — paid period ended');
     logger.info({ slug: row.slug }, 'suspended: paid period ended');
   }
   return res.rows.map((r) => r.slug);
+}
+
+/**
+ * Run that sweep on a timer, inside the control plane.
+ *
+ * Without this, `suspendLapsed` was only reachable by a person typing a command
+ * — which meant the grace period was enforced by somebody remembering, and a
+ * customer whose trial ended went on working indefinitely. The gateway does not
+ * cover this: `halted` only arrives for customers with a live mandate, so a
+ * lapsed trial or a cancelled card produces no event at all.
+ *
+ * Deliberately in the process rather than in a CI cron: a scheduled job would
+ * need this database's connection string as a repository secret, and the
+ * control plane is already running and already holds it.
+ */
+export function startLapseSweep(options: {
+  everyHours?: number;
+  /** Delay before the first run; a restart loop should not hammer the database. */
+  firstRunMs?: number;
+  task?: () => Promise<string[]>;
+} = {}): { stop: () => void } {
+  const { everyHours = 6, firstRunMs = 60_000, task = suspendLapsed } = options;
+
+  const run = (): void => {
+    void task()
+      .then((slugs) => {
+        if (slugs.length) logger.warn({ slugs }, 'suspended: paid time ran out');
+      })
+      .catch((err: unknown) => logger.error({ err }, 'the lapse sweep failed'));
+  };
+
+  const first = setTimeout(run, firstRunMs);
+  const repeat = setInterval(run, everyHours * 3_600_000);
+  return {
+    stop: () => {
+      clearTimeout(first);
+      clearInterval(repeat);
+    },
+  };
 }

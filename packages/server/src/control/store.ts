@@ -86,7 +86,13 @@ export async function closeControlPool(): Promise<void> {
 interface Row {
   id: string; slug: string; name: string; template_key: string; status: TenantStatus;
   plan: string; admin_email: string; database_url: string; app_url: string | null;
-  notes: string | null; created_at: string; updated_at: string;
+  notes: string | null; created_at: string | Date; updated_at: string | Date;
+}
+
+/** pg returns a Date for timestamptz; the interfaces promise an ISO string. */
+function iso(value: string | Date | null): string {
+  if (value === null) return '';
+  return value instanceof Date ? value.toISOString() : value;
 }
 
 function toTenant(row: Row): Tenant {
@@ -94,7 +100,7 @@ function toTenant(row: Row): Tenant {
     id: row.id, slug: row.slug, name: row.name, templateKey: row.template_key,
     status: row.status, plan: row.plan, adminEmail: row.admin_email,
     databaseUrl: box.decrypt(row.database_url), appUrl: row.app_url, notes: row.notes,
-    createdAt: row.created_at, updatedAt: row.updated_at,
+    createdAt: iso(row.created_at), updatedAt: iso(row.updated_at),
   };
 }
 
@@ -191,11 +197,11 @@ export async function listMigratable(): Promise<Tenant[]> {
 
 export async function listEvents(tenantId: string, limit = 20): Promise<TenantEvent[]> {
   const db = await openControlPool();
-  const res = await db.query<{ id: string; tenant_id: string; kind: string; detail: string | null; created_at: string }>(
+  const res = await db.query<{ id: string; tenant_id: string; kind: string; detail: string | null; created_at: string | Date }>(
     `SELECT * FROM ctl_tenant_event WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2`,
     [tenantId, limit],
   );
   return res.rows.map((r) => ({
-    id: r.id, tenantId: r.tenant_id, kind: r.kind, detail: r.detail, createdAt: r.created_at,
+    id: r.id, tenantId: r.tenant_id, kind: r.kind, detail: r.detail, createdAt: iso(r.created_at),
   }));
 }

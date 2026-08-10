@@ -10,7 +10,10 @@
  * (scripts/docker-entrypoint.sh), so this also keeps that path exercised.
  */
 import { Client } from 'pg';
-import { maintenanceDatabaseUrl, TEST_DATABASE_NAME, testDatabaseUrl } from './testDatabase.js';
+import {
+  maintenanceDatabaseUrl, TEST_CONTROL_DATABASE_NAME, TEST_DATABASE_NAME,
+  TEST_TENANT_DATABASE_NAME, testControlDatabaseUrl, testDatabaseUrl,
+} from './testDatabase.js';
 
 export default async function setup(): Promise<void> {
   const admin = new Client({ connectionString: maintenanceDatabaseUrl() });
@@ -29,6 +32,13 @@ export default async function setup(): Promise<void> {
     // without it a stale session makes DROP DATABASE hang.
     await admin.query(`DROP DATABASE IF EXISTS ${TEST_DATABASE_NAME} WITH (FORCE)`);
     await admin.query(`CREATE DATABASE ${TEST_DATABASE_NAME}`);
+
+    // The control-plane suite gets two more: one for the customer list, one to
+    // provision a customer into. Dropped here rather than after the run so a
+    // failed run leaves them behind to inspect.
+    await admin.query(`DROP DATABASE IF EXISTS ${TEST_CONTROL_DATABASE_NAME} WITH (FORCE)`);
+    await admin.query(`DROP DATABASE IF EXISTS ${TEST_TENANT_DATABASE_NAME} WITH (FORCE)`);
+    await admin.query(`CREATE DATABASE ${TEST_TENANT_DATABASE_NAME}`);
   } finally {
     await admin.end();
   }
@@ -42,6 +52,9 @@ export default async function setup(): Promise<void> {
   // and profiles, which is what the permission tests actually need. The
   // production guard that forbids this only applies when NODE_ENV=production.
   process.env.SEED_DEMO_DATA = 'true';
+  // The control plane creates this itself on first connect, which is one of the
+  // things the suite checks.
+  process.env.CONTROL_DATABASE_URL = testControlDatabaseUrl();
   process.env.JWT_SECRET = 'integration-test-secret-long-enough-to-pass-the-startup-checks';
 
   const { runMigrations } = await import('../../src/db/migrate.js');
