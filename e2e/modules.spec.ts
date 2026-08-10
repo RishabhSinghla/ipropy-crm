@@ -46,7 +46,7 @@ function watchConsole(page: Page): string[] {
   return errors;
 }
 
-/** Module routes from the sidebar — one path segment, excluding the tools. */
+/** Every one-segment route in the sidebar: the modules, and the tool pages when they are rendered. */
 async function moduleRoutes(page: Page): Promise<string[]> {
   await page.goto('/dashboard');
   await expect(page.getByRole('link', { name: /leads & contacts/i })).toBeVisible();
@@ -71,12 +71,30 @@ async function moduleRoutes(page: Page): Promise<string[]> {
 }
 
 /**
- * The list header shows "Loading…" until the query resolves and then
- * "<n> records" — the one signal that means "finished" for every module,
- * whether it has rows or an empty state.
+ * Outreach and Studio are in the sidebar sweep but are not lists.
+ *
+ * Whether they are in the routes at all is a race: the sweep reads the nav as
+ * soon as the first module link is visible, so a slower CI runner picks up the
+ * tool links and a faster one does not. That is why this test could pass on one
+ * commit and fail on the next without either touching the pages — and when it
+ * did pick them up it always failed, because it waited for a record count on a
+ * screen that has none.
  */
-function settled(page: Page) {
-  return page.getByText(/^[\d,]+ records$/);
+const TOOL_ROUTES = new Set(['/outreach', '/studio']);
+
+/**
+ * "Finished loading" is not the same signal on both kinds of page.
+ *
+ * A module list shows "Loading…" until its query resolves and then "<n> records",
+ * which is what proves the *data* arrived, not merely the shell. A tool page has
+ * no such count, so its heading is the only honest signal it came up at all —
+ * weaker, deliberately, rather than dropping the two pages from the sweep and
+ * covering them nowhere.
+ */
+function settled(page: Page, route: string) {
+  return TOOL_ROUTES.has(route)
+    ? page.getByRole('heading', { level: 1 })
+    : page.getByText(/^[\d,]+ records$/);
 }
 
 /**
@@ -126,7 +144,7 @@ test('every module in the sidebar opens without breaking', async ({ page }) => {
     await page.waitForURL((url) => url.pathname === route);
 
     try {
-      await expect(settled(page).first()).toBeVisible({ timeout: 25_000 });
+      await expect(settled(page, route).first()).toBeVisible({ timeout: 25_000 });
     } catch {
       broken.push(`${route}: never finished loading`);
       continue;
