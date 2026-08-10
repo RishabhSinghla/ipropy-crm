@@ -182,43 +182,43 @@ Vercel also builds a unique preview URL for every pull request — useful for
 
 ## 7. Backups and monitoring (10 min, do this before real client data)
 
-Two more workflows are committed and will start working the moment you add the
-secrets. Until then the backup job prints a warning and exits without failing,
-so it does not nag you daily.
+### Backups: use Neon's, don't build your own
 
-**`.github/workflows/backup.yml`** — every night at 02:00 IST it dumps the
-production database, uploads it to R2, then **restores it into a throwaway
-Postgres and counts the rows**. That last part is the reason to bother: a dump
-that is truncated or points at the wrong database looks exactly like a good one
-until the day you need it. The job fails loudly if the restore comes back empty.
-Backups older than 30 days are pruned. The dump is never kept as a workflow
-artifact — this repository is public and the dump holds names, phone numbers and
-PANs.
+Neon's paid **Launch** plan includes scheduled backups (daily/weekly/monthly)
+and a 7-day instant-restore window. Turn both on and the problem is solved
+properly: nothing is copied anywhere, there is no dump file to leak, no API
+token to rotate, and restore is a button rather than a procedure.
 
-**`.github/workflows/health.yml`** — every 15 minutes it calls `/api/health`,
-which answers `ok` only after it has really reached Postgres. Two failures in a
-row open a GitHub issue; the next success closes it. Your incident log is
-therefore the issue list, with no account to create anywhere.
+1. Neon Console → your project → **Billing** → upgrade to **Launch**.
+2. **Settings → Instant restore** → history window **7 days**.
+3. **Settings → Backups** → enable a **daily** schedule.
 
-Add these under **Settings → Secrets and variables → Actions → Secrets**:
+The free plan gives you neither: a history window of at most 6 hours, one
+snapshot, and no schedule at all.
 
-| Secret | Where it comes from |
-|---|---|
-| `PROD_DATABASE_URL` | Neon → your project → Connection string (the same one Render uses) |
-| `R2_ENDPOINT` | Cloudflare → R2 → *Manage API tokens* — looks like `https://<account-id>.r2.cloudflarestorage.com` |
-| `R2_ACCESS_KEY_ID` | Cloudflare R2 API token |
-| `R2_SECRET_ACCESS_KEY` | Cloudflare R2 API token |
-| `R2_BUCKET` | Your R2 bucket name (the media bucket is fine; dumps go under `db-backups/`) |
+An earlier version of this guide shipped a GitHub Action that dumped the
+database nightly to R2. It was removed on purpose. Its only real advantage was
+holding a copy *outside* your database provider, which matters on the day the
+provider itself is the problem — a reasonable thing to want later, and it is in
+this repository's git history if you do. It is not worth a nightly copy of every
+client's name, phone number and PAN moving between two systems today.
 
-Optionally add a **variable** (not a secret) called `HEALTH_URL` once the CRM has
-its own domain; it defaults to the Render URL.
+### Monitoring: already committed
 
-Two things worth knowing about GitHub's scheduler: it is best-effort and runs
-late under load, and **it disables scheduled workflows in a repository with no
-commits for 60 days**. If the project goes quiet, check that these are still on.
+**`.github/workflows/health.yml`** calls `/api/health` every 15 minutes, which
+answers `ok` only after it has really reached Postgres. Two failures in a row
+open a GitHub issue; the next success closes it. Your incident log is the issue
+list, with no account to create anywhere and nothing to configure — though you
+can set a repository **variable** called `HEALTH_URL` once the CRM has its own
+domain, since it defaults to the Render URL.
 
-Restoring from one of these dumps is `npm run db:restore <file>` — read
-`PROJECT_HANDOVER.md` §9 first, it replaces the live database.
+Two things about GitHub's scheduler: it is best-effort and runs late under load,
+and **it disables scheduled workflows in a repository with no commits for 60
+days**. If the project goes quiet, check this is still on.
+
+To take a manual dump at any time — before a risky migration, say — `npm run
+db:backup` still works, and `npm run db:restore <file>` puts one back. Read
+`PROJECT_HANDOVER.md` §9 first: restore replaces the live database.
 
 ---
 

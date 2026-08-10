@@ -453,10 +453,12 @@ session — the sole real bug is gone.)
    the web app and `ENABLE_SCHEDULER=true`, so overnight and at weekends no follow-up reminder, lead
    escalation or birthday message fires. No error is logged, because nothing runs. The $7/mo Starter
    plan is the fix; see DEPLOYMENT.md.
-4. **Backups are automated but not yet switched on.** `.github/workflows/backup.yml` dumps
-   production nightly, ships it to R2 and proves it by restoring into a scratch Postgres and counting
-   rows — it skips with a warning until `PROD_DATABASE_URL` and the `R2_*` secrets exist. Adding
-   those is the single highest-value thing left.
+4. **No backups until Neon is on a paid plan.** The free plan has no scheduled backups, one
+   snapshot and a ≤6-hour history window. Neon Launch adds daily backups and a 7-day instant-restore
+   window; turning those on is the single highest-value thing left, and is a better answer than a
+   dump job of our own — no copy of every client's PAN moving between systems, and restore is a
+   button. See DEPLOYMENT.md §7. If an off-provider copy is ever wanted, a GitHub Action that dumped
+   to R2 and verified itself by restoring into a scratch Postgres is in this repo's git history.
 5. **Single-process scheduler.** `FOR UPDATE SKIP LOCKED` makes the queue multi-instance safe, but
    scheduled workflows scan up to 5,000 records per tick in-process — will not scale to large tenants.
 6. **Nobody has used it concurrently.** Every check so far is a test suite or one person clicking.
