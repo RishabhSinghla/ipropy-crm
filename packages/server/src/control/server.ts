@@ -15,7 +15,7 @@ import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { operatorRouter } from './api.js';
 import { CONSOLE_HTML } from './console.js';
-import { handleRazorpayEvent } from './billing.js';
+import { handleRazorpayEvent, startLapseSweep } from './billing.js';
 import { verifyWebhookSignature, type WebhookEvent } from './razorpay.js';
 import { submitSignup } from './signups.js';
 import { closeControlPool, openControlPool } from './store.js';
@@ -139,6 +139,11 @@ if (isEntrypoint) {
         logger.info(`   webhooks: http://localhost:${config.control.port}/webhooks/razorpay`);
         logger.info(`   console:  http://localhost:${config.control.port}/`);
         logger.info(`   sign-up:  ${config.control.signupsOpen ? 'open' : 'closed (CONTROL_SIGNUPS_OPEN)'}`);
+        // The gateway never tells us a *trial* ended, so somebody has to watch
+        // the clock. Started here rather than in createControlApp so the tests
+        // that build the app do not leave timers running.
+        startLapseSweep();
+        logger.info('   billing:  watching for customers whose paid time runs out');
       });
     })
     .catch((err: unknown) => {

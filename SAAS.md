@@ -164,9 +164,14 @@ Things worth knowing:
 * **Retries are expected, not exceptional.** Razorpay redelivers until it gets a
   2xx, so every event is claimed once in `ctl_webhook_event`. Verified: the same
   delivery twice extends the period once.
-* **The grace period is enforced by `lapse`, not by the gateway.** `halted`
-  arrives days late, after Razorpay finishes retrying. `lapse` is our own clock
-  and should run daily. Customers marked `invoiced` are exempt.
+* **The grace period is enforced by our own clock, not by the gateway.**
+  `halted` arrives days late, after Razorpay finishes retrying — and for a trial
+  or a cancelled card it never arrives at all, because there is no live mandate
+  to halt. The control plane therefore sweeps for expired customers every six
+  hours while it runs (`startLapseSweep`), and `npm run tenant -- lapse` does it
+  on demand. Customers marked `invoiced` are exempt. This lives in the process
+  rather than a CI cron so the control database's connection string does not
+  have to become a repository secret.
 * **Sign-up queues, it never provisions.** Every approval creates a database that
   costs money, so the public form records a request, rate-limited to 5 an hour,
   and off entirely unless `CONTROL_SIGNUPS_OPEN=true`. A human runs `approve`.

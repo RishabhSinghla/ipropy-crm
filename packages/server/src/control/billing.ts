@@ -288,3 +288,42 @@ export async function suspendLapsed(now = new Date()): Promise<string[]> {
   }
   return res.rows.map((r) => r.slug);
 }
+
+/**
+ * Run that sweep on a timer, inside the control plane.
+ *
+ * Without this, `suspendLapsed` was only reachable by a person typing a command
+ * — which meant the grace period was enforced by somebody remembering, and a
+ * customer whose trial ended went on working indefinitely. The gateway does not
+ * cover this: `halted` only arrives for customers with a live mandate, so a
+ * lapsed trial or a cancelled card produces no event at all.
+ *
+ * Deliberately in the process rather than in a CI cron: a scheduled job would
+ * need this database's connection string as a repository secret, and the
+ * control plane is already running and already holds it.
+ */
+export function startLapseSweep(options: {
+  everyHours?: number;
+  /** Delay before the first run; a restart loop should not hammer the database. */
+  firstRunMs?: number;
+  task?: () => Promise<string[]>;
+} = {}): { stop: () => void } {
+  const { everyHours = 6, firstRunMs = 60_000, task = suspendLapsed } = options;
+
+  const run = (): void => {
+    void task()
+      .then((slugs) => {
+        if (slugs.length) logger.warn({ slugs }, 'suspended: paid time ran out');
+      })
+      .catch((err: unknown) => logger.error({ err }, 'the lapse sweep failed'));
+  };
+
+  const first = setTimeout(run, firstRunMs);
+  const repeat = setInterval(run, everyHours * 3_600_000);
+  return {
+    stop: () => {
+      clearTimeout(first);
+      clearInterval(repeat);
+    },
+  };
+}

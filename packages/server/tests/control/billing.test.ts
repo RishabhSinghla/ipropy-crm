@@ -9,7 +9,7 @@
  */
 import crypto from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { decide } from '../../src/control/billing.js';
+import { decide, startLapseSweep } from '../../src/control/billing.js';
 import { formatPrice, parsePlanIds, PLANS, resolvePlan } from '../../src/control/plans.js';
 import { verifyWebhookSignature } from '../../src/control/razorpay.js';
 import { config } from '../../src/config.js';
@@ -138,5 +138,47 @@ describe('plans', () => {
   it('resolves a known plan and refuses an unknown one', () => {
     expect(resolvePlan('growth').label).toBe('Growth');
     expect(() => resolvePlan('platinum')).toThrow(/Unknown plan/);
+  });
+});
+
+describe('startLapseSweep', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('waits before its first run, so a restart loop cannot hammer the database', () => {
+    vi.useFakeTimers();
+    const task = vi.fn().mockResolvedValue([]);
+    const sweep = startLapseSweep({ firstRunMs: 60_000, task });
+
+    expect(task).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(59_000);
+    expect(task).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(2_000);
+    expect(task).toHaveBeenCalledTimes(1);
+
+    sweep.stop();
+  });
+
+  it('keeps running on the interval, and stops when told', () => {
+    vi.useFakeTimers();
+    const task = vi.fn().mockResolvedValue([]);
+    const sweep = startLapseSweep({ everyHours: 6, firstRunMs: 1, task });
+
+    vi.advanceTimersByTime(1 + 6 * 3_600_000 * 2);
+    expect(task).toHaveBeenCalledTimes(3); // the first run plus two intervals
+
+    sweep.stop();
+    vi.advanceTimersByTime(6 * 3_600_000 * 5);
+    expect(task).toHaveBeenCalledTimes(3);
+  });
+
+  it('survives a failing sweep rather than taking the process down', () => {
+    // An unhandled rejection in a timer callback would kill the control plane,
+    // and a transient database blip must not stop customers being served.
+    vi.useFakeTimers();
+    const task = vi.fn().mockRejectedValue(new Error('database went away'));
+    const sweep = startLapseSweep({ firstRunMs: 1, task });
+
+    expect(() => vi.advanceTimersByTime(10)).not.toThrow();
+    sweep.stop();
   });
 });
