@@ -4,9 +4,14 @@
  * The same filter shape drives SQL list views and, here, workflow conditions,
  * conditional field visibility and assignment rules — so an admin builds a
  * condition once and it means the same thing everywhere.
+ *
+ * Lives in `shared` rather than on the server because the *form* needs it too:
+ * "show this field only when Loan Required is Yes" has to be decided while the
+ * user types, and a second implementation in the web package would be a copy
+ * that drifts. Same reasoning as `collectFieldErrors` in uitypes.ts.
  */
-import type { FilterCondition, FilterGroup, FilterOperator } from '@ipropy/shared';
-import { isFilterGroup } from '@ipropy/shared';
+import type { FilterCondition, FilterGroup, FilterOperator } from './uitypes.js';
+import { isFilterGroup } from './uitypes.js';
 
 export interface EvalContext {
   userId?: string;

@@ -555,7 +555,16 @@ metadataRouter.patch('/fields/:id', asyncHandler(async (req, res) => {
     throw new BadRequestError('The type of a built-in field cannot be changed.');
   }
   const nextType = input.uitype ?? current.uitype;
-  const nextConfig = { ...current.config, ...(input.config ?? {}) };
+  /**
+   * Config is merged, not replaced — a caller patching only `label` must not
+   * wipe a field's validation. That leaves no way to *remove* a setting, so an
+   * explicit `null` means "delete this key". The field editor relies on it to
+   * clear a rule; without it, unsetting a format silently did nothing.
+   */
+  const nextConfig: Record<string, unknown> = { ...current.config, ...(input.config ?? {}) };
+  for (const [key, value] of Object.entries(input.config ?? {})) {
+    if (value === null) delete nextConfig[key];
+  }
   if (input.uitype || input.config) validateFieldConfig(nextType, nextConfig);
 
   // Re-activating a field that was hidden via the "Hide field" action must

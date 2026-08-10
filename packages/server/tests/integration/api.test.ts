@@ -554,6 +554,29 @@ describe('Android companion API', () => {
       .set('Authorization', `Bearer ${deviceToken}`)
       .expect(401);
   });
+
+  /**
+   * The INSERT read the duration parameter twice — once into an integer column and
+   * once concatenated into an interval string — so Postgres refused to deduce a type
+   * and every manual log returned a 500. Nothing typechecks a SQL literal, so the
+   * guard has to be a real round trip.
+   */
+  it('logs a call an agent made from their own handset', async () => {
+    const logged = await request(app)
+      .post('/api/telephony/log')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ to: '+919812345000', direction: 'outbound', durationSeconds: 60, disposition: 'Call Back Later' });
+
+    expect(logged.status, logged.text).toBe(201);
+    expect(logged.body.callId).toBeTruthy();
+
+    const calls = await request(app)
+      .get('/api/telephony/calls?limit=200')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    const call = calls.body.find((c: { id: string }) => c.id === logged.body.callId);
+    expect(call).toMatchObject({ source: 'manual', duration_seconds: 60 });
+  });
 });
 
 /**

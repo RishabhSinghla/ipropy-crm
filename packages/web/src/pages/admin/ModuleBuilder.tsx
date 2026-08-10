@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import type { FieldMeta } from '@ipropy/shared';
-import { UITYPE_LIST } from '@ipropy/shared';
-import { Blocks, Edit3, Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
+import type { FieldMeta, FilterGroup, FilterOperator } from '@ipropy/shared';
+import { NULLARY_OPERATORS, UITYPE_LIST } from '@ipropy/shared';
+import { Blocks, ChevronDown, Edit3, Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
 import { cn } from '../../lib/utils';
@@ -272,11 +272,126 @@ export default function ModuleBuilder(): JSX.Element {
 }
 
 // ---------------------------------------------------------------------------
+// Field rules
+//
+// Every rule below was already enforced by the engine — `collectFieldErrors` in
+// shared runs them on the form and the API alike, and `evaluateFilter` decides
+// visibility. None of it could be *set* without editing seed code, so a field an
+// admin created was always a plain box. This is the missing half.
+// ---------------------------------------------------------------------------
+
+/** uitypes that can be bounded by another field of the same kind. */
+const COMPARABLE = ['integer', 'decimal', 'currency', 'percent', 'area', 'score', 'date', 'datetime'];
+
+/** uitypes where a format rule makes sense. */
+const TEXTUAL = ['string', 'textarea', 'phone', 'url', 'email'];
+
+/**
+ * Named formats, so nobody has to write a regular expression to validate a PAN.
+ * The message matters as much as the pattern — "invalid" tells a user nothing,
+ * "a PAN looks like ABCDE1234F" tells them what to type.
+ */
+const FORMATS: { key: string; label: string; pattern: string; message: string }[] = [
+  { key: 'pan', label: 'PAN (ABCDE1234F)', pattern: '^[A-Za-z]{5}[0-9]{4}[A-Za-z]$', message: 'A PAN looks like ABCDE1234F' },
+  { key: 'gst', label: 'GST number', pattern: '^[0-9]{2}[A-Za-z]{5}[0-9]{4}[A-Za-z][0-9A-Za-z]Z[0-9A-Za-z]$', message: 'A GST number looks like 27ABCDE1234F1Z5' },
+  { key: 'pincode', label: 'Pincode (6 digits)', pattern: '^[1-9][0-9]{5}$', message: 'An Indian pincode is six digits and cannot start with 0' },
+  { key: 'aadhaar4', label: 'Aadhaar — last 4 digits', pattern: '^[0-9]{4}$', message: 'Enter only the last four digits of the Aadhaar' },
+  { key: 'ifsc', label: 'IFSC code', pattern: '^[A-Za-z]{4}0[0-9A-Za-z]{6}$', message: 'An IFSC code looks like HDFC0001234' },
+  { key: 'custom', label: 'Something else…', pattern: '', message: '' },
+];
+
+/** The right control for comparing against a field, so a date rule gets a date picker. */
+function ValueInput({
+  field, value, onChange,
+}: { field?: FieldMeta; value: string; onChange: (v: string) => void }): JSX.Element {
+  if (field?.uitype === 'picklist' && field.options?.length) {
+    return (
+      <Select
+        value={value}
+        onChange={onChange}
+        placeholder="— pick a value —"
+        options={field.options.map((o) => ({ value: o.value, label: o.label }))}
+        className="min-w-[8rem] flex-1 py-1.5 text-xs sm:max-w-[10rem]"
+      />
+    );
+  }
+  return (
+    <input
+      className="input min-w-[7rem] flex-1 py-1.5 text-xs sm:max-w-[10rem]"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder="value"
+      type={field && COMPARABLE.includes(field.uitype) && field.uitype !== 'date' ? 'number' : 'text'}
+    />
+  );
+}
+
+/** The editable list behind an area's units or a phone's country codes. */
+function OptionListEditor({
+  title, hint, options, onChange, valuePlaceholder, labelPlaceholder,
+}: {
+  title: string;
+  hint: string;
+  options: { value: string; label: string }[];
+  onChange: (next: { value: string; label: string }[]) => void;
+  valuePlaceholder: string;
+  labelPlaceholder: string;
+}): JSX.Element {
+  const set = (i: number, patch: Partial<{ value: string; label: string }>): void =>
+    onChange(options.map((o, j) => (j === i ? { ...o, ...patch } : o)));
+
+  return (
+    <div>
+      <label className="label">{title}</label>
+      <p className="mb-1.5 text-2xs text-muted">{hint}</p>
+      <div className="space-y-1.5">
+        {options.map((o, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <input
+              className="input w-24 py-1.5 font-mono text-xs"
+              value={o.value}
+              onChange={(e) => set(i, { value: e.target.value })}
+              placeholder={valuePlaceholder}
+              aria-label="Stored value"
+            />
+            <input
+              className="input min-w-0 flex-1 py-1.5 text-xs"
+              value={o.label}
+              onChange={(e) => set(i, { label: e.target.value })}
+              placeholder={labelPlaceholder}
+              aria-label="Shown to the user"
+            />
+            <button
+              type="button"
+              onClick={() => onChange(options.filter((_, j) => j !== i))}
+              className="btn-ghost btn-sm shrink-0 text-slate-400 hover:text-red-500"
+              aria-label={`Remove ${o.label || o.value}`}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={() => onChange([...options, { value: '', label: '' }])}
+          className="btn-secondary btn-sm"
+        >
+          <Plus className="h-3 w-3" /> Add
+        </button>
+        {options.length === 0 && (
+          <p className="text-2xs text-muted">
+            Empty means the built-in list is used.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function FieldEditor({
   module, field, onClose, onSaved,
 }: {
-  module: { name: string; blocks: { id: string; label: string }[] };
+  module: { name: string; blocks: { id: string; label: string }[]; fields: FieldMeta[] };
   field: FieldMeta | null;
   onClose: () => void;
   onSaved: () => void;
@@ -302,6 +417,26 @@ function FieldEditor({
   const [numberPrefix, setNumberPrefix] = useState(
     (field?.config.numbering as { prefix?: string })?.prefix ?? '',
   );
+
+  // --- Advanced: rules the engine has always honoured but nothing could set --
+  const existingRule = (field?.config.visibleWhen as FilterGroup | undefined)?.conditions?.[0] as
+    { field?: string; operator?: FilterOperator; value?: unknown } | undefined;
+  const [showWhenField, setShowWhenField] = useState(existingRule?.field ?? '');
+  const [showWhenOp, setShowWhenOp] = useState<FilterOperator>(existingRule?.operator ?? 'equals');
+  const [showWhenValue, setShowWhenValue] = useState(
+    existingRule?.value === undefined || existingRule?.value === null ? '' : String(existingRule.value),
+  );
+  const [notAfterField, setNotAfterField] = useState((field?.config.notAfterField as string) ?? '');
+  const [notBeforeField, setNotBeforeField] = useState((field?.config.notBeforeField as string) ?? '');
+  const [pattern, setPattern] = useState((field?.config.pattern as string) ?? '');
+  const [patternMessage, setPatternMessage] = useState((field?.config.patternMessage as string) ?? '');
+  const [listOptions, setListOptions] = useState<{ value: string; label: string }[]>(
+    (field?.config.unitOptions as { value: string; label: string }[])
+      ?? (field?.config.countryCodes as { value: string; label: string }[])
+      ?? [],
+  );
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
   const [saving, setSaving] = useState(false);
 
   const { data: picklists } = useQuery({ queryKey: ['picklists'], queryFn: () => api.picklists() });
@@ -311,6 +446,15 @@ function FieldEditor({
   const needsReference = spec?.requiresConfig?.includes('referenceModules');
   const needsFormula = spec?.requiresConfig?.includes('formula');
   const needsNumbering = spec?.requiresConfig?.includes('numbering');
+  /** Area fields carry their unit list; phone fields their country codes. */
+  const supportsOptionList = uitype === 'area' || uitype === 'phone';
+  /** Only a scalar can be compared to another field of the same kind. */
+  const comparable = COMPARABLE.includes(uitype);
+
+  /** Everything on this module except the field being edited — nothing can depend on itself. */
+  const otherFields = module.fields.filter((f) => f.isActive && f.name !== field?.name);
+  const comparableFields = otherFields.filter((f) => COMPARABLE.includes(f.uitype));
+  const ruleCount = [showWhenField, notAfterField, notBeforeField, pattern].filter(Boolean).length;
 
   const autoName = (value: string): void => {
     setLabel(value);
@@ -327,11 +471,42 @@ function FieldEditor({
 
     setSaving(true);
     try {
-      const config: Record<string, unknown> = {};
+      // Start from what is already stored. Rebuilding config from scratch — as
+      // this did — silently discarded every key this form does not render, so
+      // editing Mobile's label wiped its digit rules and country codes.
+      const config: Record<string, unknown> = { ...(field?.config ?? {}) };
       if (needsPicklist) config.picklist = picklist;
       if (needsReference) config.referenceModules = referenceModules;
       if (needsFormula) config.formula = { expression: formula };
       if (needsNumbering) config.numbering = { prefix: numberPrefix, digits: 5, start: 1 };
+
+      // `null` rather than `delete`: the API merges config so a partial patch
+      // cannot wipe a field's other settings, and null is how it is told to
+      // remove a key. Deleting here would just leave the old rule in place.
+      const clear = (key: string): void => { config[key] = null; };
+
+      if (showWhenField) {
+        config.visibleWhen = {
+          logic: 'AND',
+          conditions: [{
+            field: showWhenField,
+            operator: showWhenOp,
+            ...(NULLARY_OPERATORS.includes(showWhenOp) ? {} : { value: showWhenValue }),
+          }],
+        };
+      } else clear('visibleWhen');
+
+      if (notAfterField) config.notAfterField = notAfterField; else clear('notAfterField');
+      if (notBeforeField) config.notBeforeField = notBeforeField; else clear('notBeforeField');
+      if (pattern) {
+        config.pattern = pattern;
+        if (patternMessage) config.patternMessage = patternMessage; else clear('patternMessage');
+      } else { clear('pattern'); clear('patternMessage'); }
+
+      if (supportsOptionList) {
+        const key = uitype === 'area' ? 'unitOptions' : 'countryCodes';
+        if (listOptions.length) config[key] = listOptions; else clear(key);
+      }
 
       const payload = {
         label, name, uitype, blockId, isMandatory, isUnique,
@@ -493,6 +668,170 @@ function FieldEditor({
         <div>
           <label className="label">Help text</label>
           <input className="input" value={helpText} onChange={(e) => setHelpText(e.target.value)} />
+        </div>
+
+        {/* Advanced rules.
+            Collapsed by default: most fields need none of this, and putting it
+            in front of every "add a field" would make the common case feel
+            harder than it is. */}
+        <div className="rounded-lg border border-slate-200 dark:border-slate-700">
+          <button
+            type="button"
+            onClick={() => setAdvancedOpen((v) => !v)}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left"
+          >
+            <ChevronDown className={cn('h-3.5 w-3.5 text-slate-400 transition-transform', !advancedOpen && '-rotate-90')} />
+            <span className="text-sm font-medium">Rules</span>
+            <span className="text-2xs text-muted">
+              when to show it, and what counts as a valid answer
+            </span>
+            {ruleCount > 0 && <Badge className="ml-auto" color="#6366f1">{ruleCount}</Badge>}
+          </button>
+
+          {advancedOpen && (
+            <div className="space-y-4 border-t border-slate-100 p-3 dark:border-slate-800">
+              {/* --- conditional visibility ------------------------------ */}
+              <div>
+                <label className="label">Only show this field when…</label>
+                <p className="mb-1.5 text-2xs text-muted">
+                  Leave the first box empty to always show it. Example: show “Loan Bank”
+                  only when “Loan Required” is Yes.
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Select
+                    value={showWhenField}
+                    onChange={setShowWhenField}
+                    placeholder="— always show —"
+                    options={otherFields.map((f) => ({ value: f.name, label: f.label }))}
+                    className="min-w-[9rem] flex-1 py-1.5 text-xs sm:max-w-[12rem]"
+                  />
+                  {showWhenField && (
+                    <>
+                      <Select
+                        value={showWhenOp}
+                        onChange={(v) => setShowWhenOp(v as FilterOperator)}
+                        options={[
+                          { value: 'equals', label: 'is' },
+                          { value: 'not_equals', label: 'is not' },
+                          { value: 'is_not_empty', label: 'is filled in' },
+                          { value: 'is_empty', label: 'is empty' },
+                          { value: 'is_true', label: 'is ticked' },
+                          { value: 'is_false', label: 'is not ticked' },
+                        ]}
+                        className="w-32 shrink-0 py-1.5 text-xs"
+                      />
+                      {!NULLARY_OPERATORS.includes(showWhenOp) && (
+                        <ValueInput
+                          field={otherFields.find((f) => f.name === showWhenField)}
+                          value={showWhenValue}
+                          onChange={setShowWhenValue}
+                        />
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* --- cross-field bounds ---------------------------------- */}
+              {comparable && (
+                <div>
+                  <label className="label">Compare against another field</label>
+                  <p className="mb-1.5 text-2xs text-muted">
+                    Stops impossible pairs. Example: on “Budget (Min)”, set
+                    <em> must not be more than</em> “Budget (Max)”.
+                  </p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <label className="flex items-center gap-2 text-xs">
+                      <span className="shrink-0 text-muted">Not more than</span>
+                      <Select
+                        value={notAfterField}
+                        onChange={setNotAfterField}
+                        placeholder="— no limit —"
+                        options={comparableFields.map((f) => ({ value: f.name, label: f.label }))}
+                        className="min-w-0 flex-1 py-1.5 text-xs"
+                      />
+                    </label>
+                    <label className="flex items-center gap-2 text-xs">
+                      <span className="shrink-0 text-muted">Not less than</span>
+                      <Select
+                        value={notBeforeField}
+                        onChange={setNotBeforeField}
+                        placeholder="— no limit —"
+                        options={comparableFields.map((f) => ({ value: f.name, label: f.label }))}
+                        className="min-w-0 flex-1 py-1.5 text-xs"
+                      />
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* --- format -------------------------------------------- */}
+              {TEXTUAL.includes(uitype) && (
+                <div>
+                  <label className="label">Must look like</label>
+                  <p className="mb-1.5 text-2xs text-muted">
+                    Refuses anything in the wrong shape, with a message that explains why.
+                  </p>
+                  <Select
+                    // `f.pattern &&` matters: the "Something else…" preset has an
+                    // empty pattern, so without it an unset field matches custom
+                    // and the dropdown reads "Something else…" instead of "anything".
+                    value={FORMATS.find((f) => f.pattern && f.pattern === pattern)?.key ?? (pattern ? 'custom' : '')}
+                    onChange={(key) => {
+                      const preset = FORMATS.find((f) => f.key === key);
+                      if (!preset) { setPattern(''); setPatternMessage(''); return; }
+                      if (preset.key === 'custom') { setPattern(pattern || '^.*$'); return; }
+                      setPattern(preset.pattern);
+                      setPatternMessage(preset.message);
+                    }}
+                    placeholder="— anything —"
+                    options={FORMATS.map((f) => ({ value: f.key, label: f.label }))}
+                    className="w-full py-1.5 text-sm sm:max-w-xs"
+                  />
+                  {pattern && (
+                    <div className="mt-2 space-y-2">
+                      <div>
+                        <label className="label">Message when it doesn’t match</label>
+                        <input
+                          className="input text-sm"
+                          value={patternMessage}
+                          onChange={(e) => setPatternMessage(e.target.value)}
+                          placeholder="A PAN looks like ABCDE1234F"
+                        />
+                      </div>
+                      {!FORMATS.some((f) => f.pattern && f.pattern === pattern) && (
+                        <div>
+                          <label className="label">Pattern</label>
+                          <input
+                            className="input font-mono text-xs"
+                            value={pattern}
+                            onChange={(e) => setPattern(e.target.value)}
+                          />
+                          <p className="mt-1 text-2xs text-muted">
+                            A regular expression. Leave the presets above if you are not sure.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* --- the unit / country-code list ------------------------ */}
+              {supportsOptionList && (
+                <OptionListEditor
+                  title={uitype === 'area' ? 'Units offered' : 'Country codes offered'}
+                  hint={uitype === 'area'
+                    ? 'The dropdown beside the number. First one is the default.'
+                    : 'The dropdown beside the mobile number. First one is the default.'}
+                  options={listOptions}
+                  onChange={setListOptions}
+                  valuePlaceholder={uitype === 'area' ? 'sqyd' : '+971'}
+                  labelPlaceholder={uitype === 'area' ? 'Sq.yd.' : 'UAE +971'}
+                />
+              )}
+            </div>
+          )}
         </div>
 
         <div className="grid gap-2 rounded-lg border border-slate-200 p-3 sm:grid-cols-2 dark:border-slate-700">

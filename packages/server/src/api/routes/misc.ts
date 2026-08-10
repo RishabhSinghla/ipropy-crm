@@ -549,7 +549,7 @@ miscRouter.post('/workflows/:id/test', asyncHandler(async (req, res) => {
   if (!workflow) throw new NotFoundError('Workflow not found');
 
   const { loadRecordValues } = await import('../../core/workflow/engine.js');
-  const { evaluateFilter } = await import('../../core/query/evaluate.js');
+  const { evaluateFilter } = await import('@ipropy/shared');
   const record = await loadRecordValues(workflow.module, recordId);
   if (!record) throw new NotFoundError('Record not found');
 

@@ -113,6 +113,42 @@ export interface CompleteResult {
 }
 
 /**
+ * A provider that has run out of quota is still out of quota a second later, but
+ * the scheduler calls AI every minute forever. Observed on a free Gemini key: the
+ * same 429 three times a call (`fetchWithRetry` backs off twice), several calls a
+ * minute, all night — noise that buries real errors, and every attempt burns a
+ * request against a quota that only resets on a timer.
+ *
+ * So a rate-limited provider is set aside for ten minutes. Keying by the key's
+ * last characters rather than by provider name is what makes recovery immediate:
+ * pasting a fresh key — the actual fix — is a different entry and is tried at
+ * once. "Test connection" calls the transports directly and is never paused.
+ */
+const COOLDOWN_MS = 10 * 60 * 1000;
+const cooldowns = new Map<string, number>();
+
+function cooldownKey(ai: { provider: AiProvider; apiKey: string }): string {
+  return `${ai.provider}:${ai.apiKey.slice(-6)}`;
+}
+
+function isCoolingDown(ai: { provider: AiProvider; apiKey: string }): boolean {
+  const until = cooldowns.get(cooldownKey(ai));
+  if (until === undefined) return false;
+  if (until > Date.now()) return true;
+  cooldowns.delete(cooldownKey(ai));
+  return false;
+}
+
+function noteRateLimit(ai: { provider: AiProvider; apiKey: string }, message: string): void {
+  if (!/\b429\b|too many requests|quota|rate.?limit/i.test(message)) return;
+  cooldowns.set(cooldownKey(ai), Date.now() + COOLDOWN_MS);
+  logger.warn(
+    { provider: ai.provider, minutes: COOLDOWN_MS / 60_000 },
+    'AI provider is rate-limited; pausing it and falling back to the rule engine',
+  );
+}
+
+/**
  * Run a completion, falling through to the next configured provider if the
  * chosen one fails outright.
  *
@@ -130,7 +166,7 @@ export async function complete(opts: CompleteOptions): Promise<CompleteResult | 
   const settings = getSettings().ai;
   if (!settings.enabled) return null;
 
-  const chain = getAiFallbackChain();
+  const chain = getAiFallbackChain().filter((ai) => !isCoolingDown(ai));
   if (!chain.length) return null;
 
   let lastError = 'No provider answered.';
@@ -155,6 +191,7 @@ export async function complete(opts: CompleteOptions): Promise<CompleteResult | 
       lastError = err instanceof Error ? err.message : String(err);
       logger.error({ err, feature: opts.feature, provider: ai.provider, model }, 'AI call failed');
       await logCall(opts, null, Date.now() - started, false, lastError);
+      noteRateLimit(ai, lastError);
     }
   }
 

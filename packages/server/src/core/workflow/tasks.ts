@@ -254,7 +254,7 @@ const sendWhatsApp: TaskHandler = async (config, ctx) => {
   const scope = await buildMergeScope(ctx);
 
   if (config.skipIf) {
-    const { evaluateFilter } = await import('../query/evaluate.js');
+    const { evaluateFilter } = await import('@ipropy/shared');
     if (evaluateFilter(config.skipIf as never, ctx.record)) return;
   }
 

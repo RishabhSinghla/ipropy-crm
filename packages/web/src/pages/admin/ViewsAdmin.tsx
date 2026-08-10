@@ -44,6 +44,10 @@ export default function ViewsAdmin(): JSX.Element {
   const [moduleName, setModuleName] = useState('leads');
   const [editing, setEditing] = useState<AdminView | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<AdminView | null>(null);
+  // The grip has always been drawn; until now it was decoration and dragging did
+  // nothing, which reads as a broken screen rather than a missing feature.
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
   const client = useQueryClient();
 
   const { data: modules } = useQuery({ queryKey: ['modules'], queryFn: () => api.modules() });
@@ -89,17 +93,17 @@ export default function ViewsAdmin(): JSX.Element {
     onError: (err: Error) => toast.error('Could not delete', err.message),
   });
 
-  const move = (index: number, direction: -1 | 1): void => {
-    if (!views) return;
+  /** Reorder by lifting one tab out and dropping it at `to` — arrows and drag both land here. */
+  const moveTo = (from: number, to: number): void => {
+    if (!views || from === to || to < 0 || to >= views.length) return;
     const next = [...views];
-    const target = index + direction;
-    if (target < 0 || target >= next.length) return;
-    [next[index], next[target]] = [next[target], next[index]];
+    const [lifted] = next.splice(from, 1);
+    next.splice(to, 0, lifted);
     reorder.mutate(next.map((v) => v.id));
   };
 
   return (
-    <div className="space-y-4">
+    <div className="max-w-3xl space-y-4 p-4 sm:p-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold">List view tabs</h2>
@@ -133,11 +137,34 @@ export default function ViewsAdmin(): JSX.Element {
 
       <div className="space-y-2">
         {views?.map((view, index) => (
-          <Card key={view.id} className={cn('p-3', view.isActive === false && 'opacity-60')}>
-            <div className="flex flex-wrap items-center gap-3">
+          <Card
+            key={view.id}
+            draggable
+            onDragStart={() => setDragIndex(index)}
+            onDragEnd={() => { setDragIndex(null); setOverIndex(null); }}
+            onDragOver={(e) => { e.preventDefault(); if (dragIndex !== null) setOverIndex(index); }}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (dragIndex !== null) moveTo(dragIndex, index);
+              setDragIndex(null);
+              setOverIndex(null);
+            }}
+            className={cn(
+              'p-2.5',
+              view.isActive === false && 'opacity-60',
+              dragIndex === index && 'opacity-40',
+              overIndex === index && dragIndex !== null && dragIndex !== index
+                && 'ring-2 ring-brand-500',
+            )}
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <GripVertical
+                className="hidden h-4 w-4 shrink-0 cursor-grab text-slate-300 active:cursor-grabbing sm:block dark:text-slate-700"
+              />
+
               <div className="flex shrink-0 flex-col">
                 <button
-                  onClick={() => move(index, -1)}
+                  onClick={() => moveTo(index, index - 1)}
                   disabled={index === 0}
                   className="btn-ghost p-0.5 disabled:opacity-25"
                   title="Move up"
@@ -145,7 +172,7 @@ export default function ViewsAdmin(): JSX.Element {
                   <ArrowUp className="h-3.5 w-3.5" />
                 </button>
                 <button
-                  onClick={() => move(index, 1)}
+                  onClick={() => moveTo(index, index + 1)}
                   disabled={index === (views.length - 1)}
                   className="btn-ghost p-0.5 disabled:opacity-25"
                   title="Move down"
@@ -153,8 +180,6 @@ export default function ViewsAdmin(): JSX.Element {
                   <ArrowDown className="h-3.5 w-3.5" />
                 </button>
               </div>
-
-              <GripVertical className="hidden h-4 w-4 shrink-0 text-slate-300 sm:block dark:text-slate-700" />
 
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -168,6 +193,7 @@ export default function ViewsAdmin(): JSX.Element {
                   )}
                   {view.isDefault && <Badge color="#0891b2">default</Badge>}
                   {view.displayMode === 'kanban' && <Badge color="#7c3aed">board</Badge>}
+                  {view.isActive === false && <Badge>hidden</Badge>}
                 </div>
                 <p className="text-2xs text-muted">
                   {countConditions(view.filter as FilterGroup)

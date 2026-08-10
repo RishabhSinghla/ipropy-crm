@@ -13,7 +13,7 @@ import { logger } from '../../utils/logger.js';
 import { bus } from '../../core/events/bus.js';
 import { createRecord, updateRecord, type ServiceContext } from '../../core/entity/recordService.js';
 import { assignOwner } from '../../core/workflow/assignment.js';
-import { evaluateFilter } from '../../core/query/evaluate.js';
+import { evaluateFilter } from '@ipropy/shared';
 
 const SYSTEM_USER: AuthUser = {
   id: '00000000-0000-0000-0000-000000000000',

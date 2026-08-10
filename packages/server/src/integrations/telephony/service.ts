@@ -461,11 +461,16 @@ export async function logManualCall(input: {
   notes?: string;
 }): Promise<{ callId: string }> {
   const agent = await db.queryOne<{ phone: string | null }>(`SELECT phone FROM ipy_user WHERE id = $1`, [input.userId]);
+  // $7 is read twice, so it needs the same deduced type in both places. `$7 || ' seconds'`
+  // made it text while duration_seconds made it integer, and Postgres rejected the whole
+  // statement with "inconsistent types deduced for parameter $7" — every manual call log
+  // returned a 500. make_interval takes the integer directly.
   const row = await db.queryOne<{ id: string }>(
     `INSERT INTO ipy_call
       (direction, from_number, to_number, user_id, record_id, record_module,
        status, duration_seconds, provider, source, disposition, notes, started_at, ended_at)
-     VALUES ($1,$2,$3,$4,$5,$6,'completed',$7,'manual','manual',$8,$9, now() - ($7 || ' seconds')::interval, now())
+     VALUES ($1,$2,$3,$4,$5,$6,'completed',$7::int,'manual','manual',$8,$9,
+             now() - make_interval(secs => $7::int), now())
      RETURNING id`,
     [
       input.direction,

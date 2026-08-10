@@ -7,7 +7,7 @@
  */
 import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
-import { evaluateFilter } from '../query/evaluate.js';
+import { evaluateFilter } from '@ipropy/shared';
 
 export interface AssignOptions {
   strategy?: string;
