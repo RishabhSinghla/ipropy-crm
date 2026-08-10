@@ -27,6 +27,7 @@
 import crypto from 'node:crypto';
 import { config } from '../../config.js';
 import { db } from '../../db/pool.js';
+import { makeSecretBox } from '../secretbox.js';
 import { logger } from '../../utils/logger.js';
 
 export type AiProvider = 'none' | 'anthropic' | 'gemini' | 'groq' | 'openrouter' | 'openai' | 'ollama';
@@ -96,36 +97,9 @@ export interface ResolvedSettings {
 // Encryption — AES-256-GCM, key derived from JWT_SECRET so no new required env var
 // ---------------------------------------------------------------------------
 
-const ENC_PREFIX = 'enc:v1:';
-
-function deriveKey(): Buffer {
-  return crypto.scryptSync(config.auth.jwtSecret, 'ipropy-integration-credentials', 32);
-}
-
-function encrypt(plain: string): string {
-  if (!plain) return '';
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', deriveKey(), iv);
-  const enc = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
-  return ENC_PREFIX + Buffer.concat([iv, cipher.getAuthTag(), enc]).toString('base64');
-}
-
-function decrypt(value: string | undefined | null): string {
-  if (!value) return '';
-  if (!value.startsWith(ENC_PREFIX)) return value; // pre-encryption rows; re-encrypted on next save
-  try {
-    const raw = Buffer.from(value.slice(ENC_PREFIX.length), 'base64');
-    const iv = raw.subarray(0, 12);
-    const tag = raw.subarray(12, 28);
-    const enc = raw.subarray(28);
-    const decipher = crypto.createDecipheriv('aes-256-gcm', deriveKey(), iv);
-    decipher.setAuthTag(tag);
-    return Buffer.concat([decipher.update(enc), decipher.final()]).toString('utf8');
-  } catch (err) {
-    logger.error({ err }, 'failed to decrypt integration credential');
-    return '';
-  }
-}
+// The salt is load-bearing: change it and every credential already stored
+// becomes undecryptable.
+const { encrypt, decrypt } = makeSecretBox('ipropy-integration-credentials');
 
 // ---------------------------------------------------------------------------
 // Load + resolve
