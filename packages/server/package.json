@@ -19,7 +19,8 @@
     "db:reset": "tsx src/db/migrate.ts --reset && tsx src/db/seed/index.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:integration:watch": "vitest --config vitest.integration.config.ts",
-    "tenant": "tsx src/control/cli.ts"
+    "tenant": "tsx src/control/cli.ts",
+    "control": "tsx src/control/server.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.68.0",

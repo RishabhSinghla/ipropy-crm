@@ -10,7 +10,11 @@
 import { config } from '../config.js';
 import { listTemplates, resolveTemplate } from '../db/seed/templates/index.js';
 import { logger } from '../utils/logger.js';
+import { attachRazorpaySubscription, markInvoiced, startTrial, suspendLapsed } from './billing.js';
+import { DEFAULT_PLAN, formatPrice, parsePlanIds, PLANS, resolvePlan } from './plans.js';
 import { migrateAll, migrateTenant, provisionTenant, redactUrl } from './provision.js';
+import { createPlan, createSubscription } from './razorpay.js';
+import { approveSignup, listSignups, rejectSignup } from './signups.js';
 import * as store from './store.js';
 import type { TenantStatus } from './types.js';
 
@@ -56,8 +60,24 @@ iPropy customers
   npm run tenant -- resume  --slug acme
   npm run tenant -- templates                  the trades a new customer can start from
 
+Billing
+
+  npm run tenant -- plans                      what a customer can buy
+  npm run tenant -- billing-setup              create the plans at Razorpay, once
+  npm run tenant -- subscribe --slug acme --plan starter
+  npm run tenant -- invoice   --slug acme --plan starter --days 365
+  npm run tenant -- trial     --slug acme [--plan trial] [--days 30]
+  npm run tenant -- lapse                      suspend everyone whose paid time ran out
+
+Sign-ups
+
+  npm run tenant -- signups                    what is waiting for a decision
+  npm run tenant -- approve --id <uuid>        provisions for real
+  npm run tenant -- reject  --id <uuid> [--note "…"]
+
 CONTROL_DATABASE_URL must point at the customer list's own database — never at
 a customer's. NEON_API_KEY is optional; without it, pass --database-url.
+Razorpay is optional too: with no keys, invoice and trial still work.
 `.trim();
 
 async function main(): Promise<void> {
@@ -135,6 +155,112 @@ async function main(): Promise<void> {
         process.stdout.write(`${r.slug.padEnd(20)} ${r.ok ? 'up to date' : `FAILED — ${r.error}`}\n`);
       }
       if (results.some((r) => !r.ok)) process.exitCode = 1;
+      return;
+    }
+
+    case 'plans': {
+      for (const plan of Object.values(PLANS)) {
+        process.stdout.write(
+          `${plan.key.padEnd(10)} ${formatPrice(plan).padStart(9)}/mo  ${String(plan.seats).padStart(3)} seats  ${plan.blurb}\n`,
+        );
+      }
+      return;
+    }
+
+    case 'billing-setup': {
+      // Run once. The ids it prints go in RAZORPAY_PLAN_IDS; running it again
+      // creates a second set of plans at Razorpay, which is confusing but not
+      // dangerous — nothing points at them until the variable changes.
+      const created: string[] = [];
+      for (const plan of Object.values(PLANS)) {
+        if (!plan.amountPaise) continue;
+        const remote = await createPlan(plan);
+        created.push(`${plan.key}=${remote.id}`);
+        process.stdout.write(`${plan.key.padEnd(10)} ${formatPrice(plan)}/mo → ${remote.id}\n`);
+      }
+      process.stdout.write(`\nRAZORPAY_PLAN_IDS=${created.join(',')}\n`);
+      return;
+    }
+
+    case 'subscribe': {
+      const tenant = await store.requireBySlug(required(flags, 'slug'));
+      const plan = resolvePlan(required(flags, 'plan'));
+      const planIds = parsePlanIds(config.billing.planIds);
+      const razorpayPlanId = planIds[plan.key];
+      if (!razorpayPlanId) {
+        throw new Error(
+          `No Razorpay plan id for "${plan.key}". Run billing-setup and put the output in RAZORPAY_PLAN_IDS.`,
+        );
+      }
+
+      const subscription = await createSubscription({
+        razorpayPlanId,
+        notifyEmail: tenant.adminEmail,
+        notes: { slug: tenant.slug, tenant_id: tenant.id },
+      });
+      await attachRazorpaySubscription(tenant.id, plan.key, subscription.id);
+      await store.recordEvent(tenant.id, 'billing:subscription_created', `${plan.key} ${subscription.id}`);
+
+      process.stdout.write(`\n${tenant.name} → ${plan.label} at ${formatPrice(plan)}/month\n`);
+      process.stdout.write(`  subscription  ${subscription.id}\n`);
+      process.stdout.write(`  send them     ${subscription.short_url ?? '(no link returned)'}\n\n`);
+      // Until they authorise the mandate nothing is charged and no webhook
+      // arrives, so a subscription sitting unused is expected, not a fault.
+      process.stdout.write('They authorise the mandate at that link. Service continues on trial until they do.\n');
+      return;
+    }
+
+    case 'invoice': {
+      const tenant = await store.requireBySlug(required(flags, 'slug'));
+      const plan = resolvePlan(required(flags, 'plan'));
+      const days = Number(flags.days ?? '365');
+      const until = new Date(Date.now() + days * 86_400_000);
+      await markInvoiced(tenant.id, plan.key, until);
+      await store.recordEvent(tenant.id, 'billing:invoiced', `${plan.key} until ${until.toISOString().slice(0, 10)}`);
+      process.stdout.write(`${tenant.slug} is on ${plan.label}, paid outside the gateway until ${until.toDateString()}.\n`);
+      return;
+    }
+
+    case 'trial': {
+      const tenant = await store.requireBySlug(required(flags, 'slug'));
+      const plan = resolvePlan(flags.plan ?? DEFAULT_PLAN);
+      const subscription = await startTrial(tenant.id, plan.key, Number(flags.days ?? '30'));
+      process.stdout.write(`${tenant.slug} is trialing ${plan.label} until ${subscription.servesUntil}.\n`);
+      return;
+    }
+
+    case 'lapse': {
+      const suspended = await suspendLapsed();
+      process.stdout.write(suspended.length
+        ? `Suspended: ${suspended.join(', ')}\n`
+        : 'Nobody has lapsed.\n');
+      return;
+    }
+
+    case 'signups': {
+      const pending = await listSignups((flags.status as 'pending' | 'approved' | 'rejected') ?? 'pending');
+      if (!pending.length) {
+        process.stdout.write('Nothing waiting.\n');
+        return;
+      }
+      for (const r of pending) {
+        process.stdout.write(`${r.id}  ${r.slug.padEnd(20)} ${r.planKey.padEnd(9)} ${r.adminEmail.padEnd(28)} ${r.name}\n`);
+      }
+      return;
+    }
+
+    case 'approve': {
+      const result = await approveSignup(required(flags, 'id'));
+      process.stdout.write(`\n${result.request.name} is ready.\n\n`);
+      process.stdout.write(`  sign in as  ${result.request.adminEmail}\n`);
+      process.stdout.write(`  password    ${result.adminPassword}\n\n`);
+      process.stdout.write('That password is shown once and is not stored anywhere. Send it to them now.\n');
+      return;
+    }
+
+    case 'reject': {
+      await rejectSignup(required(flags, 'id'), flags.note);
+      process.stdout.write('Rejected.\n');
       return;
     }
 
