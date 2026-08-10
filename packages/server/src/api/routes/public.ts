@@ -22,10 +22,10 @@ export const publicRouter = Router();
 
 // Only records in these statuses are shown to the public, regardless of
 // whatever else the query filters on. Matches the CRM's own "Active
-// Inventory" / "Available Units" system views (db/seed/modules.ts).
+// Inventory" / "Available Units" system views (db/seed/templates/realEstate.ts).
 const PUBLIC_PROPERTY_STATUS = 'Available';
 
-// publish_to_web (db/seed/modules.ts) is a JSON-storage custom field,
+// publish_to_web (db/seed/templates/realEstate.ts) is a JSON-storage custom field,
 // default true — an admin can hide a specific record from the website
 // without changing its status. Absent key (pre-existing records, never
 // re-saved since the field was added) is treated as the default: visible.

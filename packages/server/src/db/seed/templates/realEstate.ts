@@ -1,12 +1,17 @@
-import { F, type ModuleDef } from './helpers.js';
+import { F, type ModuleDef } from '../helpers.js';
+import type { IndustryTemplate } from './types.js';
 
 /**
- * The seeded real-estate data model.
+ * The seeded real-estate data model — the starting metadata for an Indian
+ * property desk.
  *
  * Everything here is *starting* metadata — an admin can add fields, reorder
  * blocks, rename labels, add modules, or delete what they don't need. Nothing
  * in the engine hard-codes any of these names except a small set of
  * integration touchpoints (documented in README).
+ *
+ * This file is data, not logic, and that is the whole point: a different trade
+ * is a different file next to this one, not a fork of the engine.
  */
 
 /**
@@ -36,7 +41,7 @@ const AREA_UNITS = [
   { value: 'sqyd', label: 'Sq.yd.' },
 ];
 
-export const MODULES: ModuleDef[] = [
+const MODULES: ModuleDef[] = [
   // =========================================================================
   // LEADS
   // =========================================================================
@@ -585,3 +590,10 @@ export const MODULES: ModuleDef[] = [
   // =========================================================================
 
 ];
+
+export const REAL_ESTATE: IndustryTemplate = {
+  key: 'real-estate',
+  label: 'Real estate',
+  description: 'Builders, brokers and channel partners — enquiries, site visits, units and bookings.',
+  modules: MODULES,
+};

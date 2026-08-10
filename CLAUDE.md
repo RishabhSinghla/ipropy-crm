@@ -128,7 +128,7 @@ Login: `admin@ipropy.com` / `Admin@123`. Other demo users in `PROJECT_HANDOVER.m
 
 ## Conventions
 
-* **Seeding is idempotent.** To change the data model, edit `db/seed/modules.ts` and re-run
+* **Seeding is idempotent.** To change the data model, edit `db/seed/templates/realEstate.ts` and re-run
   `npm run db:seed`. System views/layouts/workflows (`is_system`) are refreshed; user content is not.
 * **Migrations are forward-only**, numbered `00N_name.sql`, each applied in its own transaction and
   recorded in `ipy_migration`. Write them defensively (`IF EXISTS`) so they no-op on a fresh DB.
@@ -155,7 +155,7 @@ packages/shared/src/uitypes.ts                     the vocabulary (32 field type
 packages/server/src/core/entity/recordService.ts   the generic CRUD engine
 packages/server/src/core/query/builder.ts          filters → SQL
 packages/server/src/core/permissions/index.ts      4-layer access control
-packages/server/src/db/seed/modules.ts             the real-estate data model
+packages/server/src/db/seed/templates/          starting data models, one file per trade
 packages/web/src/components/FieldRenderer.tsx      metadata → UI
 ```
 
