@@ -1204,3 +1204,28 @@ carry. Covered by an integration test.
    patching only `label` cannot wipe validation, but it left no way to *remove*
    a setting. An explicit `null` now means "delete this key", which is what
    clearing a rule in the editor sends.
+
+### §17.5 — Three things the running system was doing wrong (2026-08-10)
+
+Found by reading a dev-server log rather than by testing, which is the point:
+none of the three showed up as a failing check.
+
+* **Logging a call by hand returned 500.** `logManualCall` bound `$7` into an
+  integer column *and* into `($7 || ' seconds')::interval`, so Postgres refused
+  to deduce a type: `inconsistent types deduced for parameter $7`. Now
+  `make_interval(secs => $7::int)`. This is the fourth appearance of the
+  parameter-binding trap in CLAUDE.md rule 8 — the first one with an integration
+  test behind it, because nothing typechecks a SQL string.
+* **A rate-limited AI provider was called every minute, forever.** Free-tier
+  Gemini returns 429 once its daily quota is gone; `fetchWithRetry` then tried
+  twice more, several features a minute, all night. `ai/client.ts` now sets a
+  rate-limited provider aside for ten minutes. The cooldown is keyed on the last
+  characters of the API key, so pasting a new key — the actual fix — takes
+  effect immediately without a restart, and "Test connection" is never paused
+  because it calls the transports directly.
+* **Admin → List View Tabs was missing its page padding.** Every other admin
+  screen wraps in `p-4 sm:p-6`; this one did not, so the heading sat against the
+  nav divider and the rows bled off the right edge of a desktop window, putting
+  the delete button a mile from the name it belonged to. Also: the grip icon on
+  each row had never been draggable. It is now — the arrows stay for keyboard
+  and touch — and a hidden tab says "hidden" rather than only being faded.
