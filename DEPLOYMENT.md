@@ -180,6 +180,48 @@ Vercel also builds a unique preview URL for every pull request — useful for
 
 ---
 
+## 7. Backups and monitoring (10 min, do this before real client data)
+
+### Backups: use Neon's, don't build your own
+
+Neon's paid **Launch** plan includes scheduled backups (daily/weekly/monthly)
+and a 7-day instant-restore window. Turn both on and the problem is solved
+properly: nothing is copied anywhere, there is no dump file to leak, no API
+token to rotate, and restore is a button rather than a procedure.
+
+1. Neon Console → your project → **Billing** → upgrade to **Launch**.
+2. **Settings → Instant restore** → history window **7 days**.
+3. **Settings → Backups** → enable a **daily** schedule.
+
+The free plan gives you neither: a history window of at most 6 hours, one
+snapshot, and no schedule at all.
+
+An earlier version of this guide shipped a GitHub Action that dumped the
+database nightly to R2. It was removed on purpose. Its only real advantage was
+holding a copy *outside* your database provider, which matters on the day the
+provider itself is the problem — a reasonable thing to want later, and it is in
+this repository's git history if you do. It is not worth a nightly copy of every
+client's name, phone number and PAN moving between two systems today.
+
+### Monitoring: already committed
+
+**`.github/workflows/health.yml`** calls `/api/health` every 15 minutes, which
+answers `ok` only after it has really reached Postgres. Two failures in a row
+open a GitHub issue; the next success closes it. Your incident log is the issue
+list, with no account to create anywhere and nothing to configure — though you
+can set a repository **variable** called `HEALTH_URL` once the CRM has its own
+domain, since it defaults to the Render URL.
+
+Two things about GitHub's scheduler: it is best-effort and runs late under load,
+and **it disables scheduled workflows in a repository with no commits for 60
+days**. If the project goes quiet, check this is still on.
+
+To take a manual dump at any time — before a risky migration, say — `npm run
+db:backup` still works, and `npm run db:restore <file>` puts one back. Read
+`PROJECT_HANDOVER.md` §9 first: restore replaces the live database.
+
+---
+
 ## Sharing with your team
 
 Send them the two URLs. For the CRM, create a real user each rather than sharing
@@ -210,6 +252,7 @@ Be upfront with your team about these — they are properties of "free", not bug
 | Limit | Effect | Fix |
 |---|---|---|
 | Render free instances sleep after ~15 min idle | First visit takes **~50 seconds** to wake. Later visits are instant. | Render Starter, $7/mo, always on |
+| …and the scheduler sleeps with it | This is the one that costs you money rather than patience. `render.yaml` runs the API, the web app and `ENABLE_SCHEDULER=true` in **one** service, so while it is asleep no follow-up reminder fires, no untouched lead escalates and no birthday message goes out. Nothing errors; the work silently does not happen overnight and at weekends. | Render Starter — same $7/mo |
 | 512 MB RAM / 0.1 CPU | Large video transcodes are slow, and a very large upload can OOM the container | Starter tier |
 | No persistent disk | Uploads vanish on redeploy — **unless you did step 2** | Cloudflare R2 (step 2) |
 | Neon free tier | 0.5 GB storage; idle databases sleep briefly | Neon paid tiers |

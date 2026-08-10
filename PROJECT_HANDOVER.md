@@ -441,14 +441,28 @@ session — the sole real bug is gone.)
 
 ### Risks
 
-1. **Production hardening not done.** `JWT_SECRET` is the dev default (the server does refuse to boot
-   in production with it) — **and now also derives the integration-credential encryption key**, so
-   rotating it in production will require re-entering every credential saved via the admin UI.
-   `WHATSAPP_APP_SECRET` is unset — webhook signature verification is skipped outside production. No
-   TLS, no rate-limit tuning, no scheduled backups (backup/restore scripts now exist — see §9; wire
-   them into a cron/systemd timer for production).
-2. **Single-process scheduler.** `FOR UPDATE SKIP LOCKED` makes the queue multi-instance safe, but
+1. **`JWT_SECRET` is a one-way decision, not just a secret.** It also derives the
+   integration-credential encryption key, so rotating it in production means re-entering every
+   credential saved through the admin UI. Set the final value before real credentials go in. (The
+   server does refuse to boot in production with the dev default.)
+2. **`WHATSAPP_APP_SECRET` is unset, so WhatsApp inbound does not work in production.** It fails
+   closed, which is the right way round — `verifyWebhookSignature` returns `!config.isProd` when no
+   secret is configured, so a deployed server rejects every unsigned webhook rather than trusting it.
+   Nothing is exposed; the messages simply never arrive until the secret is set.
+3. **The free Render instance sleeps, and the scheduler sleeps with it.** One service runs the API,
+   the web app and `ENABLE_SCHEDULER=true`, so overnight and at weekends no follow-up reminder, lead
+   escalation or birthday message fires. No error is logged, because nothing runs. The $7/mo Starter
+   plan is the fix; see DEPLOYMENT.md.
+4. **No backups until Neon is on a paid plan.** The free plan has no scheduled backups, one
+   snapshot and a ≤6-hour history window. Neon Launch adds daily backups and a 7-day instant-restore
+   window; turning those on is the single highest-value thing left, and is a better answer than a
+   dump job of our own — no copy of every client's PAN moving between systems, and restore is a
+   button. See DEPLOYMENT.md §7. If an off-provider copy is ever wanted, a GitHub Action that dumped
+   to R2 and verified itself by restoring into a scratch Postgres is in this repo's git history.
+5. **Single-process scheduler.** `FOR UPDATE SKIP LOCKED` makes the queue multi-instance safe, but
    scheduled workflows scan up to 5,000 records per tick in-process — will not scale to large tenants.
+6. **Nobody has used it concurrently.** Every check so far is a test suite or one person clicking.
+   Run a real pilot — two or three agents, real leads, one week — before the whole desk moves onto it.
 
 ### Technical debt
 
@@ -459,8 +473,12 @@ session — the sole real bug is gone.)
    scheduler hook are the entry points); rollup values are computed on read. None can be exercised
    end-to-end without keys, so they've been verified structurally (typecheck, unit suite, build, API
    no-op paths) rather than against live services.
-5. **Web bundle is ~1.2 MB** (~244 KB gzipped, grew this session with the workflow composer, dashboard
-   drill-through and now `react-grid-layout`) — no route-level code splitting yet.
+5. ~~**Web bundle is ~1.2 MB with no route-level code splitting.**~~ **Stale — measured 2026-08-10.**
+   Every page is behind `lazy()` in `App.tsx` and Vite splits accordingly. A cold load is
+   `react` (54 KB gzip) + `index` (42 KB gzip) ≈ **96 KB**; each screen then pulls its own 3–15 KB.
+   The one chunk worth watching is `charts` (recharts) at **115 KB gzip**, which the Dashboard —
+   the page you land on after login — needs immediately. That, not the total, is what a phone on
+   4G actually waits for.
  6. **`is_converted` and `lifecycle_stage` overlap** post-merge. Both are maintained; consider
     collapsing to lifecycle alone.
 
@@ -542,9 +560,11 @@ counts are `ipy_migration`, `ipy_user`, `ipy_record`, `ipy_module`, `ipy_field`.
 
 ## 10. Testing commands
 
-**Vitest is in the repo.** `packages/server/tests/` holds 107 unit tests over the highest-risk pure
-logic — `query/builder`, `query/evaluate`, `entity/formula` and `permissions` (the DB and metadata
-registry are stubbed; no Postgres needed). The smoke scripts (`smoke.mjs`, `verify-merge.mjs`)
+**Vitest is in the repo.** `packages/server/tests/` holds 155 unit tests over the highest-risk pure
+logic — `query/builder`, `query/evaluate`, `entity/formula`, `validation` and `permissions` (the DB
+and metadata registry are stubbed; no Postgres needed), and `packages/web/tests/` a further 42.
+Beyond those: 52 integration tests against a real throwaway Postgres, and 22 Playwright e2e specs.
+The smoke scripts (`smoke.mjs`, `verify-merge.mjs`)
 referenced by older handovers lived in a session scratchpad and were never recovered — do not assume
 they still exist.
 
