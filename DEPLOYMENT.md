@@ -180,6 +180,48 @@ Vercel also builds a unique preview URL for every pull request — useful for
 
 ---
 
+## 7. Backups and monitoring (10 min, do this before real client data)
+
+Two more workflows are committed and will start working the moment you add the
+secrets. Until then the backup job prints a warning and exits without failing,
+so it does not nag you daily.
+
+**`.github/workflows/backup.yml`** — every night at 02:00 IST it dumps the
+production database, uploads it to R2, then **restores it into a throwaway
+Postgres and counts the rows**. That last part is the reason to bother: a dump
+that is truncated or points at the wrong database looks exactly like a good one
+until the day you need it. The job fails loudly if the restore comes back empty.
+Backups older than 30 days are pruned. The dump is never kept as a workflow
+artifact — this repository is public and the dump holds names, phone numbers and
+PANs.
+
+**`.github/workflows/health.yml`** — every 15 minutes it calls `/api/health`,
+which answers `ok` only after it has really reached Postgres. Two failures in a
+row open a GitHub issue; the next success closes it. Your incident log is
+therefore the issue list, with no account to create anywhere.
+
+Add these under **Settings → Secrets and variables → Actions → Secrets**:
+
+| Secret | Where it comes from |
+|---|---|
+| `PROD_DATABASE_URL` | Neon → your project → Connection string (the same one Render uses) |
+| `R2_ENDPOINT` | Cloudflare → R2 → *Manage API tokens* — looks like `https://<account-id>.r2.cloudflarestorage.com` |
+| `R2_ACCESS_KEY_ID` | Cloudflare R2 API token |
+| `R2_SECRET_ACCESS_KEY` | Cloudflare R2 API token |
+| `R2_BUCKET` | Your R2 bucket name (the media bucket is fine; dumps go under `db-backups/`) |
+
+Optionally add a **variable** (not a secret) called `HEALTH_URL` once the CRM has
+its own domain; it defaults to the Render URL.
+
+Two things worth knowing about GitHub's scheduler: it is best-effort and runs
+late under load, and **it disables scheduled workflows in a repository with no
+commits for 60 days**. If the project goes quiet, check that these are still on.
+
+Restoring from one of these dumps is `npm run db:restore <file>` — read
+`PROJECT_HANDOVER.md` §9 first, it replaces the live database.
+
+---
+
 ## Sharing with your team
 
 Send them the two URLs. For the CRM, create a real user each rather than sharing
@@ -210,6 +252,7 @@ Be upfront with your team about these — they are properties of "free", not bug
 | Limit | Effect | Fix |
 |---|---|---|
 | Render free instances sleep after ~15 min idle | First visit takes **~50 seconds** to wake. Later visits are instant. | Render Starter, $7/mo, always on |
+| …and the scheduler sleeps with it | This is the one that costs you money rather than patience. `render.yaml` runs the API, the web app and `ENABLE_SCHEDULER=true` in **one** service, so while it is asleep no follow-up reminder fires, no untouched lead escalates and no birthday message goes out. Nothing errors; the work silently does not happen overnight and at weekends. | Render Starter — same $7/mo |
 | 512 MB RAM / 0.1 CPU | Large video transcodes are slow, and a very large upload can OOM the container | Starter tier |
 | No persistent disk | Uploads vanish on redeploy — **unless you did step 2** | Cloudflare R2 (step 2) |
 | Neon free tier | 0.5 GB storage; idle databases sleep briefly | Neon paid tiers |

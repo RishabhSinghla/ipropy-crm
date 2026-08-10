@@ -1,0 +1,81 @@
+# Is the deployed CRM answering?
+#
+# `/api/health` returns 200 with status "ok" only after it has actually reached
+# Postgres, so a 200 here means the whole path is up — not just that a process
+# is listening. A failure opens an issue; a recovery closes it, so the issue
+# list is the incident log and nobody has to remember to tidy up.
+#
+# This is monitoring, not a keep-alive: GitHub's scheduler is best-effort and
+# runs late under load, so it cannot be relied on to stop a free Render instance
+# sleeping. The fix for sleeping — and for the scheduler not running while it
+# sleeps — is the paid instance. See DEPLOYMENT.md.
+name: Health
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      # Override with a repository variable once the CRM has its own domain.
+      HEALTH_URL: ${{ vars.HEALTH_URL || 'https://ipropy-crm.onrender.com/api/health' }}
+      GH_TOKEN: ${{ github.token }}
+      LABEL: outage
+
+    steps:
+      - name: Ping /api/health
+        id: ping
+        run: |
+          # A free instance can take ~50s to wake, which is not an outage.
+          # Two attempts, generous timeout, before calling it down.
+          for attempt in 1 2; do
+            code=$(curl -sS -o body.json -w '%{http_code}' -m 90 "$HEALTH_URL" || echo 000)
+            status=$(jq -r '.status // "unknown"' body.json 2>/dev/null || echo unknown)
+            echo "attempt $attempt: HTTP $code, status $status"
+            if [ "$code" = "200" ] && [ "$status" = "ok" ]; then
+              echo "up=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "up=false" >> "$GITHUB_OUTPUT"
+          echo "detail=HTTP $code, status $status" >> "$GITHUB_OUTPUT"
+
+      - name: Open an issue if it is down
+        if: steps.ping.outputs.up == 'false'
+        run: |
+          set -euo pipefail
+          gh label create "$LABEL" --color b60205 --description "Automated health check" \
+            --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
+          open=$(gh issue list --repo "$GITHUB_REPOSITORY" --label "$LABEL" --state open \
+                   --json number -q '.[0].number // empty')
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --repo "$GITHUB_REPOSITORY" \
+              --body "Still down at $(date -u '+%Y-%m-%d %H:%M UTC') — ${{ steps.ping.outputs.detail }}."
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --label "$LABEL" \
+              --title "CRM health check failing" \
+              --body "$(printf '%s\n\n%s\n\n%s' \
+                "\`$HEALTH_URL\` did not answer with status \"ok\" on two attempts: ${{ steps.ping.outputs.detail }}." \
+                "First seen $(date -u '+%Y-%m-%d %H:%M UTC'). This issue closes itself when the check passes again." \
+                "If the app is merely asleep the next run usually recovers it; if it does not, check the Render service log and Neon.")"
+          fi
+          exit 1
+
+      - name: Close the outage issue if it is back
+        if: steps.ping.outputs.up == 'true'
+        run: |
+          set -euo pipefail
+          open=$(gh issue list --repo "$GITHUB_REPOSITORY" --label "$LABEL" --state open \
+                   --json number -q '.[0].number // empty')
+          if [ -n "$open" ]; then
+            gh issue close "$open" --repo "$GITHUB_REPOSITORY" \
+              --comment "Answering again at $(date -u '+%Y-%m-%d %H:%M UTC')."
+          fi
