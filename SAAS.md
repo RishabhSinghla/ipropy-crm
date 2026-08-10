@@ -89,6 +89,55 @@ Things worth knowing:
 * **No Neon key is needed** to use any of this — pass `--database-url`. That is
   how the first customers should be onboarded anyway.
 
+## Billing and sign-up — built
+
+`npm run control` runs the webhook and sign-up listener; the rest is on the same
+`npm run tenant` command line.
+
+```bash
+npm run tenant -- plans                 trial (free) · starter ₹2,499 · growth ₹5,999
+npm run tenant -- billing-setup         create those plans at Razorpay, once
+npm run tenant -- subscribe --slug acme --plan starter    # sends them a mandate link
+npm run tenant -- invoice   --slug acme --plan starter --days 365   # paying outside the gateway
+npm run tenant -- lapse                 suspend everyone whose paid time ran out — run daily
+npm run tenant -- signups | approve --id … | reject --id …
+```
+
+**What an event means for service** lives in one pure function, `decide()` in
+`billing.ts`, because it is the code that determines whether a builder can open
+their leads tomorrow and it will run for the first time against real money. It
+is generous in one direction and strict in the other:
+
+| Event | Subscription | Their service |
+|---|---|---|
+| mandate authorised | active | works immediately, before any money moves |
+| charge succeeded | active | +31 days, payment recorded |
+| charge failed | past_due | **keeps working** for the plan's grace period |
+| gateway gave up retrying | past_due | suspended |
+| cancelled / completed | cancelled | suspended |
+| anything else | unchanged | unchanged |
+
+Suspension sets a status and nothing else. No data is touched, and `resume` is
+immediate.
+
+Things worth knowing:
+
+* **The signature is checked against the raw bytes**, before parsing. Re-serialising
+  parsed JSON changes whitespace and key order, the HMAC stops matching, and the
+  temptation becomes to skip the check.
+* **It fails closed.** No `RAZORPAY_WEBHOOK_SECRET` means no webhook is accepted.
+  Accepting unsigned deliveries when unconfigured would be a public endpoint that
+  suspends any customer whose slug you can guess.
+* **Retries are expected, not exceptional.** Razorpay redelivers until it gets a
+  2xx, so every event is claimed once in `ctl_webhook_event`. Verified: the same
+  delivery twice extends the period once.
+* **The grace period is enforced by `lapse`, not by the gateway.** `halted`
+  arrives days late, after Razorpay finishes retrying. `lapse` is our own clock
+  and should run daily. Customers marked `invoiced` are exempt.
+* **Sign-up queues, it never provisions.** Every approval creates a database that
+  costs money, so the public form records a request, rate-limited to 5 an hour,
+  and off entirely unless `CONTROL_SIGNUPS_OPEN=true`. A human runs `approve`.
+
 ## What does not exist yet
 
 Roughly in the order it will hurt.
@@ -98,17 +147,20 @@ Roughly in the order it will hurt.
    per database *and* a registry cache per database — the two module-level
    `let`s above become maps keyed by customer. Do not do this before it is
    forced.
-2. **Billing.** Razorpay for India. Nothing exists.
-3. **Sign-up.** There is no self-serve anything. Users are created by an admin.
-4. **WhatsApp at scale.** This is the underestimated one. Every customer needs
+2. **Nobody has run a rupee through it.** The gateway code is written and its
+   logic is tested, but every test uses a signed fixture rather than Razorpay.
+   Before a customer is charged: create the merchant account, run
+   `billing-setup`, point a test-mode webhook at the control plane and put one
+   real subscription through the whole cycle.
+3. **WhatsApp at scale.** This is the underestimated one. Every customer needs
    their own WhatsApp Business number approved by Meta. Doing that without a
    human in the loop means Meta Embedded Signup and becoming a Tech Provider.
    WhatsApp is the heart of this product, so this is on the critical path.
-5. **Becoming a data processor.** Holding another builder's leads makes iPropy
+4. **Becoming a data processor.** Holding another builder's leads makes iPropy
    legally responsible for other people's customers under the DPDP Act:
    contracts, breach notification, deletion on request. Worth an hour with a
    lawyer before the first paying customer, not after.
-6. **Support.** One angry customer at 9pm is a person's job.
+5. **Support.** One angry customer at 9pm is a person's job.
 
 ---
 
@@ -124,10 +176,10 @@ routing. This is the step that tells you what SaaS actually requires, and
 whether anyone pays, before a line of it is built. Expect the answer to be
 mostly "onboarding and support", not "features".
 
-**Then — only if they pay and stay.** Razorpay, then sign-up behind an approval,
-then Embedded Signup. In that order. Provisioning and the customer registry are
-done, so onboarding those first customers by hand is now one command rather than
-an afternoon.
+**Then — only if they pay and stay.** Meta Embedded Signup, and per-request
+routing when one deployment each stops being practical. Provisioning, billing and
+the sign-up queue are done, so onboarding a customer by hand is now two commands
+rather than an afternoon.
 
 **Then — trades beyond real estate.** One at a time, each with a customer
 already waiting. The closest neighbours are construction, interiors and

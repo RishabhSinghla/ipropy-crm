@@ -67,6 +67,23 @@ export const config = {
     databaseUrl: str('CONTROL_DATABASE_URL'),
     neonApiKey: str('NEON_API_KEY'),
     neonRegion: str('NEON_REGION', 'aws-ap-southeast-1'),
+    /** The webhook + sign-up listener. Its own process, not the CRM's. */
+    port: num('CONTROL_PORT', 4100),
+    /** Public sign-up only queues a request; nothing is provisioned without approval. */
+    signupsOpen: bool('CONTROL_SIGNUPS_OPEN', false),
+  },
+
+  /**
+   * Razorpay. Absent in dev and in every customer's deployment — only the
+   * control plane ever charges anybody. Everything degrades the way the AI
+   * providers do: unconfigured means "cannot charge", not "crash".
+   */
+  billing: {
+    keyId: str('RAZORPAY_KEY_ID'),
+    keySecret: str('RAZORPAY_KEY_SECRET'),
+    webhookSecret: str('RAZORPAY_WEBHOOK_SECRET'),
+    /** `starter=plan_abc,growth=plan_def` — created once with `tenant -- billing-setup`. */
+    planIds: str('RAZORPAY_PLAN_IDS'),
   },
 
   seed: {

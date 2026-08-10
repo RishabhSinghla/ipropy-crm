@@ -36,7 +36,8 @@
     "pretest:integration": "npm run build -w @ipropy/shared",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "tenant": "npm run tenant -w @ipropy/server --"
+    "tenant": "npm run tenant -w @ipropy/server --",
+    "control": "npm run control -w @ipropy/server"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",
