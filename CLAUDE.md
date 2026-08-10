@@ -113,11 +113,12 @@ Login: `admin@ipropy.com` / `Admin@123`. Other demo users in `PROJECT_HANDOVER.m
 
 **Verification:** three layers, fastest first.
 
-* `npm test` — 197 unit tests, no DB: 155 in `packages/server` (query builder, filter evaluator,
-  formula engine, permissions, validation) and 42 in `packages/web` (`tests/color.test.ts`, the
+* `npm test` — 251 unit tests, no DB: 209 in `packages/server` (query builder, filter evaluator,
+  formula engine, permissions, validation, seed templates, billing decisions) and 42 in `packages/web` (`tests/color.test.ts`, the
   contrast guarantee behind the colour tokens, and `tests/markdown.test.ts`).
-* `npm run test:integration` — creates and drops its own `ipropy_itest` database. Never point it at
-  a database you care about; `vitest.config.ts` deliberately excludes `tests/integration/**` from
+* `npm run test:integration` — creates and drops its own `ipropy_itest` database, plus
+  `ipropy_itest_control` (the customer list) and `ipropy_itest_tenant` (a customer provisioned into
+  it during the control-plane suite). Never point it at a database you care about; `vitest.config.ts` deliberately excludes `tests/integration/**` from
   `npm test` so the unit run cannot touch a real DB.
 * `npm run test:e2e` — Playwright. Runs against the **developer's own database** on purpose, so
   specs create records with unique markers and never assert on global counts.

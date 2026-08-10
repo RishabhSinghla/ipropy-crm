@@ -180,7 +180,10 @@ Roughly in the order it will hurt.
    per database *and* a registry cache per database — the two module-level
    `let`s above become maps keyed by customer. Do not do this before it is
    forced.
-2. **Nobody has run a rupee through it.** The gateway code is written and its
+2. **Nobody has run a rupee through it.** (The plumbing around it is now covered:
+   `tests/integration/control.test.ts` provisions a real customer into a real database and drives
+   the webhook shapes through it, and `controlApi.test.ts` covers who may reach the console. What
+   remains unproven is Razorpay's own event names and payloads.) The gateway code is written and its
    logic is tested, but every test uses a signed fixture rather than Razorpay.
    Before a customer is charged: create the merchant account, run
    `billing-setup`, point a test-mode webhook at the control plane and put one

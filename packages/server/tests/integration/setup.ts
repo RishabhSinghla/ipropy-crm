@@ -8,9 +8,10 @@
  * lines had a chance to run.
  */
 import { afterAll } from 'vitest';
-import { testDatabaseUrl } from './testDatabase.js';
+import { testControlDatabaseUrl, testDatabaseUrl } from './testDatabase.js';
 
 process.env.DATABASE_URL = testDatabaseUrl();
+process.env.CONTROL_DATABASE_URL = testControlDatabaseUrl();
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = 'integration-test-secret-long-enough-to-pass-the-startup-checks';
 // The scheduler would otherwise start draining queues underneath the tests and

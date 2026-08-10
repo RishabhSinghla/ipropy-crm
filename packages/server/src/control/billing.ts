@@ -35,7 +35,13 @@ export interface Subscription {
 
 interface Row {
   tenant_id: string; plan_key: string; razorpay_subscription_id: string | null;
-  status: SubscriptionStatus; serves_until: string | null; last_payment_at: string | null;
+  status: SubscriptionStatus; serves_until: string | Date | null; last_payment_at: string | Date | null;
+}
+
+/** pg returns a Date for timestamptz; `Subscription` promises an ISO string. */
+function iso(value: string | Date | null): string | null {
+  if (value === null) return null;
+  return value instanceof Date ? value.toISOString() : value;
 }
 
 const toSubscription = (row: Row): Subscription => ({
@@ -43,8 +49,8 @@ const toSubscription = (row: Row): Subscription => ({
   planKey: row.plan_key,
   razorpaySubscriptionId: row.razorpay_subscription_id,
   status: row.status,
-  servesUntil: row.serves_until,
-  lastPaymentAt: row.last_payment_at,
+  servesUntil: iso(row.serves_until),
+  lastPaymentAt: iso(row.last_payment_at),
 });
 
 export async function getSubscription(tenantId: string): Promise<Subscription | null> {
