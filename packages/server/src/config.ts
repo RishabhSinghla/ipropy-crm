@@ -71,6 +71,12 @@ export const config = {
     port: num('CONTROL_PORT', 4100),
     /** Public sign-up only queues a request; nothing is provisioned without approval. */
     signupsOpen: bool('CONTROL_SIGNUPS_OPEN', false),
+    /**
+     * One shared secret for the operator console. Unset means the console is
+     * open — allowed outside production only, so a developer can see their own
+     * local console without a hardcoded default token existing anywhere.
+     */
+    operatorToken: str('CONTROL_OPERATOR_TOKEN'),
   },
 
   /**

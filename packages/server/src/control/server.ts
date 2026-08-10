@@ -13,6 +13,8 @@ import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
+import { operatorRouter } from './api.js';
+import { CONSOLE_HTML } from './console.js';
 import { handleRazorpayEvent } from './billing.js';
 import { verifyWebhookSignature, type WebhookEvent } from './razorpay.js';
 import { submitSignup } from './signups.js';
@@ -27,6 +29,17 @@ export function createControlApp(): express.Express {
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', service: 'control-plane' });
   });
+
+  // The console is one static page; helmet's default CSP would block its inline
+  // script, and splitting a single-file page into two files to satisfy a policy
+  // that protects against injected third-party script is the wrong trade here —
+  // nothing on this page is user-authored.
+  app.get('/', (_req, res) => {
+    res.setHeader('content-security-policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'");
+    res.type('html').send(CONSOLE_HTML);
+  });
+
+  app.use('/api', operatorRouter());
 
   /**
    * Razorpay deliveries.
@@ -124,6 +137,7 @@ if (isEntrypoint) {
       app.listen(config.control.port, () => {
         logger.info({ port: config.control.port }, 'control plane listening');
         logger.info(`   webhooks: http://localhost:${config.control.port}/webhooks/razorpay`);
+        logger.info(`   console:  http://localhost:${config.control.port}/`);
         logger.info(`   sign-up:  ${config.control.signupsOpen ? 'open' : 'closed (CONTROL_SIGNUPS_OPEN)'}`);
       });
     })
