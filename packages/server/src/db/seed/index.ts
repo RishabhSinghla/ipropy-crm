@@ -10,7 +10,8 @@ import { closePool, transaction, query } from '../pool.js';
 import { logger } from '../../utils/logger.js';
 import { config } from '../../config.js';
 import { registry } from '../../core/metadata/registry.js';
-import { MODULES } from './modules.js';
+import { resolveTemplate } from './templates/index.js';
+import { validateTemplate } from './templates/validate.js';
 import { seedPicklists, seedPicklistDependencies } from './picklists.js';
 import { seedDefaultLayouts, upsertModule, upsertRelations, upsertViews } from './helpers.js';
 import { seedGroups, seedProfiles, seedRoles, seedSharing, seedSystemUser, seedUsers, type SeededUser, DEMO_USERS } from './rbac.js';
@@ -22,7 +23,18 @@ import {
 import { seedDemoData } from './demo.js';
 
 export async function seed(): Promise<void> {
-  logger.info('seeding iPropy CRM…');
+  const template = resolveTemplate(config.seed.template);
+
+  // Checked here as well as in the unit suite: a template can arrive from a
+  // branch that never ran the tests, and a bad one is not recoverable by
+  // re-seeding — upserts add and update, they never remove.
+  const problems = validateTemplate(template);
+  if (problems.length) {
+    throw new Error(`The "${template.key}" template is not sound:\n  ${problems.join('\n  ')}`);
+  }
+
+  const MODULES = template.modules;
+  logger.info(`seeding iPropy CRM… (${template.label} template)`);
 
   // --- metadata -------------------------------------------------------------
   await transaction(async (tx) => {

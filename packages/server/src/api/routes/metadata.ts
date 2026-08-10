@@ -674,7 +674,7 @@ metadataRouter.delete('/fields/:id', asyncHandler(async (req, res) => {
    * Delete: the field and its stored values both go.
    *
    * A seeded field also gets a tombstone. `db:seed` rebuilds every module from
-   * db/seed/modules.ts, so without one the row would be recreated on the next
+   * db/seed/templates/realEstate.ts, so without one the row would be recreated on the next
    * run — the delete would appear to work and then quietly undo itself.
    */
   let hadValues = 0;

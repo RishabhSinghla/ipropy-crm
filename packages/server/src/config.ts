@@ -60,6 +60,10 @@ export const config = {
     adminEmail: str('SEED_ADMIN_EMAIL', 'admin@ipropy.com'),
     adminPassword: str('SEED_ADMIN_PASSWORD', 'Admin@123'),
     demoData: bool('SEED_DEMO_DATA', true),
+    // Which starting data model a *fresh* database gets. Changing this against
+    // a database that has already been seeded does not switch trades — see
+    // db/seed/templates/index.ts.
+    template: str('SEED_TEMPLATE', 'real-estate'),
   },
 
   ai: {

@@ -709,9 +709,9 @@ Read this before touching anything.
 
 ### Conventions
 
-* Seeding is **idempotent** — re-run `npm run db:seed` after changing `db/seed/modules.ts` to refresh
+* Seeding is **idempotent** — re-run `npm run db:seed` after changing `db/seed/templates/realEstate.ts` to refresh
   metadata without touching tenant data. Demo records are only created when the DB has none.
-* `db/seed/modules.ts` is the source of truth for the seeded data model. Adding a field there is the
+* `db/seed/templates/realEstate.ts` is the source of truth for the seeded data model. Adding a field there is the
   normal way to extend a module.
 * System views/layouts/workflows are marked `is_system` and are pruned/refreshed on re-seed; user
   content is never touched.
@@ -729,7 +729,7 @@ packages/shared/src/uitypes.ts            the vocabulary
 packages/server/src/core/entity/recordService.ts   the engine
 packages/server/src/core/query/builder.ts          how filters become SQL
 packages/server/src/core/permissions/index.ts      how access is decided
-packages/server/src/db/seed/modules.ts             the real-estate data model
+packages/server/src/db/seed/templates/          starting data models, one file per trade
 packages/web/src/components/FieldRenderer.tsx      how metadata becomes UI
 ```
 
@@ -753,7 +753,7 @@ from this CRM's own database, plus a CarWale-style deep comparison tool.
   just because it exists on the record. A record is visible when its status qualifies (projects:
   `New Launch | Under Construction | Nearing Possession | Ready To Move`; properties: `Available`)
   **and** its `publish_to_web` field is truthy (JSON-storage custom field, added to both modules in
-  `db/seed/modules.ts`, default `true` — no migration). An admin can hide one record from the site
+  `db/seed/templates/realEstate.ts`, default `true` — no migration). An admin can hide one record from the site
   without changing its status. Own rate limiter (`app.ts`), separate from the general `/api` one.
   `GET /api/public/cities` adds one aggregate query (project count, available units, price range per
   city) backing the site's `/cities` pages, instead of it looping a `city=` filter per picklist value.
