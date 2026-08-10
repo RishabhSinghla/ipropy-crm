@@ -56,6 +56,19 @@ export const config = {
     apiRateLimit: num('API_RATE_LIMIT', 600),
   },
 
+  /**
+   * The SaaS control plane — the list of paying customers and their databases.
+   *
+   * Empty in every normal deployment: a server serving one customer has no
+   * business holding the others' connection strings. Only the operator's
+   * machine and the provisioning job set these. See SAAS.md.
+   */
+  control: {
+    databaseUrl: str('CONTROL_DATABASE_URL'),
+    neonApiKey: str('NEON_API_KEY'),
+    neonRegion: str('NEON_REGION', 'aws-ap-southeast-1'),
+  },
+
   seed: {
     adminEmail: str('SEED_ADMIN_EMAIL', 'admin@ipropy.com'),
     adminPassword: str('SEED_ADMIN_PASSWORD', 'Admin@123'),
