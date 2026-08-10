@@ -89,6 +89,32 @@ Things worth knowing:
 * **No Neon key is needed** to use any of this — pass `--database-url`. That is
   how the first customers should be onboarded anyway.
 
+## The operator console — built
+
+`npm run control` also serves a screen at **http://localhost:4100/** — the
+customer list, the sign-up queue, plans, and suspend/resume, all live.
+
+It is served by the control plane and **not** by the CRM on :5173, which is the
+whole point: :5173 is one customer's deployment, and the console holds every
+customer's connection string. Shipping it into the customer-facing bundle would
+put the customer list inside every customer's app.
+
+One page, no build step, no second React app — four tables one person looks at
+do not justify a second bundler and a second deploy pipeline.
+
+**Access is one shared token** (`CONTROL_OPERATOR_TOKEN`), not a login. That is
+the honest shape for a one-person internal tool and it is worth naming its
+limits: no per-person audit trail, and rotating it signs everyone out. When a
+second person needs their own access, replace it. With no token set the console
+is open — allowed **outside production only**, so that a developer can see their
+own local console without a default token existing in the repository. In
+production the API returns 503 until a token is set, and the console says so on
+screen when it is running open.
+
+Provisioning stays on the command line. `create` runs migrations and seeds a
+database; the console can *approve* a queued sign-up, which is the same work
+behind a human decision, but there is no button that invents a customer.
+
 ## Billing and sign-up — built
 
 `npm run control` runs the webhook and sign-up listener; the rest is on the same
