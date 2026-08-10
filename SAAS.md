@@ -91,8 +91,15 @@ Things worth knowing:
 
 ## The operator console — built
 
-`npm run control` also serves a screen at **http://localhost:4100/** — the
-customer list, the sign-up queue, plans, and suspend/resume, all live.
+`npm run control` serves a screen at **http://localhost:4100/** — the customer
+list, the sign-up queue, plans, and suspend/resume, all live.
+
+Nothing to set up first. With `docker compose up -d db` already running, the
+control plane creates its own database on first start, the same way `db:migrate`
+does for the CRM. That convenience is development-only: in production
+`CONTROL_DATABASE_URL` must be set explicitly, because a control plane that
+quietly fell back to localhost would come up empty and look like every customer
+had disappeared.
 
 It is served by the control plane and **not** by the CRM on :5173, which is the
 whole point: :5173 is one customer's deployment, and the console holds every

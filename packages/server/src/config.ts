@@ -64,7 +64,18 @@ export const config = {
    * machine and the provisioning job set these. See SAAS.md.
    */
   control: {
-    databaseUrl: str('CONTROL_DATABASE_URL'),
+    /**
+     * Defaults to a local database next to the dev one, so `npm run control`
+     * runs with no setup — the same bargain `DATABASE_URL` already makes. There
+     * is no default in production: a control plane that silently pointed at
+     * localhost would come up empty and look like every customer had vanished.
+     */
+    databaseUrl: str(
+      'CONTROL_DATABASE_URL',
+      str('NODE_ENV', 'development') === 'production'
+        ? ''
+        : 'postgres://ipropy:ipropy@localhost:5432/ipropy_control',
+    ),
     neonApiKey: str('NEON_API_KEY'),
     neonRegion: str('NEON_REGION', 'aws-ap-southeast-1'),
     /** The webhook + sign-up listener. Its own process, not the CRM's. */

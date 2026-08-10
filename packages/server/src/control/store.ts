@@ -10,6 +10,7 @@
 import { Pool } from 'pg';
 import { config } from '../config.js';
 import { makeSecretBox } from '../core/secretbox.js';
+import { logger } from '../utils/logger.js';
 import { ensureControlSchema } from './schema.js';
 import type { Tenant, TenantEvent, TenantStatus, TenantSummary } from './types.js';
 
@@ -24,7 +25,7 @@ export async function openControlPool(): Promise<Pool> {
   const url = config.control.databaseUrl;
   if (!url) {
     throw new Error(
-      'CONTROL_DATABASE_URL is not set. The customer list lives in its own database — see SAAS.md.',
+      'CONTROL_DATABASE_URL is not set. In production the customer list needs its own database — see SAAS.md.',
     );
   }
   if (url === config.db.url) {
@@ -34,8 +35,47 @@ export async function openControlPool(): Promise<Pool> {
   }
 
   pool = new Pool({ connectionString: url, max: 4 });
-  await ensureControlSchema(pool);
+  try {
+    await ensureControlSchema(pool);
+  } catch (err) {
+    // 3D000 is "database does not exist". On a developer's machine that is not
+    // a mistake, it is the first run — `docker compose up -d db` gives you one
+    // Postgres server and no reason to know this second database was needed.
+    // Creating it is exactly what `db:migrate` does for the CRM's own database.
+    if (!config.isProd && (err as { code?: string }).code === '3D000') {
+      await pool.end();
+      await createControlDatabase(url);
+      pool = new Pool({ connectionString: url, max: 4 });
+      await ensureControlSchema(pool);
+      logger.info({ database: databaseNameOf(url) }, 'created the control database');
+      return pool;
+    }
+    pool = null;
+    throw err;
+  }
   return pool;
+}
+
+function databaseNameOf(url: string): string {
+  return new URL(url).pathname.replace(/^\//, '');
+}
+
+/**
+ * `CREATE DATABASE` cannot run inside the database being created, so this
+ * connects to the server's default `postgres` database to issue it. The name
+ * comes from our own connection string and is quoted, not interpolated raw.
+ */
+async function createControlDatabase(url: string): Promise<void> {
+  const name = databaseNameOf(url);
+  const admin = new URL(url);
+  admin.pathname = '/postgres';
+
+  const server = new Pool({ connectionString: admin.toString(), max: 1 });
+  try {
+    await server.query(`CREATE DATABASE "${name.replace(/"/g, '""')}"`);
+  } finally {
+    await server.end();
+  }
 }
 
 export async function closeControlPool(): Promise<void> {
