@@ -14,6 +14,7 @@ import { attachRazorpaySubscription, markInvoiced, startTrial, suspendLapsed } f
 import { DEFAULT_PLAN, formatPrice, parsePlanIds, PLANS, resolvePlan } from './plans.js';
 import { migrateAll, migrateTenant, provisionTenant, redactUrl } from './provision.js';
 import { createPlan, createSubscription } from './razorpay.js';
+import { setTenantService } from './service.js';
 import { approveSignup, listSignups, rejectSignup } from './signups.js';
 import * as store from './store.js';
 import type { TenantStatus } from './types.js';
@@ -268,9 +269,11 @@ async function main(): Promise<void> {
     case 'resume': {
       const tenant = await store.requireBySlug(required(flags, 'slug'));
       const status: TenantStatus = command === 'suspend' ? 'suspended' : 'active';
-      await store.setStatus(tenant.id, status);
-      await store.recordEvent(tenant.id, command, flags.reason);
+      const result = await setTenantService(tenant.id, status, flags.reason ?? 'from the command line');
       process.stdout.write(`${tenant.slug} is now ${status}.\n`);
+      if (!result.reachedTheirDatabase) {
+        process.stdout.write('Their database was unreachable, so their app has NOT been told yet.\n');
+      }
       return;
     }
 

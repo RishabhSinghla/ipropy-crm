@@ -150,8 +150,19 @@ is generous in one direction and strict in the other:
 | cancelled / completed | cancelled | suspended |
 | anything else | unchanged | unchanged |
 
-Suspension sets a status and nothing else. No data is touched, and `resume` is
-immediate.
+**Suspension actually stops service.** A customer's CRM is its own process
+against its own database and knows nothing about the control plane, so a status
+in the customer list could not by itself stop anyone working — for a while, it
+did not. `setTenantService` now writes a flag into the customer's own database
+(`ipy_setting`, key `service.status`) and their app reads it and answers `402`
+on every API route but its health check. That includes their public listings
+feed: a suspended customer should not keep collecting leads nobody will follow
+up.
+
+No data is touched and `resume` is immediate. The write is best-effort — if
+their database is unreachable the decision is still recorded, the console and
+the command line both say the customer's app has not been told yet, and the next
+sweep closes the gap.
 
 Things worth knowing:
 
@@ -244,3 +255,7 @@ not a different field list, and should be refused politely until they are not.
   egress; the isolation argument still applies to leaked object URLs.
 * **How the scheduler behaves per customer.** In-process today, scanning up to
   5,000 records a tick. Fine for one desk, unclear at fifty.
+* **A suspended customer sees a bare error, not a page.** The API answers 402
+  with a sentence; the web app shows it wherever it shows an API error. A proper
+  "your account is paused, here is who to call" screen is a small piece of work
+  and worth doing before the first customer is ever suspended.

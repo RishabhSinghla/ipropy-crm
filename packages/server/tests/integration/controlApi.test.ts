@@ -123,17 +123,24 @@ describe('what the console shows', () => {
     expect(res.body.error).toMatch(/No customer with the slug/);
   });
 
-  it('suspends and resumes, and writes it to the history', async () => {
-    await request(app()).post(`/api/tenants/${SLUG}/suspend`).expect(200);
+  it('suspends and resumes, and says whether the customer app was told', async () => {
+    // This fixture's connection string points at a host that does not exist, so
+    // it also covers the case that matters operationally: the decision is
+    // recorded either way, and the console is told the customer's app has not
+    // heard about it yet rather than quietly implying they are cut off.
+    const suspended = await request(app()).post(`/api/tenants/${SLUG}/suspend`).expect(200);
+    expect(suspended.body).toMatchObject({ status: 'suspended', reachedTheirDatabase: false });
     expect((await store.requireBySlug(SLUG)).status).toBe('suspended');
 
-    await request(app()).post(`/api/tenants/${SLUG}/resume`).expect(200);
+    const resumed = await request(app()).post(`/api/tenants/${SLUG}/resume`).expect(200);
+    expect(resumed.body).toMatchObject({ status: 'active' });
     expect((await store.requireBySlug(SLUG)).status).toBe('active');
 
     const tenant = await store.requireBySlug(SLUG);
-    const details = (await store.listEvents(tenant.id)).map((e) => e.detail);
-    expect(details).toContain('from the operator console');
-  });
+    const details = (await store.listEvents(tenant.id)).map((e) => e.detail ?? '');
+    expect(details.some((d) => d.startsWith('from the operator console'))).toBe(true);
+    expect(details.some((d) => d.includes('unreachable'))).toBe(true);
+  }, 30_000);
 
   it('lists the plans a customer can be put on', async () => {
     const res = await request(app()).get('/api/plans').expect(200);

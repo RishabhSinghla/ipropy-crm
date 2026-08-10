@@ -19,6 +19,7 @@ import { logger } from '../utils/logger.js';
 import { getSubscription, suspendLapsed } from './billing.js';
 import { formatPrice, PLANS } from './plans.js';
 import { approveSignup, listSignups, rejectSignup } from './signups.js';
+import { setTenantService } from './service.js';
 import * as store from './store.js';
 import type { TenantStatus } from './types.js';
 
@@ -108,10 +109,11 @@ export function operatorRouter(): express.Router {
     const tenant = await store.requireBySlug(req.params.slug);
     const action = req.params.action;
     const status: TenantStatus = action === 'suspend' ? 'suspended' : 'active';
-    await store.setStatus(tenant.id, status);
-    await store.recordEvent(tenant.id, action, 'from the operator console');
-    logger.info({ slug: tenant.slug, status }, 'status changed from the console');
-    res.json({ slug: tenant.slug, status });
+    const result = await setTenantService(tenant.id, status, 'from the operator console');
+    logger.info({ slug: tenant.slug, status, ...result }, 'status changed from the console');
+    // The console shows this: a suspension their database never received has
+    // not actually stopped anybody.
+    res.json({ slug: tenant.slug, status, reachedTheirDatabase: result.reachedTheirDatabase });
   }));
 
   router.get('/signups', asyncRoute(async (req, res) => {

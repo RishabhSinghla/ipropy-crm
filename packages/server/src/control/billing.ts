@@ -15,6 +15,7 @@ import { logger } from '../utils/logger.js';
 import { resolvePlan } from './plans.js';
 import { openControlPool } from './store.js';
 import * as store from './store.js';
+import { setTenantService } from './service.js';
 import type { WebhookEvent } from './razorpay.js';
 
 export type SubscriptionStatus =
@@ -252,7 +253,9 @@ export async function handleRazorpayEvent(body: WebhookEvent, eventId: string): 
   );
 
   if (decision.tenantStatus) {
-    await store.setStatus(row.tenant_id, decision.tenantStatus);
+    // Through setTenantService so their app is actually paused or restored,
+    // not merely relabelled here.
+    await setTenantService(row.tenant_id, decision.tenantStatus, `billing:${kind}`);
   }
   await store.recordEvent(row.tenant_id, `billing:${kind}`, decision.note);
 
@@ -282,8 +285,7 @@ export async function suspendLapsed(now = new Date()): Promise<string[]> {
   );
 
   for (const row of res.rows) {
-    await store.setStatus(row.tenant_id, 'suspended');
-    await store.recordEvent(row.tenant_id, 'billing:lapsed', 'paid period ended');
+    await setTenantService(row.tenant_id, 'suspended', 'billing:lapsed — paid period ended');
     logger.info({ slug: row.slug }, 'suspended: paid period ended');
   }
   return res.rows.map((r) => r.slug);

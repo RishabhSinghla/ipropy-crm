@@ -43,13 +43,22 @@ afterAll(async () => {
 });
 
 describe('the customer list', () => {
-  it('creates the control database on first connect', async () => {
+  it('creates the control database, with its schema, on first connect', async () => {
     // globalSetup deliberately does not create it: a developer running
     // `npm run control` for the first time has not created it either, and that
     // path should not be exercised for the first time on their machine.
+    //
+    // Asserts the schema is queryable rather than that it is empty — another
+    // file in this suite seeds its own fixture, and which runs first is not a
+    // property worth depending on.
     const pool = await store.openControlPool();
-    const res = await pool.query<{ count: string }>(`SELECT count(*) FROM ctl_tenant`);
-    expect(res.rows[0].count).toBe('0');
+    const tables = await pool.query<{ table_name: string }>(
+      `SELECT table_name FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name LIKE 'ctl_%' ORDER BY table_name`,
+    );
+    expect(tables.rows.map((r) => r.table_name)).toEqual([
+      'ctl_signup_request', 'ctl_subscription', 'ctl_tenant', 'ctl_tenant_event', 'ctl_webhook_event',
+    ]);
   });
 
   it('keeps a connection string encrypted at rest and readable in code', async () => {
@@ -122,13 +131,13 @@ describe('provisioning a customer', () => {
   it('creates their admin and nobody else', async () => {
     // The demo users share a password published in this repository, so a
     // customer's database getting them would be a live vulnerability.
-    const users = await inTenantDatabase<{ total: string; admin: string }>(
+    const users = await inTenantDatabase<{ total: string | number; admin: string | number }>(
       `SELECT count(*) AS total,
               count(*) FILTER (WHERE email = 'ops@acmerealty.example') AS admin
          FROM ipy_user WHERE email <> 'system@ipropy'`,
     );
-    expect(users.admin).toBe('1');
-    expect(users.total).toBe('1');
+    expect(Number(users.admin)).toBe(1);
+    expect(Number(users.total)).toBe(1);
   });
 
   it('generates a password strong enough to be worth generating', () => {
@@ -136,8 +145,8 @@ describe('provisioning a customer', () => {
   });
 
   it('starts them with no records at all', async () => {
-    const records = await inTenantDatabase<{ count: string }>(`SELECT count(*) FROM ipy_record`);
-    expect(records.count).toBe('0');
+    const records = await inTenantDatabase<{ count: string | number }>(`SELECT count(*) FROM ipy_record`);
+    expect(Number(records.count)).toBe(0);
   });
 
   it('is idempotent to re-migrate', async () => {
@@ -295,4 +304,59 @@ describe('the sign-up queue', () => {
     const [rejected] = await listSignups('rejected');
     await expect(approveSignup(rejected.id)).rejects.toThrow(/already rejected/);
   });
+});
+
+describe('suspension actually stops the customer being served', () => {
+  it('pauses their API, and leaves the health check answering', async () => {
+    // The gap this closes: before, "suspended" was a word in the customer list
+    // and their CRM — a different process against a different database — carried
+    // on serving as if nothing had happened.
+    const { createApp } = await import('../../src/app.js');
+    const { setServiceStatus, forgetServiceStatus } = await import('../../src/core/serviceStatus.js');
+    const request = (await import('supertest')).default;
+
+    const app = createApp();
+    await setServiceStatus(false);
+    await request(app).get('/api/health').expect(200);
+    // Unauthenticated, so 401 — the point is that it is not 402.
+    await request(app).get('/api/records/leads').expect(401);
+
+    await setServiceStatus(true, 'This account is paused.');
+    forgetServiceStatus();
+
+    const paused = await request(app).get('/api/records/leads').expect(402);
+    expect(paused.body).toMatchObject({ error: 'service_paused', message: 'This account is paused.' });
+    // A monitor cannot hold a token and still needs to know the box is alive.
+    await request(app).get('/api/health').expect(200);
+    // Everything is paused, including the public listings feed a suspended
+    // customer's website would otherwise keep collecting leads through.
+    await request(app).get('/api/public/properties').expect(402);
+
+    await setServiceStatus(false);
+    forgetServiceStatus();
+    await request(app).get('/api/records/leads').expect(401);
+  });
+
+  it('writes the flag into the customer own database when the control plane suspends them', async () => {
+    const { writeServiceFlag } = await import('../../src/control/service.js');
+
+    expect(await writeServiceFlag(TENANT_URL, true)).toBe(true);
+    const paused = await inTenantDatabase<{ value: { status: string } }>(
+      `SELECT value FROM ipy_setting WHERE key = 'service.status'`,
+    );
+    expect(paused.value.status).toBe('suspended');
+
+    expect(await writeServiceFlag(TENANT_URL, false)).toBe(true);
+    const resumed = await inTenantDatabase<{ value: { status: string } }>(
+      `SELECT value FROM ipy_setting WHERE key = 'service.status'`,
+    );
+    expect(resumed.value.status).toBe('active');
+  });
+
+  it('records the decision even when their database cannot be reached', async () => {
+    // A Neon blip during a billing sweep must not leave a customer marked active
+    // and unpaid; the customer list is the record, their database catches up.
+    const { writeServiceFlag } = await import('../../src/control/service.js');
+    expect(await writeServiceFlag('postgres://nobody:nothing@127.0.0.1:1/nowhere', true)).toBe(false);
+  }, 30_000);
 });
