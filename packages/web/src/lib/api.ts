@@ -576,6 +576,16 @@ export const api = {
     return request<{ id: string; fileName: string; url: string }>('/api/files', { method: 'POST', body: form });
   },
   deleteFile: (id: string) => del(`/api/files/${id}`),
+  /**
+   * Everything attached to a record, as a zip of ordinary folders.
+   *
+   * A URL rather than a fetch: the response streams and can be gigabytes, so
+   * the browser's own downloader should handle it instead of buffering the lot
+   * into memory as a Blob. It navigates rather than XHRs, hence `access_token`
+   * — same reason embeds use it.
+   */
+  archiveUrl: (recordId: string, set: 'all' | 'originals' | 'branded' | 'web' = 'branded') =>
+    authedFileUrl(`/api/records/${recordId}/archive`, { set }),
   tags: () => get<{ id: string; name: string; color: string; usage_count: number }[]>('/api/tags'),
   importPreview: (module: string, file: File) => {
     const form = new FormData();

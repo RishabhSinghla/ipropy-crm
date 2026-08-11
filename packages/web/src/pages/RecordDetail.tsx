@@ -904,6 +904,29 @@ function RelatedTab({
   );
 }
 
+/**
+ * One choice of download set.
+ *
+ * An `<a download>` rather than a button with an onClick: the browser then
+ * treats it as a file transfer from the start — progress in the downloads
+ * shelf, resumable, and never held in the tab's memory.
+ */
+function DownloadItem(
+  { recordId, set, label, hint }:
+  { recordId: string; set: 'all' | 'originals' | 'branded' | 'web'; label: string; hint: string },
+): JSX.Element {
+  return (
+    <a
+      href={api.archiveUrl(recordId, set)}
+      download
+      className="flex w-full flex-col px-3 py-1.5 text-left text-sm text-slate-700 transition-colors hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+    >
+      <span>{label}</span>
+      <span className="text-xs text-muted">{hint}</span>
+    </a>
+  );
+}
+
 function FilesTab({ module, id }: { module: string; id: string }): JSX.Element {
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({
@@ -947,7 +970,7 @@ function FilesTab({ module, id }: { module: string; id: string }): JSX.Element {
 
   return (
     <div className="card">
-      <div className="border-b border-slate-100 p-3 dark:border-slate-800">
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 p-3 dark:border-slate-800">
         <label className="btn-secondary btn-sm cursor-pointer">
           {uploading ? <Spinner /> : <Paperclip className="h-3.5 w-3.5" />}
           Upload file
@@ -958,6 +981,33 @@ function FilesTab({ module, id }: { module: string; id: string }): JSX.Element {
             onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f); e.target.value = ''; }}
           />
         </label>
+
+        {/*
+          Downloading is a plain navigation, not a fetch — the zip streams and
+          can be several GB, so the browser's downloader should take it rather
+          than the page holding it all in memory.
+
+          "Branded" leads because it is what you actually send someone: the
+          watermarked set, and small. Originals are offered separately and
+          labelled as large, so nobody starts a multi-gigabyte download by
+          reaching for the obvious button.
+        */}
+        {data?.length ? (
+          <Dropdown
+            align="left"
+            trigger={(
+              <span className="btn-secondary btn-sm">
+                <Download className="h-3.5 w-3.5" />
+                Download all
+              </span>
+            )}
+          >
+            <DownloadItem recordId={id} set="branded" label="Watermarked" hint="What you'd send a client" />
+            <DownloadItem recordId={id} set="web" label="Website & WhatsApp sizes" hint="Smaller, faster to send" />
+            <DownloadItem recordId={id} set="originals" label="Originals only" hint="Full quality — large" />
+            <DownloadItem recordId={id} set="all" label="Everything" hint="Every folder — largest" />
+          </Dropdown>
+        ) : null}
       </div>
 
       {isLoading ? (

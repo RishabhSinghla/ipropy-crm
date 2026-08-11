@@ -18,6 +18,10 @@ import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../utils/errors.js';
 import { assertCapability, canAccessRecord } from '../../core/permissions/index.js';
 import { getDriver, getStorageSettings } from '../../core/storage/index.js';
+import {
+  ARCHIVE_SETS, contentDisposition, countRecordMedia, safeName, writeRecordArchive,
+  type ArchiveSet,
+} from '../../core/media/archive.js';
 import { recordService } from '../../core/entity/recordService.js';
 import { unseenCounts } from '../../core/entity/unseen.js';
 import {
@@ -394,6 +398,74 @@ miscRouter.get('/records/:recordId/files', asyncHandler(async (req, res) => {
     [req.params.recordId],
   );
   res.json(rows.rows);
+}));
+
+/**
+ * Everything attached to one record, as a zip of ordinary folders.
+ *
+ * `?set=` picks how much: `branded` (the default) is the watermarked set you
+ * would actually send someone, and is small; `all` includes the untouched
+ * originals and can be several gigabytes of 4K video, so it is never what you
+ * get by accident.
+ */
+miscRouter.get('/records/:recordId/archive', asyncHandler(async (req, res) => {
+  const scope = getScope(req);
+  const record = await db.queryOne<{ module_name: string }>(
+    `SELECT module_name FROM ipy_record WHERE id = $1 AND is_deleted = false`,
+    [req.params.recordId],
+  );
+  if (!record) throw new NotFoundError('Record not found');
+  if (!(await canAccessRecord(scope, record.module_name, req.params.recordId, 'view'))) {
+    throw new ForbiddenError();
+  }
+
+  const requested = String(req.query.set ?? 'branded');
+  if (!ARCHIVE_SETS.includes(requested as ArchiveSet)) {
+    throw new BadRequestError(`set must be one of: ${ARCHIVE_SETS.join(', ')}`);
+  }
+  const set = requested as ArchiveSet;
+
+  // Checked before a single byte goes out: past that point the response is
+  // already 200 and there is no way left to say "there was nothing here".
+  if (await countRecordMedia(req.params.recordId) === 0) {
+    throw new NotFoundError('This record has no media to download yet');
+  }
+
+  const envelope = await recordService.getRecord(scope, record.module_name, req.params.recordId, { withDisplay: true });
+  const module = await registry.requireModule(record.module_name);
+  const label = recordService.buildLabel(module, envelope.values as Record<string, unknown>);
+  const folder = safeName(label, module.singularLabel);
+
+  // property.json — the record as it stands, so the folder stays meaningful
+  // detached from this CRM. Deliberately the display values as well as the raw
+  // ones: "₹2.25 Cr" is what a human opening this needs, the number is what a
+  // machine importing it needs.
+  const manifest = {
+    exportedAt: new Date().toISOString(),
+    module: record.module_name,
+    recordId: req.params.recordId,
+    name: label,
+    values: envelope.values,
+    display: envelope.display ?? null,
+  };
+
+  res.setHeader('Content-Type', 'application/zip');
+  // Not a plain template string: a property called "Verdant Greens — Tower D"
+  // puts a non-Latin-1 character in a header value, which Node rejects and
+  // turns into a 500 with no download at all.
+  res.setHeader('Content-Disposition', contentDisposition(`${folder}.zip`));
+  // Nothing downstream should try to re-encode an already-stored zip.
+  res.setHeader('Cache-Control', 'no-store');
+
+  try {
+    await writeRecordArchive(req.params.recordId, record.module_name, folder, set, manifest, res);
+  } catch (err) {
+    // Headers are long gone, so the only honest signal left is an incomplete
+    // response — a truncated download the browser reports as failed, rather
+    // than a complete-looking zip that is quietly missing photos.
+    logger.error({ err, recordId: req.params.recordId }, 'archive: stream failed mid-download');
+    res.destroy();
+  }
 }));
 
 // ---------------------------------------------------------------------------
