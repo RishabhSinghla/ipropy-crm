@@ -32,6 +32,7 @@ import { formatValue } from '../../core/metadata/values.js';
 import {
   assignSessionRecord, currentSession, getSession, listSessions, openSession,
 } from '../../core/capture/sessions.js';
+import { matchOrphansForSession } from '../../core/capture/matching.js';
 
 export const captureRouter = Router();
 captureRouter.use(requireAuth);
@@ -158,7 +159,13 @@ captureRouter.post('/sessions', asyncHandler(async (req, res) => {
     }, tx);
   });
 
-  res.status(201).json({ session, replayed: false });
+  // After the commit, not inside it: a visit that syncs late explains photos
+  // that have already been uploaded and processed with nothing to match, and
+  // this is the moment they can finally be filed. Run on its own connection, so
+  // it has to see a committed session row.
+  const claimed = await matchOrphansForSession(session.id).catch(() => 0);
+
+  res.status(201).json({ session, replayed: false, claimedMedia: claimed });
 }));
 
 /** What this user is shooting into right now — how the screen knows to say "in progress". */
@@ -370,5 +377,9 @@ captureRouter.patch('/sessions/:id', asyncHandler(async (req, res) => {
     throw new ForbiddenError('You cannot capture against this property');
   }
 
-  res.json(await assignSessionRecord(req.params.id, recordId));
+  const updated = await assignSessionRecord(req.params.id, recordId);
+  // Photos already filed against this visit have no property yet if the visit
+  // had none when they arrived; naming it now is what gives them one.
+  const claimed = await matchOrphansForSession(req.params.id).catch(() => 0);
+  res.json({ ...updated, claimedMedia: claimed });
 }));

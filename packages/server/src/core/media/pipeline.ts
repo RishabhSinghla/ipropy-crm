@@ -12,12 +12,30 @@ import { getDriver } from '../storage/index.js';
 import { logger } from '../../utils/logger.js';
 import { processImage } from './images.js';
 import { processVideo, type TitleCardInfo } from './video.js';
+import { captureTimeFromImage, captureTimeFromVideo } from '../capture/captureTime.js';
+import { matchAttachment } from '../capture/matching.js';
 
 interface AttachmentRow {
   id: string;
   mime_type: string;
   storage_key: string;
   record_id: string | null;
+}
+
+/**
+ * Read when this was shot and file it against the visit it belongs to.
+ *
+ * Swallows its own failures on purpose. Matching is an enhancement — the photo
+ * is already stored and already attached to whatever the uploader said — so a
+ * corrupt EXIF block or a video ffprobe cannot read must not fail the job and
+ * cost the file its watermark and its web-sized copies.
+ */
+async function fileAgainstVisit(attachmentId: string, readTime: () => Promise<Date | null>): Promise<void> {
+  try {
+    await matchAttachment(attachmentId, await readTime());
+  } catch (err) {
+    logger.warn({ err, attachmentId }, 'media job: could not file this against a visit, continuing');
+  }
 }
 
 export async function processAttachment(attachmentId: string): Promise<void> {
@@ -40,6 +58,11 @@ export async function processAttachment(attachmentId: string): Promise<void> {
       logger.warn({ attachmentId }, 'media job: original missing from storage, skipping');
       return;
     }
+    // Filed against its visit before the derivatives are made, and in its own
+    // try/catch: unreadable EXIF is not a reason to skip watermarking a
+    // perfectly good photo, and a title card wants the record this may have
+    // just supplied.
+    await fileAgainstVisit(attachment.id, () => captureTimeFromImage(original));
     variants = await processImage(driver, attachment.id, attachment.storage_key, original);
   } else {
     // Video never gets buffered into memory (a phone clip can be well over a
@@ -50,7 +73,13 @@ export async function processAttachment(attachmentId: string): Promise<void> {
       return;
     }
     try {
-      const titleCard = attachment.record_id ? await getTitleCardInfo(attachment.record_id) : null;
+      await fileAgainstVisit(attachment.id, () => captureTimeFromVideo(input.path));
+      // Re-read: matching may have just given this clip the property whose name
+      // belongs on its title card, and the row above was fetched before that.
+      const recordId = attachment.record_id ?? (await db.queryOne<{ record_id: string | null }>(
+        `SELECT record_id FROM ipy_attachment WHERE id = $1`, [attachment.id],
+      ))?.record_id ?? null;
+      const titleCard = recordId ? await getTitleCardInfo(recordId) : null;
       variants = await processVideo(driver, attachment.id, attachment.storage_key, input.path, titleCard);
     } finally {
       await input.cleanup();
