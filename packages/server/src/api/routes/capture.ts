@@ -27,6 +27,8 @@ import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../utils/errors.js';
 import { canAccessRecord } from '../../core/permissions/index.js';
 import { recordService } from '../../core/entity/recordService.js';
+import { registry } from '../../core/metadata/registry.js';
+import { formatValue } from '../../core/metadata/values.js';
 import {
   assignSessionRecord, currentSession, getSession, listSessions, openSession,
 } from '../../core/capture/sessions.js';
@@ -173,10 +175,119 @@ captureRouter.get('/sessions', asyncHandler(async (req, res) => {
   }));
 }));
 
+/**
+ * One visit, with everything the review screen needs to decide.
+ *
+ * Each parsed field arrives as a triple: what was said, what that became, and
+ * what the record currently holds. Reviewing without the third is guesswork —
+ * "4 BHK" means something different when the record is empty than when it
+ * already says 3, and only one of those is worth stopping for.
+ */
 captureRouter.get('/sessions/:id', asyncHandler(async (req, res) => {
   const session = await getSession(req.params.id);
   if (!session || session.userId !== getUser(req).id) throw new NotFoundError('Session not found');
-  res.json(session);
+
+  const parsed = session.parsed as {
+    values?: Record<string, unknown>;
+    heard?: Record<string, string>;
+    unmatched?: string[];
+  };
+
+  let suggestions: {
+    field: string; label: string; uitype: string;
+    heard: string | null; value: unknown; formatted: string;
+    current: unknown; currentFormatted: string; changes: boolean;
+  }[] = [];
+  let fieldMeta: { name: string }[] = [];
+
+  if (session.recordId && parsed?.values && Object.keys(parsed.values).length) {
+    const owner = await db.queryOne<{ module_name: string }>(
+      `SELECT module_name FROM ipy_record WHERE id = $1 AND is_deleted = false`, [session.recordId],
+    );
+    if (owner) {
+      const module = await registry.requireModule(owner.module_name);
+      const envelope = await recordService.getRecord(getScope(req), owner.module_name, session.recordId);
+      const byName = new Map(module.fields.map((f) => [f.name, f]));
+
+      suggestions = Object.entries(parsed.values).flatMap(([name, value]) => {
+        const field = byName.get(name);
+        // Readonly and formula fields are dropped, not shown. `total_price`
+        // ("All-inclusive Price") is computed from base_price and the charges,
+        // and updateRecord ignores a write to it — so offering it would let
+        // somebody tick a value, press Confirm, and be told it saved when
+        // nothing happened. A review screen that lies once is not used again.
+        if (!field || field.isReadonly) return [];
+        const current = (envelope.values as Record<string, unknown>)[name];
+        return [{
+          field: name,
+          label: field.label,
+          uitype: field.uitype,
+          heard: parsed.heard?.[name] ?? null,
+          value,
+          formatted: formatValue(field, value),
+          current,
+          currentFormatted: formatValue(field, current),
+          // Drives which rows are ticked by default: a suggestion that matches
+          // what is already there is noise, and ten of those per visit is how a
+          // review screen stops being read.
+          changes: formatValue(field, value) !== formatValue(field, current),
+        }];
+      });
+
+      fieldMeta = suggestions
+        .map((s) => byName.get(s.field))
+        .filter((f): f is NonNullable<typeof f> => Boolean(f));
+    }
+  }
+
+  res.json({
+    ...session,
+    suggestions,
+    // The field metadata for exactly the suggested fields, so the review screen
+    // can render a real control — a mis-decoded price should be correctable in
+    // place, not send somebody off to the record to edit it separately.
+    fields: Object.fromEntries(fieldMeta.map((f) => [f.name, f])),
+    unmatched: parsed?.unmatched ?? [],
+    voiceUrl: session.voiceNoteId ? `/api/files/${session.voiceNoteId}` : null,
+  });
+}));
+
+/**
+ * Confirm a visit: write the accepted values onto the property, and mark it done.
+ *
+ * The values come back from the screen rather than being read from `parsed`,
+ * because the reviewer is expected to correct them — a price that decoded as
+ * 3.25 when it was 3.35 is exactly the case this screen exists to catch, and
+ * it should be fixable in place rather than requiring a separate edit.
+ *
+ * Everything goes through recordService, so validation, field permissions,
+ * workflows and the audit trail all behave as they would from any other screen.
+ * This endpoint is not a side door into the record.
+ */
+captureRouter.post('/sessions/:id/review', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const scope = getScope(req);
+  const { values } = z.object({ values: z.record(z.unknown()).default({}) }).parse(req.body);
+
+  const session = await getSession(req.params.id);
+  if (!session || session.userId !== user.id) throw new NotFoundError('Session not found');
+
+  let record = null;
+  if (Object.keys(values).length) {
+    if (!session.recordId) throw new BadRequestError('This visit is not attached to a property yet');
+    const owner = await db.queryOne<{ module_name: string }>(
+      `SELECT module_name FROM ipy_record WHERE id = $1 AND is_deleted = false`, [session.recordId],
+    );
+    if (!owner) throw new NotFoundError('Property not found');
+    record = await recordService.updateRecord(scope, owner.module_name, session.recordId, values);
+  }
+
+  await db.query(
+    `UPDATE ipy_shoot_session SET status = 'reviewed', updated_at = now() WHERE id = $1`,
+    [req.params.id],
+  );
+
+  res.json({ session: await getSession(req.params.id), record });
 }));
 
 /**

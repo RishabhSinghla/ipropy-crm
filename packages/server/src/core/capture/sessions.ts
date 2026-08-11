@@ -49,6 +49,9 @@ export interface ShootSession {
   clientRef: string;
   deviceLabel: string | null;
   notes: string | null;
+  /** The attachment holding what was said at the gate, once one exists. */
+  voiceNoteId: string | null;
+  voiceStatus: 'none' | 'pending' | 'done' | 'failed';
 }
 
 interface Row {
@@ -66,6 +69,8 @@ interface Row {
   client_ref: string;
   device_label: string | null;
   notes: string | null;
+  voice_note_id: string | null;
+  voice_status: 'none' | 'pending' | 'done' | 'failed';
 }
 
 const num = (v: string | number | null): number | null => (v === null ? null : Number(v));
@@ -86,11 +91,14 @@ function toSession(row: Row): ShootSession {
     clientRef: row.client_ref,
     deviceLabel: row.device_label,
     notes: row.notes,
+    voiceNoteId: row.voice_note_id,
+    voiceStatus: row.voice_status,
   };
 }
 
 const COLUMNS = `id, record_id, user_id, started_at, ended_at, lat, lng, accuracy_m,
-                 status, transcript, parsed, client_ref, device_label, notes`;
+                 status, transcript, parsed, client_ref, device_label, notes,
+                 voice_note_id, voice_status`;
 
 export interface OpenSessionInput {
   userId: string;

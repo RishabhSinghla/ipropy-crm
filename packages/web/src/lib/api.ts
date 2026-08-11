@@ -5,7 +5,7 @@
  * server error envelopes into thrown ApiError objects the UI can render.
  */
 import type {
-  AuthUser, CustomView, Dashboard, ListQuery, ListResult, ModuleMeta,
+  AuthUser, CustomView, Dashboard, FieldMeta, ListQuery, ListResult, ModuleMeta,
   RecordEnvelope, TimelineEntry,
 } from '@ipropy/shared';
 
@@ -154,6 +154,9 @@ function qs(params: Record<string, unknown>): string {
 
 /** A site visit — see server/src/core/capture/sessions.ts. */
 export interface CaptureSession {
+  /** Whether a gate recording exists and how far transcription got. */
+  voiceStatus: 'none' | 'pending' | 'done' | 'failed';
+  voiceNoteId: string | null;
   id: string;
   recordId: string | null;
   userId: string;
@@ -172,6 +175,29 @@ export interface CaptureSession {
 export interface CaptureSessionRow extends CaptureSession {
   mediaCount: number;
   recordLabel: string | null;
+}
+
+/** One parsed detail, as the review screen needs to weigh it. */
+export interface CaptureSuggestion {
+  field: string;
+  label: string;
+  uitype: string;
+  /** What the speaker actually said — the only way to judge a decode. */
+  heard: string | null;
+  value: unknown;
+  formatted: string;
+  current: unknown;
+  currentFormatted: string;
+  /** False when the record already says this; those rows are not worth asking about. */
+  changes: boolean;
+}
+
+export interface CaptureSessionDetail extends CaptureSession {
+  suggestions: CaptureSuggestion[];
+  /** Metadata for the suggested fields, so a wrong value is editable in place. */
+  fields: Record<string, FieldMeta>;
+  unmatched: string[];
+  voiceUrl: string | null;
 }
 
 export interface ModuleSummary {
@@ -621,6 +647,10 @@ export const api = {
     get<CaptureSessionRow[]>(`/api/capture/sessions${qs({ limit })}`),
   assignCaptureRecord: (id: string, recordId: string) =>
     patch<CaptureSession>(`/api/capture/sessions/${id}`, { recordId }),
+  captureSession: (id: string) => get<CaptureSessionDetail>(`/api/capture/sessions/${id}`),
+  /** Write the accepted details onto the property and mark the visit done. */
+  reviewCaptureSession: (id: string, values: Record<string, unknown>) =>
+    post<{ session: CaptureSession; record: unknown }>(`/api/capture/sessions/${id}/review`, { values }),
   /**
    * The note recorded at the gate. Sent after the visit exists, because it
    * needs the session's id — and separately from it, because the tap must land

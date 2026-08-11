@@ -27,7 +27,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import type { FieldMeta, ModuleMeta } from '@ipropy/shared';
-import { Camera, Check, ChevronDown, Clock, CloudOff, MapPin, Mic, RefreshCw, Trash2, Wifi } from 'lucide-react';
+import { Camera, Check, ChevronDown, ChevronRight, Clock, CloudOff, MapPin, Mic, RefreshCw, Trash2, Wifi } from 'lucide-react';
 import { api, type CaptureSessionRow } from '../lib/api';
 import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
@@ -246,6 +246,12 @@ export default function CapturePage(): JSX.Element {
     retry: false,
   });
 
+  // Visits that have finished collecting and have something waiting to be said
+  // back — the evening's work, counted during the day.
+  const toReview = (sessions ?? []).filter(
+    (s) => s.status === 'ready' && (s.transcript || s.voiceStatus !== 'none'),
+  ).length;
+
   const primary = fields.slice(0, PRIMARY_FIELD_COUNT);
   const secondary = fields.slice(PRIMARY_FIELD_COUNT);
 
@@ -368,6 +374,24 @@ export default function CapturePage(): JSX.Element {
       </div>
 
       {queued.length ? <QueuedList items={queued} online={online} /> : null}
+
+      {/*
+        Surfaced here rather than only in the menu: the person who spoke the
+        notes is the person who has to confirm them, and the count is the only
+        thing that makes an evening task visible during the day.
+      */}
+      {toReview > 0 ? (
+        <Link
+          to="/capture/review"
+          className="flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm font-medium text-indigo-800 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-200"
+        >
+          <Check className="h-4 w-4 shrink-0" />
+          <span className="flex-1">
+            {toReview} visit{toReview === 1 ? '' : 's'} to confirm
+          </span>
+          <ChevronRight className="h-4 w-4" />
+        </Link>
+      ) : null}
 
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-muted">Recent visits</h2>

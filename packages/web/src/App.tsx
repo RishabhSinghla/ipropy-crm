@@ -15,6 +15,7 @@ const RecordEdit = lazy(() => import('./pages/RecordEdit'));
 const Inbox = lazy(() => import('./pages/Inbox'));
 const Studio = lazy(() => import('./pages/Studio'));
 const CapturePage = lazy(() => import('./pages/Capture'));
+const CaptureReviewPage = lazy(() => import('./pages/CaptureReview'));
 const Outreach = lazy(() => import('./pages/Outreach'));
 const CallsPage = lazy(() => import('./pages/Calls'));
 const ReportsPage = lazy(() => import('./pages/Reports'));
@@ -73,6 +74,7 @@ export default function App(): JSX.Element {
               <Route path="reports" element={<ReportsPage />} />
               <Route path="studio" element={<Studio />} />
               <Route path="capture" element={<CapturePage />} />
+              <Route path="capture/review" element={<CaptureReviewPage />} />
               <Route path="outreach" element={<Outreach />} />
 
               <Route path="settings" element={<SettingsPage />} />
