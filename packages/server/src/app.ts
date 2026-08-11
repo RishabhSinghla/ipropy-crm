@@ -28,6 +28,7 @@ import { telephonyRouter } from './api/routes/telephony.js';
 import { aiRouter } from './api/routes/ai.js';
 import { webhooksRouter } from './api/routes/webhooks.js';
 import { miscRouter } from './api/routes/misc.js';
+import { captureRouter } from './api/routes/capture.js';
 import { publicRouter } from './api/routes/public.js';
 
 export function createApp(): Express {
@@ -188,6 +189,7 @@ export function createApp(): Express {
   app.use('/api/studio', studioRouter);
   app.use('/api/telephony', telephonyRouter);
   app.use('/api/ai', aiRouter);
+  app.use('/api/capture', captureRouter);
   app.use('/api', miscRouter);
   // Records last: its /:module route would otherwise swallow the paths above.
   app.use('/api/records', recordsRouter);

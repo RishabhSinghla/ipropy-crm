@@ -12,6 +12,7 @@
 import { db, transaction } from '../../db/pool.js';
 import { config } from '../../config.js';
 import { logger } from '../../utils/logger.js';
+import { closeStaleSessions } from '../capture/sessions.js';
 import { loadRecordValues, runWorkflowsFor } from './engine.js';
 import { runTask, type TaskContext } from './tasks.js';
 import { loadUser } from '../../middleware/auth.js';
@@ -391,6 +392,9 @@ async function housekeeping(): Promise<void> {
     expireWhatsAppWindows(),
     pruneOldQueueRows(),
     pollInboundEmail(),
+    // The day's last site visit has no successor to close it, so without this
+    // it stays open and keeps claiming photos taken the following morning.
+    closeStaleSessions(),
   ]);
 }
 
