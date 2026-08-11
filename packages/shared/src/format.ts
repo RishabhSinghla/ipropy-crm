@@ -36,8 +36,16 @@ function trimZeros(s: string): string {
 
 export function parseIndianPrice(input: string): number | null {
   if (!input) return null;
-  const cleaned = input.replace(/[₹,\s]/gi, '').toLowerCase();
-  const m = cleaned.match(/^([\d.]+)\s*(cr|crore|crores|l|lac|lakh|lakhs|k|thousand)?$/);
+  // A trailing full stop is common in typed and dictated prices ("1.5 Cr.") and
+  // is not part of the number; stripping it here rather than widening the
+  // pattern keeps the decimal point meaningful.
+  const cleaned = input.replace(/[₹,\s]/gi, '').toLowerCase().replace(/\.$/, '');
+  // `lacs` matters: it is the ordinary spelling in Indian property listings —
+  // more common than `lakhs` — and without it "45 lacs" fell through to
+  // Number("45lacs") and became null. Every currency field in the CRM parses
+  // through here (see server core/metadata/values.ts coerceValue), so that was
+  // a silently dropped price on typed input and CSV import, not just on speech.
+  const m = cleaned.match(/^([\d.]+)\s*(cr|crore|crores|l|lac|lacs|lakh|lakhs|k|thousand)?$/);
   if (!m) {
     const n = Number(cleaned);
     return Number.isFinite(n) ? n : null;
@@ -46,7 +54,7 @@ export function parseIndianPrice(input: string): number | null {
   if (!Number.isFinite(num)) return null;
   switch (m[2]) {
     case 'cr': case 'crore': case 'crores': return num * CRORE;
-    case 'l': case 'lac': case 'lakh': case 'lakhs': return num * LAKH;
+    case 'l': case 'lac': case 'lacs': case 'lakh': case 'lakhs': return num * LAKH;
     case 'k': case 'thousand': return num * 1000;
     default: return num;
   }

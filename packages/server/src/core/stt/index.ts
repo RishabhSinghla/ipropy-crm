@@ -25,12 +25,36 @@ export class SttError extends Error {}
 export async function transcribeRecording(url: string, s: SttSettings): Promise<string> {
   const audio = await downloadRecording(url);
   if (!audio) throw new SttError('Could not download the recording — the URL may be unreachable or expired');
+  return transcribeAudio(audio.body, audio.name || 'recording.mp3', s);
+}
 
+/**
+ * Transcribe audio we already hold.
+ *
+ * Split out from `transcribeRecording` for the capture voice note, which is an
+ * attachment in our own storage — fetching our own object back over HTTP just
+ * to hand it to the same form would be a round trip for nothing, and would fail
+ * outright on a private bucket.
+ *
+ * `language` is worth sending for site notes: they are Hindi-English code-mixed
+ * ("teen BHK, park facing, ready to move"), and Whisper left to guess will
+ * sometimes decide a sentence is Hindi and translate the English half away.
+ */
+export async function transcribeAudio(
+  audio: ArrayBuffer | Buffer,
+  fileName: string,
+  s: SttSettings,
+  opts: { language?: string; prompt?: string } = {},
+): Promise<string> {
   const endpoint = `${s.baseUrl.replace(/\/$/, '')}/audio/transcriptions`;
   const form = new FormData();
   form.append('model', s.model);
   form.append('response_format', 'text');
-  form.append('file', new Blob([audio.body]), audio.name || 'recording.mp3');
+  if (opts.language) form.append('language', opts.language);
+  // Whisper uses this as a spelling hint, which is what makes it write "BHK"
+  // and "crore" rather than "B-H-K" and "crow".
+  if (opts.prompt) form.append('prompt', opts.prompt);
+  form.append('file', new Blob([audio as ArrayBuffer]), fileName);
 
   const res = await fetch(endpoint, {
     method: 'POST',

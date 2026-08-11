@@ -14,7 +14,14 @@
  */
 import { Router } from 'express';
 import { z } from 'zod';
+import multer from 'multer';
+import os from 'node:os';
+import { createReadStream } from 'node:fs';
+import { unlink } from 'node:fs/promises';
+import { extname } from 'node:path';
 import { db, transaction } from '../../db/pool.js';
+import { getDriver } from '../../core/storage/index.js';
+import { buildStorageKey } from '../../core/storage/keys.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../utils/errors.js';
@@ -34,6 +41,21 @@ captureRouter.use(requireAuth);
  */
 const MAX_CLOCK_SKEW_MS = 5 * 60_000;
 const MAX_BACKDATE_MS = 7 * 24 * 60 * 60_000;
+
+const SAFE_EXT = /^\.[a-z0-9]{1,8}$/i;
+
+/**
+ * Disk-buffered, and capped well below the photo limit.
+ *
+ * A gate note is twenty seconds — a couple of hundred kilobytes. Anything
+ * arriving here in the tens of megabytes is a misdirected video upload, and
+ * accepting it would put a file the transcription provider will reject into a
+ * queue that then retries it.
+ */
+const voiceUpload = multer({
+  storage: multer.diskStorage({ destination: os.tmpdir() }),
+  limits: { fileSize: 25 * 1024 * 1024 },
+});
 
 const startSchema = z.object({
   /** Minted on the device before queueing. The idempotency key. */
@@ -155,6 +177,64 @@ captureRouter.get('/sessions/:id', asyncHandler(async (req, res) => {
   const session = await getSession(req.params.id);
   if (!session || session.userId !== getUser(req).id) throw new NotFoundError('Session not found');
   res.json(session);
+}));
+
+/**
+ * Attach the voice note recorded at the gate.
+ *
+ * Separate from starting the visit, and deliberately so: the tap must land even
+ * with no signal, and a twenty-second audio clip is a hundred times the payload
+ * of the visit itself. Sending them together would make the one thing that must
+ * not fail depend on the one most likely to.
+ *
+ * Transcription happens later, on the scheduler — the phone is not kept waiting
+ * on a speech-to-text provider while somebody is walking into a property.
+ */
+captureRouter.post('/sessions/:id/voice', voiceUpload.single('audio'), asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const file = (req as unknown as { file?: Express.Multer.File }).file;
+  if (!file) throw new BadRequestError('No audio uploaded');
+
+  const session = await getSession(req.params.id);
+  if (!session || session.userId !== user.id) {
+    await unlink(file.path).catch(() => undefined);
+    throw new NotFoundError('Session not found');
+  }
+  if (!file.mimetype.startsWith('audio/') && !file.mimetype.startsWith('video/')) {
+    // iOS records into an mp4 container, which some browsers report as video/*.
+    await unlink(file.path).catch(() => undefined);
+    throw new BadRequestError('That does not look like an audio recording');
+  }
+
+  const ext = extname(file.originalname).toLowerCase();
+  const key = await buildStorageKey({
+    recordId: session.recordId,
+    originalName: `voice-note${SAFE_EXT.test(ext) ? ext : '.m4a'}`,
+    ext: SAFE_EXT.test(ext) ? ext : '.m4a',
+  });
+
+  const driver = await getDriver();
+  await driver.save(key, createReadStream(file.path), file.mimetype);
+  await unlink(file.path).catch(() => undefined);
+
+  const attachment = await db.queryOne<{ id: string }>(
+    `INSERT INTO ipy_attachment (record_id, file_name, mime_type, size, storage_key, category, uploaded_by)
+     VALUES ($1,$2,$3,$4,$5,'voice_note',$6) RETURNING id`,
+    [session.recordId, `voice-note${SAFE_EXT.test(ext) ? ext : '.m4a'}`, file.mimetype, file.size, key, user.id],
+  );
+
+  // Replacing a note leaves the old audio in storage on purpose — it is the
+  // only copy of something somebody said once, and orphaning it is recoverable
+  // where deleting it is not.
+  await db.query(
+    `UPDATE ipy_shoot_session
+        SET voice_note_id = $2, voice_status = 'pending', voice_attempts = 0,
+            voice_error = NULL, updated_at = now()
+      WHERE id = $1`,
+    [req.params.id, attachment!.id],
+  );
+
+  res.status(201).json({ voiceNoteId: attachment!.id, session: await getSession(req.params.id) });
 }));
 
 /**

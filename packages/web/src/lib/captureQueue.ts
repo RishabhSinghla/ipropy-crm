@@ -24,7 +24,20 @@ const DB_NAME = 'ipropy-capture';
 const DB_VERSION = 1;
 const STORE = 'pending';
 
+/**
+ * A visit waiting to be sent, and optionally the note recorded with it.
+ *
+ * The audio rides along as a Blob — IndexedDB stores those natively, so a
+ * twenty-second recording survives the phone being locked, the app being
+ * killed, and the drive home with no signal.
+ *
+ * It cannot be sent with the visit: the upload endpoint needs a session id,
+ * which only exists once the visit has landed. So a queued item becomes a
+ * `voice` item after its visit syncs, and that second stage is queued in its
+ * own right rather than being a fire-and-forget the user never hears about.
+ */
 export interface QueuedVisit {
+  kind?: 'visit';
   clientRef: string;
   body: Record<string, unknown>;
   queuedAt: string;
@@ -32,7 +45,24 @@ export interface QueuedVisit {
   lastError?: string;
   /** Shown in the list while it waits, so a queued visit is never invisible. */
   label: string;
+  audio?: Blob;
+  audioName?: string;
 }
+
+/** The second stage: audio whose visit has already reached the server. */
+export interface QueuedVoice {
+  kind: 'voice';
+  clientRef: string;
+  sessionId: string;
+  audio: Blob;
+  audioName: string;
+  queuedAt: string;
+  attempts: number;
+  lastError?: string;
+  label: string;
+}
+
+export type QueuedItem = QueuedVisit | QueuedVoice;
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -60,13 +90,13 @@ function tx<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore) => IDBReque
   }));
 }
 
-export const listQueued = (): Promise<QueuedVisit[]> =>
-  tx<QueuedVisit[]>('readonly', (s) => s.getAll() as IDBRequest<QueuedVisit[]>)
+export const listQueued = (): Promise<QueuedItem[]> =>
+  tx<QueuedItem[]>('readonly', (s) => s.getAll() as IDBRequest<QueuedItem[]>)
     // Oldest first: visits close each other, so replaying them out of order
     // would hand the wrong window to the wrong property.
     .then((rows) => rows.sort((a, b) => a.queuedAt.localeCompare(b.queuedAt)));
 
-const put = (item: QueuedVisit): Promise<IDBValidKey> => tx('readwrite', (s) => s.put(item));
+const put = (item: QueuedItem): Promise<IDBValidKey> => tx('readwrite', (s) => s.put(item));
 const remove = (clientRef: string): Promise<undefined> => tx('readwrite', (s) => s.delete(clientRef));
 
 /** Subscribers are the screen's pending badge; fired after every change. */
@@ -85,8 +115,16 @@ const emit = (): void => { listeners.forEach((fn) => { fn(); }); };
  * "saved" while somebody is already walking into the property. Whether it
  * reached the server is a separate, later question.
  */
-export async function enqueueVisit(clientRef: string, body: Record<string, unknown>, label: string): Promise<void> {
-  await put({ clientRef, body, label, queuedAt: new Date().toISOString(), attempts: 0 });
+export async function enqueueVisit(
+  clientRef: string,
+  body: Record<string, unknown>,
+  label: string,
+  audio?: { blob: Blob; name: string },
+): Promise<void> {
+  await put({
+    kind: 'visit', clientRef, body, label, queuedAt: new Date().toISOString(), attempts: 0,
+    ...(audio ? { audio: audio.blob, audioName: audio.name } : {}),
+  });
   emit();
   void flushQueue();
 }
@@ -96,13 +134,21 @@ let flushing = false;
 export interface FlushResult { sent: number; failed: number; remaining: number }
 
 /**
- * Push what is queued, oldest first, stopping at the first failure.
+ * Push what is queued, oldest first, stopping at the first transient failure.
  *
- * Stopping rather than skipping is deliberate. Sessions close each other, so
+ * Stopping rather than skipping is deliberate. Visits close each other, so
  * sending visit 3 while visit 2 is still stuck would close a visit that has not
  * happened yet from the server's point of view, and photos would land against
  * the wrong property. Order is worth more here than throughput.
+ *
+ * Repeated in passes because sending a visit can *create* work: a visit
+ * carrying audio mints a second-stage `voice` item once it has a session id,
+ * and a single sweep over a snapshot taken at the start would leave that
+ * sitting until the next tick a minute later. The pass count is bounded so a
+ * bug that endlessly re-queues cannot spin here.
  */
+const MAX_PASSES = 5;
+
 export async function flushQueue(): Promise<FlushResult> {
   if (flushing || !navigator.onLine) {
     return { sent: 0, failed: 0, remaining: (await listQueued()).length };
@@ -111,28 +157,60 @@ export async function flushQueue(): Promise<FlushResult> {
   let sent = 0;
   let failed = 0;
   try {
-    for (const item of await listQueued()) {
-      try {
-        await api.startCapture(item.body);
-        await remove(item.clientRef);
-        sent += 1;
-        emit();
-      } catch (err) {
-        // A 4xx will never succeed on retry — a malformed body, or a property
-        // the user has since lost access to. Keeping it would block every later
-        // visit behind something that can only fail, so it is recorded on the
-        // item and the queue moves on at the next flush.
-        const status = (err as { status?: number }).status;
-        const permanent = typeof status === 'number' && status >= 400 && status < 500;
-        await put({
-          ...item,
-          attempts: item.attempts + 1,
-          lastError: (err as Error).message,
-        });
-        failed += 1;
-        emit();
-        if (!permanent) break;
+    for (let pass = 0; pass < MAX_PASSES; pass += 1) {
+      const items = await listQueued();
+      if (!items.length) break;
+
+      let progressed = false;
+      let stalled = false;
+
+      for (const item of items) {
+        try {
+          if (item.kind === 'voice') {
+            await api.uploadCaptureVoice(item.sessionId, item.audio, item.audioName);
+          } else {
+            const { session } = await api.startCapture(item.body);
+            // The visit has landed; hand its audio to a second-stage item rather
+            // than uploading inline. If the connection dies between the two, the
+            // visit is safe and the recording is still queued rather than lost.
+            if (item.audio) {
+              await put({
+                kind: 'voice',
+                clientRef: `${item.clientRef}:voice`,
+                sessionId: session.id,
+                audio: item.audio,
+                audioName: item.audioName ?? 'note.m4a',
+                label: item.label,
+                queuedAt: new Date().toISOString(),
+                attempts: 0,
+              });
+            }
+          }
+          await remove(item.clientRef);
+          sent += 1;
+          progressed = true;
+          emit();
+        } catch (err) {
+          // A 4xx will never succeed on retry — a malformed body, or a property
+          // the user has since lost access to. Keeping it would block every later
+          // visit behind something that can only fail, so it is recorded on the
+          // item and the queue moves past it.
+          const status = (err as { status?: number }).status;
+          const permanent = typeof status === 'number' && status >= 400 && status < 500;
+          await put({
+            ...item,
+            attempts: item.attempts + 1,
+            lastError: (err as Error).message,
+          });
+          failed += 1;
+          emit();
+          if (!permanent) { stalled = true; break; }
+        }
       }
+
+      // Nothing moved, or the network went away mid-pass: another identical
+      // pass would only repeat the same failure immediately.
+      if (!progressed || stalled) break;
     }
   } finally {
     flushing = false;

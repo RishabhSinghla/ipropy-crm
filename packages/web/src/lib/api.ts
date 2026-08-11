@@ -621,6 +621,18 @@ export const api = {
     get<CaptureSessionRow[]>(`/api/capture/sessions${qs({ limit })}`),
   assignCaptureRecord: (id: string, recordId: string) =>
     patch<CaptureSession>(`/api/capture/sessions/${id}`, { recordId }),
+  /**
+   * The note recorded at the gate. Sent after the visit exists, because it
+   * needs the session's id — and separately from it, because the tap must land
+   * even when a hundred kilobytes of audio will not.
+   */
+  uploadCaptureVoice: (sessionId: string, audio: Blob, fileName: string) => {
+    const form = new FormData();
+    form.append('audio', audio, fileName);
+    return request<{ voiceNoteId: string; session: CaptureSession }>(
+      `/api/capture/sessions/${sessionId}/voice`, { method: 'POST', body: form },
+    );
+  },
   tags: () => get<{ id: string; name: string; color: string; usage_count: number }[]>('/api/tags'),
   importPreview: (module: string, file: File) => {
     const form = new FormData();

@@ -27,14 +27,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import type { FieldMeta, ModuleMeta } from '@ipropy/shared';
-import { Camera, Check, ChevronDown, Clock, CloudOff, MapPin, RefreshCw, Trash2, Wifi } from 'lucide-react';
+import { Camera, Check, ChevronDown, Clock, CloudOff, MapPin, Mic, RefreshCw, Trash2, Wifi } from 'lucide-react';
 import { api, type CaptureSessionRow } from '../lib/api';
 import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
 import { FieldInput } from '../components/FieldRenderer';
 import {
   discardQueued, enqueueVisit, flushQueue, listQueued, onQueueChange,
-  startCaptureSync, type QueuedVisit,
+  startCaptureSync, type QueuedItem,
 } from '../lib/captureQueue';
 import { EmptyState, Skeleton, Spinner } from '../components/ui';
 
@@ -63,6 +63,88 @@ const GPS_TIMEOUT_MS = 6000;
  * than to remember it tonight.
  */
 const PRIMARY_FIELD_COUNT = 4;
+
+/**
+ * Container the browser will actually record into.
+ *
+ * Safari records mp4 and nothing else; Chrome and Firefox record webm. Asking
+ * for an unsupported type does not fail loudly — `MediaRecorder` silently
+ * substitutes its own, and the file lands with an extension that does not match
+ * its contents, which the transcription provider then rejects. So the type is
+ * chosen and the extension derived from it.
+ */
+function pickAudioFormat(): { mimeType?: string; ext: string } {
+  const candidates = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
+  for (const mimeType of candidates) {
+    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported?.(mimeType)) {
+      return { mimeType, ext: mimeType.startsWith('audio/mp4') ? 'm4a' : mimeType.includes('ogg') ? 'ogg' : 'webm' };
+    }
+  }
+  return { ext: 'm4a' };
+}
+
+type RecordState = 'idle' | 'recording' | 'ready' | 'denied' | 'unsupported';
+
+/**
+ * Tap to start, tap to stop — not hold-to-talk.
+ *
+ * WhatsApp's hold gesture is the familiar one, but twenty seconds of holding
+ * while walking towards a gate one-handed is how recordings get cut off at
+ * "B-110 Greenfi". A tap with an obvious running timer is unambiguous and
+ * survives being interrupted.
+ */
+function useRecorder(): {
+  state: RecordState; seconds: number; clip: { blob: Blob; name: string } | null;
+  start: () => Promise<void>; stop: () => void; discard: () => void;
+} {
+  const [state, setState] = useState<RecordState>(
+    () => (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices ? 'unsupported' : 'idle'),
+  );
+  const [seconds, setSeconds] = useState(0);
+  const [clip, setClip] = useState<{ blob: Blob; name: string } | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const timerRef = useRef<number | null>(null);
+
+  const stopTimer = (): void => {
+    if (timerRef.current !== null) { window.clearInterval(timerRef.current); timerRef.current = null; }
+  };
+
+  const start = async (): Promise<void> => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const { mimeType, ext } = pickAudioFormat();
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      const chunks: Blob[] = [];
+      recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+      recorder.onstop = () => {
+        // Releasing the track matters: iOS leaves the orange recording dot lit
+        // and holds the microphone against other apps until every track ends.
+        stream.getTracks().forEach((t) => t.stop());
+        setClip({ blob: new Blob(chunks, { type: recorder.mimeType || mimeType || 'audio/mp4' }), name: `note.${ext}` });
+        setState('ready');
+      };
+      recorder.start();
+      recorderRef.current = recorder;
+      setSeconds(0);
+      setState('recording');
+      timerRef.current = window.setInterval(() => setSeconds((s) => s + 1), 1000);
+    } catch {
+      setState('denied');
+    }
+  };
+
+  const stop = (): void => {
+    stopTimer();
+    recorderRef.current?.stop();
+    recorderRef.current = null;
+  };
+
+  const discard = (): void => { setClip(null); setSeconds(0); setState('idle'); };
+
+  useEffect(() => () => { stopTimer(); recorderRef.current?.stop(); }, []);
+
+  return { state, seconds, clip, start, stop, discard };
+}
 
 interface Fix { lat: number; lng: number; accuracy?: number }
 
@@ -101,8 +183,8 @@ function useOnline(): boolean {
 }
 
 /** The IndexedDB queue, as React state. */
-function useQueue(): { queued: QueuedVisit[]; reload: () => void } {
-  const [queued, setQueued] = useState<QueuedVisit[]>([]);
+function useQueue(): { queued: QueuedItem[]; reload: () => void } {
+  const [queued, setQueued] = useState<QueuedItem[]>([]);
   const reload = (): void => { void listQueued().then(setQueued); };
   useEffect(() => {
     reload();
@@ -120,6 +202,7 @@ export default function CapturePage(): JSX.Element {
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const recorder = useRecorder();
   const nameRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { startCaptureSync(); }, []);
@@ -181,10 +264,11 @@ export default function CapturePage(): JSX.Element {
         ...(fix ? { location: { lat: fix.lat, lng: fix.lng, ...(fix.accuracy ? { accuracy: fix.accuracy } : {}) } } : {}),
         property: { module: CAPTURE_MODULE, values },
         deviceLabel: navigator.userAgent.includes('iPhone') ? 'iPhone' : undefined,
-      }, label);
+      }, label, recorder.clip ?? undefined);
 
       setJustSaved(label);
       setValues({});
+      recorder.discard();
       // The list only matters once something has actually reached the server.
       void queryClient.invalidateQueries({ queryKey: ['capture', 'sessions'] });
       window.setTimeout(() => setJustSaved(null), 4000);
@@ -233,6 +317,8 @@ export default function CapturePage(): JSX.Element {
                 />
               </div>
             ))}
+
+            <VoiceNote recorder={recorder} />
 
             {secondary.length ? (
               <button
@@ -299,6 +385,72 @@ export default function CapturePage(): JSX.Element {
   );
 }
 
+/**
+ * Say it instead of typing it.
+ *
+ * The single biggest usability win available on this screen. Everything in a
+ * spoken note — price, size, configuration, facing, the owner's name — is
+ * already a field, and for somebody quick on a phone call and slow on a phone
+ * keyboard, twenty seconds of talking replaces nine dropdowns and four number
+ * pads standing in the sun.
+ *
+ * Optional on purpose. A noisy site, or the owner standing right there
+ * listening, are both good reasons to type instead.
+ */
+function VoiceNote({ recorder }: { recorder: ReturnType<typeof useRecorder> }): JSX.Element | null {
+  const { state, seconds, clip, start, stop, discard } = recorder;
+  if (state === 'unsupported') return null;
+
+  const mmss = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+
+  if (state === 'denied') {
+    return (
+      <p className="rounded-lg bg-slate-100 p-2.5 text-xs text-muted dark:bg-slate-800">
+        Microphone is blocked for this site, so notes have to be typed. Turn it on in your
+        browser&apos;s settings for this page if you want to speak them instead.
+      </p>
+    );
+  }
+
+  if (state === 'recording') {
+    return (
+      <button
+        type="button"
+        onClick={stop}
+        className="flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 py-3 text-sm font-medium text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200"
+      >
+        <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-600" />
+        Recording {mmss} — tap to stop
+      </button>
+    );
+  }
+
+  if (state === 'ready' && clip) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-2.5 dark:border-emerald-900 dark:bg-emerald-950/40">
+        <Check className="h-4 w-4 shrink-0 text-emerald-600" />
+        <span className="flex-1 text-sm text-emerald-800 dark:text-emerald-200">Note recorded ({mmss})</span>
+        {/* Playable before it is sent — the only chance to notice it caught nothing. */}
+        <audio controls src={URL.createObjectURL(clip.blob)} className="h-8 max-w-[9rem]" />
+        <button type="button" onClick={discard} title="Discard the note" className="rounded p-1 text-slate-400 hover:text-red-600">
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => { void start(); }}
+      className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 py-3 text-sm font-medium text-slate-600 hover:border-slate-400 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+    >
+      <Mic className="h-4 w-4" />
+      Say the details instead
+    </button>
+  );
+}
+
 function StatusPill(
   { online, gps, pending }: { online: boolean; gps: string; pending: number },
 ): JSX.Element {
@@ -344,7 +496,7 @@ function StatusPill(
  * no signal needs to see that all six are safe, or they will capture them again
  * on paper.
  */
-function QueuedList({ items, online }: { items: QueuedVisit[]; online: boolean }): JSX.Element {
+function QueuedList({ items, online }: { items: QueuedItem[]; online: boolean }): JSX.Element {
   const [syncing, setSyncing] = useState(false);
   const sync = async (): Promise<void> => {
     setSyncing(true);
