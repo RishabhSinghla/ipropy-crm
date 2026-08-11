@@ -158,7 +158,7 @@ export async function renderReel(spec: ReelSpec, jobId: string): Promise<ReelRes
 
     // --- 4. watermark ------------------------------------------------------
     const watermarked = join(work, 'watermarked.mp4');
-    await applyWatermark(joined, watermarked, width);
+    await applyWatermark(joined, watermarked, width, height);
 
     let final = watermarked;
     if (spec.music && await isReelMusicAvailable()) {
@@ -348,9 +348,15 @@ async function crossfade(clips: string[], outputPath: string, durations: number[
   await runFfmpeg(args);
 }
 
-async function applyWatermark(inputPath: string, outputPath: string, width: number): Promise<void> {
+async function applyWatermark(
+  inputPath: string, outputPath: string, width: number, height: number,
+): Promise<void> {
   try {
-    const wm = await watermarkFor(width);
+    const wm = await watermarkFor(width, height);
+    // A frame too small to carry a readable badge takes the same path as a
+    // watermark that failed to render: the cut, unbranded, which is still a
+    // reel worth having.
+    if (!wm) throw new Error('frame too small for a readable watermark');
     const wmPath = join(tmpdir(), `ipropy-reel-wm-${Date.now()}.png`);
     await writeFile(wmPath, wm.buffer);
     try {

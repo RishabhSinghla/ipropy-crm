@@ -50,15 +50,21 @@ export async function processImage(
 
     let finalBuffer: Buffer = resized.data;
     if (d.watermark) {
-      const wm = await watermarkFor(resized.info.width);
-      finalBuffer = await sharp(resized.data)
-        .composite([{
-          input: wm.buffer,
-          left: Math.max(0, resized.info.width - wm.width - wm.margin),
-          top: Math.max(0, resized.info.height - wm.height - wm.margin),
-        }])
-        .webp({ quality: 82 })
-        .toBuffer();
+      // Null when the badge would not fit — an icon, a logo, a signature crop.
+      // Skipping it is the whole fix for a job that used to throw here and be
+      // retried by the queue forever, since a 40px image is exactly as small on
+      // the tenth attempt as on the first.
+      const wm = await watermarkFor(resized.info.width, resized.info.height);
+      if (wm) {
+        finalBuffer = await sharp(resized.data)
+          .composite([{
+            input: wm.buffer,
+            left: resized.info.width - wm.width - wm.margin,
+            top: resized.info.height - wm.height - wm.margin,
+          }])
+          .webp({ quality: 82 })
+          .toBuffer();
+      }
     }
 
     const key = `${base}-${d.key}.webp`;

@@ -151,7 +151,24 @@ async function scaleAndWatermark(inputPath: string, outputPath: string): Promise
   // Reference width for the watermark's proportions; the overlay filter's
   // W/H expressions below position it correctly regardless of the actual
   // (possibly portrait) output size — see watermark.ts.
-  const wm = await watermarkFor(1920);
+  // 1920x1080 is the nominal capped frame, not a measurement — the overlay's
+  // W/H expressions place the badge correctly whatever the real output is. At
+  // this size the badge always fits, so the null branch is unreachable; it is
+  // handled rather than asserted because "cannot happen" ages badly and an
+  // unwatermarked clip is a far better outcome than a failed job.
+  const wm = await watermarkFor(1920, 1080);
+
+  if (!wm) {
+    await runFfmpeg([
+      '-y', '-i', inputPath,
+      '-vf', `scale=w='min(1920,iw)':h='min(1920,ih)':force_original_aspect_ratio=decrease`,
+      '-c:v', 'libx264', '-preset', 'medium', '-crf', '23', '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac', '-movflags', '+faststart',
+      outputPath,
+    ]);
+    return;
+  }
+
   const wmPath = join(tmpdir(), `ipropy-wm-${Date.now()}.png`);
   await writeFile(wmPath, wm.buffer);
 
