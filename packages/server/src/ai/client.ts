@@ -89,6 +89,24 @@ export async function testAiProvider(
   }
 }
 
+/**
+ * One picture to look at.
+ *
+ * Bytes rather than a URL on purpose. Every provider accepts inline base64, and
+ * only some accept a URL — and the ones that do have to be able to *reach* it,
+ * which our permission-checked `/api/files/:id` is specifically designed to stop
+ * them doing. Handing over the bytes we already hold avoids inventing a public
+ * hole in the one endpoint that guards site photos.
+ *
+ * Callers are expected to have downscaled already: an iPhone frame is several
+ * megabytes and costs tokens by the pixel. See `core/capture/vision.ts`.
+ */
+export interface VisionImage {
+  data: Buffer;
+  /** image/jpeg, image/png or image/webp — the three every provider accepts. */
+  mimeType: string;
+}
+
 export interface CompleteOptions {
   /** feature name for logging, e.g. 'lead_scoring' */
   feature: string;
@@ -103,6 +121,15 @@ export interface CompleteOptions {
   /** prefill the assistant turn — the reliable way to force JSON */
   prefill?: string;
   stopSequences?: string[];
+  /**
+   * Pictures the model should look at, in the order the prompt refers to them.
+   *
+   * A provider or model with no vision support answers with a 4xx, which the
+   * fallback chain treats like any other whole-provider failure and steps past —
+   * so configuring a text-only model does not break the feature, it just means
+   * the next provider gets the call, and `complete` returns null if none can.
+   */
+  images?: VisionImage[];
 }
 
 export interface CompleteResult {
@@ -202,7 +229,23 @@ export async function complete(opts: CompleteOptions): Promise<CompleteResult | 
 async function callAnthropic(
   apiKey: string, model: string, maxTokens: number, temperature: number, opts: CompleteOptions,
 ): Promise<CompleteResult> {
-  const messages: Anthropic.MessageParam[] = [{ role: 'user', content: opts.prompt }];
+  // Images before the text, which is what Anthropic's own guidance asks for:
+  // a question read after the pictures is answered about the pictures.
+  const content: Anthropic.ContentBlockParam[] = opts.images?.length
+    ? [
+      ...opts.images.map((image): Anthropic.ImageBlockParam => ({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: image.mimeType as Anthropic.Base64ImageSource['media_type'],
+          data: image.data.toString('base64'),
+        },
+      })),
+      { type: 'text', text: opts.prompt },
+    ]
+    : [{ type: 'text', text: opts.prompt }];
+
+  const messages: Anthropic.MessageParam[] = [{ role: 'user', content }];
   if (opts.prefill) messages.push({ role: 'assistant', content: opts.prefill });
 
   const response = await getAnthropic(apiKey).messages.create({
@@ -283,6 +326,30 @@ interface ChatCompletionResponse {
  * - There is no shared SDK. Raw `fetch` keeps the dependency list unchanged and
  *   works identically against a local Ollama, which is the zero-cost option.
  */
+export type OpenAiContent = string | ({ type: 'text'; text: string } | {
+  type: 'image_url'; image_url: { url: string };
+})[];
+
+/**
+ * The user turn, as a plain string when there are no pictures.
+ *
+ * Kept as a string in the text-only case deliberately. The content-array form
+ * is part of the spec, but it is the newer half of it and several of the
+ * smaller OpenAI-compatible servers — the free tiers this product is expected
+ * to run on — only ever implemented the string. Sending an array to all of them
+ * would be correct and would break working setups, for no gain.
+ */
+export function userContent(opts: Pick<CompleteOptions, 'prompt' | 'images'>): OpenAiContent {
+  if (!opts.images?.length) return opts.prompt;
+  return [
+    ...opts.images.map((image) => ({
+      type: 'image_url' as const,
+      image_url: { url: `data:${image.mimeType};base64,${image.data.toString('base64')}` },
+    })),
+    { type: 'text' as const, text: opts.prompt },
+  ];
+}
+
 async function callOpenAiCompatible(
   baseUrl: string, apiKey: string, model: string, maxTokens: number, temperature: number, opts: CompleteOptions,
 ): Promise<CompleteResult> {
@@ -306,7 +373,7 @@ async function callOpenAiCompatible(
       temperature,
       messages: [
         { role: 'system', content: system },
-        { role: 'user', content: opts.prompt },
+        { role: 'user', content: userContent(opts) },
       ],
       ...(opts.stopSequences ? { stop: opts.stopSequences } : {}),
     }),

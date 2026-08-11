@@ -148,6 +148,12 @@ function ShootCard({ shoot }: { shoot: UnnamedShoot }): JSX.Element {
   });
 
   const existing = matches ?? [];
+
+  const extraFeatures = useMemo(() => {
+    const summary = (shoot.summary ?? '').toLowerCase();
+    return shoot.features.filter((f) => !summary.includes(f.toLowerCase()));
+  }, [shoot.summary, shoot.features]);
+
   // Offered whenever what was typed is not already an exact match — the usual
   // case for a floor photographed this morning.
   const canCreate = typed.length >= 2
@@ -157,8 +163,16 @@ function ShootCard({ shoot }: { shoot: UnnamedShoot }): JSX.Element {
     <div className="card space-y-3 p-3">
       <PreviewStrip shoot={shoot} />
 
+      {/* What the photos are of, when a model has looked. This is the line that
+          turns naming a three-day-old shoot from a memory test into reading —
+          so it sits above the count, not below it. Absent on an install with no
+          AI provider, and the card is designed to read fine that way. */}
+      {shoot.summary && (
+        <p className="text-sm font-medium leading-snug">{shoot.summary}</p>
+      )}
+
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-        <span className="font-medium">
+        <span className={cn(shoot.summary ? 'text-muted' : 'font-medium')}>
           {shoot.mediaCount} {shoot.mediaCount === 1 ? 'photo' : 'photos'}
         </span>
         <span className="text-muted">{window_(shoot.startedAt, shoot.endedAt)}</span>
@@ -173,6 +187,23 @@ function ShootCard({ shoot }: { shoot: UnnamedShoot }): JSX.Element {
           </a>
         )}
       </div>
+
+      {/* Only what the summary did not already say. The model writes both, and
+          it naturally repeats itself — "marble flooring, modular kitchen" in
+          the line above and again as chips is noise on a phone, and noise is
+          what somebody skims past. */}
+      {extraFeatures.length > 0 && (
+        <ul className="flex flex-wrap gap-1">
+          {extraFeatures.map((feature) => (
+            <li
+              key={feature}
+              className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-muted dark:border-slate-700"
+            >
+              {feature}
+            </li>
+          ))}
+        </ul>
+      )}
 
       {/* What was said at the gate, when there was a recording. Not a name, but
           often the fastest reminder of which place this was. */}

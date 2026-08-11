@@ -266,6 +266,13 @@ export interface UnnamedShoot {
   transcript: string | null;
   lat: number | null;
   lng: number | null;
+  /**
+   * What the photos are of, when a model has looked — see vision.ts. Null on an
+   * install with no AI provider, which is the normal state of this one, and the
+   * screen is expected to work without it.
+   */
+  summary: string | null;
+  features: string[];
 }
 
 /**
@@ -287,11 +294,17 @@ export async function listUnnamedShoots(
   const { rows } = await conn.query<{
     id: string; origin: 'manual' | 'auto'; started_at: Date; ended_at: Date | null;
     media_count: number; preview_ids: string[]; transcript: string | null;
-    lat: string | null; lng: string | null;
+    lat: string | null; lng: string | null; vision: Record<string, unknown> | null;
   }>(
-    `SELECT s.id, s.origin, s.started_at, s.ended_at, s.transcript, s.lat, s.lng,
+    // The cover the model picked sorts first, so the leading thumbnail is the
+    // frame chosen to represent the place rather than whichever shot happened
+    // to be taken earliest — which on a real visit is usually a doorway.
+    `SELECT s.id, s.origin, s.started_at, s.ended_at, s.transcript, s.lat, s.lng, s.vision,
             COUNT(a.id)::int AS media_count,
-            (ARRAY_AGG(a.id ORDER BY a.captured_at NULLS LAST))[1:4] AS preview_ids
+            (ARRAY_AGG(
+               a.id ORDER BY (a.id::text = (s.vision->>'coverAttachmentId')) DESC,
+                             a.captured_at NULLS LAST
+             ))[1:4] AS preview_ids
        FROM ipy_shoot_session s
        JOIN ipy_attachment a ON a.shoot_session_id = s.id
       WHERE s.user_id = $1
@@ -302,17 +315,25 @@ export async function listUnnamedShoots(
     [userId, Math.min(limit, 200)],
   );
 
-  return rows.map((r) => ({
-    id: r.id,
-    origin: r.origin,
-    startedAt: r.started_at,
-    endedAt: r.ended_at,
-    mediaCount: r.media_count,
-    previewIds: r.preview_ids ?? [],
-    transcript: r.transcript,
-    lat: r.lat === null ? null : Number(r.lat),
-    lng: r.lng === null ? null : Number(r.lng),
-  }));
+  return rows.map((r) => {
+    const vision = r.vision ?? {};
+    const summary = typeof vision.summary === 'string' ? vision.summary : null;
+    return {
+      id: r.id,
+      origin: r.origin,
+      startedAt: r.started_at,
+      endedAt: r.ended_at,
+      mediaCount: r.media_count,
+      previewIds: r.preview_ids ?? [],
+      transcript: r.transcript,
+      lat: r.lat === null ? null : Number(r.lat),
+      lng: r.lng === null ? null : Number(r.lng),
+      summary,
+      features: Array.isArray(vision.features)
+        ? (vision.features as unknown[]).filter((f): f is string => typeof f === 'string').slice(0, 6)
+        : [],
+    };
+  });
 }
 
 /**

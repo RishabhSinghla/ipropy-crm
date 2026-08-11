@@ -195,6 +195,13 @@ export interface UnnamedShoot {
   transcript: string | null;
   lat: number | null;
   lng: number | null;
+  /**
+   * What a model saw in the photos. Null on an install with no AI provider —
+   * which is this one until a key is added — so the screen must read fine
+   * without it.
+   */
+  summary: string | null;
+  features: string[];
 }
 
 /** One parsed detail, as the review screen needs to weigh it. */

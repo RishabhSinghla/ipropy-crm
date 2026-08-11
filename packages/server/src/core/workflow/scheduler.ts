@@ -15,6 +15,7 @@ import { logger } from '../../utils/logger.js';
 import { closeStaleSessions } from '../capture/sessions.js';
 import { groupUnfiledPhotos } from '../capture/grouping.js';
 import { processPendingVoiceNotes } from '../capture/voice.js';
+import { processPendingShootVisions } from '../capture/vision.js';
 import { loadRecordValues, runWorkflowsFor } from './engine.js';
 import { runTask, type TaskContext } from './tasks.js';
 import { loadUser } from '../../middleware/auth.js';
@@ -403,6 +404,9 @@ async function housekeeping(): Promise<void> {
     groupUnfiledPhotos(),
     // Transcribe what was said at the gate. A no-op without an STT key.
     processPendingVoiceNotes(),
+    // Read the photos in a nameless shoot, so the evening screen can say what
+    // it is instead of only when it was. A no-op without an AI provider.
+    processPendingShootVisions(),
   ]);
 }
 
