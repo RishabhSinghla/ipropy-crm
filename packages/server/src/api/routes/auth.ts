@@ -15,7 +15,7 @@ export const authRouter = Router();
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 20,
+  limit: config.security.loginRateLimit,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'rate_limited', message: 'Too many sign-in attempts. Try again in a few minutes.' },

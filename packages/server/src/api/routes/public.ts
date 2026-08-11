@@ -12,11 +12,13 @@
  */
 import { Router } from 'express';
 import { resolve } from 'node:path';
+import sharp from 'sharp';
 import { db } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { NotFoundError } from '../../utils/errors.js';
 import { getDriver, getStorageSettings } from '../../core/storage/index.js';
 import { logger } from '../../utils/logger.js';
+import { recordShareView, resolveShareToken } from '../../core/sharing/shareLinks.js';
 
 export const publicRouter = Router();
 
@@ -331,6 +333,11 @@ publicRouter.get('/cities', asyncHandler(async (_req, res) => {
 
 const VARIANT_SIZES = new Set(['thumb', 'medium', 'large']);
 
+// Widths used when shrinking an original that has no derivative yet — see
+// the share media route. Matches core/media/images.ts so a photo looks the
+// same before and after the queue catches up with it.
+const FALLBACK_WIDTHS: Record<string, number> = { thumb: 480, medium: 1200, large: 2400 };
+
 publicRouter.get('/media/:attachmentId', asyncHandler(async (req, res) => {
   const file = await db.queryOne<{ storage_key: string; file_name: string; mime_type: string; record_id: string | null; variants: Record<string, string> | null }>(
     `SELECT storage_key, file_name, mime_type, record_id, variants FROM ipy_attachment WHERE id = $1`,
@@ -395,3 +402,120 @@ function toPublicMedia<T extends Record<string, unknown>>(row: T, size: 'medium'
   }
   return out as T;
 }
+
+// ---------------------------------------------------------------------------
+// Share links — one property, sent to one person.
+//
+// Separate from everything above, and deliberately not subject to the
+// status/publish gate. That gate is right for a catalogue: the website should
+// only list units that are actually available and meant to be public. It is
+// wrong for sending, because the property somebody most wants to send is the
+// floor they photographed this morning, which is a draft.
+//
+// What authorises this instead is the token: minted by a signed-in user who had
+// permission to see the record, unguessable, revocable, and scoped to exactly
+// one property. See core/sharing/shareLinks.ts.
+// ---------------------------------------------------------------------------
+
+/** Everything the shared page renders. 404 covers every failure — see resolveShareToken. */
+publicRouter.get('/share/:token', asyncHandler(async (req, res) => {
+  const link = await resolveShareToken(req.params.token);
+  if (!link) throw new NotFoundError('This link is no longer available');
+
+  const unit = await db.queryOne<Record<string, unknown>>(
+    `SELECT ${PROPERTY_FIELDS} FROM ipy_e_properties u WHERE u.record_id = $1`,
+    [link.recordId],
+  );
+  if (!unit) throw new NotFoundError('This link is no longer available');
+
+  // The record's own photos, not the `gallery` field. Gallery is curated by
+  // hand and is empty on a property that arrived through capture — which is
+  // every property this feature exists for. Ordered by when they were shot, so
+  // the buyer walks the floor in the order it was walked.
+  const { rows: photos } = await db.query<{ id: string; file_name: string }>(
+    `SELECT id, file_name
+       FROM ipy_attachment
+      WHERE record_id = $1 AND mime_type LIKE 'image/%'
+      ORDER BY captured_at NULLS LAST, created_at
+      LIMIT 60`,
+    [link.recordId],
+  );
+
+  // Counted after the payload is built and never awaited into the response: a
+  // failed counter must not stop a buyer seeing the property.
+  void recordShareView(link.id).catch((err) => logger.debug({ err }, 'share: view count failed'));
+
+  res.json({
+    property: toPublicMedia(unit, 'large'),
+    photos: photos.map((p) => ({
+      id: p.id,
+      url: `/api/public/share/${link.token}/media/${p.id}`,
+      name: p.file_name,
+    })),
+    sharedAt: link.createdAt,
+  });
+}));
+
+/**
+ * An image from a shared property.
+ *
+ * Authorised by the token in the path and checked against the attachment's own
+ * record, so a valid link for one property cannot be used to pull an image
+ * belonging to another by swapping the id.
+ */
+publicRouter.get('/share/:token/media/:attachmentId', asyncHandler(async (req, res) => {
+  const link = await resolveShareToken(req.params.token);
+  if (!link) throw new NotFoundError('File not found');
+
+  const file = await db.queryOne<{
+    storage_key: string; mime_type: string; variants: Record<string, string> | null;
+  }>(
+    `SELECT storage_key, mime_type, variants
+       FROM ipy_attachment
+      WHERE id = $1 AND record_id = $2 AND mime_type LIKE 'image/%'`,
+    [req.params.attachmentId, link.recordId],
+  );
+  if (!file) throw new NotFoundError('File not found');
+
+  const requestedSize = typeof req.query.size === 'string' ? req.query.size : null;
+  const variantKey = requestedSize && VARIANT_SIZES.has(requestedSize) ? file.variants?.[requestedSize] : undefined;
+  const storageKey = variantKey ?? file.storage_key;
+
+  const driver = await getDriver();
+  const data = await driver.read(storageKey);
+  if (!data) throw new NotFoundError('File is missing from storage');
+
+  // Private, never public: a link is not secret enough to sit in a shared CDN
+  // cache, and revoking one has to actually take effect.
+  res.setHeader('Cache-Control', 'private, max-age=3600');
+
+  if (variantKey) {
+    res.setHeader('Content-Type', 'image/webp');
+    res.send(data);
+    return;
+  }
+
+  // No derivative yet, so this is the untouched original — and on this route
+  // that is the normal case rather than the rare one. The media queue makes
+  // variants a minute or two after upload; a share link is made for the floor
+  // somebody photographed this morning, so a buyer can easily open it first.
+  //
+  // Serving the original there means several megabytes per photo to a phone on
+  // mobile data, which is the difference between a link that loads and one that
+  // gets closed. Shrinking on the fly costs about a tenth of a second and the
+  // route is rate-limited, so the trade is worth making. The originals on disk
+  // are untouched — this is a resize on the way out, not a derivative.
+  try {
+    res.setHeader('Content-Type', 'image/webp');
+    res.send(await sharp(data, { failOn: 'none' })
+      .rotate()
+      .resize({ width: FALLBACK_WIDTHS[requestedSize ?? 'large'] ?? 1600, withoutEnlargement: true })
+      .webp({ quality: 80 })
+      .toBuffer());
+  } catch (err) {
+    // A format sharp cannot decode still deserves to be shown.
+    logger.debug({ err, id: req.params.attachmentId }, 'shared media: could not shrink, sending the original');
+    res.setHeader('Content-Type', file.mime_type);
+    res.send(data);
+  }
+}));

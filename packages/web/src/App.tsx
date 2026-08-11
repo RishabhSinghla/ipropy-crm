@@ -3,11 +3,15 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useApp } from './lib/store';
 import { Spinner, ToastHost } from './components/ui';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import Layout from './components/Layout';
 import Login from './pages/Login';
 
 // Route-level code splitting: every page ships as its own chunk and loads on
 // first visit. Login and the shell stay eager so the first paint is instant.
+// Lazy, like the pages. Layout pulls in socket.io-client, the realtime
+// listener and the AI assistant — and as a static import it shipped all of
+// that to /s/:token too, where a buyer with no account is looking at five
+// photos on mobile data. Nothing there ever mounts it.
+const Layout = lazy(() => import('./components/Layout'));
 const DashboardPage = lazy(() => import('./pages/Dashboard'));
 const ListView = lazy(() => import('./pages/ListView'));
 const RecordDetail = lazy(() => import('./pages/RecordDetail'));
@@ -17,6 +21,7 @@ const Studio = lazy(() => import('./pages/Studio'));
 const CapturePage = lazy(() => import('./pages/Capture'));
 const CaptureReviewPage = lazy(() => import('./pages/CaptureReview'));
 const CaptureShootsPage = lazy(() => import('./pages/CaptureShoots'));
+const SharedPropertyPage = lazy(() => import('./pages/SharedProperty'));
 const Outreach = lazy(() => import('./pages/Outreach'));
 const CallsPage = lazy(() => import('./pages/Calls'));
 const ReportsPage = lazy(() => import('./pages/Reports'));
@@ -62,6 +67,9 @@ export default function App(): JSX.Element {
         <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/login" element={<Login />} />
+            {/* Public: a buyer opening a link has no account, so this sits
+                outside RequireAuth alongside /login. */}
+            <Route path="/s/:token" element={<SharedPropertyPage />} />
 
             <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
               <Route index element={<Navigate to="/dashboard" replace />} />

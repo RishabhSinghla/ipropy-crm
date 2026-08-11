@@ -54,6 +54,19 @@ export const config = {
      * minute, which is not a shape any real user produces.
      */
     apiRateLimit: num('API_RATE_LIMIT', 600),
+
+    /**
+     * Sign-in attempts per 15 minutes, per IP. The brute-force guard.
+     *
+     * Configurable for the same reason as above, and one that bit: the limiter
+     * is created once at module scope in api/routes/auth.ts, so every
+     * `createApp()` in a process shares one budget. The integration suite makes
+     * about seventeen logins across its files from a single IP, which left
+     * three of headroom — the next test file to sign in would have broken the
+     * run with a 401 that looks nothing like a rate limit. Raised in
+     * tests/integration/setup.ts; the default is what production uses.
+     */
+    loginRateLimit: num('LOGIN_RATE_LIMIT', 20),
   },
 
   /**
