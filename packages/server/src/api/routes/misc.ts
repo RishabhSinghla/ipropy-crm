@@ -18,6 +18,7 @@ import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../utils/errors.js';
 import { assertCapability, canAccessRecord } from '../../core/permissions/index.js';
 import { getDriver, getStorageSettings } from '../../core/storage/index.js';
+import { buildStorageKey } from '../../core/storage/keys.js';
 import {
   ARCHIVE_SETS, contentDisposition, countRecordMedia, safeName, writeRecordArchive,
   type ArchiveSet,
@@ -276,10 +277,12 @@ miscRouter.post('/files', mediaUpload.single('file'), asyncHandler(async (req, r
     throw new ForbiddenError('You cannot attach files to this record');
   }
 
-  // Never trust the client's filename for the path — derive a safe key.
+  // Never trust the client's filename for the path — derive a safe key. It is
+  // named after the record rather than a bare UUID so that a bucket mirrored to
+  // a laptop is browsable; see core/storage/keys.ts.
   const ext = extname(file.originalname).toLowerCase();
   const safeExt = SAFE_EXT.test(ext) ? ext : '';
-  const key = `${new Date().toISOString().slice(0, 7)}/${crypto.randomUUID()}${safeExt}`;
+  const key = await buildStorageKey({ recordId, originalName: file.originalname, ext: safeExt });
 
   const driver = await getDriver();
   await driver.save(key, createReadStream(file.path), file.mimetype);
