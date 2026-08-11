@@ -91,6 +91,13 @@ export async function matchAttachment(attachmentId: string, capturedAt: Date | n
  *
  * Scoped to the visit's own window and user, so it can only ever claim photos
  * that were genuinely taken during it.
+ *
+ * It also takes photos back off an unnamed auto group (see grouping.ts). Those
+ * groups are a guess about where one visit ended and the next began; this
+ * session is somebody's statement that they were at a named property between
+ * two times. The statement wins. A group that has already been given a property
+ * is off-limits — that is a decision, not a guess — as is any photo somebody
+ * filed by hand, which `record_id IS NULL` in the SET already protects.
  */
 export async function matchOrphansForSession(sessionId: string): Promise<number> {
   const session = await db.queryOne<{
@@ -102,15 +109,24 @@ export async function matchOrphansForSession(sessionId: string): Promise<number>
   if (!session) return 0;
 
   const { rows } = await db.query<{ id: string }>(
-    `UPDATE ipy_attachment
+    `UPDATE ipy_attachment a
         SET shoot_session_id = $1,
-            record_id = CASE WHEN record_id IS NULL THEN $2 ELSE record_id END
-      WHERE shoot_session_id IS NULL
-        AND uploaded_by = $3
-        AND captured_at IS NOT NULL
-        AND captured_at >= $4
-        AND ($5::timestamptz IS NULL OR captured_at <= $5)
-      RETURNING id`,
+            record_id = CASE WHEN a.record_id IS NULL THEN $2 ELSE a.record_id END
+      WHERE a.uploaded_by = $3
+        AND a.captured_at IS NOT NULL
+        AND a.captured_at >= $4
+        AND ($5::timestamptz IS NULL OR a.captured_at <= $5)
+        AND a.shoot_session_id IS DISTINCT FROM $1
+        AND (
+          a.shoot_session_id IS NULL
+          OR EXISTS (
+            SELECT 1 FROM ipy_shoot_session g
+             WHERE g.id = a.shoot_session_id
+               AND g.origin = 'auto'
+               AND g.record_id IS NULL
+          )
+        )
+      RETURNING a.id`,
     [sessionId, session.record_id, session.user_id, session.started_at, session.ended_at],
   );
 

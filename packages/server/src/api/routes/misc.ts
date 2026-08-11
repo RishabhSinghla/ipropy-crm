@@ -317,8 +317,12 @@ const VARIANT_SIZES = new Set(['thumb', 'medium', 'large']);
 
 miscRouter.get('/files/:id', asyncHandler(async (req, res) => {
   const scope = getScope(req);
-  const file = await db.queryOne<{ storage_key: string; file_name: string; mime_type: string; record_id: string | null; variants: Record<string, string> | null }>(
-    `SELECT storage_key, file_name, mime_type, record_id, variants FROM ipy_attachment WHERE id = $1`,
+  const file = await db.queryOne<{
+    storage_key: string; file_name: string; mime_type: string; record_id: string | null;
+    variants: Record<string, string> | null; uploaded_by: string | null; shoot_session_id: string | null;
+  }>(
+    `SELECT storage_key, file_name, mime_type, record_id, variants, uploaded_by, shoot_session_id
+       FROM ipy_attachment WHERE id = $1`,
     [req.params.id],
   );
   if (!file) throw new NotFoundError('File not found');
@@ -330,6 +334,15 @@ miscRouter.get('/files/:id', asyncHandler(async (req, res) => {
     if (record && !(await canAccessRecord(scope, record.module_name, file.record_id, 'view'))) {
       throw new ForbiddenError();
     }
+  } else if (file.shoot_session_id && file.uploaded_by !== scope.user.id && !scope.user.isAdmin) {
+    // A site photo that has not been filed against a property yet has no record
+    // to inherit permissions from, so the check above skips it entirely. That
+    // was a narrow window while it lasted; with photos now grouped and left
+    // nameless until the evening, a whole day of somebody's site visits sits in
+    // this state, and "no record" must not mean "no rules". Scoped to shoot
+    // media on purpose — avatars and other recordless uploads are deliberately
+    // world-readable to anyone signed in.
+    throw new ForbiddenError();
   }
 
   // ?size=thumb|medium|large serves a generated derivative when one exists,

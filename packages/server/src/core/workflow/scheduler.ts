@@ -13,6 +13,7 @@ import { db, transaction } from '../../db/pool.js';
 import { config } from '../../config.js';
 import { logger } from '../../utils/logger.js';
 import { closeStaleSessions } from '../capture/sessions.js';
+import { groupUnfiledPhotos } from '../capture/grouping.js';
 import { processPendingVoiceNotes } from '../capture/voice.js';
 import { loadRecordValues, runWorkflowsFor } from './engine.js';
 import { runTask, type TaskContext } from './tasks.js';
@@ -396,6 +397,10 @@ async function housekeeping(): Promise<void> {
     // The day's last site visit has no successor to close it, so without this
     // it stays open and keeps claiming photos taken the following morning.
     closeStaleSessions(),
+    // Gather photos nobody opened a visit for into the shoots they came from,
+    // so a forgotten tap at the gate costs one tap that evening instead of the
+    // whole day's filing.
+    groupUnfiledPhotos(),
     // Transcribe what was said at the gate. A no-op without an STT key.
     processPendingVoiceNotes(),
   ]);

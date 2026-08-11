@@ -27,7 +27,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import type { FieldMeta, ModuleMeta } from '@ipropy/shared';
-import { Camera, Check, ChevronDown, ChevronRight, Clock, CloudOff, MapPin, Mic, RefreshCw, Trash2, Wifi } from 'lucide-react';
+import { Camera, Check, ChevronDown, ChevronRight, Clock, CloudOff, Images, MapPin, Mic, RefreshCw, Trash2, Wifi } from 'lucide-react';
 import { api, type CaptureSessionRow } from '../lib/api';
 import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
@@ -252,6 +252,17 @@ export default function CapturePage(): JSX.Element {
     (s) => s.status === 'ready' && (s.transcript || s.voiceStatus !== 'none'),
   ).length;
 
+  // Shoots the clock grouped on its own that still have no property. Counted
+  // here so somebody who never taps Start still has a reason to open this
+  // screen — otherwise the whole automatic path would be invisible to them.
+  const { data: unnamedShoots } = useQuery({
+    queryKey: ['capture', 'shoots', 'unnamed'],
+    queryFn: () => api.unnamedShoots(50),
+    staleTime: 30_000,
+    retry: false,
+  });
+  const unnamed = unnamedShoots?.length ?? 0;
+
   const primary = fields.slice(0, PRIMARY_FIELD_COUNT);
   const secondary = fields.slice(PRIMARY_FIELD_COUNT);
 
@@ -388,6 +399,23 @@ export default function CapturePage(): JSX.Element {
           <Check className="h-4 w-4 shrink-0" />
           <span className="flex-1">
             {toReview} visit{toReview === 1 ? '' : 's'} to confirm
+          </span>
+          <ChevronRight className="h-4 w-4" />
+        </Link>
+      ) : null}
+
+      {/* Photos shot without anyone tapping Start. Deliberately prominent and
+          phrased as a normal outcome rather than an error — forgetting the tap
+          is the expected case this exists to absorb, and a screen that scolded
+          somebody for it would just teach them to dread the app. */}
+      {unnamed > 0 ? (
+        <Link
+          to="/capture/shoots"
+          className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
+        >
+          <Images className="h-4 w-4 shrink-0" />
+          <span className="flex-1">
+            {unnamed} {unnamed === 1 ? 'shoot needs' : 'shoots need'} a property
           </span>
           <ChevronRight className="h-4 w-4" />
         </Link>

@@ -177,6 +177,26 @@ export interface CaptureSessionRow extends CaptureSession {
   recordLabel: string | null;
 }
 
+/**
+ * A shoot with no property on it yet — see server/src/core/capture/grouping.ts.
+ *
+ * Either a run of photos the clock grouped together with nobody having tapped
+ * anything, or a visit somebody opened and never named. The screen treats them
+ * identically because the job is identical: point it at a property.
+ */
+export interface UnnamedShoot {
+  id: string;
+  origin: 'manual' | 'auto';
+  startedAt: string;
+  endedAt: string | null;
+  mediaCount: number;
+  /** A handful of attachment ids, enough to recognise the place at a glance. */
+  previewIds: string[];
+  transcript: string | null;
+  lat: number | null;
+  lng: number | null;
+}
+
 /** One parsed detail, as the review screen needs to weigh it. */
 export interface CaptureSuggestion {
   field: string;
@@ -648,6 +668,17 @@ export const api = {
   assignCaptureRecord: (id: string, recordId: string) =>
     patch<CaptureSession>(`/api/capture/sessions/${id}`, { recordId }),
   captureSession: (id: string) => get<CaptureSessionDetail>(`/api/capture/sessions/${id}`),
+  /** Everything shot that still has no property on it. */
+  unnamedShoots: (limit = 50) => get<UnnamedShoot[]>(`/api/capture/shoots/unnamed${qs({ limit })}`),
+  /**
+   * Name one shoot — either an existing property or the values to create one.
+   * Creating is the common case: a floor photographed this morning usually is
+   * not in the CRM yet.
+   */
+  nameShoot: (id: string, body: { recordId: string } | { property: { module: string; values: Record<string, unknown> } }) =>
+    post<{ session: CaptureSession; recordId: string; photosAttached: number }>(
+      `/api/capture/shoots/${id}/name`, body,
+    ),
   /** Write the accepted details onto the property and mark the visit done. */
   reviewCaptureSession: (id: string, values: Record<string, unknown>) =>
     post<{ session: CaptureSession; record: unknown }>(`/api/capture/sessions/${id}/review`, { values }),

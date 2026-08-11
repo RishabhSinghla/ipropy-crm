@@ -33,6 +33,7 @@ import {
   assignSessionRecord, currentSession, getSession, listSessions, openSession,
 } from '../../core/capture/sessions.js';
 import { matchOrphansForSession } from '../../core/capture/matching.js';
+import { attachShootMedia, listUnnamedShoots, nameShoot } from '../../core/capture/grouping.js';
 
 export const captureRouter = Router();
 captureRouter.use(requireAuth);
@@ -378,8 +379,94 @@ captureRouter.patch('/sessions/:id', asyncHandler(async (req, res) => {
   }
 
   const updated = await assignSessionRecord(req.params.id, recordId);
-  // Photos already filed against this visit have no property yet if the visit
-  // had none when they arrived; naming it now is what gives them one.
+  // Two different sets of photos, and both need doing. Ones already inside this
+  // visit have no property if it had none when they arrived — `attachShootMedia`
+  // is what finally gives them one, and its absence used to leave them stranded
+  // in a visit that read as correctly named. Ones outside it are the late-sync
+  // case `matchOrphansForSession` exists for.
+  const attached = await attachShootMedia(req.params.id, recordId).catch(() => 0);
   const claimed = await matchOrphansForSession(req.params.id).catch(() => 0);
-  res.json({ ...updated, claimedMedia: claimed });
+  res.json({ ...updated, claimedMedia: attached + claimed });
+}));
+
+/**
+ * Everything shot that still has no property on it.
+ *
+ * The screen that replaces having to remember. Inferred groups and visits
+ * somebody opened but never named appear together, because they are the same
+ * job — a list of things to point at a property — and splitting them across two
+ * screens would only make somebody learn the difference.
+ */
+captureRouter.get('/shoots/unnamed', asyncHandler(async (req, res) => {
+  res.json(await listUnnamedShoots(getUser(req).id, Number(req.query.limit) || 50));
+}));
+
+const nameSchema = z.object({
+  /** Point at an existing property… */
+  recordId: z.string().uuid().optional(),
+  /** …or hand over the values to create one, exactly as the gate tap does. */
+  property: z.object({
+    module: z.string().min(1).default('properties'),
+    values: z.record(z.unknown()),
+  }).optional(),
+});
+
+/**
+ * Name one shoot — the evening's entire interaction.
+ *
+ * Takes the same two shapes as the gate tap: an existing property, or the
+ * values to make one. Creating from here is the common case rather than the
+ * exotic one — a floor photographed this morning usually is not in the CRM yet,
+ * and making somebody leave, create it, and come back would put the friction
+ * straight back where it was removed from.
+ */
+captureRouter.post('/shoots/:id/name', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const scope = getScope(req);
+  const input = nameSchema.parse(req.body);
+
+  if (Boolean(input.recordId) === Boolean(input.property)) {
+    throw new BadRequestError('Send either recordId or property, not both');
+  }
+
+  const session = await getSession(req.params.id);
+  if (!session || session.userId !== user.id) throw new NotFoundError('Shoot not found');
+  if (session.recordId) throw new BadRequestError('This shoot already has a property');
+
+  if (input.recordId) {
+    const owner = await db.queryOne<{ module_name: string }>(
+      `SELECT module_name FROM ipy_record WHERE id = $1 AND is_deleted = false`, [input.recordId],
+    );
+    if (!owner) throw new NotFoundError('Property not found');
+    if (!(await canAccessRecord(scope, owner.module_name, input.recordId, 'edit'))) {
+      throw new ForbiddenError('You cannot file photos against this property');
+    }
+  }
+
+  // Property creation and naming share a transaction for the same reason the
+  // gate tap does: a property with no photos, or photos pointed at a property
+  // that failed to save, are both worse than a failure the screen can retry.
+  const result = await transaction(async (tx) => {
+    let recordId = input.recordId ?? null;
+    if (input.property) {
+      const created = await recordService.createRecord(
+        scope, input.property.module, input.property.values, { conn: tx },
+      );
+      recordId = created.id;
+    }
+    return { recordId: recordId!, ...await nameShoot(req.params.id, user.id, recordId!, tx) };
+  });
+
+  if (!result.ok) throw new BadRequestError('This shoot already has a property');
+
+  // Outside the transaction, on its own connection: photos shot in this window
+  // that landed in a neighbouring guessed group now have a named visit
+  // explaining them, and it outranks the guess.
+  const claimed = await matchOrphansForSession(req.params.id).catch(() => 0);
+
+  res.status(200).json({
+    session: await getSession(req.params.id),
+    recordId: result.recordId,
+    photosAttached: result.photosAttached + claimed,
+  });
 }));
