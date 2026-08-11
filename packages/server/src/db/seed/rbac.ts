@@ -250,15 +250,22 @@ export async function seedProfiles(conn: Tx): Promise<Map<string, string>> {
   const ids = new Map<string, string>();
 
   for (const def of PROFILES) {
-    const row = await conn.queryOne<{ id: string }>(
+    // Create-only. Capabilities are access-control decisions an admin makes in
+    // Settings → Profiles; re-seeding them handed back permissions somebody had
+    // deliberately removed, and did it on every cold start rather than only on
+    // deploy. The per-module and per-field grants below stay DO NOTHING for the
+    // same reason — but they still insert, so a module added to the template
+    // gets its default grants instead of being invisible to existing profiles.
+    const existing = await conn.queryOne<{ id: string }>(
+      `SELECT id FROM ipy_profile WHERE name = $1`,
+      [def.name],
+    );
+    const profileId = existing?.id ?? (await conn.queryOne<{ id: string }>(
       `INSERT INTO ipy_profile (name, description, is_system, capabilities)
        VALUES ($1,$2,true,$3)
-       ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description,
-         capabilities = EXCLUDED.capabilities, updated_at = now()
        RETURNING id`,
       [def.name, def.description, JSON.stringify(def.capabilities)],
-    );
-    const profileId = row!.id;
+    ))!.id;
     ids.set(def.name, profileId);
 
     for (const [moduleName, p] of Object.entries(def.modules)) {
@@ -268,10 +275,7 @@ export async function seedProfiles(conn: Tx): Promise<Map<string, string>> {
         `INSERT INTO ipy_profile_module_perm
            (profile_id, module_id, can_view, can_create, can_edit, can_delete, can_export, can_import)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-         ON CONFLICT (profile_id, module_id) DO UPDATE SET
-           can_view = EXCLUDED.can_view, can_create = EXCLUDED.can_create,
-           can_edit = EXCLUDED.can_edit, can_delete = EXCLUDED.can_delete,
-           can_export = EXCLUDED.can_export, can_import = EXCLUDED.can_import`,
+         ON CONFLICT (profile_id, module_id) DO NOTHING`,
         [profileId, mod.id, ...p],
       );
     }
@@ -287,7 +291,7 @@ export async function seedProfiles(conn: Tx): Promise<Map<string, string>> {
         await conn.query(
           `INSERT INTO ipy_profile_field_perm (profile_id, field_id, permission)
            VALUES ($1,$2,$3)
-           ON CONFLICT (profile_id, field_id) DO UPDATE SET permission = EXCLUDED.permission`,
+           ON CONFLICT (profile_id, field_id) DO NOTHING`,
           [profileId, fld.id, permission],
         );
       }
@@ -321,8 +325,10 @@ export async function seedSharing(conn: Tx): Promise<void> {
     const mod = await conn.queryOne<{ id: string }>(`SELECT id FROM ipy_module WHERE name = $1`, [moduleName]);
     if (!mod) continue;
     await conn.query(
+      // Create-only: the org-wide default (private/read/read-write) is an admin
+      // decision in Settings → Sharing, not something a redeploy should revert.
       `INSERT INTO ipy_module_sharing (module_id, access) VALUES ($1,$2)
-       ON CONFLICT (module_id) DO UPDATE SET access = EXCLUDED.access`,
+       ON CONFLICT (module_id) DO NOTHING`,
       [mod.id, access],
     );
   }
@@ -426,9 +432,9 @@ export async function seedGroups(conn: Tx, users: SeededUser[]): Promise<void> {
   ];
 
   for (const g of groups) {
-    const row = await conn.queryOne<{ id: string }>(
-      `INSERT INTO ipy_group (name, description) VALUES ($1,$2)
-       ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description RETURNING id`,
+    const found = await conn.queryOne<{ id: string }>(`SELECT id FROM ipy_group WHERE name = $1`, [g.name]);
+    const row = found ?? await conn.queryOne<{ id: string }>(
+      `INSERT INTO ipy_group (name, description) VALUES ($1,$2) RETURNING id`,
       [g.name, g.description],
     );
     if (!row) continue;

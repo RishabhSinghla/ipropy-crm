@@ -5,11 +5,14 @@
 #
 #   migrate  forward-only, each file recorded in ipy_migration — already-applied
 #            files are skipped, so this is a no-op once the DB is current.
-#   seed     idempotent by design (see CLAUDE.md): refreshes is_system views/
-#            layouts/workflows and inserts demo data ONLY when the DB is empty.
-#            Running it here is what makes a brand-new database self-provision,
-#            and what keeps system metadata in step after a deploy that changed
-#            db/seed/modules.ts.
+#   seed     create-only for admin-editable content (see db/seed/index.ts), so
+#            running it here is safe even though a free-tier instance cold-starts
+#            several times a day. It is what makes a brand-new database
+#            self-provision, and what adds newly-defined modules/fields after a
+#            deploy that changed db/seed/templates/. It will NOT push edits to a
+#            dashboard, workflow or template that already exists — those belong
+#            to the admin. Before migration 033 it did, and every cold start
+#            silently reset them.
 #
 # Failing fast matters: a container that starts with a half-migrated schema
 # would serve errors on nearly every request, which is harder to diagnose than

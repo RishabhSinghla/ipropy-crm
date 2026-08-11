@@ -592,6 +592,10 @@ metadataRouter.patch('/fields/:id', asyncHandler(async (req, res) => {
     sets.push(`${col} = $${params.length}`);
   }
   if (sets.length) {
+    // Claim the field as admin-owned so the seed stops rewriting its label,
+    // validation and visibility rules on the next deploy or cold start — the
+    // same contract ipy_layout.is_customised has (see seed/helpers.ts).
+    sets.push('is_customised = true');
     await db.query(`UPDATE ipy_field SET ${sets.join(', ')}, updated_at = now() WHERE id = $1`, params);
   }
   invalidateAll();

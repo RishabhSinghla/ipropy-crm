@@ -172,7 +172,15 @@ export async function seedWorkflows(conn: Tx): Promise<void> {
       [mod.id, wf.name],
     );
 
-    let workflowId: string;
+    // Create-only, and the most important one on this list. The old code reset
+    // `is_active` from the definition and deleted every task row before putting
+    // the seeded ones back — so a workflow an admin had switched off came back
+    // on at the next cold start and started sending WhatsApp messages to real
+    // customers again. Editing or disabling one of these is explicitly
+    // supported (see the note at the top of this file), so the seed must leave
+    // an existing row alone entirely.
+    if (existing) continue;
+
     const params = [
       mod.id, wf.name, wf.description, wf.trigger,
       JSON.stringify(wf.watchFields ?? []),
@@ -182,29 +190,15 @@ export async function seedWorkflows(conn: Tx): Promise<void> {
       wf.active !== false, i,
     ];
 
-    if (existing) {
-      workflowId = existing.id;
-      // module_id/name (params[0],[1]) aren't updated, so bind only what's used —
-      // otherwise Postgres can't infer the types of the two unreferenced params.
-      await conn.query(
-        `UPDATE ipy_workflow SET description = $1, trigger = $2, watch_fields = $3,
-           conditions = $4, execution_mode = $5, schedule = $6, is_active = $7,
-           sequence = $8, updated_at = now()
-         WHERE id = $9`,
-        [...params.slice(2), workflowId],
-      );
-      await conn.query(`DELETE FROM ipy_workflow_task WHERE workflow_id = $1`, [workflowId]);
-    } else {
-      const row = await conn.queryOne<{ id: string }>(
-        `INSERT INTO ipy_workflow
-          (module_id, name, description, trigger, watch_fields, conditions,
-           execution_mode, schedule, is_active, sequence, is_system)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true)
-         RETURNING id`,
-        params,
-      );
-      workflowId = row!.id;
-    }
+    const row = await conn.queryOne<{ id: string }>(
+      `INSERT INTO ipy_workflow
+        (module_id, name, description, trigger, watch_fields, conditions,
+         execution_mode, schedule, is_active, sequence, is_system)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true)
+       RETURNING id`,
+      params,
+    );
+    const workflowId = row!.id;
 
     for (const [j, task] of wf.tasks.entries()) {
       await conn.query(
@@ -257,18 +251,15 @@ export async function seedAssignmentRules(conn: Tx): Promise<void> {
       `SELECT id FROM ipy_assignment_rule WHERE module_id = $1 AND name = $2`,
       [leads.id, r.name],
     );
-    if (existing) {
-      await conn.query(
-        `UPDATE ipy_assignment_rule SET conditions = $2, strategy = $3, target_group_id = $4, sequence = $5 WHERE id = $1`,
-        [existing.id, JSON.stringify(r.conditions), r.strategy, r.groupId, r.sequence],
-      );
-    } else {
-      await conn.query(
-        `INSERT INTO ipy_assignment_rule (module_id, name, conditions, strategy, target_group_id, sequence)
-         VALUES ($1,$2,$3,$4,$5,$6)`,
-        [leads.id, r.name, JSON.stringify(r.conditions), r.strategy, r.groupId, r.sequence],
-      );
-    }
+    // Create-only, like the SLA policies below. Who a lead routes to is a
+    // business decision an admin makes in the UI; re-seeding it put the
+    // out-of-the-box routing back and leads started landing on the wrong desk.
+    if (existing) continue;
+    await conn.query(
+      `INSERT INTO ipy_assignment_rule (module_id, name, conditions, strategy, target_group_id, sequence)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [leads.id, r.name, JSON.stringify(r.conditions), r.strategy, r.groupId, r.sequence],
+    );
   }
 }
 
@@ -382,14 +373,14 @@ const WHATSAPP_TEMPLATES: TemplateSeed[] = [
 
 export async function seedTemplates(conn: Tx): Promise<void> {
   for (const t of WHATSAPP_TEMPLATES) {
+    // Create-only: the wording is starter copy the business is expected to
+    // rewrite in its own voice, and a template already submitted to Meta must
+    // not have its body silently changed underneath the approved version.
     await conn.query(
       `INSERT INTO ipy_whatsapp_template
         (name, language, category, status, header_text, header_format, body_text, footer_text, buttons, variable_map)
        VALUES ($1,'en',$2,'LOCAL',$3,$4,$5,$6,$7,$8)
-       ON CONFLICT (name, language) DO UPDATE SET
-         category = EXCLUDED.category, header_text = EXCLUDED.header_text,
-         body_text = EXCLUDED.body_text, footer_text = EXCLUDED.footer_text,
-         buttons = EXCLUDED.buttons, variable_map = EXCLUDED.variable_map`,
+       ON CONFLICT (name, language) DO NOTHING`,
       [
         t.name, t.category, t.header ?? null, t.header ? 'TEXT' : null,
         t.body, t.footer ?? null,
@@ -438,7 +429,7 @@ Reference: {{record.reference_number}}</p>
     await conn.query(
       `INSERT INTO ipy_email_template (name, subject, body_html, category)
        VALUES ($1,$2,$3,'system')
-       ON CONFLICT (name) DO UPDATE SET subject = EXCLUDED.subject, body_html = EXCLUDED.body_html`,
+       ON CONFLICT (name) DO NOTHING`,
       [t.name, t.subject, t.body],
     );
   }
@@ -531,9 +522,7 @@ export async function seedWebforms(conn: Tx): Promise<void> {
   await conn.query(
     `INSERT INTO ipy_webform (name, public_key, module_id, fields, defaults, success_message, captcha_enabled, allowed_origins)
      VALUES ($1, $2, $3, $4, $5, $6, false, '[]'::jsonb)
-     ON CONFLICT (public_key) DO UPDATE SET
-       module_id = EXCLUDED.module_id, fields = EXCLUDED.fields, defaults = EXCLUDED.defaults,
-       success_message = EXCLUDED.success_message`,
+     ON CONFLICT (public_key) DO NOTHING`,
     [
       'Website Enquiry',
       'website-enquiry',

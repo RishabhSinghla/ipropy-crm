@@ -129,8 +129,15 @@ Login: `admin@ipropy.com` / `Admin@123`. Other demo users in `PROJECT_HANDOVER.m
 
 ## Conventions
 
-* **Seeding is idempotent.** To change the data model, edit `db/seed/templates/realEstate.ts` and re-run
-  `npm run db:seed`. System views/layouts/workflows (`is_system`) are refreshed; user content is not.
+* **Seeding is idempotent and create-only.** To change the data model, edit
+  `db/seed/templates/realEstate.ts` and re-run `npm run db:seed`. Anything an admin can edit in the
+  UI — dashboards, workflows, views, assignment rules, templates, picklist values, profiles, sharing
+  — is written only when absent and never rewritten, because `docker-entrypoint.sh` re-seeds on every
+  cold start and used to reset all of it several times a day (migration `033`). Consequence to know:
+  **editing a seed definition does not reach a database that already has that row.** To change one,
+  change it in the UI, or delete the row and re-seed. Module/field/relation structure is the
+  exception and still upserts — `ipy_field.is_customised` is what protects an edited field's label,
+  validation and visibility from that upsert.
 * **Migrations are forward-only**, numbered `00N_name.sql`, each applied in its own transaction and
   recorded in `ipy_migration`. Write them defensively (`IF EXISTS`) so they no-op on a fresh DB.
 * **Colour goes through tokens, not raw palette steps.** Secondary copy is `text-muted`; up/down

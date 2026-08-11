@@ -95,12 +95,14 @@ export async function upsertPicklist(conn: Tx, def: PicklistDef): Promise<string
   let seq = 0;
   for (const v of def.values) {
     const item = typeof v === 'string' ? { value: v } : v;
+    // Create-only. Label, colour and order are admin controls in Settings →
+    // Picklists, so overwriting them here undid every rename and re-colour on
+    // the next seed run — and the seed runs on every cold start, not just on
+    // deploy. New values still appear; existing ones are the admin's.
     await conn.query(
       `INSERT INTO ipy_picklist_value (picklist_id, value, label, color, sequence, is_default, meta)
        VALUES ($1,$2,$3,$4,$5,$6,$7)
-       ON CONFLICT (picklist_id, value) DO UPDATE
-         SET label = EXCLUDED.label, color = EXCLUDED.color,
-             sequence = EXCLUDED.sequence, meta = EXCLUDED.meta`,
+       ON CONFLICT (picklist_id, value) DO NOTHING`,
       [
         picklistId,
         item.value,
@@ -221,20 +223,35 @@ export async function upsertModule(conn: Tx, def: ModuleDef): Promise<string> {
       const storage = f.storage ?? (f.column ? 'column' : 'json');
       if (storage === 'column') await ensureColumn(conn, def.table, f.column ?? f.name, f);
       await conn.query(
-        `INSERT INTO ipy_field
+        `INSERT INTO ipy_field AS f
           (module_id, block_id, name, label, uitype, storage, column_name, sequence,
            is_mandatory, is_readonly, is_unique, display_type, default_value, max_length,
            help_text, config, quick_create, mass_editable, searchable)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
          ON CONFLICT (module_id, name) DO UPDATE SET
-           block_id = EXCLUDED.block_id, label = EXCLUDED.label, uitype = EXCLUDED.uitype,
+           -- Plumbing, always refreshed: neither is exposed by the field editor
+           -- (see the map in api/routes/metadata.ts), and the query builder
+           -- breaks if metadata disagrees with where the value actually lives.
            storage = EXCLUDED.storage, column_name = EXCLUDED.column_name,
-           sequence = EXCLUDED.sequence, is_mandatory = EXCLUDED.is_mandatory,
-           is_readonly = EXCLUDED.is_readonly, is_unique = EXCLUDED.is_unique,
-           display_type = EXCLUDED.display_type, default_value = EXCLUDED.default_value,
-           max_length = EXCLUDED.max_length, help_text = EXCLUDED.help_text,
-           config = EXCLUDED.config, quick_create = EXCLUDED.quick_create,
-           mass_editable = EXCLUDED.mass_editable, searchable = EXCLUDED.searchable,
+           -- Everything below is an admin control. Once the field editor has
+           -- touched this field, the seed must not have an opinion about it —
+           -- otherwise a validation rule or a relabelled field is undone on the
+           -- next cold start. Same contract as ipy_layout.is_customised.
+           block_id = CASE WHEN f.is_customised THEN f.block_id ELSE EXCLUDED.block_id END,
+           label = CASE WHEN f.is_customised THEN f.label ELSE EXCLUDED.label END,
+           uitype = CASE WHEN f.is_customised THEN f.uitype ELSE EXCLUDED.uitype END,
+           sequence = CASE WHEN f.is_customised THEN f.sequence ELSE EXCLUDED.sequence END,
+           is_mandatory = CASE WHEN f.is_customised THEN f.is_mandatory ELSE EXCLUDED.is_mandatory END,
+           is_readonly = CASE WHEN f.is_customised THEN f.is_readonly ELSE EXCLUDED.is_readonly END,
+           is_unique = CASE WHEN f.is_customised THEN f.is_unique ELSE EXCLUDED.is_unique END,
+           display_type = CASE WHEN f.is_customised THEN f.display_type ELSE EXCLUDED.display_type END,
+           default_value = CASE WHEN f.is_customised THEN f.default_value ELSE EXCLUDED.default_value END,
+           max_length = CASE WHEN f.is_customised THEN f.max_length ELSE EXCLUDED.max_length END,
+           help_text = CASE WHEN f.is_customised THEN f.help_text ELSE EXCLUDED.help_text END,
+           config = CASE WHEN f.is_customised THEN f.config ELSE EXCLUDED.config END,
+           quick_create = CASE WHEN f.is_customised THEN f.quick_create ELSE EXCLUDED.quick_create END,
+           mass_editable = CASE WHEN f.is_customised THEN f.mass_editable ELSE EXCLUDED.mass_editable END,
+           searchable = CASE WHEN f.is_customised THEN f.searchable ELSE EXCLUDED.searchable END,
            updated_at = now()`,
         [
           moduleId, blockId, f.name, f.label, f.uitype, storage,
@@ -305,15 +322,11 @@ export async function upsertViews(conn: Tx, moduleName: string, views: ViewDef[]
       v.groupBy ?? null, v.showMetrics ?? false, seq++,
     ];
     if (existing) {
-      // Only the columns being updated are bound here — reusing the insert
-      // params would leave $1/$2 unreferenced, which Postgres can't type.
-      await conn.query(
-        `UPDATE ipy_view SET columns = $1, filter = $2, sort_by = $3, sort_dir = $4,
-           is_default = $5, display_mode = $6, group_by = $7, show_metrics = $8,
-           sequence = $9, updated_at = now()
-         WHERE id = $10`,
-        [...params.slice(2), existing.id],
-      );
+      // Create-only. A system view's columns, filter, sort and display mode are
+      // all editable from the list view, so re-running the seed used to throw
+      // away whatever the admin had arranged. Views added to the template still
+      // appear; ones already in the database belong to the admin.
+      continue;
     } else {
       await conn.query(
         `INSERT INTO ipy_view
@@ -386,11 +399,15 @@ export async function seedDefaultLayouts(conn: Tx, def: ModuleDef): Promise<void
     const quickConfig = {
       blocks: [{ key: 'quick', label: `New ${def.singular}`, columns: 2 as const, fields: quickFields }],
     };
-    const existing = await conn.queryOne<{ id: string }>(
-      `SELECT id FROM ipy_layout WHERE module_id = $1 AND type = 'quick_create' AND is_default = true`,
+    const existing = await conn.queryOne<{ id: string; is_customised: boolean }>(
+      `SELECT id, is_customised FROM ipy_layout WHERE module_id = $1 AND type = 'quick_create' AND is_default = true`,
       [mod.id],
     );
-    if (existing) {
+    if (existing?.is_customised) {
+      // Same rule the detail and edit layouts follow above. This branch was
+      // missing the check, so an admin's quick-create arrangement was the one
+      // layout the seed still overwrote.
+    } else if (existing) {
       await conn.query(`UPDATE ipy_layout SET config = $2 WHERE id = $1`, [existing.id, JSON.stringify(quickConfig)]);
     } else {
       await conn.query(

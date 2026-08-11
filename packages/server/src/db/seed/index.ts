@@ -1,9 +1,25 @@
 /**
  * Seed entrypoint.
  *
- * Idempotent: every step upserts, so running it again after a schema change
- * refreshes metadata without wiping the tenant's data. Demo records are only
- * created when the database has none, so a real deployment never gets polluted.
+ * Idempotent, and — since migration 033 — **create-only** for anything an admin
+ * can edit in the UI: dashboards, workflows, views, assignment rules, message
+ * templates, picklist values, profiles and sharing defaults are written when
+ * absent and never rewritten. Adding to a template still reaches an existing
+ * database; changing something already there does not, because the row now
+ * belongs to whoever has been editing it.
+ *
+ * That is not a nicety. docker-entrypoint.sh runs this on every deploy *and*
+ * every cold start, so anything overwritten here was being reset several times
+ * a day on a free-tier instance — dashboards lost their widgets and disabled
+ * workflows switched themselves back on.
+ *
+ * Module, field and relation *structure* is the deliberate exception: the code
+ * depends on it existing, so it keeps upserting. `ipy_field.is_customised`
+ * (set by the field editor) is what stops that upsert from clobbering an
+ * admin's labels, validation and visibility rules along the way.
+ *
+ * Demo records are only created when the database has none, so a real
+ * deployment never gets polluted.
  */
 import { fileURLToPath } from 'node:url';
 import { closePool, transaction, query } from '../pool.js';

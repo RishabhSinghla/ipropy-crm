@@ -232,25 +232,22 @@ export async function seedDashboards(conn: Tx): Promise<void> {
       `SELECT id FROM ipy_dashboard WHERE name = $1 AND is_system = true`,
       [def.name],
     );
-    let dashboardId: string;
-    if (existing) {
-      dashboardId = existing.id;
-      await conn.query(
-        `UPDATE ipy_dashboard SET description = $2, is_default = $3, sequence = $4, updated_at = now() WHERE id = $1`,
-        [dashboardId, def.description, def.isDefault ?? false, i],
-      );
-      await conn.query(`DELETE FROM ipy_dashboard_widget WHERE dashboard_id = $1`, [dashboardId]);
-    } else {
-      const moduleId = def.module
-        ? (await conn.queryOne<{ id: string }>(`SELECT id FROM ipy_module WHERE name = $1`, [def.module]))?.id ?? null
-        : null;
-      const row = await conn.queryOne<{ id: string }>(
-        `INSERT INTO ipy_dashboard (name, description, is_shared, is_default, is_system, module_id, sequence)
-         VALUES ($1,$2,true,$3,true,$4,$5) RETURNING id`,
-        [def.name, def.description, def.isDefault ?? false, moduleId, i],
-      );
-      dashboardId = row!.id;
-    }
+    // Create-only. This used to DELETE every widget on the dashboard and put
+    // the seeded set back, which meant each widget an admin added, moved or
+    // resized was destroyed — not merely on deploy, but on every cold start,
+    // because docker-entrypoint.sh re-seeds when the instance wakes up. A
+    // dashboard that already exists belongs to whoever has been editing it.
+    if (existing) continue;
+
+    const moduleId = def.module
+      ? (await conn.queryOne<{ id: string }>(`SELECT id FROM ipy_module WHERE name = $1`, [def.module]))?.id ?? null
+      : null;
+    const row = await conn.queryOne<{ id: string }>(
+      `INSERT INTO ipy_dashboard (name, description, is_shared, is_default, is_system, module_id, sequence)
+       VALUES ($1,$2,true,$3,true,$4,$5) RETURNING id`,
+      [def.name, def.description, def.isDefault ?? false, moduleId, i],
+    );
+    const dashboardId = row!.id;
 
     for (const [j, w] of def.widgets.entries()) {
       await conn.query(
