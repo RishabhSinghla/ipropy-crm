@@ -152,6 +152,28 @@ function qs(params: Record<string, unknown>): string {
 
 // ---------------------------------------------------------------------------
 
+/** A site visit — see server/src/core/capture/sessions.ts. */
+export interface CaptureSession {
+  id: string;
+  recordId: string | null;
+  userId: string;
+  startedAt: string;
+  endedAt: string | null;
+  lat: number | null;
+  lng: number | null;
+  accuracyM: number | null;
+  status: 'capturing' | 'ready' | 'reviewed';
+  transcript: string | null;
+  clientRef: string;
+  deviceLabel: string | null;
+  notes: string | null;
+}
+
+export interface CaptureSessionRow extends CaptureSession {
+  mediaCount: number;
+  recordLabel: string | null;
+}
+
 export interface ModuleSummary {
   id: string; name: string; label: string; singularLabel: string;
   icon: string; color: string; sequence: number; isEntity: boolean; isCustom: boolean;
@@ -586,6 +608,19 @@ export const api = {
    */
   archiveUrl: (recordId: string, set: 'all' | 'originals' | 'branded' | 'web' = 'branded') =>
     authedFileUrl(`/api/records/${recordId}/archive`, { set }),
+
+  // --- site capture --------------------------------------------------------
+  /**
+   * Start a visit. Callers go through lib/captureQueue rather than calling this
+   * directly — the screen must not wait on a network that is often not there.
+   */
+  startCapture: (body: Record<string, unknown>) =>
+    post<{ session: CaptureSession; replayed: boolean }>('/api/capture/sessions', body),
+  currentCapture: () => get<{ session: CaptureSession | null }>('/api/capture/sessions/current'),
+  captureSessions: (limit = 25) =>
+    get<CaptureSessionRow[]>(`/api/capture/sessions${qs({ limit })}`),
+  assignCaptureRecord: (id: string, recordId: string) =>
+    patch<CaptureSession>(`/api/capture/sessions/${id}`, { recordId }),
   tags: () => get<{ id: string; name: string; color: string; usage_count: number }[]>('/api/tags'),
   importPreview: (module: string, file: File) => {
     const form = new FormData();
