@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import multer from 'multer';
 import { db } from '../../db/pool.js';
@@ -25,6 +26,36 @@ import {
 
 export const aiRouter = Router();
 aiRouter.use(requireAuth);
+
+/**
+ * A budget for the routes that actually call a model.
+ *
+ * Everything here costs a provider request, and the provider is on a free tier
+ * with a daily cap — so the scarce resource is not this server's CPU, it is the
+ * quota the whole organisation shares for the rest of the day. The general
+ * 600/min API limit is no protection: a loop left running in a browser tab, or
+ * one impatient person hammering Ask iPropy, exhausts a free tier in about a
+ * minute and every AI feature silently drops to its fallback rules for everyone
+ * else.
+ *
+ * Keyed per user rather than per IP, because the office shares one address and
+ * one person's runaway tab must not spend the team's day.
+ *
+ * Deliberately applied per route rather than to the whole router: `/status` and
+ * the thread and memory endpoints are ordinary database reads that the UI polls,
+ * and rationing those would only make the assistant feel broken.
+ */
+const modelLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `ai:${(req as { user?: { id?: string } }).user?.id ?? req.ip ?? 'unknown'}`,
+  message: {
+    error: 'rate_limited',
+    message: 'Too many AI requests in a row. Give it a minute — this protects the shared daily quota.',
+  },
+});
 
 const assistantAudioUpload = multer({
   storage: multer.memoryStorage(),
@@ -56,7 +87,7 @@ aiRouter.get('/status', asyncHandler(async (_req, res) => {
 // Scoring & analysis
 // ---------------------------------------------------------------------------
 
-aiRouter.post('/score-lead/:id', asyncHandler(async (req, res) => {
+aiRouter.post('/score-lead/:id', modelLimiter, asyncHandler(async (req, res) => {
   const scope = getScope(req);
   if (!(await canAccessRecord(scope, 'leads', req.params.id, 'view'))) throw new NotFoundError();
   const result = await scoreLead(req.params.id);
@@ -68,7 +99,7 @@ aiRouter.post('/score-lead/:id', asyncHandler(async (req, res) => {
 // Property matching
 // ---------------------------------------------------------------------------
 
-aiRouter.get('/match/:module/:id', asyncHandler(async (req, res) => {
+aiRouter.get('/match/:module/:id', modelLimiter, asyncHandler(async (req, res) => {
   const scope = getScope(req);
   const { module, id } = req.params;
   if (!(await canAccessRecord(scope, module, id, 'view'))) throw new NotFoundError();
@@ -82,7 +113,7 @@ aiRouter.get('/match/:module/:id', asyncHandler(async (req, res) => {
 }));
 
 /** Ad-hoc matching from a requirement the rep types in. */
-aiRouter.post('/match', asyncHandler(async (req, res) => {
+aiRouter.post('/match', modelLimiter, asyncHandler(async (req, res) => {
   const input = z.object({
     budgetMin: z.number().nullable().optional(),
     budgetMax: z.number().nullable().optional(),
@@ -101,7 +132,7 @@ aiRouter.post('/match', asyncHandler(async (req, res) => {
 }));
 
 /** Reverse match: who should we pitch this unit to? */
-aiRouter.get('/buyers-for/:propertyId', asyncHandler(async (req, res) => {
+aiRouter.get('/buyers-for/:propertyId', modelLimiter, asyncHandler(async (req, res) => {
   const scope = getScope(req);
   if (!(await canAccessRecord(scope, 'properties', req.params.propertyId, 'view'))) throw new NotFoundError();
   res.json({ buyers: await matchBuyersForProperty(req.params.propertyId, Math.min(25, Number(req.query.limit) || 10)) });
@@ -111,7 +142,7 @@ aiRouter.get('/buyers-for/:propertyId', asyncHandler(async (req, res) => {
 // Drafting & summarising
 // ---------------------------------------------------------------------------
 
-aiRouter.post('/draft', asyncHandler(async (req, res) => {
+aiRouter.post('/draft', modelLimiter, asyncHandler(async (req, res) => {
   const user = getUser(req);
   const scope = getScope(req);
   const input = z.object({
@@ -136,7 +167,7 @@ aiRouter.post('/draft', asyncHandler(async (req, res) => {
   res.json(draft);
 }));
 
-aiRouter.post('/summarise/:module/:id', asyncHandler(async (req, res) => {
+aiRouter.post('/summarise/:module/:id', modelLimiter, asyncHandler(async (req, res) => {
   const scope = getScope(req);
   const { module, id } = req.params;
   if (!(await canAccessRecord(scope, module, id, 'view'))) throw new NotFoundError();
@@ -151,7 +182,7 @@ aiRouter.post('/summarise/:module/:id', asyncHandler(async (req, res) => {
 // ---------------------------------------------------------------------------
 
 /** Transcribe a call recording so analysis can run without a manual transcript. */
-aiRouter.post('/calls/:id/transcribe', asyncHandler(async (req, res) => {
+aiRouter.post('/calls/:id/transcribe', modelLimiter, asyncHandler(async (req, res) => {
   const call = await db.queryOne<{ id: string; recording_url: string | null; user_id: string | null }>(
     `SELECT id, recording_url, user_id FROM ipy_call WHERE id = $1`,
     [req.params.id],
@@ -183,7 +214,7 @@ aiRouter.post('/calls/:id/transcribe', asyncHandler(async (req, res) => {
   }
 }));
 
-aiRouter.post('/calls/:id/analyse', asyncHandler(async (req, res) => {
+aiRouter.post('/calls/:id/analyse', modelLimiter, asyncHandler(async (req, res) => {
   const { transcript } = z.object({ transcript: z.string().min(20).optional() }).parse(req.body ?? {});
 
   const call = await db.queryOne<{
@@ -218,7 +249,7 @@ aiRouter.post('/calls/:id/analyse', asyncHandler(async (req, res) => {
   res.json(result);
 }));
 
-aiRouter.get('/coaching/:userId', asyncHandler(async (req, res) => {
+aiRouter.get('/coaching/:userId', modelLimiter, asyncHandler(async (req, res) => {
   const user = getUser(req);
   // A rep can see their own report; managers can see their team's.
   if (req.params.userId !== user.id) await assertCapability(user, 'telephony.listen_recordings');
@@ -299,7 +330,7 @@ async function appendThreadMessages(
   );
 }
 
-aiRouter.post('/ask', asyncHandler(async (req, res) => {
+aiRouter.post('/ask', modelLimiter, asyncHandler(async (req, res) => {
   const scope = getScope(req);
   const { question, contextRecordId, contextModule, threadId } = z.object({
     question: z.string().min(2).max(2000),
@@ -371,7 +402,7 @@ aiRouter.post('/ask', asyncHandler(async (req, res) => {
 }));
 
 /** Browser-recorded voice → text for the assistant compose box. */
-aiRouter.post('/transcribe', assistantAudioUpload.single('audio'), asyncHandler(async (req, res) => {
+aiRouter.post('/transcribe', modelLimiter, assistantAudioUpload.single('audio'), asyncHandler(async (req, res) => {
   const file = (req as unknown as { file?: Express.Multer.File }).file;
   if (!file) throw new BadRequestError('Record a voice question first');
 
@@ -392,7 +423,7 @@ aiRouter.post('/transcribe', assistantAudioUpload.single('audio'), asyncHandler(
 }));
 
 /** NL → filter without running it, so the UI can preview and let the user edit. */
-aiRouter.post('/parse-query', asyncHandler(async (req, res) => {
+aiRouter.post('/parse-query', modelLimiter, asyncHandler(async (req, res) => {
   const scope = getScope(req);
   const { question, module } = z.object({
     question: z.string().min(2),
