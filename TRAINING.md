@@ -784,6 +784,106 @@ Five tabs:
 - **Security** — password, and setting up your passkey.
 - **Phones** — pair your Android phone for call sync. **This is where you get the pairing token.**
 
+## 6.12 Capture — photographing a property without typing anything
+
+This is the screen you use **standing at the gate**, not sitting at a desk. Everything about it is
+shaped by where it runs: outdoors, one-handed, in sunlight, on a connection that often is not there.
+
+**The problem it solves.** You know exactly which flat you are photographing at the moment you press
+the shutter. Then that fact is thrown away. Every step afterwards — sorting the camera roll,
+working out which forty photos were B-110 and which were B-112, filing them, sending them — is you
+reconstructing something you already knew that morning.
+
+**How you use it:**
+
+1. Open **Capture**, type or say the property, tap **Start**.
+2. Walk in and shoot with your **normal camera app**. Not through the CRM — your own camera.
+3. That's it. Photos taken between Start and the next visit are filed against that property
+   automatically.
+
+**It never waits for the network.** The tap writes to your phone's own storage and returns
+immediately; the queue uploads later when there is signal. A visit made in a basement with no bars is
+not a visit whose photos are lost.
+
+### Saying the details instead of typing them
+
+> *"B-110 Greenfield, second floor, four BHK, 325 gaj, asking three point two five crore, two
+> parking, lift, ready to move, park facing"*
+
+Every item in that sentence is already a field in the CRM. Typing it is nine dropdowns and four
+number pads while standing in the sun. Saying it is one breath. It is **optional** — the screen works
+fine without it.
+
+You are never asked to trust it blindly. What you said is turned into values, and you confirm them
+later (see 6.13).
+
+### If you forget to tap Start
+
+**Nothing is lost.** This is the important part.
+
+Photos that belong to no visit are grouped **by the clock alone**: a gap of about 40 minutes means
+you drove somewhere, so the run of photos before it was one place and the run after it was another.
+That gives you a group with no name — which is exactly the thing one tap in the evening fixes, while
+sitting down and looking at the pictures, instead of having to remember anything at a gate.
+
+Missing the tap now costs nothing. The group is still there tomorrow.
+
+### Why the clock and not GPS
+
+The phone records where you were, and that is useful for review. It **cannot** tell you which
+property you were at. Two builder floors next door to each other are ten to twenty metres apart —
+well inside the error of a phone's location fix. The clock is exact; the property comes from you.
+
+## 6.13 Shoots and the evening review
+
+Two screens for sitting down at the end of the day.
+
+**Shoots** lists the visits that still have no property attached. It shows **thumbnails first**,
+deliberately: nobody on earth can tell *"9:03–9:21, 12 photos"* from *"9:48–10:04, 14 photos"*, but
+everybody recognises their own pictures. One box both searches existing properties and creates a new
+one — because a floor you shot this morning usually is not in the CRM yet.
+
+If a model has been configured (Admin → Integrations), each group also carries a **description of
+what is actually in the photos**:
+
+```
+3 BHK builder floor — marble flooring, modular kitchen, covered parking
+12 photos   2:38 pm – 2:58 pm
+[false ceiling]
+```
+
+That turns naming a three-day-old shoot from a memory test into reading. Two limits worth knowing:
+the description is **never written onto the property record** — a model can see a modular kitchen, it
+cannot see that this is B-110 rather than B-112 — and with no model configured you simply get the
+thumbnails and times, which is how the system ships.
+
+**Capture review** is the other half of speaking at the gate: read a line, glance at the values it
+pulled out, tap **Confirm**. Ten properties in about two minutes.
+
+## 6.14 Sending one property to one person
+
+The complaint this exists for: *"then later I have to send it to some party and everything is so
+cluttered."*
+
+On any property, **Send to a buyer** makes a share link — one property, one long unguessable web
+address, no login required at the other end. The buyer opens it on their phone and sees the photos,
+large, first.
+
+**Why not just use the website?** The public site is a catalogue: it lists units that are marked
+Available and published. The flat you most want to send is usually the one you photographed this
+morning — still a draft. Waiting for it to be publishable before you can show it to a buyer is
+backwards, so a share link is its own separate thing.
+
+Three things to know:
+
+- **Label each link with who you sent it to.** That is what turns an anonymous view counter into
+  *"the one I sent Rajesh has been opened four times"* — which is a buying signal. The label is
+  **never shown to the buyer**; it is your own note to yourself.
+- **You can revoke a link** at any time. A revoked link, an expired one and a mistyped one all give
+  the visitor exactly the same "not found" page — on purpose, so nobody can probe for real ones.
+- **The photos come from the property's Files**, not the hand-curated gallery — which is empty on
+  anything that arrived through Capture, i.e. every property this feature is for.
+
 ---
 
 # PART 7 — The Admin panel, section by section
@@ -1155,10 +1255,23 @@ Four things make this trustworthy:
    error.
 4. **The public website automatically uses the right size** — medium in grids, large in the
    lightbox — and falls back to the original if a size isn't ready yet.
+5. **A picture too small to carry a watermark is left unbranded rather than failing.** The badge has
+   a minimum readable size; on an image smaller than that — a logo, an icon, a scanned signature —
+   it simply isn't applied. Every other version is still produced.
+
+This is also the pipeline **Capture** (6.12) feeds. Photos arriving from a site visit go through
+exactly the same two stages; the only difference is that the visit's time window decides which
+property they land on.
 
 > **Two known gaps:** no music track is bundled (deliberate — someone has to drop in a file with a
 > confirmed licence). And iPhone HEIC photos may or may not decode, depending on the image library
 > the server was built with; that's never been tested against a real HEIC file.
+
+> **A bug that lived here and is fixed:** the watermark badge has a 60px floor so "IPROPY" stays
+> readable. On an image *narrower than that*, the badge was wider than the thing it was being
+> stamped onto — the imaging library refuses that, the job threw, and the queue retried it forever
+> against an image exactly as small on the tenth attempt as on the first. One icon uploaded to a
+> record could occupy the media queue indefinitely. Nothing off a phone ever hit it.
 
 ---
 
@@ -1258,8 +1371,8 @@ This section exists so nobody is surprised. Nothing here is missing through lazi
 
 ## 13.1 Blocked on things code cannot supply
 
-| # | Item | The real blocker |
-|---|---|---|
+| Item | The real blocker |
+|---|---|
 | **WhatsApp sending** | Needs a Meta-approved business, a dedicated number, and usually a paid provider. **The code is complete and waiting.** There is no legal API that mirrors a personal WhatsApp inbox — the libraries claiming to do it get numbers permanently banned |
 | **Portal syndication** (*posting* listings to 99acres / MagicBricks / Housing) | No open API exists for posting. These are **commercial contracts, one per portal**. Note: receiving *inbound* leads from all four already works |
 | **Call recording on Android** | Android 10 closed the API. Nothing reopens it. The working routes are (a) cloud telephony recording server-side, already built, or (b) the companion app picking up your phone's own recorder's files. Per-state consent law applies either way |
@@ -1273,13 +1386,24 @@ This section exists so nobody is surprised. Nothing here is missing through lazi
 - Inbound email over IMAP.
 - Rollup fields — built, but nothing uses them since the linked modules were removed.
 - The Channel Partner portal.
+- **Speaking the details at the gate** (6.12) — the transcription path needs a real provider key.
+- **Shoot descriptions** (6.13) — needs a model with vision. Without one you get thumbnails and
+  times, which is the shipped default.
+- **Capture itself has never been used on a real site visit.** It is verified in a browser at phone
+  width and against a stand-in provider. Sunlight, one hand, no signal, and EXIF timestamps from a
+  real camera are the four assumptions it rests on, and none of them have been tested where they
+  actually apply. This is the single most valuable hour anyone could spend on this project.
 
 ## 13.3 Deliberate scope decisions
 
-- **No speech-to-text.** Call analysis needs a transcript from somewhere else.
 - **Dashboard drag-to-resize is desktop-only** (1024px+). Phones get a sensible stacked layout.
-- **Automated tests cover the server's core.** 132 unit tests plus integration and browser tests;
-  the write paths and the UI are verified by hand and by browser tests rather than exhaustively.
+- **Automated tests cover the server's core.** 298 unit tests (256 server, 42 web) plus 246
+  integration tests against a real Postgres and a Playwright browser suite; the write paths and the
+  UI are still partly verified by hand.
+- **A shoot description is never written onto the property.** A model can describe a room; it cannot
+  know the unit number. Treating its guess as a fact would defeat the point of asking a person.
+- **Photos are matched to a property by time, never by GPS.** Neighbouring builder floors are closer
+  together than a phone's location fix is accurate.
 
 ## 13.4 Genuinely unfinished
 
@@ -1287,12 +1411,16 @@ This section exists so nobody is surprised. Nothing here is missing through lazi
 - The website isn't deployed — it only runs locally.
 - No music track bundled for video.
 - Mobile layout not yet audited on Reports, Inbox, Calls and the admin screens.
-- **Right now, on this branch:** "only show this field when…" (conditional field visibility) is
-  half-built and uncommitted. The important half — the server refusing to *demand* a required
-  field that it told the form to hide — is done. A form can't be made valid if the box you need
-  isn't on screen.
-- No scheduled database backups. The backup and restore commands exist and are verified; nothing
-  runs them on a timer.
+- No scheduled backups **on the deployed database**. The backup and restore commands exist and are
+  verified, and a timer covers a developer's local Postgres — nothing runs against production. The
+  intended fix is the database provider's own scheduled backups, which need a paid plan; a nightly
+  dump job was built once and deliberately removed rather than move every client's name, phone
+  number and PAN between two systems every night.
+- The many-to-many "pick an existing record" box on related lists. The API already supports it.
+
+> Conditional field visibility ("only show this field when…") was listed here as half-built. It
+> shipped — along with cross-field date rules and format presets for PAN, GST, pincode, Aadhaar
+> last-4 and IFSC. See the Rules section of the field editor in Part 7.
 
 ---
 
@@ -1303,12 +1431,15 @@ You don't need this to *use* the CRM. Read it to understand why it behaves as it
 ## 14.1 Numbers
 
 91 tables · 3 modules · 160 fields · 58 dropdown lists · 17 views · 9 layouts · 7 workflows ·
-5 dashboards · 17 roles · 9 profiles · 13 users · 254 records · 32 migrations applied.
+5 dashboards · 17 roles · 9 profiles · 13 users · 254 records · 38 migrations applied.
+
+(Counts other than the migrations are from the 9 August audit and drift as records are added; the
+migration count is exact.)
 
 ## 14.2 What a "migration" is
 
 A numbered instruction file that changes the database's shape, applied once, in order, and recorded
-so it never runs twice. `001` through `032` so far. They only ever go forwards — there's no undo
+so it never runs twice. `001` through `038` so far. They only ever go forwards — there's no undo
 button, which is why they're written defensively.
 
 The interesting ones:
@@ -1326,6 +1457,12 @@ The interesting ones:
 | `030` | Removed eight modules |
 | `031` | Removed Projects and Activities — **copying their rows to archive tables first** |
 | `032` | Field tombstones, so deleting a built-in field actually sticks |
+| `033` | Stopped the seed undoing an admin's work on every cold start |
+| `034` | **Shoot sessions** — a site visit: which property, and the window its photos were shot in |
+| `035` | Transcription state for a visit's spoken note |
+| `036` | Auto-grouped shoots, so a missed tap at the gate costs nothing |
+| `037` | What the photos in a shoot are actually of |
+| `038` | **Share links** — send one property to one person |
 
 > On `031`: 207 activities and 6 projects were archived before deletion. Nothing reads those
 > archive tables. They cost nothing to keep, and a wrong call would have cost a restore.
@@ -1371,7 +1508,7 @@ Then open **http://localhost:5173** and sign in as `admin@ipropy.com` / `Admin@1
 ```bash
 npm run typecheck           # must be clean before finishing any change
 npm run build               # full build
-npm test                    # 132 fast tests, no database needed
+npm test                    # 298 fast tests, no database needed
 npm run test:integration    # makes and destroys its own throwaway database
 npm run test:e2e            # drives a real browser
 npm run db:migrate          # apply new migrations
@@ -1433,6 +1570,28 @@ Every one of these cost real debugging time. They're listed so they cost it only
 
 10. **Report bugs as phone screenshots** — that's how they arrive here, and the UI should be
     checked at 390px wide as a matter of routine.
+
+11. **A camera's timestamp doesn't say which timezone it's in.** The tag a photo carries is local
+    wall-clock time with no offset attached: "09:03" means nine in the morning *wherever the
+    photographer was standing*. Read as UTC in India, every photo lands 5½ hours early — across a
+    day of visits that is one or two properties' worth of drift, and photos filing against the wrong
+    floor. Video is the opposite: its timestamp already carries a zone and must **not** be adjusted
+    again.
+
+12. **A background worker that finds nothing configured must not spend an attempt.** The shoot
+    describer retries three times before giving up. When it counted "no AI provider" as a failed
+    attempt, it burned all three within three minutes of boot and marked every shoot permanently
+    failed — with no error message anywhere to explain it, because nothing had actually gone wrong.
+    A feature that degrades gracefully must also **wait** gracefully.
+
+13. **Check whether a route already exists before adding one.** `POST /:module/:id/share` already
+    meant "grant another user access to this record" — so new share-*link* routes at the same path
+    were silently shadowed, because the first route registered wins. They answered, just not with
+    the code anyone had written. Caught only by a test that got an empty list back.
+
+14. **Clear `ANTHROPIC_API_KEY` when testing the no-AI path.** An agent session's own shell exports
+    it, so a server started that way looks like it has AI configured when a normal terminal does
+    not. Every "what happens with no provider" check run that way is testing the wrong thing.
 
 ---
 

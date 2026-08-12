@@ -64,22 +64,31 @@ is painful to merge.
 
 ### 1. Migration numbers collide
 
-Database migrations are numbered files (`030_…sql`, `031_…sql`). If you and
-someone else both create `031_` on separate branches, both merge, and the
-numbering is now broken and ambiguous.
+Database migrations are numbered files (`037_…sql`, `038_…sql` — the highest is
+currently `038`). If you and someone else both create `039_` on separate
+branches, both merge, and the numbering is now broken and ambiguous.
 
 **Before creating a migration:** pull `main`, check the highest number that
 exists there, and take the next one. If your PR sits open for a while and
 someone else lands a migration first, renumber yours before merging. Say in the
 PR that you are adding a migration so the other person knows.
 
+This has already come close once: `038_share_links.sql` sat in an open PR while
+`034`–`037` landed on `main` from another branch. It survived only because it
+had been numbered after them.
+
 ### 2. Seed changes overwrite each other
 
-The data model lives in `db/seed/modules.ts`. Re-running `npm run db:seed`
-refreshes system content but leaves user-created content alone. If you and
-someone else both edit the seed on separate branches, git will merge both — but
-the result may not be what either of you intended. Coordinate before reshaping
-modules or fields.
+The data model lives in `db/seed/templates/realEstate.ts` — one file per trade,
+with the shared machinery in `db/seed/`. Re-running `npm run db:seed` refreshes
+module and field *structure* but leaves anything an admin can edit in the UI
+alone (dashboards, workflows, views, picklist values, profiles, sharing), so
+**editing a seed definition does not reach a database that already has that
+row**. To change one, change it in the UI, or delete the row and re-seed.
+
+If you and someone else both edit the seed on separate branches, git will merge
+both — but the result may not be what either of you intended. Coordinate before
+reshaping modules or fields.
 
 ---
 

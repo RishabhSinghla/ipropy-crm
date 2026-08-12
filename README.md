@@ -147,7 +147,36 @@ because the rest of the CRM reads from it.
 | **Inbox** | WhatsApp threads with the 24-hour window enforced, delivery receipts, AI reply suggestions. |
 | **Calls** | Call log with recordings, AI summary/sentiment/objections, and a coaching report. |
 | **Reports** | Ad-hoc summary and tabular reports with grouping, measures and CSV export. |
+| **Capture** | Built for standing at a gate: name the property, tap Start, shoot with the normal camera. Writes to IndexedDB and returns — it never waits for the network, so a visit with no signal still lands. Details can be **spoken** rather than typed. |
+| **Shoots** | The evening list of visits that still have no name — thumbnails first, because nobody can tell "9:03–9:21, 12 photos" from "9:48–10:04, 14 photos", but everybody recognises their own pictures. One box both finds a property and creates one. |
+| **Capture review** | Confirm what you said at the gate. Read a line, glance at the parsed values, tap Confirm — ten properties in about two minutes, sitting down. |
+| **Shared property** (`/s/:token`) | The buyer's page. One property, one unguessable URL, no sign-in, revocable. Loads zero auth-only modules. |
 | **Admin** | Module & field builder (hide or permanently delete a field), layout designer (sections, header chips, default tab), dropdown editor, users, roles, profiles, sharing, workflows, guided integration setup, import, audit log. |
+
+### Site capture — photos onto the right property, without typing
+
+The identity of a property is known at the instant the shutter is pressed, and thrown away
+immediately. Everything after that — sorting, filing, captioning, sending — is a person
+re-deriving a fact they already had. Capture records it once, at the gate.
+
+A **shoot session** binds a property to a window of time. Every photo taken inside that window is
+filed against it automatically, matched on **EXIF time, not GPS** — adjacent builder floors are ten
+to twenty metres apart, well inside the error of a phone fix, so the clock is the exact instrument
+and location is only good for segmenting a day into visits.
+
+The tap that opens a session is **optional**. Photos belonging to no session are grouped by the clock
+alone — a 40-minute gap means the photographer drove somewhere — which yields a group with no name,
+exactly the state one tap in the evening fixes. Missing a tap costs nothing.
+
+Where a model is configured, it **describes** each nameless group ("3 BHK builder floor — marble
+flooring, modular kitchen, covered parking") so naming a three-day-old shoot is reading rather than a
+memory test. It never writes to the record: a model can see a modular kitchen, it cannot see that
+this is B-110 and not B-112.
+
+Getting them back out is a **share link** — one property, one unguessable URL, made by somebody who
+could already see the record, revocable, and independent of whether the unit is ready for the public
+website. Naming a link after who it went to turns an anonymous counter into *"the one I sent Rajesh
+has been opened four times"*.
 
 ### Automation
 
@@ -208,14 +237,22 @@ packages/
       query/       SQL builder + in-memory filter evaluator (same grammar, two engines)
       entity/      recordService, conversion/merge, timeline, formula parser, numbering
       permissions/ the four-layer engine
-      workflow/    engine, 14 task types, assignment, scheduler
+      workflow/    engine, 14 task types, assignment, scheduler, follow-ups
       analytics/   widget + report query engine
+      capture/     shoot sessions, EXIF time matching, auto-grouping, voice, vision
+      media/       watermark, derivatives, video, reel — the processing pipeline
+      sharing/     share links (one property, one unguessable URL)
+      notifications/ notify()/notifyMany() — row + socket + Web Push, never a raw INSERT
     integrations/  whatsapp, telephony, email, lead sources
-    ai/            client, scoring, matching, drafting, call analysis, assistant
-    api/routes/    auth, metadata, records, views, dashboards, admin, comms, telephony, ai, webhooks
+    ai/            client (Anthropic + any OpenAI-compatible), scoring, matching, drafting,
+                   call analysis, assistant
+    api/routes/    auth, metadata, records, views, dashboards, admin, comms, telephony, ai,
+                   webhooks, capture, public, studio, outreach, passkeys, device
   web/
-    components/    FieldRenderer (the heart), RecordForm, FilterBuilder, AiAssistant, ui kit
-    pages/         Dashboard, ListView, RecordDetail, Inbox, Calls, Inventory, Reports, admin/*
+    components/    FieldRenderer (the heart), RecordForm, FilterBuilder, AiAssistant,
+                   ShareLinks, ui kit
+    pages/         Dashboard, ListView, RecordDetail, Inbox, Calls, Reports, Studio, Outreach,
+                   Capture, CaptureShoots, CaptureReview, SharedProperty, admin/*
 ```
 
 Two details worth knowing if you extend this:
@@ -242,6 +279,10 @@ npm run db:reset       # drop everything and start over
 npm run db:backup      # pg_dump the DB to backups/ipropy-<timestamp>.dump
 npm run db:backup:verify  # restore newest dump to a scratch DB, compare counts, drop it
 npm run db:restore <dump> # replace the live DB from a backup (see PROJECT_HANDOVER.md §9)
+
+npm test               # 298 unit tests, no database needed
+npm run test:integration  # API + recordService against a real throwaway Postgres
+npm run test:e2e       # Playwright, against a real browser and the dev stack
 ```
 
 Seeding is idempotent — re-run `db:seed` after changing module definitions to refresh metadata
@@ -265,10 +306,21 @@ the API behind TLS.
 
 ## Verification
 
-`npm run build` typechecks and builds all three packages. The engine was exercised end-to-end against
-a live Postgres — 63 checks covering auth, metadata, list/kanban/filters, detail, timeline, the write
-path (create → update → audit → duplicate detection → convert → delete), inbox, telephony, inventory,
-reports, the full admin surface, and permission enforcement across three profiles.
+Three layers, fastest first:
+
+| | |
+|---|---|
+| `npm test` | **298 unit tests**, no database — 256 in `packages/server` (query builder, filter evaluator, formula engine, permissions, validation, seed templates, billing, capture time/EXIF, watermark sizing, vision sampling), 42 in `packages/web` (the WCAG contrast guarantee behind the colour tokens, and markdown) |
+| `npm run test:integration` | **246 tests** against a real throwaway Postgres — it creates and drops its own `ipropy_itest`, so never point it at a database you care about |
+| `npm run test:e2e` | Playwright, against a real browser and the dev stack |
+
+`npm run build` typechecks and builds all three packages, and `npm run typecheck` must be clean
+before any change is finished.
+
+The engine was also exercised end-to-end against a live Postgres — 63 checks covering auth, metadata,
+list/kanban/filters, detail, timeline, the write path (create → update → audit → duplicate detection
+→ convert → delete), inbox, telephony, inventory, reports, the full admin surface, and permission
+enforcement across three profiles.
 
 Three real bugs were found and fixed during that pass, all noted in the code:
 
@@ -291,4 +343,5 @@ Honest scope notes:
   the layout persists to the server; below that the grid falls back to responsive auto-flow (see the
   README of `react-grid-layout` if you want finer control over the handles).
 * **The workflow builder is fully editable in the UI.** Workflows are seeded declaratively; the admin screen lists, inspects, enables, deletes and composes new ones visually.
-* **Unit tests cover the server core only.** A Vitest suite (`npm test`) covers the query builder, filter evaluator, formula engine and permission engine; the API, write paths and UI are verified live rather than by automated tests.
+* **No LLM provider ships configured.** Every AI feature pairs a deterministic rule engine with an optional model pass and runs on the fallback until a key is added in Admin → Integrations. That includes shoot descriptions — with no key, a capture group shows its thumbnails and times and nothing else. Gemini, Groq and OpenRouter all have free tiers; any OpenAI-compatible endpoint or a local Ollama works too.
+* **Capture has not been used on a real site visit.** It is verified in a browser at 390px and against a stand-in provider. Sunlight, one hand, no signal and EXIF offsets from a real camera are the assumptions it is built on, and none of them have been tested where they actually apply.
