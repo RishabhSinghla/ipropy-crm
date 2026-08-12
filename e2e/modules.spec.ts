@@ -71,7 +71,8 @@ async function moduleRoutes(page: Page): Promise<string[]> {
 }
 
 /**
- * Outreach and Studio are in the sidebar sweep but are not lists.
+ * Outreach, Studio and Site Capture are in the sidebar sweep but are not
+ * record lists.
  *
  * Whether they are in the routes at all is a race: the sweep reads the nav as
  * soon as the first module link is visible, so a slower CI runner picks up the
@@ -80,7 +81,7 @@ async function moduleRoutes(page: Page): Promise<string[]> {
  * did pick them up it always failed, because it waited for a record count on a
  * screen that has none.
  */
-const TOOL_ROUTES = new Set(['/outreach', '/studio']);
+const TOOL_ROUTES = new Set(['/outreach', '/studio', '/capture']);
 
 /**
  * "Finished loading" is not the same signal on both kinds of page.
