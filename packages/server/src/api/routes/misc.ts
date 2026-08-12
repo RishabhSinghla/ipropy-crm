@@ -23,6 +23,7 @@ import {
   ARCHIVE_SETS, contentDisposition, countRecordMedia, safeName, writeRecordArchive,
   type ArchiveSet,
 } from '../../core/media/archive.js';
+import { applyFileSecurityHeaders } from '../../core/media/serving.js';
 import { recordService } from '../../core/entity/recordService.js';
 import { unseenCounts } from '../../core/entity/unseen.js';
 import {
@@ -363,7 +364,7 @@ miscRouter.get('/files/:id', asyncHandler(async (req, res) => {
   // ?download=1 forces a save instead of an in-tab render. The viewer needs
   // both: `inline` for the preview iframe, `attachment` for its download
   // button, and the browser will not re-request the same URL for the other.
-  const disposition = req.query.download === '1' ? 'attachment' : 'inline';
+  const wantsDownload = req.query.download === '1';
 
   const requestedSize = typeof req.query.size === 'string' ? req.query.size : null;
   const variantKey = requestedSize && VARIANT_SIZES.has(requestedSize) ? file.variants?.[requestedSize] : undefined;
@@ -376,8 +377,7 @@ miscRouter.get('/files/:id', asyncHandler(async (req, res) => {
     const path = resolve(storage.localPath, storageKey);
     if (!path.startsWith(resolve(storage.localPath))) throw new ForbiddenError();
 
-    res.setHeader('Content-Type', mimeType);
-    res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(file.file_name)}"`);
+    applyFileSecurityHeaders(res, mimeType, file.file_name, wantsDownload);
     res.sendFile(path, (err) => {
       if (err) {
         logger.warn({ err, id: req.params.id }, 'file stream failed');
@@ -389,8 +389,7 @@ miscRouter.get('/files/:id', asyncHandler(async (req, res) => {
 
   const data = await getDriver().then((driver) => driver.read(storageKey));
   if (!data) throw new NotFoundError('File is missing from storage');
-  res.setHeader('Content-Type', mimeType);
-  res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(file.file_name)}"`);
+  applyFileSecurityHeaders(res, mimeType, file.file_name, wantsDownload);
   res.send(data);
 }));
 
