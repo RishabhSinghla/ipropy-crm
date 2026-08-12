@@ -27,6 +27,20 @@
 import { randomUUID } from 'node:crypto';
 import { db } from '../../db/pool.js';
 
+export const PROPERTY_MEDIA_FOLDERS = {
+  originals: '01 Originals',
+  compressed: '02 Compressed',
+  watermarked: '03 Watermarked',
+  instagramFeed: '04 Social Media/Instagram Feed',
+  instagramStory: '04 Social Media/Instagram Story and Reels',
+  facebook: '04 Social Media/Facebook',
+  whatsapp: '04 Social Media/WhatsApp',
+  crmWebsite: '05 CRM Website',
+} as const;
+
+/** Every real folder provisioned even before the first photo arrives. */
+export const PROPERTY_MEDIA_FOLDER_TREE = [...new Set(Object.values(PROPERTY_MEDIA_FOLDERS))];
+
 /**
  * Lowercase, hyphen-joined, ASCII only.
  *
@@ -67,10 +81,41 @@ function fileStem(originalName: string, ext: string): string {
  * no numbering scheme, and a label can be entirely non-Latin — so the id is the
  * backstop that guarantees a non-empty, unique-enough folder.
  */
-function recordFolder(recordNumber: string | null, label: string, recordId: string): string {
+export function recordFolder(recordNumber: string | null, label: string, recordId: string): string {
   const parts = [slug(recordNumber ?? '', 24), slug(label, 48)].filter(Boolean);
   const name = parts.join('-');
   return name || recordId.slice(0, 8);
+}
+
+/** Stable root for everything belonging to one CRM record. */
+export function recordStorageRoot(
+  moduleName: string,
+  recordNumber: string | null,
+  label: string,
+  recordId: string,
+): string {
+  return `${slug(moduleName, 32)}/${recordFolder(recordNumber, label, recordId)}`;
+}
+
+/**
+ * Put a derivative in its named human-facing folder.
+ *
+ * Existing pre-migration keys did not contain `01 Originals`; they still map
+ * safely by treating their current parent as the record root.
+ */
+export function derivativeStorageKey(
+  originalKey: string,
+  destination: string,
+  suffix: string,
+  extension: string,
+): string {
+  const parts = originalKey.split('/').filter(Boolean);
+  const file = parts.pop() ?? 'file';
+  if (parts.at(-1) === PROPERTY_MEDIA_FOLDERS.originals) parts.pop();
+  const dot = file.lastIndexOf('.');
+  const stem = dot > 0 ? file.slice(0, dot) : file;
+  const ext = extension.startsWith('.') ? extension : `.${extension}`;
+  return `${parts.join('/')}/${destination}/${stem}-${suffix}${ext}`;
 }
 
 export interface KeyRequest {
@@ -95,8 +140,11 @@ export async function buildStorageKey({ recordId, originalName, ext }: KeyReques
   const unique = randomUUID().slice(0, 8);
 
   const record = recordId
-    ? await db.queryOne<{ module_name: string; label: string; record_number: string | null }>(
-      `SELECT module_name, label, record_number FROM ipy_record WHERE id = $1`,
+    ? await db.queryOne<{ module_name: string; label: string; record_number: string | null; folder_key: string | null }>(
+      `SELECT r.module_name, r.label, r.record_number, ps.folder_key
+         FROM ipy_record r
+         LEFT JOIN ipy_property_storage ps ON ps.record_id = r.id
+        WHERE r.id = $1`,
       [recordId],
     )
     : null;
@@ -107,6 +155,22 @@ export async function buildStorageKey({ recordId, originalName, ext }: KeyReques
     return `unfiled/${new Date().toISOString().slice(0, 7)}/${stem}-${unique}${ext}`;
   }
 
-  const folder = recordFolder(record.record_number, record.label, recordId!);
-  return `${slug(record.module_name, 32)}/${folder}/${stem}-${unique}${ext}`;
+  const root = record.folder_key
+    ?? recordStorageRoot(record.module_name, record.record_number, record.label, recordId!);
+
+  if (record.module_name === 'properties') {
+    // Whichever runs first — folder worker or upload — permanently chooses the
+    // same root. Renaming a property later cannot split its media in two.
+    await db.query(
+      `INSERT INTO ipy_property_storage (record_id, folder_key)
+       VALUES ($1,$2)
+       ON CONFLICT (record_id) DO UPDATE
+         SET folder_key = COALESCE(ipy_property_storage.folder_key, EXCLUDED.folder_key),
+             updated_at = now()`,
+      [recordId, root],
+    );
+    return `${root}/${PROPERTY_MEDIA_FOLDERS.originals}/${stem}-${unique}${ext}`;
+  }
+
+  return `${root}/${stem}-${unique}${ext}`;
 }

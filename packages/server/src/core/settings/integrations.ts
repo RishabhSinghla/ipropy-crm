@@ -84,12 +84,20 @@ export interface ResolvedSettings {
     webformPublicKey: string;
   };
   storage: {
-    driver: 'local' | 's3';
+    driver: 'local' | 's3' | 'onedrive';
     bucket: string;
     region: string;
     accessKeyId: string;
     secretAccessKey: string;
     endpoint: string;
+    onedrive: {
+      tenantId: string;
+      clientId: string;
+      clientSecret: string;
+      driveId: string;
+      driveUser: string;
+      rootFolder: string;
+    };
   };
 }
 
@@ -241,6 +249,19 @@ export function getSttProviderSettings(): ResolvedSettings['stt'] {
   };
 }
 
+/** Saved OneDrive card values, even before the admin enables the connector. */
+export function getOneDriveProviderSettings(): ResolvedSettings['storage']['onedrive'] {
+  const row = rows.get('onedrive');
+  return {
+    tenantId: pickStored(row, 'config', 'tenantId', config.storage.onedrive.tenantId),
+    clientId: pickStored(row, 'config', 'clientId', config.storage.onedrive.clientId),
+    clientSecret: pickStored(row, 'credentials', 'clientSecret', config.storage.onedrive.clientSecret),
+    driveId: pickStored(row, 'config', 'driveId', config.storage.onedrive.driveId),
+    driveUser: pickStored(row, 'config', 'driveUser', config.storage.onedrive.driveUser),
+    rootFolder: pickStored(row, 'config', 'rootFolder', config.storage.onedrive.rootFolder) || 'iPropy Properties',
+  };
+}
+
 /**
  * Every provider that has enough configuration to be usable, best first.
  *
@@ -336,13 +357,30 @@ function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
   const google = map.get('google_ads');
   const webform = map.get('webform');
   const s3 = map.get('s3');
+  const onedrive = map.get('onedrive');
 
   let telephonyProvider: 'none' | 'twilio' | 'exotel' = config.telephony.provider === 'twilio' || config.telephony.provider === 'exotel'
     ? config.telephony.provider : 'none';
   if (twilio?.isActive && twilio.credentials.accountSid && twilio.credentials.authToken) telephonyProvider = 'twilio';
   else if (exotel?.isActive && exotel.credentials.sid && exotel.credentials.apiKey && exotel.credentials.apiToken) telephonyProvider = 'exotel';
 
-  const storageDriver = pick(s3, 'config', 'driver', config.storage.driver) === 's3' ? 's3' : 'local';
+  const oneDriveConfigured = Boolean(
+    pick(onedrive, 'config', 'tenantId', config.storage.onedrive.tenantId)
+    && pick(onedrive, 'config', 'clientId', config.storage.onedrive.clientId)
+    && pick(onedrive, 'credentials', 'clientSecret', config.storage.onedrive.clientSecret)
+    && (
+      pick(onedrive, 'config', 'driveId', config.storage.onedrive.driveId)
+      || pick(onedrive, 'config', 'driveUser', config.storage.onedrive.driveUser)
+    ),
+  );
+  const requestedStorageDriver = config.storage.driver;
+  const storageDriver: ResolvedSettings['storage']['driver'] = onedrive?.isActive && oneDriveConfigured
+    ? 'onedrive'
+    : pick(s3, 'config', 'driver', requestedStorageDriver) === 's3'
+      ? 's3'
+      : requestedStorageDriver === 'onedrive' && oneDriveConfigured
+        ? 'onedrive'
+        : 'local';
 
   return {
     whatsapp: {
@@ -408,6 +446,14 @@ function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
       accessKeyId: pick(s3, 'credentials', 'accessKeyId', config.storage.s3.accessKeyId),
       secretAccessKey: pick(s3, 'credentials', 'secretAccessKey', config.storage.s3.secretAccessKey),
       endpoint: pick(s3, 'config', 'endpoint', config.storage.s3.endpoint),
+      onedrive: {
+        tenantId: pick(onedrive, 'config', 'tenantId', config.storage.onedrive.tenantId),
+        clientId: pick(onedrive, 'config', 'clientId', config.storage.onedrive.clientId),
+        clientSecret: pick(onedrive, 'credentials', 'clientSecret', config.storage.onedrive.clientSecret),
+        driveId: pick(onedrive, 'config', 'driveId', config.storage.onedrive.driveId),
+        driveUser: pick(onedrive, 'config', 'driveUser', config.storage.onedrive.driveUser),
+        rootFolder: pick(onedrive, 'config', 'rootFolder', config.storage.onedrive.rootFolder) || 'iPropy Properties',
+      },
     },
   };
 }
@@ -451,6 +497,7 @@ const SECRET_FIELDS: Record<string, string[]> = {
   facebook_leads: ['appSecret', 'pageAccessToken'],
   google_ads: ['webhookKey'],
   s3: ['accessKeyId', 'secretAccessKey'],
+  onedrive: ['clientSecret'],
 };
 
 function mask(value: string): string {
@@ -530,6 +577,17 @@ export async function saveIntegration(
      WHERE id = $1`,
     [existing.id, JSON.stringify(mergedConfig), JSON.stringify(mergedCredsEncrypted), isActive ?? null],
   );
+
+  // A corrected storage credential should replay folders that exhausted their
+  // earlier retries; the user must not need a database repair after fixing a key.
+  if (provider === 'onedrive' || provider === 's3') {
+    await db.query(
+      `UPDATE ipy_property_storage
+          SET status = 'pending', attempts = 0, last_error = NULL, locked_at = NULL, updated_at = now()
+        WHERE status = 'failed' OR provisioned_driver IS DISTINCT FROM $1`,
+      [provider === 'onedrive' ? 'onedrive' : 's3'],
+    );
+  }
 
   await invalidate();
 }

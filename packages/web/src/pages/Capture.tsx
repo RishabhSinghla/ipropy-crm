@@ -30,7 +30,7 @@ import { Link } from 'react-router-dom';
 import type { FieldMeta, ModuleMeta } from '@ipropy/shared';
 import {
   Building2, Camera, Check, CheckCircle2, ChevronDown, ChevronRight, Clock,
-  CloudOff, Images, MapPin, Mic, RefreshCw, Trash2, Wifi,
+  CloudOff, FolderOpen, Images, MapPin, Mic, RefreshCw, Trash2, Upload, Wifi,
 } from 'lucide-react';
 import { api, type CaptureSessionRow } from '../lib/api';
 import { toast } from '../lib/store';
@@ -80,6 +80,8 @@ interface ActiveCapture {
   label: string;
   startedAt: string;
   mode: 'site' | 'office';
+  /** Arrives once the offline visit reaches the server. */
+  recordId?: string;
 }
 
 const ACTIVE_CAPTURE_KEY = 'ipropy-active-capture';
@@ -243,6 +245,8 @@ export default function CapturePage(): JSX.Element {
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
   const [finishing, setFinishing] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadedCount, setUploadedCount] = useState(0);
   const [active, setActive] = useState<ActiveCapture | null>(() => loadActiveCapture());
   const [justFinished, setJustFinished] = useState<string | null>(null);
   const [modeOverride, setModeOverride] = useState<'site' | 'office' | null>(null);
@@ -302,6 +306,22 @@ export default function CapturePage(): JSX.Element {
     retry: false,
   });
 
+  const storageQuery = useQuery({
+    queryKey: ['capture', 'storage', active?.clientRef],
+    queryFn: () => api.captureStorage(active!.clientRef),
+    enabled: Boolean(active && online),
+    retry: false,
+    refetchInterval: active ? 3000 : false,
+  });
+
+  useEffect(() => {
+    const recordId = storageQuery.data?.recordId;
+    if (!recordId || !active || active.recordId === recordId) return;
+    const next = { ...active, recordId };
+    setActive(next);
+    rememberActiveCapture(next);
+  }, [storageQuery.data?.recordId, active]);
+
   // Visits that have finished collecting and have something waiting to be said
   // back — the evening's work, counted during the day.
   const toReview = (sessions ?? []).filter(
@@ -329,6 +349,25 @@ export default function CapturePage(): JSX.Element {
   const labelField = (module as ModuleMeta | undefined)?.labelFields?.[0] ?? 'name';
   const label = String(values[labelField] ?? '').trim();
   const canStart = label.length > 0 && !saving && !active;
+
+  const uploadMedia = async (files: FileList | null): Promise<void> => {
+    const recordId = storageQuery.data?.recordId ?? active?.recordId;
+    if (!files?.length || !recordId || uploading) return;
+    setUploading(true);
+    let sent = 0;
+    try {
+      for (const file of Array.from(files)) {
+        await api.uploadFile(file, recordId, CAPTURE_MODULE, storageQuery.data?.sessionId);
+        sent += 1;
+        setUploadedCount((count) => count + 1);
+      }
+      toast.success(`${sent} file${sent === 1 ? '' : 's'} added`, 'Originals are safe; processing continues automatically.');
+    } catch (err) {
+      toast.error('Upload stopped', `${sent} saved. ${(err as Error).message}`);
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const start = async (): Promise<void> => {
     if (!canStart) return;
@@ -374,6 +413,7 @@ export default function CapturePage(): JSX.Element {
       setActive(null);
       rememberActiveCapture(null);
       setJustFinished(finishedLabel);
+      setUploadedCount(0);
       setExpanded(false);
       window.setTimeout(() => setJustFinished(null), 5000);
       // Try immediately when online; the queue remains the source of truth if
@@ -458,6 +498,60 @@ export default function CapturePage(): JSX.Element {
               </p>
             </div>
           </div>
+          <div className="space-y-3 border-t border-emerald-100 p-4 dark:border-emerald-900/60">
+            {storageQuery.data?.recordId || active.recordId ? (
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className={cn('btn-primary cursor-pointer justify-center', uploading && 'pointer-events-none opacity-50')}>
+                    <Camera className="h-4 w-4" /> Take photo
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="hidden"
+                      disabled={uploading}
+                      onChange={(event) => { void uploadMedia(event.target.files); event.target.value = ''; }}
+                    />
+                  </label>
+                  <label className={cn('btn-secondary cursor-pointer justify-center', uploading && 'pointer-events-none opacity-50')}>
+                    {uploading ? <Spinner className="h-4 w-4" /> : <Upload className="h-4 w-4" />} Add media
+                    <input
+                      type="file"
+                      accept="image/*,video/*"
+                      multiple
+                      className="hidden"
+                      disabled={uploading}
+                      onChange={(event) => { void uploadMedia(event.target.files); event.target.value = ''; }}
+                    />
+                  </label>
+                </div>
+                <p className="text-center text-xs text-muted">
+                  {uploading ? 'Uploading originals… keep this screen open.' : `${uploadedCount} added from this screen. Originals are never changed.`}
+                </p>
+                {storageQuery.data?.storage?.externalUrl ? (
+                  <a
+                    href={storageQuery.data.storage.externalUrl}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="flex items-center justify-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-800 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-200"
+                  >
+                    <FolderOpen className="h-4 w-4" /> Open this property in OneDrive
+                  </a>
+                ) : storageQuery.data?.storage?.status === 'failed' ? (
+                  <p className="rounded-lg bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                    Cloud folder needs attention, but direct uploads still work. {storageQuery.data.storage.lastError}
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              <p className="flex items-center justify-center gap-2 text-xs text-muted">
+                {online ? <Spinner className="h-3.5 w-3.5" /> : <CloudOff className="h-3.5 w-3.5" />}
+                {online
+                  ? 'Creating the property and its media folder…'
+                  : 'No signal: use the phone camera now; add the files here when the connection returns.'}
+              </p>
+            )}
+          </div>
         </div>
       ) : (
       <div className="card space-y-3 p-4">
@@ -532,7 +626,7 @@ export default function CapturePage(): JSX.Element {
         <button
           type="button"
           onClick={() => { if (active) void finish(); else void start(); }}
-          disabled={active ? finishing : !canStart}
+          disabled={active ? finishing || uploading : !canStart}
           className={cn(
             'flex w-full items-center justify-center gap-2 rounded-lg py-4 text-base font-semibold text-white disabled:opacity-40',
             active ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-brand-600 hover:bg-brand-700',

@@ -490,6 +490,17 @@ export async function createRecord(
 
     await insertPayload(conn, module, recordId, prepared);
 
+    // Property folders are provisioned by the background worker. Queueing is
+    // inside this transaction so a property can never commit without its
+    // storage job, while the remote OneDrive call itself never delays capture.
+    if (module.name === 'properties') {
+      await conn.query(
+        `INSERT INTO ipy_property_storage (record_id) VALUES ($1)
+         ON CONFLICT (record_id) DO NOTHING`,
+        [recordId],
+      );
+    }
+
     if (!opts.skipAudit) {
       await writeAudit(conn, {
         recordId,

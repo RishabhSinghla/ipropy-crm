@@ -74,6 +74,18 @@ describe('POST /api/capture/sessions', () => {
     expect(res.body.session.recordId).toBeTruthy();
     expect(res.body.session.status).toBe('capturing');
     expect(res.body.session.lat).toBeCloseTo(28.4089, 4);
+    expect(res.body.storage).toMatchObject({
+      recordId: res.body.session.recordId,
+      status: 'ready',
+      provisionedDriver: 'local',
+    });
+    expect(res.body.storage.folderKey).toContain('b-110-greenfield');
+
+    const storage = await request(app)
+      .get(`/api/capture/sessions/client/${res.body.session.clientRef}/storage`)
+      .set('Authorization', `Bearer ${token}`).expect(200);
+    expect(storage.body.recordId).toBe(res.body.session.recordId);
+    expect(storage.body.storage.status).toBe('ready');
 
     const record = await db.queryOne<{ label: string }>(
       `SELECT label FROM ipy_record WHERE id = $1`, [res.body.session.recordId],

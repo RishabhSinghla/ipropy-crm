@@ -200,6 +200,15 @@ export interface CaptureSessionRow extends CaptureSession {
   recordLabel: string | null;
 }
 
+export interface CaptureStorageStatus {
+  recordId: string;
+  folderKey: string | null;
+  status: 'pending' | 'running' | 'ready' | 'failed';
+  provisionedDriver: string | null;
+  externalUrl: string | null;
+  lastError: string | null;
+}
+
 /**
  * A shoot with no property on it yet — see server/src/core/capture/grouping.ts.
  *
@@ -682,11 +691,12 @@ export const api = {
     get<{ notifications: Record<string, unknown>[]; unreadCount: number }>(`/api/notifications${qs({ unread })}`),
   markNotificationsRead: (ids?: string[]) => post('/api/notifications/read', { ids }),
   files: (recordId: string) => get<Record<string, unknown>[]>(`/api/records/${recordId}/files`),
-  uploadFile: (file: File, recordId?: string, module?: string) => {
+  uploadFile: (file: File, recordId?: string, module?: string, shootSessionId?: string) => {
     const form = new FormData();
     form.append('file', file);
     if (recordId) form.append('recordId', recordId);
     if (module) form.append('module', module);
+    if (shootSessionId) form.append('shootSessionId', shootSessionId);
     return request<{ id: string; fileName: string; url: string }>('/api/files', { method: 'POST', body: form });
   },
   deleteFile: (id: string) => del(`/api/files/${id}`),
@@ -711,6 +721,9 @@ export const api = {
   finishCapture: (body: { clientRef: string; endedAt: string }) =>
     post<{ session: CaptureSession; claimedMedia: number }>('/api/capture/sessions/finish', body),
   currentCapture: () => get<{ session: CaptureSession | null }>('/api/capture/sessions/current'),
+  captureStorage: (clientRef: string) => get<{
+    sessionId: string; recordId: string | null; storage: CaptureStorageStatus | null;
+  }>(`/api/capture/sessions/client/${encodeURIComponent(clientRef)}/storage`),
   captureSessions: (limit = 25) =>
     get<CaptureSessionRow[]>(`/api/capture/sessions${qs({ limit })}`),
   assignCaptureRecord: (id: string, recordId: string) =>

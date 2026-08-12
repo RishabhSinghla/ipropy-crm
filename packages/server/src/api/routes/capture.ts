@@ -34,6 +34,9 @@ import {
 } from '../../core/capture/sessions.js';
 import { matchOrphansForSession } from '../../core/capture/matching.js';
 import { attachShootMedia, listUnnamedShoots, nameShoot } from '../../core/capture/grouping.js';
+import {
+  getPropertyStorageStatus, provisionPropertyFolder,
+} from '../../core/storage/propertyFolders.js';
 
 export const captureRouter = Router();
 captureRouter.use(requireAuth);
@@ -120,7 +123,11 @@ captureRouter.post('/sessions', asyncHandler(async (req, res) => {
     `SELECT id FROM ipy_shoot_session WHERE client_ref = $1`, [input.clientRef],
   );
   if (replay) {
-    res.status(200).json({ session: await getSession(replay.id), replayed: true });
+    const session = await getSession(replay.id);
+    const storage = session?.recordId
+      ? await provisionPropertyFolder(session.recordId).catch(() => getPropertyStorageStatus(session.recordId!))
+      : null;
+    res.status(200).json({ session, storage, replayed: true });
     return;
   }
 
@@ -165,13 +172,34 @@ captureRouter.post('/sessions', asyncHandler(async (req, res) => {
   // this is the moment they can finally be filed. Run on its own connection, so
   // it has to see a committed session row.
   const claimed = await matchOrphansForSession(session.id).catch(() => 0);
+  // The phone already returned after writing to IndexedDB, so making the sync
+  // request wait here does not slow the person at the gate. It does mean that
+  // when sync reports success, the OneDrive folder is genuinely ready to open.
+  const storage = session.recordId
+    ? await provisionPropertyFolder(session.recordId).catch(() => getPropertyStorageStatus(session.recordId!))
+    : null;
 
-  res.status(201).json({ session, replayed: false, claimedMedia: claimed });
+  res.status(201).json({ session, storage, replayed: false, claimedMedia: claimed });
 }));
 
 /** What this user is shooting into right now — how the screen knows to say "in progress". */
 captureRouter.get('/sessions/current', asyncHandler(async (req, res) => {
   res.json({ session: await currentSession(getUser(req).id) });
+}));
+
+/** Resolve a locally queued capture to its server record and cloud folder. */
+captureRouter.get('/sessions/client/:clientRef/storage', asyncHandler(async (req, res) => {
+  const session = await db.queryOne<{ id: string; record_id: string | null }>(
+    `SELECT id, record_id FROM ipy_shoot_session WHERE client_ref = $1 AND user_id = $2`,
+    [req.params.clientRef, getUser(req).id],
+  );
+  if (!session) throw new NotFoundError('Capture has not synced yet');
+  if (!session.record_id) {
+    res.json({ sessionId: session.id, recordId: null, storage: null });
+    return;
+  }
+  const storage = await getPropertyStorageStatus(session.record_id);
+  res.json({ sessionId: session.id, recordId: session.record_id, storage });
 }));
 
 /**

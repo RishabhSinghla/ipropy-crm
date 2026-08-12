@@ -121,7 +121,7 @@ function entriesFor(row: AttachmentRow, set: ArchiveSet): { folder: string; key:
   }
   // Images watermark at `large`; video's single `web` derivative is the one
   // carrying the title card, so it is the branded artefact for a clip.
-  const branded = variants.large ?? variants.web;
+  const branded = variants.watermarked ?? variants.large ?? variants.web;
   if (wants('branded') && branded) {
     out.push({ folder: 'branded', key: branded, name: derivativeName(row.file_name, branded) });
   }

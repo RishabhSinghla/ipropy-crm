@@ -8,7 +8,7 @@ import { BadRequestError, ConflictError, NotFoundError } from '../../utils/error
 import { assertCapability, invalidatePermissions } from '../../core/permissions/index.js';
 import { registry } from '../../core/metadata/registry.js';
 import {
-  getSettings, listIntegrations, getIntegrationSummary, saveIntegration, recordIntegrationResult,
+  getSettings, getOneDriveProviderSettings, listIntegrations, getIntegrationSummary, saveIntegration, recordIntegrationResult,
 } from '../../core/settings/integrations.js';
 import { verifyConnection as verifySmtpConnection } from '../../integrations/email/service.js';
 import { syncInboundEmails, testImapConnection } from '../../integrations/email/inbound.js';
@@ -771,6 +771,11 @@ async function testIntegration(provider: string): Promise<{ ok: boolean; message
         return catalogue?.live
           ? { ok: true, message: `Connected — ${catalogue.models.length} transcription model${catalogue.models.length === 1 ? '' : 's'} available.` }
           : { ok: false, message: catalogue?.warning ?? 'Could not verify the speech provider.' };
+      }
+      case 'onedrive': {
+        const { testOneDriveConnection } = await import('../../core/storage/onedrive.js');
+        const result = await testOneDriveConnection(getOneDriveProviderSettings());
+        return { ok: true, message: `Connected — ${result.name}. The iPropy root folder is writable.` };
       }
       case 'facebook_leads':
         if (!s.leadSources.facebook.pageAccessToken) return { ok: false, message: 'A page access token is required.' };

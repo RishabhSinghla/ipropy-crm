@@ -18,7 +18,7 @@ import { config } from '../../config.js';
 import { getSettings } from '../settings/integrations.js';
 
 export interface StorageSettings {
-  driver: 'local' | 's3';
+  driver: 'local' | 's3' | 'onedrive';
   localPath: string;
   s3: {
     bucket: string;
@@ -26,6 +26,14 @@ export interface StorageSettings {
     accessKeyId: string;
     secretAccessKey: string;
     endpoint: string;
+  };
+  onedrive: {
+    tenantId: string;
+    clientId: string;
+    clientSecret: string;
+    driveId: string;
+    driveUser: string;
+    rootFolder: string;
   };
 }
 
@@ -41,6 +49,7 @@ export function getStorageSettings(): StorageSettings {
       secretAccessKey: s.secretAccessKey,
       endpoint: s.endpoint,
     },
+    onedrive: { ...s.onedrive },
   };
 }
 
@@ -52,6 +61,10 @@ export interface StorageDriver {
   save(key: string, data: Buffer | Readable, contentType: string): Promise<void>;
   read(key: string): Promise<Buffer | null>;
   remove(key: string): Promise<void>;
+  /** Create a real folder tree when the backend supports empty folders. */
+  ensureFolder?(key: string): Promise<{ webUrl?: string }>;
+  /** List direct file children when the backend can be changed outside CRM. */
+  listFolder?(key: string): Promise<StorageObject[]>;
   /**
    * A real filesystem path to the object's bytes — ffmpeg needs actual file
    * access, not a Buffer (a video can be well over a GB; buffering that in
@@ -61,6 +74,16 @@ export interface StorageDriver {
    * download first (s3), it removes the temp copy. Always call it when done.
    */
   readToTempFile(key: string): Promise<{ path: string; cleanup: () => Promise<void> } | null>;
+}
+
+export interface StorageObject {
+  key: string;
+  name: string;
+  size: number;
+  mimeType: string;
+  lastModifiedAt: string | null;
+  /** Stable, backend-qualified id used to make external ingestion idempotent. */
+  externalId: string;
 }
 
 const localDriver: StorageDriver = {
@@ -82,6 +105,10 @@ const localDriver: StorageDriver = {
   },
   async remove(key) {
     await unlink(localPath(key)).catch(() => undefined);
+  },
+  async ensureFolder(key) {
+    await mkdir(localPath(key), { recursive: true });
+    return {};
   },
   async readToTempFile(key) {
     const path = localPath(key);
@@ -133,6 +160,10 @@ async function s3Driver(settings: StorageSettings): Promise<StorageDriver> {
     async remove(key) {
       await client.send(new DeleteObjectCommand({ Bucket, Key: key })).catch(() => undefined);
     },
+    async ensureFolder() {
+      // S3 prefixes are virtual and appear as soon as the first object is saved.
+      return {};
+    },
     async readToTempFile(key) {
       try {
         const out = await client.send(new GetObjectCommand({ Bucket, Key: key }));
@@ -149,6 +180,10 @@ async function s3Driver(settings: StorageSettings): Promise<StorageDriver> {
 
 export async function getDriver(): Promise<StorageDriver> {
   const settings = getStorageSettings();
+  if (settings.driver === 'onedrive') {
+    const { createOneDriveDriver } = await import('./onedrive.js');
+    return createOneDriveDriver(settings.onedrive);
+  }
   if (settings.driver === 's3') {
     if (!settings.s3.bucket) {
       throw new Error('Storage driver is set to s3 but no bucket is configured (Admin → Integrations → S3)');

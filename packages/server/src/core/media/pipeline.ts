@@ -22,6 +22,17 @@ interface AttachmentRow {
   record_id: string | null;
 }
 
+async function isPropertyAttachment(attachmentId: string): Promise<boolean> {
+  const owner = await db.queryOne<{ module_name: string | null }>(
+    `SELECT r.module_name
+       FROM ipy_attachment a
+       LEFT JOIN ipy_record r ON r.id = a.record_id
+      WHERE a.id = $1`,
+    [attachmentId],
+  );
+  return owner?.module_name === 'properties';
+}
+
 /**
  * Read when this was shot and file it against the visit it belongs to.
  *
@@ -63,7 +74,13 @@ export async function processAttachment(attachmentId: string): Promise<void> {
     // perfectly good photo, and a title card wants the record this may have
     // just supplied.
     await fileAgainstVisit(attachment.id, () => captureTimeFromImage(original));
-    variants = await processImage(driver, attachment.id, attachment.storage_key, original);
+    variants = await processImage(
+      driver,
+      attachment.id,
+      attachment.storage_key,
+      original,
+      await isPropertyAttachment(attachment.id) ? 'property' : 'standard',
+    );
   } else {
     // Video never gets buffered into memory (a phone clip can be well over a
     // GB) — ffmpeg operates on a real file path via readToTempFile instead.

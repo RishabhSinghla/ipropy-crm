@@ -11,7 +11,9 @@ import { resolve } from 'node:path';
 import { db } from '../../src/db/pool.js';
 import { recordService } from '../../src/core/entity/recordService.js';
 import { registry } from '../../src/core/metadata/registry.js';
-import { buildStorageKey, slug } from '../../src/core/storage/keys.js';
+import {
+  buildStorageKey, derivativeStorageKey, PROPERTY_MEDIA_FOLDERS, slug,
+} from '../../src/core/storage/keys.js';
 import { localPath } from '../../src/core/storage/index.js';
 import { config } from '../../src/config.js';
 import { adminContext } from './fixtures.js';
@@ -32,7 +34,7 @@ describe('storage keys', () => {
     expect(key).toMatch(/^properties\//);
     expect(key).toContain('verdant-greens-tower-d-unit-702');
     // Still obviously the photo it came from, with a tail for uniqueness.
-    expect(key).toMatch(/\/img-9001-[0-9a-f]{8}\.heic$/);
+    expect(key).toMatch(/\/01 Originals\/img-9001-[0-9a-f]{8}\.heic$/);
   });
 
   it('leads the folder with the record number, since that is what people quote', async () => {
@@ -62,12 +64,13 @@ describe('storage keys', () => {
     const created = await recordService.createRecord(ctx, 'properties', { name: 'ग्रीनफील्ड' });
     const key = await buildStorageKey({ recordId: created.id, originalName: 'फोटो.jpg', ext: '.jpg' });
 
-    const [module, folder, file] = key.split('/');
+    const [module, folder, originals, file] = key.split('/');
     expect(module).toBe('properties');
     expect(folder).not.toBe('');
+    expect(originals).toBe('01 Originals');
     expect(file).toMatch(/^[a-z0-9-]+\.jpg$/);
     // Whatever it fell back to, it is still ASCII and still a usable path.
-    expect(key).toMatch(/^[a-z0-9/_.-]+$/);
+    expect(key).toMatch(/^[A-Za-z0-9 /_.-]+$/);
   });
 
   it('files an unattached upload under unfiled/, still by month', async () => {
@@ -93,13 +96,12 @@ describe('storage keys', () => {
     }
   });
 
-  it('keeps derivative keys next to the original', async () => {
-    // images.ts/video.ts build their keys by stripping the extension and
-    // appending — so the layout only works if the base is a real path.
+  it('files derivatives into their explicit property folders', async () => {
     const created = await recordService.createRecord(ctx, 'properties', { name: 'Derivative Home' });
     const key = await buildStorageKey({ recordId: created.id, originalName: 'IMG_1.jpg', ext: '.jpg' });
-    const base = key.slice(0, key.lastIndexOf('.'));
-    expect(`${base}-large.webp`.split('/').slice(0, -1).join('/')).toBe(key.split('/').slice(0, -1).join('/'));
+    const derivative = derivativeStorageKey(key, PROPERTY_MEDIA_FOLDERS.crmWebsite, 'large', '.webp');
+    expect(derivative).toContain('/05 CRM Website/');
+    expect(derivative).toMatch(/\/img-1-[0-9a-f]{8}-large\.webp$/);
   });
 
   describe('slug', () => {

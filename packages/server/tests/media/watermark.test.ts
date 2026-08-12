@@ -91,7 +91,7 @@ describe('processing an image', () => {
     const variants = await processImage(driver, 'att-1', 'icons/logo.png', await solid(40, 40));
 
     expect(variants).not.toBeNull();
-    // Still produces every derivative — just unbranded.
+    // Non-property images preserve the old lightweight three-variant path.
     expect(Object.keys(variants!).sort()).toEqual(['large', 'medium', 'thumb']);
     expect(driver.saved.size).toBe(3);
   });
@@ -100,14 +100,18 @@ describe('processing an image', () => {
     // The other half: proving the skip is narrow and has not quietly disabled
     // branding everywhere.
     const driver = fakeDriver();
-    const variants = await processImage(driver, 'att-2', 'properties/x/IMG_1.jpg', await solid(1600, 1200));
+    const variants = await processImage(driver, 'att-2', 'properties/x/01 Originals/IMG_1.jpg', await solid(1600, 1200), 'property');
 
     expect(variants).not.toBeNull();
     const plain = driver.saved.get(variants!.thumb!)!;
-    const branded = driver.saved.get(variants!.large!)!;
+    const branded = driver.saved.get(variants!.watermarked!)!;
     // The watermarked derivative carries pixels the unbranded one does not, so
     // a solid-colour source cannot compress to the same thing.
     expect(branded.length).toBeGreaterThan(plain.length);
+    expect(Object.keys(variants!).sort()).toEqual([
+      'compressed', 'facebook', 'instagramFeed', 'instagramStory', 'large',
+      'medium', 'thumb', 'watermarked', 'whatsapp',
+    ]);
   });
 
   it('returns null for something that is not an image at all', async () => {

@@ -16,6 +16,10 @@ import { closeStaleSessions } from '../capture/sessions.js';
 import { groupUnfiledPhotos } from '../capture/grouping.js';
 import { processPendingVoiceNotes } from '../capture/voice.js';
 import { processPendingShootVisions } from '../capture/vision.js';
+import { cullPendingRecords } from '../capture/cull.js';
+import { classifyPendingPropertyPhotos } from '../capture/classify.js';
+import { provisionPendingPropertyFolders } from '../storage/propertyFolders.js';
+import { ingestOneDriveOriginals } from '../storage/onedriveIngest.js';
 import { loadRecordValues, runWorkflowsFor } from './engine.js';
 import { runTask, type TaskContext } from './tasks.js';
 import { loadUser } from '../../middleware/auth.js';
@@ -407,6 +411,15 @@ async function housekeeping(): Promise<void> {
     // Read the photos in a nameless shoot, so the evening screen can say what
     // it is instead of only when it was. A no-op without an AI provider.
     processPendingShootVisions(),
+    // Create the complete OneDrive/local folder tree without making capture
+    // wait on a cloud call. Driver changes replay ready properties automatically.
+    provisionPendingPropertyFolders(),
+    // The OneDrive phone app is also a valid capture surface: originals placed
+    // there become normal CRM attachments and enter this same queue.
+    ingestOneDriveOriginals(),
+    // Conservative arithmetic first; vision labels only the photos it keeps.
+    cullPendingRecords(),
+    classifyPendingPropertyPhotos(),
   ]);
 }
 

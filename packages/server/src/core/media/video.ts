@@ -26,6 +26,7 @@ import ffmpeg from 'fluent-ffmpeg';
 import type { StorageDriver } from '../storage/index.js';
 import { logger } from '../../utils/logger.js';
 import { watermarkFor } from './watermark.js';
+import { derivativeStorageKey, PROPERTY_MEDIA_FOLDERS } from '../storage/keys.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -115,9 +116,7 @@ export async function processVideo(
       }
     }
 
-    const extIndex = storageKey.lastIndexOf('.');
-    const base = extIndex === -1 ? storageKey : storageKey.slice(0, extIndex);
-    const key = `${base}-web.mp4`;
+    const key = derivativeStorageKey(storageKey, PROPERTY_MEDIA_FOLDERS.crmWebsite, 'web', '.mp4');
     await driver.save(key, createReadStream(final), 'video/mp4');
     return { web: key };
   } finally {

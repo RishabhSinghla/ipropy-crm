@@ -131,6 +131,14 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
     { key: 'accessKeyId', label: 'Access Key ID', source: 'credentials' },
     { key: 'secretAccessKey', label: 'Secret Access Key', source: 'credentials', secret: true },
   ],
+  onedrive: [
+    { key: 'tenantId', label: 'Microsoft Entra Tenant ID', source: 'config', placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' },
+    { key: 'clientId', label: 'Application (Client) ID', source: 'config', placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' },
+    { key: 'clientSecret', label: 'Client Secret', source: 'credentials', secret: true },
+    { key: 'driveUser', label: 'OneDrive owner email', source: 'config', placeholder: 'photos@yourcompany.com' },
+    { key: 'driveId', label: 'Drive ID (optional instead of email)', source: 'config' },
+    { key: 'rootFolder', label: 'Root folder', source: 'config', placeholder: 'iPropy Properties' },
+  ],
   webform: [
     { key: 'key', label: 'Public Webhook Key', source: 'config', placeholder: 'ipropy-public-webform' },
   ],
@@ -139,7 +147,7 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
 const TESTABLE = new Set([
   'meta_whatsapp', 'twilio', 'exotel', 'smtp', 'imap', 'facebook_leads',
   'anthropic', 'ai_gemini', 'ai_groq', 'ai_openrouter', 'ai_openai', 'ai_ollama',
-  'ai_opencode', 'stt',
+  'ai_opencode', 'stt', 'onedrive',
 ]);
 
 /**
@@ -397,6 +405,19 @@ const GUIDES: Record<string, Guide> = {
       { title: 'Secret Access Key', help: 'Shown once when the key is created — if you did not save it, make a new key.', field: 'secretAccessKey' },
     ],
   },
+  onedrive: {
+    outcome: 'Keep every property original and every generated version in your company OneDrive, in a predictable folder tree.',
+    minutes: 8,
+    steps: [
+      { title: 'Register iPropy in Microsoft Entra', help: 'Open App registrations, create an application, then copy the Directory (tenant) ID.', href: 'https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade', linkLabel: 'Open Microsoft Entra' },
+      { title: 'Tenant ID', help: 'The Directory (tenant) ID from the app overview.', field: 'tenantId' },
+      { title: 'Application ID', help: 'The Application (client) ID from the same overview.', field: 'clientId' },
+      { title: 'Create a client secret', help: 'Certificates & secrets → New client secret. Copy its Value now; Microsoft only shows it once.', field: 'clientSecret' },
+      { title: 'Allow file access', help: 'API permissions → Microsoft Graph → Application permissions → Files.ReadWrite.All, then press Grant admin consent. This lets the background worker upload without an employee staying signed in.' },
+      { title: 'Choose the company drive', help: 'Enter the Microsoft 365 email address whose OneDrive should hold property media.', field: 'driveUser' },
+      { title: 'Name the root folder', help: 'All house folders are created inside this folder.', field: 'rootFolder' },
+    ],
+  },
 };
 
 /**
@@ -443,9 +464,9 @@ const CATALOGUE: { title: string; blurb: string; icon: typeof MessageCircle; pro
   },
   {
     title: 'Store files in your own cloud',
-    blurb: 'Optional — files live on this server otherwise.',
+    blurb: 'OneDrive is recommended; S3 and local storage remain available.',
     icon: HardDrive,
-    providers: ['s3'],
+    providers: ['onedrive', 's3'],
   },
 ];
 

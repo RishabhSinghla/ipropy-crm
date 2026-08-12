@@ -272,9 +272,20 @@ miscRouter.post('/files', mediaUpload.single('file'), asyncHandler(async (req, r
 
   const recordId = typeof req.body.recordId === 'string' ? req.body.recordId : null;
   const module = typeof req.body.module === 'string' ? req.body.module : null;
+  const shootSessionId = typeof req.body.shootSessionId === 'string' ? req.body.shootSessionId : null;
   if (recordId && module && !(await canAccessRecord(scope, module, recordId, 'edit'))) {
     await unlink(file.path).catch(() => undefined);
     throw new ForbiddenError('You cannot attach files to this record');
+  }
+  if (shootSessionId) {
+    const shoot = await db.queryOne<{ record_id: string | null }>(
+      `SELECT record_id FROM ipy_shoot_session WHERE id = $1 AND user_id = $2`,
+      [shootSessionId, user.id],
+    );
+    if (!shoot || (shoot.record_id && shoot.record_id !== recordId)) {
+      await unlink(file.path).catch(() => undefined);
+      throw new ForbiddenError('That capture session does not belong to this property');
+    }
   }
 
   // Never trust the client's filename for the path — derive a safe key. It is
@@ -289,11 +300,12 @@ miscRouter.post('/files', mediaUpload.single('file'), asyncHandler(async (req, r
   await unlink(file.path).catch(() => undefined);
 
   const row = await db.queryOne<{ id: string }>(
-    `INSERT INTO ipy_attachment (record_id, file_name, mime_type, size, storage_key, url, category, uploaded_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+    `INSERT INTO ipy_attachment
+       (record_id, file_name, mime_type, size, storage_key, url, category, uploaded_by, shoot_session_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
     [
       recordId, file.originalname, file.mimetype, file.size, key,
-      `/api/files/${key}`, req.body.category ?? null, user.id,
+      `/api/files/${key}`, req.body.category ?? null, user.id, shootSessionId,
     ],
   );
 
@@ -407,10 +419,14 @@ miscRouter.get('/records/:recordId/files', asyncHandler(async (req, res) => {
   }
 
   const rows = await db.query(
-    `SELECT a.id, a.file_name, a.mime_type, a.size, a.category, a.created_at,
+    `SELECT a.id, a.file_name, a.mime_type, a.size, a.category, a.created_at, a.variants,
+            a.cull_state, a.cull_of, a.stats,
+            a.ai_category, a.ai_caption, a.ai_confidence, a.ai_classified_at,
             trim(u.first_name || ' ' || u.last_name) AS uploaded_by_name
      FROM ipy_attachment a LEFT JOIN ipy_user u ON u.id = a.uploaded_by
-     WHERE a.record_id = $1 ORDER BY a.created_at DESC`,
+     WHERE a.record_id = $1
+     ORDER BY CASE WHEN a.cull_state = 'keep' THEN 0 WHEN a.cull_state IS NULL THEN 1 ELSE 2 END,
+              a.captured_at NULLS LAST, a.created_at DESC`,
     [req.params.recordId],
   );
   res.json(rows.rows);
@@ -917,4 +933,3 @@ miscRouter.post('/merge/:module', asyncHandler(async (req, res) => {
 
   res.json(await mergeRecords(scope, req.params.module, primaryId, duplicateIds, fieldChoices));
 }));
-

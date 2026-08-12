@@ -256,7 +256,7 @@ export const config = {
   },
 
   storage: {
-    driver: str('STORAGE_DRIVER', 'local') as 'local' | 's3',
+    driver: str('STORAGE_DRIVER', 'local') as 'local' | 's3' | 'onedrive',
     localPath: str('STORAGE_LOCAL_PATH', './storage'),
     s3: {
       bucket: str('S3_BUCKET'),
@@ -264,6 +264,14 @@ export const config = {
       accessKeyId: str('S3_ACCESS_KEY_ID'),
       secretAccessKey: str('S3_SECRET_ACCESS_KEY'),
       endpoint: str('S3_ENDPOINT'),
+    },
+    onedrive: {
+      tenantId: str('ONEDRIVE_TENANT_ID'),
+      clientId: str('ONEDRIVE_CLIENT_ID'),
+      clientSecret: str('ONEDRIVE_CLIENT_SECRET'),
+      driveId: str('ONEDRIVE_DRIVE_ID'),
+      driveUser: str('ONEDRIVE_DRIVE_USER'),
+      rootFolder: str('ONEDRIVE_ROOT_FOLDER', 'iPropy Properties'),
     },
   },
 
