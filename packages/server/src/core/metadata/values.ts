@@ -22,6 +22,29 @@ export function isEmpty(v: unknown): boolean {
 }
 
 /**
+ * Remove the characters Postgres will not store in a `text` column.
+ *
+ * A NUL byte makes the driver fail the whole statement with
+ * `invalid byte sequence for encoding "UTF8": 0x00`, which surfaced as a 500
+ * rather than a validation error — an unhandled crash from one invisible
+ * character. It arrives more often than it sounds: text copied out of a PDF, a
+ * CSV exported from an old system, a UTF-16 file read as UTF-8. The other C0
+ * controls are stripped alongside it because they are equally invisible and
+ * equally useless in a name or an address, while tab, newline and carriage
+ * return are kept — a textarea legitimately contains those.
+ *
+ * Stripped rather than rejected on purpose. "Your input contains an invalid
+ * character" is unactionable advice about something the person cannot see, and
+ * the value they meant to type is exactly what is left once it is gone.
+ */
+// eslint-disable-next-line no-control-regex
+const UNSTORABLE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g;
+
+export function stripUnstorable(value: string): string {
+  return value.replace(UNSTORABLE, '');
+}
+
+/**
  * Coerce an inbound value to the shape the DB column expects.
  * Throws ValidationError with a field-scoped message on bad input.
  */
@@ -37,6 +60,13 @@ const LIST_TYPES = new Set(['multipicklist', 'multireference', 'tags']);
 const TEXT_TYPES = new Set(['string', 'textarea', 'richtext']);
 
 export function coerceValue(field: FieldMeta, raw: unknown): unknown {
+  // Before anything else, and for every uitype: one NUL byte anywhere in a
+  // string fails the whole INSERT in the driver, and a value that is *only*
+  // control characters has to end up empty rather than as a string Postgres
+  // will not take. Done here rather than per-case so a uitype added later
+  // cannot forget.
+  if (typeof raw === 'string') raw = stripUnstorable(raw);
+
   // An empty multi-select must round-trip as [] rather than NULL: the payload
   // columns are `jsonb NOT NULL DEFAULT '[]'`, so writing NULL violates the
   // constraint. Mandatory validation still rejects [] via isEmpty().
