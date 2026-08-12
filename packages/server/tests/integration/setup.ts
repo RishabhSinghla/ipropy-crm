@@ -30,6 +30,14 @@ process.env.ENABLE_SCHEDULER = 'false';
 delete process.env.ANTHROPIC_API_KEY;
 delete process.env.AI_PROVIDER;
 
+// The sign-in brute-force guard is 20 attempts per 15 minutes per IP, and its
+// limiter is built once at module scope in api/routes/auth.ts — so every
+// `createApp()` in this process shares one budget, and the whole suite signs in
+// from one address. It sat at roughly seventeen of twenty; the next file to add
+// a login would have failed the run with a 401 that looks nothing like a rate
+// limit, and only sometimes. Raised here rather than weakened in the product.
+process.env.LOGIN_RATE_LIMIT = '10000';
+
 afterAll(async () => {
   // Without this the pool's idle clients keep the worker alive and vitest hangs.
   const { closePool } = await import('../../src/db/pool.js');

@@ -152,6 +152,29 @@ function qs(params: Record<string, unknown>): string {
 
 // ---------------------------------------------------------------------------
 
+
+/** A link that shows one property to one person — see server/core/sharing/shareLinks.ts. */
+export interface ShareLink {
+  id: string;
+  recordId: string;
+  token: string;
+  /** Who it was sent to. The sender's own note; never shown to the visitor. */
+  label: string | null;
+  createdBy: string;
+  createdAt: string;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  viewCount: number;
+  lastViewedAt: string | null;
+}
+
+/** What the public page renders. No auth, no CRM fields beyond the whitelist. */
+export interface SharedProperty {
+  property: Record<string, unknown>;
+  photos: { id: string; url: string; name: string }[];
+  sharedAt: string;
+}
+
 /** A site visit — see server/src/core/capture/sessions.ts. */
 export interface CaptureSession {
   /** Whether a gate recording exists and how far transcription got. */
@@ -701,6 +724,14 @@ export const api = {
       `/api/capture/sessions/${sessionId}/voice`, { method: 'POST', body: form },
     );
   },
+  shareLinks: (module: string, id: string) =>
+    get<ShareLink[]>(`/api/records/${module}/${id}/share-links`),
+  createShareLink: (module: string, id: string, body: { label?: string; expiresInDays?: number }) =>
+    post<ShareLink>(`/api/records/${module}/${id}/share-links`, body),
+  revokeShareLink: (module: string, id: string, linkId: string) =>
+    del<void>(`/api/records/${module}/${id}/share-links/${linkId}`),
+  /** The public read. Deliberately not authenticated — a buyer has no account. */
+  sharedProperty: (token: string) => get<SharedProperty>(`/api/public/share/${token}`),
   tags: () => get<{ id: string; name: string; color: string; usage_count: number }[]>('/api/tags'),
   importPreview: (module: string, file: File) => {
     const form = new FormData();

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { createShareLink, listShareLinks, revokeShareLink } from '../../core/sharing/shareLinks.js';
 import type { FilterGroup } from '@ipropy/shared';
 import { db, transaction } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
@@ -520,4 +521,59 @@ recordsRouter.get('/:module/:id/audit', asyncHandler(async (req, res) => {
 recordsRouter.get('/:module/meta/field-permissions', asyncHandler(async (req, res) => {
   const perms = await getFieldPermissions(getUser(req), req.params.module);
   res.json(Object.fromEntries(perms));
+}));
+
+// ---------------------------------------------------------------------------
+// Share links — see core/sharing/shareLinks.ts.
+//
+// Named `share-links`, not `shares`: `POST /:module/:id/share` and
+// `GET /:module/:id/shares` already exist and mean something entirely
+// different — granting another *user* access to the record. Express matches
+// the first route registered, so reusing that path silently shadowed these
+// behind the internal ones. Caught by a test that got an empty list back.
+//
+// Making one requires 'view' on the record, not 'edit': a link exposes exactly
+// what its maker could already see, and adds nothing to the record. Requiring
+// edit would stop a telecaller sending a buyer a property they are allowed to
+// discuss, which is the whole job.
+// ---------------------------------------------------------------------------
+
+recordsRouter.get('/:module/:id/share-links', asyncHandler(async (req, res) => {
+  const { module, id } = req.params;
+  if (!(await canAccessRecord(getScope(req), module, id, 'view'))) throw new ForbiddenError();
+  res.json(await listShareLinks(id));
+}));
+
+recordsRouter.post('/:module/:id/share-links', asyncHandler(async (req, res) => {
+  const scope = getScope(req);
+  const user = getUser(req);
+  const { module, id } = req.params;
+  if (!(await canAccessRecord(scope, module, id, 'view'))) throw new ForbiddenError();
+
+  const { label, expiresInDays } = z.object({
+    /** Who it is going to. The sender's own note — never shown to the visitor. */
+    label: z.string().max(120).optional(),
+    /** Omitted means it never expires, which is the default on purpose. */
+    expiresInDays: z.number().int().min(1).max(365).optional(),
+  }).parse(req.body ?? {});
+
+  const link = await createShareLink({
+    recordId: id,
+    userId: user.id,
+    label: label ?? null,
+    expiresAt: expiresInDays ? new Date(Date.now() + expiresInDays * 86_400_000) : null,
+  });
+
+  res.status(201).json(link);
+}));
+
+recordsRouter.delete('/:module/:id/share-links/:linkId', asyncHandler(async (req, res) => {
+  const { module, id, linkId } = req.params;
+  if (!(await canAccessRecord(getScope(req), module, id, 'view'))) throw new ForbiddenError();
+
+  // Scoped to this record inside the query too, so a guessed link id belonging
+  // to a property the caller cannot see is not revocable from here.
+  const revoked = await revokeShareLink(linkId, id);
+  if (!revoked) throw new NotFoundError('Link not found');
+  res.status(204).end();
 }));

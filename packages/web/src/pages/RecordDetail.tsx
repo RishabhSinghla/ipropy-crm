@@ -18,6 +18,7 @@ import { cn, renderMarkdown, restrictionForField } from '../lib/utils';
 import { resolveIcon } from '../lib/icons';
 import { FieldValue } from '../components/FieldRenderer';
 import { EditableField, isInlineEditable } from '../components/EditableField';
+import { ShareLinksPanel } from '../components/ShareLinks';
 import {
   Avatar, Badge, ConfirmDialog, Dropdown, DropdownItem, EmptyState, Modal,
   ScoreChip, Skeleton, Spinner, Tabs,
@@ -47,6 +48,7 @@ export default function RecordDetail(): JSX.Element {
 
   const [tab, setTab] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const [compose, setCompose] = useState<'whatsapp' | 'email' | null>(null);
 
   const { data: meta } = useQuery({
@@ -403,6 +405,14 @@ export default function RecordDetail(): JSX.Element {
                         Summarise with AI
                       </DropdownItem>
                     )}
+                    {moduleName === 'properties' && (
+                      <DropdownItem
+                        icon={<Link2 className="h-3.5 w-3.5" />}
+                        onClick={() => { setSharing(true); close(); }}
+                      >
+                        Send to a buyer
+                      </DropdownItem>
+                    )}
                     {record.can?.delete && (
                       <DropdownItem
                         icon={<Trash2 className="h-3.5 w-3.5" />}
@@ -453,6 +463,14 @@ export default function RecordDetail(): JSX.Element {
           <AiPanel module={moduleName!} record={record} meta={meta} />
         </div>
       </div>
+
+      <Modal
+        open={sharing}
+        onClose={() => setSharing(false)}
+        title="Send this property to a buyer"
+      >
+        <ShareLinksPanel module={moduleName!} recordId={id!} recordLabel={record.label} />
+      </Modal>
 
       <ConfirmDialog
         open={confirmDelete}
