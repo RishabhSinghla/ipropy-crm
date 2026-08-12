@@ -24,13 +24,42 @@ export interface Watermark {
   margin: number;
 }
 
-/** Sized proportionally (~16% of image width) so it reads the same on a thumbnail-sized crop as on a hero. */
-export async function watermarkFor(imageWidth: number): Promise<Watermark> {
-  const width = Math.max(60, Math.round(imageWidth * 0.16));
+/**
+ * Below this the word "IPROPY" is not readable, so the badge stops shrinking.
+ *
+ * That floor is also what makes `fits` necessary: on an image narrower than
+ * 60px the badge is wider than the thing it is being stamped onto, and sharp's
+ * composite rejects an overlay larger than its base outright.
+ */
+const MIN_WIDTH = 60;
+
+/**
+ * Sized proportionally (~16% of image width) so it reads the same on a
+ * thumbnail-sized crop as on a hero.
+ *
+ * Returns null when the badge cannot fit — which is not an error and must not
+ * be treated as one. This was a real bug: `processImage` let the composite
+ * throw, `processAttachment` let that propagate, and the media queue retried
+ * the job forever, because a 40px image is exactly as small on the tenth
+ * attempt as on the first. A photo from a phone never hits it; a logo, an
+ * icon, a scanned stamp or a signature crop does.
+ *
+ * A watermark nobody can read on an image nobody can see is worth nothing, so
+ * skipping it costs nothing either.
+ */
+export async function watermarkFor(imageWidth: number, imageHeight: number): Promise<Watermark | null> {
+  const width = Math.max(MIN_WIDTH, Math.round(imageWidth * 0.16));
   const height = Math.round(width * 0.34);
+  const margin = Math.round(imageWidth * 0.025);
+
+  // Margin included on purpose. sharp only refuses an overlay strictly larger
+  // than the base, so a badge exactly the size of the image would technically
+  // composite — as a bar covering the whole picture, which is not a watermark.
+  if (width + margin > imageWidth || height + margin > imageHeight) return null;
+
   if (!cache.has(width)) {
     cache.set(width, sharp(Buffer.from(svgFor(width, height))).png().toBuffer());
   }
   const buffer = await cache.get(width)!;
-  return { buffer, width, height, margin: Math.round(imageWidth * 0.025) };
+  return { buffer, width, height, margin };
 }
