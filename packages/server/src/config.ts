@@ -40,6 +40,9 @@ export const config = {
 
   auth: {
     jwtSecret: str('JWT_SECRET', 'dev-only-insecure-secret-change-me'),
+    // A database dump alone must not make a four-digit device PIN brute-forceable.
+    // Defaults to the already-required JWT secret; deployments may separate it.
+    pinPepper: str('PIN_PEPPER') || str('JWT_SECRET', 'dev-only-insecure-secret-change-me'),
     jwtExpiresIn: str('JWT_EXPIRES_IN', '12h'),
     refreshExpiresIn: str('REFRESH_TOKEN_EXPIRES_IN', '30d'),
     bcryptRounds: num('BCRYPT_ROUNDS', 10),

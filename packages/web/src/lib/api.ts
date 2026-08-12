@@ -46,6 +46,7 @@ async function refreshToken(): Promise<boolean> {
 
   refreshPromise = fetch('/api/auth/refresh', {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ refreshToken: refresh }),
   })
@@ -76,6 +77,9 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     const isFormData = body instanceof FormData;
     return fetch(path.startsWith('/') ? path : `/api/${path}`, {
       ...rest,
+      // Required by the trusted-device PIN in split localhost deployments.
+      // Its HttpOnly cookie is path-scoped to /api/auth/pin.
+      credentials: rest.credentials ?? 'include',
       headers: {
         ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -423,6 +427,23 @@ export interface RenderJob {
   title?: string | null; created_at: string; finished_at: string | null;
 }
 
+export interface PinStatus {
+  available: boolean;
+  label?: string | null;
+  userHint?: string;
+  lockedUntil?: string | null;
+}
+
+export interface PinDevice {
+  id: string;
+  label: string | null;
+  created_at: string;
+  last_used_at: string | null;
+  expires_at: string;
+  locked_until: string | null;
+  is_current: boolean;
+}
+
 export const api = {
   /** Escape hatch for endpoints without a dedicated helper. */
   request,
@@ -446,6 +467,17 @@ export const api = {
     }),
   passkeys: () => get<Record<string, unknown>[]>('/api/auth/passkeys'),
   deletePasskey: (id: string) => del(`/api/auth/passkeys/${id}`),
+
+  // --- trusted-device four-digit PIN ---------------------------------------
+  pinStatus: () => request<PinStatus>('/api/auth/pin/status', { skipRefresh: true }),
+  pinLogin: (pin: string) =>
+    request<{ token: string; refreshToken: string; user: AuthUser }>('/api/auth/pin/login', {
+      method: 'POST', body: { pin }, skipRefresh: true,
+    }),
+  enrolPin: (pin: string, currentPassword: string, label?: string) =>
+    post('/api/auth/pin/enrol', { pin, currentPassword, label }),
+  pinDevices: () => get<PinDevice[]>('/api/auth/pin'),
+  deletePinDevice: (id: string) => del(`/api/auth/pin/${id}`),
   logout: () => post('/api/auth/logout', { refreshToken: tokenStore.getRefresh() }),
   me: () => get<AuthUser>('/api/auth/me'),
   updateProfile: (data: Record<string, unknown>) => patch<AuthUser>('/api/auth/me', data),

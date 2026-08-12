@@ -12,7 +12,6 @@
  * what lets a raw assertion identify the account.
  */
 import { Router, type Request } from 'express';
-import crypto from 'node:crypto';
 import { z } from 'zod';
 import rateLimit from 'express-rate-limit';
 import {
@@ -22,9 +21,10 @@ import {
 import { config } from '../../config.js';
 import { db, queryOne } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
-import { getUser, loadUser, requireAuth, signAccessToken } from '../../middleware/auth.js';
+import { getUser, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, UnauthorizedError } from '../../utils/errors.js';
 import { logger } from '../../utils/logger.js';
+import { issueSession } from '../../core/auth/session.js';
 
 export const passkeyRouter = Router();
 
@@ -33,6 +33,7 @@ const passkeyLimiter = rateLimit({
   limit: 30,
   standardHeaders: true,
   legacyHeaders: false,
+  skipSuccessfulRequests: true,
   message: { error: 'rate_limited', message: 'Too many attempts. Try again in a few minutes.' },
 });
 
@@ -259,15 +260,5 @@ passkeyRouter.post('/login/verify', passkeyLimiter, asyncHandler(async (req, res
     [cred.id, newCounter],
   );
 
-  const user = await loadUser(cred.user_id);
-  if (!user) throw new UnauthorizedError('Account not found');
-
-  const refreshToken = crypto.randomBytes(48).toString('base64url');
-  await db.query(
-    `INSERT INTO ipy_session (user_id, refresh_token, user_agent, ip_address, expires_at)
-     VALUES ($1,$2,$3,$4,$5)`,
-    [user.id, refreshToken, req.headers['user-agent'] ?? null, req.ip ?? null, new Date(Date.now() + 30 * 86_400_000)],
-  );
-
-  res.json({ token: signAccessToken(user), refreshToken, user });
+  res.json(await issueSession(cred.user_id, req));
 }));

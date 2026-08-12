@@ -15,7 +15,9 @@ interface AppState {
   /** `identifier` is an email address or a mobile number. */
   login: (identifier: string, password: string) => Promise<void>;
   /** Sign in with a device passkey (Face ID / Touch ID / Android biometrics). */
-  loginWithPasskey: () => Promise<void>;
+  loginWithPasskey: (useBrowserAutofill?: boolean) => Promise<void>;
+  /** Fast unlock available only in the browser where the PIN was enrolled. */
+  loginWithPin: (pin: string) => Promise<void>;
   logout: () => Promise<void>;
   setTheme: (theme: 'light' | 'dark') => void;
   toggleSidebar: () => void;
@@ -88,13 +90,17 @@ export const useApp = create<AppState>((set, get) => ({
     await adoptSession(await api.login(identifier, password), set);
   },
 
-  loginWithPasskey: async () => {
+  loginWithPasskey: async (useBrowserAutofill = false) => {
     const { startAuthentication } = await import('@simplewebauthn/browser');
     const options = await api.passkeyLoginOptions();
     // The browser shows the biometric prompt here; it rejects if the user
     // cancels, which the caller treats as "not an error worth shouting about".
-    const assertion = await startAuthentication({ optionsJSON: options as never });
+    const assertion = await startAuthentication({ optionsJSON: options as never, useBrowserAutofill });
     await adoptSession(await api.passkeyLoginVerify(assertion), set);
+  },
+
+  loginWithPin: async (pin) => {
+    await adoptSession(await api.pinLogin(pin), set);
   },
 
   logout: async () => {

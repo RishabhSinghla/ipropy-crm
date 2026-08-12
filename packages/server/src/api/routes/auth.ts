@@ -10,6 +10,8 @@ import {
 } from '../../middleware/auth.js';
 import { BadRequestError, UnauthorizedError, ValidationError } from '../../utils/errors.js';
 import { getSubordinateUserIds } from '../../core/permissions/index.js';
+import { issueSession } from '../../core/auth/session.js';
+import { clearPinDeviceCookie } from '../../core/auth/devicePin.js';
 
 export const authRouter = Router();
 
@@ -18,6 +20,7 @@ const loginLimiter = rateLimit({
   limit: config.security.loginRateLimit,
   standardHeaders: true,
   legacyHeaders: false,
+  skipSuccessfulRequests: true,
   message: { error: 'rate_limited', message: 'Too many sign-in attempts. Try again in a few minutes.' },
 });
 
@@ -39,15 +42,6 @@ const loginSchema = z.object({
 function phoneKey(value: string): string | null {
   const digits = value.replace(/\D/g, '');
   return digits.length >= 10 ? digits.slice(-10) : null;
-}
-
-function refreshExpiry(): Date {
-  const spec = config.auth.refreshExpiresIn;
-  const m = spec.match(/^(\d+)([smhd])$/);
-  const ms = m
-    ? Number(m[1]) * ({ s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 }[m[2]] ?? 86_400_000)
-    : 30 * 86_400_000;
-  return new Date(Date.now() + ms);
 }
 
 authRouter.post('/login', loginLimiter, asyncHandler(async (req, res) => {
@@ -74,22 +68,7 @@ authRouter.post('/login', loginLimiter, asyncHandler(async (req, res) => {
   }
   if (!row.is_active) throw new UnauthorizedError('This account has been deactivated');
 
-  const user = await loadUser(row.id);
-  if (!user) throw new UnauthorizedError('Account not found');
-
-  const refreshToken = crypto.randomBytes(48).toString('base64url');
-  await db.query(
-    `INSERT INTO ipy_session (user_id, refresh_token, user_agent, ip_address, expires_at)
-     VALUES ($1,$2,$3,$4,$5)`,
-    [user.id, refreshToken, req.headers['user-agent'] ?? null, req.ip ?? null, refreshExpiry()],
-  );
-  await db.query(`UPDATE ipy_user SET last_login_at = now() WHERE id = $1`, [user.id]);
-
-  res.json({
-    token: signAccessToken(user),
-    refreshToken,
-    user: { ...user, subordinateIds: await getSubordinateUserIds(user) },
-  });
+  res.json(await issueSession(row.id, req));
 }));
 
 authRouter.post('/refresh', asyncHandler(async (req, res) => {
@@ -193,6 +172,11 @@ authRouter.post('/change-password', requireAuth, asyncHandler(async (req, res) =
   );
   // Force other devices to re-authenticate after a password change.
   await db.query(`UPDATE ipy_session SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, [user.id]);
+  // A device PIN is deliberately a lower-friction credential. Changing the
+  // account password is a security reset, so every trusted-device PIN must be
+  // explicitly set up again afterward.
+  await db.query(`UPDATE ipy_pin_device SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, [user.id]);
+  clearPinDeviceCookie(res);
   res.json({ ok: true });
 }));
 

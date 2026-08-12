@@ -178,6 +178,7 @@ function PreferencesTab({
 }
 
 function SecurityTab(): JSX.Element {
+  const queryClient = useQueryClient();
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -193,8 +194,10 @@ function SecurityTab(): JSX.Element {
     setBusy(true);
     try {
       await api.changePassword(current, next);
-      toast.success('Password changed', 'Other devices were signed out.');
+      toast.success('Password changed', 'Other sessions were signed out and trusted-device PINs were reset.');
       setCurrent(''); setNext(''); setConfirm('');
+      await queryClient.invalidateQueries({ queryKey: ['pin-devices'] });
+      await queryClient.invalidateQueries({ queryKey: ['pin-status'] });
     } catch (err) {
       toast.error('Could not change the password', (err as Error).message);
     } finally {
@@ -205,6 +208,7 @@ function SecurityTab(): JSX.Element {
   return (
     <div className="space-y-4">
       <PasskeysCard />
+      <DevicePinCard />
 
       <div className="card p-5">
         <p className="mb-3 text-sm font-medium">Change password</p>
@@ -259,6 +263,123 @@ function SecurityTab(): JSX.Element {
             );
           })}
         </ul>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Optional banking-app-style quick unlock. The four digits are useful only
+ * together with this browser's HttpOnly random device credential; they are
+ * never accepted as an account-wide password.
+ */
+function DevicePinCard(): JSX.Element {
+  const [pin, setPin] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const { data: devices, refetch } = useQuery({
+    queryKey: ['pin-devices'],
+    queryFn: () => api.pinDevices(),
+  });
+
+  const setDigits = (value: string, setter: (next: string) => void): void => {
+    setter(value.replace(/\D/g, '').slice(0, 4));
+  };
+
+  const enrol = async (): Promise<void> => {
+    if (pin.length !== 4) { toast.error('Enter exactly four digits'); return; }
+    if (pin !== confirm) { toast.error('PINs do not match'); return; }
+    setBusy(true);
+    try {
+      await api.enrolPin(pin, password, describeThisDevice());
+      setPin(''); setConfirm(''); setPassword('');
+      toast.success('Quick unlock is ready', 'It works only in this browser on this device.');
+      await refetch();
+    } catch (err) {
+      toast.error('Could not set up the PIN', (err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (id: string): Promise<void> => {
+    try {
+      await api.deletePinDevice(id);
+      toast.success('Trusted device removed');
+      await refetch();
+    } catch (err) {
+      toast.error('Could not remove the device', (err as Error).message);
+    }
+  };
+
+  return (
+    <div className="card space-y-4 p-5">
+      <div>
+        <p className="text-sm font-medium">Four-digit quick unlock</p>
+        <p className="mt-1 text-sm text-muted">
+          Optional. The PIN is tied to this trusted browser, locks after five wrong attempts,
+          and cannot be used from another phone or computer.
+        </p>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div>
+          <label className="label">New 4-digit PIN</label>
+          <input
+            type="password" inputMode="numeric" pattern="[0-9]*" maxLength={4}
+            className="input text-center tracking-[0.45em] tnum" value={pin}
+            onChange={(e) => setDigits(e.target.value, setPin)} autoComplete="off" placeholder="••••"
+          />
+        </div>
+        <div>
+          <label className="label">Confirm PIN</label>
+          <input
+            type="password" inputMode="numeric" pattern="[0-9]*" maxLength={4}
+            className="input text-center tracking-[0.45em] tnum" value={confirm}
+            onChange={(e) => setDigits(e.target.value, setConfirm)} autoComplete="off" placeholder="••••"
+          />
+        </div>
+        <div>
+          <label className="label">Current password</label>
+          <input
+            type="password" className="input" value={password}
+            onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" placeholder="Required once"
+          />
+        </div>
+      </div>
+      <div className="flex justify-end">
+        <button className="btn-primary btn-sm" disabled={busy || pin.length !== 4 || confirm.length !== 4 || !password} onClick={() => void enrol()}>
+          {busy ? <Spinner className="h-3 w-3" /> : <KeyRound className="h-3.5 w-3.5" />}
+          Trust this device
+        </button>
+      </div>
+
+      <div>
+        <p className="mb-2 text-sm font-medium">Devices with quick unlock</p>
+        {(devices ?? []).length === 0 ? (
+          <p className="text-xs text-muted">None yet.</p>
+        ) : (
+          <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-700">
+            {(devices ?? []).map((device) => (
+              <li key={device.id} className="flex items-center justify-between gap-3 px-3 py-2">
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-medium">
+                    {device.label ?? 'Unnamed device'}{device.is_current ? ' · this browser' : ''}
+                  </p>
+                  <p className="text-2xs text-muted">
+                    added {relativeTime(device.created_at)}
+                    {device.last_used_at ? ` · last used ${relativeTime(device.last_used_at)}` : ' · never used'}
+                    {device.locked_until && new Date(device.locked_until) > new Date() ? ' · temporarily locked' : ''}
+                  </p>
+                </div>
+                <button className="btn-ghost btn-sm shrink-0 text-negative" onClick={() => void remove(device.id)}>
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   );
@@ -553,8 +674,8 @@ function PasskeysCard(): JSX.Element {
 
       {!supported ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
-          This device or browser has no biometric sign-in available. On iPhone and iPad, add
-          iPropy to your Home Screen and open it from there first.
+          This browser does not currently advertise a built-in biometric authenticator. You can
+          still use your password or set up a device-bound quick PIN below.
         </div>
       ) : (
         <button className="btn-primary btn-sm" disabled={busy} onClick={() => void enrol()}>
