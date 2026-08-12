@@ -47,8 +47,8 @@ const PROPERTY_DERIVATIVES: Derivative[] = [
 /** Preserve the old lightweight behaviour for avatars and non-property files. */
 const STANDARD_DERIVATIVES: Derivative[] = [
   { key: 'thumb', destination: '', suffix: 'thumb', width: 480, quality: 76 },
-  { key: 'medium', destination: '', suffix: 'medium', width: 1200, quality: 82, watermark: true },
-  { key: 'large', destination: '', suffix: 'large', width: 2400, quality: 82, watermark: true },
+  { key: 'medium', destination: '', suffix: 'medium', width: 1200, quality: 82 },
+  { key: 'large', destination: '', suffix: 'large', width: 2400, quality: 82 },
 ];
 
 export async function processImage(

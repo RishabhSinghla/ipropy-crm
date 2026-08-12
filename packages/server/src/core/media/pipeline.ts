@@ -12,6 +12,7 @@ import { getDriver } from '../storage/index.js';
 import { logger } from '../../utils/logger.js';
 import { processImage } from './images.js';
 import { processVideo, type TitleCardInfo } from './video.js';
+import { needsTranscode, transcodeToJpeg } from './transcode.js';
 import { captureTimeFromImage, captureTimeFromVideo } from '../capture/captureTime.js';
 import { matchAttachment } from '../capture/matching.js';
 
@@ -74,13 +75,21 @@ export async function processAttachment(attachmentId: string): Promise<void> {
     // perfectly good photo, and a title card wants the record this may have
     // just supplied.
     await fileAgainstVisit(attachment.id, () => captureTimeFromImage(original));
-    variants = await processImage(
-      driver,
-      attachment.id,
-      attachment.storage_key,
-      original,
-      await isPropertyAttachment(attachment.id) ? 'property' : 'standard',
-    );
+    // Most iPhones shoot HEIC. The original is retained byte-for-byte; ffmpeg
+    // supplies only a temporary decoded frame because Sharp's common libvips
+    // build cannot decode HEVC pixels even when it recognises the container.
+    const pixelSource = needsTranscode(attachment.mime_type)
+      ? await transcodeToJpeg(original, attachment.id)
+      : original;
+    variants = pixelSource
+      ? await processImage(
+        driver,
+        attachment.id,
+        attachment.storage_key,
+        pixelSource,
+        await isPropertyAttachment(attachment.id) ? 'property' : 'standard',
+      )
+      : null;
   } else {
     // Video never gets buffered into memory (a phone clip can be well over a
     // GB) — ffmpeg operates on a real file path via readToTempFile instead.

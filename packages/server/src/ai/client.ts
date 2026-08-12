@@ -176,6 +176,18 @@ function noteRateLimit(ai: { provider: AiProvider; apiKey: string }, message: st
 }
 
 /**
+ * Reasoning models count hidden thinking against the output ceiling before
+ * they write the visible answer. Small per-feature caps such as 400 or 700 can
+ * therefore produce an empty, length-truncated response even though the model
+ * and API key are working. This is only a ceiling, not reserved/spent tokens.
+ */
+export const MIN_OUTPUT_TOKENS = 2500;
+
+export function outputTokenLimit(requested: number | undefined, configured: number): number {
+  return Math.max(requested ?? configured, MIN_OUTPUT_TOKENS);
+}
+
+/**
  * Run a completion, falling through to the next configured provider if the
  * chosen one fails outright.
  *
@@ -200,7 +212,7 @@ export async function complete(opts: CompleteOptions): Promise<CompleteResult | 
 
   for (const [index, ai] of chain.entries()) {
     const model = opts.fast ? ai.fastModel : ai.model;
-    const maxTokens = opts.maxTokens ?? ai.maxTokens;
+    const maxTokens = outputTokenLimit(opts.maxTokens, ai.maxTokens);
     const temperature = opts.temperature ?? 0.2;
     const started = Date.now();
 
@@ -262,6 +274,10 @@ async function callAnthropic(
     .map((b) => b.text)
     .join('');
 
+  if (!text.trim()) {
+    throw new Error(`Model returned no text (stop reason: ${response.stop_reason ?? 'unknown'}). Increase its output allowance or choose another model.`);
+  }
+
   return {
     // Prefill isn't echoed back, so re-attach it for the caller's parser.
     text: opts.prefill ? opts.prefill + text : text,
@@ -308,7 +324,7 @@ async function fetchWithRetry(url: string, init: RequestInit, attempts = 3): Pro
 }
 
 interface ChatCompletionResponse {
-  choices?: { message?: { content?: string | null } }[];
+  choices?: { finish_reason?: string | null; message?: { content?: string | null } }[];
   usage?: { prompt_tokens?: number; completion_tokens?: number };
   error?: { message?: string } | string;
 }
@@ -390,7 +406,11 @@ async function callOpenAiCompatible(
     throw new Error(typeof json.error === 'string' ? json.error : (json.error.message ?? 'provider error'));
   }
 
-  const text = json.choices?.[0]?.message?.content ?? '';
+  const choice = json.choices?.[0];
+  const text = choice?.message?.content ?? '';
+  if (!text.trim()) {
+    throw new Error(`Model returned no text (finish reason: ${choice?.finish_reason ?? 'unknown'}). Increase its output allowance or choose another model.`);
+  }
   return {
     text,
     inputTokens: json.usage?.prompt_tokens ?? 0,
