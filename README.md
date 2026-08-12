@@ -247,11 +247,11 @@ packages/
     ai/            client (Anthropic + any OpenAI-compatible), scoring, matching, drafting,
                    call analysis, assistant
     api/routes/    auth, metadata, records, views, dashboards, admin, comms, telephony, ai,
-                   webhooks, capture, public, studio, outreach, passkeys, device
+                   webhooks, capture, public, outreach, passkeys, device
   web/
     components/    FieldRenderer (the heart), RecordForm, FilterBuilder, AiAssistant,
                    ShareLinks, ui kit
-    pages/         Dashboard, ListView, RecordDetail, Inbox, Calls, Reports, Studio, Outreach,
+    pages/         Dashboard, ListView, RecordDetail, Inbox, Calls, Reports, Outreach,
                    Capture, CaptureShoots, CaptureReview, SharedProperty, admin/*
 ```
 

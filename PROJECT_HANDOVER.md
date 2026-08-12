@@ -168,6 +168,13 @@ exists, which is the authoritative account.
 | `036_auto_grouped_shoots.sql` | 2026-08-11 | `origin` (`manual` / `auto`) — photos group themselves when nobody tapped Start |
 | `037_shoot_vision.sql` | 2026-08-11 | `vision` JSONB + status/attempts/error — what the photos in a shoot are of |
 | `038_share_links.sql` | 2026-08-12 | `ipy_share_link` — send one property to one person |
+| `039_opencode_ai.sql` | 2026-08-13 | OpenCode Zen as an additional AI route; `ON CONFLICT` keeps configured settings |
+| `040_onedrive_media_intelligence.sql` | 2026-08-13 | OneDrive-backed property folders and non-destructive photo intelligence |
+| `041_onedrive_originals_scan.sql` | 2026-08-13 | Graph item id, so a background scan imports each original exactly once |
+| `042_property_share_controls.sql` | 2026-08-13 | Admin-controlled share fields — unit identity and location are off by default |
+| `043_ai_assistant_agent.sql` | 2026-08-13 | `ipy_ai_action` and explicit, user-owned assistant memories |
+| `044_device_pin.sql` | 2026-08-13 | Four-digit quick unlock bound to one browser; neither PIN nor device token stored |
+| `045_remove_studio.sql` | 2026-08-14 | Drops `ipy_design` and `ipy_render_job` — the Studio is gone |
 
 The migration runner (`db/migrate.ts`) is forward-only, applies each `.sql` in name order inside its
 own transaction, and records it in `ipy_migration`. It is safe to re-run (already-applied files are
@@ -1124,14 +1131,21 @@ scaled only by CSS, so there is no second rendering path that could disagree.
 Canvas has no text wrapping, hence `wrapText` — without it a long project name
 runs off the edge, which is the most common way a generated post looks broken.
 
+> **Removed 2026-08-14.** The Studio, the reel renderer, PDF brochures and AI
+> photo editing were all deleted (migration `045`) — a design editor was the
+> wrong surface for the CRM to own, and creatives are made in a dedicated tool.
+> Watermarking and image/video derivatives survive: those are the media
+> pipeline, run with no UI on every upload, and publishing needs them. The
+> paragraphs above are kept as the record of what was built, not as a
+> description of the code today.
+
 **Known data issue, not a bug:** the demo seed writes `gallery` URLs pointing at
 attachment ids it never creates, so seeded properties have dangling photos.
 Templates therefore always draw a brand-colour rect *under* the image, so a
 missing photo yields a branded post rather than a near-black one.
 
 **Still not done:** #7/#10/#12/#13 (WhatsApp — Meta approval), #15 (portal
-contracts), #17 (call recording). The Studio covers social-post creation only —
-not video editing or a general design tool.
+contracts), #17 (call recording).
 
 ### §17.3 — Fourth session (2026-08-09)
 

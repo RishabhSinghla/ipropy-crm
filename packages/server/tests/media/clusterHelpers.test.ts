@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { buildImagePdf } from '../../src/core/media/pdf.js';
 import { buildWaLink } from '../../src/integrations/whatsapp/deviceSend.js';
 import { minutesUntilAwake } from '../../src/integrations/whatsapp/sequences.js';
 import { parseByteRange } from '../../src/utils/httpRange.js';
@@ -47,22 +46,3 @@ describe('minutesUntilAwake', () => {
   });
 });
 
-describe('buildImagePdf', () => {
-  it('writes a complete multi-page PDF with the expected page tree', () => {
-    const fakeJpeg = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
-    const pdf = buildImagePdf([
-      { jpeg: fakeJpeg, width: 1080, height: 1528 },
-      { jpeg: fakeJpeg, width: 1080, height: 1528 },
-    ]);
-    const text = pdf.toString('latin1');
-
-    expect(text.startsWith('%PDF-1.4\n')).toBe(true);
-    expect(text).toContain('/Type /Pages /Count 2');
-    expect(text).toContain('xref\n0 9\n');
-    expect(text.endsWith('%%EOF\n')).toBe(true);
-  });
-
-  it('refuses to produce an empty document', () => {
-    expect(() => buildImagePdf([])).toThrow('A PDF needs at least one page');
-  });
-});

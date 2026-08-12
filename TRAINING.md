@@ -553,7 +553,7 @@ workflow engine. Nobody has to update five places.
 # PART 6 — Every screen, one by one
 
 The left sidebar, top to bottom: **Dashboard · Inbox · Calls · Leads & Contacts · Properties ·
-Campaigns · Outreach · Studio · Reports** — and at the bottom, **Settings** and **Admin**.
+Campaigns · Outreach · Site capture · Reports** — and at the bottom, **Settings** and **Admin**.
 
 ## 6.1 Login
 
@@ -739,29 +739,31 @@ they reply or convert.
 Rules can chain into one another, and you can test a rule against sample text before switching it
 on.
 
-## 6.9 Studio — make the marketing picture
+## 6.9 Site capture — the screen used at the gate
 
-Turns a listing into something you can post. Four tabs: **Reel**, **Brochure**, **Photo**, **Post**.
+This is the one screen designed to be used outdoors, one-handed, in sunlight, standing outside a
+builder floor immediately before walking in to photograph it. Everything about it follows from
+that.
 
-- **Post** — an Instagram / Facebook / WhatsApp image built from a template, filled with the
-  unit's real photo, price, configuration and location.
-- **Brochure** — a PDF-style sheet for one property.
-- **Reel** — a short video from the unit's photos.
-- **Photo** — image editing / cleanup.
+- **It never waits for the network.** The tap writes to the phone's own storage and returns. A
+  site with no signal must not cost you the visit.
+- **It never waits for GPS.** Location is collected in the background and attached if it arrives.
+  It is used for grouping, never to decide *which* property this is — adjacent floors are ten
+  metres apart.
+- **There is no Finish button.** Nobody presses one reliably after ten visits, so the next Start
+  closes the previous visit and the server closes the day's last one.
+- **You can speak instead of typing.** A twenty-second note at the gate is turned into fields
+  later, and you confirm them that evening rather than typing them in the sun.
 
-Two design decisions worth understanding:
+Which fields appear here comes from the Properties quick-create layout, so it is an Admin setting
+in the Layout Designer, not something that needs a developer.
 
-1. **The preview *is* the export.** Both go through exactly the same drawing code onto a canvas at
-   full output size, and the preview is just scaled down with CSS. There is no second rendering
-   path that could disagree with the first, so what you see cannot differ from what you get.
-2. **Text wrapping is hand-written.** A drawing canvas has no idea what a line break is. Without
-   the custom wrapping code, a long project name runs straight off the edge of the image — which
-   is the single most common way a generated post looks broken.
+**Site capture → Shoots** is the evening half: photos that arrived with no property on them,
+grouped by when they were taken, with thumbnails, waiting to be pointed at a property.
 
-> **Known cosmetic issue, not a bug:** the demo sample data refers to photos that were never
-> actually created, so demo properties have dangling images. Templates therefore always paint a
-> brand-coloured rectangle *underneath* the photo — so a missing image gives you a clean branded
-> post instead of a near-black one.
+> There is no Studio. Marketing images, brochures and reels are made in a dedicated design tool —
+> the CRM's job is to hold the property and its photos, watermark and resize them automatically,
+> and publish them. A design editor inside the CRM was removed deliberately.
 
 ## 6.10 Reports
 
@@ -1637,8 +1639,8 @@ enrol people. They exit automatically when they reply or convert.
 **Answer common questions automatically**
 Outreach → Auto-replies → new rule → *A keyword appears* → "PRICE" → your reply → test it → enable.
 
-**Make a social post for a flat**
-Studio → Post → pick the property → pick a template → Export.
+**Record a property while standing at it**
+Site capture → say or type the details → Start. Photograph the place, then drive on.
 
 **Ask a question in English**
 Open the AI assistant, type it. Remember: it can only see what *you* are allowed to see, and it

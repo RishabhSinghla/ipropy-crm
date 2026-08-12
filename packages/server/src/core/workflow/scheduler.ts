@@ -55,7 +55,6 @@ async function tick(): Promise<void> {
     await Promise.allSettled([
       drainQueue(),
       drainMediaQueue(),
-      drainRenderQueue(),
       runScheduledWorkflows(),
       runSequences(),
       startDueBroadcasts(),
@@ -94,16 +93,6 @@ async function startDueBroadcasts(): Promise<void> {
     await runDueBroadcasts();
   } catch (err) {
     logger.error({ err }, 'scheduled broadcast dispatch failed');
-  }
-}
-
-/** Render reels and brochures queued by the studio. */
-async function drainRenderQueue(): Promise<void> {
-  try {
-    const { drainRenders } = await import('../media/renderQueue.js');
-    await drainRenders();
-  } catch (err) {
-    logger.error({ err }, 'render queue failed');
   }
 }
 

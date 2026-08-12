@@ -411,22 +411,6 @@ export interface AutoReplyRule {
   media_url: string | null; is_routed_only: boolean; match_count: number;
 }
 
-export interface SavedDesign {
-  id: string; name: string; kind: 'post' | 'reel' | 'brochure';
-  template_key: string | null; record_id: string | null; module_name: string | null;
-  width: number; height: number; thumbnail: string | null;
-  record_label?: string | null; created_by_name?: string | null;
-  created_at: string; updated_at: string;
-}
-
-export interface RenderJob {
-  id: string; kind: 'reel' | 'brochure' | 'image_edit';
-  status: 'queued' | 'running' | 'completed' | 'failed' | 'unsupported';
-  progress: number; error: string | null; output_mime: string | null;
-  record_id: string | null; record_label?: string | null;
-  title?: string | null; created_at: string; finished_at: string | null;
-}
-
 export interface PinStatus {
   available: boolean;
   label?: string | null;
@@ -696,31 +680,6 @@ export const api = {
   createWhatsappTemplate: (data: Record<string, unknown>) => post<{ id: string }>('/api/comms/templates', data),
   deleteWhatsappTemplate: (id: string) => del(`/api/comms/templates/${id}`),
   syncWhatsappTemplates: () => post<{ synced: number }>('/api/comms/templates/sync', {}),
-
-  // --- studio ---------------------------------------------------------------
-  studioCapabilities: () => get<{
-    video: boolean; music: boolean; imageEdit: boolean; brochure: boolean;
-    presets: { key: string; label: string }[];
-  }>('/api/studio/capabilities'),
-  designs: (params: Record<string, unknown> = {}) => get<SavedDesign[]>(`/api/studio/designs${qs(params)}`),
-  design: (id: string) => get<SavedDesign & { spec: Record<string, unknown> }>(`/api/studio/designs/${id}`),
-  saveDesign: (data: Record<string, unknown>) => post<{ id: string }>('/api/studio/designs', data),
-  updateDesign: (id: string, data: Record<string, unknown>) => patch(`/api/studio/designs/${id}`, data),
-  deleteDesign: (id: string) => del(`/api/studio/designs/${id}`),
-  renders: () => get<RenderJob[]>('/api/studio/renders'),
-  render: (id: string) => get<RenderJob>(`/api/studio/renders/${id}`),
-  renderFile: (id: string) => request<Response>(`/api/studio/renders/${id}/file`, { raw: true }),
-  queueReel: (data: Record<string, unknown>) => post<{ id: string }>('/api/studio/renders/reel', data),
-  queueBrochure: (data: Record<string, unknown>) => post<{ id: string }>('/api/studio/renders/brochure', data),
-  editImage: (file: Blob, preset: string, instruction?: string) => {
-    const form = new FormData();
-    form.append('image', file, 'photo.jpg');
-    form.append('preset', preset);
-    if (instruction) form.append('instruction', instruction);
-    return request<{ ok: boolean; dataUrl?: string; reason?: string }>('/api/studio/image-edit', {
-      method: 'POST', body: form,
-    });
-  },
 
   // --- telephony ----------------------------------------------------------
   telephonyStatus: () => get<{ configured: boolean }>('/api/telephony/status'),

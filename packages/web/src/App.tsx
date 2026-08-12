@@ -17,7 +17,6 @@ const ListView = lazy(() => import('./pages/ListView'));
 const RecordDetail = lazy(() => import('./pages/RecordDetail'));
 const RecordEdit = lazy(() => import('./pages/RecordEdit'));
 const Inbox = lazy(() => import('./pages/Inbox'));
-const Studio = lazy(() => import('./pages/Studio'));
 const CapturePage = lazy(() => import('./pages/Capture'));
 const CaptureReviewPage = lazy(() => import('./pages/CaptureReview'));
 const CaptureShootsPage = lazy(() => import('./pages/CaptureShoots'));
@@ -81,7 +80,6 @@ export default function App(): JSX.Element {
 
               <Route path="calls" element={<CallsPage />} />
               <Route path="reports" element={<ReportsPage />} />
-              <Route path="studio" element={<Studio />} />
               <Route path="capture" element={<CapturePage />} />
               <Route path="capture/review" element={<CaptureReviewPage />} />
               <Route path="capture/shoots" element={<CaptureShootsPage />} />
