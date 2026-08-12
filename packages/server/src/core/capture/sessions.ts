@@ -8,10 +8,9 @@
  *
  * Three rules the design turns on:
  *
- * There is no "finish" button. Nobody presses it reliably after ten visits, and
- * a session left open until midnight would swallow the next property's photos.
- * A session closes when the next one opens, or when the sweep decides it has
- * gone quiet — see `closeStaleSessions`.
+ * Finish closes the exact photo window when it is pressed. It cannot be the only
+ * safeguard, though: the next visit also closes the previous one, and the sweep
+ * closes a forgotten last visit after it goes quiet — see `closeStaleSessions`.
  *
  * Opening is idempotent. The capture screen writes to IndexedDB first and syncs
  * when there is signal, because these sites often have none. A queued request
@@ -19,8 +18,9 @@
  * on the device) makes asking twice safe.
  *
  * Time decides which session a photo belongs to; the person decides which
- * property a session is. GPS is recorded for grouping and review, never for
- * identification: adjacent builder floors are well inside a phone fix's error.
+ * property a session is. GPS is optional and recorded for grouping and review,
+ * never for identification: adjacent builder floors are well inside a phone
+ * fix's error.
  */
 import { db, type Tx } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
@@ -176,6 +176,33 @@ export async function currentSession(userId: string, conn: Tx = db): Promise<Sho
       WHERE user_id = $1 AND ended_at IS NULL
       ORDER BY started_at DESC LIMIT 1`,
     [userId],
+  );
+  return row ? toSession(row) : null;
+}
+
+/**
+ * Explicitly finish the visit the phone opened.
+ *
+ * The automatic "next visit closes the previous one" rule remains as a safety
+ * net, but an intentional Finish gives the last property of the day an exact
+ * window immediately. Addressing it by the device's client ref makes the
+ * offline queue safe: the open request lands first, then this one, and either
+ * may be retried without changing the answer.
+ */
+export async function finishSession(
+  userId: string,
+  clientRef: string,
+  endedAt: Date,
+  conn: Tx = db,
+): Promise<ShootSession | null> {
+  const row = await conn.queryOne<Row>(
+    `UPDATE ipy_shoot_session
+        SET ended_at = COALESCE(ended_at, GREATEST($3::timestamptz, started_at)),
+            status = CASE WHEN status = 'capturing' THEN 'ready' ELSE status END,
+            updated_at = now()
+      WHERE user_id = $1 AND client_ref = $2
+      RETURNING ${COLUMNS}`,
+    [userId, clientRef, endedAt],
   );
   return row ? toSession(row) : null;
 }

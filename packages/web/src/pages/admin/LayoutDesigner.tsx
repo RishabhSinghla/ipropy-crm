@@ -1,11 +1,13 @@
 /**
  * Layout Designer — what a record page looks like, as data.
  *
- * Three things are editable here, and all three used to be hard-coded:
+ * Record presentation and the property-capture panel are editable here rather
+ * than hard-coded:
  *
  *   * the sections and the fields inside them (drag, plus add/rename/reorder/delete);
  *   * the summary chips in the record header;
  *   * which tab a record opens on.
+ *   * which quick-create fields stay visible at the gate, plus voice/GPS mode.
  *
  * Saving marks the layout as customised, which stops `db:seed` rewriting it on
  * the next schema change — see seed/helpers.ts.
@@ -32,7 +34,22 @@ interface DesignerConfig {
   blocks: LayoutBlock[];
   headerFields: string[];
   defaultTab: string;
+  capture?: CapturePanelConfig;
 }
+
+interface CapturePanelConfig {
+  primaryFieldCount: number;
+  voiceEnabled: boolean;
+  gpsEnabled: boolean;
+  defaultMode: 'site' | 'office';
+}
+
+const DEFAULT_CAPTURE_PANEL: CapturePanelConfig = {
+  primaryFieldCount: 4,
+  voiceEnabled: true,
+  gpsEnabled: true,
+  defaultMode: 'site',
+};
 
 /** Tabs the record page can open on. Relation tabs are appended per module. */
 const BASE_TABS = [
@@ -49,6 +66,7 @@ export default function LayoutDesigner(): JSX.Element {
   const [blocks, setBlocks] = useState<LayoutBlock[]>([]);
   const [headerFields, setHeaderFields] = useState<string[]>([]);
   const [defaultTab, setDefaultTab] = useState('overview');
+  const [capturePanel, setCapturePanel] = useState<CapturePanelConfig>(DEFAULT_CAPTURE_PANEL);
   const [layoutId, setLayoutId] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -75,6 +93,7 @@ export default function LayoutDesigner(): JSX.Element {
       setBlocks(layout.config.blocks ?? []);
       setHeaderFields(layout.config.headerFields ?? []);
       setDefaultTab(layout.config.defaultTab ?? 'overview');
+      setCapturePanel({ ...DEFAULT_CAPTURE_PANEL, ...(layout.config.capture ?? {}) });
     } else if (meta) {
       // Fall back to the module's block structure so there's always something
       // to edit — saving then creates the layout rather than refusing.
@@ -85,6 +104,7 @@ export default function LayoutDesigner(): JSX.Element {
       })));
       setHeaderFields(meta.blocks[0]?.fields.slice(0, 4).map((f) => f.name) ?? []);
       setDefaultTab('overview');
+      setCapturePanel(DEFAULT_CAPTURE_PANEL);
     }
     setDirty(false);
   }, [layouts, layoutType, meta?.id]);
@@ -154,6 +174,9 @@ export default function LayoutDesigner(): JSX.Element {
         // Only the detail view has a header strip and tabs; keeping them off the
         // edit/quick-create configs avoids writing keys nothing will read.
         ...(layoutType === 'detail' ? { headerFields, defaultTab } : {}),
+        ...(layoutType === 'quick_create' && moduleName === 'properties'
+          ? { capture: capturePanel }
+          : {}),
       };
 
       if (layoutId) {
@@ -220,6 +243,70 @@ export default function LayoutDesigner(): JSX.Element {
       ) : (
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_16rem]">
           <div className="space-y-3">
+            {layoutType === 'quick_create' && moduleName === 'properties' && (
+              <div className="card p-4">
+                <div className="mb-3">
+                  <p className="text-sm font-semibold">Property capture panel</p>
+                  <p className="text-xs text-muted">
+                    The field order below is the capture order. Choose how many stay visible as the fast gate fields.
+                  </p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <label>
+                    <span className="label">Fast fields shown</span>
+                    <Select
+                      value={String(capturePanel.primaryFieldCount)}
+                      onChange={(value) => {
+                        setCapturePanel((prev) => ({ ...prev, primaryFieldCount: Number(value) }));
+                        touch();
+                      }}
+                      options={Array.from({ length: Math.max(1, Math.min(12, placeable.length)) }, (_, i) => ({
+                        value: String(i + 1), label: String(i + 1),
+                      }))}
+                    />
+                  </label>
+                  <label>
+                    <span className="label">Default capture mode</span>
+                    <Select
+                      value={capturePanel.defaultMode}
+                      onChange={(value) => {
+                        setCapturePanel((prev) => ({ ...prev, defaultMode: value as 'site' | 'office' }));
+                        touch();
+                      }}
+                      options={[
+                        { value: 'site', label: 'At property' },
+                        { value: 'office', label: 'From office' },
+                      ]}
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={capturePanel.voiceEnabled}
+                      onChange={(event) => {
+                        setCapturePanel((prev) => ({ ...prev, voiceEnabled: event.target.checked }));
+                        touch();
+                      }}
+                      className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                    />
+                    Offer voice note
+                  </label>
+                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={capturePanel.gpsEnabled}
+                      onChange={(event) => {
+                        setCapturePanel((prev) => ({ ...prev, gpsEnabled: event.target.checked }));
+                        touch();
+                      }}
+                      className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                    />
+                    Offer optional GPS
+                  </label>
+                </div>
+              </div>
+            )}
+
             {layoutType === 'detail' && (
               <HeaderStripEditor
                 value={headerFields}

@@ -15,9 +15,10 @@
  *   identity comes from the person, not the coordinates. So it is collected in
  *   the background and attached if it turns up in time.
  *
- *   There is no finish button, by design. Nobody presses one reliably after ten
- *   visits; the next Start closes the previous visit and the server closes the
- *   day's last one.
+ *   Finish is explicit because it gives the person a clean psychological end
+ *   to one property and an exact photo window. The old automatic safeguards
+ *   remain: the next Start and the stale-session sweep still close anything
+ *   somebody forgets.
  *
  * The fields come from the module's own quick-create layout, so which ones
  * appear here is an admin setting in the Layout Designer rather than something
@@ -27,13 +28,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import type { FieldMeta, ModuleMeta } from '@ipropy/shared';
-import { Camera, Check, ChevronDown, ChevronRight, Clock, CloudOff, Images, MapPin, Mic, RefreshCw, Trash2, Wifi } from 'lucide-react';
+import {
+  Building2, Camera, Check, CheckCircle2, ChevronDown, ChevronRight, Clock,
+  CloudOff, Images, MapPin, Mic, RefreshCw, Trash2, Wifi,
+} from 'lucide-react';
 import { api, type CaptureSessionRow } from '../lib/api';
 import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
 import { FieldInput } from '../components/FieldRenderer';
 import {
-  discardQueued, enqueueVisit, flushQueue, listQueued, onQueueChange,
+  discardQueued, enqueueFinish, enqueueVisit, flushQueue, listQueued, onQueueChange,
   startCaptureSync, type QueuedItem,
 } from '../lib/captureQueue';
 import { EmptyState, Skeleton, Spinner } from '../components/ui';
@@ -62,7 +66,42 @@ const GPS_TIMEOUT_MS = 6000;
  * owner is standing there answering questions and it is easier to record it now
  * than to remember it tonight.
  */
-const PRIMARY_FIELD_COUNT = 4;
+const DEFAULT_PRIMARY_FIELD_COUNT = 4;
+
+interface CapturePanelConfig {
+  primaryFieldCount?: number;
+  voiceEnabled?: boolean;
+  gpsEnabled?: boolean;
+  defaultMode?: 'site' | 'office';
+}
+
+interface ActiveCapture {
+  clientRef: string;
+  label: string;
+  startedAt: string;
+  mode: 'site' | 'office';
+}
+
+const ACTIVE_CAPTURE_KEY = 'ipropy-active-capture';
+
+function loadActiveCapture(): ActiveCapture | null {
+  try {
+    const value = localStorage.getItem(ACTIVE_CAPTURE_KEY);
+    return value ? JSON.parse(value) as ActiveCapture : null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberActiveCapture(value: ActiveCapture | null): void {
+  try {
+    if (value) localStorage.setItem(ACTIVE_CAPTURE_KEY, JSON.stringify(value));
+    else localStorage.removeItem(ACTIVE_CAPTURE_KEY);
+  } catch {
+    // Private browsing can deny localStorage. IndexedDB still owns the durable
+    // requests; this only restores the in-progress card after a page reload.
+  }
+}
 
 /**
  * Container the browser will actually record into.
@@ -148,13 +187,17 @@ function useRecorder(): {
 
 interface Fix { lat: number; lng: number; accuracy?: number }
 
-/** Ask once, in the background, and never block on the answer. */
-function useLocation(): { fix: Fix | null; state: 'idle' | 'locating' | 'ready' | 'denied' } {
+/** Ask only when the user opts in, and never block capture on the answer. */
+function useLocation(enabled: boolean): { fix: Fix | null; state: 'idle' | 'locating' | 'ready' | 'denied' } {
   const [fix, setFix] = useState<Fix | null>(null);
   const [state, setState] = useState<'idle' | 'locating' | 'ready' | 'denied'>('idle');
 
   useEffect(() => {
-    if (!navigator.geolocation) return;
+    if (!enabled || !navigator.geolocation) {
+      setFix(null);
+      setState('idle');
+      return;
+    }
     setState('locating');
     const watch = navigator.geolocation.watchPosition(
       (pos) => {
@@ -165,7 +208,7 @@ function useLocation(): { fix: Fix | null; state: 'idle' | 'locating' | 'ready' 
       { enableHighAccuracy: true, timeout: GPS_TIMEOUT_MS, maximumAge: 30_000 },
     );
     return () => navigator.geolocation.clearWatch(watch);
-  }, []);
+  }, [enabled]);
 
   return { fix, state };
 }
@@ -196,11 +239,14 @@ function useQueue(): { queued: QueuedItem[]; reload: () => void } {
 export default function CapturePage(): JSX.Element {
   const queryClient = useQueryClient();
   const online = useOnline();
-  const { fix, state: gpsState } = useLocation();
   const { queued } = useQueue();
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
-  const [justSaved, setJustSaved] = useState<string | null>(null);
+  const [finishing, setFinishing] = useState(false);
+  const [active, setActive] = useState<ActiveCapture | null>(() => loadActiveCapture());
+  const [justFinished, setJustFinished] = useState<string | null>(null);
+  const [modeOverride, setModeOverride] = useState<'site' | 'office' | null>(null);
+  const [useGps, setUseGps] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const recorder = useRecorder();
   const nameRef = useRef<HTMLDivElement>(null);
@@ -223,6 +269,11 @@ export default function CapturePage(): JSX.Element {
     staleTime: 5 * 60_000,
   });
 
+  const panel = ((layout?.config as { capture?: CapturePanelConfig } | undefined)?.capture ?? {});
+  const mode = modeOverride ?? (panel.defaultMode === 'office' ? 'office' : 'site');
+  const gpsAvailable = panel.gpsEnabled !== false;
+  const { fix, state: gpsState } = useLocation(mode === 'site' && gpsAvailable && useGps);
+
   const fields: FieldMeta[] = useMemo(() => {
     const meta = module as (ModuleMeta | undefined);
     if (!meta) return [];
@@ -232,7 +283,12 @@ export default function CapturePage(): JSX.Element {
     const chosen = configured.length
       ? configured
       : meta.fields.filter((f) => f.quickCreate).map((f) => f.name);
-    return chosen
+    // A property cannot be created without its label. Keep the screen usable if
+    // an admin accidentally removes it from quick create; everything else is
+    // exactly the order configured in Layout Designer.
+    const labelField = meta.labelFields?.[0];
+    const ordered = labelField && !chosen.includes(labelField) ? [labelField, ...chosen] : chosen;
+    return ordered
       .map((n) => byName.get(n))
       .filter((f): f is FieldMeta => Boolean(f) && f!.displayType !== 'hidden' && f!.uitype !== 'autonumber');
   }, [module, layout]);
@@ -263,12 +319,16 @@ export default function CapturePage(): JSX.Element {
   });
   const unnamed = unnamedShoots?.length ?? 0;
 
-  const primary = fields.slice(0, PRIMARY_FIELD_COUNT);
-  const secondary = fields.slice(PRIMARY_FIELD_COUNT);
+  const configuredPrimary = Number(panel.primaryFieldCount);
+  const primaryCount = Number.isFinite(configuredPrimary)
+    ? Math.max(1, Math.min(fields.length, Math.round(configuredPrimary)))
+    : DEFAULT_PRIMARY_FIELD_COUNT;
+  const primary = fields.slice(0, primaryCount);
+  const secondary = fields.slice(primaryCount);
 
   const labelField = (module as ModuleMeta | undefined)?.labelFields?.[0] ?? 'name';
   const label = String(values[labelField] ?? '').trim();
-  const canStart = label.length > 0 && !saving;
+  const canStart = label.length > 0 && !saving && !active;
 
   const start = async (): Promise<void> => {
     if (!canStart) return;
@@ -283,13 +343,18 @@ export default function CapturePage(): JSX.Element {
         deviceLabel: navigator.userAgent.includes('iPhone') ? 'iPhone' : undefined,
       }, label, recorder.clip ?? undefined);
 
-      setJustSaved(label);
+      const next: ActiveCapture = {
+        clientRef,
+        label,
+        startedAt: new Date().toISOString(),
+        mode,
+      };
+      setActive(next);
+      rememberActiveCapture(next);
       setValues({});
       recorder.discard();
       // The list only matters once something has actually reached the server.
       void queryClient.invalidateQueries({ queryKey: ['capture', 'sessions'] });
-      window.setTimeout(() => setJustSaved(null), 4000);
-      nameRef.current?.querySelector('input')?.focus();
     } catch (err) {
       // enqueueVisit only fails if IndexedDB itself is unavailable — private
       // mode, or storage full. Worth saying out loud rather than looking like
@@ -300,23 +365,101 @@ export default function CapturePage(): JSX.Element {
     }
   };
 
+  const finish = async (): Promise<void> => {
+    if (!active || finishing) return;
+    setFinishing(true);
+    try {
+      await enqueueFinish(active.clientRef, active.label, new Date().toISOString());
+      const finishedLabel = active.label;
+      setActive(null);
+      rememberActiveCapture(null);
+      setJustFinished(finishedLabel);
+      setExpanded(false);
+      window.setTimeout(() => setJustFinished(null), 5000);
+      // Try immediately when online; the queue remains the source of truth if
+      // this fails, and will retry on focus/online/timer as before.
+      void flushQueue().finally(() => {
+        void queryClient.invalidateQueries({ queryKey: ['capture', 'sessions'] });
+        void queryClient.invalidateQueries({ queryKey: ['capture', 'shoots'] });
+      });
+      window.setTimeout(() => nameRef.current?.querySelector('input')?.focus(), 50);
+    } catch (err) {
+      toast.error('Could not save Finish', (err as Error).message);
+    } finally {
+      setFinishing(false);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-lg space-y-4 p-4 pb-24 sm:p-6">
       <header className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Site capture</h1>
-          <p className="text-sm text-muted">Start a visit, then shoot with the normal camera.</p>
+          <h1 className="text-xl font-semibold">Property capture</h1>
+          <p className="text-sm text-muted">Name it once, shoot, then finish.</p>
         </div>
-        <StatusPill online={online} gps={gpsState} pending={queued.length} />
+        <StatusPill
+          online={online}
+          gps={mode === 'site' && useGps ? gpsState : null}
+          pending={queued.length}
+        />
       </header>
 
-      {justSaved ? (
+      {justFinished ? (
         <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
           <Check className="h-4 w-4 shrink-0" />
-          <span><strong>{justSaved}</strong> started. Shoot now — there is nothing to press when you finish.</span>
+          <span><strong>{justFinished}</strong> finished and is safe. You can start the next property.</span>
         </div>
       ) : null}
 
+      {!active ? (
+        <div className="grid grid-cols-2 gap-2" role="group" aria-label="Where are you adding this property from?">
+          <button
+            type="button"
+            onClick={() => setModeOverride('site')}
+            className={cn(
+              'rounded-xl border p-3 text-left transition-colors',
+              mode === 'site'
+                ? 'border-brand-500 bg-brand-50 text-brand-800 dark:bg-brand-950/40 dark:text-brand-200'
+                : 'border-slate-200 bg-white text-muted dark:border-slate-800 dark:bg-slate-900',
+            )}
+          >
+            <MapPin className="mb-1 h-4 w-4" />
+            <span className="block text-sm font-semibold">At property</span>
+            <span className="block text-2xs opacity-80">Capture while visiting</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => { setModeOverride('office'); setUseGps(false); }}
+            className={cn(
+              'rounded-xl border p-3 text-left transition-colors',
+              mode === 'office'
+                ? 'border-brand-500 bg-brand-50 text-brand-800 dark:bg-brand-950/40 dark:text-brand-200'
+                : 'border-slate-200 bg-white text-muted dark:border-slate-800 dark:bg-slate-900',
+            )}
+          >
+            <Building2 className="mb-1 h-4 w-4" />
+            <span className="block text-sm font-semibold">From office</span>
+            <span className="block text-2xs opacity-80">Add or upload later</span>
+          </button>
+        </div>
+      ) : null}
+
+      {active ? (
+        <div className="card overflow-hidden border-emerald-200 dark:border-emerald-900">
+          <div className="flex items-start gap-3 bg-emerald-50 p-4 dark:bg-emerald-950/30">
+            <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white">
+              <Camera className="h-4 w-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Capture in progress</p>
+              <p className="truncate text-base font-semibold text-emerald-950 dark:text-emerald-100">{active.label}</p>
+              <p className="mt-1 text-xs text-emerald-800/80 dark:text-emerald-200/80">
+                Take the property photos and videos normally. Tap Finish when you are done.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : (
       <div className="card space-y-3 p-4">
         {!module ? (
           <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12" />)}</div>
@@ -335,7 +478,22 @@ export default function CapturePage(): JSX.Element {
               </div>
             ))}
 
-            <VoiceNote recorder={recorder} />
+            {panel.voiceEnabled !== false ? <VoiceNote recorder={recorder} /> : null}
+
+            {mode === 'site' && gpsAvailable ? (
+              <label className="flex cursor-pointer items-center justify-between rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700">
+                <span>
+                  <span className="block font-medium">Add current location</span>
+                  <span className="block text-xs text-muted">Optional — property capture works without GPS.</span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={useGps}
+                  onChange={(e) => setUseGps(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                />
+              </label>
+            ) : null}
 
             {secondary.length ? (
               <button
@@ -363,6 +521,7 @@ export default function CapturePage(): JSX.Element {
           </>
         )}
       </div>
+      )}
 
       {/*
         Pinned rather than sitting under the form. With the extra details open
@@ -372,15 +531,20 @@ export default function CapturePage(): JSX.Element {
       <div className="sticky bottom-0 rounded-t-xl border-t border-slate-200 bg-white/95 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
         <button
           type="button"
-          onClick={() => { void start(); }}
-          disabled={!canStart}
-          className="btn-primary flex w-full items-center justify-center gap-2 py-4 text-base disabled:opacity-40"
+          onClick={() => { if (active) void finish(); else void start(); }}
+          disabled={active ? finishing : !canStart}
+          className={cn(
+            'flex w-full items-center justify-center gap-2 rounded-lg py-4 text-base font-semibold text-white disabled:opacity-40',
+            active ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-brand-600 hover:bg-brand-700',
+          )}
         >
-          {saving ? <Spinner /> : <Camera className="h-5 w-5" />}
-          Start shoot
+          {saving || finishing ? <Spinner /> : active ? <CheckCircle2 className="h-5 w-5" /> : <Camera className="h-5 w-5" />}
+          {active ? 'Finish property' : mode === 'site' ? 'Start capture' : 'Create property'}
         </button>
         <p className="mt-1.5 text-center text-xs text-muted">
-          {online ? 'Saved here first, then synced.' : 'No signal — saved on this phone and sent later.'}
+          {active
+            ? 'Finish closes this property cleanly. Automatic safeguards still protect forgotten visits.'
+            : online ? 'Saved here first, then synced.' : 'No signal — saved on this phone and sent later.'}
         </p>
       </div>
 
@@ -504,7 +668,7 @@ function VoiceNote({ recorder }: { recorder: ReturnType<typeof useRecorder> }): 
 }
 
 function StatusPill(
-  { online, gps, pending }: { online: boolean; gps: string; pending: number },
+  { online, gps, pending }: { online: boolean; gps: string | null; pending: number },
 ): JSX.Element {
   return (
     <div className="flex items-center gap-2 text-xs">
@@ -525,18 +689,20 @@ function StatusPill(
         {online ? <Wifi className="h-3 w-3" /> : <CloudOff className="h-3 w-3" />}
         {online ? 'Online' : 'Offline'}
       </span>
-      <span
-        title={gps === 'denied' ? 'Location permission is off — visits will save without coordinates' : undefined}
-        className={cn(
-          'flex items-center gap-1 rounded-full px-2 py-1',
-          gps === 'ready'
-            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-200'
-            : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
-        )}
-      >
-        <MapPin className="h-3 w-3" />
-        {gps === 'ready' ? 'Located' : gps === 'denied' ? 'No location' : 'Locating'}
-      </span>
+      {gps ? (
+        <span
+          title={gps === 'denied' ? 'Location permission is off — visits will save without coordinates' : undefined}
+          className={cn(
+            'flex items-center gap-1 rounded-full px-2 py-1',
+            gps === 'ready'
+              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-200'
+              : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
+          )}
+        >
+          <MapPin className="h-3 w-3" />
+          {gps === 'ready' ? 'Located' : gps === 'denied' ? 'No location' : 'Locating'}
+        </span>
+      ) : null}
     </div>
   );
 }

@@ -41,7 +41,7 @@ describe('capture sessions', () => {
     expect((await currentSession(userId))?.id).toBe(s.id);
   });
 
-  it('closes the previous visit when the next one starts — no finish button', async () => {
+  it('still closes the previous visit when Finish was forgotten', async () => {
     const first = await openSession({ userId, clientRef: randomUUID(), startedAt: new Date(Date.now() - minutes(40)) });
     const second = await openSession({ userId, clientRef: randomUUID(), startedAt: new Date(Date.now() - minutes(10)) });
 

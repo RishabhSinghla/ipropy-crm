@@ -708,6 +708,8 @@ export const api = {
    */
   startCapture: (body: Record<string, unknown>) =>
     post<{ session: CaptureSession; replayed: boolean }>('/api/capture/sessions', body),
+  finishCapture: (body: { clientRef: string; endedAt: string }) =>
+    post<{ session: CaptureSession; claimedMedia: number }>('/api/capture/sessions/finish', body),
   currentCapture: () => get<{ session: CaptureSession | null }>('/api/capture/sessions/current'),
   captureSessions: (limit = 25) =>
     get<CaptureSessionRow[]>(`/api/capture/sessions${qs({ limit })}`),

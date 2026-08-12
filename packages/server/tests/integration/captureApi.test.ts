@@ -183,6 +183,29 @@ describe('POST /api/capture/sessions', () => {
     expect(list.body[0]).toHaveProperty('mediaCount');
   });
 
+  it('finishes the exact visit and is safe to retry', async () => {
+    const clientRef = randomUUID();
+    const opened = await start(token, {
+      clientRef,
+      property: { module: 'properties', values: { name: `Finish Floor ${clientRef.slice(0, 8)}` } },
+    }).expect(201);
+    const endedAt = new Date().toISOString();
+
+    const first = await request(app).post('/api/capture/sessions/finish')
+      .set('Authorization', `Bearer ${token}`).send({ clientRef, endedAt }).expect(200);
+    expect(first.body.session.id).toBe(opened.body.session.id);
+    expect(first.body.session.status).toBe('ready');
+    expect(first.body.session.endedAt).toBeTruthy();
+
+    const replay = await request(app).post('/api/capture/sessions/finish')
+      .set('Authorization', `Bearer ${token}`).send({ clientRef, endedAt: new Date().toISOString() }).expect(200);
+    expect(replay.body.session.endedAt).toBe(first.body.session.endedAt);
+
+    const current = await request(app).get('/api/capture/sessions/current')
+      .set('Authorization', `Bearer ${token}`).expect(200);
+    expect(current.body.session).toBeNull();
+  });
+
   it('rejects a nonsense location rather than storing it', async () => {
     // 422 rather than 400: schema failures are unprocessable-entity throughout
     // this API, and 400 is reserved for a request that parsed but cannot be

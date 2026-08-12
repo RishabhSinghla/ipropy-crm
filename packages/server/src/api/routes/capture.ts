@@ -30,7 +30,7 @@ import { recordService } from '../../core/entity/recordService.js';
 import { registry } from '../../core/metadata/registry.js';
 import { formatValue } from '../../core/metadata/values.js';
 import {
-  assignSessionRecord, currentSession, getSession, listSessions, openSession,
+  assignSessionRecord, currentSession, finishSession, getSession, listSessions, openSession,
 } from '../../core/capture/sessions.js';
 import { matchOrphansForSession } from '../../core/capture/matching.js';
 import { attachShootMedia, listUnnamedShoots, nameShoot } from '../../core/capture/grouping.js';
@@ -172,6 +172,27 @@ captureRouter.post('/sessions', asyncHandler(async (req, res) => {
 /** What this user is shooting into right now — how the screen knows to say "in progress". */
 captureRouter.get('/sessions/current', asyncHandler(async (req, res) => {
   res.json({ session: await currentSession(getUser(req).id) });
+}));
+
+/**
+ * Close the active phone visit now. Kept separate from the start payload so it
+ * can be queued offline behind it and replayed safely by clientRef.
+ */
+captureRouter.post('/sessions/finish', asyncHandler(async (req, res) => {
+  const input = z.object({
+    clientRef: z.string().min(8).max(64),
+    endedAt: z.string().datetime({ offset: true }).optional(),
+  }).parse(req.body);
+  const session = await finishSession(
+    getUser(req).id,
+    input.clientRef,
+    clampStartedAt(input.endedAt),
+  );
+  if (!session) throw new NotFoundError('Capture session not found');
+
+  // A precise end can explain files that arrived before this final request.
+  const claimed = await matchOrphansForSession(session.id).catch(() => 0);
+  res.json({ session, claimedMedia: claimed });
 }));
 
 /** The evening review list. */

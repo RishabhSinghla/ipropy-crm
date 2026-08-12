@@ -62,7 +62,19 @@ export interface QueuedVoice {
   label: string;
 }
 
-export type QueuedItem = QueuedVisit | QueuedVoice;
+/** An explicit Finish tap, queued behind the visit it closes. */
+export interface QueuedFinish {
+  kind: 'finish';
+  clientRef: string;
+  visitClientRef: string;
+  endedAt: string;
+  queuedAt: string;
+  attempts: number;
+  lastError?: string;
+  label: string;
+}
+
+export type QueuedItem = QueuedVisit | QueuedVoice | QueuedFinish;
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -129,6 +141,25 @@ export async function enqueueVisit(
   void flushQueue();
 }
 
+/**
+ * Finish is written locally first for the same reason Start is. Its queue key
+ * differs from the visit's idempotency key so both records can coexist in the
+ * one IndexedDB store; the API still receives the original ref.
+ */
+export async function enqueueFinish(visitClientRef: string, label: string, endedAt: string): Promise<void> {
+  await put({
+    kind: 'finish',
+    clientRef: `${visitClientRef}:finish`,
+    visitClientRef,
+    endedAt,
+    label,
+    queuedAt: new Date().toISOString(),
+    attempts: 0,
+  });
+  emit();
+  void flushQueue();
+}
+
 let flushing = false;
 
 export interface FlushResult { sent: number; failed: number; remaining: number }
@@ -168,6 +199,8 @@ export async function flushQueue(): Promise<FlushResult> {
         try {
           if (item.kind === 'voice') {
             await api.uploadCaptureVoice(item.sessionId, item.audio, item.audioName);
+          } else if (item.kind === 'finish') {
+            await api.finishCapture({ clientRef: item.visitClientRef, endedAt: item.endedAt });
           } else {
             const { session } = await api.startCapture(item.body);
             // The visit has landed; hand its audio to a second-stage item rather
