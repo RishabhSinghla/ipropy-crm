@@ -86,4 +86,40 @@ describe('renderMarkdown — link safety', () => {
     expect(renderMarkdown('[x](//evil.example)')).not.toContain('<a ');
     expect(renderMarkdown('[x](/admin)')).not.toContain('<a ');
   });
+  /**
+   * A safe scheme is not enough if the value can leave its own attribute.
+   *
+   * The href is interpolated into `href="…"`, and the escape pass originally
+   * covered only `&`, `<` and `>`. That let `[c](https://x"autofocus/onfocus=…)`
+   * close the attribute and add its own: a real DOM parser saw
+   * `href, autofocus, onfocus, target, rel` on the anchor. No angle bracket was
+   * ever needed, so every `<script>` test above passed while this worked.
+   *
+   * The reachable input is not exotic — the document viewer renders uploaded
+   * `.md` files through this function, so one attachment reaches everyone who
+   * opens it, and AI answers pass through it too.
+   */
+  it('cannot break out of the href attribute with a double quote', () => {
+    const html = renderMarkdown('[c](https://x"autofocus/onfocus=location=name)');
+    expect(html).not.toMatch(/<a[^>]*\sautofocus/i);
+    expect(html).not.toMatch(/<a[^>]*\son\w+=/i);
+    expect(html).toContain('&quot;');
+  });
+
+  it('cannot break out with a single quote either', () => {
+    const html = renderMarkdown("[c](https://x'onclick=alert)");
+    expect(html).not.toMatch(/<a[^>]*\sonclick/i);
+  });
+
+  it('leaves quotes in ordinary prose readable', () => {
+    const html = renderMarkdown('He said "hello" and it\'s fine');
+    expect(html).toContain('&quot;hello&quot;');
+    expect(html).toContain('it&#39;s');
+    expect(html).not.toContain('<a ');
+  });
+
+  it('still renders a normal link untouched', () => {
+    const html = renderMarkdown('[our site](https://ipropy.com/a-b_c?x=1)');
+    expect(html).toContain('href="https://ipropy.com/a-b_c?x=1"');
+  });
 });
