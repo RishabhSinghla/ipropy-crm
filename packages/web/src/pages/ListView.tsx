@@ -5,7 +5,7 @@ import type { FieldMeta, FilterGroup, ListQuery, ModuleMeta, RecordEnvelope } fr
 import { formatIndianPrice } from '@ipropy/shared';
 import {
   ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, Columns3, Download, Filter,
-  LayoutGrid, List, MailCheck, Plus, RefreshCw, Search, Settings2, Sparkles, Trash2, Upload, Users, X,
+  LayoutGrid, List, MailCheck, Plus, RefreshCw, Search, Settings2, Sparkles, Star, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
@@ -197,8 +197,8 @@ export default function ListView(): JSX.Element {
     if (moduleName && data?.rows) saveListNav(moduleName, data.rows.map((r) => r.id));
   }, [moduleName, data]);
 
-  // Which rows on this page the user has never opened, so they can be shown
-  // the way an unread email is. Asked for separately rather than returned by
+  // Which rows need attention. Leads remain highlighted while their pipeline
+  // status is New; other modules use unread-style state. Asked for separately rather than returned by
   // the list, because the list endpoint is shared with exports, reports and
   // the portal, none of which have a reader to be unread for.
   const pageIds = useMemo(() => (data?.rows ?? []).map((r) => r.id), [data]);
@@ -332,7 +332,7 @@ export default function ListView(): JSX.Element {
               )}
             </Dropdown>
 
-            {unseen.size > 0 && (
+            {moduleName !== 'leads' && unseen.size > 0 && (
               <button
                 onClick={() => void markAllSeen()}
                 className="btn-ghost btn-sm text-brand-600 dark:text-brand-400"
@@ -432,6 +432,7 @@ export default function ListView(): JSX.Element {
             rows={rows}
             groups={data?.groups ?? []}
             groupBy={groupByField!}
+            attentionIds={unseen}
             onMove={(id, value) => stageMutation.mutate({ id, values: { [groupByField!]: value } })}
           />
         ) : (
@@ -450,6 +451,7 @@ export default function ListView(): JSX.Element {
                 fieldMap={fieldMap}
                 selected={selected.has(row.id)}
                 isNew={unseen.has(row.id)}
+                isStarred={Boolean(row.starred)}
                 onToggleSelect={(checked) => {
                   const next = new Set(selected);
                   if (checked) next.add(row.id); else next.delete(row.id);
@@ -502,9 +504,11 @@ export default function ListView(): JSX.Element {
                   key={row.id}
                   className={cn(
                     'group cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60',
-                    isNew
-                      ? 'bg-brand-50/60 dark:bg-brand-950/25'
-                      : 'bg-white dark:bg-slate-900',
+                    row.starred
+                      ? 'bg-amber-50/80 dark:bg-amber-950/25'
+                      : isNew
+                        ? 'bg-brand-50/60 dark:bg-brand-950/25'
+                        : 'bg-white dark:bg-slate-900',
                   )}
                   onClick={() => navigate(`/${moduleName}/${row.id}?return=${encodeURIComponent(returnTo)}`)}
                 >
@@ -538,6 +542,12 @@ export default function ListView(): JSX.Element {
                           isNew && 'font-semibold text-slate-900 dark:text-white',
                         )}
                       >
+                        {ci === 0 && row.starred && (
+                          <Star
+                            className="mr-1.5 inline-block h-3.5 w-3.5 fill-amber-400 text-amber-500 align-middle"
+                            aria-label="Favourite"
+                          />
+                        )}
                         {ci === 0 && isNew && (
                           <span
                             className="mr-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-brand-600 align-middle dark:bg-brand-400"
@@ -715,15 +725,17 @@ function defaultColumns(meta: { fields: { name: string; isActive: boolean; displ
  * stacked row instead of a narrow column.
  */
 function MobileRecordCard({
-  row, module, columns, fieldMap, selected, isNew, onToggleSelect, onOpen, onSaved,
+  row, module, columns, fieldMap, selected, isNew, isStarred, onToggleSelect, onOpen, onSaved,
 }: {
   row: RecordEnvelope;
   module: ModuleMeta & { permissions: { edit: boolean }; picklistDependencies: { sourceField: string; targetField: string; mapping: Record<string, string[]> }[] };
   columns: string[];
   fieldMap: Map<string, FieldMeta>;
   selected: boolean;
-  /** never opened by this user — shown with unread weight, like an inbox */
+  /** needs attention — New pipeline stage for leads, unread-style elsewhere */
   isNew: boolean;
+  /** explicitly favourited by this user — stays gold until unstarred */
+  isStarred: boolean;
   onToggleSelect: (checked: boolean) => void;
   onOpen: () => void;
   onSaved: () => void;
@@ -744,7 +756,12 @@ function MobileRecordCard({
   });
 
   return (
-    <div className={cn('px-4 py-3', isNew ? 'bg-brand-50/60 dark:bg-brand-950/25' : 'bg-white dark:bg-slate-900')}>
+    <div className={cn(
+      'px-4 py-3',
+      isStarred
+        ? 'bg-amber-50/80 dark:bg-amber-950/25'
+        : isNew ? 'bg-brand-50/60 dark:bg-brand-950/25' : 'bg-white dark:bg-slate-900',
+    )}>
       <div className="flex items-start gap-3">
         <input
           type="checkbox"
@@ -755,6 +772,7 @@ function MobileRecordCard({
         />
         <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
           <p className={cn('truncate text-slate-900 dark:text-slate-100', isNew ? 'font-semibold' : 'font-medium')}>
+            {isStarred && <Star className="mr-1.5 inline-block h-3.5 w-3.5 fill-amber-400 text-amber-500 align-middle" aria-label="Favourite" />}
             {isNew && (
               <span
                 className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-brand-600 align-middle dark:bg-brand-400"
@@ -811,12 +829,13 @@ function MobileRecordCard({
 }
 
 function KanbanBoard({
-  module, rows, groups, groupBy, onMove,
+  module, rows, groups, groupBy, attentionIds, onMove,
 }: {
   module: { fields: FieldMeta[]; name: string; singularLabel: string; permissions: { edit: boolean } };
   rows: RecordEnvelope[];
   groups: { key: string; label: string; color?: string | null; count: number; sum?: number }[];
   groupBy: string;
+  attentionIds: Set<string>;
   onMove: (id: string, value: string) => void;
 }): JSX.Element {
   const navigate = useNavigate();
@@ -886,10 +905,16 @@ function KanbanBoard({
                   onClick={() => navigate(`/${module.name}/${row.id}`)}
                   className={cn(
                     'cursor-pointer rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm transition-all hover:shadow-md dark:border-slate-700 dark:bg-slate-800',
+                    row.starred && 'border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30',
+                    !row.starred && attentionIds.has(row.id) && 'border-brand-300 bg-brand-50/70 dark:border-brand-800 dark:bg-brand-950/30',
                     dragging === row.id && 'opacity-40',
                   )}
                 >
-                  <p className="truncate text-sm font-medium">{row.label}</p>
+                  <p className={cn('truncate text-sm', attentionIds.has(row.id) ? 'font-semibold' : 'font-medium')}>
+                    {row.starred && <Star className="mr-1 inline-block h-3.5 w-3.5 fill-amber-400 text-amber-500 align-middle" aria-label="Favourite" />}
+                    {attentionIds.has(row.id) && <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-brand-500 align-middle" title="Needs attention" />}
+                    {row.label}
+                  </p>
                   {amountField && row.values[amountField.name] != null && (
                     <p className="mt-1 text-xs font-semibold text-slate-700 tnum dark:text-slate-300">
                       {formatIndianPrice(Number(row.values[amountField.name]))}

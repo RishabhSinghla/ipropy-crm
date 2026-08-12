@@ -14,7 +14,7 @@ import { logger } from '../utils/logger.js';
 import { registry } from '../core/metadata/registry.js';
 import { listRecords, type ServiceContext } from '../core/entity/recordService.js';
 import { runWidget } from '../core/analytics/widgets.js';
-import { canAccessRecord } from '../core/permissions/index.js';
+import { canAccessRecord, getFieldPermissions } from '../core/permissions/index.js';
 import { NotFoundError } from '../utils/errors.js';
 import { complete, completeJson, isAiAvailable, REAL_ESTATE_SYSTEM } from './client.js';
 import {
@@ -372,9 +372,15 @@ async function askAboutRecord(
   }
   const { buildRecordSummary } = await import('./drafting.js');
   const { buildTimeline } = await import('../core/entity/timeline.js');
+  const fieldPermissions = ctx.user.isAdmin ? null : await getFieldPermissions(ctx.user, module);
+  const visibleFields = fieldPermissions
+    ? new Set([...fieldPermissions.entries()]
+      .filter(([, permission]) => permission !== 'hidden')
+      .map(([name]) => name))
+    : undefined;
 
   const [summary, timeline] = await Promise.all([
-    buildRecordSummary(recordId, module),
+    buildRecordSummary(recordId, module, visibleFields),
     buildTimeline(recordId, { limit: 30 }),
   ]);
 

@@ -453,7 +453,16 @@ recordsRouter.post('/:module/:id/tags', asyncHandler(async (req, res) => {
 }));
 
 recordsRouter.post('/:module/:id/star', asyncHandler(async (req, res) => {
+  const scope = getScope(req);
   const user = getUser(req);
+  if (!(await canAccessRecord(scope, req.params.module, req.params.id, 'view'))) {
+    throw new ForbiddenError('You cannot favourite this record');
+  }
+  const record = await db.queryOne<{ module_name: string }>(
+    `SELECT module_name FROM ipy_record WHERE id = $1 AND is_deleted = false`,
+    [req.params.id],
+  );
+  if (!record || record.module_name !== req.params.module) throw new NotFoundError('Record not found');
   const starred = req.body?.starred !== false;
   if (starred) {
     await db.query(`INSERT INTO ipy_starred (user_id, record_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [user.id, req.params.id]);

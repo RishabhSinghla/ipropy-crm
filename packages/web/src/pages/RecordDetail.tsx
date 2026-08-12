@@ -44,12 +44,14 @@ export default function RecordDetail(): JSX.Element {
     ? `?return=${encodeURIComponent(detailParams.get('return')!)}`
     : '';
   const queryClient = useQueryClient();
-  const { user, aiAvailable } = useApp();
+  const { user } = useApp();
 
   const [tab, setTab] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [compose, setCompose] = useState<'whatsapp' | 'email' | null>(null);
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [summarising, setSummarising] = useState(false);
 
   const { data: meta } = useQuery({
     queryKey: ['module', moduleName],
@@ -127,7 +129,10 @@ export default function RecordDetail(): JSX.Element {
 
   const starMutation = useMutation({
     mutationFn: (starred: boolean) => api.star(moduleName!, id!, starred),
-    onSuccess: () => void refetch(),
+    onSuccess: () => {
+      invalidateRecordQueries(queryClient, moduleName, id);
+      void refetch();
+    },
   });
 
   // A failed load has to be distinguishable from a slow one. Previously this
@@ -405,19 +410,19 @@ export default function RecordDetail(): JSX.Element {
               <Dropdown trigger={<button className="btn-ghost p-2" aria-label="More actions"><MoreHorizontal className="h-4 w-4" /></button>}>
                 {(close) => (
                   <>
-                    {aiAvailable && (
-                      <DropdownItem
-                        icon={<Sparkles className="h-3.5 w-3.5" />}
-                        onClick={() => {
-                          close();
-                          void api.summarise(moduleName!, id!)
-                            .then((r) => toast.info('AI summary', r.summary))
-                            .catch((e: Error) => toast.error('Summary failed', e.message));
-                        }}
-                      >
-                        Summarise with AI
-                      </DropdownItem>
-                    )}
+                    <DropdownItem
+                      icon={summarising ? <Spinner className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
+                      onClick={() => {
+                        close();
+                        setSummarising(true);
+                        void api.summarise(moduleName!, id!)
+                          .then((result) => setAiSummary(result.summary))
+                          .catch((e: Error) => toast.error('Summary failed', e.message))
+                          .finally(() => setSummarising(false));
+                      }}
+                    >
+                      {summarising ? 'Summarising…' : 'Summarise with AI'}
+                    </DropdownItem>
                     {moduleName === 'properties' && (
                       <DropdownItem
                         icon={<Link2 className="h-3.5 w-3.5" />}
@@ -484,6 +489,21 @@ export default function RecordDetail(): JSX.Element {
         title="Send this property to a buyer"
       >
         <ShareLinksPanel module={moduleName!} recordId={id!} />
+      </Modal>
+
+      <Modal
+        open={Boolean(aiSummary)}
+        onClose={() => setAiSummary(null)}
+        title={`Summary of ${record.label}`}
+      >
+        <div className="space-y-3">
+          <div className="rounded-xl border border-brand-100 bg-brand-50/60 p-4 text-sm leading-6 text-slate-700 dark:border-brand-900 dark:bg-brand-950/30 dark:text-slate-200">
+            {aiSummary}
+          </div>
+          <p className="text-xs text-muted">
+            Built only from the CRM fields and activity you are allowed to see; missing facts are not invented.
+          </p>
+        </div>
       </Modal>
 
       <ConfirmDialog

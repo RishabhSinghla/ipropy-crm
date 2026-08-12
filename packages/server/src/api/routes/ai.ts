@@ -5,7 +5,7 @@ import { db } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, NotFoundError } from '../../utils/errors.js';
-import { assertCapability, canAccessRecord } from '../../core/permissions/index.js';
+import { assertCapability, canAccessRecord, getFieldPermissions } from '../../core/permissions/index.js';
 import { aiStatus, isAiAvailable } from '../../ai/client.js';
 import {
   isSttConfigured, SttError, transcribeAudio, transcribeRecording,
@@ -33,6 +33,14 @@ const assistantAudioUpload = multer({
     done(null, file.mimetype.startsWith('audio/') || file.mimetype === 'video/webm');
   },
 });
+
+async function readableAiFields(user: ReturnType<typeof getUser>, module: string): Promise<string[] | undefined> {
+  if (user.isAdmin) return undefined;
+  const permissions = await getFieldPermissions(user, module);
+  return [...permissions.entries()]
+    .filter(([, permission]) => permission !== 'hidden')
+    .map(([name]) => name);
+}
 
 aiRouter.get('/status', asyncHandler(async (_req, res) => {
   const status = aiStatus();
@@ -119,7 +127,11 @@ aiRouter.post('/draft', asyncHandler(async (req, res) => {
 
   if (!(await canAccessRecord(scope, input.module, input.recordId, 'view'))) throw new NotFoundError();
 
-  const draft = await draftMessage({ ...input, userId: user.id });
+  const draft = await draftMessage({
+    ...input,
+    userId: user.id,
+    visibleFields: await readableAiFields(user, input.module),
+  });
   if (!draft) throw new BadRequestError('AI drafting is unavailable — check the API key configuration');
   res.json(draft);
 }));
@@ -128,7 +140,8 @@ aiRouter.post('/summarise/:module/:id', asyncHandler(async (req, res) => {
   const scope = getScope(req);
   const { module, id } = req.params;
   if (!(await canAccessRecord(scope, module, id, 'view'))) throw new NotFoundError();
-  const summary = await summariseRecord(id, module, scope.user.id);
+  const visible = await readableAiFields(scope.user, module);
+  const summary = await summariseRecord(id, module, scope.user.id, visible ? new Set(visible) : undefined);
   if (!summary) throw new BadRequestError('AI summarisation is unavailable');
   res.json({ summary });
 }));

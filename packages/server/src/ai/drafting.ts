@@ -20,6 +20,8 @@ export interface DraftInput {
   language?: string;
   includeProperties?: boolean;
   userId?: string | null;
+  /** Server-derived readable field names; never trust this from a browser. */
+  visibleFields?: string[];
 }
 
 export interface DraftResult {
@@ -36,14 +38,18 @@ interface RecordContext {
   history: string;
 }
 
-async function buildContext(recordId: string, module: string): Promise<RecordContext | null> {
+async function buildContext(
+  recordId: string,
+  module: string,
+  visibleFields?: ReadonlySet<string>,
+): Promise<RecordContext | null> {
   const record = await db.queryOne<{ label: string; owner_id: string | null; module_name: string }>(
     `SELECT label, owner_id, module_name FROM ipy_record WHERE id = $1 AND is_deleted = false`,
     [recordId],
   );
   if (!record) return null;
 
-  const summary = await buildRecordSummary(recordId, module);
+  const summary = await buildRecordSummary(recordId, module, visibleFields);
 
   const [owner, org, messages, calls] = await Promise.all([
     record.owner_id
@@ -89,7 +95,11 @@ async function buildContext(recordId: string, module: string): Promise<RecordCon
 }
 
 /** Compact, human-readable snapshot of a record for prompt context. */
-export async function buildRecordSummary(recordId: string, module: string): Promise<string> {
+export async function buildRecordSummary(
+  recordId: string,
+  module: string,
+  visibleFields?: ReadonlySet<string>,
+): Promise<string> {
   const { registry } = await import('../core/metadata/registry.js');
   const meta = await registry.getModule(module);
   if (!meta) return '';
@@ -105,6 +115,7 @@ export async function buildRecordSummary(recordId: string, module: string): Prom
 
   for (const field of meta.fields) {
     if (!field.isActive || field.displayType === 'hidden') continue;
+    if (visibleFields && !visibleFields.has(field.name)) continue;
     const raw = field.storage === 'column' ? row[field.columnName] : custom[field.columnName];
     if (raw === null || raw === undefined || raw === '' || (Array.isArray(raw) && !raw.length)) continue;
 
@@ -148,7 +159,11 @@ const CHANNEL_RULES: Record<string, string> = {
 export async function draftMessage(input: DraftInput): Promise<DraftResult | null> {
   if (!isAiAvailable()) return null;
 
-  const ctx = await buildContext(input.recordId, input.module);
+  const ctx = await buildContext(
+    input.recordId,
+    input.module,
+    input.visibleFields ? new Set(input.visibleFields) : undefined,
+  );
   if (!ctx) return null;
 
   let propertyBlock = '';
@@ -262,15 +277,37 @@ Return exactly three lines, each starting with "- ". No other text.`;
 }
 
 /** Summarise a long record timeline into a paragraph a manager can skim. */
-export async function summariseRecord(recordId: string, module: string, userId?: string): Promise<string | null> {
-  if (!isAiAvailable()) return null;
-
+export async function summariseRecord(
+  recordId: string,
+  module: string,
+  userId?: string,
+  visibleFields?: ReadonlySet<string>,
+): Promise<string | null> {
   const [summary, timeline] = await Promise.all([
-    buildRecordSummary(recordId, module),
+    buildRecordSummary(recordId, module, visibleFields),
     import('../core/entity/timeline.js').then((m) => m.buildTimeline(recordId, { limit: 40 })),
   ]);
 
-  const prompt = `Summarise where this deal stands.
+  const meta = await import('../core/metadata/registry.js').then((m) => m.registry.getModule(module));
+  const kind = meta?.singularLabel.toLowerCase() ?? 'record';
+  const facts = summary.split('\n').map((line) => line.replace(/^-\s*/, '').trim()).filter(Boolean).slice(0, 7);
+  const latest = timeline[0];
+  const fallback = [
+    facts.length
+      ? `Current ${kind} details: ${facts.join('; ')}.`
+      : `This ${kind} does not yet have enough populated CRM fields for a detailed summary.`,
+    latest
+      ? `Latest activity: ${latest.title}${latest.body ? ` — ${latest.body.slice(0, 180)}` : ''}.`
+      : 'No activity has been logged yet.',
+    `Next action: review the missing details and record the next concrete follow-up in the CRM.`,
+  ].join(' ');
+
+  // A provider outage should not turn the menu item into a dead end. The
+  // factual summary above is deterministic and still useful; when AI is
+  // connected it is replaced by the richer, context-aware version below.
+  if (!isAiAvailable()) return fallback;
+
+  const prompt = `Summarise where this ${kind} stands in iPropy CRM.
 
 ## Record
 ${summary}
@@ -278,7 +315,7 @@ ${summary}
 ## Activity (newest first)
 ${timeline.map((t) => `- [${new Date(t.at).toLocaleDateString('en-IN')}] ${t.title}${t.body ? `: ${t.body.slice(0, 200)}` : ''}`).join('\n')}
 
-Write 3-5 sentences covering: where the buyer is in the journey, what they care about, what is blocking progress, and the single most useful next action. Be specific and reference real values. No preamble.`;
+Write 3-5 sentences using only the facts above. For a lead, cover their buying journey, priorities, blockers and next action. For a property, cover availability, important facts, media/activity state and next action. For any other record, describe its current state and the single most useful next action. Be specific. If a fact is missing, say it is missing rather than inventing it. No preamble.`;
 
   const result = await complete({
     feature: 'summarise_record',
@@ -288,5 +325,5 @@ Write 3-5 sentences covering: where the buyer is in the journey, what they care 
     recordId,
     userId: userId ?? null,
   });
-  return result?.text.trim() ?? null;
+  return result?.text.trim() || fallback;
 }

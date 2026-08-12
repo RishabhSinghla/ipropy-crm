@@ -39,7 +39,10 @@ export default function Layout(): JSX.Element {
     queryKey: ['unseen-counts'],
     queryFn: () => api.unseenCounts(),
     enabled: Boolean(user),
-    refetchInterval: 60_000,
+    // Socket invalidation makes this immediate while connected; this short
+    // poll is the safety net for a laptop that slept through a socket event.
+    refetchInterval: 20_000,
+    refetchOnWindowFocus: true,
   });
 
   const { data: brand } = useQuery({
@@ -121,7 +124,7 @@ export default function Layout(): JSX.Element {
                     collapsed={sidebarCollapsed}
                     color={m.color}
                     badge={unseenCounts?.[m.name]
-                      ? <UnseenBadge count={unseenCounts[m.name]} />
+                      ? <UnseenBadge count={unseenCounts[m.name]} module={m.name} />
                       : undefined}
                   />
                 ))}
@@ -349,11 +352,13 @@ function SocialIcon({ platform }: { platform: string }): JSX.Element {
 }
 
 /** Count of records in a module this user has never opened. */
-function UnseenBadge({ count }: { count: number }): JSX.Element {
+function UnseenBadge({ count, module }: { count: number; module: string }): JSX.Element {
   return (
     <span
       className="rounded-full bg-brand-600 px-1.5 py-0.5 text-2xs font-semibold text-white"
-      title={`${count} new — not opened yet`}
+      title={module === 'leads'
+        ? `${count} lead${count === 1 ? '' : 's'} still in New status`
+        : `${count} new — not opened yet`}
     >
       {count > 99 ? '99+' : count}
     </span>
@@ -471,7 +476,6 @@ function GlobalSearch(): JSX.Element {
   const [open, setOpen] = useState(false);
   const [results, setResults] = useState<{ id: string; module: string; moduleLabel: string; label: string }[]>([]);
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -528,14 +532,15 @@ function GlobalSearch(): JSX.Element {
             <p className="px-3 py-6 text-center text-xs text-muted">No matches for “{query}”</p>
           )}
           {results.map((r) => (
-            <button
+            <Link
               key={r.id}
-              onClick={() => { navigate(`/${r.module}/${r.id}`); setOpen(false); setQuery(''); }}
+              to={`/${r.module}/${r.id}`}
+              onClick={() => { setOpen(false); setQuery(''); }}
               className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-800"
             >
               <span className="truncate text-sm">{r.label}</span>
               <Badge className="shrink-0">{r.moduleLabel}</Badge>
-            </button>
+            </Link>
           ))}
         </div>
       )}

@@ -1,11 +1,10 @@
 /**
  * "New since you last looked" — the CRM's equivalent of an unread email.
  *
- * A record is new for a user when it was created after that user's watermark
- * for the module and they have never opened it. Both halves matter: without
- * the open check a lead you have already worked would stay bold; without the
- * watermark, connecting to an existing database would light up every
- * historical record at once.
+ * A lead needs attention while its pipeline status is literally New. Opening
+ * it is not the same as working it, so only a stage move clears that highlight.
+ * Other modules use unread-style state: created after the user's module
+ * watermark and never opened.
  *
  * Deliberately *not* part of listRecords. The list engine is shared by exports,
  * reports, widgets and the portal, none of which have a "who is reading this"
@@ -31,6 +30,22 @@ export async function filterUnseen(
   conn: Tx = db,
 ): Promise<string[]> {
   if (!ids.length) return [];
+  // A lead is operationally "new" until somebody moves it out of the New
+  // pipeline stage. Opening it must not make it look worked — that hid fresh
+  // enquiries after a rep merely inspected them. Other modules keep the
+  // ordinary unread-style behaviour below.
+  if (moduleName === 'leads') {
+    const rows = await conn.query<{ id: string }>(
+      `SELECT r.id
+       FROM ipy_record r
+       JOIN ipy_e_leads e ON e.record_id = r.id
+       WHERE r.id = ANY($1::uuid[])
+         AND r.is_deleted = false
+         AND e.status = 'New'`,
+      [ids],
+    );
+    return rows.rows.map((row) => row.id);
+  }
   const rows = await conn.query<{ id: string }>(
     `SELECT r.id
      FROM ipy_record r
@@ -38,6 +53,7 @@ export async function filterUnseen(
      LEFT JOIN ipy_module_seen ms ON ms.user_id = $1 AND ms.module_name = $3
      WHERE r.id = ANY($2::uuid[])
        AND r.is_deleted = false
+       AND r.module_name = $3
        AND r.created_at > COALESCE(ms.seen_at, u.created_at)
        AND NOT EXISTS (
          SELECT 1 FROM ipy_recent_view rv WHERE rv.user_id = $1 AND rv.record_id = r.id
@@ -65,11 +81,16 @@ export async function unseenCounts(ctx: ScopeContext, conn: Tx = db): Promise<Re
     const moduleParam = params.add(module.id);
     const nameParam = params.add(module.name);
 
+    const pipelineNew = module.name === 'leads';
     const clauses = [
       `r.module_id = ${moduleParam}::uuid`,
       `r.is_deleted = false`,
-      `r.created_at > COALESCE(ms.seen_at, u.created_at)`,
-      `NOT EXISTS (SELECT 1 FROM ipy_recent_view rv WHERE rv.user_id = ${userParam} AND rv.record_id = r.id)`,
+      ...(pipelineNew
+        ? [`entity_row.status = 'New'`]
+        : [
+            `r.created_at > COALESCE(ms.seen_at, u.created_at)`,
+            `NOT EXISTS (SELECT 1 FROM ipy_recent_view rv WHERE rv.user_id = ${userParam} AND rv.record_id = r.id)`,
+          ]),
     ];
 
     // recordScopeSql writes predicates against the `r` alias, which is why the
@@ -82,6 +103,7 @@ export async function unseenCounts(ctx: ScopeContext, conn: Tx = db): Promise<Re
        FROM ipy_record r
        JOIN ipy_user u ON u.id = ${userParam}
        LEFT JOIN ipy_module_seen ms ON ms.user_id = ${userParam} AND ms.module_name = ${nameParam}
+       ${pipelineNew ? 'JOIN ipy_e_leads entity_row ON entity_row.record_id = r.id' : ''}
        WHERE ${clauses.join(' AND ')}`,
       params.all(),
     ).catch(() => null);

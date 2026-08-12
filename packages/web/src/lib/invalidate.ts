@@ -17,9 +17,16 @@ export function invalidateRecordQueries(qc: QueryClient, module?: string, id?: s
   if (module) {
     void qc.invalidateQueries({ queryKey: ['records', module] });
     void qc.invalidateQueries({ queryKey: ['views', module] });
+    void qc.invalidateQueries({ queryKey: ['unseen', module] });
   } else {
     void qc.invalidateQueries({ queryKey: ['records'] });
+    void qc.invalidateQueries({ queryKey: ['unseen'] });
   }
+
+  // Sidebar badges and favourites are user-specific projections of the same
+  // records. A pipeline move or star toggle must update them in the same tick.
+  void qc.invalidateQueries({ queryKey: ['unseen-counts'] });
+  void qc.invalidateQueries({ queryKey: ['starred'] });
 
   if (module && id) {
     void qc.invalidateQueries({ queryKey: ['record', module, id] });

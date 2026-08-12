@@ -116,8 +116,10 @@ function wireEvents(): void {
   });
 
   bus.on('record.created', (p) => {
-    // Let list views know something new arrived in their module.
-    io?.emit('record:created', { module: p.module, recordId: p.recordId });
+    // Let list views know something new arrived, without broadcasting a record
+    // id to users whose permission scope may not include it. Their refetch is
+    // still filtered by the ordinary API boundary.
+    io?.emit('record:created', { module: p.module });
   });
 
   // List views, dashboards and reports aggregate a whole module, so they need

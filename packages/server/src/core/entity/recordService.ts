@@ -226,6 +226,19 @@ export async function listRecords(
     })),
   );
 
+  // Favourite state belongs to the signed-in user, not the record. Resolve it
+  // once for the page so every list/card/kanban renderer can keep the gold
+  // highlight without issuing one query per row.
+  if (!ctx.system && rows.length) {
+    const starred = await conn.query<{ record_id: string }>(
+      `SELECT record_id FROM ipy_starred
+       WHERE user_id = $1 AND record_id = ANY($2::uuid[])`,
+      [ctx.user.id, rows.map((row) => row.id)],
+    );
+    const starredIds = new Set(starred.rows.map((row) => row.record_id));
+    for (const row of rows) row.starred = starredIds.has(row.id);
+  }
+
   // Resolved once for the whole page rather than per row.
   if (!ctx.system) {
     const hidden = await hiddenFieldsFor(ctx, moduleName);
