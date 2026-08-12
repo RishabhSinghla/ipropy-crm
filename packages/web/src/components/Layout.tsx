@@ -535,7 +535,14 @@ function GlobalSearch(): JSX.Element {
             <Link
               key={r.id}
               to={`/${r.module}/${r.id}`}
-              onClick={() => { setOpen(false); setQuery(''); }}
+              // A modified click opens a background tab and the browser leaves
+              // this page alone — so clearing the box would throw away the
+              // results somebody is deliberately working through one at a time.
+              onClick={(e) => {
+                if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+                setOpen(false);
+                setQuery('');
+              }}
               className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-800"
             >
               <span className="truncate text-sm">{r.label}</span>
