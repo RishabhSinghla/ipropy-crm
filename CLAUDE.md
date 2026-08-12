@@ -88,6 +88,29 @@ Vtiger (at `../vtigercrm`) is an **architecture reference only**. No Vtiger code
 * **One filter grammar, two engines:** `core/query/builder.ts` → SQL (lists, widgets, reports);
   `core/query/evaluate.ts` → in-memory (workflow conditions, conditional visibility). Keep them in
   step.
+* **A photo finds its property by the clock, never by GPS.** A shoot session
+  (`ipy_shoot_session`) binds a property to a window of time; a photo taken inside that window is
+  filed against it. Location is recorded and is good for segmenting a day into visits, but adjacent
+  builder floors are ten to twenty metres apart — well inside a phone fix's error. Don't be tempted.
+* **EXIF `DateTimeOriginal` carries no UTC offset.** It is local wall-clock time and the tag does not
+  say where. Read as UTC in India every photo lands 5½ hours early — a day's drift is one or two
+  properties' worth, filing against the wrong floor. Resolution order is `OffsetTimeOriginal` → the
+  organisation's configured timezone (through `Intl`, not hardcoded) → UTC. Video is different:
+  `ffprobe`'s `creation_time` is already zoned, so it is taken at face value and **not** offset again.
+* **A shoot with no name is a normal state, not an error.** `origin` is `'manual'` (somebody tapped
+  Start) or `'auto'` (inferred from a 40-minute gap between photos). Manual always outranks auto: a
+  guessed group yields its photos to a visit somebody actually opened, but **never once it has been
+  named** — that is a decision, not a guess.
+* **Shoot vision never writes to the record.** A model can see a modular kitchen; it cannot see that
+  this is B-110 and not B-112. It also only looks at *nameless* shoots, and a worker that spends an
+  attempt when it finds no provider burns its three retries in three minutes and marks everything
+  permanently failed — the tests pin this.
+* **A share link is not the public website.** `/api/public/properties` is a catalogue (`Available` +
+  published); the property somebody wants to send is usually this morning's draft. Every share-link
+  failure — revoked, expired, mistyped, deleted — must resolve to **the same 404**. Its photos come
+  from the record's attachments, not the `gallery` field, which is empty on anything from capture.
+  Note `/:module/:id/share` and `/shares` already exist and mean *granting a user access*; the link
+  routes are `/share-links`.
 
 ---
 
@@ -113,8 +136,9 @@ Login: `admin@ipropy.com` / `Admin@123`. Other demo users in `PROJECT_HANDOVER.m
 
 **Verification:** three layers, fastest first.
 
-* `npm test` — 251 unit tests, no DB: 209 in `packages/server` (query builder, filter evaluator,
-  formula engine, permissions, validation, seed templates, billing decisions) and 42 in `packages/web` (`tests/color.test.ts`, the
+* `npm test` — 298 unit tests, no DB: 256 in `packages/server` (query builder, filter evaluator,
+  formula engine, permissions, validation, seed templates, billing decisions, capture time/EXIF
+  offsets, watermark sizing, vision sampling) and 42 in `packages/web` (`tests/color.test.ts`, the
   contrast guarantee behind the colour tokens, and `tests/markdown.test.ts`).
 * `npm run test:integration` — creates and drops its own `ipropy_itest` database, plus
   `ipropy_itest_control` (the customer list) and `ipropy_itest_tenant` (a customer provisioned into
@@ -165,6 +189,8 @@ packages/server/src/core/query/builder.ts          filters → SQL
 packages/server/src/core/permissions/index.ts      4-layer access control
 packages/server/src/db/seed/templates/          starting data models, one file per trade
 packages/web/src/components/FieldRenderer.tsx      metadata → UI
+packages/server/src/core/capture/                  shoot sessions, EXIF matching, grouping, vision
+packages/server/src/ai/client.ts                   two transports; `images` is what carries photos
 ```
 
 ---
@@ -175,12 +201,21 @@ packages/web/src/components/FieldRenderer.tsx      metadata → UI
   Production generates its own `JWT_SECRET` and sets `SEED_DEMO_DATA=false` — that gate must stay
   false, since the demo seed creates ~12 users sharing a password published in this repo. **Local
   dev still uses the committed defaults**, so never point a dev `.env` at the deployed database.
-* `WHATSAPP_APP_SECRET` is unset and there are no scheduled backups.
+* `WHATSAPP_APP_SECRET` is unset. **Scheduled backups of the deployed database are not on** — the
+  launchd timer covers a developer's local Postgres only. The intended fix is Neon's own scheduled
+  backups + instant restore (paid Launch plan), *not* a dump job in this repo; that was shipped once
+  and deliberately removed. See `DEPLOYMENT.md` §7 before building anything here.
 * Speech-to-text, email IMAP inbound, rollup fields and the Channel Partner portal shipped as
   graceful-degradation features — they need real credentials/keys to be exercised end-to-end.
 * Dashboard drag-to-resize is wired (react-grid-layout on desktop, persisted via `saveDashboardLayout`).
 * **No LLM provider is configured.** Every AI feature runs on its fallback rule engine until a key
   is added in Admin → Integrations. Gemini/Groq/OpenRouter have free tiers; see §"AI providers".
+  This now includes shoot descriptions — with no key a capture group shows thumbnails and times only.
+* **Capture has never been used on a real site visit.** Verified in a browser at 390px and against a
+  stand-in OpenAI-compatible server. Sunlight, one hand, no signal and EXIF offsets from a real
+  camera are the assumptions it rests on, and none have been tested where they apply.
+* Branches `fix/watermark-retry-loop` and `feat/property-share-links` were squash-merged on
+  12 August but still exist on the remote — an agent session's git credentials can't delete them.
 * **Social links in `social.links` were found by web search, not supplied by the business.** Two
   iPropy Instagram accounts exist. Treat them as unverified until someone confirms each one.
 * Browser push works but **nobody has subscribed a device yet** — Settings → Alerts, per device.

@@ -132,6 +132,30 @@ your own — they can otherwise all log in. Better still for a real team review:
 add a handful of genuine leads and one real project, which shows your data model
 doing its job rather than someone else's fixtures.
 
+### What is reachable without signing in
+
+Three surfaces answer unauthenticated requests, by design. If you ever put an
+auth proxy in front of this deployment, these must stay reachable or the
+features silently stop working:
+
+| Path | Why it is public |
+|---|---|
+| `/api/public/*` | The website's catalogue — `Available`, published units only |
+| `/api/webhooks/*` | Inbound leads, WhatsApp delivery receipts, portal enquiries |
+| `/s/:token` and `/api/public/share/:token` | **Property share links.** One property, one unguessable token, sent to one buyer |
+
+Share links are the one to understand before you go live. A link is created
+deliberately by somebody who can already see the record, it is revocable, and it
+is independent of whether the unit is published to the website — so it happily
+exposes a *draft* property to whoever holds the URL. That is the point of it.
+Every failure mode — revoked, expired, mistyped, deleted — returns the same 404,
+so the token cannot be probed for.
+
+**Don't put a shared CDN cache in front of shared media.** Those responses are
+deliberately sent as `Cache-Control: private` — a link is not secret enough to
+sit in a cache other people can reach, and revoking one has to actually take
+effect. A public edge cache would keep serving photos from a link you revoked.
+
 ---
 
 ## 4. Website — Vercel (5 min)

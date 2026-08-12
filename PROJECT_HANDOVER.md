@@ -119,9 +119,13 @@ Real-estate specific: `currency` (accepts `"1.5 Cr"` → `15000000`), `area`, `s
 
 **Connection:** `postgres://ipropy:ipropy@localhost:5432/ipropy` (Docker container `ipropy-db`).
 
-### Migrations applied (all nine, verified in `ipy_migration`)
+### Migrations applied (all 38, verified in `ipy_migration`)
 
-| Migration | Applied | What it does |
+The first nine are described in full because they establish the shape of everything after them.
+`010`–`038` are one line each; every migration file carries a header comment explaining *why* it
+exists, which is the authoritative account.
+
+| Migration | Landed | What it does |
 |---|---|---|
 | `001_core.sql` | 2026-08-06 13:35 | Metadata engine (`ipy_module`/`block`/`field`/`picklist`/`relation`), identity (`ipy_user`/`role`/`profile`/`group`/`session`), `ipy_record` base table + tsvector search, permissions, views, layouts, dashboards, audit/comments/attachments/tags/notifications, settings |
 | `002_entities.sql` | 2026-08-06 13:35 | Real-estate payload tables: organizations, contacts, leads, projects, properties, deals, site_visits, bookings, payments, channel_partners, campaigns, activities, documents |
@@ -129,9 +133,41 @@ Real-estate specific: `currency` (accepts `"1.5 Cr"` → `15000000`), `area`, `s
 | `004_merge_contacts_into_leads.sql` | 2026-08-06 16:30 | **Merged Contacts into Leads** (see below) + added module enable/disable columns (`disabled_reason`, `disabled_at`, `disabled_by`, `is_core`) |
 | `005_integration_settings.sql` | 2026-08-07 | Added the `webform` provider row to `ipy_integration` so the generic web-form capture key is editable from the admin UI like every other credential, not `.env`-only |
 | `006_remove_converted_contact_id.sql` | 2026-08-07 | Dropped the dead `ipy_e_leads.converted_contact_id` column and deleted its field metadata (no nulls, no indexes, no views/workflows/dashboards/reports references) |
-| `007_dashboard_drag_resize.sql` | 2026-08-07 | Added dashboard drag-to-resize persistence (widget x/y/w/h layout storage) |
+| `007_projects_rollup.sql` | 2026-08-07 | Real column for the `total_inventory` rollup on projects (the module has since been removed — see `031`) |
 | `008_inbound_email_threading.sql` | 2026-08-07 | Unique index on `ipy_email_log.provider_id` for idempotent inbound email sync |
 | `009_portal_user_link.sql` | 2026-08-07 | Added `channel_partner_id` to `ipy_user` linking portal users to their channel_partners record (enables Channel Partner portal) |
+
+| Migration | Landed | What it does |
+|---|---|---|
+| `010_media_pipeline.sql` | 2026-08-07 | Derivative image/video variants and the processing queue |
+| `011_rename_leads_module_label.sql` | 2026-08-08 | Module relabelled to "Leads & Contacts" |
+| `012_ai_providers.sql` | 2026-08-08 | Alternative LLM providers (Gemini, Groq, OpenRouter, Ollama) |
+| `013_unseen_records_and_push.sql` | 2026-08-08 | Per-user "new record" watermarks and Web Push subscriptions |
+| `014_brand_and_social.sql` | 2026-08-08 | Brand positioning line and social links |
+| `015_passkeys.sql` | 2026-08-09 | Passkeys (Face ID / Touch ID / Android biometrics) |
+| `016_blog.sql` | 2026-08-09 | Blog, written in the CRM and published to the website |
+| `017_seo_audit.sql` | 2026-08-09 | Daily SEO / AEO / GEO audit results |
+| `018_gemini_model_aliases.sql` | 2026-08-09 | Move Gemini onto alias models after the pinned ones retired |
+| `019_whatsapp_autoreply.sql` | 2026-08-09 | WhatsApp consent trail and keyword auto-replies |
+| `020_whatsapp_campaigns_sequences.sql` | 2026-08-09 | Device sends, broadcasts, drip sequences, richer auto-replies |
+| `021_studio_designs_and_renders.sql` | 2026-08-09 | Saved Studio designs and the render queue |
+| `022_device_call_sync.sql` | 2026-08-09 | Call logging from the salesperson's own phone |
+| `023_cluster_queue_hardening.sql` | 2026-08-09 | Durable claims for the outreach and render queues |
+| `024_outreach_sequence_namespace.sql` | 2026-08-09 | Outreach sequences get their own table namespace |
+| `025_simplify_to_one_module.sql` | 2026-08-09 | Collapse thirteen modules into two places to look |
+| `026_full_name_and_phone.sql` | 2026-08-09 | One name field, no salutation, an explicit country code |
+| `027_fix_full_name_uitype.sql` | 2026-08-09 | Correct the Full Name uitype |
+| `028_inventory_tab_group.sql` | 2026-08-09 | Projects and Properties become one place |
+| `029_prune_stale_dashboard_widgets.sql` | 2026-08-09 | Remove dashboard widgets that outlived their modules |
+| `030_remove_modules_permanently.sql` | 2026-08-09 | Eight modules removed for good |
+| `031_projects_activities_and_field_cleanup.sql` | 2026-08-09 | Projects and Activities removed; lead fields simplified |
+| `032_field_tombstones.sql` | 2026-08-09 | `ipy_field_tombstone` — deleting a built-in field survives a re-seed |
+| `033_seed_preserves_customisation.sql` | 2026-08-11 | Stop the seed undoing an admin's work on every cold start |
+| `034_shoot_sessions.sql` | 2026-08-11 | `ipy_shoot_session` — a site visit: which property, and the window its photos were shot in |
+| `035_capture_voice.sql` | 2026-08-11 | Transcription state for a visit's spoken note (`voice_status`/`attempts`/`error`) |
+| `036_auto_grouped_shoots.sql` | 2026-08-11 | `origin` (`manual` / `auto`) — photos group themselves when nobody tapped Start |
+| `037_shoot_vision.sql` | 2026-08-11 | `vision` JSONB + status/attempts/error — what the photos in a shoot are of |
+| `038_share_links.sql` | 2026-08-12 | `ipy_share_link` — send one property to one person |
 
 The migration runner (`db/migrate.ts`) is forward-only, applies each `.sql` in name order inside its
 own transaction, and records it in `ipy_migration`. It is safe to re-run (already-applied files are
@@ -315,7 +351,11 @@ iPropy-crm/
 
 ## 7. Current unfinished task and exact current state
 
-**There is no task in progress. The last requested work is complete, verified live, and pushed.**
+**There is no task in progress. The last requested work is complete, verified, and merged to `main`.**
+
+> **Read §18 first — it is the current state.** The narrative immediately below is the 7 August
+> session, kept because it explains why several things are shaped the way they are. Sessions since
+> then are recorded in §17.1–§17.5 and §18, newest last.
 
 ### This session's work (7 August 2026)
 
@@ -398,6 +438,11 @@ this document — now exists.
 
 ### Exact runtime state right now
 
+Superseded — this table described 7 August. **See §18 for the current state.**
+
+<details>
+<summary>State as of 7 August 2026 (historical)</summary>
+
 | | |
 |---|---|
 | Postgres | Docker container `ipropy-db`, **up and healthy**, all 6 migrations applied |
@@ -407,6 +452,8 @@ this document — now exists.
 | Demo data | Clean — all test records/workflows/credentials created during verification were deleted or reverted afterward |
 | Git | **Initialised, pushed to `origin/main`.** Latest commit `01ce186`. Working tree clean. |
 | AI | `ANTHROPIC_API_KEY` empty → rule-based fallback active (also configurable now via Admin → Integrations) |
+
+</details>
 
 ---
 
@@ -621,24 +668,38 @@ encryption, the workflow builder, stale-UI/realtime, module toggle, field hide/u
 record navigation, quick-edit, dashboard drill-through, the Vitest unit suite, removal of the dead
 `converted_contact_id` column, dashboard drag-to-resize, the DB backup/restore runbook, the funnel
 drill-through + filter-panel fixes, the rollup aggregation engine, speech-to-text for call
-recordings, IMAP inbound email sync, **Channel Partner portal**, **production hardening** (secrets, launchd timer)) has been removed. What's left:
-
-### Correctness and safety
-
-1. **DONE** — Production secrets generated: strong `JWT_SECRET`, `WHATSAPP_APP_SECRET` in `.env`. `npm check:prod` passes.
-
-### Finish partially-built features
-
-2. Add the many-to-many related-list "select existing record" UI (API already supports it).
+recordings, IMAP inbound email sync, **Channel Partner portal**, **production hardening** (secrets,
+launchd timer), the **site capture pipeline** (§18) and **property share links** (§18)) has been
+removed. What's left:
 
 ### Deployment and operations
 
-3. **DONE** — launchd backup timer installed and verified; backup written and restore-verified.
+1. **Delete the two merged feature branches.** `fix/watermark-retry-loop` and
+   `feat/property-share-links` were squash-merged on 12 August and still exist on the remote; the
+   agent session's git credentials are scoped to its own branch, so `git push --delete` returns 403.
+   Two clicks in the GitHub UI, or turn on **Settings → General → Automatically delete head
+   branches** so it stops recurring.
+2. **Turn on scheduled backups for the deployed database.** The launchd timer covers a developer's
+   local Postgres only. This is an **ops action, not a code change**: upgrade Neon to Launch, enable
+   a daily schedule and a 7-day instant-restore window (`DEPLOYMENT.md` §7). A nightly dump job was
+   shipped once and removed on purpose — don't rebuild it without reading why.
+3. **Add an LLM provider key** (Admin → Integrations). Every AI feature is running on its
+   deterministic fallback, which now includes the shoot-vision worker — a real key is the difference
+   between "12 photos, 2:38–2:58 pm" and a description of the flat. Gemini/Groq/OpenRouter have free
+   tiers.
+
+### Finish partially-built features
+
+4. Add the many-to-many related-list "select existing record" UI (API already supports it).
+5. **Field-test capture on a real site visit.** The whole pipeline has been verified in a browser at
+   390px and against a stand-in provider, but never on a phone at an actual gate — which is the only
+   place its assumptions (sunlight, one hand, no signal, EXIF offsets from a real camera) are
+   actually tested.
 
 ### Product depth
 
-4. Mobile-responsive pass on ListView, RecordDetail and the Inventory board.
-5. Collapse `is_converted` into `lifecycle_stage` and simplify conversion logic (§8 technical debt 6).
+6. Mobile-responsive pass on ListView, RecordDetail and the Inventory board.
+7. Collapse `is_converted` into `lifecycle_stage` and simplify conversion logic (§8 technical debt 6).
 
 ---
 
@@ -1251,3 +1312,141 @@ none of the three showed up as a failing check.
   the delete button a mile from the name it belonged to. Also: the grip icon on
   each row had never been draggable. It is now — the arrows stay for keyboard
   and touch — and a hidden tab says "hidden" rather than only being faded.
+
+---
+
+## 18. Site capture, and getting the photos back out (2026-08-11 → 12)
+
+**This is the current state of the project.** Two days of work, one theme: a property's photos are
+taken by a person standing at a gate, and every step between that moment and a buyer's phone used to
+be somebody re-deriving a fact they already had.
+
+### The problem, in the owner's words
+
+> *"then later I have to send it to some party and everything is so cluttered."*
+
+The identity of a property is known at the instant the shutter is pressed, and thrown away
+immediately. Sorting, filing, captioning and sending are all a person reconstructing it from a camera
+roll that evening. Capture records it once; share links send the result out.
+
+### What shipped
+
+Ten commits on 11 August, then two pull requests merged on 12 August.
+
+| | |
+|---|---|
+| `ecb7b18` | Seed stopped undoing an admin's work on every cold start (migration `033`) |
+| `231fb50` | **Download all** for a property — a zip of ordinary folders, four sets |
+| `fe50ee3` | Storage keys named after the record, not a bare UUID |
+| `02e4e5d` | **Shoot sessions** — one tap binds a property to a window of time (migration `034`) |
+| `7d464b3` | The capture screen and the offline queue that lets it work with no signal |
+| `a785355` | **Say the details at the gate** instead of typing them (migration `035`) |
+| `7747219` | The evening review — confirm what you said at the gate |
+| `6f272e9` | File photos against the visit they were shot on, by EXIF time |
+| `151cea0` | Photos **group themselves** when nobody tapped Start (migration `036`) |
+| `3ab8da3` | The CRM can **look at the photos** (migration `037`) |
+| **#27** | A media job could never finish on a very small image |
+| **#28** | **Send one property to one person** (migration `038`) |
+
+### The five things worth knowing before touching any of it
+
+**1. Matching is by time, never by location.** GPS is recorded on the session and is good for
+segmenting a day into visits — it cannot name a property. Adjacent builder floors in Greenfield are
+ten to twenty metres apart, well inside the error of a phone fix. The property comes from the person;
+the clock does the rest.
+
+**2. The timezone is the whole risk in EXIF matching, and most of the code.** `DateTimeOriginal` is
+local wall-clock time with **no offset attached** — `2026:08:11 09:03:00` means nine in the morning
+wherever the photographer was standing, and the tag does not say where. Read as UTC in India, every
+photo lands five and a half hours early, which across a day is one or two properties' worth of drift
+and photos filing against the wrong floor. The offset resolves from `OffsetTimeOriginal` when the
+camera recorded one, then the organisation's configured timezone, then UTC — read through `Intl`
+rather than hardcoded, so it stays right outside India and across a DST boundary. Video is easier:
+`ffprobe`'s `creation_time` is already zoned and is taken at face value.
+
+**3. The gate tap is optional, and manual always outranks auto.** Photos belonging to no session are
+grouped by the clock alone — a 40-minute gap means the photographer drove somewhere. That yields a
+group with **no name**, which is exactly the state one tap in the evening fixes. A guessed group
+yields its photos to a visit somebody actually opened, but **never once it has been named** — that is
+a decision, not a guess. `origin` (`manual` | `auto`) on `ipy_shoot_session` is what carries this.
+
+**4. Vision never writes to the record.** A model can see a modular kitchen; it cannot see that this
+is B-110 and not B-112. Treating a description as a fact throws away the reason for asking a person.
+It also only looks at **nameless** shoots — once somebody has named one, describing it is paying to
+be told what we already know — and it degrades to nothing when no provider is configured, which is
+this install's normal state. The trap the tests pin: a worker that spends an attempt when it finds no
+provider burns its three retries in three minutes and marks everything permanently failed, with no
+error anywhere to explain it.
+
+**5. A share link is not the website.** `/api/public/properties` is a catalogue — units that are
+`Available` and published. The property somebody most wants to send is the floor they shot this
+morning, which is a draft. Every share-link failure (revoked, expired, mistyped, deleted) resolves to
+**the same 404**: telling someone probing for links that they found a real one is the thing to avoid.
+Photos come from the record's **attachments**, not the `gallery` field — gallery is curated by hand
+and is empty on anything that arrived through capture, which is every property this exists for.
+
+### The transport change that made vision possible
+
+`ai/client.ts` sent the user turn as a plain string, so no feature could ever include a picture. Both
+paths now take `images` — Anthropic's block form and the OpenAI-compatible data-URL form — with
+pictures **before** the question, which is what makes the question read as being about them.
+
+The text-only case is deliberately still a bare string: the content-array form is spec, but the newer
+half of it, and several of the small free-tier servers this is expected to run on only ever
+implemented the string.
+
+### Bugs found on the way (all pre-existing)
+
+* **Naming a visit never reached its own photos.** `matchAttachment` copies the session's `record_id`
+  onto a photo as it files it — null for a nameless visit — and the orphan sweep only considered
+  photos with no session *at all*. So the one photo naming could not reach was the one that had
+  correctly joined the visit: the visit read as named and the property's Files tab stayed empty.
+* **`/api/files/:id` only permission-checked attachments that have a record.** Site photos have none
+  until they are named. Now scoped to shoot media, so avatars and other recordless uploads stay
+  readable to anyone signed in.
+* **Route collision on share links.** `POST /:module/:id/share` and `GET /:module/:id/shares` already
+  exist and mean something else entirely — granting another *user* access. Express matches the first
+  route registered, so the new ones were silently shadowed. Renamed to `/share-links`.
+* **The buyer downloaded the whole CRM.** `Layout` was a static import, so socket.io-client, the
+  realtime listener and the AI assistant shipped to `/s/:token` where nothing ever mounts them. Made
+  lazy — the buyer's page now loads **zero** auth-only modules.
+* **A media job could never finish on a very small image** (#27). `watermarkFor` floors the badge at
+  60px; on anything smaller, sharp refuses an overlay larger than its base, `processImage` let it
+  throw, and the media queue retried — against an image exactly as small on the tenth attempt as on
+  the first. Nothing off a phone hits it; a logo, an icon or a signature crop does. `watermarkFor`
+  now takes height too and returns `null` when the badge cannot fit, **margin included** — sharp only
+  refuses an overlay *strictly* larger, so a badge exactly the image's size would composite happily,
+  as a bar across the whole picture.
+* **The integration suite was one login away from breaking.** The sign-in rate limiter is built once
+  at module scope, so every `createApp()` in a process shares one 20-per-15-minute budget, and the
+  suite already made ~17 logins from one IP. Raised in the harness, **not** weakened in the product.
+
+### Exact state as of 12 August 2026
+
+| | |
+|---|---|
+| Git | `main` at `bd1923c`. Working tree clean. PRs #27 and #28 squash-merged; **their branches still exist on the remote** (see §12.1) |
+| Migrations | **38**, `001` → `038_share_links.sql` |
+| Typecheck | Clean across all three packages |
+| Unit tests | **298 pass** — 256 in `packages/server`, 42 in `packages/web` |
+| Integration | 246 at the time #28 was merged; **not re-run in this session** (no Postgres in the container that did the merge) |
+| e2e | Green on both PRs in CI before merge; not re-run since |
+| AI | No provider configured — every feature, including shoot vision, on its deterministic fallback |
+| Capture | Verified in a browser at 390px and against a stand-in OpenAI-compatible server. **Never used on a real site visit** (see §12.5) |
+
+### Verification notes for whoever picks this up
+
+The browser passes caught three things the tests did not, which is the argument for doing them: a
+24-hour clock where the rest of the app pins `en-IN`, a results list long enough to push "add as a
+new property" off a phone screen, and a confirmation step truncated to `"Verdant Green…"`, which
+cannot be told from any of the other thirty units.
+
+Two traps specific to testing this code:
+
+* **Clear `ANTHROPIC_API_KEY` before testing any degradation path.** Claude Code's own shell exports
+  it, so a server started from an agent session looks like it has AI configured when `npm run dev` in
+  a normal terminal does not. `tests/integration/setup.ts` now clears it; the same latent flakiness
+  had already existed in `captureVoice.test.ts`.
+* **The vision and voice workers poll a column, not a job table.** There are ten of these a day, not
+  ten thousand. If you find yourself adding a queue table, check that the volume actually justifies
+  the moving parts.
