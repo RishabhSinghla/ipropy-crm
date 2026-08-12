@@ -215,6 +215,68 @@ export interface CaptureStorageStatus {
   lastError: string | null;
 }
 
+export interface AiAssistantAction {
+  id: string;
+  type: 'update_record';
+  summary: string;
+  module: string;
+  recordId: string;
+  recordLabel: string;
+  changes: { field: string; label: string; from: unknown; to: unknown }[];
+  status: 'pending' | 'confirmed' | 'cancelled' | 'expired';
+  expiresAt: string;
+}
+
+export interface AiAssistantChoice {
+  id: string;
+  module: string;
+  moduleLabel: string;
+  label: string;
+  recordNumber: string | null;
+}
+
+export interface AiAssistantMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  at?: string;
+  query?: Record<string, unknown>;
+  action?: AiAssistantAction;
+  choices?: AiAssistantChoice[];
+  results?: ListResult;
+}
+
+export interface AiThreadSummary {
+  id: string;
+  title: string;
+  contextRecordId: string | null;
+  contextModule: string | null;
+  updatedAt: string;
+  messageCount: number;
+  preview: string | null;
+}
+
+export interface AiThreadDetail extends Omit<AiThreadSummary, 'messageCount' | 'preview'> {
+  messages: AiAssistantMessage[];
+  createdAt: string;
+}
+
+export interface AiMemory {
+  id: string;
+  fact: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AiAskResponse {
+  answer: string;
+  threadId: string;
+  query?: Record<string, unknown>;
+  results?: ListResult;
+  action?: AiAssistantAction;
+  choices?: AiAssistantChoice[];
+  remembered?: AiMemory;
+}
+
 /**
  * A shoot with no property on it yet — see server/src/core/capture/grouping.ts.
  *
@@ -658,8 +720,24 @@ export const api = {
   summarise: (module: string, id: string) => post<{ summary: string }>(`/api/ai/summarise/${module}/${id}`),
   insights: (recordId: string) => get<Record<string, unknown>[]>(`/api/ai/insights/${recordId}`),
   dismissInsight: (id: string) => post(`/api/ai/insights/${id}/dismiss`),
-  askAi: (question: string, context?: { contextRecordId?: string; contextModule?: string }) =>
-    post<{ answer: string; query?: Record<string, unknown>; results?: ListResult }>('/api/ai/ask', { question, ...context }),
+  askAi: (question: string, context?: { contextRecordId?: string; contextModule?: string; threadId?: string }) =>
+    post<AiAskResponse>('/api/ai/ask', { question, ...context }),
+  aiThreads: () => get<AiThreadSummary[]>('/api/ai/threads'),
+  aiThread: (id: string) => get<AiThreadDetail>(`/api/ai/threads/${id}`),
+  createAiThread: (context?: { title?: string; contextRecordId?: string; contextModule?: string }) =>
+    post<{ id: string; title: string }>('/api/ai/threads', context ?? {}),
+  renameAiThread: (id: string, title: string) => patch<{ id: string; title: string }>(`/api/ai/threads/${id}`, { title }),
+  deleteAiThread: (id: string) => del<{ ok: boolean }>(`/api/ai/threads/${id}`),
+  confirmAiAction: (id: string) => post<{ action: AiAssistantAction; answer: string; threadId: string }>(`/api/ai/actions/${id}/confirm`, {}),
+  cancelAiAction: (id: string) => del<{ action: AiAssistantAction; answer: string }>(`/api/ai/actions/${id}`),
+  aiMemories: () => get<AiMemory[]>('/api/ai/memory'),
+  deleteAiMemory: (id: string) => del<{ ok: boolean }>(`/api/ai/memory/${id}`),
+  transcribeAiAudio: (audio: Blob) => {
+    const form = new FormData();
+    const extension = audio.type.includes('ogg') ? 'ogg' : audio.type.includes('mp4') ? 'm4a' : 'webm';
+    form.append('audio', audio, `ask-ipropy.${extension}`);
+    return request<{ transcript: string }>('/api/ai/transcribe', { method: 'POST', body: form });
+  },
   digest: () => get<{ greeting: string; summary: string; priorities: Record<string, unknown>[]; stats: Record<string, number> }>('/api/ai/digest'),
   dashboardInsight: (scope: string, prompt?: string) => post<{ insight: string }>('/api/ai/insight', { scope, prompt }),
   analyseCall: (id: string, transcript?: string) => post<Record<string, unknown>>(`/api/ai/calls/${id}/analyse`, { transcript }),

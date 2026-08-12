@@ -1,20 +1,38 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import multer from 'multer';
 import { db } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, NotFoundError } from '../../utils/errors.js';
 import { assertCapability, canAccessRecord } from '../../core/permissions/index.js';
 import { aiStatus, isAiAvailable } from '../../ai/client.js';
-import { isSttConfigured, SttError, transcribeRecording } from '../../core/stt/index.js';
+import {
+  isSttConfigured, SttError, transcribeAudio, transcribeRecording,
+} from '../../core/stt/index.js';
 import { scoreLead } from '../../ai/leadScoring.js';
 import { matchForRecord, matchProperties, matchBuyersForProperty, loadRequirement } from '../../ai/matching.js';
 import { draftMessage, summariseRecord } from '../../ai/drafting.js';
 import { analyseTranscript, coachingReport } from '../../ai/callAnalysis.js';
 import { ask, dailyDigest, dashboardInsight, parseNaturalQuery } from '../../ai/assistant.js';
+import {
+  actionStatuses, cancelAssistantAction, confirmAssistantAction,
+  type AssistantActionProposal,
+} from '../../ai/assistantActions.js';
+import {
+  extractMemoryFact, forgetMemory, listMemories, memoryPrompt, rememberFact,
+} from '../../ai/assistantMemory.js';
 
 export const aiRouter = Router();
 aiRouter.use(requireAuth);
+
+const assistantAudioUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 },
+  fileFilter: (_req, file, done) => {
+    done(null, file.mimetype.startsWith('audio/') || file.mimetype === 'video/webm');
+  },
+});
 
 aiRouter.get('/status', asyncHandler(async (_req, res) => {
   const status = aiStatus();
@@ -121,11 +139,15 @@ aiRouter.post('/summarise/:module/:id', asyncHandler(async (req, res) => {
 
 /** Transcribe a call recording so analysis can run without a manual transcript. */
 aiRouter.post('/calls/:id/transcribe', asyncHandler(async (req, res) => {
-  const call = await db.queryOne<{ id: string; recording_url: string | null }>(
-    `SELECT id, recording_url FROM ipy_call WHERE id = $1`,
+  const call = await db.queryOne<{ id: string; recording_url: string | null; user_id: string | null }>(
+    `SELECT id, recording_url, user_id FROM ipy_call WHERE id = $1`,
     [req.params.id],
   );
   if (!call) throw new NotFoundError('Call not found');
+  const user = getUser(req);
+  if (call.user_id !== user.id && !user.isAdmin) {
+    await assertCapability(user, 'telephony.listen_recordings');
+  }
   if (!call.recording_url) {
     throw new BadRequestError('This call has no recording to transcribe');
   }
@@ -160,6 +182,10 @@ aiRouter.post('/calls/:id/analyse', asyncHandler(async (req, res) => {
     [req.params.id],
   );
   if (!call) throw new NotFoundError('Call not found');
+  const user = getUser(req);
+  if (call.user_id !== user.id && !user.isAdmin) {
+    await assertCapability(user, 'telephony.listen_recordings');
+  }
 
   const text = transcript ?? call.transcript;
   if (!text) throw new BadRequestError('No transcript available. Paste one to analyse this call.');
@@ -192,6 +218,74 @@ aiRouter.get('/coaching/:userId', asyncHandler(async (req, res) => {
 // Assistant
 // ---------------------------------------------------------------------------
 
+interface StoredAssistantMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  at: string;
+  query?: unknown;
+  action?: AssistantActionProposal;
+  choices?: unknown;
+}
+
+interface AssistantThreadRow {
+  id: string;
+  title: string | null;
+  context_record_id: string | null;
+  context_module: string | null;
+  messages: StoredAssistantMessage[];
+  created_at: string;
+  updated_at: string;
+}
+
+function conversationPrompt(messages: StoredAssistantMessage[]): string {
+  return messages.slice(-14).map((message) => {
+    const speaker = message.role === 'user' ? 'User' : 'Ask iPropy';
+    return `${speaker}: ${message.content.replace(/\s+/g, ' ').slice(0, 1_200)}`;
+  }).join('\n').slice(-8_000);
+}
+
+function threadTitle(question: string): string {
+  const compact = question.replace(/\s+/g, ' ').trim();
+  return compact.length > 60 ? `${compact.slice(0, 57)}…` : compact;
+}
+
+async function assertAssistantContext(
+  scope: ReturnType<typeof getScope>,
+  recordId?: string | null,
+  module?: string | null,
+): Promise<void> {
+  if (!recordId && !module) return;
+  if (!recordId || !module) throw new BadRequestError('A record and its CRM module must be supplied together');
+  const record = await db.queryOne<{ module_name: string }>(
+    `SELECT module_name FROM ipy_record WHERE id = $1 AND is_deleted = false`,
+    [recordId],
+  );
+  if (!record || record.module_name !== module || !(await canAccessRecord(scope, module, recordId, 'view'))) {
+    throw new NotFoundError('Record not found');
+  }
+}
+
+async function appendThreadMessages(
+  threadId: string,
+  userId: string,
+  messages: StoredAssistantMessage[],
+  firstQuestion?: string,
+): Promise<void> {
+  await db.query(
+    `UPDATE ipy_ai_thread
+     SET messages = messages || $3::jsonb,
+         title = CASE
+           WHEN jsonb_array_length(messages) = 0
+            AND (title IS NULL OR title = '' OR title = 'New conversation')
+           THEN $4
+           ELSE title
+         END,
+         updated_at = now()
+     WHERE id = $1 AND user_id = $2`,
+    [threadId, userId, JSON.stringify(messages), firstQuestion ? threadTitle(firstQuestion) : null],
+  );
+}
+
 aiRouter.post('/ask', asyncHandler(async (req, res) => {
   const scope = getScope(req);
   const { question, contextRecordId, contextModule, threadId } = z.object({
@@ -201,26 +295,87 @@ aiRouter.post('/ask', asyncHandler(async (req, res) => {
     threadId: z.string().uuid().optional(),
   }).parse(req.body);
 
-  const result = await ask(question, scope, { contextRecordId, contextModule, threadId });
-
-  // Persist the exchange so the assistant panel has history.
+  let thread: AssistantThreadRow | null = null;
   if (threadId) {
-    await db.query(
-      `UPDATE ipy_ai_thread
-       SET messages = messages || $2::jsonb, updated_at = now()
-       WHERE id = $1 AND user_id = $3`,
-      [
-        threadId,
-        JSON.stringify([
-          { role: 'user', content: question, at: new Date().toISOString() },
-          { role: 'assistant', content: result.answer, at: new Date().toISOString(), query: result.query },
-        ]),
-        scope.user.id,
-      ],
+    // Ownership is checked before any AI or record lookup. Previously an
+    // unknown thread still received an answer and merely failed to persist it.
+    thread = await db.queryOne<AssistantThreadRow>(
+      `SELECT id, title, context_record_id, context_module, messages, created_at, updated_at
+       FROM ipy_ai_thread WHERE id = $1 AND user_id = $2`,
+      [threadId, scope.user.id],
+    );
+    if (!thread) throw new NotFoundError('Conversation not found');
+  } else {
+    await assertAssistantContext(scope, contextRecordId, contextModule);
+    thread = await db.queryOne<AssistantThreadRow>(
+      `INSERT INTO ipy_ai_thread (user_id, title, context_record_id, context_module)
+       VALUES ($1,'New conversation',$2,$3)
+       RETURNING id, title, context_record_id, context_module, messages, created_at, updated_at`,
+      [scope.user.id, contextRecordId ?? null, contextModule ?? null],
     );
   }
+  if (!thread) throw new Error('Could not create assistant conversation');
 
-  res.json(result);
+  const effectiveRecordId = thread.context_record_id ?? contextRecordId;
+  const effectiveModule = thread.context_module ?? contextModule;
+  await assertAssistantContext(scope, effectiveRecordId, effectiveModule);
+
+  const at = new Date().toISOString();
+  const memoryFact = extractMemoryFact(question);
+  if (memoryFact) {
+    const remembered = await rememberFact(scope.user.id, memoryFact, thread.id);
+    const answer = `I’ll remember that: ${remembered.fact}. You can review or remove saved memory from the History panel.`;
+    await appendThreadMessages(thread.id, scope.user.id, [
+      { role: 'user', content: question, at },
+      { role: 'assistant', content: answer, at: new Date().toISOString() },
+    ], question);
+    res.json({ answer, threadId: thread.id, remembered });
+    return;
+  }
+
+  const memories = await listMemories(scope.user.id, 20);
+  const result = await ask(question, scope, {
+    contextRecordId: effectiveRecordId ?? undefined,
+    contextModule: effectiveModule ?? undefined,
+    threadId: thread.id,
+    conversationContext: conversationPrompt(thread.messages ?? []),
+    memoryContext: memoryPrompt(memories),
+  });
+
+  await appendThreadMessages(thread.id, scope.user.id, [
+    { role: 'user', content: question, at },
+    {
+      role: 'assistant',
+      content: result.answer,
+      at: new Date().toISOString(),
+      query: result.query,
+      action: result.action,
+      choices: result.choices,
+    },
+  ], question);
+
+  res.json({ ...result, threadId: thread.id });
+}));
+
+/** Browser-recorded voice → text for the assistant compose box. */
+aiRouter.post('/transcribe', assistantAudioUpload.single('audio'), asyncHandler(async (req, res) => {
+  const file = (req as unknown as { file?: Express.Multer.File }).file;
+  if (!file) throw new BadRequestError('Record a voice question first');
+
+  const { getSettings } = await import('../../core/settings/integrations.js');
+  const settings = getSettings().stt;
+  if (!isSttConfigured(settings)) {
+    throw new BadRequestError('Speech-to-text is not configured. Add it under Admin → Integrations.');
+  }
+  try {
+    const transcript = await transcribeAudio(file.buffer, file.originalname || 'ask-ipropy.webm', settings, {
+      prompt: 'iPropy CRM, Faridabad, property, builder floor, BHK, square yards, crore, lakh, lead, follow-up',
+    });
+    res.json({ transcript });
+  } catch (err) {
+    if (err instanceof SttError) throw new BadRequestError(err.message);
+    throw err;
+  }
 }));
 
 /** NL → filter without running it, so the UI can preview and let the user edit. */
@@ -237,40 +392,113 @@ aiRouter.post('/parse-query', asyncHandler(async (req, res) => {
 }));
 
 aiRouter.get('/threads', asyncHandler(async (req, res) => {
-  const rows = await db.query(
-    `SELECT id, title, context_record_id, context_module, updated_at
+  const rows = await db.query<{
+    id: string; title: string | null; context_record_id: string | null; context_module: string | null;
+    updated_at: string; message_count: number; preview: string | null;
+  }>(
+    `SELECT id, title, context_record_id, context_module, updated_at,
+            jsonb_array_length(messages)::int AS message_count,
+            messages->-1->>'content' AS preview
      FROM ipy_ai_thread WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 30`,
     [getUser(req).id],
   );
-  res.json(rows.rows);
+  res.json(rows.rows.map((row) => ({
+    id: row.id,
+    title: row.title ?? 'New conversation',
+    contextRecordId: row.context_record_id,
+    contextModule: row.context_module,
+    updatedAt: row.updated_at,
+    messageCount: row.message_count,
+    preview: row.preview,
+  })));
 }));
 
 aiRouter.post('/threads', asyncHandler(async (req, res) => {
   const { title, contextRecordId, contextModule } = z.object({
-    title: z.string().optional(),
+    title: z.string().trim().min(1).max(80).optional(),
     contextRecordId: z.string().uuid().optional(),
     contextModule: z.string().optional(),
+  }).refine((input) => Boolean(input.contextRecordId) === Boolean(input.contextModule), {
+    message: 'A record and module must be supplied together',
   }).parse(req.body ?? {});
 
-  const row = await db.queryOne<{ id: string }>(
+  await assertAssistantContext(getScope(req), contextRecordId, contextModule);
+
+  const row = await db.queryOne<{ id: string; title: string }>(
     `INSERT INTO ipy_ai_thread (user_id, title, context_record_id, context_module)
-     VALUES ($1,$2,$3,$4) RETURNING id`,
+     VALUES ($1,$2,$3,$4) RETURNING id, title`,
     [getUser(req).id, title ?? 'New conversation', contextRecordId ?? null, contextModule ?? null],
   );
-  res.status(201).json({ id: row?.id });
+  res.status(201).json(row);
 }));
 
 aiRouter.get('/threads/:id', asyncHandler(async (req, res) => {
-  const row = await db.queryOne(
-    `SELECT * FROM ipy_ai_thread WHERE id = $1 AND user_id = $2`,
+  const row = await db.queryOne<AssistantThreadRow>(
+    `SELECT id, title, context_record_id, context_module, messages, created_at, updated_at
+     FROM ipy_ai_thread WHERE id = $1 AND user_id = $2`,
     [req.params.id, getUser(req).id],
+  );
+  if (!row) throw new NotFoundError('Thread not found');
+  const messages = Array.isArray(row.messages) ? row.messages : [];
+  const ids = messages.flatMap((message) => message.action?.id ? [message.action.id] : []);
+  const statuses = await actionStatuses(ids, getUser(req).id);
+  const enriched = messages.map((message) => message.action?.id
+    ? { ...message, action: { ...message.action, status: statuses.get(message.action.id) ?? message.action.status } }
+    : message);
+  res.json({
+    id: row.id,
+    title: row.title ?? 'New conversation',
+    contextRecordId: row.context_record_id,
+    contextModule: row.context_module,
+    messages: enriched,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  });
+}));
+
+aiRouter.patch('/threads/:id', asyncHandler(async (req, res) => {
+  const { title } = z.object({ title: z.string().trim().min(1).max(80) }).parse(req.body);
+  const row = await db.queryOne<{ id: string; title: string }>(
+    `UPDATE ipy_ai_thread SET title = $3, updated_at = now()
+     WHERE id = $1 AND user_id = $2 RETURNING id, title`,
+    [req.params.id, getUser(req).id, title],
   );
   if (!row) throw new NotFoundError('Thread not found');
   res.json(row);
 }));
 
 aiRouter.delete('/threads/:id', asyncHandler(async (req, res) => {
-  await db.query(`DELETE FROM ipy_ai_thread WHERE id = $1 AND user_id = $2`, [req.params.id, getUser(req).id]);
+  const result = await db.query(
+    `DELETE FROM ipy_ai_thread WHERE id = $1 AND user_id = $2`,
+    [req.params.id, getUser(req).id],
+  );
+  if (!result.rowCount) throw new NotFoundError('Thread not found');
+  res.json({ ok: true });
+}));
+
+aiRouter.post('/actions/:id/confirm', asyncHandler(async (req, res) => {
+  const result = await confirmAssistantAction(req.params.id, getScope(req));
+  await appendThreadMessages(result.threadId, getUser(req).id, [{
+    role: 'assistant', content: result.answer, at: new Date().toISOString(), action: result.action,
+  }]);
+  res.json(result);
+}));
+
+aiRouter.delete('/actions/:id', asyncHandler(async (req, res) => {
+  const result = await cancelAssistantAction(req.params.id, getUser(req).id);
+  const answer = 'Cancelled — no CRM data was changed.';
+  await appendThreadMessages(result.threadId, getUser(req).id, [{
+    role: 'assistant', content: answer, at: new Date().toISOString(), action: result.action,
+  }]);
+  res.json({ action: result.action, answer });
+}));
+
+aiRouter.get('/memory', asyncHandler(async (req, res) => {
+  res.json(await listMemories(getUser(req).id));
+}));
+
+aiRouter.delete('/memory/:id', asyncHandler(async (req, res) => {
+  if (!(await forgetMemory(getUser(req).id, req.params.id))) throw new NotFoundError('Memory not found');
   res.json({ ok: true });
 }));
 
