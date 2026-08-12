@@ -19,6 +19,7 @@ import { NotFoundError } from '../../utils/errors.js';
 import { getDriver, getStorageSettings } from '../../core/storage/index.js';
 import { logger } from '../../utils/logger.js';
 import { recordShareView, resolveShareToken } from '../../core/sharing/shareLinks.js';
+import { getPropertyShareConfig, loadSharedProperty } from '../../core/sharing/propertyShare.js';
 
 export const publicRouter = Router();
 
@@ -422,35 +423,36 @@ publicRouter.get('/share/:token', asyncHandler(async (req, res) => {
   const link = await resolveShareToken(req.params.token);
   if (!link) throw new NotFoundError('This link is no longer available');
 
-  const unit = await db.queryOne<Record<string, unknown>>(
-    `SELECT ${PROPERTY_FIELDS} FROM ipy_e_properties u WHERE u.record_id = $1`,
-    [link.recordId],
-  );
-  if (!unit) throw new NotFoundError('This link is no longer available');
+  const shared = await loadSharedProperty(link.recordId);
+  if (!shared) throw new NotFoundError('This link is no longer available');
 
   // The record's own photos, not the `gallery` field. Gallery is curated by
   // hand and is empty on a property that arrived through capture — which is
   // every property this feature exists for. Ordered by when they were shot, so
   // the buyer walks the floor in the order it was walked.
-  const { rows: photos } = await db.query<{ id: string; file_name: string }>(
-    `SELECT id, file_name
-       FROM ipy_attachment
-      WHERE record_id = $1 AND mime_type LIKE 'image/%'
-      ORDER BY captured_at NULLS LAST, created_at
-      LIMIT 60`,
-    [link.recordId],
-  );
+  const photos = shared.showPhotos
+    ? (await db.query<{ id: string; file_name: string }>(
+      `SELECT id, file_name
+         FROM ipy_attachment
+        WHERE record_id = $1
+          AND mime_type LIKE 'image/%'
+          AND (cull_state IS NULL OR cull_state = 'keep')
+        ORDER BY ai_category NULLS LAST, captured_at NULLS LAST, created_at
+        LIMIT 60`,
+      [link.recordId],
+    )).rows
+    : [];
 
   // Counted after the payload is built and never awaited into the response: a
   // failed counter must not stop a buyer seeing the property.
   void recordShareView(link.id).catch((err) => logger.debug({ err }, 'share: view count failed'));
 
   res.json({
-    property: toPublicMedia(unit, 'large'),
+    property: shared.property,
+    fields: shared.fields,
     photos: photos.map((p) => ({
       id: p.id,
       url: `/api/public/share/${link.token}/media/${p.id}`,
-      name: p.file_name,
     })),
     sharedAt: link.createdAt,
   });
@@ -466,13 +468,16 @@ publicRouter.get('/share/:token', asyncHandler(async (req, res) => {
 publicRouter.get('/share/:token/media/:attachmentId', asyncHandler(async (req, res) => {
   const link = await resolveShareToken(req.params.token);
   if (!link) throw new NotFoundError('File not found');
+  const shareConfig = await getPropertyShareConfig();
+  if (!shareConfig.showPhotos) throw new NotFoundError('File not found');
 
   const file = await db.queryOne<{
     storage_key: string; mime_type: string; variants: Record<string, string> | null;
   }>(
     `SELECT storage_key, mime_type, variants
        FROM ipy_attachment
-      WHERE id = $1 AND record_id = $2 AND mime_type LIKE 'image/%'`,
+      WHERE id = $1 AND record_id = $2 AND mime_type LIKE 'image/%'
+        AND (cull_state IS NULL OR cull_state = 'keep')`,
     [req.params.attachmentId, link.recordId],
   );
   if (!file) throw new NotFoundError('File not found');
@@ -487,7 +492,7 @@ publicRouter.get('/share/:token/media/:attachmentId', asyncHandler(async (req, r
 
   // Private, never public: a link is not secret enough to sit in a shared CDN
   // cache, and revoking one has to actually take effect.
-  res.setHeader('Cache-Control', 'private, max-age=3600');
+  res.setHeader('Cache-Control', 'private, no-store');
 
   if (variantKey) {
     res.setHeader('Content-Type', 'image/webp');

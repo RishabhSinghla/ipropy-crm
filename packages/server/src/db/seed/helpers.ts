@@ -367,6 +367,15 @@ export async function seedDefaultLayouts(conn: Tx, def: ModuleDef): Promise<void
     relatedLists: (def.relations ?? []).map((r) => r.name),
     /** Which tab a record opens on. Admin-settable in the Layout Designer. */
     defaultTab: 'overview',
+    tabs: [
+      { key: 'overview', label: 'Overview', icon: 'layout-dashboard' },
+      { key: 'timeline', label: 'Timeline', icon: 'activity' },
+      ...(def.name === 'leads' ? [{ key: 'calls', label: 'Calls', icon: 'phone' }] : []),
+      { key: 'files', label: 'Files', icon: 'paperclip' },
+      ...(def.relations ?? []).map((relation) => ({
+        key: `rel:${relation.name}`, label: relation.label, icon: 'link-2',
+      })),
+    ],
     sidebar: [
       { type: 'notes', title: 'Notes' },
       { type: 'ai_insights', title: 'AI Insights' },

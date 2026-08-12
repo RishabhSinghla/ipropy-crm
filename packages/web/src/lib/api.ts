@@ -171,8 +171,14 @@ export interface ShareLink {
 /** What the public page renders. No auth, no CRM fields beyond the whitelist. */
 export interface SharedProperty {
   property: Record<string, unknown>;
-  photos: { id: string; url: string; name: string }[];
+  fields: { name: string; label: string; uitype: string }[];
+  photos: { id: string; url: string }[];
   sharedAt: string;
+}
+
+export interface PropertyShareAdminConfig {
+  fields: { name: string; label: string; uitype: string; visible: boolean }[];
+  showPhotos: boolean;
 }
 
 /** A site visit — see server/src/core/capture/sessions.ts. */
@@ -510,6 +516,9 @@ export const api = {
   groups: () => get<Record<string, unknown>[]>('/api/admin/groups'),
   sharing: () => get<{ defaults: Record<string, unknown>[]; rules: Record<string, unknown>[] }>('/api/admin/sharing'),
   saveSharingDefaults: (defaults: Record<string, string>) => put('/api/admin/sharing/defaults', { defaults }),
+  propertyShareConfig: () => get<PropertyShareAdminConfig>('/api/admin/sharing/property-link'),
+  savePropertyShareConfig: (data: { visibleFields: string[]; showPhotos: boolean }) =>
+    put<PropertyShareAdminConfig>('/api/admin/sharing/property-link', data),
   settings: (category?: string) => get<Record<string, unknown>[]>(`/api/admin/settings${qs({ category })}`),
   saveSettings: (settings: Record<string, unknown>) => put('/api/admin/settings', { settings }),
   auditLog: (params: Record<string, unknown> = {}) => get<Record<string, unknown>[]>(`/api/admin/audit${qs(params)}`),
@@ -699,6 +708,8 @@ export const api = {
     if (shootSessionId) form.append('shootSessionId', shootSessionId);
     return request<{ id: string; fileName: string; url: string }>('/api/files', { method: 'POST', body: form });
   },
+  updateFile: (id: string, data: { fileName?: string; category?: string | null }) =>
+    patch<{ id: string; file_name: string; category: string | null }>(`/api/files/${id}`, data),
   deleteFile: (id: string) => del(`/api/files/${id}`),
   /**
    * Everything attached to a record, as a zip of ordinary folders.

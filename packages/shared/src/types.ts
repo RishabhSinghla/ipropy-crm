@@ -115,6 +115,8 @@ export interface LayoutConfig {
   relatedLists?: string[];
   /** which tabs appear on the detail view */
   tabs?: { key: string; label: string; icon?: string }[];
+  /** which tab opens first */
+  defaultTab?: string;
 }
 
 export interface LayoutBlock {

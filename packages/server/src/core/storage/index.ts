@@ -158,7 +158,7 @@ async function s3Driver(settings: StorageSettings): Promise<StorageDriver> {
       }
     },
     async remove(key) {
-      await client.send(new DeleteObjectCommand({ Bucket, Key: key })).catch(() => undefined);
+      await client.send(new DeleteObjectCommand({ Bucket, Key: key }));
     },
     async ensureFolder() {
       // S3 prefixes are virtual and appear as soon as the first object is saved.

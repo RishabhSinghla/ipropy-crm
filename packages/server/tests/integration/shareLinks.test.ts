@@ -118,14 +118,16 @@ describe('opening a link', () => {
     // The entire point. The public catalogue requires status 'Available' and
     // publish_to_web; a floor shot this morning is a draft with forty photos on
     // it, and it is exactly the one somebody wants to send.
-    const { id } = await propertyWithPhoto('Draft Floor', { status: 'Sold' });
+    const { id } = await propertyWithPhoto('Draft Floor', { status: 'Sold', property_type: 'Builder Floor' });
     const { body } = await share(id).expect(201);
 
     // Confirm the catalogue genuinely will not show it…
     await request(app).get(`/api/public/properties/${id}`).expect(404);
     // …and the link does.
     const res = await request(app).get(`/api/public/share/${body.token}`).expect(200);
-    expect(res.body.property.name).toBe('Draft Floor');
+    expect(res.body.property.property_type).toBe('Builder Floor');
+    // Exact identity is private by default even though the link itself works.
+    expect(res.body.property).not.toHaveProperty('name');
   });
 
   it('needs no authentication', async () => {
@@ -145,6 +147,7 @@ describe('opening a link', () => {
     expect(res.body.photos).toHaveLength(1);
     expect(res.body.photos[0].id).toBe(attachmentId);
     expect(res.body.photos[0].url).toBe(`/api/public/share/${body.token}/media/${attachmentId}`);
+    expect(JSON.stringify(res.body)).not.toContain('IMG_1.jpg');
   });
 
   it('never tells the visitor who the link was for', async () => {
@@ -165,8 +168,43 @@ describe('opening a link', () => {
 
     // The payload is an explicit column whitelist, so this is a guard against
     // somebody widening it later rather than a claim about today's schema.
-    for (const leak of ['owner_id', 'owner_name', 'owner_phone', 'custom_fields', 'commission']) {
+    for (const leak of [
+      'name', 'project_name', 'tower', 'wing', 'unit_number', 'city', 'locality',
+      'owner_id', 'owner_name', 'owner_phone', 'custom_fields', 'commission',
+    ]) {
       expect(Object.keys(res.body.property)).not.toContain(leak);
+    }
+  });
+
+  it('applies the admin field and photo choices on the server', async () => {
+    const original = await db.queryOne<{ value: unknown }>(
+      `SELECT value FROM ipy_setting WHERE key = 'sharing.property_link'`,
+    );
+    try {
+      const config = await request(app).put('/api/admin/sharing/property-link')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ visibleFields: ['name', 'configuration'], showPhotos: false })
+        .expect(200);
+      expect(config.body.fields.find((field: { name: string }) => field.name === 'name').visible).toBe(true);
+      expect(config.body.fields.some((field: { name: string }) => field.name === 'owner_contact_id')).toBe(false);
+
+      const { id, attachmentId } = await propertyWithPhoto('Admin Controlled Floor', {
+        configuration: '4 BHK', unit_number: 'SECRET-1204', locality: 'Whitefield',
+      });
+      const { body } = await share(id).expect(201);
+      const publicView = await request(app).get(`/api/public/share/${body.token}`).expect(200);
+
+      expect(publicView.body.property).toEqual({ name: 'Admin Controlled Floor', configuration: '4 BHK' });
+      expect(publicView.body.fields.map((field: { name: string }) => field.name)).toEqual(['name', 'configuration']);
+      expect(publicView.body.photos).toEqual([]);
+      expect(JSON.stringify(publicView.body)).not.toContain('SECRET-1204');
+      expect(JSON.stringify(publicView.body)).not.toContain('Whitefield');
+      await request(app).get(`/api/public/share/${body.token}/media/${attachmentId}`).expect(404);
+    } finally {
+      await db.query(
+        `UPDATE ipy_setting SET value = $1::jsonb WHERE key = 'sharing.property_link'`,
+        [JSON.stringify(original!.value)],
+      );
     }
   });
 

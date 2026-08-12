@@ -4,12 +4,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FieldMeta, ModuleMeta, RecordEnvelope, TimelineEntry } from '@ipropy/shared';
 import { CALL_DISPOSITIONS, formatIndianPrice, relativeTime } from '@ipropy/shared';
 import {
-  Activity, Check, ChevronDown, Eye, FileQuestion, ChevronLeft, ChevronRight, Download, Edit3, FileText, LayoutDashboard,
+  Activity, Check, ChevronDown, Eye, FileQuestion, ChevronLeft, ChevronRight, Download, Edit3, FileText, Images, LayoutDashboard,
   PhoneIncoming, PhoneMissed, PhoneOutgoing,
   Link2, MessageCircle, MoreHorizontal, Paperclip, Phone, Plus, RefreshCw, Search, Send, Sparkles,
   Star, Trash2, UserCheck, X,
 } from 'lucide-react';
-import { api } from '../lib/api';
+import { api, authedFileUrl } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { useWatchRecord } from '../lib/realtime';
 import { invalidateRecordQueries } from '../lib/invalidate';
@@ -81,6 +81,7 @@ export default function RecordDetail(): JSX.Element {
       headerFields?: string[];
       relatedLists?: string[];
       defaultTab?: string;
+      tabs?: { key: string; label: string; icon?: string }[];
     }),
     [meta],
   );
@@ -188,7 +189,7 @@ export default function RecordDetail(): JSX.Element {
   // ring them back?" gets answered — no separate call-centre module.
   const supportsCalls = moduleName === 'leads';
 
-  const tabs = [
+  const availableTabs = [
     { key: 'overview', label: 'Overview', icon: <LayoutDashboard className="h-3.5 w-3.5" /> },
     { key: 'timeline', label: 'Timeline', icon: <Activity className="h-3.5 w-3.5" /> },
     ...meta.relations.map((r) => ({
@@ -199,11 +200,23 @@ export default function RecordDetail(): JSX.Element {
     ...(supportsCalls ? [{ key: 'calls', label: 'Calls', icon: <Phone className="h-3.5 w-3.5" /> }] : []),
     { key: 'files', label: 'Files', icon: <Paperclip className="h-3.5 w-3.5" /> },
   ];
+  const availableByKey = new Map(availableTabs.map((item) => [item.key, item]));
+  const configuredTabs = layoutConfig.tabs?.flatMap((item) => {
+    const available = availableByKey.get(item.key);
+    if (!available) return [];
+    const Icon = item.icon ? resolveIcon(item.icon) : null;
+    return [{
+      ...available,
+      label: item.label.trim() || available.label,
+      ...(Icon ? { icon: <Icon className="h-3.5 w-3.5" /> } : {}),
+    }];
+  });
+  const tabs = configuredTabs?.length ? configuredTabs : availableTabs;
 
   // A configured default tab can outlive what it named — an admin deletes the
   // related list it pointed at and every record of the module then opens on a
   // tab that isn't in the strip, showing an empty body with nothing selected.
-  const activeTab = tabs.some((t) => t.key === tab) ? tab : 'overview';
+  const activeTab = tabs.some((t) => t.key === tab) ? tab : tabs[0]!.key;
 
   return (
     <div className="mx-auto max-w-[1600px] p-4 sm:p-6">
@@ -452,13 +465,14 @@ export default function RecordDetail(): JSX.Element {
             />
           )}
           {activeTab === 'calls' && <CallsTab recordId={id!} />}
-          {activeTab === 'files' && <FilesTab module={moduleName!} id={id!} />}
+          {activeTab === 'files' && <FilesTab module={moduleName!} id={id!} canEdit={Boolean(record.can?.edit)} />}
         </div>
 
         {/* Notes first. A rep opening a lead needs the last thing a colleague
             wrote before anything a model inferred, and the AI panel grows with
             however many insights exist — below it, notes were often offscreen. */}
         <div className="space-y-4">
+          {moduleName === 'properties' && <PropertyPhotoCarousel recordId={id!} />}
           <CommentsPanel module={moduleName!} id={id!} currentUser={user?.fullName ?? ''} />
           <AiPanel module={moduleName!} record={record} meta={meta} />
         </div>
@@ -469,7 +483,7 @@ export default function RecordDetail(): JSX.Element {
         onClose={() => setSharing(false)}
         title="Send this property to a buyer"
       >
-        <ShareLinksPanel module={moduleName!} recordId={id!} recordLabel={record.label} />
+        <ShareLinksPanel module={moduleName!} recordId={id!} />
       </Modal>
 
       <ConfirmDialog
@@ -945,7 +959,20 @@ function DownloadItem(
   );
 }
 
-function FilesTab({ module, id }: { module: string; id: string }): JSX.Element {
+interface FileRow {
+  id: string;
+  file_name: string;
+  mime_type: string;
+  size: number;
+  category: string | null;
+  created_at: string;
+  uploaded_by_name: string | null;
+  cull_state?: string | null;
+  ai_category?: string | null;
+  ai_caption?: string | null;
+}
+
+function FilesTab({ module, id, canEdit }: { module: string; id: string; canEdit: boolean }): JSX.Element {
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: ['files', id],
@@ -953,20 +980,19 @@ function FilesTab({ module, id }: { module: string; id: string }): JSX.Element {
   });
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<ViewableFile | null>(null);
+  const [editing, setEditing] = useState<FileRow | null>(null);
+  const [deleting, setDeleting] = useState<FileRow | null>(null);
 
   // The API returns snake_case rows; the viewer takes a narrow shape. Both are
   // needed here — the list still shows uploader and date, which the viewer
   // has no use for.
+  const files = (data ?? []) as unknown as FileRow[];
   const raw = useMemo(
-    () => new Map((data ?? []).map((f) => {
-      const row = f as { id: string; size: number; created_at: string; uploaded_by_name: string | null };
-      return [row.id, row];
-    })),
+    () => new Map(files.map((row) => [row.id, row])),
     [data],
   );
   const viewables: ViewableFile[] = useMemo(
-    () => (data ?? []).map((f) => {
-      const row = f as { id: string; file_name: string; size: number; mime_type: string };
+    () => files.map((row) => {
       return { id: row.id, fileName: row.file_name, mimeType: row.mime_type, fileSize: row.size };
     }),
     [data],
@@ -989,7 +1015,7 @@ function FilesTab({ module, id }: { module: string; id: string }): JSX.Element {
   return (
     <div className="card">
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 p-3 dark:border-slate-800">
-        <label className="btn-secondary btn-sm cursor-pointer">
+        {canEdit && <label className="btn-secondary btn-sm cursor-pointer">
           {uploading ? <Spinner /> : <Paperclip className="h-3.5 w-3.5" />}
           Upload file
           <input
@@ -998,7 +1024,7 @@ function FilesTab({ module, id }: { module: string; id: string }): JSX.Element {
             disabled={uploading}
             onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f); e.target.value = ''; }}
           />
-        </label>
+        </label>}
 
         {/*
           Downloading is a plain navigation, not a fetch — the zip streams and
@@ -1054,6 +1080,13 @@ function FilesTab({ module, id }: { module: string; id: string }): JSX.Element {
                   <p className="text-2xs text-muted">
                     {(meta.size / 1024).toFixed(0)} KB · {meta.uploaded_by_name ?? 'Unknown'} · {relativeTime(meta.created_at)}
                   </p>
+                  {(meta.category || meta.ai_category || (meta.cull_state && meta.cull_state !== 'keep')) && (
+                    <p className="mt-0.5 flex flex-wrap gap-1 text-2xs text-muted">
+                      {meta.category && <Badge>{meta.category}</Badge>}
+                      {meta.ai_category && <Badge color="#0ea5e9">{meta.ai_category.replaceAll('_', ' ')}</Badge>}
+                      {meta.cull_state && meta.cull_state !== 'keep' && <Badge color="#f59e0b">flagged: {meta.cull_state}</Badge>}
+                    </p>
+                  )}
                 </button>
                 <button
                   type="button"
@@ -1066,6 +1099,20 @@ function FilesTab({ module, id }: { module: string; id: string }): JSX.Element {
                 <a href={`/api/files/${file.id}?download=1`} className="btn-ghost btn-sm" aria-label={`Download ${file.fileName}`}>
                   <Download className="h-3.5 w-3.5" />
                 </a>
+                {canEdit && (
+                  <Dropdown trigger={<button className="btn-ghost btn-sm" aria-label={`Manage ${file.fileName}`}><MoreHorizontal className="h-3.5 w-3.5" /></button>}>
+                    {(close) => (
+                      <>
+                        <DropdownItem icon={<Edit3 className="h-3.5 w-3.5" />} onClick={() => { setEditing(meta); close(); }}>
+                          Rename or categorise
+                        </DropdownItem>
+                        <DropdownItem icon={<Trash2 className="h-3.5 w-3.5" />} danger onClick={() => { setDeleting(meta); close(); }}>
+                          Delete file
+                        </DropdownItem>
+                      </>
+                    )}
+                  </Dropdown>
+                )}
               </li>
             );
           })}
@@ -1080,13 +1127,164 @@ function FilesTab({ module, id }: { module: string; id: string }): JSX.Element {
           onClose={() => setPreview(null)}
         />
       )}
+
+      {editing && (
+        <EditFileModal
+          file={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            void queryClient.invalidateQueries({ queryKey: ['files', id] });
+          }}
+        />
+      )}
+
+      <ConfirmDialog
+        open={Boolean(deleting)}
+        onClose={() => setDeleting(null)}
+        onConfirm={async () => {
+          if (!deleting) return;
+          await api.deleteFile(deleting.id);
+          toast.success('File deleted', deleting.file_name);
+          setPreview((current) => current?.id === deleting.id ? null : current);
+          await queryClient.invalidateQueries({ queryKey: ['files', id] });
+        }}
+        title={`Delete ${deleting?.file_name ?? 'file'}?`}
+        body="This removes the original and every generated copy from connected storage. This cannot be undone."
+        confirmLabel="Delete file"
+        danger
+      />
     </div>
+  );
+}
+
+function EditFileModal({
+  file, onClose, onSaved,
+}: { file: FileRow; onClose: () => void; onSaved: () => void }): JSX.Element {
+  const [fileName, setFileName] = useState(file.file_name);
+  const [category, setCategory] = useState(file.category ?? '');
+  const [saving, setSaving] = useState(false);
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="File details"
+      size="sm"
+      footer={(
+        <>
+          <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={saving || !fileName.trim()}
+            onClick={() => {
+              setSaving(true);
+              void api.updateFile(file.id, { fileName: fileName.trim(), category: category.trim() || null })
+                .then(() => { toast.success('File updated'); onSaved(); })
+                .catch((err: Error) => toast.error('Could not update file', err.message))
+                .finally(() => setSaving(false));
+            }}
+          >
+            {saving && <Spinner />} Save
+          </button>
+        </>
+      )}
+    >
+      <div className="space-y-3">
+        <label>
+          <span className="label">File name</span>
+          <input className="input" value={fileName} onChange={(event) => setFileName(event.target.value)} maxLength={255} />
+        </label>
+        <label>
+          <span className="label">Category</span>
+          <input
+            className="input"
+            value={category}
+            onChange={(event) => setCategory(event.target.value)}
+            placeholder="Photo, Brochure, KYC, Agreement…"
+            maxLength={80}
+          />
+        </label>
+        <p className="text-xs text-muted">Renaming changes the CRM label only; the untouched original bytes stay exactly as uploaded.</p>
+      </div>
+    </Modal>
   );
 }
 
 // ---------------------------------------------------------------------------
 // Sidebar panels
 // ---------------------------------------------------------------------------
+
+function PropertyPhotoCarousel({ recordId }: { recordId: string }): JSX.Element | null {
+  const [index, setIndex] = useState(0);
+  const [preview, setPreview] = useState<ViewableFile | null>(null);
+  const { data, isLoading } = useQuery({
+    queryKey: ['files', recordId],
+    queryFn: () => api.files(recordId),
+  });
+  const photos: ViewableFile[] = ((data ?? []) as unknown as FileRow[])
+    .filter((file) => file.mime_type.startsWith('image/') && (!file.cull_state || file.cull_state === 'keep'))
+    .map((file) => ({ id: file.id, fileName: file.file_name, mimeType: file.mime_type, fileSize: file.size }));
+
+  useEffect(() => {
+    if (index >= photos.length) setIndex(Math.max(0, photos.length - 1));
+  }, [index, photos.length]);
+
+  if (isLoading) return <Skeleton className="aspect-[4/3] w-full rounded-xl" />;
+  if (!photos.length) return null;
+  const photo = photos[index]!;
+  const go = (delta: number): void => setIndex((current) => (current + delta + photos.length) % photos.length);
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2 dark:border-slate-800">
+        <p className="flex items-center gap-1.5 text-sm font-medium"><Images className="h-3.5 w-3.5" /> Property photos</p>
+        <span className="text-2xs text-muted">{index + 1} / {photos.length}</span>
+      </div>
+      <div className="group relative bg-slate-100 dark:bg-slate-950">
+        <button type="button" className="block w-full" onClick={() => setPreview(photo)} aria-label={`Open ${photo.fileName}`}>
+          <img
+            src={authedFileUrl(`/api/files/${photo.id}`, { size: 'medium' })}
+            alt={photo.fileName}
+            className="aspect-[4/3] w-full object-contain"
+          />
+        </button>
+        {photos.length > 1 && (
+          <>
+            <button type="button" className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-black/55 p-1.5 text-white" onClick={() => go(-1)} aria-label="Previous photo">
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-black/55 p-1.5 text-white" onClick={() => go(1)} aria-label="Next photo">
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </>
+        )}
+      </div>
+      {photos.length > 1 && (
+        <div className="flex gap-1.5 overflow-x-auto p-2">
+          {photos.map((item, itemIndex) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setIndex(itemIndex)}
+              className={cn(
+                'h-14 w-14 shrink-0 overflow-hidden rounded border-2 bg-subtle',
+                itemIndex === index ? 'border-brand-500' : 'border-transparent',
+              )}
+              aria-label={`Show photo ${itemIndex + 1}`}
+            >
+              <img src={authedFileUrl(`/api/files/${item.id}`, { size: 'thumb' })} alt="" className="h-full w-full object-cover" loading="lazy" />
+            </button>
+          ))}
+        </div>
+      )}
+      {preview && (
+        <DocumentViewer file={preview} files={photos} onNavigate={setPreview} onClose={() => setPreview(null)} />
+      )}
+    </div>
+  );
+}
 
 function AiPanel({
   module, record, meta,

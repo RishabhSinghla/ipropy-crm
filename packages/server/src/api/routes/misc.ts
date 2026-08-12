@@ -390,20 +390,76 @@ miscRouter.get('/files/:id', asyncHandler(async (req, res) => {
   const data = await getDriver().then((driver) => driver.read(storageKey));
   if (!data) throw new NotFoundError('File is missing from storage');
   res.setHeader('Content-Type', mimeType);
-  res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(file.file_name)}"`);
+  res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(file.file_name)}"`);
   res.send(data);
 }));
 
+/** Rename or recategorise an attachment without touching its immutable bytes. */
+miscRouter.patch('/files/:id', asyncHandler(async (req, res) => {
+  const scope = getScope(req);
+  const input = z.object({
+    fileName: z.string().trim().min(1).max(255).optional(),
+    category: z.string().trim().max(80).nullable().optional(),
+  }).refine((value) => value.fileName !== undefined || value.category !== undefined, {
+    message: 'Nothing to update',
+  }).parse(req.body);
+
+  const file = await db.queryOne<{
+    id: string; record_id: string | null; uploaded_by: string | null;
+  }>(`SELECT id, record_id, uploaded_by FROM ipy_attachment WHERE id = $1`, [req.params.id]);
+  if (!file) throw new NotFoundError('File not found');
+
+  if (file.record_id) {
+    const record = await db.queryOne<{ module_name: string }>(
+      `SELECT module_name FROM ipy_record WHERE id = $1 AND is_deleted = false`, [file.record_id],
+    );
+    if (!record || !(await canAccessRecord(scope, record.module_name, file.record_id, 'edit'))) {
+      throw new ForbiddenError('You cannot change files on this record');
+    }
+  } else if (file.uploaded_by !== scope.user.id && !scope.user.isAdmin) {
+    throw new ForbiddenError();
+  }
+
+  const row = await db.queryOne(
+    `UPDATE ipy_attachment
+        SET file_name = COALESCE($2, file_name),
+            category = CASE WHEN $3::boolean THEN $4 ELSE category END
+      WHERE id = $1
+      RETURNING id, file_name, category`,
+    [req.params.id, input.fileName ?? null, input.category !== undefined, input.category ?? null],
+  );
+  res.json(row);
+}));
+
 miscRouter.delete('/files/:id', asyncHandler(async (req, res) => {
-  const user = getUser(req);
-  const file = await db.queryOne<{ storage_key: string; uploaded_by: string | null }>(
-    `SELECT storage_key, uploaded_by FROM ipy_attachment WHERE id = $1`, [req.params.id],
+  const scope = getScope(req);
+  const file = await db.queryOne<{
+    storage_key: string; variants: Record<string, string> | null;
+    uploaded_by: string | null; record_id: string | null;
+  }>(
+    `SELECT storage_key, variants, uploaded_by, record_id FROM ipy_attachment WHERE id = $1`, [req.params.id],
   );
   if (!file) throw new NotFoundError('File not found');
-  if (file.uploaded_by !== user.id && !user.isAdmin) throw new ForbiddenError();
+  if (file.record_id) {
+    const record = await db.queryOne<{ module_name: string }>(
+      `SELECT module_name FROM ipy_record WHERE id = $1 AND is_deleted = false`, [file.record_id],
+    );
+    if (!record || !(await canAccessRecord(scope, record.module_name, file.record_id, 'edit'))) {
+      throw new ForbiddenError('You cannot delete files from this record');
+    }
+  } else if (file.uploaded_by !== scope.user.id && !scope.user.isAdmin) {
+    throw new ForbiddenError();
+  }
 
+  const keys = [...new Set([file.storage_key, ...Object.values(file.variants ?? {})])];
+  const driver = await getDriver();
+  const removed = await Promise.allSettled(keys.map((key) => driver.remove(key)));
+  const failure = removed.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+  if (failure) {
+    logger.warn({ err: failure.reason, fileId: req.params.id }, 'file delete: storage cleanup failed; retaining CRM row for retry');
+    throw failure.reason;
+  }
   await db.query(`DELETE FROM ipy_attachment WHERE id = $1`, [req.params.id]);
-  await getDriver().then((driver) => driver.remove(file.storage_key));
   res.json({ ok: true });
 }));
 

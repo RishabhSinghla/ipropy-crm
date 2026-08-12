@@ -13,6 +13,9 @@ import {
 import { verifyConnection as verifySmtpConnection } from '../../integrations/email/service.js';
 import { syncInboundEmails, testImapConnection } from '../../integrations/email/inbound.js';
 import { testAiProvider } from '../../ai/client.js';
+import {
+  getPropertyShareAdminConfig, savePropertyShareConfig,
+} from '../../core/sharing/propertyShare.js';
 import { listIntegrationModels } from '../../ai/models.js';
 
 export const adminRouter = Router();
@@ -555,6 +558,29 @@ adminRouter.delete('/sharing/rules/:id', asyncHandler(async (req, res) => {
   await db.query(`DELETE FROM ipy_sharing_rule WHERE id = $1`, [req.params.id]);
   invalidatePermissions();
   res.json({ ok: true });
+}));
+
+/**
+ * What leaves the CRM through a buyer-facing property link.
+ *
+ * This is deliberately its own endpoint instead of exposing the raw setting:
+ * callers receive only fields the server considers safe to make public, with
+ * current admin-renamed labels from metadata.
+ */
+adminRouter.get('/sharing/property-link', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.sharing');
+  res.json(await getPropertyShareAdminConfig());
+}));
+
+adminRouter.put('/sharing/property-link', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'admin.sharing');
+  const input = z.object({
+    visibleFields: z.array(z.string()).max(200),
+    showPhotos: z.boolean(),
+  }).parse(req.body);
+  await savePropertyShareConfig(input, user.id);
+  res.json(await getPropertyShareAdminConfig());
 }));
 
 // ---------------------------------------------------------------------------

@@ -34,7 +34,14 @@ interface DesignerConfig {
   blocks: LayoutBlock[];
   headerFields: string[];
   defaultTab: string;
+  tabs?: DetailTabConfig[];
   capture?: CapturePanelConfig;
+}
+
+interface DetailTabConfig {
+  key: string;
+  label: string;
+  icon?: string;
 }
 
 interface CapturePanelConfig {
@@ -66,6 +73,7 @@ export default function LayoutDesigner(): JSX.Element {
   const [blocks, setBlocks] = useState<LayoutBlock[]>([]);
   const [headerFields, setHeaderFields] = useState<string[]>([]);
   const [defaultTab, setDefaultTab] = useState('overview');
+  const [detailTabs, setDetailTabs] = useState<DetailTabConfig[]>([]);
   const [capturePanel, setCapturePanel] = useState<CapturePanelConfig>(DEFAULT_CAPTURE_PANEL);
   const [layoutId, setLayoutId] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -93,6 +101,7 @@ export default function LayoutDesigner(): JSX.Element {
       setBlocks(layout.config.blocks ?? []);
       setHeaderFields(layout.config.headerFields ?? []);
       setDefaultTab(layout.config.defaultTab ?? 'overview');
+      setDetailTabs(layout.config.tabs ?? []);
       setCapturePanel({ ...DEFAULT_CAPTURE_PANEL, ...(layout.config.capture ?? {}) });
     } else if (meta) {
       // Fall back to the module's block structure so there's always something
@@ -104,6 +113,7 @@ export default function LayoutDesigner(): JSX.Element {
       })));
       setHeaderFields(meta.blocks[0]?.fields.slice(0, 4).map((f) => f.name) ?? []);
       setDefaultTab('overview');
+      setDetailTabs([]);
       setCapturePanel(DEFAULT_CAPTURE_PANEL);
     }
     setDirty(false);
@@ -118,11 +128,15 @@ export default function LayoutDesigner(): JSX.Element {
   const usedFields = new Set(blocks.flatMap((b) => b.fields));
   const availableFields = placeable.filter((f) => !usedFields.has(f.name));
 
-  const tabOptions = [
+  const availableTabs = [
     ...BASE_TABS,
     ...(meta?.relations ?? []).map((r) => ({ value: `rel:${r.name}`, label: r.label })),
     ...(moduleName === 'leads' ? [{ value: 'calls', label: 'Calls' }] : []),
   ];
+  const detailTabOptions = detailTabs.length
+    ? detailTabs
+    : availableTabs.map((option) => ({ key: option.value, label: option.label }));
+  const tabOptions = detailTabOptions.map((tab) => ({ value: tab.key, label: tab.label }));
 
   const touch = (): void => setDirty(true);
 
@@ -173,7 +187,7 @@ export default function LayoutDesigner(): JSX.Element {
         blocks,
         // Only the detail view has a header strip and tabs; keeping them off the
         // edit/quick-create configs avoids writing keys nothing will read.
-        ...(layoutType === 'detail' ? { headerFields, defaultTab } : {}),
+        ...(layoutType === 'detail' ? { headerFields, defaultTab, tabs: detailTabOptions } : {}),
         ...(layoutType === 'quick_create' && moduleName === 'properties'
           ? { capture: capturePanel }
           : {}),
@@ -313,8 +327,15 @@ export default function LayoutDesigner(): JSX.Element {
                 options={placeable.map((f) => ({ value: f.name, label: f.label }))}
                 defaultTab={defaultTab}
                 tabOptions={tabOptions}
+                tabs={detailTabOptions}
+                availableTabs={availableTabs}
                 onChange={(next) => { setHeaderFields(next); touch(); }}
                 onDefaultTabChange={(next) => { setDefaultTab(next); touch(); }}
+                onTabsChange={(next) => {
+                  setDetailTabs(next);
+                  if (!next.some((item) => item.key === defaultTab)) setDefaultTab(next[0]?.key ?? 'overview');
+                  touch();
+                }}
               />
             )}
 
@@ -490,17 +511,22 @@ export default function LayoutDesigner(): JSX.Element {
  * land there.
  */
 function HeaderStripEditor({
-  value, options, defaultTab, tabOptions, onChange, onDefaultTabChange,
+  value, options, defaultTab, tabOptions, tabs, availableTabs,
+  onChange, onDefaultTabChange, onTabsChange,
 }: {
   value: string[];
   options: { value: string; label: string }[];
   defaultTab: string;
   tabOptions: { value: string; label: string }[];
+  tabs: DetailTabConfig[];
+  availableTabs: { value: string; label: string }[];
   onChange: (next: string[]) => void;
   onDefaultTabChange: (next: string) => void;
+  onTabsChange: (next: DetailTabConfig[]) => void;
 }): JSX.Element {
   const labelOf = (name: string): string => options.find((o) => o.value === name)?.label ?? name;
   const unused = options.filter((o) => !value.includes(o.value));
+  const unusedTabs = availableTabs.filter((option) => !tabs.some((tab) => tab.key === option.value));
 
   return (
     <div className="card overflow-hidden">
@@ -561,11 +587,89 @@ function HeaderStripEditor({
         </div>
 
         <div>
+          <label className="label">Detail tabs</label>
+          <p className="mb-1.5 text-2xs text-muted">
+            Rename, reorder, hide and restore Overview, Timeline, Calls, Files and related sections.
+          </p>
+          <div className="space-y-1.5">
+            {tabs.map((tab, index) => (
+              <div key={tab.key} className="flex items-center gap-1.5 rounded-lg border border-slate-200 p-1.5 dark:border-slate-700">
+                <div className="flex shrink-0 flex-col">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = [...tabs];
+                      [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                      onTabsChange(next);
+                    }}
+                    disabled={index === 0}
+                    className="text-slate-300 hover:text-slate-500 disabled:opacity-25"
+                    aria-label={`Move ${tab.label} up`}
+                  >
+                    <ChevronUp className="h-3 w-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = [...tabs];
+                      [next[index], next[index + 1]] = [next[index + 1], next[index]];
+                      onTabsChange(next);
+                    }}
+                    disabled={index === tabs.length - 1}
+                    className="text-slate-300 hover:text-slate-500 disabled:opacity-25"
+                    aria-label={`Move ${tab.label} down`}
+                  >
+                    <ChevronDown className="h-3 w-3" />
+                  </button>
+                </div>
+                <input
+                  className="input min-w-0 flex-1 py-1 text-xs"
+                  value={tab.label}
+                  aria-label={`Name for ${tab.key} tab`}
+                  onChange={(event) => onTabsChange(tabs.map((item) => (
+                    item.key === tab.key ? { ...item, label: event.target.value } : item
+                  )))}
+                />
+                <span className="hidden shrink-0 font-mono text-2xs text-muted sm:inline">{tab.key}</span>
+                <button
+                  type="button"
+                  className="btn-ghost p-1 text-slate-400 hover:text-red-500"
+                  onClick={() => onTabsChange(tabs.filter((item) => item.key !== tab.key))}
+                  disabled={tabs.length === 1}
+                  aria-label={`Hide ${tab.label} tab`}
+                  title={tabs.length === 1 ? 'A record needs at least one tab' : 'Hide tab'}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+          {unusedTabs.length > 0 && (
+            <Select
+              value=""
+              placeholder="Restore a hidden tab…"
+              onChange={(key) => {
+                const option = unusedTabs.find((item) => item.value === key);
+                if (option) onTabsChange([...tabs, { key: option.value, label: option.label }]);
+              }}
+              options={unusedTabs}
+              className="mt-2 w-56 py-1.5 text-xs"
+            />
+          )}
+          {tabs.length === 0 && (
+            <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+              At least one tab is recommended. Restore one before saving to keep the record body usable.
+            </p>
+          )}
+        </div>
+
+        <div>
           <label className="label" htmlFor="default-tab">Opens on</label>
           <Select
             value={defaultTab}
             onChange={onDefaultTabChange}
             options={tabOptions}
+            disabled={tabOptions.length === 0}
             className="w-56 py-1.5 text-sm"
           />
           <p className="mt-1 text-2xs text-muted">

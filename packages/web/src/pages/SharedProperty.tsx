@@ -26,7 +26,37 @@ import { Skeleton } from '../components/ui';
 import { cn } from '../lib/utils';
 
 const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
-const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+const num = (v: unknown): number | null => {
+  const parsed = typeof v === 'number' ? v : typeof v === 'string' && v.trim() ? Number(v) : NaN;
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+function sharedValue(
+  field: { name: string; uitype: string },
+  value: unknown,
+  property: Record<string, unknown>,
+): string | null {
+  if (value === null || value === undefined || value === '') return null;
+  if (Array.isArray(value)) return value.filter(Boolean).join(', ') || null;
+  if (field.uitype === 'boolean') return value === true || value === 'true' ? 'Yes' : 'No';
+  if (field.uitype === 'currency' || (field.uitype === 'formula' && /(price|rent|charge|deposit)/i.test(field.name))) {
+    const amount = num(value);
+    return amount === null ? null : formatIndianPrice(amount);
+  }
+  if (field.uitype === 'area') {
+    const area = num(value);
+    if (area === null) return null;
+    const unit = str(property.area_unit) ?? 'sq.ft.';
+    return `${area.toLocaleString('en-IN')} ${unit}`;
+  }
+  if (field.uitype === 'percent') return `${value}%`;
+  if (field.uitype === 'date' || field.uitype === 'datetime') {
+    const date = new Date(String(value));
+    return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString('en-IN');
+  }
+  if (typeof value === 'object') return null;
+  return String(value);
+}
 
 export default function SharedPropertyPage(): JSX.Element {
   const { token } = useParams<{ token: string }>();
@@ -66,25 +96,18 @@ export default function SharedPropertyPage(): JSX.Element {
   }
 
   const p = data.property;
-  const title = str(p.project_name) ?? str(p.name) ?? 'Property';
+  const title = (str(p.project_name) ?? str(p.name)
+    ?? [str(p.configuration), str(p.property_type)].filter(Boolean).join(' ')) || 'Property';
   const unitName = str(p.name);
   const price = num(p.total_price);
   const place = [str(p.locality), str(p.city)].filter(Boolean).join(', ');
 
-  const facts: { label: string; value: string }[] = [];
-  const fact = (label: string, value: string | null): void => { if (value) facts.push({ label, value }); };
-  fact('Configuration', str(p.configuration));
-  fact('Type', str(p.property_type));
-  fact('Carpet area', num(p.carpet_area) ? `${num(p.carpet_area)} ${str(p.area_unit) ?? 'sq.ft.'}` : null);
-  fact('Built-up area', num(p.built_up_area) ? `${num(p.built_up_area)} ${str(p.area_unit) ?? 'sq.ft.'}` : null);
-  fact('Bedrooms', num(p.bedrooms) ? String(num(p.bedrooms)) : null);
-  fact('Bathrooms', num(p.bathrooms) ? String(num(p.bathrooms)) : null);
-  fact('Balconies', num(p.balconies) ? String(num(p.balconies)) : null);
-  fact('Parking', num(p.parking_slots) ? String(num(p.parking_slots)) : null);
-  fact('Floor', num(p.floor) !== null ? String(num(p.floor)) : null);
-  fact('Facing', str(p.facing));
-  fact('Furnishing', str(p.furnishing));
-  fact('Possession', str(p.possession_status));
+  const heroFields = new Set(['name', 'project_name', 'total_price', 'locality', 'city', 'description', 'amenities', 'area_unit']);
+  const facts = data.fields.flatMap((field) => {
+    if (heroFields.has(field.name)) return [];
+    const value = sharedValue(field, p[field.name], p);
+    return value ? [{ label: field.label, value }] : [];
+  });
 
   const amenities = Array.isArray(p.amenities)
     ? (p.amenities as unknown[]).filter((a): a is string => typeof a === 'string')

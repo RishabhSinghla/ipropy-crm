@@ -24,9 +24,9 @@
  * together in the icon-registry test.
  */
 import {
-  AlertCircle, BarChart3, Box, Briefcase, Building, Building2, CalendarCheck, CheckCircle2, Circle,
+  Activity, AlertCircle, BarChart3, Box, Briefcase, Building, Building2, CalendarCheck, CheckCircle2, Circle,
   CircleDashed, ClipboardList, Contact, FileSignature, FileText, Flag, FolderOpen, Gift, Hammer,
-  Handshake, Home, Key, Landmark, LayoutDashboard, LayoutGrid, Mail, Map, MapPinned, Megaphone, Newspaper,
+  Handshake, Home, Key, Landmark, LayoutDashboard, LayoutGrid, Link2, Mail, Map, MapPinned, Megaphone, Newspaper,
   MessageCircle, MessageSquare, Package, Paperclip, Pencil, Phone, PhoneMissed, PlusCircle,
   ReceiptIndianRupee, Send, Shield, Sparkles, Star, Ticket, Trash2, Truck, Users, Wrench,
 } from 'lucide-react';
@@ -53,12 +53,14 @@ const REGISTRY: Record<string, IconComponent> = {
 
   // Timeline entry icons — core/entity/timeline.ts
   'alert-circle': AlertCircle,
+  activity: Activity,
   'check-circle-2': CheckCircle2,
   'circle-dashed': CircleDashed,
   circle: Circle,
   mail: Mail,
   'message-circle': MessageCircle,
   'message-square': MessageSquare,
+  'link-2': Link2,
   paperclip: Paperclip,
   pencil: Pencil,
   phone: Phone,

@@ -22,8 +22,8 @@ import { EmptyState, Spinner } from './ui';
 const linkUrl = (token: string): string => `${window.location.origin}/s/${token}`;
 
 export function ShareLinksPanel({
-  module, recordId, recordLabel,
-}: { module: string; recordId: string; recordLabel: string }): JSX.Element {
+  module, recordId,
+}: { module: string; recordId: string }): JSX.Element {
   const queryClient = useQueryClient();
   const [label, setLabel] = useState('');
   const [copied, setCopied] = useState<string | null>(null);
@@ -116,7 +116,6 @@ export function ShareLinksPanel({
             <LinkRow
               key={link.id}
               link={link}
-              recordLabel={recordLabel}
               copied={copied === link.token}
               onCopy={() => void copy(link.token)}
               onRevoke={() => revoke.mutate(link.id)}
@@ -146,10 +145,9 @@ export function ShareLinksPanel({
 }
 
 function LinkRow({
-  link, recordLabel, copied, onCopy, onRevoke, revoking,
+  link, copied, onCopy, onRevoke, revoking,
 }: {
   link: ShareLink;
-  recordLabel: string;
   copied: boolean;
   onCopy: () => void;
   onRevoke: () => void;
@@ -159,7 +157,9 @@ function LinkRow({
   // wa.me opens the app on a phone and web on a desktop, with the message
   // pre-filled and no recipient — so the sender picks the contact themselves
   // and nothing is sent without them tapping send.
-  const whatsapp = `https://wa.me/?text=${encodeURIComponent(`${recordLabel}\n${url}`)}`;
+  // Never put the CRM record label into the message: it commonly contains a
+  // house or unit number that the admin intentionally hid from the share page.
+  const whatsapp = `https://wa.me/?text=${encodeURIComponent(`Property details from iPropy\n${url}`)}`;
 
   return (
     <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
