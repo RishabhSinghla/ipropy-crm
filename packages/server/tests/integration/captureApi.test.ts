@@ -32,10 +32,26 @@ const start = (t: string, body: Record<string, unknown>) =>
 beforeAll(async () => {
   await registry.warmup();
   app = createApp();
-  const admin = await db.queryOne<{ email: string }>(
-    `SELECT email FROM ipy_user WHERE is_admin = true AND password_hash IS NOT NULL ORDER BY created_at LIMIT 1`,
+  const admin = await db.queryOne<{ password_hash: string }>(
+    `SELECT password_hash FROM ipy_user
+      WHERE is_admin = true AND password_hash IS NOT NULL
+      ORDER BY created_at LIMIT 1`,
   );
-  token = await login(admin!.email);
+  if (!admin) throw new Error('No seeded admin user available for capture API tests');
+
+  // Every other capture integration spec also opens visits as the seeded admin.
+  // A new visit closes that user's prior open visit, so sharing that account
+  // turns the assertions below into a race when Vitest runs files in parallel.
+  // Use a real, isolated admin-shaped user instead: the test still exercises
+  // the production login and permission paths, while "current" genuinely
+  // belongs to this file alone.
+  const email = `capture-api-${randomUUID()}@itest.ipropy`;
+  await db.query(
+    `INSERT INTO ipy_user (email, password_hash, first_name, last_name, is_admin)
+     VALUES ($1,$2,'Capture','API Test',true)`,
+    [email, admin.password_hash],
+  );
+  token = await login(email);
   otherToken = await login(SEEDED.executiveB);
 });
 
