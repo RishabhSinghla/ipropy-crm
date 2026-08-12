@@ -17,6 +17,7 @@ import {
   filterWritableFields,
   getFieldPermissions,
   getModulePermission,
+  getSubordinateUserIds,
   hasCapability,
   invalidatePermissions,
   recordScopeSql,
@@ -425,6 +426,11 @@ describe('field-level permissions', () => {
 
 describe('buildScopeContext', () => {
   it('collects subordinate users through the role tree and group memberships', async () => {
+    // A real tree, not an empty one: the user sits at r2 with r3 beneath it.
+    // This used to stub no roles at all and still pass, because the lookup fell
+    // back to the user's *own* role — which is precisely the bug that let a
+    // colleague sharing a job title be counted as a subordinate.
+    on('FROM ipy_role', [{ id: 'r2', path: [] }, { id: 'r3', path: ['r2'] }]);
     on('SELECT id FROM ipy_user', [{ id: 'u_2' }]);
     on('FROM ipy_group_member', [{ group_id: 'g1' }]);
 
@@ -434,10 +440,82 @@ describe('buildScopeContext', () => {
     expect(scoped.groupIds).toEqual(['g1']);
   });
 
+  it('gives a user with no one below them an empty subordinate list', async () => {
+    // The same stubs as above except the tree has no descendant of r2, so a
+    // fallback to "everyone in my own role" would show up as a leak here.
+    on('FROM ipy_role', [{ id: 'r2', path: [] }]);
+    on('SELECT id FROM ipy_user', [{ id: 'u_peer' }]);
+    on('FROM ipy_group_member', []);
+
+    const scoped = await buildScopeContext(user());
+    expect(scoped.subordinateIds).toEqual([]);
+  });
+
   it('returns empty lists for a user with no role', async () => {
     on('FROM ipy_group_member', []);
     const scoped = await buildScopeContext(user({ roleId: null }));
     expect(scoped.subordinateIds).toEqual([]);
     expect(scoped.groupIds).toEqual([]);
+  });
+});
+
+/**
+ * Peers are not subordinates.
+ *
+ * `getRoleTree` maps a role to itself plus its descendants, which is correct
+ * for a `role_and_subordinates` sharing rule and wrong for "who reports to me".
+ * Keeping the own-role entry made everyone sharing a job title a subordinate,
+ * so two Sales Executives each had full read *and write* access to the other's
+ * leads while the module was configured `private`. These pin the boundary.
+ */
+describe('getSubordinateUserIds', () => {
+  const ROLES = [
+    { id: 'r_head', path: [] },
+    { id: 'r_mgr', path: ['r_head'] },
+    { id: 'r_exec', path: ['r_head', 'r_mgr'] },
+  ];
+
+  /** Users keyed by the role ids the query asked for. */
+  function onUsersByRole(byRole: Record<string, string[]>) {
+    poolState.query.mockImplementation(async (sql: string, params?: unknown[]) => {
+      if (sql.includes('FROM ipy_role')) return { rows: ROLES, rowCount: ROLES.length };
+      if (sql.includes('FROM ipy_user WHERE role_id')) {
+        const asked = (params?.[0] ?? []) as string[];
+        const rows = asked.flatMap((r) => (byRole[r] ?? []).map((id) => ({ id })));
+        return { rows, rowCount: rows.length };
+      }
+      const rows = poolState.handlers.find((h) => sql.includes(h.sql))?.rows ?? [];
+      return { rows, rowCount: rows.length };
+    });
+  }
+
+  const population = {
+    r_head: ['u_head'],
+    r_mgr: ['u_mgr'],
+    r_exec: ['u_execA', 'u_execB', 'u_execC'],
+  };
+
+  it('does not treat a colleague in the same role as a subordinate', async () => {
+    onUsersByRole(population);
+    const subs = await getSubordinateUserIds({ id: 'u_execA', roleId: 'r_exec' });
+    expect(subs).toEqual([]);
+  });
+
+  it('still gives a manager everyone below them', async () => {
+    onUsersByRole(population);
+    const subs = await getSubordinateUserIds({ id: 'u_mgr', roleId: 'r_mgr' });
+    expect(subs.sort()).toEqual(['u_execA', 'u_execB', 'u_execC']);
+    expect(subs).not.toContain('u_mgr');
+  });
+
+  it('gives the top of the tree everyone underneath, at every depth', async () => {
+    onUsersByRole(population);
+    const subs = await getSubordinateUserIds({ id: 'u_head', roleId: 'r_head' });
+    expect(subs.sort()).toEqual(['u_execA', 'u_execB', 'u_execC', 'u_mgr']);
+  });
+
+  it('returns nothing for a user with no role at all', async () => {
+    onUsersByRole(population);
+    expect(await getSubordinateUserIds({ id: 'u_x', roleId: null })).toEqual([]);
   });
 });

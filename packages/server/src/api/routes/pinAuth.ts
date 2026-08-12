@@ -77,7 +77,29 @@ pinAuthRouter.get('/status', asyncHandler(async (req, res) => {
   });
 }));
 
-pinAuthRouter.post('/enrol', requireAuth, asyncHandler(async (req, res) => {
+/**
+ * Enrolment re-checks the account password, so it is a password oracle unless
+ * it is budgeted like one.
+ *
+ * Without this a stolen session — an unlocked laptop, a leaked token, XSS — can
+ * try passwords at full speed against an endpoint that answers "correct" or
+ * "incorrect" every time, and the session it started from never told it the
+ * password. That turns temporary access into the account itself, and into every
+ * other site where the password was reused. Keyed per user rather than per IP:
+ * the whole office shares one address, and one person's compromised session
+ * must not spend everybody else's budget.
+ */
+const enrolLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => `pin-enrol:${(req as { user?: { id?: string } }).user?.id ?? req.ip ?? 'unknown'}`,
+  message: { error: 'rate_limited', message: 'Too many attempts. Try again in a few minutes.' },
+});
+
+pinAuthRouter.post('/enrol', requireAuth, enrolLimiter, asyncHandler(async (req, res) => {
   const user = getUser(req);
   const input = enrolSchema.parse(req.body);
   if (pinIsTooCommon(input.pin)) {

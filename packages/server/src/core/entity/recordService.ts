@@ -8,15 +8,16 @@
 import type {
   AuthUser,
   FieldMeta,
+  FilterCondition,
   FilterGroup,
   ListQuery,
   ListResult,
   ModuleMeta,
   RecordEnvelope,
 } from '@ipropy/shared';
-import { UITYPES, formatArea, formatPhoneWithCode } from '@ipropy/shared';
+import { UITYPES, formatArea, formatPhoneWithCode, isFilterGroup } from '@ipropy/shared';
 import { db, onCommit, transaction, type Tx } from '../../db/pool.js';
-import { BadRequestError, ConflictError, NotFoundError, ValidationError } from '../../utils/errors.js';
+import { BadRequestError, ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../utils/errors.js';
 import { logger } from '../../utils/logger.js';
 import { emit } from '../events/bus.js';
 import { registry } from '../metadata/registry.js';
@@ -124,6 +125,27 @@ async function hiddenFieldsFor(ctx: ServiceContext, moduleName: string): Promise
   return hidden;
 }
 
+/**
+ * Every field name a filter tree mentions, however deeply nested.
+ *
+ * Walks groups as well as conditions: an injection oracle hidden three levels
+ * down inside an OR is still an oracle, and a guard that only reads the top
+ * level would wave it through.
+ */
+function filterFieldNames(filter: FilterGroup | undefined): string[] {
+  if (!filter) return [];
+  const names: string[] = [];
+  const walk = (node: FilterCondition | FilterGroup): void => {
+    if (isFilterGroup(node)) {
+      for (const child of node.conditions ?? []) walk(child);
+      return;
+    }
+    if (node?.field) names.push(node.field);
+  };
+  walk(filter);
+  return names;
+}
+
 function stripHidden(envelope: RecordEnvelope, hidden: Set<string>): void {
   if (!hidden.size) return;
   for (const name of hidden) {
@@ -174,6 +196,30 @@ export async function listRecords(
     }
     if (!q.columns?.length && Array.isArray(view.columns) && view.columns.length) {
       q = { ...q, columns: view.columns };
+    }
+  }
+
+  // A field this profile cannot see must not be usable to *ask questions about*
+  // either. Stripping the value from the response but still honouring
+  // `budget_max > 5000000` leaves a binary-search oracle: a dozen requests
+  // recover the exact number the permission was meant to withhold, and sorting
+  // or grouping by it gives away the ordering for nothing. Checked here, before
+  // any SQL is built, so filter, saved-view filter, sort and group-by are all
+  // covered by the one guard.
+  if (!ctx.system) {
+    const hidden = await hiddenFieldsFor(ctx, moduleName);
+    if (hidden.size) {
+      const used = [
+        ...filterFieldNames(effectiveFilter),
+        ...(q.sortBy ? [q.sortBy] : []),
+        ...(q.groupBy ? [q.groupBy] : []),
+      ];
+      const blocked = [...new Set(used)].filter((name) => hidden.has(String(name).split('.')[0] ?? ''));
+      if (blocked.length) {
+        throw new ForbiddenError(
+          `You do not have access to ${blocked.length > 1 ? 'these fields' : 'this field'}: ${blocked.join(', ')}`,
+        );
+      }
     }
   }
 

@@ -336,3 +336,80 @@ describe('permission enforcement', () => {
     expect(asExecutive.total).toBeLessThanOrEqual(asAdmin.total);
   });
 });
+
+/**
+ * Hiding a value is only half the job.
+ *
+ * A field the profile forbids must also be unusable as a *question*. Honouring
+ * `base_price > 5000000` while stripping the value leaves a binary-search
+ * oracle — a dozen requests recover the exact number — and sorting or grouping
+ * by it hands over the ordering for free. Same policy source as the stripping
+ * test above, so both keep testing the seed's real choices.
+ */
+describe('hidden fields cannot be used as an oracle', () => {
+  let telecaller: Awaited<ReturnType<typeof contextFor>>;
+  let hiddenField: string;
+
+  beforeAll(async () => {
+    telecaller = await contextFor(SEEDED.telecaller);
+    const { rows } = await db.query<{ name: string }>(
+      `SELECT f.name FROM ipy_profile_field_perm pf
+         JOIN ipy_field f ON f.id = pf.field_id
+         JOIN ipy_module m ON m.id = f.module_id
+        WHERE m.name = 'properties' AND pf.profile_id = $1 AND pf.permission = 'hidden'
+        LIMIT 1`,
+      [telecaller.user.profileId],
+    );
+    // Nothing hidden would make every assertion below vacuously true.
+    expect(rows.length).toBe(1);
+    hiddenField = rows[0]!.name;
+  });
+
+  it('refuses to filter on it', async () => {
+    await expect(listRecords(telecaller, 'properties', {
+      filter: { logic: 'AND', conditions: [{ field: hiddenField, operator: 'is_not_empty' }] },
+    })).rejects.toThrow(/access/i);
+  });
+
+  it('refuses to filter on it however deeply it is buried', async () => {
+    await expect(listRecords(telecaller, 'properties', {
+      filter: {
+        logic: 'AND',
+        conditions: [
+          { field: 'status', operator: 'is_not_empty' },
+          {
+            logic: 'OR',
+            conditions: [
+              { field: 'city', operator: 'is_not_empty' },
+              { logic: 'AND', conditions: [{ field: hiddenField, operator: 'is_not_empty' }] },
+            ],
+          },
+        ],
+      },
+    })).rejects.toThrow(/access/i);
+  });
+
+  it('refuses to sort by it', async () => {
+    await expect(listRecords(telecaller, 'properties', { sortBy: hiddenField }))
+      .rejects.toThrow(/access/i);
+  });
+
+  it('refuses to group by it', async () => {
+    await expect(listRecords(telecaller, 'properties', { groupBy: hiddenField }))
+      .rejects.toThrow(/access/i);
+  });
+
+  it('still allows a field the profile can see', async () => {
+    const result = await listRecords(telecaller, 'properties', {
+      filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'is_not_empty' }] },
+      sortBy: 'created_at',
+      pageSize: 1,
+    });
+    expect(result.rows.length).toBeGreaterThanOrEqual(0);
+  });
+
+  it('does not get in an admin\'s way', async () => {
+    const result = await listRecords(admin, 'properties', { sortBy: hiddenField, pageSize: 1 });
+    expect(result.total).toBeGreaterThanOrEqual(0);
+  });
+});

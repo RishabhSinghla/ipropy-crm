@@ -105,11 +105,28 @@ async function getRoleTree(conn: Tx = db): Promise<Map<string, string[]>> {
   return map;
 }
 
-/** Users whose records a given user can see via the role hierarchy. */
+/**
+ * Users whose records a given user can see via the role hierarchy — the people
+ * *below* them, and nobody else.
+ *
+ * The user's own role is deliberately excluded. `getRoleTree` maps a role to
+ * itself plus its descendants, which is right for a `role_and_subordinates`
+ * sharing rule but wrong here: keeping the own-role entry made every colleague
+ * sharing a job title a "subordinate", so two Sales Executives each held full
+ * read *and write* access to the other's leads and `private` sharing meant
+ * nothing. In a brokerage that is one rep quietly working another rep's
+ * pipeline, which is the exact thing record ownership exists to prevent.
+ *
+ * A manager still sees their reports: Sales Executive sits under Regional Sales
+ * Manager under Sales Head, so those roles are descendants rather than peers.
+ * Two people who genuinely should share a queue get a sharing rule or a group,
+ * both of which say so explicitly.
+ */
 export async function getSubordinateUserIds(user: Pick<AuthUser, 'id' | 'roleId'>, conn: Tx = db): Promise<string[]> {
   if (!user.roleId) return [];
   const tree = await getRoleTree(conn);
-  const roleIds = tree.get(user.roleId) ?? [user.roleId];
+  const roleIds = (tree.get(user.roleId) ?? []).filter((id) => id !== user.roleId);
+  if (!roleIds.length) return [];
   const res = await conn.query<{ id: string }>(
     `SELECT id FROM ipy_user WHERE role_id = ANY($1::uuid[]) AND deleted_at IS NULL`,
     [roleIds],
