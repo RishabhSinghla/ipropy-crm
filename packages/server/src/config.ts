@@ -132,9 +132,10 @@ export const config = {
      * Blank means "auto": pick whichever provider actually has a key, in the
      * priority order in core/settings/integrations.ts. Set explicitly to pin
      * one. Anything other than `anthropic` is spoken to over the OpenAI
-     * chat-completions shape, which every option here exposes.
+     * chat-completions shape. OpenCode's model picker filters out models that
+     * use its other transports, so every model shown by the CRM is callable.
      */
-    provider: str('AI_PROVIDER') as '' | 'anthropic' | 'gemini' | 'groq' | 'openrouter' | 'openai' | 'ollama',
+    provider: str('AI_PROVIDER') as '' | 'anthropic' | 'gemini' | 'groq' | 'openrouter' | 'opencode' | 'openai' | 'ollama',
     apiKey: str('ANTHROPIC_API_KEY'),
     model: str('AI_MODEL', 'claude-sonnet-5'),
     fastModel: str('AI_MODEL_FAST', 'claude-haiku-4-5-20251001'),
@@ -160,6 +161,12 @@ export const config = {
       // without notice, this one keeps working.
       model: str('OPENROUTER_MODEL', 'openrouter/free'),
       fastModel: str('OPENROUTER_MODEL_FAST', 'openrouter/free'),
+    },
+    /** OpenCode Zen — free models plus one API key across several providers. */
+    opencode: {
+      apiKey: str('OPENCODE_API_KEY'),
+      model: str('OPENCODE_MODEL', 'nemotron-3-ultra-free'),
+      fastModel: str('OPENCODE_MODEL_FAST', 'deepseek-v4-flash-free'),
     },
     /** Any other OpenAI-compatible endpoint, incl. a local Ollama or vLLM. */
     openaiCompatible: {

@@ -30,7 +30,7 @@ import { db } from '../../db/pool.js';
 import { makeSecretBox } from '../secretbox.js';
 import { logger } from '../../utils/logger.js';
 
-export type AiProvider = 'none' | 'anthropic' | 'gemini' | 'groq' | 'openrouter' | 'openai' | 'ollama';
+export type AiProvider = 'none' | 'anthropic' | 'gemini' | 'groq' | 'openrouter' | 'opencode' | 'openai' | 'ollama';
 
 interface IntegrationRow {
   id: string;
@@ -164,12 +164,15 @@ function pickStored(row: IntegrationRow | undefined, source: 'config' | 'credent
  * output, then the free tiers by daily quota, then a local model, which costs
  * nothing but needs a machine to run on. `AI_PROVIDER` pins one explicitly.
  */
-const AI_PROVIDER_ORDER: Exclude<AiProvider, 'none'>[] = ['anthropic', 'gemini', 'groq', 'openrouter', 'openai', 'ollama'];
+const AI_PROVIDER_ORDER: Exclude<AiProvider, 'none'>[] = [
+  'anthropic', 'gemini', 'groq', 'opencode', 'openrouter', 'openai', 'ollama',
+];
 
 const AI_BASE_URLS: Record<Exclude<AiProvider, 'none' | 'anthropic'>, string> = {
   gemini: 'https://generativelanguage.googleapis.com/v1beta/openai',
   groq: 'https://api.groq.com/openai/v1',
   openrouter: 'https://openrouter.ai/api/v1',
+  opencode: 'https://opencode.ai/zen/v1',
   openai: config.ai.openaiCompatible.baseUrl,
   ollama: config.ai.ollama.baseUrl,
 };
@@ -179,6 +182,7 @@ const AI_ENV_DEFAULTS: Record<Exclude<AiProvider, 'none'>, { apiKey: string; mod
   gemini: config.ai.gemini,
   groq: config.ai.groq,
   openrouter: config.ai.openrouter,
+  opencode: config.ai.opencode,
   openai: {
     apiKey: config.ai.openaiCompatible.apiKey,
     model: config.ai.openaiCompatible.model,
@@ -224,6 +228,17 @@ function aiCandidate(
  */
 export function getAiProviderSettings(provider: Exclude<AiProvider, 'none'>): ResolvedSettings['ai'] | null {
   return aiCandidate(rows, provider, true);
+}
+
+/** Saved speech settings, even while the card is disabled, for model discovery. */
+export function getSttProviderSettings(): ResolvedSettings['stt'] {
+  const row = rows.get('stt');
+  return {
+    provider: 'openai',
+    apiKey: pickStored(row, 'credentials', 'apiKey', config.stt.apiKey),
+    baseUrl: pickStored(row, 'config', 'baseUrl', config.stt.baseUrl) || config.stt.baseUrl,
+    model: pickStored(row, 'config', 'model', config.stt.model) || config.stt.model,
+  };
 }
 
 /**
@@ -429,6 +444,7 @@ const SECRET_FIELDS: Record<string, string[]> = {
   ai_gemini: ['apiKey'],
   ai_groq: ['apiKey'],
   ai_openrouter: ['apiKey'],
+  ai_opencode: ['apiKey'],
   ai_openai: ['apiKey'],
   ai_ollama: [],
   stt: ['apiKey'],

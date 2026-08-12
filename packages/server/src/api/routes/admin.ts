@@ -13,6 +13,7 @@ import {
 import { verifyConnection as verifySmtpConnection } from '../../integrations/email/service.js';
 import { syncInboundEmails, testImapConnection } from '../../integrations/email/inbound.js';
 import { testAiProvider } from '../../ai/client.js';
+import { listIntegrationModels } from '../../ai/models.js';
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth);
@@ -671,6 +672,16 @@ adminRouter.get('/integrations', asyncHandler(async (req, res) => {
   res.json(await listIntegrations());
 }));
 
+/** Live provider catalogue for the model pickers; secrets never leave here. */
+adminRouter.get('/integrations/:provider/models', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.integrations');
+  const existing = await getIntegrationSummary(req.params.provider);
+  if (!existing) throw new NotFoundError(`Unknown integration provider '${req.params.provider}'`);
+  const catalogue = await listIntegrationModels(req.params.provider);
+  if (!catalogue) throw new BadRequestError('This integration does not expose AI models');
+  res.json(catalogue);
+}));
+
 adminRouter.get('/integrations/:provider', asyncHandler(async (req, res) => {
   await assertCapability(getUser(req), 'admin.integrations');
   const summary = await getIntegrationSummary(req.params.provider);
@@ -749,10 +760,18 @@ async function testIntegration(provider: string): Promise<{ ok: boolean; message
         return testAiProvider('groq');
       case 'ai_openrouter':
         return testAiProvider('openrouter');
+      case 'ai_opencode':
+        return testAiProvider('opencode');
       case 'ai_openai':
         return testAiProvider('openai');
       case 'ai_ollama':
         return testAiProvider('ollama');
+      case 'stt': {
+        const catalogue = await listIntegrationModels('stt');
+        return catalogue?.live
+          ? { ok: true, message: `Connected — ${catalogue.models.length} transcription model${catalogue.models.length === 1 ? '' : 's'} available.` }
+          : { ok: false, message: catalogue?.warning ?? 'Could not verify the speech provider.' };
+      }
       case 'facebook_leads':
         if (!s.leadSources.facebook.pageAccessToken) return { ok: false, message: 'A page access token is required.' };
         return { ok: true, message: 'Page access token is set. Full verification happens on the next inbound lead.' };

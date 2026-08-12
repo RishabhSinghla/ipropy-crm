@@ -268,6 +268,20 @@ export interface IntegrationSummary {
   credentialFields: Record<string, { set: boolean; preview: string }>;
 }
 
+export interface IntegrationModel {
+  id: string;
+  label: string;
+  contextLength: number | null;
+  free: boolean;
+  vision: boolean;
+}
+
+export interface IntegrationModelCatalogue {
+  models: IntegrationModel[];
+  live: boolean;
+  warning?: string;
+}
+
 /** A message the CRM composed, waiting for a human to send it from their phone. */
 export interface DeviceSend {
   id: string; handle: string; name: string | null; body: string;
@@ -493,6 +507,8 @@ export const api = {
   systemHealth: () => get<Record<string, unknown>>('/api/admin/health'),
   integrations: () => get<IntegrationSummary[]>('/api/admin/integrations'),
   integration: (provider: string) => get<IntegrationSummary>(`/api/admin/integrations/${provider}`),
+  integrationModels: (provider: string) =>
+    get<IntegrationModelCatalogue>(`/api/admin/integrations/${provider}/models`),
   saveIntegration: (provider: string, data: { config?: Record<string, string>; credentials?: Record<string, string>; isActive?: boolean }) =>
     put<IntegrationSummary>(`/api/admin/integrations/${provider}`, data),
   testIntegration: (provider: string) => post<{ ok: boolean; message: string }>(`/api/admin/integrations/${provider}/test`, {}),

@@ -32,6 +32,8 @@ interface FieldDef {
   source: 'config' | 'credentials';
   secret?: boolean;
   placeholder?: string;
+  /** Load real choices from the provider, while still allowing a custom id. */
+  model?: boolean;
 }
 
 const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
@@ -72,40 +74,45 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
   ],
   anthropic: [
     { key: 'apiKey', label: 'API Key', source: 'credentials', secret: true },
-    { key: 'model', label: 'Model', source: 'config', placeholder: 'claude-sonnet-5' },
-    { key: 'fastModel', label: 'Fast model', source: 'config', placeholder: 'claude-haiku-4-5-20251001' },
+    { key: 'model', label: 'Model', source: 'config', placeholder: 'claude-sonnet-5', model: true },
+    { key: 'fastModel', label: 'Fast model', source: 'config', placeholder: 'claude-haiku-4-5-20251001', model: true },
     { key: 'maxTokens', label: 'Max tokens', source: 'config', placeholder: '4096' },
   ],
   ai_gemini: [
     { key: 'apiKey', label: 'API Key', source: 'credentials', secret: true },
-    { key: 'model', label: 'Model', source: 'config', placeholder: 'gemini-flash-latest' },
-    { key: 'fastModel', label: 'Fast model', source: 'config', placeholder: 'gemini-flash-lite-latest' },
+    { key: 'model', label: 'Model', source: 'config', placeholder: 'gemini-flash-latest', model: true },
+    { key: 'fastModel', label: 'Fast model', source: 'config', placeholder: 'gemini-flash-lite-latest', model: true },
   ],
   ai_groq: [
     { key: 'apiKey', label: 'API Key', source: 'credentials', secret: true },
-    { key: 'model', label: 'Model', source: 'config', placeholder: 'llama-3.3-70b-versatile' },
-    { key: 'fastModel', label: 'Fast model', source: 'config', placeholder: 'llama-3.1-8b-instant' },
+    { key: 'model', label: 'Model', source: 'config', placeholder: 'openai/gpt-oss-120b', model: true },
+    { key: 'fastModel', label: 'Fast model', source: 'config', placeholder: 'llama-3.1-8b-instant', model: true },
   ],
   ai_openrouter: [
     { key: 'apiKey', label: 'API Key', source: 'credentials', secret: true },
-    { key: 'model', label: 'Model', source: 'config', placeholder: 'openrouter/free' },
-    { key: 'fastModel', label: 'Fast model', source: 'config', placeholder: 'openrouter/free' },
+    { key: 'model', label: 'Model', source: 'config', placeholder: 'openrouter/free', model: true },
+    { key: 'fastModel', label: 'Fast model', source: 'config', placeholder: 'openrouter/free', model: true },
+  ],
+  ai_opencode: [
+    { key: 'apiKey', label: 'OpenCode Zen API Key', source: 'credentials', secret: true },
+    { key: 'model', label: 'Model', source: 'config', placeholder: 'nemotron-3-ultra-free', model: true },
+    { key: 'fastModel', label: 'Fast model', source: 'config', placeholder: 'deepseek-v4-flash-free', model: true },
   ],
   ai_openai: [
     { key: 'apiKey', label: 'API Key', source: 'credentials', secret: true },
     { key: 'baseUrl', label: 'Base URL', source: 'config', placeholder: 'https://api.openai.com/v1' },
-    { key: 'model', label: 'Model', source: 'config', placeholder: 'gpt-4o-mini' },
-    { key: 'fastModel', label: 'Fast model', source: 'config', placeholder: 'gpt-4o-mini' },
+    { key: 'model', label: 'Model', source: 'config', placeholder: 'gpt-4o-mini', model: true },
+    { key: 'fastModel', label: 'Fast model', source: 'config', placeholder: 'gpt-4o-mini', model: true },
   ],
   ai_ollama: [
     { key: 'baseUrl', label: 'Base URL', source: 'config', placeholder: 'http://localhost:11434/v1' },
-    { key: 'model', label: 'Model', source: 'config', placeholder: 'llama3.1' },
-    { key: 'fastModel', label: 'Fast model', source: 'config', placeholder: 'llama3.1' },
+    { key: 'model', label: 'Model', source: 'config', placeholder: 'llama3.1', model: true },
+    { key: 'fastModel', label: 'Fast model', source: 'config', placeholder: 'llama3.1', model: true },
   ],
   stt: [
     { key: 'apiKey', label: 'API Key (OpenAI-compatible Whisper)', source: 'credentials', secret: true },
     { key: 'baseUrl', label: 'Base URL', source: 'config', placeholder: 'https://api.openai.com/v1' },
-    { key: 'model', label: 'Model', source: 'config', placeholder: 'whisper-1' },
+    { key: 'model', label: 'Model', source: 'config', placeholder: 'whisper-large-v3-turbo', model: true },
   ],
   facebook_leads: [
     { key: 'appId', label: 'App ID', source: 'config' },
@@ -132,6 +139,7 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
 const TESTABLE = new Set([
   'meta_whatsapp', 'twilio', 'exotel', 'smtp', 'imap', 'facebook_leads',
   'anthropic', 'ai_gemini', 'ai_groq', 'ai_openrouter', 'ai_openai', 'ai_ollama',
+  'ai_opencode', 'stt',
 ]);
 
 /**
@@ -162,6 +170,12 @@ const PROVIDER_HINTS: Record<string, { text: string; href?: string; linkLabel?: 
     text: 'Free tier, no card needed. Keep the model as openrouter/free — individual “:free” model ids get retired without notice.',
     href: 'https://openrouter.ai/keys',
     linkLabel: 'Get a free key',
+  },
+  ai_opencode: {
+    free: true,
+    text: 'OpenCode Zen gives one key access to several models. The CRM lists only models compatible with its chat API, including the free choices.',
+    href: 'https://opencode.ai/zen',
+    linkLabel: 'Get a key',
   },
   ai_openai: {
     text: 'Any OpenAI-compatible endpoint — OpenAI, Together, Fireworks, vLLM.',
@@ -300,6 +314,14 @@ const GUIDES: Record<string, Guide> = {
       { title: 'Paste the key', help: 'It starts with "sk-or-".', field: 'apiKey' },
     ],
   },
+  ai_opencode: {
+    outcome: 'Use OpenCode Zen free models for high-volume CRM text work, with other providers still available as fallbacks.',
+    minutes: 2,
+    steps: [
+      { title: 'Create an OpenCode Zen key', help: 'Open Zen, add a key, then copy it. Free models can be used without choosing a paid model.', href: 'https://opencode.ai/zen', linkLabel: 'Open OpenCode Zen' },
+      { title: 'Paste the key', help: 'After connecting, the detailed settings load the current compatible models directly from OpenCode.', field: 'apiKey' },
+    ],
+  },
   anthropic: {
     outcome: 'The highest-quality AI answers. Paid — billing must be set up on the Anthropic console first.',
     minutes: 2,
@@ -324,6 +346,16 @@ const GUIDES: Record<string, Guide> = {
       { title: 'Install Ollama', help: 'Download it, then run "ollama serve" and "ollama pull llama3.1" in a terminal.', href: 'https://ollama.com/download', linkLabel: 'Install Ollama' },
       { title: 'Where is it running?', help: 'Leave the default unless you moved it.', field: 'baseUrl' },
       { title: 'Which model did you pull?', help: 'The name you used with "ollama pull", e.g. llama3.1.', field: 'model' },
+    ],
+  },
+  stt: {
+    outcome: 'Turn property voice notes and call recordings into searchable text automatically.',
+    minutes: 2,
+    steps: [
+      { title: 'Choose a Whisper provider', help: 'Groq is the low-cost, fast recommendation. The same Groq key can be used here and on the Groq AI card.', href: 'https://console.groq.com/keys', linkLabel: 'Open Groq keys' },
+      { title: 'Paste the API key', help: 'Use your Groq or OpenAI-compatible speech key.', field: 'apiKey' },
+      { title: 'Set the speech API address', help: 'For Groq use https://api.groq.com/openai/v1. For OpenAI use https://api.openai.com/v1.', field: 'baseUrl' },
+      { title: 'Choose the transcription model', help: 'For Groq, whisper-large-v3-turbo is the fast recommended choice.', field: 'model' },
     ],
   },
   facebook_leads: {
@@ -401,7 +433,13 @@ const CATALOGUE: { title: string; blurb: string; icon: typeof MessageCircle; pro
     title: 'Turn on AI',
     blurb: 'Lead scoring, reply drafting and the assistant. Free options available.',
     icon: Sparkles,
-    providers: ['ai_gemini', 'ai_groq', 'ai_openrouter', 'ai_openai', 'ai_ollama', 'anthropic'],
+    providers: ['ai_gemini', 'ai_groq', 'ai_opencode', 'ai_openrouter', 'ai_openai', 'ai_ollama', 'anthropic'],
+  },
+  {
+    title: 'Understand voice notes and calls',
+    blurb: 'Transcribe speech so AI can extract facts and update the CRM.',
+    icon: Sparkles,
+    providers: ['stt'],
   },
   {
     title: 'Store files in your own cloud',
@@ -667,6 +705,14 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
   const [testing, setTesting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const hasModelFields = fields.some((field) => field.model);
+  const modelCatalogue = useQuery({
+    queryKey: ['integration-models', summary.provider],
+    queryFn: () => api.integrationModels(summary.provider),
+    enabled: hasModelFields,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
 
   const setField = (key: string, v: string): void => setValues((prev) => ({ ...prev, [key]: v }));
 
@@ -691,6 +737,9 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
         return next;
       });
       await queryClient.invalidateQueries({ queryKey: ['integrations'] });
+      if (hasModelFields) {
+        await queryClient.invalidateQueries({ queryKey: ['integration-models', summary.provider] });
+      }
     } catch (err) {
       toast.error('Could not save', (err as Error).message);
     } finally {
@@ -772,16 +821,38 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
       <div className="grid gap-3 p-4 sm:grid-cols-2">
         {fields.map((f) => {
           const preview = f.secret ? summary.credentialFields[f.key] : undefined;
+          const listId = `models_${summary.provider}_${f.key}`;
           return (
             <div key={f.key} className={fields.length === 1 ? 'sm:col-span-2' : ''}>
               <label className="label">{f.label}</label>
               <input
                 type={f.secret ? 'password' : 'text'}
                 className="input"
+                list={f.model ? listId : undefined}
                 value={values[f.key] ?? ''}
                 onChange={(e) => setField(f.key, e.target.value)}
                 placeholder={preview?.set ? `Saved (${preview.preview}) — leave blank to keep` : f.placeholder}
               />
+              {f.model && (
+                <>
+                  <datalist id={listId}>
+                    {(modelCatalogue.data?.models ?? []).map((model) => (
+                      <option
+                        key={model.id}
+                        value={model.id}
+                        label={`${model.label}${model.free ? ' · free' : ''}${model.vision ? ' · vision' : ''}`}
+                      />
+                    ))}
+                  </datalist>
+                  <p className="mt-1 text-2xs text-muted">
+                    {modelCatalogue.isFetching
+                      ? 'Loading current models…'
+                      : modelCatalogue.data?.live
+                        ? `${modelCatalogue.data.models.length} live models loaded — choose one or type a custom model ID.`
+                        : modelCatalogue.data?.warning ?? 'Choose a suggested model or type a custom model ID.'}
+                  </p>
+                </>
+              )}
             </div>
           );
         })}

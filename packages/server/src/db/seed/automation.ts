@@ -492,6 +492,7 @@ export async function seedIntegrations(conn: Tx): Promise<void> {
     { provider: 'ai_gemini', kind: 'ai', label: 'Google Gemini' },
     { provider: 'ai_groq', kind: 'ai', label: 'Groq' },
     { provider: 'ai_openrouter', kind: 'ai', label: 'OpenRouter' },
+    { provider: 'ai_opencode', kind: 'ai', label: 'OpenCode Zen' },
     { provider: 'ai_openai', kind: 'ai', label: 'OpenAI-compatible' },
     { provider: 'ai_ollama', kind: 'ai', label: 'Ollama (local)' },
     { provider: 'stt', kind: 'ai', label: 'Speech-to-text (Whisper)' },

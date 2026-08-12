@@ -11,6 +11,9 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // Cloudflare Quick Tunnels use a fresh random subdomain on every run.
+    // The leading dot permits only that domain family, not arbitrary hosts.
+    allowedHosts: ['.trycloudflare.com'],
     proxy: {
       // Keeps the browser same-origin in development, so no CORS or token juggling.
       '/api': { target: 'http://localhost:4000', changeOrigin: true },
