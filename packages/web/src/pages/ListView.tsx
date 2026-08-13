@@ -21,6 +21,8 @@ import {
 } from '../components/ui';
 import { ModuleIcon } from '../components/Layout';
 import RecordForm from '../components/RecordForm';
+import RecordPeek from '../components/RecordPeek';
+import { usePressPreview } from '../lib/pressPreview';
 
 const EMPTY_FILTER: FilterGroup = { logic: 'AND', conditions: [] };
 
@@ -42,6 +44,8 @@ export default function ListView(): JSX.Element {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [displayMode, setDisplayMode] = useState<'table' | 'kanban'>('table');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Which record a long press is previewing. Null when nothing is peeked.
+  const [peekId, setPeekId] = useState<string | null>(null);
   const [columns, setColumns] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [showQuickCreate, setShowQuickCreate] = useState(false);
@@ -458,6 +462,7 @@ export default function ListView(): JSX.Element {
                   setSelected(next);
                 }}
                 onOpen={() => navigate(`/${moduleName}/${row.id}?return=${encodeURIComponent(returnTo)}`)}
+                onPeek={() => setPeekId(row.id)}
                 onSaved={() => invalidateRecordQueries(queryClient, moduleName, row.id)}
               />
             ))}
@@ -693,6 +698,24 @@ export default function ListView(): JSX.Element {
         </Modal>
       )}
 
+      {/* Press and hold a card to see it without leaving the list — see
+          lib/pressPreview.ts. Rendered here rather than inside the card so one
+          dialog exists at a time regardless of how many rows are on screen. */}
+      <RecordPeek
+        row={rows.find((r) => r.id === peekId) ?? null}
+        module={meta}
+        columns={visibleColumns}
+        fieldMap={fieldMap}
+        isNew={peekId ? unseen.has(peekId) : false}
+        isStarred={Boolean(rows.find((r) => r.id === peekId)?.starred)}
+        onOpen={() => {
+          const id = peekId;
+          setPeekId(null);
+          if (id) navigate(`/${moduleName}/${id}?return=${encodeURIComponent(returnTo)}`);
+        }}
+        onClose={() => setPeekId(null)}
+      />
+
       <ConfirmDialog
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
@@ -725,7 +748,7 @@ function defaultColumns(meta: { fields: { name: string; isActive: boolean; displ
  * stacked row instead of a narrow column.
  */
 function MobileRecordCard({
-  row, module, columns, fieldMap, selected, isNew, isStarred, onToggleSelect, onOpen, onSaved,
+  row, module, columns, fieldMap, selected, isNew, isStarred, onToggleSelect, onOpen, onPeek, onSaved,
 }: {
   row: RecordEnvelope;
   module: ModuleMeta & { permissions: { edit: boolean }; picklistDependencies: { sourceField: string; targetField: string; mapping: Record<string, string[]> }[] };
@@ -738,6 +761,8 @@ function MobileRecordCard({
   isStarred: boolean;
   onToggleSelect: (checked: boolean) => void;
   onOpen: () => void;
+  /** Press and hold — show the card without leaving the list. */
+  onPeek: () => void;
   onSaved: () => void;
 }): JSX.Element {
   // Fields that make up row.label are already the heading — repeating them as
@@ -755,13 +780,21 @@ function MobileRecordCard({
     return v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && !v.length);
   });
 
+  // Bound to the card, not the title button: the whole row is the target a
+  // thumb actually lands on, and holding over a field should peek too rather
+  // than doing nothing.
+  const press = usePressPreview(onPeek);
+
   return (
-    <div className={cn(
-      'px-4 py-3',
-      isStarred
-        ? 'bg-amber-50/80 dark:bg-amber-950/25'
-        : isNew ? 'bg-brand-50/60 dark:bg-brand-950/25' : 'bg-white dark:bg-slate-900',
-    )}>
+    <div
+      {...press}
+      className={cn(
+        'px-4 py-3 [-webkit-touch-callout:none]',
+        isStarred
+          ? 'bg-amber-50/80 dark:bg-amber-950/25'
+          : isNew ? 'bg-brand-50/60 dark:bg-brand-950/25' : 'bg-white dark:bg-slate-900',
+      )}
+    >
       <div className="flex items-start gap-3">
         <input
           type="checkbox"

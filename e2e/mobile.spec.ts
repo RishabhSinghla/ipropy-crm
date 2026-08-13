@@ -55,6 +55,58 @@ test.describe('phone', () => {
     await expect(page.locator('button[title="Click to edit"]:visible').first()).toBeVisible();
   });
 
+  /**
+   * Press and hold to peek — the round trip this removes is the whole point.
+   *
+   * Checking one number on a phone otherwise means open, read, back, and lose
+   * your place in the list. The assertions that matter are that the preview
+   * appears *and that the list is still underneath it*: a peek that navigates
+   * is just a slow tap.
+   */
+  test('pressing and holding a card previews it without leaving the list', async ({ page }) => {
+    await page.goto('/leads');
+    await waitForRecords(page);
+
+    const card = page.locator('div.md\\:hidden > div').first();
+    const box = await card.boundingBox();
+    expect(box).not.toBeNull();
+
+    // A real finger, not a click: the gesture is bound to touch pointers only.
+    await card.dispatchEvent('pointerdown', {
+      pointerType: 'touch', pointerId: 1, clientX: box!.x + box!.width / 2, clientY: box!.y + 20,
+    });
+    await page.waitForTimeout(600);
+    await card.dispatchEvent('pointerup', { pointerType: 'touch', pointerId: 1 });
+
+    const peek = page.getByRole('dialog');
+    await expect(peek).toBeVisible();
+    // Still on the list — the peek must not have navigated.
+    await expect(page).toHaveURL(/\/leads/);
+    await expect(peek.getByRole('button', { name: 'Open' })).toBeVisible();
+
+    // Closes on Escape like any dialog — the peek inherits Modal's handling.
+    await page.keyboard.press('Escape');
+    await expect(peek).toBeHidden();
+  });
+
+  test('a quick tap does not trigger the preview', async ({ page }) => {
+    // The gesture has to be distinguishable from an ordinary tap, or every
+    // touch of the list throws a dialog in the way.
+    await page.goto('/leads');
+    await waitForRecords(page);
+
+    const card = page.locator('div.md\\:hidden > div').first();
+    const box = await card.boundingBox();
+    await card.dispatchEvent('pointerdown', {
+      pointerType: 'touch', pointerId: 1, clientX: box!.x + box!.width / 2, clientY: box!.y + 20,
+    });
+    await page.waitForTimeout(120);
+    await card.dispatchEvent('pointerup', { pointerType: 'touch', pointerId: 1 });
+    await page.waitForTimeout(500);
+
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+
   test('a record opens and can be inline-edited from a phone', async ({ page }) => {
     await page.goto('/leads');
     await waitForRecords(page);
