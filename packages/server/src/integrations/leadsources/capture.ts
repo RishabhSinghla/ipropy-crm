@@ -13,6 +13,7 @@ import { logger } from '../../utils/logger.js';
 import { bus } from '../../core/events/bus.js';
 import { createRecord, updateRecord, type ServiceContext } from '../../core/entity/recordService.js';
 import { assignOwner } from '../../core/workflow/assignment.js';
+import { notify } from '../../core/notifications/index.js';
 import { evaluateFilter } from '@ipropy/shared';
 
 const SYSTEM_USER: AuthUser = {
@@ -233,13 +234,22 @@ async function enrichExistingLead(recordId: string, normalized: NormalizedLead):
 
   await updateRecord(systemContext(), 'leads', recordId, updates, { skipDuplicateCheck: true });
 
-  await db.query(
-    `INSERT INTO ipy_notification (user_id, kind, title, body, link, record_id)
-     SELECT r.owner_id, 'repeat_enquiry', 'Repeat enquiry received',
-            r.label || ' enquired again via ' || $2, '/leads/' || r.id::text, r.id
-     FROM ipy_record r WHERE r.id = $1 AND r.owner_id IS NOT NULL`,
-    [recordId, normalized.source],
+  const record = await db.queryOne<{ label: string; owner_id: string | null }>(
+    `SELECT label, owner_id FROM ipy_record WHERE id = $1`,
+    [recordId],
   );
+  // Somebody enquiring a second time is the strongest signal this CRM sees, and
+  // it arrives while the rep is out. Worth a push, not just a row.
+  if (record?.owner_id) {
+    await notify({
+      userId: record.owner_id,
+      kind: 'repeat_enquiry',
+      title: 'Repeat enquiry received',
+      body: `${record.label} enquired again via ${normalized.source}`,
+      link: `/leads/${recordId}`,
+      recordId,
+    });
+  }
 }
 
 async function resolveCampaign(n: NormalizedLead): Promise<string | null> {

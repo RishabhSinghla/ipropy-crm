@@ -253,9 +253,9 @@ Two traps worth knowing:
 
 **Never `INSERT INTO ipy_notification` directly.** Everything goes through `notify()` /
 `notifyMany()` in `core/notifications/index.ts`, which writes the row, pings the socket, *and*
-fans out a Web Push to that user's devices. There were nine hand-rolled copies of that INSERT
-before; the remaining ones (scheduler, telephony, lead capture, WhatsApp, AI actions, webhooks,
-comms, records) still need converting — do it as you touch them.
+fans out a Web Push to that user's devices. There were nine hand-rolled copies of that INSERT;
+all are converted and `notify()` is now the only writer. A new one is a regression — the row
+would appear in the bell and reach no phone, which looks like working code and isn't.
 
 VAPID keys are generated once and stored in `ipy_integration` under provider `web_push`. **Rotating
 them silently invalidates every subscription already issued**, which is why they are not

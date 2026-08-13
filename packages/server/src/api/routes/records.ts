@@ -15,6 +15,7 @@ import {
 import { buildTimeline } from '../../core/entity/timeline.js';
 import { filterUnseen, markModuleSeen } from '../../core/entity/unseen.js';
 import { toCsv } from '../../utils/csv.js';
+import { notifyMany } from '../../core/notifications/index.js';
 
 export const recordsRouter = Router();
 recordsRouter.use(requireAuth);
@@ -323,15 +324,15 @@ recordsRouter.post('/:module/:id/comments', asyncHandler(async (req, res) => {
     [id, parentId ?? null, user.id, body, JSON.stringify(mentions ?? []), isPrivate ?? false],
   );
 
-  // Notify anyone @mentioned.
-  for (const mentionedId of mentions ?? []) {
-    if (mentionedId === user.id) continue;
-    await db.query(
-      `INSERT INTO ipy_notification (user_id, kind, title, body, link, record_id)
-       VALUES ($1,'mention',$2,$3,$4,$5)`,
-      [mentionedId, `${user.fullName} mentioned you`, body.slice(0, 200), `/${module}/${id}`, id],
-    );
-  }
+  // Notify anyone @mentioned. notifyMany de-duplicates, so naming somebody
+  // twice in one comment still only pings them once.
+  await notifyMany((mentions ?? []).filter((m) => m !== user.id), {
+    kind: 'mention',
+    title: `${user.fullName} mentioned you`,
+    body: body.slice(0, 200),
+    link: `/${module}/${id}`,
+    recordId: id,
+  });
 
   await recordService.touchActivity(id);
   res.status(201).json({ id: row?.id, createdAt: row?.created_at });

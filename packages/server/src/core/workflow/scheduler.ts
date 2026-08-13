@@ -23,6 +23,7 @@ import { ingestOneDriveOriginals } from '../storage/onedriveIngest.js';
 import { loadRecordValues, runWorkflowsFor } from './engine.js';
 import { runTask, type TaskContext } from './tasks.js';
 import { loadUser } from '../../middleware/auth.js';
+import { notify } from '../notifications/index.js';
 
 let timer: NodeJS.Timeout | null = null;
 let running = false;
@@ -457,16 +458,14 @@ async function checkSlaBreaches(): Promise<void> {
     const record = await db.queryOne<{ label: string; module_name: string }>(
       `SELECT label, module_name FROM ipy_record WHERE id = $1`, [row.record_id],
     );
-    await db.query(
-      `INSERT INTO ipy_notification (user_id, kind, title, body, link, record_id)
-       VALUES ($1,'sla_breach','SLA breached',$2,$3,$4)`,
-      [
-        row.escalate_to,
-        `${record?.label ?? 'A record'} has missed its first-response SLA.`,
-        `/${record?.module_name}/${row.record_id}`,
-        row.record_id,
-      ],
-    );
+    await notify({
+      userId: row.escalate_to,
+      kind: 'sla_breach',
+      title: 'SLA breached',
+      body: `${record?.label ?? 'A record'} has missed its first-response SLA.`,
+      link: `/${record?.module_name}/${row.record_id}`,
+      recordId: row.record_id,
+    });
   }
 }
 

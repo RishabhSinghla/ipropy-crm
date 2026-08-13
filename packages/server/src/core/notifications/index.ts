@@ -1,11 +1,14 @@
 /**
  * One way to notify a person.
  *
- * Before this, `INSERT INTO ipy_notification` appeared verbatim in nine places
+ * `INSERT INTO ipy_notification` once appeared verbatim in nine places
  * (workflow tasks, the scheduler, telephony, lead capture, WhatsApp, AI
  * actions, webhooks, comms, records). That was fine while a notification was
  * only a row, but the moment it also has to reach a phone that isn't looking at
- * the CRM, nine copies means nine places to forget. Everything funnels here:
+ * the CRM, nine copies means nine places to forget — and eight of them did, so
+ * an SLA breach, a website enquiry, a repeat enquiry, an @mention and a
+ * finished import all wrote a row nobody saw until they next opened the app.
+ * This is now the only writer; everything funnels here:
  *
  *   row in ipy_notification  →  socket ping to open tabs  →  Web Push to devices
  *

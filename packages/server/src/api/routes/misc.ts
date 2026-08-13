@@ -951,11 +951,13 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
       [job!.id, rows.length, created, skipped, failed, JSON.stringify(errors)],
     );
 
-    await db.query(
-      `INSERT INTO ipy_notification (user_id, kind, title, body)
-       VALUES ($1,'import','Import complete',$2)`,
-      [user.id, `${created} created, ${skipped} skipped, ${failed} failed.`],
-    );
+    // An import of any size outlives the page that started it.
+    await notify({
+      userId: user.id,
+      kind: 'import',
+      title: 'Import complete',
+      body: `${created} created, ${skipped} skipped, ${failed} failed.`,
+    });
   })().catch((err) => logger.error({ err }, 'import job failed'));
 }));
 

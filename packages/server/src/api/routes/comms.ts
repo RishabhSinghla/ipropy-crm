@@ -11,6 +11,7 @@ import * as wa from '../../integrations/whatsapp/service.js';
 import * as waProvider from '../../integrations/whatsapp/provider.js';
 import { sendEmail, sendTemplatedEmail, verifyConnection } from '../../integrations/email/service.js';
 import { suggestReplies, draftMessage } from '../../ai/drafting.js';
+import { notify } from '../../core/notifications/index.js';
 
 export const commsRouter = Router();
 commsRouter.use(requireAuth);
@@ -302,11 +303,14 @@ commsRouter.post('/broadcast', asyncHandler(async (req, res) => {
         [input.campaignId, result.sent],
       );
     }
-    await db.query(
-      `INSERT INTO ipy_notification (user_id, kind, title, body)
-       VALUES ($1,'broadcast','Broadcast complete',$2)`,
-      [user.id, `${result.sent} sent, ${result.failed} failed.`],
-    );
+    // The whole point of answering 202 is that you can walk away, so the result
+    // has to find you rather than wait in a tab you closed.
+    await notify({
+      userId: user.id,
+      kind: 'broadcast',
+      title: 'Broadcast complete',
+      body: `${result.sent} sent, ${result.failed} failed.`,
+    });
   }).catch(() => undefined);
 }));
 

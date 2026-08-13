@@ -21,6 +21,7 @@ import {
   captureLead, normalizeFacebook, normalizeGoogleAds, normalizePortal, type NormalizedLead,
 } from '../../integrations/leadsources/capture.js';
 import { recordOpen } from '../../integrations/email/service.js';
+import { notifyMany } from '../../core/notifications/index.js';
 
 export const webhooksRouter = Router();
 
@@ -347,13 +348,16 @@ webhooksRouter.post('/forms/:publicKey', asyncHandler(async (req, res) => {
 
   await db.query(`UPDATE ipy_webform SET submission_count = submission_count + 1 WHERE id = $1`, [form.id]);
 
-  for (const userId of form.notify_user_ids ?? []) {
-    await db.query(
-      `INSERT INTO ipy_notification (user_id, kind, title, body, link, record_id)
-       VALUES ($1,'webform','New form submission',$2,$3,$4)`,
-      [userId, `${normalized.firstName} — ${normalized.mobile}`, result.recordId ? `/leads/${result.recordId}` : '/leads', result.recordId],
-    );
-  }
+  // Speed of first response is the biggest controllable factor in conversion,
+  // and a website enquiry lands when nobody is at a desk. This is the alert
+  // that most needs to reach a phone.
+  await notifyMany(form.notify_user_ids ?? [], {
+    kind: 'webform',
+    title: 'New form submission',
+    body: `${normalized.firstName} — ${normalized.mobile}`,
+    link: result.recordId ? `/leads/${result.recordId}` : '/leads',
+    recordId: result.recordId,
+  });
 
   res.json({
     ok: result.status !== 'failed',
