@@ -105,6 +105,14 @@ Vtiger (at `../vtigercrm`) is an **architecture reference only**. No Vtiger code
   this is B-110 and not B-112. It also only looks at *nameless* shoots, and a worker that spends an
   attempt when it finds no provider burns its three retries in three minutes and marks everything
   permanently failed — the tests pin this.
+* **A lead's name is one field and its phone is two.** `full_name` is mandatory; `country_code` is a
+  picklist and `mobile` holds national digits with a per-country length (`digitsMap`). Migration
+  `026` made both changes and `integrations/leadsources/capture.ts` kept writing the old
+  `first_name`/`last_name` pair and a full E.164 number, so **every** automated lead — website form,
+  Facebook, Google, the portals, email — failed validation and was thrown away. Nothing showed it:
+  the public form answers 200 with its success message regardless, and the only trace was
+  `ipy_lead_inbox.status = 'failed'`. `splitPhone` in `@ipropy/shared` is the inverse of
+  `toInternational` and is what any new source must use.
 * **A share link is not the public website.** `/api/public/properties` is a catalogue (`Available` +
   published); the property somebody wants to send is usually this morning's draft. Every share-link
   failure — revoked, expired, mistyped, deleted — must resolve to **the same 404**. Its photos come
@@ -136,9 +144,10 @@ Login: `admin@ipropy.com` / `Admin@123`. Other demo users in `PROJECT_HANDOVER.m
 
 **Verification:** three layers, fastest first.
 
-* `npm test` — 298 unit tests, no DB: 256 in `packages/server` (query builder, filter evaluator,
-  formula engine, permissions, validation, seed templates, billing decisions, capture time/EXIF
-  offsets, watermark sizing, vision sampling) and 42 in `packages/web` (`tests/color.test.ts`, the
+* `npm test` — 349 unit tests, no DB: 303 in `packages/server` (query builder, filter evaluator,
+  formula engine, permissions and role-hierarchy scoping, validation, unstorable characters, seed
+  templates, billing decisions, capture time/EXIF offsets, watermark sizing, vision sampling, file
+  serving headers) and 46 in `packages/web` (`tests/color.test.ts`, the
   contrast guarantee behind the colour tokens, and `tests/markdown.test.ts`).
 * `npm run test:integration` — creates and drops its own `ipropy_itest` database, plus
   `ipropy_itest_control` (the customer list) and `ipropy_itest_tenant` (a customer provisioned into
