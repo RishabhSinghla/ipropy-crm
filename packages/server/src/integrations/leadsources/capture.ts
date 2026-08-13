@@ -7,7 +7,7 @@
  * so a mapping bug never loses a lead.
  */
 import type { AuthUser } from '@ipropy/shared';
-import { toE164 } from '@ipropy/shared';
+import { splitPhone, toE164 } from '@ipropy/shared';
 import { db, type Tx } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { bus } from '../../core/events/bus.js';
@@ -83,6 +83,12 @@ export async function captureLead(
 
   try {
     const mobile = normalized.mobile ? toE164(normalized.mobile) : null;
+    // The module keeps the country code and the national number in separate
+    // fields, with a per-country digit count — so the E.164 string every source
+    // hands over ("+919812345671") fails `mobile` outright with "must be
+    // exactly 10 digits". Splitting is the other half of the migration-026
+    // breakage that lost every inbound enquiry.
+    const parts = splitPhone(normalized.mobile);
 
     // Dedupe against recent leads on the same number/email.
     const windowDays = await getSetting<number>('leads.duplicate_window_days', 90);
@@ -100,10 +106,34 @@ export async function captureLead(
     const campaignId = await resolveCampaign(normalized);
 
     const values: Record<string, unknown> = {
-      first_name: normalized.firstName || 'Unknown',
-      last_name: normalized.lastName ?? '',
+      // One name field, not two.
+      //
+      // Leads carried `first_name`/`last_name` until migration 026 merged them
+      // into a single mandatory `full_name`; every source that feeds this
+      // function kept writing the old pair. Unknown keys are ignored rather
+      // than rejected, so `full_name` simply arrived empty and validation
+      // refused the record — and because the web form answers 200 with its
+      // success message regardless, a visitor saw "our team will call you
+      // shortly" while nothing was created.
+      //
+      // This is the single write path for *every* automated source — the
+      // website form, Facebook lead ads, Google Ads, the portal webhooks and
+      // email-to-lead — so the whole top of the funnel was silently dropping
+      // enquiries. `ipy_lead_inbox` recorded each one as `failed` with
+      // "Full Name is required", which is the only reason it was findable.
+      //
+      // The `firstName`/`lastName` split stays on NormalizedLead: the source
+      // adapters genuinely receive names both ways, and joining here is the one
+      // place that has to know what the module currently looks like.
+      full_name: [normalized.firstName, normalized.lastName]
+        .map((part) => (part ?? '').trim())
+        .filter(Boolean)
+        .join(' ') || 'Unknown',
       email: normalized.email ?? null,
-      mobile,
+      country_code: parts?.countryCode ?? '+91',
+      mobile: parts?.national ?? null,
+      // Keeps its full dialable form: this is what a wa.me link and the Cloud
+      // API actually send to, and it has no per-country length rule.
       whatsapp_number: mobile,
       status: 'New',
       lead_source: normalized.source,
@@ -335,7 +365,14 @@ export function normalizePortal(source: string, payload: Record<string, unknown>
     email: get('email', 'Email', 'senderEmail', 'buyer_email'),
     mobile: get('phone', 'mobile', 'Phone', 'senderPhone', 'contact_number', 'buyer_phone'),
     source,
-    subSource: 'Portal',
+    // 'Portal' is not a value this picklist has ever offered — it holds
+    // Organic / Paid / Retargeting / … — so every 99acres, MagicBricks and
+    // Housing lead was refused with "Sub Source must be one of: …" and lost.
+    // Which portal it was is already recorded in `lead_source`; what
+    // `sub_source` is actually for is the paid-vs-organic split that drives
+    // campaign ROI, and a portal listing is bought, exactly like the Google and
+    // Facebook adapters above.
+    subSource: 'Paid',
     projectName: get('project', 'projectName', 'property_name', 'listing_title'),
     message: get('message', 'query', 'comments', 'requirement'),
     locations: [get('locality', 'location', 'city')].filter(Boolean) as string[],

@@ -159,6 +159,58 @@ export function toInternational(
   return `+${code}${digits}`;
 }
 
+/**
+ * The country codes a lead's `country_code` picklist offers, longest first so
+ * that prefix matching is unambiguous — `+971` has to be tried before `+97`
+ * would ever be, and `+91` before `+9`.
+ */
+const KNOWN_COUNTRY_CODES = ['+971', '+966', '+974', '+968', '+965', '+973', '+91', '+65', '+61', '+44', '+1'] as const;
+
+/**
+ * The inverse of `toInternational`: pull a dialable number apart into the two
+ * fields a lead actually stores.
+ *
+ * Every automated lead source hands over one string — `+919812345671` from a
+ * portal, `9812345671` from a web form — while the module keeps `country_code`
+ * and a national `mobile` apart, with a per-country digit count. Writing the
+ * E.164 form straight into `mobile` fails validation ("must be exactly 10
+ * digits") and the enquiry is lost, so something has to do this split, and
+ * doing it here means the server and the web app agree on the answer.
+ *
+ * Falls back to the default country only when the number carries no code of its
+ * own — never overriding one that was supplied, because guessing +91 for a
+ * Dubai buyer sends their WhatsApp to a stranger in India.
+ */
+export function splitPhone(
+  value: string | null | undefined,
+  defaultCountryCode = '+91',
+): { countryCode: string; national: string } | null {
+  const raw = (value ?? '').trim();
+  const digits = raw.replace(/\D/g, '');
+  if (!digits) return null;
+
+  // No explicit code and a plain national-length number: take the default.
+  if (!raw.startsWith('+') && digits.length <= 10) {
+    return { countryCode: defaultCountryCode, national: digits };
+  }
+
+  for (const code of KNOWN_COUNTRY_CODES) {
+    const bare = code.slice(1);
+    // Require something left over that could be a real subscriber number, so
+    // "+1" never swallows the front of an Indian number that lost its plus.
+    if (digits.startsWith(bare) && digits.length - bare.length >= 6) {
+      return { countryCode: code, national: digits.slice(bare.length) };
+    }
+  }
+
+  // Unrecognised code: keep the last ten digits as the national part, which is
+  // what every lookup in this codebase matches on anyway.
+  if (digits.length > 10) {
+    return { countryCode: `+${digits.slice(0, digits.length - 10)}`, national: digits.slice(-10) };
+  }
+  return { countryCode: defaultCountryCode, national: digits };
+}
+
 export function formatDate(value: string | Date | null | undefined, locale = 'en-IN'): string {
   if (!value) return '—';
   const d = typeof value === 'string' ? new Date(value) : value;
