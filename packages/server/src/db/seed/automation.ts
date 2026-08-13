@@ -133,6 +133,23 @@ const WORKFLOWS: WorkflowSeed[] = [
   // --- Inventory -------------------------------------------------------------
   {
     module: 'properties',
+    name: 'Alert buyers waiting for new stock',
+    description: 'When a unit is listed, tells each rep which of their buyers were waiting for exactly this. Whoever calls first sells it, so this is the alert that has to be automatic.',
+    trigger: 'on_create',
+    conditions: { logic: 'AND', conditions: [{ field: 'status', operator: 'equals', value: 'Available' }] },
+    tasks: [{ type: 'ai_action', name: 'Match and alert', config: { action: 'match_buyers' } }],
+  },
+  {
+    module: 'properties',
+    name: 'Re-alert when a unit is repriced or returns',
+    description: 'A price cut brings a different set of buyers into range, and an expired hold puts the unit back on the market. Both are new news to somebody — the action only alerts buyers it has not already named for this unit.',
+    trigger: 'on_field_change',
+    watchFields: ['status', 'total_price', 'base_price', 'possession_status'],
+    conditions: { logic: 'AND', conditions: [{ field: 'status', operator: 'equals', value: 'Available' }] },
+    tasks: [{ type: 'ai_action', name: 'Match and alert', config: { action: 'match_buyers' } }],
+  },
+  {
+    module: 'properties',
     name: 'Release expired blocks',
     description: 'Frees units whose hold period has elapsed so stock never silently disappears.',
     trigger: 'scheduled',

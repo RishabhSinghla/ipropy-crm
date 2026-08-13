@@ -405,6 +405,21 @@ const TASK_TYPE_LABELS: Record<string, string> = {
   delay: 'Wait',
 };
 
+/**
+ * The AI actions the workflow engine actually implements — the switch in
+ * `server/src/ai/actions.ts`. Anything not on this list falls through to its
+ * default case, which logs and does nothing.
+ */
+const AI_ACTIONS: { value: string; label: string; hint: string }[] = [
+  { value: 'score_lead', label: 'Score and grade the lead', hint: 'Writes an AI score, a grade and the reasons behind them.' },
+  { value: 'match_properties', label: 'Match properties to this buyer', hint: 'Ranks available inventory against the requirement and tells the owner.' },
+  { value: 'match_buyers', label: 'Match buyers to this unit', hint: 'Tells each rep which of their buyers were waiting for this unit. Only alerts a buyer once per unit.' },
+  { value: 'draft_message', label: 'Draft a message', hint: 'Writes a WhatsApp, email or SMS draft a following send step can use.' },
+  { value: 'summarise_record', label: 'Summarise the record', hint: 'Writes a short summary into the insights panel, and optionally a field.' },
+  { value: 'summarise_visit', label: 'Summarise a site visit', hint: 'Turns the visit feedback and objections into a summary and a sentiment.' },
+  { value: 'classify', label: 'Classify', hint: 'Answers a question you set with one of the options you list, and writes it to a field.' },
+];
+
 interface TaskDraft {
   key: string;
   type: string;
@@ -738,13 +753,24 @@ function TaskConfigFields({
         </div>
       );
 
-    case 'ai_action':
+    case 'ai_action': {
+      // A free-text box here was a trap: the engine logs "unknown AI workflow
+      // action" and does nothing, so a typo produced a workflow that ran, said
+      // it succeeded and had no effect. The placeholder it shipped with
+      // suggested `draft_reply`, which has never been one of them.
+      const action = (task.config.action as string) ?? '';
+      const options = AI_ACTIONS.map((a) => ({ value: a.value, label: a.label }));
+      if (action && !AI_ACTIONS.some((a) => a.value === action)) {
+        options.push({ value: action, label: `${action} (not recognised)` });
+      }
       return (
         <div className="space-y-2">
           <label className="label">Action</label>
-          <input className="input" value={(task.config.action as string) ?? ''} onChange={(e) => set({ action: e.target.value })} placeholder="e.g. score_lead, draft_reply" />
+          <Select value={action} onChange={(v) => set({ action: v })} options={options} placeholder="Choose an action" />
+          <p className="text-2xs text-muted">{AI_ACTIONS.find((a) => a.value === action)?.hint ?? ''}</p>
         </div>
       );
+    }
 
     default:
       return <p className="text-xs text-muted">No extra configuration for this action.</p>;
