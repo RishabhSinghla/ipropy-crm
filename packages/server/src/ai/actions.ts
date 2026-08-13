@@ -265,7 +265,9 @@ async function alertBuyerMatches(ctx: TaskContext, config: Record<string, unknow
     module: ctx.module,
     kind: 'buyer_match',
     title: `${strong.length} buyer${strong.length === 1 ? '' : 's'} waiting for this`,
-    body: strong.slice(0, 8).map((m) => `${m.label} — ${m.score}% fit${m.reasons[0] ? `. ${m.reasons[0]}` : ''}`).join('\n'),
+    // A list, because the insights panel renders markdown and a run of plain
+    // lines comes out as one paragraph of names.
+    body: strong.slice(0, 8).map((m) => `- **${m.label}** — ${m.score}% fit${m.reasons[0] ? `. ${m.reasons[0]}` : ''}`).join('\n'),
     data: { buyerIds: strong.map((m) => m.recordId), buyers: strong.slice(0, 10) },
     score: strong[0].score,
     replace: true,
