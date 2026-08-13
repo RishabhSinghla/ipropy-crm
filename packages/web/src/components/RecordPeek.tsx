@@ -17,10 +17,21 @@
  * Escape handling, backdrop dismissal and `aria-modal` — a peek is still a
  * dialog, and the accessibility suite scans it like one.
  */
+import { useQuery } from '@tanstack/react-query';
 import { Phone, Star } from 'lucide-react';
 import type { FieldMeta, ModuleMeta, RecordEnvelope } from '@ipropy/shared';
-import { Modal } from './ui';
+import { api } from '../lib/api';
+import { Modal, Spinner } from './ui';
 import { FieldValue } from './FieldRenderer';
+
+/**
+ * How many rows a peek shows when the caller has no column preference.
+ *
+ * A search result has no list behind it to inherit columns from, so the fields
+ * are chosen here — and capped, because a peek that runs past the fold is just
+ * the record page with extra steps.
+ */
+const DERIVED_FIELD_LIMIT = 8;
 
 /** The first phone-shaped value on the record, whatever the module calls it. */
 function firstPhone(row: RecordEnvelope, fields: FieldMeta[]): string | null {
@@ -37,8 +48,12 @@ export default function RecordPeek({
 }: {
   row: RecordEnvelope | null;
   module: ModuleMeta;
-  /** The columns the list is already showing — a peek should not reveal more than the list would. */
-  columns: string[];
+  /**
+   * The columns the list is already showing — a peek should not reveal more
+   * than the list would. Omitted when there is no list behind the peek (the
+   * global search), in which case the fields are derived from the record.
+   */
+  columns?: string[];
   fieldMap: Map<string, FieldMeta>;
   isNew: boolean;
   isStarred: boolean;
@@ -50,14 +65,30 @@ export default function RecordPeek({
   // Same rule the card itself uses: fields that make up the title are already
   // the heading, and empty ones are noise.
   const titleFields = new Set(module.labelFields ?? []);
-  const detail = columns.filter((col) => {
+  const hasValue = (col: string): boolean => {
+    const value = row.values[col];
+    if (value === null || value === undefined || value === '') return false;
+    if (Array.isArray(value)) return value.length > 0;
+    // An unticked checkbox arrives as `false` and an untouched address as `{}`.
+    // Both are "nothing recorded" as far as a reader is concerned — they render
+    // as an em dash — but they are not empty in JavaScript's sense, so without
+    // this a peek spends half its eight rows saying nothing. Seen on a real
+    // lead: address, requirement, do_not_call, do_not_whatsapp, email_opt_out,
+    // is_nri and loan_required were all present and all blank.
+    if (value === false) return false;
+    if (typeof value === 'object') return Object.values(value).some((v) => v !== null && v !== undefined && v !== '');
+    return true;
+  };
+  const usable = (col: string): boolean => {
     if (titleFields.has(col)) return false;
     const field = fieldMap.get(col);
-    if (!field || field.uitype === 'autonumber') return false;
-    const value = row.values[col];
-    return value !== null && value !== undefined && value !== ''
-      && !(Array.isArray(value) && !value.length);
-  });
+    if (!field || field.uitype === 'autonumber' || field.displayType === 'hidden') return false;
+    return hasValue(col);
+  };
+
+  const detail = (columns ?? [...fieldMap.keys()])
+    .filter(usable)
+    .slice(0, columns ? undefined : DERIVED_FIELD_LIMIT);
 
   const phone = firstPhone(row, [...fieldMap.values()]);
 
@@ -125,5 +156,60 @@ export default function RecordPeek({
         <p className="text-sm text-muted">Nothing else recorded yet.</p>
       )}
     </Modal>
+  );
+}
+
+/**
+ * The same peek, for a caller that only knows *which* record.
+ *
+ * A global search result carries an id, a label and a module name and nothing
+ * else, so the record and the module's field metadata are fetched on demand.
+ * Both are cached by react-query, which matters because pressing three results
+ * in a row is a normal thing to do and should not refetch the module each time.
+ */
+export function RecordPeekById({
+  target, onOpen, onClose,
+}: {
+  target: { module: string; id: string; label: string } | null;
+  onOpen: () => void;
+  onClose: () => void;
+}): JSX.Element | null {
+  const enabled = Boolean(target);
+
+  const { data: meta } = useQuery({
+    queryKey: ['module', target?.module],
+    queryFn: () => api.module(target!.module),
+    enabled,
+    staleTime: 10 * 60_000,
+  });
+
+  const { data: row, isLoading } = useQuery({
+    queryKey: ['record', target?.module, target?.id],
+    queryFn: () => api.record(target!.module, target!.id),
+    enabled,
+  });
+
+  if (!target) return null;
+
+  // Something has to be on screen the moment the finger lifts, or a slow
+  // network makes the gesture feel broken and people press again.
+  if (isLoading || !row || !meta) {
+    return (
+      <Modal open onClose={onClose} title={target.label} size="sm">
+        <div className="flex justify-center py-8"><Spinner className="text-slate-400" /></div>
+      </Modal>
+    );
+  }
+
+  return (
+    <RecordPeek
+      row={row}
+      module={meta}
+      fieldMap={new Map(meta.fields.map((f) => [f.name, f]))}
+      isNew={false}
+      isStarred={Boolean((row as RecordEnvelope & { starred?: boolean }).starred)}
+      onOpen={onOpen}
+      onClose={onClose}
+    />
   );
 }

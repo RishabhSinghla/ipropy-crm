@@ -89,6 +89,50 @@ test.describe('phone', () => {
     await expect(peek).toBeHidden();
   });
 
+  /**
+   * The same gesture on a search result, where it saves even more.
+   *
+   * Search is how you reach a record you cannot see, and following a result is
+   * a one-way trip: the dropdown closes, the query is cleared, and coming back
+   * means typing it again. Peeking answers "is this the right Sharma?" without
+   * spending the search.
+   */
+  test('pressing and holding a search result previews it without leaving the page', async ({ page }) => {
+    await page.goto('/leads');
+    await waitForRecords(page);
+
+    // Search for something that is definitely there — the record the list is
+    // already showing — rather than a hardcoded name that depends on seed data.
+    const label = ((await page.locator('div.md\\:hidden > div').first().locator('p').first().textContent()) ?? '').trim();
+    expect(label.length).toBeGreaterThan(1);
+
+    const search = page.getByPlaceholder(/search everything/i);
+    await search.click();
+    await search.fill(label.slice(0, 12));
+
+    // The dropdown is the only place a visible record link exists at this
+    // width: the cards are buttons and the desktop table is display:none.
+    const result = page.locator('a[href^="/leads/"]:visible').first();
+    await expect(result).toBeVisible({ timeout: 30_000 });
+    const box = await result.boundingBox();
+    expect(box).not.toBeNull();
+
+    await result.dispatchEvent('pointerdown', {
+      pointerType: 'touch', pointerId: 1, clientX: box!.x + 20, clientY: box!.y + box!.height / 2,
+    });
+    await page.waitForTimeout(600);
+    await result.dispatchEvent('pointerup', { pointerType: 'touch', pointerId: 1 });
+
+    const peek = page.getByRole('dialog');
+    await expect(peek).toBeVisible();
+    // The search must survive the peek — following the result is what costs it.
+    await expect(page).toHaveURL(/\/leads(\?|$)/);
+    await expect(peek.getByRole('button', { name: 'Open' })).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await expect(peek).toBeHidden();
+  });
+
   test('a quick tap does not trigger the preview', async ({ page }) => {
     // The gesture has to be distinguishable from an ordinary tap, or every
     // touch of the list throws a dialog in the way.

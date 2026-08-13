@@ -13,6 +13,8 @@ import { resolveIcon } from '../lib/icons';
 import { ErrorBoundary } from './ErrorBoundary';
 import { Avatar, Badge, Dropdown, DropdownItem, Spinner } from './ui';
 import AiAssistant from './AiAssistant';
+import { RecordPeekById } from './RecordPeek';
+import { usePressPreview } from '../lib/pressPreview';
 
 /** Resolve a lucide icon by its kebab-case metadata name (see lib/icons.ts for why this is a registry, not a namespace lookup). */
 export function ModuleIcon({ name, className }: { name: string; className?: string }): JSX.Element {
@@ -473,6 +475,10 @@ function NotificationBell(): JSX.Element {
 
 function GlobalSearch(): JSX.Element {
   const [query, setQuery] = useState('');
+  // Press and hold a result to see the record without leaving the search —
+  // the same gesture the lists use. See lib/pressPreview.ts.
+  const [peek, setPeek] = useState<{ module: string; id: string; label: string } | null>(null);
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [results, setResults] = useState<{ id: string; module: string; moduleLabel: string; label: string }[]>([]);
   const [loading, setLoading] = useState(false);
@@ -532,25 +538,59 @@ function GlobalSearch(): JSX.Element {
             <p className="px-3 py-6 text-center text-xs text-muted">No matches for “{query}”</p>
           )}
           {results.map((r) => (
-            <Link
+            <SearchResult
               key={r.id}
-              to={`/${r.module}/${r.id}`}
-              // A modified click opens a background tab and the browser leaves
-              // this page alone — so clearing the box would throw away the
-              // results somebody is deliberately working through one at a time.
-              onClick={(e) => {
-                if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
-                setOpen(false);
-                setQuery('');
-              }}
-              className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-800"
-            >
-              <span className="truncate text-sm">{r.label}</span>
-              <Badge className="shrink-0">{r.moduleLabel}</Badge>
-            </Link>
+              result={r}
+              onPeek={() => setPeek({ module: r.module, id: r.id, label: r.label })}
+              onNavigate={() => { setOpen(false); setQuery(''); }}
+            />
           ))}
         </div>
       )}
+
+      <RecordPeekById
+        target={peek}
+        onOpen={() => {
+          const target = peek;
+          setPeek(null);
+          setOpen(false);
+          setQuery('');
+          if (target) navigate(`/${target.module}/${target.id}`);
+        }}
+        onClose={() => setPeek(null)}
+      />
     </div>
+  );
+}
+
+/**
+ * One search result: a real link, so cmd/ctrl-click still opens a tab, plus the
+ * press-and-hold peek the record lists have. Split out because the hook cannot
+ * be called inside the map.
+ */
+function SearchResult({
+  result, onPeek, onNavigate,
+}: {
+  result: { id: string; module: string; moduleLabel: string; label: string };
+  onPeek: () => void;
+  onNavigate: () => void;
+}): JSX.Element {
+  const press = usePressPreview(onPeek);
+  return (
+    <Link
+      {...press}
+      to={`/${result.module}/${result.id}`}
+      // A modified click opens a background tab and the browser leaves this
+      // page alone — so clearing the box would throw away the results somebody
+      // is deliberately working through one at a time.
+      onClick={(e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+        onNavigate();
+      }}
+      className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-slate-50 [-webkit-touch-callout:none] dark:hover:bg-slate-800"
+    >
+      <span className="truncate text-sm">{result.label}</span>
+      <Badge className="shrink-0">{result.moduleLabel}</Badge>
+    </Link>
   );
 }
