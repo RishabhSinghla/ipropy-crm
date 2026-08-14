@@ -40,12 +40,20 @@ const HOLD_MS = 450;
  */
 const MOVE_TOLERANCE_PX = 10;
 
+/**
+ * How long after a peek a click is still assumed to be part of the same
+ * gesture. Generous enough to cover a slow lift, short enough that a later,
+ * deliberate tap is never mistaken for one.
+ */
+const CLICK_GRACE_MS = 700;
+
 export interface PressPreviewHandlers {
   onPointerDown: (e: React.PointerEvent) => void;
   onPointerUp: () => void;
   onPointerMove: (e: React.PointerEvent) => void;
   onPointerCancel: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
+  onClickCapture: (e: React.MouseEvent) => void;
 }
 
 /**
@@ -57,9 +65,15 @@ export interface PressPreviewHandlers {
 export function usePressPreview(onPeek: () => void, enabled = true): PressPreviewHandlers {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const origin = useRef<{ x: number; y: number } | null>(null);
-  // Set when a press fires, so the click that follows the finger lifting can be
-  // told apart from a tap — without it, opening the peek also navigates.
-  const fired = useRef(false);
+  // When a press last fired, so the click that follows the finger lifting can
+  // be told apart from a tap — without it, opening the peek also navigates.
+  // A timestamp rather than a flag: a peek dismissed with Escape produces no
+  // click at all, and a flag left standing would then swallow the *next*
+  // genuine tap on the same row.
+  const firedAt = useRef(0);
+
+  /** The click a finger produces lands within a frame or two of the lift. */
+  const justFired = useCallback(() => Date.now() - firedAt.current < CLICK_GRACE_MS, []);
 
   const clear = useCallback(() => {
     if (timer.current) clearTimeout(timer.current);
@@ -69,10 +83,16 @@ export function usePressPreview(onPeek: () => void, enabled = true): PressPrevie
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     if (!enabled || e.pointerType === 'mouse') return;
-    fired.current = false;
+    // Peekable things nest: a lookup value inside a card that is itself
+    // peekable. Both timers would fire and the last one to land would win,
+    // which is not a decision anybody made. The innermost wins instead —
+    // pressing the unit's name means you want the unit, not the row it sits
+    // in. This does not affect scrolling: pointer events do not drive it.
+    e.stopPropagation();
+    firedAt.current = 0;
     origin.current = { x: e.clientX, y: e.clientY };
     timer.current = setTimeout(() => {
-      fired.current = true;
+      firedAt.current = Date.now();
       // Android only; a no-op on iOS, which has no web haptic at all.
       navigator.vibrate?.(12);
       onPeek();
@@ -91,8 +111,24 @@ export function usePressPreview(onPeek: () => void, enabled = true): PressPrevie
     // Android raises its own long-press menu ("open in new tab", "copy link")
     // over the top of ours. Only suppressed once a peek has actually fired, so
     // a right-click on a laptop keeps working normally.
-    if (fired.current) e.preventDefault();
-  }, []);
+    if (justFired()) e.preventDefault();
+  }, [justFired]);
+
+  /**
+   * Swallow the click a lifted finger still produces.
+   *
+   * Without this, holding a link both peeks *and* follows it: the preview
+   * appears and the record page loads underneath it in the same gesture, which
+   * is precisely the round trip the preview exists to avoid. Capture phase,
+   * because the element's own onClick (React Router's `Link`, an inline-edit
+   * trigger) must not have run yet — both bail on `defaultPrevented`.
+   */
+  const onClickCapture = useCallback((e: React.MouseEvent) => {
+    if (!justFired()) return;
+    firedAt.current = 0;
+    e.preventDefault();
+    e.stopPropagation();
+  }, [justFired]);
 
   return {
     onPointerDown,
@@ -100,16 +136,6 @@ export function usePressPreview(onPeek: () => void, enabled = true): PressPrevie
     onPointerMove,
     onPointerCancel: clear,
     onContextMenu,
+    onClickCapture,
   };
-}
-
-/**
- * True once a press has just fired, for the click handler to bail on.
- *
- * A finger lifting after a long press still produces a click, so a row that
- * both peeks and navigates would do both — the preview would appear and be
- * replaced by the record page in the same gesture.
- */
-export function suppressClickAfterPeek(peekedAt: number | null): boolean {
-  return peekedAt !== null && Date.now() - peekedAt < 600;
 }

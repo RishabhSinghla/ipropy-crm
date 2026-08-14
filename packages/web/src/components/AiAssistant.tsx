@@ -11,6 +11,7 @@ import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { cn, renderMarkdown } from '../lib/utils';
 import { Badge, Spinner } from './ui';
+import { PeekLink } from './PeekLink';
 
 const SUGGESTIONS = [
   'Which leads should I call today?',
@@ -373,10 +374,10 @@ export default function AiAssistant({
                       {message.choices?.length ? (
                         <div className="mt-3 space-y-1 border-t border-slate-200 pt-2 dark:border-slate-700">
                           {message.choices.map((choice) => (
-                            <Link key={choice.id} to={`/${choice.module}/${choice.id}`} className="block rounded px-2 py-1.5 text-xs hover:bg-white dark:hover:bg-slate-700">
+                            <PeekLink key={choice.id} module={choice.module} id={choice.id} label={choice.label} className="block rounded px-2 py-1.5 text-xs hover:bg-white [-webkit-touch-callout:none] dark:hover:bg-slate-700">
                               <span className="font-medium">{choice.label}</span>
                               <span className="ml-1 text-muted">{choice.recordNumber ? `· ${choice.recordNumber}` : `· ${choice.moduleLabel}`}</span>
-                            </Link>
+                            </PeekLink>
                           ))}
                         </div>
                       ) : null}
@@ -387,10 +388,10 @@ export default function AiAssistant({
                             <Link to={`/${module}`} className="text-2xs text-brand-600 hover:underline dark:text-brand-400">Open module</Link>
                           </div>
                           {message.results.rows.slice(0, 8).map((row) => (
-                            <Link key={row.id} to={`/${module}/${row.id}`} className="flex items-center justify-between gap-2 rounded px-2 py-1 text-xs hover:bg-white dark:hover:bg-slate-700">
+                            <PeekLink key={row.id} module={module} id={row.id} label={row.label} className="flex items-center justify-between gap-2 rounded px-2 py-1 text-xs hover:bg-white [-webkit-touch-callout:none] dark:hover:bg-slate-700">
                               <span className="truncate font-medium text-slate-700 dark:text-slate-200">{row.label}</span>
                               {typeof row.values.ai_score === 'number' && <Badge color={Number(row.values.ai_score) >= 70 ? '#22c55e' : '#94a3b8'}>{String(row.values.ai_score)}</Badge>}
-                            </Link>
+                            </PeekLink>
                           ))}
                         </div>
                       )}

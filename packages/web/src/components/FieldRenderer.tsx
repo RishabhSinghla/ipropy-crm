@@ -19,6 +19,7 @@ import { api, tokenStore } from '../lib/api';
 import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
 import { Avatar, Badge, ScoreChip } from './ui';
+import { PeekLink } from './PeekLink';
 
 /**
  * A plain <img src> can't carry the app's Authorization header, and
@@ -145,10 +146,18 @@ export function FieldValue({
     case 'reference': {
       const label = display || String(value);
       if (linkTo) {
+        // The single most useful peek in the CRM: a lead says "Interested In:
+        // Skyline Aurum" and the question is always what that unit is. Reading
+        // it otherwise means leaving the lead and coming back.
         return (
-          <Link to={`/${linkTo}/${value}`} className="text-brand-600 hover:underline dark:text-brand-400">
+          <PeekLink
+            module={linkTo}
+            id={String(value)}
+            label={label}
+            className="text-brand-600 hover:underline [-webkit-touch-callout:none] dark:text-brand-400"
+          >
             {label}
-          </Link>
+          </PeekLink>
         );
       }
       return <span>{label}</span>;

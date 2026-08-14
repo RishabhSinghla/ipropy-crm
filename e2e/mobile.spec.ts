@@ -151,6 +151,62 @@ test.describe('phone', () => {
     await expect(page.getByRole('dialog')).toHaveCount(0);
   });
 
+  /**
+   * The same gesture on the dashboard, which is the first screen on a phone and
+   * the one where "who is this?" gets asked most — a widget row is a name and a
+   * date, and everything you need to decide whether to ring them is one screen
+   * away in the wrong direction.
+   */
+  test('a dashboard row previews without leaving the dashboard', async ({ page }) => {
+    await page.goto('/dashboard');
+
+    const row = page.locator('a[href^="/leads/"]:visible').first();
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    const box = await row.boundingBox();
+
+    await row.dispatchEvent('pointerdown', {
+      pointerType: 'touch', pointerId: 1, clientX: box!.x + 20, clientY: box!.y + box!.height / 2,
+    });
+    await page.waitForTimeout(600);
+    await row.dispatchEvent('pointerup', { pointerType: 'touch', pointerId: 1 });
+    // The click a lifted finger produces. Without the capture-phase guard this
+    // is what followed the link out from under the preview.
+    await row.dispatchEvent('click', { button: 0 });
+
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await expect(page).toHaveURL(/\/dashboard/);
+  });
+
+  /**
+   * Escape produces no click at all, so a flag set by the peek and cleared by
+   * the click would still be standing — and would eat the next genuine tap on
+   * the same row. It is a timestamp for exactly this.
+   */
+  test('a tap still works after a preview was dismissed with Escape', async ({ page }) => {
+    await page.goto('/dashboard');
+
+    const row = page.locator('a[href^="/leads/"]:visible').first();
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    const href = await row.getAttribute('href');
+    const box = await row.boundingBox();
+
+    await row.dispatchEvent('pointerdown', {
+      pointerType: 'touch', pointerId: 1, clientX: box!.x + 20, clientY: box!.y + box!.height / 2,
+    });
+    await page.waitForTimeout(600);
+    await row.dispatchEvent('pointerup', { pointerType: 'touch', pointerId: 1 });
+    await expect(page.getByRole('dialog')).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toBeHidden();
+
+    // Past the grace window, so this is a new gesture rather than the tail of
+    // the old one.
+    await page.waitForTimeout(800);
+    await page.locator(`a[href="${href}"]:visible`).first().click();
+    await expect(page).toHaveURL(new RegExp(href!.replace(/\//g, '\\/')));
+  });
+
   test('a record opens and can be inline-edited from a phone', async ({ page }) => {
     await page.goto('/leads');
     await waitForRecords(page);

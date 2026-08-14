@@ -23,6 +23,7 @@ import { tintedTextVars } from '../lib/color';
 import { cn, renderMarkdown } from '../lib/utils';
 import { Badge, ConfirmDialog, Dropdown, DropdownItem, EmptyState, Modal, ScoreChip, Skeleton, Spinner } from '../components/ui';
 import WidgetBuilder from '../components/WidgetBuilder';
+import { PeekLink } from '../components/PeekLink';
 
 const PALETTE = ['#6366f1', '#22c55e', '#f59e0b', '#ec4899', '#0ea5e9', '#a855f7', '#14b8a6', '#f97316', '#64748b', '#ef4444'];
 
@@ -534,8 +535,17 @@ function DigestBanner(): JSX.Element | null {
                     <span className="truncate font-medium">{p.title}</span>
                   </span>
                 );
+                // The reason lives in a title attribute, which a phone has no
+                // way to show — press and hold reaches the record itself,
+                // which is the thing the reason was pointing at anyway.
                 return p.recordId && p.module
-                  ? <li key={i}><Link to={`/${p.module}/${p.recordId}`} title={p.reason}>{content}</Link></li>
+                  ? (
+                    <li key={i}>
+                      <PeekLink module={p.module} id={p.recordId} label={p.title} title={p.reason}>
+                        {content}
+                      </PeekLink>
+                    </li>
+                  )
                   : <li key={i} title={p.reason}>{content}</li>;
               })}
             </ul>
@@ -821,7 +831,12 @@ function ActivityFeedCard({ widget, data }: { widget: DashboardWidget; data: Rec
           const when = row[sortField];
           return (
             <li key={row.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/60">
-              <Link to={`/${row.module ?? module}/${row.id}`} className="block px-4 py-2">
+              <PeekLink
+                module={String(row.module ?? module)}
+                id={String(row.id)}
+                label={String(row.label ?? '')}
+                className="block px-4 py-2 [-webkit-touch-callout:none]"
+              >
                 <p className="truncate text-xs font-medium text-slate-800 dark:text-slate-200">{row.label}</p>
                 <p className="mt-0.5 flex flex-wrap gap-x-2 text-2xs text-muted">
                   {Object.entries(row.__display ?? {})
@@ -830,7 +845,7 @@ function ActivityFeedCard({ widget, data }: { widget: DashboardWidget; data: Rec
                     .map(([key, value]) => <span key={key}>{value}</span>)}
                   {typeof when === 'string' && <span>{relativeTime(when)}</span>}
                 </p>
-              </Link>
+              </PeekLink>
             </li>
           );
         })}
@@ -872,13 +887,15 @@ function CalendarCard({ widget, data }: { widget: DashboardWidget; data: Record<
                   : '—';
                 return (
                   <li key={row.id}>
-                    <Link
-                      to={`/${row.module ?? module}/${row.id}`}
-                      className="flex items-baseline gap-2 rounded px-1 py-0.5 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                    <PeekLink
+                      module={String(row.module ?? module)}
+                      id={String(row.id)}
+                      label={String(row.label ?? '')}
+                      className="flex items-baseline gap-2 rounded px-1 py-0.5 hover:bg-slate-50 [-webkit-touch-callout:none] dark:hover:bg-slate-800/60"
                     >
                       <span className="shrink-0 text-2xs text-muted tnum">{time}</span>
                       <span className="min-w-0 truncate text-xs text-slate-800 dark:text-slate-200">{row.label}</span>
-                    </Link>
+                    </PeekLink>
                   </li>
                 );
               })}
@@ -1336,12 +1353,14 @@ function TableCard({ widget, data }: { widget: DashboardWidget; data: Record<str
               return (
                 <tr key={String(row.id)} className="hover:bg-slate-50 dark:hover:bg-slate-800/60">
                   <td className="px-4 py-2">
-                    <Link
-                      to={`/${module ?? row.module}/${row.id}`}
-                      className="text-sm font-medium text-slate-800 hover:text-brand-600 dark:text-slate-200"
+                    <PeekLink
+                      module={String(module ?? row.module)}
+                      id={String(row.id)}
+                      label={String(row.label ?? '')}
+                      className="text-sm font-medium text-slate-800 hover:text-brand-600 [-webkit-touch-callout:none] dark:text-slate-200"
                     >
                       {String(row.label ?? '')}
-                    </Link>
+                    </PeekLink>
                     <div className="mt-0.5 flex flex-wrap gap-x-3 text-2xs text-muted">
                       {columns.slice(1, 4).map((c) => {
                         const v = display[c] ?? row[c];

@@ -26,6 +26,7 @@ import {
 import { ModuleIcon } from '../components/Layout';
 import DocumentViewer, { isPreviewable, type ViewableFile } from '../components/DocumentViewer';
 import ComposeModal from '../components/ComposeModal';
+import { PeekLink } from '../components/PeekLink';
 
 export default function RecordDetail(): JSX.Element {
   const { module: moduleName, id } = useParams<{ module: string; id: string }>();
@@ -885,9 +886,14 @@ function RelatedTab({
                     return (
                       <td key={c} className="table-cell">
                         {i === 0 ? (
-                          <Link to={`/${relation!.targetModule}/${row.id}`} className="font-medium text-brand-600 hover:underline dark:text-brand-400">
+                          <PeekLink
+                            module={relation!.targetModule}
+                            id={row.id}
+                            label={row.label}
+                            className="font-medium text-brand-600 hover:underline [-webkit-touch-callout:none] dark:text-brand-400"
+                          >
                             {field ? <FieldValue field={field} value={row.values[c]} display={row.display?.[c]} compact /> : row.label}
-                          </Link>
+                          </PeekLink>
                         ) : field ? (
                           <FieldValue field={field} value={row.values[c]} display={row.display?.[c]} compact />
                         ) : '—'}
