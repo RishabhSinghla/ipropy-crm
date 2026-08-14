@@ -406,6 +406,27 @@ function revivalReason(
   }
 }
 
+/**
+ * Configurations a buyer might accept for this unit.
+ *
+ * The scorer treats an adjacent BHK count as a soft miss rather than a
+ * disqualification — somebody wanting a 3 BHK will look at a 2.5 — so the SQL
+ * ordering has to know about that too, or it would rank a genuine near-match
+ * below an irrelevant lead with a high AI score.
+ */
+function acceptableConfigurations(configuration: string | null): string[] {
+  if (!configuration) return [];
+  const wanted = bhkNumber(configuration);
+  if (wanted === null) return [configuration];
+  const out = new Set([configuration]);
+  for (const step of [-1, -0.5, 0.5, 1]) {
+    const near = wanted + step;
+    if (near <= 0) continue;
+    out.add(`${Number.isInteger(near) ? near : near.toFixed(1)} BHK`);
+  }
+  return [...out];
+}
+
 /** How much better a revival has to look than an ordinary match to be worth the call. */
 const REVIVAL_SCORE_FLOOR = 70;
 
@@ -458,9 +479,27 @@ export async function matchBuyersForProperty(propertyId: string, limit = 10): Pr
            AND (l.budget_min IS NULL OR l.budget_min <= $1 * 1.2)
          OR l.status = 'Lost' AND l.lost_reason IS NOT NULL
        )
-     ORDER BY l.ai_score DESC NULLS LAST
+     -- Ordered by how likely this lead is to match *this unit*, not by how
+     -- good a lead they are in general.
+     --
+     -- This was ORDER BY ai_score DESC LIMIT 400, which is correct-looking
+     -- and silently wrong the moment the table outgrows the limit. At a
+     -- hundred leads, 400 means everybody and the JS scorer sees the whole
+     -- table. At sixty thousand it means the four hundred highest-scoring
+     -- leads in the business — a slice with no relationship to whether any of
+     -- them wants a 4 BHK in Baner. Measured: ten buyers per unit at 99 leads,
+     -- zero at 60,000, from the same code. The alert would have quietly
+     -- stopped working as the desk grew, which is the worst way for a feature
+     -- to fail.
+     --
+     -- Nothing is excluded that was not excluded before — the scorer still
+     -- decides, and still forgives a location miss or an adjacent BHK count.
+     -- This only makes the four hundred rows fetched the right four hundred.
+     ORDER BY (l.configuration ?| $2::text[]) DESC,
+              (l.preferred_locations ? $3) DESC,
+              l.ai_score DESC NULLS LAST
      LIMIT 400`,
-    [price],
+    [price, acceptableConfigurations(property.configuration), property.locality ?? ''],
   );
 
   return leads.rows

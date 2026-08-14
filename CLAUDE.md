@@ -285,6 +285,31 @@ can set a header.
 
 ---
 
+## Scale
+
+`scripts/load-test-data.sql` loads a realistic year — 60,000 leads, 8,000 units, 272,000
+audit rows — into a **throwaway** database in about fifteen seconds. Never point it at a
+database you care about; it inserts directly, so no validation or workflows run.
+
+```bash
+docker exec ipropy-db psql -U ipropy -d postgres -c "CREATE DATABASE ipropy_scale;"
+DATABASE_URL='postgresql://ipropy:ipropy@localhost:5432/ipropy_scale' npm run db:migrate
+DATABASE_URL='postgresql://ipropy:ipropy@localhost:5432/ipropy_scale' npm run db:seed
+docker exec -i ipropy-db psql -U ipropy -d ipropy_scale < scripts/load-test-data.sql
+```
+
+Measured at that size, all well indexed: lists 59ms, deep paging 73ms, text search 42ms,
+matching 33ms, comparables 8ms, dashboard 4ms.
+
+**The bug it found, and the shape to watch for.** `matchBuyersForProperty` pre-filtered with
+`ORDER BY ai_score DESC LIMIT 400`. At 99 leads that is everybody; at 60,000 it is the four
+hundred best leads *in the business*, which says nothing about whether any of them wants a
+4 BHK in Baner. Ten buyers per unit became zero, silently, from identical code. Any
+`ORDER BY <global ranking> LIMIT <n>` feeding an in-memory scorer has this defect — the
+ordering has to encode relevance to the specific thing being matched.
+
+---
+
 ## Notifications
 
 **Never `INSERT INTO ipy_notification` directly.** Everything goes through `notify()` /
