@@ -7,13 +7,14 @@
   "workspaces": [
     "packages/shared",
     "packages/server",
-    "packages/web"
+    "packages/web",
+    "packages/mcp"
   ],
   "engines": {
     "node": ">=20.0.0"
   },
   "scripts": {
-    "build": "npm run build -w @ipropy/shared && npm run build -w @ipropy/server && npm run build -w @ipropy/web",
+    "build": "npm run build -w @ipropy/shared && npm run build -w @ipropy/server && npm run build -w @ipropy/web && npm run build -w @ipropy/mcp",
     "build:shared": "npm run build -w @ipropy/shared",
     "dev": "concurrently -n server,web -c cyan,magenta \"npm run dev -w @ipropy/server\" \"npm run dev -w @ipropy/web\"",
     "dev:server": "npm run dev -w @ipropy/server",
@@ -21,9 +22,9 @@
     "worker": "npm run worker -w @ipropy/server",
     "check:prod": "npm run check:prod -w @ipropy/server",
     "secrets:generate": "bash scripts/gen-secrets.sh",
-    "typecheck": "npm run typecheck -w @ipropy/shared && npm run typecheck -w @ipropy/server && npm run typecheck -w @ipropy/web",
+    "typecheck": "npm run typecheck -w @ipropy/shared && npm run typecheck -w @ipropy/server && npm run typecheck -w @ipropy/web && npm run typecheck -w @ipropy/mcp",
     "pretypecheck": "npm run build -w @ipropy/shared",
-    "test": "npm run test -w @ipropy/server && npm run test -w @ipropy/web",
+    "test": "npm run test -w @ipropy/server && npm run test -w @ipropy/web && npm run test -w @ipropy/mcp",
     "pretest": "npm run build -w @ipropy/shared",
     "db:migrate": "npm run db:migrate -w @ipropy/server",
     "db:seed": "npm run db:seed -w @ipropy/server",

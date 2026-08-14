@@ -4,7 +4,7 @@ import { createShareLink, listShareLinks, revokeShareLink } from '../../core/sha
 import type { FilterGroup } from '@ipropy/shared';
 import { db, transaction } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
-import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
+import { blockApiKey, getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../utils/errors.js';
 import { registry } from '../../core/metadata/registry.js';
 import { recordService } from '../../core/entity/recordService.js';
@@ -19,6 +19,20 @@ import { notifyMany } from '../../core/notifications/index.js';
 
 export const recordsRouter = Router();
 recordsRouter.use(requireAuth);
+
+/**
+ * A connected app can read, create and update. It can never delete.
+ *
+ * Deletion is the one action with no undo from the far side of an assistant:
+ * a misread instruction that updates a status is a mistake somebody notices
+ * and reverses, and one that empties a list is a restore-from-backup. The line
+ * is drawn here rather than by choosing which tools to publish, because the key
+ * can be pointed at any client, not just the one we wrote.
+ */
+recordsRouter.use((req, res, next) => {
+  const destructive = req.method === 'DELETE' || req.path.endsWith('/mass-delete');
+  return destructive ? blockApiKey(req, res, next) : next();
+});
 
 const filterSchema: z.ZodType<FilterGroup> = z.lazy(() =>
   z.object({

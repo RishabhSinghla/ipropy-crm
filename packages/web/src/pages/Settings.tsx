@@ -209,6 +209,7 @@ function SecurityTab(): JSX.Element {
     <div className="space-y-4">
       <PasskeysCard />
       <DevicePinCard />
+      <ConnectedAppsCard />
 
       <div className="card p-5">
         <p className="mb-3 text-sm font-medium">Change password</p>
@@ -264,6 +265,149 @@ function SecurityTab(): JSX.Element {
           })}
         </ul>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Keys that let something outside the CRM act as you — an AI assistant, a
+ * phone shortcut, a script.
+ *
+ * The key is shown once, on creation, and only ever stored hashed. That is not
+ * theatre: this string is a password with no second factor, and a list that can
+ * re-display it turns one glance at a screen into permanent access to a
+ * colleague's pipeline.
+ *
+ * What a key can do is deliberately narrower than what you can do in the CRM:
+ * it reads, creates and updates records you already have access to, and that is
+ * all. It cannot administer the CRM, change fields or delete anything — see
+ * `blockApiKey` in the server's auth middleware.
+ */
+function ConnectedAppsCard(): JSX.Element {
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [fresh, setFresh] = useState<{ name: string; key: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [revoking, setRevoking] = useState<{ id: string; name: string } | null>(null);
+
+  const { data: keys, refetch } = useQuery({
+    queryKey: ['api-keys'],
+    queryFn: () => api.apiKeys(),
+  });
+
+  const create = async (): Promise<void> => {
+    if (!name.trim()) { toast.error('Give the key a name so you know what to revoke later'); return; }
+    setBusy(true);
+    try {
+      const created = await api.createApiKey(name.trim());
+      setFresh({ name: created.name, key: created.key });
+      setName('');
+      setCopied(false);
+      await refetch();
+    } catch (err) {
+      toast.error('Could not create the key', (err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const revoke = async (id: string): Promise<void> => {
+    try {
+      await api.revokeApiKey(id);
+      toast.success('Key revoked', 'Anything using it stops working immediately.');
+      await refetch();
+    } catch (err) {
+      toast.error('Could not revoke the key', (err as Error).message);
+    }
+  };
+
+  const live = (keys ?? []).filter((k) => !k.revoked_at);
+
+  return (
+    <div className="card p-5">
+      <p className="text-sm font-medium">Connected apps</p>
+      <p className="mt-1 text-xs text-muted">
+        A key lets an assistant like Claude or ChatGPT work with your CRM records. It can read,
+        add and update — the same records you can see, and nothing more. It can never delete
+        anything or reach the admin area.
+      </p>
+
+      {fresh && (
+        <div className="mt-3 rounded-lg border border-brand-200 bg-brand-50 p-3 dark:border-brand-900 dark:bg-brand-950/40">
+          <p className="text-xs font-medium">Copy “{fresh.name}” now — it is not shown again.</p>
+          <div className="mt-2 flex items-center gap-2">
+            <code className="min-w-0 flex-1 truncate rounded bg-white px-2 py-1.5 font-mono text-2xs dark:bg-slate-900">
+              {fresh.key}
+            </code>
+            <button
+              className="btn-secondary btn-sm shrink-0"
+              onClick={() => {
+                void navigator.clipboard.writeText(fresh.key).then(() => {
+                  setCopied(true);
+                  toast.success('Copied');
+                });
+              }}
+            >
+              {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+          <button className="mt-2 text-2xs text-muted hover:underline" onClick={() => setFresh(null)}>
+            I have saved it — hide this
+          </button>
+        </div>
+      )}
+
+      <div className="mt-3 flex flex-wrap items-end gap-2">
+        <div className="min-w-[12rem] flex-1">
+          <label className="label" htmlFor="api-key-name">What is it for?</label>
+          <input
+            id="api-key-name"
+            className="input"
+            placeholder="e.g. Claude on my laptop"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') void create(); }}
+          />
+        </div>
+        <button className="btn-primary btn-sm" disabled={busy} onClick={() => void create()}>
+          {busy ? <Spinner className="h-3 w-3" /> : <Plus className="h-3.5 w-3.5" />} Create key
+        </button>
+      </div>
+
+      {live.length > 0 && (
+        <ul className="mt-4 divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-700">
+          {live.map((k) => (
+            <li key={k.id} className="flex items-center gap-3 px-3 py-2">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-medium">{k.name}</p>
+                <p className="text-2xs text-muted">
+                  <span className="font-mono">{k.key_prefix}…</span>
+                  {' · '}
+                  {k.last_used_at ? `last used ${relativeTime(k.last_used_at)}` : 'never used'}
+                </p>
+              </div>
+              <button
+                className="btn-ghost p-1 text-slate-400 hover:text-red-500"
+                title={`Revoke ${k.name}`}
+                onClick={() => setRevoking({ id: k.id, name: k.name })}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <ConfirmDialog
+        open={Boolean(revoking)}
+        title={`Revoke “${revoking?.name}”?`}
+        body="Whatever is using this key stops working straight away. You can always create another."
+        confirmLabel="Revoke"
+        danger
+        onConfirm={() => { const id = revoking?.id; setRevoking(null); if (id) void revoke(id); }}
+        onClose={() => setRevoking(null)}
+      />
     </div>
   );
 }

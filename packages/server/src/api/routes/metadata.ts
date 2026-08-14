@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { UITYPE_LIST, UITYPES } from '@ipropy/shared';
 import { db, transaction } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
-import { getUser, requireAuth } from '../../middleware/auth.js';
+import { blockApiKey, getUser, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, ConflictError, NotFoundError } from '../../utils/errors.js';
 import { registry } from '../../core/metadata/registry.js';
 import { assertCapability, canAccessModule, getFieldPermissions, getModulePermission, hasCapability, invalidatePermissions } from '../../core/permissions/index.js';
@@ -13,6 +13,13 @@ import { previewNumber } from '../../core/entity/numbering.js';
 
 export const metadataRouter = Router();
 metadataRouter.use(requireAuth);
+/**
+ * A connected app needs to *read* the schema — an assistant cannot fill in a
+ * lead without knowing the module's fields. Reshaping it is a different act
+ * entirely, and one nobody should be able to do with a string in a config
+ * file, so every write here stays behind a signed-in session.
+ */
+metadataRouter.use((req, res, next) => (req.method === 'GET' ? next() : blockApiKey(req, res, next)));
 
 /** Reload metadata + permission caches after any admin change. */
 function invalidateAll(): void {

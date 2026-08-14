@@ -468,6 +468,19 @@ export const api = {
   changePassword: (currentPassword: string, newPassword: string) =>
     post('/api/auth/change-password', { currentPassword, newPassword }),
 
+  // --- connected apps -------------------------------------------------------
+  /** The plaintext `key` comes back once, on creation, and is never readable again. */
+  createApiKey: (name: string, expiresInDays?: number) =>
+    post<{ id: string; name: string; key: string; prefix: string; expiresAt: string | null }>(
+      '/api/auth/api-keys', { name, expiresInDays },
+    ),
+  apiKeys: () => get<{
+    id: string; name: string; key_prefix: string;
+    last_used_at: string | null; expires_at: string | null;
+    revoked_at: string | null; created_at: string;
+  }[]>('/api/auth/api-keys'),
+  revokeApiKey: (id: string) => del(`/api/auth/api-keys/${id}`),
+
   // --- metadata -----------------------------------------------------------
   modules: () => get<ModuleSummary[]>('/api/meta/modules'),
   module: (name: string, opts: { includeInactive?: boolean } = {}) => get<ModuleMeta & {

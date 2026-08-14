@@ -12,7 +12,7 @@ picklists, views, roles, sharing rules, workflows and dashboards are **data, not
 reshape the product at runtime with no deploy and no DDL.
 
 Stack: Node 20 + TypeScript + Express + PostgreSQL 16 · React 18 + Vite + Tailwind + TanStack Query ·
-Socket.IO · Claude. npm workspaces: `packages/{shared,server,web}`.
+Socket.IO · Claude. npm workspaces: `packages/{shared,server,web,mcp}`.
 
 Vtiger (at `../vtigercrm`) is an **architecture reference only**. No Vtiger code is used.
 
@@ -246,6 +246,31 @@ Two traps worth knowing:
 * `getAiProviderSettings(provider)` exists so the admin panel's "Test connection" tests the card the
   admin clicked, not whichever provider happens to have won resolution. Don't reach for
   `getSettings().ai` there.
+
+---
+
+## Connected apps (MCP)
+
+`packages/mcp` exposes the CRM to Claude, ChatGPT or any MCP client. It holds **no**
+business logic and **never** touches the database: every call goes out through the
+CRM's own HTTP API carrying a personal API key, so profile permissions, the role
+hierarchy, sharing rules, field visibility, validation, workflows and the audit trail
+all apply unchanged. A direct query would have none of them — that is the whole reason
+this is safe to point at real customer data.
+
+Three rules the server side enforces, in `middleware/auth.ts`:
+
+* `requireAuth` accepts an `x-api-key` as well as a session token, and records which
+  one it was in `req.authSource` → `ipy_audit.source`, so an assistant's writes are
+  distinguishable from a person's.
+* `blockApiKey` shuts the admin router and every non-GET metadata route. A key can
+  read the schema (an assistant needs the field names); it can never reshape it, and
+  it can never administer the CRM — including when the key belongs to an admin.
+* The records router refuses `DELETE` and `mass-delete` from a key entirely. A key
+  reads, creates and updates. Nothing else.
+
+The MCP server itself starts **read-only**; writing is opt-in per connection with
+`IPROPY_READ_ONLY=false`. See `packages/mcp/README.md` for the setup a person follows.
 
 ---
 

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { CAPABILITIES } from '@ipropy/shared';
 import { db, transaction } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
-import { getUser, hashPassword, requireAuth } from '../../middleware/auth.js';
+import { blockApiKey, getUser, hashPassword, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, ConflictError, NotFoundError } from '../../utils/errors.js';
 import { assertCapability, invalidatePermissions } from '../../core/permissions/index.js';
 import { registry } from '../../core/metadata/registry.js';
@@ -20,6 +20,9 @@ import { listIntegrationModels } from '../../ai/models.js';
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth);
+// Administering the CRM is a thing a person does while signed in, not a thing a
+// long-lived key in a config file should be able to do on their behalf.
+adminRouter.use(blockApiKey);
 
 // ---------------------------------------------------------------------------
 // Users

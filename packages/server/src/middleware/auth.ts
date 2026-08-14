@@ -13,6 +13,12 @@ declare global {
     interface Request {
       user?: AuthUser;
       scope?: ScopeContext;
+      /**
+       * How this request proved who it is. Carried through to `ipy_audit.source`,
+       * so "who changed this?" can distinguish a person clicking in the CRM from
+       * an assistant acting on their behalf through a connected app.
+       */
+      authSource?: 'app' | 'api_key';
     }
   }
 }
@@ -121,21 +127,87 @@ function extractToken(req: Request): string | null {
   return null;
 }
 
-/** Require a signed-in user; attaches req.user and req.scope. */
+/**
+ * Resolve an `x-api-key` header to the user it belongs to.
+ *
+ * The prefix narrows the lookup to a handful of rows; the bcrypt compare is
+ * what actually authenticates, so a key that merely shares a prefix gets
+ * nowhere. Returns null when there is no key header at all, so callers can
+ * treat "no key" and "bad key" differently.
+ */
+async function userFromApiKey(req: Request): Promise<AuthUser | null> {
+  const key = req.headers['x-api-key'];
+  if (typeof key !== 'string' || !key) return null;
+
+  const rows = await db.query<{ id: string; key_hash: string; user_id: string | null; expires_at: string | null; revoked_at: string | null }>(
+    `SELECT id, key_hash, user_id, expires_at, revoked_at FROM ipy_api_key WHERE key_prefix = $1`,
+    [key.slice(0, 8)],
+  );
+  for (const row of rows.rows) {
+    if (row.revoked_at) continue;
+    if (row.expires_at && new Date(row.expires_at) < new Date()) continue;
+    if (!(await bcrypt.compare(key, row.key_hash))) continue;
+    if (!row.user_id) throw new UnauthorizedError('API key is not bound to a user');
+    const user = await loadUser(row.user_id);
+    if (!user) throw new UnauthorizedError('API key user no longer exists');
+    if (!user.isActive) throw new UnauthorizedError('Account is deactivated');
+    await db.query(`UPDATE ipy_api_key SET last_used_at = now() WHERE id = $1`, [row.id]);
+    return user;
+  }
+  throw new UnauthorizedError('Invalid API key');
+}
+
+/**
+ * Require a signed-in user; attaches req.user and req.scope.
+ *
+ * Two ways in, both landing on the same person and therefore the same
+ * permissions: a session token from the web app, or a personal API key from a
+ * connected app (the MCP server, a script, a Siri shortcut). The key route is
+ * deliberately *not* a second, weaker door — `buildScopeContext` runs either
+ * way, so a junior's key sees exactly the records that junior sees. What it is
+ * not allowed to do is administer the CRM; see `blockApiKey` below.
+ */
 export async function requireAuth(req: Request, _res: Response, next: NextFunction): Promise<void> {
   try {
     const token = extractToken(req);
-    if (!token) throw new UnauthorizedError();
+    if (!token) {
+      const keyUser = await userFromApiKey(req);
+      if (!keyUser) throw new UnauthorizedError();
+      req.user = keyUser;
+      req.scope = await buildScopeContext(keyUser);
+      req.authSource = 'api_key';
+      next();
+      return;
+    }
     const payload = verifyAccessToken(token);
     const user = await loadUser(payload.sub);
     if (!user) throw new UnauthorizedError('Account no longer exists');
     if (!user.isActive) throw new UnauthorizedError('Account is deactivated');
     req.user = user;
     req.scope = await buildScopeContext(user);
+    req.authSource = 'app';
     next();
   } catch (err) {
     next(err);
   }
+}
+
+/**
+ * Shut a route to API keys, whoever owns them.
+ *
+ * A key is a long-lived string that lives in a config file on somebody's laptop
+ * and is handed to an AI client. That is an acceptable way to read and update
+ * records — it is a person's own access, and it is auditable. It is not an
+ * acceptable way to create users, rewrite permissions or change billing, and
+ * "the key belongs to an admin" is exactly when that matters most.
+ */
+export function blockApiKey(req: Request, _res: Response, next: NextFunction): void {
+  if (req.authSource === 'api_key') {
+    return next(new UnauthorizedError(
+      'API keys cannot reach the admin area. Sign in to the CRM for this.',
+    ));
+  }
+  next();
 }
 
 /** Attach the user when a token is present, but never reject. */
@@ -172,7 +244,10 @@ export function getUser(req: Request): AuthUser {
 
 export function getScope(req: Request): ScopeContext & { source: string } {
   if (!req.scope) throw new UnauthorizedError();
-  return { ...req.scope, source: 'app' };
+  // The real source, not a constant: this is what lands in `ipy_audit.source`,
+  // and "a person did this in the CRM" and "an assistant did this with my key"
+  // are different answers to the same question.
+  return { ...req.scope, source: req.authSource ?? 'app' };
 }
 
 /**
