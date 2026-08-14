@@ -19,61 +19,18 @@
  *   It cannot delete anything, and by default it cannot write at all. Writing
  *   is opt-in, per connection, by setting IPROPY_READ_ONLY=false.
  *
- * Runs over stdio, which is what a desktop assistant launches directly. An HTTP
- * transport for connecting remotely is a separate, later job — it needs OAuth
- * to be worth doing properly.
+ * This file is the stdio transport, which is what a desktop assistant launches
+ * directly on a laptop. The CRM also serves the same tools over HTTP at
+ * `/api/mcp` for clients connecting remotely — both build their server from
+ * `createMcpServer`, so the two can never offer different things.
  */
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { CrmClient, CrmError, configFromEnv } from './client.js';
-import { toolsFor } from './tools.js';
+import { CrmClient, configFromEnv } from './client.js';
+import { createMcpServer } from './server.js';
 
 async function main(): Promise<void> {
   const crm = new CrmClient(configFromEnv());
-
-  const server = new McpServer(
-    { name: 'ipropy', version: '1.0.0' },
-    {
-      instructions:
-        'iPropy is a CRM for an Indian real-estate business. Leads and contacts are one module '
-        + '("leads"); inventory is "properties"; marketing is "campaigns". Prices are in rupees — '
-        + 'write them as ₹1.45 Cr or ₹85 L when talking to the user, but pass plain numbers to '
-        + 'tools. You are acting as one named person: you can only see and change what they can, '
-        + 'and you cannot delete anything. Before changing a record, make sure you have the right '
-        + 'one — find it, show the user who you found, and only then update it.',
-    },
-  );
-
-  for (const tool of toolsFor(crm)) {
-    server.registerTool(
-      tool.name,
-      {
-        title: tool.title,
-        description: tool.description,
-        inputSchema: tool.schema,
-        annotations: {
-          readOnlyHint: !tool.writes,
-          // Nothing offered here deletes or overwrites irrecoverably; an update
-          // is a change somebody can see in the audit trail and put back.
-          destructiveHint: false,
-          openWorldHint: true,
-        },
-      },
-      async (args: Record<string, unknown>) => {
-        try {
-          return await tool.run(crm, args);
-        } catch (err) {
-          // Errors come back as tool results rather than protocol failures, so
-          // the model can tell the user what went wrong and try something else
-          // instead of the whole conversation falling over.
-          const message = err instanceof CrmError
-            ? err.message
-            : `Something went wrong talking to the CRM: ${(err as Error).message}`;
-          return { content: [{ type: 'text' as const, text: message }], isError: true };
-        }
-      },
-    );
-  }
+  const server = createMcpServer(crm);
 
   // Prove the connection before announcing readiness. A server that starts
   // cleanly and then fails on every call is the worst of both worlds — the

@@ -269,8 +269,19 @@ Three rules the server side enforces, in `middleware/auth.ts`:
 * The records router refuses `DELETE` and `mass-delete` from a key entirely. A key
   reads, creates and updates. Nothing else.
 
-The MCP server itself starts **read-only**; writing is opt-in per connection with
-`IPROPY_READ_ONLY=false`. See `packages/mcp/README.md` for the setup a person follows.
+Two transports, one set of tools (`createMcpServer` in `packages/mcp/src/server.ts`,
+so they cannot drift): **stdio** for an assistant launched on a laptop, and **HTTP** at
+`/api/mcp` on the CRM itself for remote clients. The HTTP one is stateless — a session
+map would live in the memory of a container Render restarts at will, so a redeploy would
+404 every open assistant — and its tools reach the CRM over loopback rather than calling
+`recordService` directly, deliberately: one enforcement path, not two.
+
+Both start **read-only**. Writing is opt-in per connection: `IPROPY_READ_ONLY=false` for
+stdio, an `x-ipropy-write: allow` header for HTTP. See `packages/mcp/README.md`.
+
+**Still to build:** OAuth 2.1, which is what a one-click connector in the Claude or
+ChatGPT apps requires. The API-key path works today with Claude Code and anything that
+can set a header.
 
 ---
 

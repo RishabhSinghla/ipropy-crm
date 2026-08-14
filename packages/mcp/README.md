@@ -45,6 +45,22 @@ In **Claude Desktop**, edit `claude_desktop_config.json`
 
 Build it once first, with `npm run build -w @ipropy/mcp`.
 
+### Or connect over the network, with nothing installed
+
+The CRM serves the same tools at `/api/mcp`, so a client that can set a header
+needs no local install at all:
+
+```bash
+claude mcp add --transport http ipropy https://ipropy-crm.onrender.com/api/mcp --header "x-api-key: ipy_your_key_here"
+```
+
+Add `--header "x-ipropy-write: allow"` when you want it to be able to change
+things. Same tools, same limits, same key.
+
+One-click connectors inside the Claude and ChatGPT **apps** need OAuth sign-in,
+which this endpoint does not do yet — that is the remaining piece, and it only
+matters once the team has paid accounts on one of them.
+
 **3. Check it worked.** Ask the assistant "what can you do with iPropy?" — it
 should list the tools below. If something is wrong it says so in plain English
 on startup, naming the problem.

@@ -47,7 +47,8 @@
     "sharp": "^0.35.3",
     "socket.io": "^4.8.1",
     "web-push": "^3.6.7",
-    "zod": "^3.24.1"
+    "zod": "^3.24.1",
+    "@ipropy/mcp": "*"
   },
   "devDependencies": {
     "@types/archiver": "^8.0.0",

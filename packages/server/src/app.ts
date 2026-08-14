@@ -29,6 +29,7 @@ import { aiRouter } from './api/routes/ai.js';
 import { webhooksRouter } from './api/routes/webhooks.js';
 import { miscRouter } from './api/routes/misc.js';
 import { captureRouter } from './api/routes/capture.js';
+import { mcpRouter } from './api/routes/mcp.js';
 import { publicRouter } from './api/routes/public.js';
 
 export function createApp(): Express {
@@ -106,6 +107,14 @@ export function createApp(): Express {
         // Invalid or expired — treat as anonymous.
       }
     }
+    // Connected apps get a bucket each, keyed by the key's public prefix — the
+    // prefix, never the key, because this string ends up in an in-memory store
+    // and in nothing that should ever hold a secret. Without this every API
+    // key on the deployment shares one `ip:` bucket, so one busy assistant
+    // throttles the whole team, and the MCP endpoint's own loopback calls
+    // (all from 127.0.0.1) would exhaust it fastest of all.
+    const apiKey = req.headers['x-api-key'];
+    if (typeof apiKey === 'string' && apiKey) return `k:${apiKey.slice(0, 8)}`;
     // Mirrors express-rate-limit's own default, which this replaces.
     return `ip:${req.ip ?? 'unknown'}`;
   };
@@ -190,6 +199,8 @@ export function createApp(): Express {
   app.use('/api/telephony', telephonyRouter);
   app.use('/api/ai', aiRouter);
   app.use('/api/capture', captureRouter);
+  // Connected assistants. Mounted before miscRouter's catch-all /api paths.
+  app.use('/api/mcp', mcpRouter);
   app.use('/api', miscRouter);
   // Records last: its /:module route would otherwise swallow the paths above.
   app.use('/api/records', recordsRouter);
