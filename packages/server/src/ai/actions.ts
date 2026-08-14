@@ -154,6 +154,8 @@ export interface AlertableMatch {
   label: string;
   score: number;
   ownerId: string | null;
+  /** Set when this person previously said no, explaining what has changed. */
+  revival?: string;
 }
 
 /**
@@ -188,11 +190,29 @@ export function groupMatchesByRep<T extends AlertableMatch>(
  */
 export function describeRepAlert(buyers: AlertableMatch[], unitLabel: string): { title: string; body: string } {
   const named = buyers.slice(0, 3).map((b) => `${b.label} (${b.score}%)`).join(', ');
+  const body = buyers.length > 3 ? `${named} and ${buyers.length - 3} more` : named;
+
+  // A revived lead is a different phone call and the title has to say so. "3 of
+  // your buyers match B-110" sends a rep in expecting a warm enquiry; walking
+  // into "you told me it was too expensive" unprepared is how the call is lost
+  // in its first ten seconds.
+  const revivals = buyers.filter((b) => b.revival);
+  if (revivals.length === buyers.length) {
+    return {
+      title: buyers.length === 1
+        ? `${buyers[0].label} said no to a price — this one may fit`
+        : `${buyers.length} buyers who said no may fit ${unitLabel}`,
+      body: buyers.length === 1 ? buyers[0].revival! : body,
+    };
+  }
+
   return {
     title: buyers.length === 1
       ? `${buyers[0].label} may want ${unitLabel}`
       : `${buyers.length} of your buyers match ${unitLabel}`,
-    body: buyers.length > 3 ? `${named} and ${buyers.length - 3} more` : named,
+    body: revivals.length
+      ? `${body} — ${revivals.length} of them previously said no`
+      : body,
   };
 }
 

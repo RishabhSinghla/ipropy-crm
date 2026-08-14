@@ -338,12 +338,93 @@ export async function matchForRecord(recordId: string, opts: MatchOptions = {}):
 }
 
 /**
+ * Whether the arrival of *this* unit answers the reason a lead was lost.
+ *
+ * A lead marked Lost is not one fact, it is twelve different facts wearing the
+ * same label, and they do not age alike. "Bought Elsewhere" is permanent —
+ * they own a house. "Price Too High" is a statement about one number on one
+ * day, and the day a unit lands inside their budget it has expired.
+ *
+ * So a revival needs the new unit to specifically undo the objection, not
+ * merely to score well. Without that this degrades into ringing everybody who
+ * ever said no, which is worse than not calling them: it is cold-calling with
+ * the CRM's blessing, and it teaches a rep to ignore the alert.
+ *
+ * Returns the sentence to put in front of the rep, or null to leave the lead
+ * where it is.
+ */
+function revivalReason(
+  lostReason: string | null,
+  property: PropertyRow,
+  req: Requirement,
+): string | null {
+  if (!lostReason) return null;
+  const price = property.total_price ?? property.base_price ?? 0;
+  const inBudget = Boolean(req.budgetMax && price && price <= req.budgetMax);
+
+  switch (lostReason) {
+    // The objection was a number, and the number has changed.
+    case 'Price Too High':
+    case 'Budget Mismatch':
+      return inBudget
+        ? `Lost on price — this one is ${formatIndianPrice(price)}, inside their ${formatIndianPrice(req.budgetMax!)} budget`
+        : null;
+
+    // They wanted something we did not have. Now we do.
+    case 'Unit Not Available':
+      return `Lost because nothing suitable was available — this unit is`;
+
+    case 'Location Not Suitable': {
+      const locality = (property.locality ?? '').toLowerCase();
+      const hit = (req.locations ?? []).some((l) => {
+        const wanted = l.toLowerCase();
+        return locality.includes(wanted) || wanted.includes(locality);
+      });
+      return hit ? `Lost on location — this one is in ${property.locality}, which they asked for` : null;
+    }
+
+    case 'Possession Timeline': {
+      const urgent = ['Immediate', 'Within 1 Month', '1-3 Months'].includes(req.possessionTimeline ?? '');
+      return urgent && property.possession_status === 'Ready To Move'
+        ? 'Lost on possession timing — this one is ready to move'
+        : null;
+    }
+
+    case 'Vastu Concerns':
+      return property.vastu_compliant ? 'Lost over Vastu — this unit is compliant' : null;
+
+    // Deliberately never revived, and each for its own reason:
+    //   Bought Elsewhere  — they own a home now.
+    //   Loan Rejected     — no unit at any price fixes their financing.
+    //   Postponed Purchase— about their year, not our inventory.
+    //   No Response       — we never learned what they wanted, so a match here
+    //                       is a guess dressed up as a signal.
+    //   Competitor Offered Better / Legal-RERA — about a rival's deal or a
+    //                       project's paperwork; a different unit says nothing.
+    default:
+      return null;
+  }
+}
+
+/** How much better a revival has to look than an ordinary match to be worth the call. */
+const REVIVAL_SCORE_FLOOR = 70;
+
+export interface BuyerMatch {
+  recordId: string;
+  label: string;
+  module: string;
+  score: number;
+  ownerId: string | null;
+  reasons: string[];
+  /** Set when this is somebody who previously said no, explaining what changed. */
+  revival?: string;
+}
+
+/**
  * Reverse match: given a property, which open leads should be pitched it?
  * Used when a unit is released or repriced.
  */
-export async function matchBuyersForProperty(propertyId: string, limit = 10): Promise<{
-  recordId: string; label: string; module: string; score: number; ownerId: string | null; reasons: string[];
-}[]> {
+export async function matchBuyersForProperty(propertyId: string, limit = 10): Promise<BuyerMatch[]> {
   const property = await db.queryOne<PropertyRow>(
     `SELECT p.record_id, r.label, p.name, p.configuration, p.carpet_area, p.total_price, p.base_price,
             p.floor, p.facing, p.vastu_compliant, p.status, p.possession_date, p.possession_status,
@@ -356,39 +437,72 @@ export async function matchBuyersForProperty(propertyId: string, limit = 10): Pr
 
   const price = property.total_price ?? property.base_price ?? 0;
 
-  const leads = await db.query<{ record_id: string; label: string; owner_id: string | null; budget_min: number | null; budget_max: number | null; configuration: string[] | null; preferred_locations: string[] | null; possession_timeline: string | null; purpose: string | null }>(
+  const leads = await db.query<{ record_id: string; label: string; owner_id: string | null; budget_min: number | null; budget_max: number | null; configuration: string[] | null; preferred_locations: string[] | null; possession_timeline: string | null; purpose: string | null; status: string; lost_reason: string | null }>(
+    // Lost leads are in scope now; Junk never is. A wrong number, a broker
+    // fishing or a test entry does not become a buyer because a unit appeared,
+    // and `revivalReason` is what decides which of the Lost are worth raising.
+    //
+    // The budget bounds are relaxed for them: somebody lost on price stated a
+    // ceiling *before* saying no, and the whole point is that this unit may now
+    // sit under it — filtering on the same ±band as a live lead would drop
+    // exactly the ones worth reviving.
     `SELECT l.record_id, r.label, r.owner_id, l.budget_min, l.budget_max,
-            l.configuration, l.preferred_locations, l.possession_timeline, l.purpose
+            l.configuration, l.preferred_locations, l.possession_timeline, l.purpose,
+            l.status, l.lost_reason
      FROM ipy_e_leads l JOIN ipy_record r ON r.id = l.record_id
      WHERE r.is_deleted = false AND l.is_converted = false
-       AND l.status NOT IN ('Junk','Lost')
-       AND (l.budget_max IS NULL OR l.budget_max >= $1 * 0.85)
-       AND (l.budget_min IS NULL OR l.budget_min <= $1 * 1.2)
+       AND l.status <> 'Junk'
+       AND (
+         l.status <> 'Lost'
+           AND (l.budget_max IS NULL OR l.budget_max >= $1 * 0.85)
+           AND (l.budget_min IS NULL OR l.budget_min <= $1 * 1.2)
+         OR l.status = 'Lost' AND l.lost_reason IS NOT NULL
+       )
      ORDER BY l.ai_score DESC NULLS LAST
-     LIMIT 200`,
+     LIMIT 400`,
     [price],
   );
 
   return leads.rows
     .map((lead) => {
-      const scored = scoreProperty(property, {
+      const req: Requirement = {
         budgetMin: lead.budget_min,
         budgetMax: lead.budget_max,
         configurations: lead.configuration ?? [],
         locations: lead.preferred_locations ?? [],
         possessionTimeline: lead.possession_timeline,
         purpose: lead.purpose,
-      });
+      };
+      const scored = scoreProperty(property, req);
+      const revival = lead.status === 'Lost'
+        ? revivalReason(lead.lost_reason, property, req)
+        : null;
+
       return {
-        recordId: lead.record_id,
-        label: lead.label,
-        module: 'leads',
-        score: scored.score,
-        ownerId: lead.owner_id,
-        reasons: scored.reasons,
+        wasLost: lead.status === 'Lost',
+        match: {
+          recordId: lead.record_id,
+          label: lead.label,
+          module: 'leads',
+          score: scored.score,
+          ownerId: lead.owner_id,
+          // The revival sentence leads, because "they told you no over price
+          // and this one is in budget" is the reason to ring them; the scoring
+          // reasons are the supporting detail.
+          reasons: revival ? [revival, ...scored.reasons] : scored.reasons,
+          ...(revival ? { revival } : {}),
+        } satisfies BuyerMatch,
       };
     })
-    .filter((m) => m.score >= 55)
+    // The SQL over-fetches Lost leads because it cannot tell whether this unit
+    // answers their objection — only `revivalReason` can. A Lost lead with no
+    // revival is dropped here; without this, one lost to "Bought Elsewhere"
+    // would reappear on score alone.
+    .filter(({ wasLost, match }) => !wasLost || match.revival)
+    // A revival is a colder call than a live enquiry — the person has already
+    // said no once — so it clears a higher bar to earn the interruption.
+    .filter(({ match }) => match.score >= (match.revival ? REVIVAL_SCORE_FLOOR : 55))
+    .map(({ match }) => match)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
 }
