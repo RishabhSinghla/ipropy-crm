@@ -214,7 +214,12 @@ test('a dead module URL says so instead of loading forever', async ({ page }) =>
   await expect(page.getByText(/there is no .*studio.* here/i)).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole('link', { name: /go to the dashboard/i })).toBeVisible();
 
-  // And the real modules are unaffected by the same code path.
+  // And the guard must not be over-broad: a real module goes down the same
+  // branch and must never show this. Asserted as the *absence* of the dead-end
+  // rather than the presence of a record count, because waiting for the list
+  // query to resolve made this the slowest test in the file and a flaky one
+  // under load — and the count is already covered by the two sweeps above.
   await page.goto('/leads');
-  await expect(page.getByText(/^[\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('heading', { name: /leads & contacts/i })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/there is no .* here/i)).toHaveCount(0);
 });
