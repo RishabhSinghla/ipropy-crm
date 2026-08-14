@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FieldMeta, FilterGroup, ListQuery, ModuleMeta, RecordEnvelope } from '@ipropy/shared';
 import { formatIndianPrice } from '@ipropy/shared';
 import {
-  ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, Columns3, Download, Filter,
+  ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, Columns3, Compass, Download, Filter,
   LayoutGrid, List, MailCheck, Plus, RefreshCw, Search, Settings2, Sparkles, Star, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { api } from '../lib/api';
@@ -95,10 +95,13 @@ export default function ListView(): JSX.Element {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  const { data: meta, isLoading: metaLoading } = useQuery({
+  const { data: meta, isLoading: metaLoading, isError: metaFailed } = useQuery({
     queryKey: ['module', moduleName],
     queryFn: () => api.module(moduleName!),
     enabled: Boolean(moduleName),
+    // A module that does not exist is an answer, not a hiccup. Retrying a 404
+    // three times only makes the wrong screen take longer to appear.
+    retry: false,
   });
 
   const { data: views } = useQuery({
@@ -229,6 +232,25 @@ export default function ListView(): JSX.Element {
   };
 
   if (!moduleName) return <div />;
+
+  // `:module` is the catch-all for every single-segment URL, so it is what
+  // answers a dead bookmark or a typo — and it used to answer them with loading
+  // skeletons that never resolved. /studio is the case that matters: the page
+  // existed until it was deleted, so somebody's tab and somebody's bookmark
+  // still point at it, and a permanent spinner reads as "the CRM is broken"
+  // rather than "that screen is gone".
+  if (metaFailed) {
+    return (
+      <div className="p-4 sm:p-6">
+        <EmptyState
+          icon={<Compass className="h-10 w-10" />}
+          title={`There is no “${moduleName}” here`}
+          body="The link may be out of date, or the module may have been renamed or removed."
+          action={<Link to="/dashboard" className="btn-primary btn-sm">Go to the dashboard</Link>}
+        />
+      </div>
+    );
+  }
 
   if (metaLoading || !meta) {
     return (

@@ -199,3 +199,22 @@ test('every module opens its first record without breaking', async ({ page }) =>
   expect(opened, 'no module had a record to open').toBeGreaterThan(0);
   expect(broken.join('\n'), broken.join('\n')).toBe('');
 });
+
+/**
+ * `:module` is the catch-all for every single-segment URL, so it is what
+ * answers a dead link — and it used to answer with loading skeletons that
+ * never resolved, because "no metadata yet" and "no such module" were the same
+ * branch. `/studio` is the case that matters: the page existed until it was
+ * deleted, so bookmarks and open tabs still point at it, and a permanent
+ * spinner reads as "the CRM is broken" rather than "that screen is gone".
+ */
+test('a dead module URL says so instead of loading forever', async ({ page }) => {
+  await page.goto('/studio');
+
+  await expect(page.getByText(/there is no .*studio.* here/i)).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('link', { name: /go to the dashboard/i })).toBeVisible();
+
+  // And the real modules are unaffected by the same code path.
+  await page.goto('/leads');
+  await expect(page.getByText(/^[\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
+});
