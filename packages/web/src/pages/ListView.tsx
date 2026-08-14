@@ -4,10 +4,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FieldMeta, FilterGroup, ListQuery, ModuleMeta, RecordEnvelope } from '@ipropy/shared';
 import { formatIndianPrice } from '@ipropy/shared';
 import {
-  ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, Columns3, Compass, Download, Filter,
+  ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, CloudOff, Columns3, Compass, Download, Filter,
   LayoutGrid, List, MailCheck, Plus, RefreshCw, Search, Settings2, Sparkles, Star, Trash2, Upload, Users, X,
 } from 'lucide-react';
-import { api } from '../lib/api';
+import { ApiError, api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { saveListNav } from '../lib/listNav';
@@ -23,6 +23,7 @@ import { ModuleIcon } from '../components/Layout';
 import RecordForm from '../components/RecordForm';
 import RecordPeek from '../components/RecordPeek';
 import { usePressPreview } from '../lib/pressPreview';
+import { useOfflineList, useOfflineMeta } from '../lib/useOfflineList';
 
 const EMPTY_FILTER: FilterGroup = { logic: 'AND', conditions: [] };
 
@@ -95,7 +96,7 @@ export default function ListView(): JSX.Element {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  const { data: meta, isLoading: metaLoading, isError: metaFailed } = useQuery({
+  const { data: liveMeta, isLoading: metaLoading, error: metaError } = useQuery({
     queryKey: ['module', moduleName],
     queryFn: () => api.module(moduleName!),
     enabled: Boolean(moduleName),
@@ -103,6 +104,18 @@ export default function ListView(): JSX.Element {
     // three times only makes the wrong screen take longer to appear.
     retry: false,
   });
+
+  const meta = useOfflineMeta(moduleName, liveMeta, user?.id);
+
+  /**
+   * Only a real 404 means the module is gone.
+   *
+   * An unreachable server also fails this query, and treating the two alike
+   * told a rep standing in a basement that Leads had been deleted — which is
+   * both alarming and false. A network failure is not an ApiError at all: it
+   * is fetch rejecting, so the status check separates them cleanly.
+   */
+  const metaFailed = metaError instanceof ApiError && metaError.status === 404;
 
   const { data: views } = useQuery({
     queryKey: ['views', moduleName],
@@ -171,12 +184,18 @@ export default function ListView(): JSX.Element {
     groupBy: groupByField,
   }), [activeView?.id, page, search, filter, sortBy, sortDir, columns, groupByField, displayMode]);
 
-  const { data, isLoading, isFetching, refetch } = useQuery({
+  const { data, isLoading, isFetching, failureCount, refetch } = useQuery({
     queryKey: ['records', moduleName, query],
     queryFn: () => api.list(moduleName!, query),
     enabled: Boolean(moduleName && meta),
     placeholderData: (prev) => prev,
   });
+
+    // `failureCount`, not `isError`: react-query retries three times with backoff
+  // before it calls a query failed, and somebody holding a phone in a basement
+  // should not watch a spinner for seven seconds first. The first failed
+  // attempt is enough to know the server is not answering.
+  const offline = useOfflineList(moduleName, query, data, user?.id, failureCount > 0);
 
   const deleteMutation = useMutation({
     mutationFn: (ids: string[]) => api.massDelete(moduleName!, ids),
@@ -265,7 +284,7 @@ export default function ListView(): JSX.Element {
   const visibleColumns = columns.length ? columns : defaultColumns(meta);
   const fieldMap = new Map(meta.fields.map((f) => [f.name, f]));
   const canCreate = meta.permissions.create;
-  const rows = data?.rows ?? [];
+  const rows = offline.rows;
 
   return (
     <div className="flex h-full flex-col">
@@ -282,7 +301,9 @@ export default function ListView(): JSX.Element {
             <div>
               <h1 className="text-lg font-semibold leading-tight tracking-tight">{meta.label}</h1>
               <p className="text-xs text-muted tnum">
-                {isFetching && !data ? 'Loading…' : `${(data?.total ?? 0).toLocaleString('en-IN')} records`}
+                {isFetching && !data && !offline.stale
+                  ? 'Loading…'
+                  : `${(data?.total ?? (offline.stale ? offline.rows.length : 0)).toLocaleString('en-IN')} records`}
               </p>
             </div>
           </div>
@@ -430,6 +451,13 @@ export default function ListView(): JSX.Element {
               </button>
             )}
           </div>
+        </div>
+      )}
+
+      {offline.stale && (
+        <div className="mx-4 mb-2 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 sm:mx-6 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+          <CloudOff className="h-3.5 w-3.5 shrink-0" />
+          <span>Can&rsquo;t reach the CRM — this is what was here at {offline.asOf}. Read only until it is back.</span>
         </div>
       )}
 
@@ -753,12 +781,24 @@ export default function ListView(): JSX.Element {
 
 // ---------------------------------------------------------------------------
 
-function defaultColumns(meta: { fields: { name: string; isActive: boolean; displayType: string }[] } | undefined): string[] {
+/**
+ * Columns to show when no view says otherwise.
+ *
+ * Identity first, always. Taking the first seven fields in sequence order gave
+ * a leads table whose first column was Date of Birth and which showed nobody's
+ * name — technically a list of leads, useless as one. This only surfaced when
+ * the views query failed and the fallback ran for real, which is the argument
+ * for the fallback being decent rather than merely present.
+ */
+function defaultColumns(meta: {
+  labelFields?: string[];
+  fields: { name: string; isActive: boolean; displayType: string }[];
+} | undefined): string[] {
   if (!meta) return [];
-  return meta.fields
-    .filter((f) => f.isActive && f.displayType !== 'hidden')
-    .slice(0, 7)
-    .map((f) => f.name);
+  const usable = meta.fields.filter((f) => f.isActive && f.displayType !== 'hidden');
+  const identity = (meta.labelFields ?? []).filter((name) => usable.some((f) => f.name === name));
+  const rest = usable.map((f) => f.name).filter((name) => !identity.includes(name));
+  return [...identity, ...rest].slice(0, 7);
 }
 
 /**

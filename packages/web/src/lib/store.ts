@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { AuthUser } from '@ipropy/shared';
-import { api, tokenStore, type ModuleSummary } from './api';
+import { ApiError, api, tokenStore, type ModuleSummary } from './api';
+import { forgetAll } from './offlineCache';
 
 interface AppState {
   user: AuthUser | null;
@@ -10,6 +11,8 @@ interface AppState {
   sidebarCollapsed: boolean;
   aiAvailable: boolean;
   telephonyAvailable: boolean;
+  /** The CRM could not be reached on start-up; the shell is running on cached identity. */
+  offline: boolean;
 
   bootstrap: () => Promise<void>;
   /** `identifier` is an email address or a mobile number. */
@@ -40,6 +43,50 @@ function initialTheme(): 'light' | 'dark' {
  * Password and passkey differ only in how the token is obtained, so the rest
  * lives here rather than being written twice and drifting.
  */
+const USER_CACHE_KEY = 'ipropy.user';
+const MODULES_CACHE_KEY = 'ipropy.modules';
+
+/**
+ * The last person known to be signed in on this device.
+ *
+ * Only ever used to keep the shell rendering when the CRM is unreachable, so
+ * the offline copy of their records is still keyed and readable. It is not a
+ * credential and grants nothing: every request still carries the real token,
+ * and the server is the only thing that decides what comes back.
+ */
+function cacheUser(user: AuthUser): void {
+  try { localStorage.setItem(USER_CACHE_KEY, JSON.stringify(user)); } catch { /* full or private */ }
+}
+
+/**
+ * The nav, remembered.
+ *
+ * Without it an unreachable CRM comes up with an empty sidebar and no route to
+ * anything — the shell technically running, and useless. These are labels and
+ * icons, not data.
+ */
+function cacheModules(modules: ModuleSummary[]): void {
+  try { localStorage.setItem(MODULES_CACHE_KEY, JSON.stringify(modules)); } catch { /* ignore */ }
+}
+
+function cachedModules(): ModuleSummary[] {
+  try {
+    const raw = localStorage.getItem(MODULES_CACHE_KEY);
+    return raw ? JSON.parse(raw) as ModuleSummary[] : [];
+  } catch {
+    return [];
+  }
+}
+
+function cachedUser(): AuthUser | null {
+  try {
+    const raw = localStorage.getItem(USER_CACHE_KEY);
+    return raw ? JSON.parse(raw) as AuthUser : null;
+  } catch {
+    return null;
+  }
+}
+
 async function adoptSession(
   result: { token: string; refreshToken: string; user: AuthUser },
   set: (partial: Partial<AppState>) => void,
@@ -47,7 +94,9 @@ async function adoptSession(
   tokenStore.set(result.token);
   tokenStore.setRefresh(result.refreshToken);
   const modules = await api.modules();
-  set({ user: result.user, modules });
+  cacheUser(result.user);
+  cacheModules(modules);
+  set({ user: result.user, modules, offline: false });
   void api.aiStatus().then((s) => set({ aiAvailable: s.available })).catch(() => undefined);
   void api.telephonyStatus().then((s) => set({ telephonyAvailable: s.configured })).catch(() => undefined);
 }
@@ -60,6 +109,7 @@ export const useApp = create<AppState>((set, get) => ({
   sidebarCollapsed: localStorage.getItem('ipropy.sidebar') === 'collapsed',
   aiAvailable: false,
   telephonyAvailable: false,
+  offline: false,
 
   bootstrap: async () => {
     applyTheme(get().theme);
@@ -70,7 +120,9 @@ export const useApp = create<AppState>((set, get) => ({
     }
     try {
       const [user, modules] = await Promise.all([api.me(), api.modules()]);
-      set({ user, modules, loading: false });
+      cacheUser(user);
+      cacheModules(modules);
+      set({ user, modules, offline: false, loading: false });
 
       // Non-critical capability probes — never block the app shell on these.
       void api.aiStatus().then((s) => set({ aiAvailable: s.available })).catch(() => undefined);
@@ -80,9 +132,20 @@ export const useApp = create<AppState>((set, get) => ({
         set({ theme: user.theme });
         applyTheme(user.theme);
       }
-    } catch {
-      tokenStore.clear();
-      set({ user: null, loading: false });
+    } catch (err) {
+      // "The server said no" and "I could not reach the server" are different
+      // answers and were being treated as one. Walking into a lift, a basement
+      // or a dead spot threw away a perfectly good session and dumped the rep
+      // at the login screen — where, with no connection, they could not sign
+      // back in either. The token stays; only an actual rejection clears it.
+      if (err instanceof ApiError && err.status === 401) {
+        tokenStore.clear();
+        set({ user: null, loading: false });
+        return;
+      }
+      // Unreachable, not unauthenticated. Come up with whoever was last signed
+      // in, so the offline copy of their leads is reachable.
+      set({ user: cachedUser(), modules: cachedModules(), offline: true, loading: false });
     }
   },
 
@@ -105,6 +168,13 @@ export const useApp = create<AppState>((set, get) => ({
 
   logout: async () => {
     await api.logout().catch(() => undefined);
+    // A shared handset on an office desk is normal in this business, so the
+    // offline copy must not outlive the session that fetched it.
+    await forgetAll().catch(() => undefined);
+    try {
+      localStorage.removeItem(USER_CACHE_KEY);
+      localStorage.removeItem(MODULES_CACHE_KEY);
+    } catch { /* ignore */ }
     tokenStore.clear();
     set({ user: null, modules: [] });
     window.location.href = '/login';
