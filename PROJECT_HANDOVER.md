@@ -175,6 +175,7 @@ exists, which is the authoritative account.
 | `043_ai_assistant_agent.sql` | 2026-08-13 | `ipy_ai_action` and explicit, user-owned assistant memories |
 | `044_device_pin.sql` | 2026-08-13 | Four-digit quick unlock bound to one browser; neither PIN nor device token stored |
 | `045_remove_studio.sql` | 2026-08-14 | Drops `ipy_design` and `ipy_render_job` — the Studio is gone |
+| `046_remove_blog_and_seo_audit.sql` | 2026-08-14 | Drops `ipy_seo_audit`, the blog residue and the `seo.*` settings |
 
 The migration runner (`db/migrate.ts`) is forward-only, applies each `.sql` in name order inside its
 own transaction, and records it in `ipy_migration`. It is safe to re-run (already-applied files are

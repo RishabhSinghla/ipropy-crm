@@ -17,8 +17,11 @@ FROM node:20-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 ENV SERVE_WEB=true
-# Video processing and iPhone HEIC decoding shell out to ffmpeg. Originals are
-# still preserved if decoding fails, but thumbnails and web copies need it.
+# ffmpeg is not optional. Video transcoding degrades gracefully without it
+# (clips serve unprocessed), but HEIC decoding does not have a fallback:
+# sharp's libvips ships with no HEVC decoder, so without ffmpeg every photo
+# from an iPhone gets no thumbnail and no web-sized copies, and the website
+# serves visitors a multi-megabyte original. See core/media/transcode.ts.
 RUN apk add --no-cache ffmpeg
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/package-lock.json ./package-lock.json

@@ -59,7 +59,6 @@ async function tick(): Promise<void> {
       runSequences(),
       startDueBroadcasts(),
       housekeeping(),
-      maybeRunSeoAudit(),
     ]);
   } catch (err) {
     logger.error({ err }, 'scheduler tick failed');
@@ -93,27 +92,6 @@ async function startDueBroadcasts(): Promise<void> {
     await runDueBroadcasts();
   } catch (err) {
     logger.error({ err }, 'scheduled broadcast dispatch failed');
-  }
-}
-
-/**
- * Fetches and scores the live website once a day.
- *
- * Guarded on the last run rather than a cron expression, so a restart or a
- * missed window still produces one audit per day instead of none — the point
- * is a daily datapoint, not a precise hour.
- */
-async function maybeRunSeoAudit(): Promise<void> {
-  try {
-    const enabled = await db.queryOne<{ value: boolean }>(
-      `SELECT (value #>> '{}')::boolean AS value FROM ipy_setting WHERE key = 'seo.audit_enabled'`,
-    );
-    if (enabled?.value === false) return;
-    const { runSeoAudit, shouldRunSeoAudit } = await import('../seo/audit.js');
-    if (!(await shouldRunSeoAudit())) return;
-    await runSeoAudit();
-  } catch (err) {
-    logger.error({ err }, 'SEO audit failed');
   }
 }
 

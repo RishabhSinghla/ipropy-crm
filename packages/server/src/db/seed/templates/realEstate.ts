@@ -577,18 +577,6 @@ const MODULES: ModuleDef[] = [
     ],
   },
 
-  // =========================================================================
-  // DOCUMENTS
-  // =========================================================================
-
-  // =========================================================================
-  // Blog — written here, published to the public website.
-  //
-  // An ordinary module rather than a bolted-on CMS, so posts get list views,
-  // roles, sharing rules, workflows and custom fields for free, and the
-  // website keeps reading everything from one API.
-  // =========================================================================
-
 ];
 
 export const REAL_ESTATE: IndustryTemplate = {

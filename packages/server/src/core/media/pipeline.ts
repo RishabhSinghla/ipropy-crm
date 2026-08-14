@@ -11,8 +11,8 @@ import { formatIndianPrice } from '@ipropy/shared';
 import { getDriver } from '../storage/index.js';
 import { logger } from '../../utils/logger.js';
 import { processImage } from './images.js';
-import { processVideo, type TitleCardInfo } from './video.js';
 import { needsTranscode, transcodeToJpeg } from './transcode.js';
+import { processVideo } from './video.js';
 import { captureTimeFromImage, captureTimeFromVideo } from '../capture/captureTime.js';
 import { matchAttachment } from '../capture/matching.js';
 
@@ -71,9 +71,26 @@ export async function processAttachment(attachmentId: string): Promise<void> {
       return;
     }
     // Filed against its visit before the derivatives are made, and in its own
-    // try/catch: unreadable EXIF is not a reason to skip watermarking a
-    // perfectly good photo, and a title card wants the record this may have
-    // just supplied.
+    // try/catch: unreadable EXIF is not a reason to skip watermarking and
+    // resizing a perfectly good photo.
+    //
+    // Read from the *original*, deliberately before any transcode: ffmpeg's
+    // JPEG output carries no EXIF at all (`-map_metadata 0` included), so
+    // reading capture time from the transcode would lose it for every photo.
+    //
+    // On a full-size HEIC this usually gets nothing anyway. libheif refuses the
+    // container before it reaches the EXIF — a 4032x3024 iPhone frame is stored
+    // as a tiled grid, and "Number of references in iref box (48) exceeds the
+    // security limits of 16" is a refusal, not a decode failure, so no sharp
+    // option turns it off. Small HEICs parse fine, which is exactly why this
+    // looks like it works when you test it with one.
+    //
+    // Not worked around here. Capture time is no longer how a photo finds its
+    // property — the folder it was dropped into says that — and it now only
+    // affects gallery ordering, which the cull/classify pass re-decides anyway.
+    // Where it does matter, the folder bridge reads it on the Mac with Apple's
+    // own decoder and sends it with the upload, rather than this process
+    // guessing at an ISO box layout.
     await fileAgainstVisit(attachment.id, () => captureTimeFromImage(original));
     // Most iPhones shoot HEIC. The original is retained byte-for-byte; ffmpeg
     // supplies only a temporary decoded frame because Sharp's common libvips
@@ -100,13 +117,7 @@ export async function processAttachment(attachmentId: string): Promise<void> {
     }
     try {
       await fileAgainstVisit(attachment.id, () => captureTimeFromVideo(input.path));
-      // Re-read: matching may have just given this clip the property whose name
-      // belongs on its title card, and the row above was fetched before that.
-      const recordId = attachment.record_id ?? (await db.queryOne<{ record_id: string | null }>(
-        `SELECT record_id FROM ipy_attachment WHERE id = $1`, [attachment.id],
-      ))?.record_id ?? null;
-      const titleCard = recordId ? await getTitleCardInfo(recordId) : null;
-      variants = await processVideo(driver, attachment.id, attachment.storage_key, input.path, titleCard);
+      variants = await processVideo(driver, attachment.id, attachment.storage_key, input.path);
     } finally {
       await input.cleanup();
     }
@@ -117,26 +128,3 @@ export async function processAttachment(attachmentId: string): Promise<void> {
   }
 }
 
-/**
- * A video's title card shows the property it's actually of — name, price,
- * location — pulled live so it's never stale. Only properties carry that;
- * anything else gets no title card, which processVideo treats as "skip that
- * step", not an error.
- */
-async function getTitleCardInfo(recordId: string): Promise<TitleCardInfo | null> {
-  const unit = await db.queryOne<{ name: string; project_name: string | null; city: string | null; locality: string | null; total_price: number | null; configuration: string | null }>(
-    `SELECT u.name, u.project_name, u.city, u.locality, u.total_price, u.configuration
-     FROM ipy_e_properties u
-     WHERE u.record_id = $1`,
-    [recordId],
-  );
-  if (unit) {
-    return {
-      title: unit.project_name ?? unit.name,
-      subtitle: [unit.configuration, [unit.locality, unit.city].filter(Boolean).join(', ')].filter(Boolean).join(' · '),
-      price: unit.total_price ? formatIndianPrice(unit.total_price) : undefined,
-    };
-  }
-
-  return null;
-}

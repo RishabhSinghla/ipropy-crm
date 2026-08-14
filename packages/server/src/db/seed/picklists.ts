@@ -10,17 +10,6 @@ import { upsertPicklist, type PicklistDef } from './helpers.js';
 
 /** Every dropdown in the CRM, seeded once and then fully admin-editable. */
 export const PICKLISTS: PicklistDef[] = [
-  { name: 'blog_status', label: 'Blog Status', values: [
-    { value: 'Draft', label: 'Draft', color: '#94a3b8', isDefault: true },
-    { value: 'In Review', label: 'In Review', color: '#f59e0b' },
-    { value: 'Scheduled', label: 'Scheduled', color: '#0ea5e9' },
-    { value: 'Published', label: 'Published', color: '#22c55e' },
-    { value: 'Archived', label: 'Archived', color: '#64748b' },
-  ] },
-  { name: 'blog_category', label: 'Blog Category', values: [
-    'Buying Guide', 'Market Update', 'Project Spotlight', 'Legal & RERA',
-    'Home Loans', 'Vastu', 'Interiors', 'Investment', 'Locality Guide', 'News',
-  ] },
   { name: 'lead_status', label: 'Lead Status', values: LEAD_STATUSES.map((s) => ({ ...s, isDefault: s.value === 'New' })) },
   { name: 'lead_source', label: 'Lead Source', values: [...LEAD_SOURCES] },
   { name: 'lead_sub_source', label: 'Lead Sub Source', values: ['Organic', 'Paid', 'Retargeting', 'Email Blast', 'SMS Blast', 'Broker Network', 'Existing Customer', 'Employee Referral'] },

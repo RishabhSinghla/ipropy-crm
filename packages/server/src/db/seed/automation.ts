@@ -28,7 +28,6 @@ interface WorkflowSeed {
 }
 
 const WORKFLOWS: WorkflowSeed[] = [
-  // --- Blog ------------------------------------------------------------------
   // --- Lead intake -----------------------------------------------------------
   {
     module: 'leads',

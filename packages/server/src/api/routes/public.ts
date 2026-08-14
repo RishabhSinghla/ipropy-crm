@@ -279,15 +279,8 @@ publicRouter.get('/brand', asyncHandler(async (_req, res) => {
 }));
 
 // ---------------------------------------------------------------------------
-// Blog
-//
-// Visibility is enforced here, not in the CRM's UI: only Published posts with
-// a publish time in the past and noindex off are ever returned, so a draft or
-// a scheduled post cannot leak by guessing a URL.
+// Filters and city summaries — what the website's search UI is built from.
 // ---------------------------------------------------------------------------
-
-const PUBLISHED = `r.is_deleted = false AND b.status = 'Published'
-  AND b.published_at IS NOT NULL AND b.published_at <= now() AND b.noindex = false`;
 
 publicRouter.get('/filters', asyncHandler(async (_req, res) => {
   const rows = await db.query<{ name: string; value: string; label: string }>(
