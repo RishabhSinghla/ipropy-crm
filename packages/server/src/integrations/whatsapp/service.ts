@@ -433,6 +433,36 @@ export async function sendWhatsAppForWorkflow(input: WorkflowSendInput): Promise
     }
   }
 
+  // No Business API? Queue it for a human to send from their own WhatsApp.
+  //
+  // Without this the whole instant-response workflow is theatre: it fires, the
+  // send finds no provider, and nothing reaches the buyer — while the CRM
+  // reports the workflow ran. Meta approval takes months and speed to lead is
+  // the single biggest conversion lever there is, so the eight months of
+  // waiting should not also be eight months of not answering enquiries.
+  //
+  // One tap instead of none. The message is written, addressed and merged; a
+  // person presses send. Everything downstream — the queue, the header badge,
+  // the timeline, the lead's last-contacted date — already existed and simply
+  // was never fed from here.
+  const { isConfigured } = await import('./provider.js');
+  if (!(await isConfigured())) {
+    const body = text ?? (input.templateName ? await templateBody(input.templateName) : null);
+    if (!body) {
+      logger.info({ recordId: input.recordId }, 'whatsapp workflow skipped — no provider and no text to hand a person');
+      return;
+    }
+    const { queueDeviceSend, renderForRecord } = await import('./deviceSend.js');
+    await queueDeviceSend({
+      handle: input.to,
+      body: await renderForRecord(body, input.recordId ?? null, input.module ?? 'leads'),
+      recordId: input.recordId ?? null,
+      module: input.module ?? 'leads',
+      reason: 'Workflow — no WhatsApp Business account connected',
+    }).catch((err) => logger.warn({ err, recordId: input.recordId }, 'could not queue a device send'));
+    return;
+  }
+
   const conversationId = await getOrCreateConversation(input.to);
   const windowOpen = await isWindowOpen(conversationId);
 
@@ -513,4 +543,19 @@ export async function broadcast(input: {
     if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
   return { sent, failed };
+}
+
+/**
+ * A template's own text, for when there is no provider to send it through.
+ *
+ * An approved template is a Meta artefact, but its body is just words with
+ * `{{1}}` placeholders in it — perfectly sendable by a human. Falling back to
+ * it means a workflow written for the API path still says something useful on
+ * the phone path rather than silently doing nothing.
+ */
+async function templateBody(templateName: string): Promise<string | null> {
+  const row = await db.queryOne<{ body: string | null }>(
+    `SELECT body FROM ipy_whatsapp_template WHERE name = $1 LIMIT 1`, [templateName],
+  );
+  return row?.body?.trim() || null;
 }

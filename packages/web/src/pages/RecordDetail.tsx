@@ -479,6 +479,7 @@ export default function RecordDetail(): JSX.Element {
             however many insights exist — below it, notes were often offscreen. */}
         <div className="space-y-4">
           {moduleName === 'properties' && <PropertyPhotoCarousel recordId={id!} />}
+          <ReplyReady recordId={id!} />
           <PendingProposals module={moduleName!} recordId={id!} />
           <CommentsPanel module={moduleName!} id={id!} currentUser={user?.fullName ?? ''} />
           <AiPanel module={moduleName!} record={record} meta={meta} />
@@ -1309,6 +1310,83 @@ function PropertyPhotoCarousel({ recordId }: { recordId: string }): JSX.Element 
       {preview && (
         <DocumentViewer file={preview} files={photos} onNavigate={setPreview} onClose={() => setPreview(null)} />
       )}
+    </div>
+  );
+}
+
+/**
+ * A written reply waiting for one tap.
+ *
+ * An enquiry arrives at nine in the evening. The workflow drafts the answer,
+ * and with no WhatsApp Business account there is nobody to send it — so it is
+ * queued for a person instead. This is where that person finds it: on the lead
+ * they just opened from the notification, not on a queue page they would have
+ * to think to visit.
+ *
+ * Speed of first response is the biggest controllable factor in conversion,
+ * and the gap between a four-minute reply and a four-hour one is usually just
+ * whether the words were already written.
+ */
+function ReplyReady({ recordId }: { recordId: string }): JSX.Element | null {
+  const [busy, setBusy] = useState<string | null>(null);
+  const { data, refetch } = useQuery({
+    queryKey: ['outreach', 'queue'],
+    queryFn: () => api.deviceQueue(),
+    staleTime: 30_000,
+  });
+
+  const waiting = (data ?? []).filter((m) => m.recordId === recordId);
+  if (!waiting.length) return null;
+
+  const send = (id: string, link: string): void => {
+    // Opened before the await so the tap and the window are in the same gesture
+    // — Safari blocks a popup opened after an async hop.
+    window.open(link, '_blank', 'noopener');
+    void api.deviceSendOpened(id).catch(() => undefined);
+  };
+
+  const confirm = async (id: string): Promise<void> => {
+    setBusy(id);
+    try {
+      await api.deviceSendDone(id);
+      toast.success('Logged as sent');
+      await refetch();
+    } catch (err) {
+      toast.error('Could not log that', (err as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="card overflow-hidden border-emerald-200 dark:border-emerald-900">
+      <div className="flex items-center gap-2 border-b border-emerald-200 bg-emerald-50 px-4 py-2.5 dark:border-emerald-900 dark:bg-emerald-950/40">
+        <MessageCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+        <span className="text-sm font-medium text-emerald-900 dark:text-emerald-200">
+          {waiting.length === 1 ? 'Reply ready to send' : `${waiting.length} replies ready to send`}
+        </span>
+      </div>
+      <div className="divide-y divide-slate-100 dark:divide-slate-800">
+        {waiting.map((message) => (
+          <div key={message.id} className="p-4">
+            <p className="whitespace-pre-wrap text-sm">{message.body}</p>
+            <p className="mt-1 text-2xs text-muted">To {message.handle}</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button className="btn-primary btn-sm" onClick={() => send(message.id, message.link)}>
+                <MessageCircle className="h-3.5 w-3.5" /> Send on WhatsApp
+              </button>
+              <button
+                className="btn-secondary btn-sm"
+                disabled={busy === message.id}
+                onClick={() => void confirm(message.id)}
+              >
+                {busy === message.id ? <Spinner className="h-3 w-3" /> : <Check className="h-3.5 w-3.5" />}
+                I sent it
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
