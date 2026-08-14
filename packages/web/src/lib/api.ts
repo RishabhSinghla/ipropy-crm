@@ -735,6 +735,11 @@ export const api = {
   renameAiThread: (id: string, title: string) => patch<{ id: string; title: string }>(`/api/ai/threads/${id}`, { title }),
   deleteAiThread: (id: string) => del<{ ok: boolean }>(`/api/ai/threads/${id}`),
   confirmAiAction: (id: string) => post<{ action: AiAssistantAction; answer: string; threadId: string | null }>(`/api/ai/actions/${id}/confirm`, {}),
+  /** What your own comparable units were listed at — for the shape being typed. */
+  comparables: (input: { locality: string; configuration: string; carpetArea?: number; excludeRecordId?: string }) =>
+    get<{ comparables: { summary: string; count: number; medianPrice: number } | null }>(
+      `/api/ai/comparables${qs(input)}`,
+    ),
   /** Changes proposed but not yet confirmed for one record — e.g. after a call. */
   pendingAiActions: (recordId: string) =>
     get<{ actions: AiAssistantAction[] }>(`/api/ai/actions?recordId=${encodeURIComponent(recordId)}`),

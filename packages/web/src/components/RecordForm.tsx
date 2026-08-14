@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FieldMeta, ModuleMeta, RecordEnvelope } from '@ipropy/shared';
 import { collectFieldErrors, evaluateFilter } from '@ipropy/shared';
-import { AlertTriangle, ChevronDown, Save, X } from 'lucide-react';
+import { AlertTriangle, ChevronDown, Save, TrendingUp, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import { invalidateRecordQueries } from '../lib/invalidate';
@@ -58,6 +58,54 @@ function DuplicateHint({
         ))}
       </ul>
     </div>
+  );
+}
+
+/**
+ * What your own comparable units were listed at, under the price field.
+ *
+ * A portal can tell you the asking price in a locality. Only this CRM knows
+ * what *your* 3 BHKs in Powai actually went out at, because you photographed
+ * and listed every one of them — and the moment that is worth anything is the
+ * moment somebody is typing a number into a new unit.
+ *
+ * One line, and only when there are enough comparable units to mean something.
+ * The server returns null below its threshold and this renders nothing, which
+ * is the common case and the right one: a median drawn from three units is a
+ * number with false authority, and somebody will price against it.
+ *
+ * No recommendation, deliberately. The person typing knows the floor, the
+ * view, and how badly the builder needs the money; a CRM that says "price it at
+ * ₹2.1 Cr" is pretending it knows better.
+ */
+function ComparablesHint({
+  module, field, values, recordId,
+}: {
+  module: string;
+  field: string;
+  values: Record<string, unknown>;
+  recordId?: string;
+}): JSX.Element | null {
+  const locality = typeof values.locality === 'string' ? values.locality : '';
+  const configuration = typeof values.configuration === 'string' ? values.configuration : '';
+  const carpetArea = typeof values.carpet_area === 'number' ? values.carpet_area : undefined;
+  const relevant = module === 'properties' && field === 'base_price' && Boolean(locality && configuration);
+
+  const { data } = useQuery({
+    queryKey: ['comparables', locality, configuration, carpetArea ?? null],
+    queryFn: () => api.comparables({ locality, configuration, carpetArea, excludeRecordId: recordId }),
+    enabled: relevant,
+    // Inventory does not move minute to minute, and this fires again on every
+    // keystroke in the size field without it.
+    staleTime: 5 * 60_000,
+  });
+
+  if (!relevant || !data?.comparables) return null;
+  return (
+    <p className="mt-1 flex items-start gap-1.5 text-xs text-muted">
+      <TrendingUp className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-500" />
+      <span>{data.comparables.summary}</span>
+    </p>
   );
 }
 
@@ -351,6 +399,12 @@ export default function RecordForm({
                       matches={duplicatesByField.get(field.name)}
                       module={module.name}
                       label={field.label}
+                    />
+                    <ComparablesHint
+                      module={module.name}
+                      field={field.name}
+                      values={values}
+                      recordId={record?.id}
                     />
                     {!errors[field.name] && field.helpText && field.uitype !== 'boolean' && (
                       <p className="mt-1 text-xs text-muted">{field.helpText}</p>

@@ -6,7 +6,7 @@ import { db } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, NotFoundError } from '../../utils/errors.js';
-import { assertCapability, canAccessRecord, getFieldPermissions } from '../../core/permissions/index.js';
+import { assertCapability, assertModuleAccess, canAccessRecord, getFieldPermissions } from '../../core/permissions/index.js';
 import { aiStatus, isAiAvailable } from '../../ai/client.js';
 import {
   isSttConfigured, SttError, transcribeAudio, transcribeRecording,
@@ -420,6 +420,31 @@ aiRouter.post('/transcribe', modelLimiter, assistantAudioUpload.single('audio'),
     if (err instanceof SttError) throw new BadRequestError(err.message);
     throw err;
   }
+}));
+
+/**
+ * What comparable units of yours were listed at — answered while the record is
+ * still being typed, so it takes the shape rather than an id.
+ */
+aiRouter.get('/comparables', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertModuleAccess(user, 'properties', 'view');
+  const input = z.object({
+    locality: z.string().min(1),
+    configuration: z.string().min(1),
+    carpetArea: z.coerce.number().positive().optional(),
+    excludeRecordId: z.string().uuid().optional(),
+  }).parse(req.query);
+
+  const { comparablesFor } = await import('../../ai/comparables.js');
+  res.json({
+    comparables: await comparablesFor({
+      locality: input.locality,
+      configuration: input.configuration,
+      carpetArea: input.carpetArea ?? null,
+      excludeRecordId: input.excludeRecordId ?? null,
+    }),
+  });
 }));
 
 /** NL → filter without running it, so the UI can preview and let the user edit. */
