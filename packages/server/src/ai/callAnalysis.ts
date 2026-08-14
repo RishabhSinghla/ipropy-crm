@@ -22,6 +22,18 @@ export interface CallAnalysis {
   /** field updates the analysis implies, e.g. a stated budget */
   extractedFields: Record<string, unknown>;
   coaching: string | null;
+  /**
+   * Where the call leaves the lead, and when to chase.
+   *
+   * Separate from `extractedFields` because these are the two the rep has to
+   * remember and therefore the two that rot, and because they are proposed for
+   * confirmation rather than written silently — moving somebody to Negotiation
+   * on a model's reading of a transcript is a bigger claim than filling in a
+   * budget they said out loud.
+   */
+  suggestedStatus?: string | null;
+  followUpDate?: string | null;
+  followUpReason?: string | null;
 }
 
 export async function analyseCallRecording(callId: string): Promise<CallAnalysis | null> {
@@ -48,6 +60,25 @@ export async function analyseCallRecording(callId: string): Promise<CallAnalysis
   });
 }
 
+/**
+ * The coming week, spelled out.
+ *
+ * A model given only today's date still turns "this Saturday" into the wrong
+ * date — seen in testing, where it produced a Monday. Naming the days removes
+ * the arithmetic entirely, and a follow-up on the wrong day is not a rounding
+ * error to a buyer expecting a call.
+ */
+function nextWeek(): string {
+  const out: string[] = [];
+  for (let i = 1; i <= 7; i += 1) {
+    const day = new Date();
+    day.setDate(day.getDate() + i);
+    const name = day.toLocaleDateString('en-IN', { weekday: 'long', timeZone: 'Asia/Kolkata' });
+    out.push(`${name} ${day.toISOString().slice(0, 10)}`);
+  }
+  return out.join(', ');
+}
+
 export async function analyseTranscript(
   callId: string,
   transcript: string,
@@ -68,6 +99,14 @@ export async function analyseTranscript(
   const dispositions = await db.query<{ value: string }>(
     `SELECT v.value FROM ipy_picklist_value v JOIN ipy_picklist p ON p.id = v.picklist_id
      WHERE p.name = 'call_disposition' AND v.is_active ORDER BY v.sequence`,
+  );
+
+  // Read from the picklist rather than hardcoded: an admin can add a stage in
+  // the UI, and a model offered a value the CRM does not have produces a
+  // proposal that fails validation at confirm time.
+  const statuses = await db.query<{ value: string }>(
+    `SELECT v.value FROM ipy_picklist_value v JOIN ipy_picklist p ON p.id = v.picklist_id
+     WHERE p.name = 'lead_status' AND v.is_active ORDER BY v.sequence`,
   );
 
   const prompt = `Analyse this sales call transcript.
@@ -100,10 +139,31 @@ Return JSON:
     "preferred_locations": [<areas mentioned>],
     "funding_type": <"Self Funded" | "Home Loan" | "Loan Pre-Approved", if stated>
   },
-  "coaching": "<one specific, actionable coaching note for the rep, or null>"
+  "coaching": "<one specific, actionable coaching note for the rep, or null>",
+  "suggestedStatus": <one of the allowed statuses, ONLY if the call clearly moved the lead there, else null>,
+  "followUpDate": <"YYYY-MM-DD" if a time to call back was agreed or implied, else null>,
+  "followUpReason": "<short phrase: why then, e.g. 'agreed to visit Saturday', 'wants to speak to wife first'>"
 }
 
-Omit any extractedFields key that was not explicitly stated. Never guess a budget.`;
+Omit any extractedFields key that was not explicitly stated. Never guess a budget.
+
+Money is in rupees as a plain integer. 1 lakh = 100000, 1 crore = 10000000.
+"two point two crore" is 22000000, not 2200000. A budget for a flat in an
+Indian metro is virtually never under 2000000 — if your number is, you have
+dropped a zero.
+
+Allowed statuses: ${statuses.rows.map((s) => s.value).join(', ')}
+Today is ${new Date().toISOString().slice(0, 10)}, a ${new Date().toLocaleDateString('en-IN', { weekday: 'long', timeZone: 'Asia/Kolkata' })}.
+The next seven days are: ${nextWeek()}
+
+On suggestedStatus, only move the lead when the call actually did. "I'll think
+about it" is not Negotiation. A booked site visit is Site Visit Scheduled; a
+completed one is Site Visit Done. If nothing changed, return null — leaving it
+alone is a correct answer and a wrong status is worse than a stale one.
+
+On followUpDate, use what was agreed. "Call me next week" is seven days out;
+"after Diwali" or any date you cannot place is null, not a guess. Never put it
+in the past.`;
 
   const parsed = await completeJson<CallAnalysis>({
     feature: 'call_analysis',
@@ -144,6 +204,18 @@ Omit any extractedFields key that was not explicitly stated. Never guess a budge
     });
 
     await applyExtractedFields(meta.recordId, meta.module, parsed.extractedFields ?? {});
+
+    // Where the call leaves the lead is *proposed*, not applied. Everything
+    // above transcribes what the buyer said; a pipeline status is a judgement,
+    // and a wrong one drops the lead into a stage nobody is working.
+    if (meta.module === 'leads') {
+      const { proposeFromCall } = await import('./callProposal.js');
+      await proposeFromCall({
+        callId, recordId: meta.recordId, module: meta.module,
+        userId: meta.userId, analysis: parsed,
+      }).catch((err) => logger.warn({ err, callId }, 'could not propose an update from the call'));
+    }
+
     await createFollowUpTasks(meta.recordId, meta.module, parsed.nextActions ?? [], meta.userId);
 
     // A fresh call materially changes the picture — re-score.
@@ -189,6 +261,10 @@ async function applyExtractedFields(
     if (!allowed.has(key)) continue;
     if (value === null || value === undefined || value === '') continue;
     if (Array.isArray(value) && !value.length) continue;
+    if (!plausibleMoney(key, value)) {
+      logger.warn({ recordId, key, value }, 'refused an implausible amount extracted from a call');
+      continue;
+    }
 
     const field = meta.fields.find((f) => f.name === key);
     const existing = field?.storage === 'column'
@@ -210,6 +286,28 @@ async function applyExtractedFields(
   ).catch((err) => logger.warn({ err, recordId }, 'failed to apply extracted fields'));
 
   logger.info({ recordId, fields: Object.keys(updates) }, 'AI enriched record from call');
+}
+
+/**
+ * Reject an amount that has lost a zero.
+ *
+ * Seen in testing: "two point two crore" came back as 2200000 — ₹22 lakh, off
+ * by a factor of ten. On this call it was harmless because the field was
+ * already filled and only empty ones are written, but on a fresh lead it would
+ * have silently made them unmatchable against every unit they actually want,
+ * with nothing to show why.
+ *
+ * The floor is deliberately crude. Any real budget or income figure in this
+ * business clears ₹5 lakh by a wide margin, so a number below it is a units
+ * error rather than an unusually cheap flat, and refusing is free: the field
+ * stays empty and a person fills it, which is exactly where it was before.
+ */
+function plausibleMoney(field: string, value: unknown): boolean {
+  const MONEY_FIELDS = new Set(['budget_min', 'budget_max', 'annual_income', 'lifetime_value']);
+  if (!MONEY_FIELDS.has(field)) return true;
+  const amount = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(amount)) return false;
+  return amount >= 500_000;
 }
 
 async function createFollowUpTasks(

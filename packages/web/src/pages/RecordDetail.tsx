@@ -479,6 +479,7 @@ export default function RecordDetail(): JSX.Element {
             however many insights exist — below it, notes were often offscreen. */}
         <div className="space-y-4">
           {moduleName === 'properties' && <PropertyPhotoCarousel recordId={id!} />}
+          <PendingProposals module={moduleName!} recordId={id!} />
           <CommentsPanel module={moduleName!} id={id!} currentUser={user?.fullName ?? ''} />
           <AiPanel module={moduleName!} record={record} meta={meta} />
         </div>
@@ -1310,6 +1311,116 @@ function PropertyPhotoCarousel({ recordId }: { recordId: string }): JSX.Element 
       )}
     </div>
   );
+}
+
+/**
+ * Changes the CRM is waiting on you to approve.
+ *
+ * Almost always this is a call that has just ended: the analysis read the
+ * transcript, worked out that the buyer agreed to a site visit on Saturday, and
+ * is asking whether to move them and chase on the 16th. One tap, and the record
+ * is up to date without anybody typing.
+ *
+ * Above the notes and the insights on purpose. A decision waiting on you
+ * outranks something to read, and this is the whole point of the feature —
+ * buried under two other cards it becomes the thing nobody scrolls to, which is
+ * exactly how the CRM went stale in the first place.
+ *
+ * Renders nothing at all when there is nothing pending, which is most of the
+ * time. An empty "no proposals" card would be a permanent reminder of a feature
+ * doing nothing.
+ */
+function PendingProposals({ module, recordId }: { module: string; recordId: string }): JSX.Element | null {
+  const queryClient = useQueryClient();
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const { data, refetch } = useQuery({
+    queryKey: ['pending-actions', recordId],
+    queryFn: () => api.pendingAiActions(recordId),
+    staleTime: 30_000,
+  });
+
+  const settle = async (id: string, confirm: boolean): Promise<void> => {
+    setBusy(id);
+    try {
+      if (confirm) {
+        const result = await api.confirmAiAction(id);
+        toast.success('Record updated', result.action.summary);
+        // The record itself changed, so everything reading it is now stale.
+        invalidateRecordQueries(queryClient, module, recordId);
+      } else {
+        await api.cancelAiAction(id);
+        toast.success('Dismissed', 'Nothing was changed.');
+      }
+      await refetch();
+    } catch (err) {
+      toast.error(confirm ? 'Could not apply that' : 'Could not dismiss that', (err as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const actions = data?.actions ?? [];
+  if (!actions.length) return null;
+
+  return (
+    <div className="card overflow-hidden border-amber-200 dark:border-amber-900">
+      <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2.5 dark:border-amber-900 dark:bg-amber-950/40">
+        <Sparkles className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+        <span className="text-sm font-medium text-amber-900 dark:text-amber-200">
+          {actions.length === 1 ? 'One change to review' : `${actions.length} changes to review`}
+        </span>
+      </div>
+      <div className="divide-y divide-slate-100 dark:divide-slate-800">
+        {actions.map((action) => (
+          <div key={action.id} className="p-4">
+            <p className="text-sm">{action.summary}</p>
+            {action.origin === 'call' && (
+              <p className="mt-1 text-2xs text-muted">Suggested from your last call</p>
+            )}
+            <dl className="mt-2.5 space-y-1">
+              {action.changes.map((change) => (
+                <div key={change.field} className="flex items-baseline gap-2 text-xs">
+                  <dt className="text-muted">{change.label}</dt>
+                  <dd className="min-w-0 flex-1 truncate">
+                    <span className="text-muted line-through">{proposalValue(change.from)}</span>
+                    <span className="mx-1.5 text-slate-400">&rarr;</span>
+                    <span className="font-medium">{proposalValue(change.to)}</span>
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            <div className="mt-3 flex gap-2">
+              <button
+                className="btn-primary btn-sm"
+                disabled={busy === action.id}
+                onClick={() => void settle(action.id, true)}
+              >
+                {busy === action.id ? <Spinner className="h-3 w-3" /> : <Check className="h-3.5 w-3.5" />}
+                Apply
+              </button>
+              <button
+                className="btn-secondary btn-sm"
+                disabled={busy === action.id}
+                onClick={() => void settle(action.id, false)}
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function proposalValue(value: unknown): string {
+  if (value === null || value === undefined || value === '') return 'empty';
+  if (Array.isArray(value)) return value.join(', ');
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+    return new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+  return String(value);
 }
 
 function AiPanel({

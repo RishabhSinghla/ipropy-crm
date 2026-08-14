@@ -17,7 +17,7 @@ import { draftMessage, summariseRecord } from '../../ai/drafting.js';
 import { analyseTranscript, coachingReport } from '../../ai/callAnalysis.js';
 import { ask, dailyDigest, dashboardInsight, parseNaturalQuery } from '../../ai/assistant.js';
 import {
-  actionStatuses, cancelAssistantAction, confirmAssistantAction,
+  actionStatuses, cancelAssistantAction, confirmAssistantAction, pendingActionsForRecord,
   type AssistantActionProposal,
 } from '../../ai/assistantActions.js';
 import {
@@ -522,18 +522,29 @@ aiRouter.delete('/threads/:id', asyncHandler(async (req, res) => {
 
 aiRouter.post('/actions/:id/confirm', asyncHandler(async (req, res) => {
   const result = await confirmAssistantAction(req.params.id, getScope(req));
-  await appendThreadMessages(result.threadId, getUser(req).id, [{
-    role: 'assistant', content: result.answer, at: new Date().toISOString(), action: result.action,
-  }]);
+  // A proposal from a finished call has no chat thread to write back into.
+  if (result.threadId) {
+    await appendThreadMessages(result.threadId, getUser(req).id, [{
+      role: 'assistant', content: result.answer, at: new Date().toISOString(), action: result.action,
+    }]);
+  }
   res.json(result);
+}));
+
+/** Proposals waiting on this user for one record — shown when the page opens. */
+aiRouter.get('/actions', asyncHandler(async (req, res) => {
+  const recordId = z.string().uuid().parse(req.query.recordId);
+  res.json({ actions: await pendingActionsForRecord(recordId, getUser(req).id) });
 }));
 
 aiRouter.delete('/actions/:id', asyncHandler(async (req, res) => {
   const result = await cancelAssistantAction(req.params.id, getUser(req).id);
   const answer = 'Cancelled — no CRM data was changed.';
-  await appendThreadMessages(result.threadId, getUser(req).id, [{
-    role: 'assistant', content: answer, at: new Date().toISOString(), action: result.action,
-  }]);
+  if (result.threadId) {
+    await appendThreadMessages(result.threadId, getUser(req).id, [{
+      role: 'assistant', content: answer, at: new Date().toISOString(), action: result.action,
+    }]);
+  }
   res.json({ action: result.action, answer });
 }));
 

@@ -11,6 +11,8 @@ import { completeJson, isAiAvailable } from './client.js';
 export interface AssistantActionProposal {
   id: string;
   type: 'update_record';
+  /** Where it came from — a chat message, or a call that has just ended. */
+  origin?: 'ask_ipropy' | 'call';
   summary: string;
   module: string;
   recordId: string;
@@ -46,7 +48,9 @@ interface ModelActionPlan {
 interface ActionRow {
   id: string;
   user_id: string;
-  thread_id: string;
+  /** Null for a proposal that did not come from a chat — see migration 047. */
+  thread_id: string | null;
+  origin: 'ask_ipropy' | 'call';
   action_type: 'update_record';
   module_name: string;
   record_id: string;
@@ -83,6 +87,7 @@ function proposalFromRow(row: ActionRow): AssistantActionProposal {
   return {
     id: row.id,
     type: row.action_type,
+    origin: row.origin ?? 'ask_ipropy',
     summary: row.preview,
     module: row.module_name,
     recordId: row.record_id,
@@ -255,9 +260,9 @@ Use exact option values shown above. Do not include unchanged information or sys
 export async function confirmAssistantAction(
   actionId: string,
   ctx: ServiceContext,
-): Promise<{ action: AssistantActionProposal; answer: string; threadId: string }> {
+): Promise<{ action: AssistantActionProposal; answer: string; threadId: string | null }> {
   const result = await transaction(async (conn): Promise<
-    { expired: true } | { action: AssistantActionProposal; answer: string; threadId: string }
+    { expired: true } | { action: AssistantActionProposal; answer: string; threadId: string | null }
   > => {
     const row = await conn.queryOne<ActionRow>(
       `SELECT * FROM ipy_ai_action WHERE id = $1 AND user_id = $2 FOR UPDATE`,
@@ -274,7 +279,9 @@ export async function confirmAssistantAction(
     }
 
     await updateRecord(
-      { ...ctx, source: 'ask_ipropy' },
+      // The audit trail should say where the change came from, and a proposal
+      // made after a phone call did not come from the assistant panel.
+      { ...ctx, source: row.origin === 'call' ? 'call_analysis' : 'ask_ipropy' },
       row.module_name,
       row.record_id,
       row.payload.updates ?? {},
@@ -303,7 +310,7 @@ export async function confirmAssistantAction(
 export async function cancelAssistantAction(
   actionId: string,
   userId: string,
-): Promise<{ action: AssistantActionProposal; threadId: string }> {
+): Promise<{ action: AssistantActionProposal; threadId: string | null }> {
   const row = await db.queryOne<ActionRow>(
     `UPDATE ipy_ai_action
      SET status = 'cancelled', cancelled_at = now()
@@ -333,4 +340,32 @@ export async function actionStatuses(
     [actionIds, userId],
   );
   return new Map(rows.rows.map((row) => [row.id, row.status]));
+}
+
+/**
+ * Proposals still waiting on this person for one record.
+ *
+ * Read when a record page opens, so a change suggested after a call is in
+ * front of the rep the moment they look at the lead — which for most people is
+ * sooner than they will read a notification.
+ */
+export async function pendingActionsForRecord(
+  recordId: string,
+  userId: string,
+): Promise<AssistantActionProposal[]> {
+  // Expire on read. A background sweep for this would be a scheduled job
+  // earning its keep once a day; the only moment staleness matters is when
+  // somebody is about to be shown one.
+  await db.query(
+    `UPDATE ipy_ai_action SET status = 'expired'
+     WHERE record_id = $1 AND user_id = $2 AND status = 'pending' AND expires_at <= now()`,
+    [recordId, userId],
+  );
+  const rows = await db.query<ActionRow>(
+    `SELECT * FROM ipy_ai_action
+     WHERE record_id = $1 AND user_id = $2 AND status = 'pending'
+     ORDER BY created_at DESC LIMIT 5`,
+    [recordId, userId],
+  );
+  return rows.rows.map(proposalFromRow);
 }

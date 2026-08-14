@@ -180,9 +180,13 @@ export default function AiAssistant({
     setActionBusy(action.id);
     try {
       const result = await api.confirmAiAction(action.id);
-      setActiveThreadId(result.threadId);
-      await loadThread(result.threadId);
-      await refreshThreads();
+      // A proposal made after a call has no chat thread; confirming one from
+      // the record page still lands here if the panel happens to be open.
+      if (result.threadId) {
+        setActiveThreadId(result.threadId);
+        await loadThread(result.threadId);
+        await refreshThreads();
+      }
       toast.success('CRM updated', result.action.summary);
     } catch (err) {
       toast.error('Could not complete that change', (err as Error).message);

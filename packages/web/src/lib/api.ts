@@ -222,6 +222,8 @@ export interface CaptureStorageStatus {
 export interface AiAssistantAction {
   id: string;
   type: 'update_record';
+  /** Where it came from — a chat message, or a call that has just ended. */
+  origin?: 'ask_ipropy' | 'call';
   summary: string;
   module: string;
   recordId: string;
@@ -732,7 +734,10 @@ export const api = {
     post<{ id: string; title: string }>('/api/ai/threads', context ?? {}),
   renameAiThread: (id: string, title: string) => patch<{ id: string; title: string }>(`/api/ai/threads/${id}`, { title }),
   deleteAiThread: (id: string) => del<{ ok: boolean }>(`/api/ai/threads/${id}`),
-  confirmAiAction: (id: string) => post<{ action: AiAssistantAction; answer: string; threadId: string }>(`/api/ai/actions/${id}/confirm`, {}),
+  confirmAiAction: (id: string) => post<{ action: AiAssistantAction; answer: string; threadId: string | null }>(`/api/ai/actions/${id}/confirm`, {}),
+  /** Changes proposed but not yet confirmed for one record — e.g. after a call. */
+  pendingAiActions: (recordId: string) =>
+    get<{ actions: AiAssistantAction[] }>(`/api/ai/actions?recordId=${encodeURIComponent(recordId)}`),
   cancelAiAction: (id: string) => del<{ action: AiAssistantAction; answer: string }>(`/api/ai/actions/${id}`),
   aiMemories: () => get<AiMemory[]>('/api/ai/memory'),
   deleteAiMemory: (id: string) => del<{ ok: boolean }>(`/api/ai/memory/${id}`),
