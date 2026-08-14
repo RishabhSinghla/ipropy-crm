@@ -313,6 +313,64 @@ function isUnreachable(candidate: ResolvedSettings['ai']): boolean {
   }
 }
 
+/**
+ * Whisper-compatible transcription endpoints, keyed by AI provider.
+ *
+ * Both of these serve OpenAI's `/audio/transcriptions` shape on the same key
+ * that answers chat, so a provider already configured for text needs nothing
+ * added to also handle speech. Groq is listed first because its free tier
+ * covers speech and Gemini's does not expose this endpoint at all.
+ */
+const STT_CAPABLE: { provider: Exclude<AiProvider, 'none'>; baseUrl: string; model: string }[] = [
+  { provider: 'groq', baseUrl: 'https://api.groq.com/openai/v1', model: 'whisper-large-v3-turbo' },
+  { provider: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'whisper-1' },
+];
+
+/**
+ * Speech-to-text, falling back to a key that is already here.
+ *
+ * The microphone in Ask iPropy and the voice note on a site visit were both
+ * built, shipped and dead: they needed a *separate* `stt` integration nobody
+ * had filled in, so pressing the button recorded audio and got back "speech-to
+ * -text is not configured". Meanwhile a Groq key sat in the next row of the
+ * same table, transcribing free of charge, unused.
+ *
+ * So an explicitly configured `stt` card still wins — someone who sets one has
+ * decided something. Absent that, this reaches for any AI provider that can
+ * already do the job, rather than making a person configure the same vendor
+ * twice to use two of its endpoints.
+ */
+function resolveStt(map: Map<string, IntegrationRow>, sttRow: IntegrationRow | undefined): ResolvedSettings['stt'] {
+  const explicitKey = pick(sttRow, 'credentials', 'apiKey', config.stt.apiKey);
+  const provider = pick(sttRow, 'config', 'provider', config.stt.provider) === 'openai' ? 'openai' : 'none';
+
+  if (explicitKey) {
+    return {
+      provider,
+      apiKey: explicitKey,
+      baseUrl: pick(sttRow, 'config', 'baseUrl', config.stt.baseUrl) || config.stt.baseUrl,
+      model: pick(sttRow, 'config', 'model', config.stt.model) || config.stt.model,
+    };
+  }
+
+  for (const candidate of STT_CAPABLE) {
+    const ai = aiCandidate(map, candidate.provider);
+    if (!ai?.apiKey) continue;
+    return {
+      // 'openai' here names the wire format, not the vendor — it is what
+      // isSttConfigured checks and what the client speaks.
+      provider: 'openai',
+      apiKey: ai.apiKey,
+      // The provider's own base URL if it set one, so a proxy or a regional
+      // endpoint is honoured; otherwise the vendor's documented default.
+      baseUrl: ai.baseUrl || candidate.baseUrl,
+      model: candidate.model,
+    };
+  }
+
+  return { provider: 'none', apiKey: '', baseUrl: config.stt.baseUrl, model: config.stt.model };
+}
+
 function resolveAi(map: Map<string, IntegrationRow>): ResolvedSettings['ai'] {
   if (config.ai.provider) {
     const pinned = aiCandidate(map, config.ai.provider);
@@ -423,12 +481,7 @@ function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
       },
     },
     ai: resolveAi(map),
-    stt: {
-      provider: pick(sttRow, 'config', 'provider', config.stt.provider) === 'openai' ? 'openai' : 'none',
-      apiKey: pick(sttRow, 'credentials', 'apiKey', config.stt.apiKey),
-      baseUrl: pick(sttRow, 'config', 'baseUrl', config.stt.baseUrl) || config.stt.baseUrl,
-      model: pick(sttRow, 'config', 'model', config.stt.model) || config.stt.model,
-    },
+    stt: resolveStt(map, sttRow),
     leadSources: {
       facebook: {
         appId: pick(fb, 'config', 'appId', config.leadSources.facebook.appId),
