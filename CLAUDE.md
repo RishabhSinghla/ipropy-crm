@@ -158,6 +158,30 @@ Login: `admin@ipropy.com` / `Admin@123`. Other demo users in `PROJECT_HANDOVER.m
 
 `npm run typecheck` must still be clean before finishing any change.
 
+**A green local run does not mean the deploy works.** Render clones the repo and builds from
+source; a developer's machine builds on top of whatever is already in `packages/*/dist`. Those are
+different builds, and only one of them is what the team actually gets.
+
+Two traps, both of which have already cost a full day of failed deploys:
+
+* **Workspace build order.** `packages/server` imports `@ipropy/mcp`, whose types come from
+  `dist/lib.d.ts`. The root `build` and `pretypecheck` scripts must build a workspace *before*
+  anything that imports it — `shared`, `mcp`, `server`, `web`. Locally the stale `dist` hides a
+  wrong order completely; from a clean checkout it is an immediate `TS2307`.
+* **`.dockerignore` matches full paths from the context root.** A bare `dist` excludes `/dist` and
+  leaves every `packages/*/dist` in place, so `COPY . .` ships the developer's build output into
+  the image and `npm run build` there can no longer fail. Anything that can appear inside a
+  workspace needs `**/` — `**/dist`, `**/node_modules`, `**/*.tsbuildinfo`.
+
+To check the real thing before pushing:
+
+```bash
+docker build --platform linux/amd64 -t ipropy-crm:local .   # what Render runs; CI runs this too
+```
+
+Adding a workspace also means adding its `package.json` to the Dockerfile's `deps` stage. npm still
+links a missing workspace from the lockfile, so leaving it out fails quietly rather than loudly.
+
 ---
 
 ## Conventions
