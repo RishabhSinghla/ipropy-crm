@@ -1,9 +1,77 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
-import { Activity, Database, Layers, Sparkles } from 'lucide-react';
+import { Activity, AlertTriangle, CheckCircle2, CircleHelp, Database, Layers, Rocket, Sparkles, XCircle } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Badge, EmptyState, Select, Skeleton, Tabs } from '../../components/ui';
+
+/**
+ * Whether this deployment is ready for a team, checked by the deployment itself.
+ *
+ * The go-live list is six pieces of configuration spread across a database
+ * host, a hosting dashboard, an admin screen and everybody's phone. Written
+ * down, it records what somebody intended; asked of the running server, it
+ * records what is actually true — which is a different thing, and the one that
+ * matters the morning you hand the address to five people.
+ *
+ * Failures first, deliberately. A list that reads top to bottom in its original
+ * order buries the one item that loses data under four that are already fine.
+ */
+function ReadinessPanel(): JSX.Element {
+  const { data, isLoading } = useQuery({
+    queryKey: ['readiness'],
+    queryFn: () => api.readiness(),
+    refetchInterval: 60_000,
+  });
+
+  if (isLoading) return <Skeleton className="h-64" />;
+  if (!data) return <EmptyState title="Could not run the check" />;
+
+  const rank: Record<string, number> = { fail: 0, warn: 1, unknown: 2, ok: 3 };
+  const checks = [...data.checks].sort((a, b) => rank[a.status] - rank[b.status]);
+
+  const icon = (status: string): JSX.Element => {
+    if (status === 'ok') return <CheckCircle2 className="h-4 w-4 shrink-0 text-positive" />;
+    if (status === 'fail') return <XCircle className="h-4 w-4 shrink-0 text-negative" />;
+    if (status === 'warn') return <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />;
+    return <CircleHelp className="h-4 w-4 shrink-0 text-slate-400" />;
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="card p-5">
+        <p className="text-sm font-medium">
+          {data.readyCount} of {data.total} ready
+        </p>
+        <p className="mt-1 text-xs text-muted">
+          Checked against this running server, not against a document. Anything it cannot see
+          from here says so rather than guessing.
+        </p>
+        <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+          <div
+            className="h-full bg-positive transition-all"
+            style={{ width: `${(data.readyCount / data.total) * 100}%` }}
+          />
+        </div>
+      </div>
+
+      <ul className="card divide-y divide-slate-100 dark:divide-slate-800">
+        {checks.map((check) => (
+          <li key={check.id} className="flex gap-3 p-4">
+            {icon(check.status)}
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">{check.title}</p>
+              <p className="mt-0.5 text-xs text-muted">{check.detail}</p>
+              {check.fix && check.status !== 'ok' && (
+                <p className="mt-1.5 text-xs text-brand-600 dark:text-brand-400">{check.fix}</p>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 export default function SystemAdmin(): JSX.Element {
   const [tab, setTab] = useState('overview');
@@ -40,6 +108,7 @@ export default function SystemAdmin(): JSX.Element {
       <Tabs
         tabs={[
           { key: 'overview', label: 'Overview', icon: <Activity className="h-3.5 w-3.5" /> },
+          { key: 'readiness', label: 'Go live', icon: <Rocket className="h-3.5 w-3.5" /> },
           { key: 'audit', label: 'Audit log', icon: <Layers className="h-3.5 w-3.5" /> },
           { key: 'ai', label: 'AI usage', icon: <Sparkles className="h-3.5 w-3.5" /> },
         ]}
@@ -47,6 +116,8 @@ export default function SystemAdmin(): JSX.Element {
         onChange={setTab}
         className="mb-4"
       />
+
+      {tab === 'readiness' && <ReadinessPanel />}
 
       {tab === 'overview' && (
         isLoading ? (

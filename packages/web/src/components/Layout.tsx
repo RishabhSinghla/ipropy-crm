@@ -14,6 +14,7 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { Avatar, Badge, Dropdown, DropdownItem, Spinner } from './ui';
 import AiAssistant from './AiAssistant';
 import { PeekLink, PeekProvider } from './PeekLink';
+import AlertsPrompt from './AlertsPrompt';
 
 /** Resolve a lucide icon by its kebab-case metadata name (see lib/icons.ts for why this is a registry, not a namespace lookup). */
 export function ModuleIcon({ name, className }: { name: string; className?: string }): JSX.Element {
@@ -237,6 +238,8 @@ export default function Layout(): JSX.Element {
           </div>
         </header>
 
+        <AlertsPrompt />
+
         <main id="main" tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto">
           {/* Per-page net. Keyed on the path so a crashed page clears itself
               when the user navigates away — without the key the boundary stays
@@ -397,7 +400,12 @@ function QueueBadge(): JSX.Element | null {
   const waiting = data?.length ?? 0;
   if (!waiting) return null;
   return (
-    <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-2xs font-semibold text-white">
+    // amber-700, not amber-500: white on amber-500 is 2.15:1, less than half
+    // the 4.5:1 that AA asks for at this size. The badge only renders when the
+    // queue has something in it, so nothing had ever looked at it — the
+    // accessibility sweep found it the moment the WhatsApp fallback started
+    // putting messages there.
+    <span className="rounded-full bg-amber-700 px-1.5 py-0.5 text-2xs font-semibold text-white">
       {waiting > 99 ? '99+' : waiting}
     </span>
   );

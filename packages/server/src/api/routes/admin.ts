@@ -660,6 +660,19 @@ adminRouter.get('/audit', asyncHandler(async (req, res) => {
 // System health / diagnostics
 // ---------------------------------------------------------------------------
 
+/**
+ * Whether this deployment is actually ready for a team.
+ *
+ * Separate from /health, which answers "is the server up". This answers "is the
+ * configuration around it finished", which is a different question and the one
+ * that decides whether handing the address to five people is safe.
+ */
+adminRouter.get('/readiness', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.access');
+  const { readinessReport } = await import('../../core/readiness.js');
+  res.json(await readinessReport());
+}));
+
 adminRouter.get('/health', asyncHandler(async (req, res) => {
   await assertCapability(getUser(req), 'admin.access');
   const [counts, queue, integrations, aiUsage] = await Promise.all([

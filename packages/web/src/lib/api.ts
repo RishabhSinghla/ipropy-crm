@@ -735,6 +735,12 @@ export const api = {
   renameAiThread: (id: string, title: string) => patch<{ id: string; title: string }>(`/api/ai/threads/${id}`, { title }),
   deleteAiThread: (id: string) => del<{ ok: boolean }>(`/api/ai/threads/${id}`),
   confirmAiAction: (id: string) => post<{ action: AiAssistantAction; answer: string; threadId: string | null }>(`/api/ai/actions/${id}/confirm`, {}),
+  /** Whether this deployment is configured for a real team — see core/readiness.ts. */
+  readiness: () => get<{
+    readyCount: number;
+    total: number;
+    checks: { id: string; title: string; status: 'ok' | 'warn' | 'fail' | 'unknown'; detail: string; fix?: string }[];
+  }>('/api/admin/readiness'),
   /** What your own comparable units were listed at — for the shape being typed. */
   comparables: (input: { locality: string; configuration: string; carpetArea?: number; excludeRecordId?: string }) =>
     get<{ comparables: { summary: string; count: number; medianPrice: number } | null }>(
