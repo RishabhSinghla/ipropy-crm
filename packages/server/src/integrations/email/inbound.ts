@@ -85,7 +85,7 @@ export async function syncInboundEmails(options: SyncOptions = {}): Promise<Inbo
 
       // Best-effort resolution of email -> record and outbound thread maps up
       // front so the per-message work stays cheap.
-      const byEmail = await indexRecordsByEmail();
+      const resolveByEmail = createEmailResolver();
       const byThread = await indexOutboundThreads();
 
       const messages = client.fetch(uids, {
@@ -97,7 +97,7 @@ export async function syncInboundEmails(options: SyncOptions = {}): Promise<Inbo
       for await (const msg of messages) {
         result.checked += 1;
         try {
-          const imported = await importMessage(msg, byEmail, byThread);
+          const imported = await importMessage(msg, resolveByEmail, byThread);
           if (imported) {
             result.imported += 1;
             if (imported.matched) result.matched += 1;
@@ -138,7 +138,7 @@ export async function syncInboundEmails(options: SyncOptions = {}): Promise<Inbo
  */
 async function importMessage(
   msg: FetchMessageObject,
-  byEmail: Map<string, string>,
+  resolveByEmail: (address: string) => Promise<string | null>,
   byThread: Map<string, string>,
 ): Promise<{ matched: boolean } | null> {
   const env = msg.envelope;
@@ -164,7 +164,7 @@ async function importMessage(
   const text = body('1.text') ?? body('2.text') ?? body('1');
   const html = body('1') ?? body('2');
 
-  const recordId = byEmail.get(senderAddress) ?? matchByThread(env.inReplyTo, byThread) ?? null;
+  const recordId = (await resolveByEmail(senderAddress)) ?? matchByThread(env.inReplyTo, byThread) ?? null;
 
   await db.query(
     `INSERT INTO ipy_email_log
@@ -188,42 +188,58 @@ async function importMessage(
 }
 
 /**
- * Build sender-address -> record-id for every entity module that carries an
- * email-typed field. Party records (leads, organisations) are ranked first so
- * a person wins over a unit/project record that happens to share the address.
+ * Find the record that owns one email address.
  *
- * One query per module (a plain row scan, no per-message binds), so a poll of
- * 25 messages costs a handful of lookups instead of one query per message.
+ * This used to pre-build a map of *every* record carrying an email address,
+ * `LIMIT 5000` per module and no ORDER BY — so past five thousand leads the map
+ * held an arbitrary subset, and a reply from anybody outside it silently failed
+ * to thread. It would land as an unmatched message or a duplicate lead, which
+ * looks like the customer never wrote back.
+ *
+ * The old docblock justified the map as avoiding "one query per message", and
+ * that was a false choice. A poll handles at most twenty-five messages, so this
+ * does at most twenty-five indexed lookups — cheaper than scanning five
+ * thousand rows, and correct at any table size. Results are memoised for the
+ * poll, so a thread with several replies from the same person costs one.
+ *
+ * Party records still win: leads and organisations are searched before
+ * anything else, so a person beats a unit that happens to list the same
+ * address.
  */
-async function indexRecordsByEmail(): Promise<Map<string, string>> {
-  const map = new Map<string, string>();
-  const modules = await registry.getModules({ activeOnly: true, entityOnly: true });
-  const ranked = [...modules].sort((a, b) => rankModule(a.name) - rankModule(b.name));
+function createEmailResolver(): (address: string) => Promise<string | null> {
+  const seen = new Map<string, string | null>();
 
-  for (const mod of ranked) {
-    const emailFields = mod.fields.filter((f) => f.uitype === 'email');
-    if (!emailFields.length) continue;
-    const table = quoteIdent(mod.tableName);
-    const nonNull = emailFields.map((f) => `NULLIF(${fieldExpr(f, 't')}, '') IS NOT NULL`).join(' OR ');
-    const res = await db.query<Record<string, unknown>>(
-      `SELECT r.id::text,
-              ${emailFields.map((f, i) => `lower(${fieldExpr(f, 't')}) AS addr_${i}`).join(', ')}
-       FROM ipy_record r JOIN ${table} t ON t.record_id = r.id
-       WHERE r.is_deleted = false AND (${nonNull})
-       LIMIT 5000`,
-    );
-    for (const row of res.rows) {
-      const id = row.id as string;
-      for (let i = 0; i < emailFields.length; i++) {
-        const addr = row[`addr_${i}`];
-        if (typeof addr === 'string' && addr && !map.has(addr)) map.set(addr, id);
-      }
+  return async (address: string): Promise<string | null> => {
+    const key = address.trim().toLowerCase();
+    if (!key) return null;
+    if (seen.has(key)) return seen.get(key) ?? null;
+
+    const modules = await registry.getModules({ activeOnly: true, entityOnly: true });
+    const ranked = [...modules].sort((a, b) => rankModule(a.name) - rankModule(b.name));
+
+    let found: string | null = null;
+    for (const mod of ranked) {
+      const emailFields = mod.fields.filter((f) => f.uitype === 'email');
+      if (!emailFields.length) continue;
+
+      const table = quoteIdent(mod.tableName);
+      const matches = emailFields.map((f) => `lower(${fieldExpr(f, 't')}) = $1`).join(' OR ');
+      const row = await db.queryOne<{ id: string }>(
+        `SELECT r.id::text AS id
+         FROM ipy_record r JOIN ${table} t ON t.record_id = r.id
+         WHERE r.is_deleted = false AND (${matches})
+         ORDER BY r.created_at ASC
+         LIMIT 1`,
+        [key],
+      );
+      if (row?.id) { found = row.id; break; }
     }
-  }
-  return map;
+
+    seen.set(key, found);
+    return found;
+  };
 }
 
-/** leads and organisations are the party records an inbound mail is about. */
 function rankModule(name: string): number {
   if (name === 'leads') return 0;
   if (name === 'organisations') return 1;

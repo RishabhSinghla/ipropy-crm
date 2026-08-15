@@ -73,7 +73,26 @@ export async function loadRequirement(recordId: string): Promise<Requirement | n
   return null;
 }
 
+/**
+ * Inventory worth scoring against this requirement.
+ *
+ * `projectName` is a hard filter here, which is right until it is not: a buyer
+ * who names a project they cannot afford — "I want Skyline Aurum", budget ₹65 L,
+ * nothing there under ₹2.3 Cr — matches nothing at all, and the rep is shown an
+ * empty list rather than the eight units the buyer could actually buy. Seen
+ * against real seeded data at scale.
+ *
+ * So the project narrows the search when it can, and steps aside when it cannot.
+ * Silence is the one answer that is never useful to somebody about to make a
+ * call.
+ */
 async function candidateInventory(req: Requirement, limit = 60): Promise<PropertyRow[]> {
+  const withProject = await queryInventory(req, limit);
+  if (withProject.length || !req.projectName) return withProject;
+  return queryInventory({ ...req, projectName: null }, limit);
+}
+
+async function queryInventory(req: Requirement, limit: number): Promise<PropertyRow[]> {
   // Allow 10% headroom over the stated ceiling — buyers routinely stretch.
   const maxPrice = req.budgetMax ? req.budgetMax * 1.1 : null;
   const minPrice = req.budgetMin ? req.budgetMin * 0.8 : null;
@@ -90,9 +109,22 @@ async function candidateInventory(req: Requirement, limit = 60): Promise<Propert
        AND ($1::numeric IS NULL OR COALESCE(p.total_price, p.base_price) <= $1)
        AND ($2::numeric IS NULL OR COALESCE(p.total_price, p.base_price) >= $2)
        AND ($3::text IS NULL OR p.project_name ILIKE $3)
-     ORDER BY COALESCE(p.total_price, p.base_price) ASC
+     -- Relevance before price, for the same reason the reverse match orders by
+     -- it: this takes a bounded slice and scores it in memory, so the slice has
+     -- to be the units most likely to suit *this* buyer. Ordering by price
+     -- alone took the sixty cheapest in their band, which at a few hundred
+     -- units in budget means a perfect 3 BHK in their preferred area loses to
+     -- sixty cheap 1 BHKs somewhere else. Price still breaks the tie, because
+     -- among equally suitable units the cheaper one is the better pitch.
+     ORDER BY (p.configuration = ANY($5::text[])) DESC,
+              (p.locality = ANY($6::text[])) DESC,
+              COALESCE(p.total_price, p.base_price) ASC
      LIMIT $4`,
-    [maxPrice, minPrice, req.projectName ?? null, limit],
+    [
+      maxPrice, minPrice, req.projectName ?? null, limit,
+      req.configurations?.length ? req.configurations : [''],
+      req.locations?.length ? req.locations : [''],
+    ],
   );
   return res.rows;
 }
