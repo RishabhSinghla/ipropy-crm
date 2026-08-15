@@ -144,11 +144,11 @@ Login: `admin@ipropy.com` / `Admin@123`. Other demo users in `PROJECT_HANDOVER.m
 
 **Verification:** three layers, fastest first.
 
-* `npm test` — 349 unit tests, no DB: 303 in `packages/server` (query builder, filter evaluator,
+* `npm test` — 374 unit tests, no DB: 320 in `packages/server` (query builder, filter evaluator,
   formula engine, permissions and role-hierarchy scoping, validation, unstorable characters, seed
   templates, billing decisions, capture time/EXIF offsets, watermark sizing, vision sampling, file
-  serving headers) and 46 in `packages/web` (`tests/color.test.ts`, the
-  contrast guarantee behind the colour tokens, and `tests/markdown.test.ts`).
+  serving headers), 46 in `packages/web` (colour contrast and safe markdown), and 8 in
+  `packages/mcp` (tool-output formatting).
 * `npm run test:integration` — creates and drops its own `ipropy_itest` database, plus
   `ipropy_itest_control` (the customer list) and `ipropy_itest_tenant` (a customer provisioned into
   it during the control-plane suite). Never point it at a database you care about; `vitest.config.ts` deliberately excludes `tests/integration/**` from

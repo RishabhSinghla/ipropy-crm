@@ -47,12 +47,23 @@ git commit -m "feat: what changed and why"
 git push -u origin feat/short-description
 ```
 
-Then open a **Pull Request** on GitHub. CI runs typecheck, build, unit and
-integration tests, plus browser tests on desktop and mobile. Get it green, get
-it reviewed, then merge.
+CI runs typecheck, build, unit and integration tests, browser tests on desktop
+and mobile, a dependency audit and the production Docker build — on every push
+and on every pull request.
 
-Merging to `main` deploys to production automatically. That is why nobody pushes
-straight to `main`.
+`main` is **not** a protected branch: this is a single-owner repository, and
+GitHub does not let anyone approve their own pull request, so requiring a review
+would mean nothing could ever merge. Pushing straight to `main` is therefore
+fine and is how the owner works.
+
+Production is protected by `render.yaml` instead of by the branch.
+`autoDeployTrigger: checksPass` means Render deploys a `main` commit only once
+every GitHub check on it has passed, and keeps the current working version live
+when any check fails. A red build cannot reach the team even though a red commit
+can reach `main`.
+
+Use a branch and a pull request anyway when the change is large enough to want a
+second look at the diff, or when you want CI to report before `main` moves.
 
 **Branch names:** `feat/…` for new work, `fix/…` for bugs, `docs/…` for
 documentation. Keep branches small and short-lived — a branch open for two weeks
@@ -64,8 +75,8 @@ is painful to merge.
 
 ### 1. Migration numbers collide
 
-Database migrations are numbered files (`037_…sql`, `038_…sql` — the highest is
-currently `038`). If you and someone else both create `039_` on separate
+Database migrations are numbered files (`046_…sql`, `047_…sql` — the highest is
+currently `047`). If you and someone else both create `048_` on separate
 branches, both merge, and the numbering is now broken and ambiguous.
 
 **Before creating a migration:** pull `main`, check the highest number that
@@ -98,6 +109,7 @@ reshaping modules or fields.
 |---|---|
 | Types are clean | `npm run typecheck` |
 | Unit tests pass | `npm test` |
+| Dependencies have no known moderate-or-higher advisory | `npm audit --audit-level=moderate` |
 | Nothing secret is staged | `git status` — is `.env` in there? It must not be |
 
 Two heavier suites you can run when your change warrants it:

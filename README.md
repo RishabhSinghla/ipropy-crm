@@ -8,8 +8,18 @@ role hierarchy, sharing rules, workflows, dashboards) is editable at runtime her
 telephony, portal lead capture, and an AI layer that scores, matches, drafts and analyses.
 
 ```
-Node 20 + TypeScript + Express + PostgreSQL 16   ·   React 18 + Vite + Tailwind   ·   Claude (Anthropic)
+Node 20 + TypeScript + Express + PostgreSQL 16   ·   React 18 + Vite + Tailwind   ·   pluggable AI providers
 ```
+
+---
+
+## Current release status
+
+The CRM and public website are deployed. Every change to `main` must pass typecheck, build, unit,
+database integration, browser, dependency-audit and production-Docker checks before Render deploys
+it. The application code is ready for a controlled team pilot; storage, backups, always-on hosting,
+real accounts and provider credentials are deployment checks owned outside this repository. See
+[`DEPLOYMENT.md`](DEPLOYMENT.md) and **Admin → System & Audit → Go live** before importing real data.
 
 ---
 
@@ -31,11 +41,11 @@ Open <http://localhost:5173> and sign in:
 | `priya.sharma@ipropy.com` | Sales Head | Sees the whole org via role hierarchy |
 | `rahul.mehta@ipropy.com` | Sales Manager | Sees their team's records only |
 | `aisha.khan@ipropy.com` | Sales Executive | Sees only their own records |
-| `neha.gupta@ipropy.com` | Pre-Sales / Tele-caller | Pricing fields hidden, Bookings blocked |
-| `arjun.nair@ipropy.com` | CRM / Post-Sales | Bookings, payments, documentation |
-| `sanjay.iyer@ipropy.com` | Finance | Collections and commissions |
-| `rakesh.bhandari@ipropy.com` | Channel Partner (Platinum) | Partner portal — submit leads, view bookings |
-| `sunita.menon@ipropy.com` | Channel Partner (Gold) | Partner portal — submit leads, view bookings |
+| `neha.gupta@ipropy.com` | Pre-Sales / Tele-caller | Restricted fields and lead access |
+| `arjun.nair@ipropy.com` | CRM / Post-Sales | Legacy profile retained for permission testing |
+| `sanjay.iyer@ipropy.com` | Finance | Legacy profile retained for permission testing |
+| `rakesh.bhandari@ipropy.com` | Channel Partner | Restricted portal-style profile |
+| `sunita.menon@ipropy.com` | Channel Partner | Restricted portal-style profile |
 
 Password for all of them: `Admin@123`.
 
@@ -240,7 +250,7 @@ packages/
       workflow/    engine, 14 task types, assignment, scheduler, follow-ups
       analytics/   widget + report query engine
       capture/     shoot sessions, EXIF time matching, auto-grouping, voice, vision
-      media/       watermark, derivatives, video, reel — the processing pipeline
+      media/       watermark, image/video derivatives — the processing pipeline
       sharing/     share links (one property, one unguessable URL)
       notifications/ notify()/notifyMany() — row + socket + Web Push, never a raw INSERT
     integrations/  whatsapp, telephony, email, lead sources
@@ -253,6 +263,7 @@ packages/
                    ShareLinks, ui kit
     pages/         Dashboard, ListView, RecordDetail, Inbox, Calls, Reports, Outreach,
                    Capture, CaptureShoots, CaptureReview, SharedProperty, admin/*
+  mcp/         permission-scoped CRM tools for assistants, over stdio or HTTP
 ```
 
 Two details worth knowing if you extend this:
@@ -271,7 +282,7 @@ Two details worth knowing if you extend this:
 
 ```bash
 npm run dev            # both servers, hot reload
-npm run build          # typecheck + build all three packages
+npm run build          # build shared, MCP, server and web workspaces
 npm run typecheck      # types only
 npm run db:migrate     # apply pending migrations
 npm run db:seed        # (re)seed metadata; demo data only if the DB is empty
@@ -280,7 +291,7 @@ npm run db:backup      # pg_dump the DB to backups/ipropy-<timestamp>.dump
 npm run db:backup:verify  # restore newest dump to a scratch DB, compare counts, drop it
 npm run db:restore <dump> # replace the live DB from a backup (see PROJECT_HANDOVER.md §9)
 
-npm test               # 298 unit tests, no database needed
+npm test               # 374 unit tests, no database needed
 npm run test:integration  # API + recordService against a real throwaway Postgres
 npm run test:e2e       # Playwright, against a real browser and the dev stack
 ```
@@ -310,11 +321,13 @@ Three layers, fastest first:
 
 | | |
 |---|---|
-| `npm test` | **298 unit tests**, no database — 256 in `packages/server` (query builder, filter evaluator, formula engine, permissions, validation, seed templates, billing, capture time/EXIF, watermark sizing, vision sampling), 42 in `packages/web` (the WCAG contrast guarantee behind the colour tokens, and markdown) |
-| `npm run test:integration` | **246 tests** against a real throwaway Postgres — it creates and drops its own `ipropy_itest`, so never point it at a database you care about |
-| `npm run test:e2e` | Playwright, against a real browser and the dev stack |
+| `npm test` | **374 unit tests**, no database — 320 server, 46 web and 8 MCP |
+| `npm run test:integration` | **274 tests** against real throwaway Postgres databases; never point it at a database you care about |
+| `npm run test:e2e` | **28 Playwright tests** across desktop and mobile browser projects |
+| `npm audit --audit-level=moderate` | Dependency advisory gate, including build tooling |
+| `docker build --platform linux/amd64 -t ipropy-crm:local .` | The production image Render actually builds |
 
-`npm run build` typechecks and builds all three packages, and `npm run typecheck` must be clean
+`npm run build` typechecks and builds all four workspaces, and `npm run typecheck` must be clean
 before any change is finished.
 
 The engine was also exercised end-to-end against a live Postgres — 63 checks covering auth, metadata,
@@ -337,8 +350,9 @@ Three real bugs were found and fixed during that pass, all noted in the code:
 
 Honest scope notes:
 
-* **Speech-to-text is not bundled.** Call analysis works from a transcript — supplied by your
-  telephony provider, an external STT service, or pasted into the call detail screen.
+* **Speech-to-text needs a provider.** A dedicated Whisper-compatible connection wins; otherwise a
+  configured Groq or OpenAI provider is reused for transcription. With neither, audio stays intact
+  and the feature reports that transcription is unavailable.
 * **Dashboard drag-to-resize is desktop-only.** On ≥1024 px widgets can be dragged and resized and
   the layout persists to the server; below that the grid falls back to responsive auto-flow (see the
   README of `react-grid-layout` if you want finer control over the handles).
