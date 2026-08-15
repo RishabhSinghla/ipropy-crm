@@ -1,14 +1,23 @@
-node_modules
-dist
-build
+# Patterns here are matched against the whole path from the build context root,
+# so a bare `dist` excludes only `/dist` and leaves every `packages/*/dist`
+# behind. That is not a tidiness detail: it silently copied a developer's own
+# build output into the image, so `npm run build` inside the container found
+# everything already present and could not fail. A build-order bug that broke
+# every deploy for a day therefore passed locally every time it was tested.
+#
+# Keep the `**/` on anything that can appear inside a workspace. The container
+# must build from source alone, exactly as a fresh clone does.
+**/node_modules
+**/dist
+**/build
+**/coverage
+**/.vite
+**/*.tsbuildinfo
 storage
 backups
-coverage
 .env
 .env.*
 !.env.example
 .git
 *.log
 .DS_Store
-.vite
-*.tsbuildinfo

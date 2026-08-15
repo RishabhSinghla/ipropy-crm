@@ -2,9 +2,14 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
+# Every workspace listed in package.json, or `npm ci` resolves the tree without
+# one of them. Today npm still links the missing workspace from the lockfile, so
+# omitting one fails quietly rather than loudly — which is worse. Add a line here
+# whenever a workspace is added.
 COPY packages/shared/package.json packages/shared/package.json
 COPY packages/server/package.json packages/server/package.json
 COPY packages/web/package.json packages/web/package.json
+COPY packages/mcp/package.json packages/mcp/package.json
 RUN npm ci --ignore-scripts
 
 FROM node:20-alpine AS build

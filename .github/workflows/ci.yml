@@ -42,6 +42,26 @@ jobs:
       - name: Integration tests
         run: npm run test:integration
 
+  # Build the image Render actually deploys.
+  #
+  # `verify` builds from a clean checkout and so catches build-order breaks, but
+  # it never touches the Dockerfile — and the Dockerfile has its own ways to
+  # fail that no npm script can see: a workspace missing from the deps stage, a
+  # COPY that does not match, a .dockerignore pattern that hides a whole
+  # directory. Those failures used to be discovered by Render, one email at a
+  # time, after the push had already landed on main.
+  #
+  # No registry and no push: building it is the whole test.
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build the production image
+        # linux/amd64 is what Render runs, and it is the runner's own
+        # architecture, so this needs no emulation.
+        run: docker build --platform linux/amd64 -t ipropy-crm:ci .
+
   # Kept separate from `verify` rather than appended to it: this job needs a
   # seeded database and two running servers, it is the slowest by far, and when
   # it breaks the cause is almost never the same as a typecheck or unit failure.
