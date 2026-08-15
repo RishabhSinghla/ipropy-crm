@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronLeft } from 'lucide-react';

@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 /**
  * Naming the day's shoots — the screen that replaces having to remember.
  *

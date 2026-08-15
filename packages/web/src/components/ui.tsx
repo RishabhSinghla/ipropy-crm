@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, Check, ChevronDown, Info, Loader2, X } from 'lucide-react';

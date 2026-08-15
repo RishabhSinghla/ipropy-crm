@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 import { Suspense, lazy } from 'react';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {

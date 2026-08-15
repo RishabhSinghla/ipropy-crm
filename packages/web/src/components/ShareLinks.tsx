@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 /**
  * Making a link and sending it.
  *

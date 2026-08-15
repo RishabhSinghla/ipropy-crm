@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 /**
  * Layout Designer — what a record page looks like, as data.
  *

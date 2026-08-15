@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 /**
  * Ask once, rather than hoping somebody remembers.
  *

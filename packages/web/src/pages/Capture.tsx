@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 /**
  * Site capture — the screen used standing at the gate of a builder floor.
  *

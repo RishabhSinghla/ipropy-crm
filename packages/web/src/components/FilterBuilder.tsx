@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 import { useState } from 'react';
 import type { FieldMeta, FilterCondition, FilterGroup, FilterOperator, ModuleMeta } from '@ipropy/shared';
 import { OPERATOR_LABELS, UITYPES, isFilterGroup, operatorTakesValue } from '@ipropy/shared';
