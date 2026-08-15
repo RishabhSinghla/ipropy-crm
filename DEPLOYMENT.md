@@ -12,9 +12,9 @@ origin, the deployed bundle matches `main`, and the seed admin password is in
 effect (the repo's public default is rejected — `curl`-tested, not just "it
 loaded").
 
-Goal: both apps live on the internet, on free tiers, redeploying automatically
-every time you `git push`. Roughly 30 minutes end to end, almost all of it
-waiting for builds.
+Goal: both apps live on the internet, with production deploying only after the
+repository's required CI checks pass. The committed Render plan is still Free;
+move it to an always-on instance before relying on scheduled work.
 
 Everything in this guide needs **your** accounts and your click — I can prepare
 the configuration (all of it is already committed) but I can't create accounts,
@@ -192,12 +192,19 @@ are blocked by the browser. Save — Render redeploys automatically.
 
 ---
 
-## 6. Auto-deploy is already on
+## 6. The deploy is gated on CI, not on the branch
 
-- Push to `ipropy-crm` `main` → Render rebuilds and redeploys.
+- Push to `ipropy-crm` `main` → GitHub runs the dependency audit, typecheck,
+  build, unit, integration, browser and production-Docker checks.
+- `render.yaml` uses `autoDeployTrigger: checksPass`, so Render deploys only
+  after the checks on that `main` commit pass. A failed check leaves the current
+  working version live.
 - Push to `ipropy-website` `main` → Vercel rebuilds and redeploys.
-- Both repos run GitHub Actions CI (typecheck, build, tests) on every push, so a
-  broken commit is visible even if the host deploys it.
+- The CRM's `main` branch is **not** protected, deliberately: the repository has
+  a single owner, and GitHub does not let anyone approve their own pull request,
+  so a required review would mean nothing could ever merge. Pushing straight to
+  `main` is normal here. The gate that matters is the one above — a red check
+  stops the deploy, so a broken commit on `main` never reaches the team.
 
 Vercel also builds a unique preview URL for every pull request — useful for
 "what do you think of this change?" without touching the live site.

@@ -370,7 +370,12 @@ function WorkflowDetail({ id, onClose }: { id: string; onClose: () => void }): J
               <ul className="max-h-48 space-y-1 overflow-y-auto">
                 {wf.recentRuns.map((run) => (
                   <li key={run.id} className="flex items-center gap-2 rounded px-2 py-1 text-xs hover:bg-slate-50 dark:hover:bg-slate-800">
-                    <Badge color={run.status === 'success' ? '#22c55e' : '#ef4444'}>{run.status}</Badge>
+                    {/* 'partial' is its own colour on purpose: some tasks ran and
+                        some threw. Green would hide the failure, red would imply
+                        nothing happened — and something did, irreversibly.
+                        amber-700 (#b45309), not amber-500, for the same contrast
+                        reason as the queue badge in Layout.tsx. */}
+                    <Badge color={run.status === 'success' ? '#22c55e' : run.status === 'partial' ? '#b45309' : '#ef4444'}>{run.status}</Badge>
                     <span className="text-slate-500 tnum">{run.tasks_run} tasks · {run.duration_ms}ms</span>
                     <span className="ml-auto text-slate-400">{relativeTime(run.created_at)}</span>
                   </li>

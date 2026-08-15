@@ -1129,10 +1129,9 @@ adapter that speaks the common "OpenAI-style" format** — which covers everythi
 
 Configure them in **Admin → Integrations**, not in a file.
 
-> **Current state: no AI provider is configured.** A Gemini key supplied on 9 August was rejected
-> by Google — it wasn't in Google AI Studio's key format (`AIza…`, 39 characters). The integration
-> was deliberately left switched off, so the CRM keeps using its rule engines rather than failing
-> every AI call. **Everything in this section that says "the AI adds…" is currently not running.**
+> **Check the deployment, not this document.** AI credentials live in Admin → Integrations and can
+> change without a code deploy. If no provider card is active, the deterministic scoring, matching
+> and routing rules still run; model-written explanations, vision and drafting do not.
 
 ## 9.5 The scheduler — the thing that works while you sleep
 
@@ -1142,7 +1141,6 @@ A background loop ticks every 60 seconds and:
 - drains the queue of delayed workflow actions,
 - releases expired unit blocks,
 - processes uploaded photos and videos (Part 11),
-- runs the daily SEO audit,
 - does housekeeping.
 
 ---
@@ -1352,18 +1350,14 @@ cached for about 60 seconds.
 **Also on the website:** structured data for Google, per-listing social preview images, city
 landing pages, dark mode, amenity icons, recently-viewed, and a deep comparison tool.
 
-**Not done:** locality-level SEO pages, and deployment — the website currently only runs locally.
+**Not done:** locality-level SEO pages. The website itself is deployed at
+`https://ipropy-website.vercel.app`.
 
-## 12.4 The daily SEO audit
+## 12.4 Removed: the daily SEO audit
 
-Runs once a day from the scheduler. It fetches **the live website** and grades it.
-
-> That choice is deliberate and worth understanding: auditing our own page templates would only
-> ever confirm that the template is what we wrote. Fetching the live site is the only way to catch
-> what actually shipped.
-
-Ships **switched off**. Set the site address in Admin → Settings to enable it. Proven at 78/100
-across five pages against a real build.
+This feature was removed on 14 August together with the blog residue. Website SEO is owned by the
+Next.js application and normal external search tooling; the CRM no longer runs or stores a daily
+SEO grade.
 
 ---
 
@@ -1378,7 +1372,7 @@ This section exists so nobody is surprised. Nothing here is missing through lazi
 | **WhatsApp sending** | Needs a Meta-approved business, a dedicated number, and usually a paid provider. **The code is complete and waiting.** There is no legal API that mirrors a personal WhatsApp inbox — the libraries claiming to do it get numbers permanently banned |
 | **Portal syndication** (*posting* listings to 99acres / MagicBricks / Housing) | No open API exists for posting. These are **commercial contracts, one per portal**. Note: receiving *inbound* leads from all four already works |
 | **Call recording on Android** | Android 10 closed the API. Nothing reopens it. The working routes are (a) cloud telephony recording server-side, already built, or (b) the companion app picking up your phone's own recorder's files. Per-state consent law applies either way |
-| **A working AI key** | See 9.4. Every AI feature is on its fallback rule engine right now |
+| **A working AI key** | See 9.4. Configuration is deployment-specific; check Admin → Integrations rather than assuming from this guide |
 
 ## 13.2 Built but never exercised with real credentials
 
@@ -1399,9 +1393,9 @@ This section exists so nobody is surprised. Nothing here is missing through lazi
 ## 13.3 Deliberate scope decisions
 
 - **Dashboard drag-to-resize is desktop-only** (1024px+). Phones get a sensible stacked layout.
-- **Automated tests cover the server's core.** 298 unit tests (256 server, 42 web) plus 246
-  integration tests against a real Postgres and a Playwright browser suite; the write paths and the
-  UI are still partly verified by hand.
+- **Automated tests cover the working system.** 374 unit tests (320 server, 46 web, 8 MCP), 274
+  integration tests against real throwaway Postgres databases and 28 Playwright tests across
+  desktop and mobile. Real provider accounts and a real site visit still require human checks.
 - **A shoot description is never written onto the property.** A model can describe a room; it cannot
   know the unit number. Treating its guess as a fact would defeat the point of asking a person.
 - **Photos are matched to a property by time, never by GPS.** Neighbouring builder floors are closer
@@ -1409,15 +1403,14 @@ This section exists so nobody is surprised. Nothing here is missing through lazi
 
 ## 13.4 Genuinely unfinished
 
-- Locality-level SEO pages on the website.
-- The website isn't deployed — it only runs locally.
-- No music track bundled for video.
-- Mobile layout not yet audited on Reports, Inbox, Calls and the admin screens.
-- No scheduled backups **on the deployed database**. The backup and restore commands exist and are
-  verified, and a timer covers a developer's local Postgres — nothing runs against production. The
-  intended fix is the database provider's own scheduled backups, which need a paid plan; a nightly
-  dump job was built once and deliberately removed rather than move every client's name, phone
-  number and PAN between two systems every night.
+- Locality-level SEO pages on the public website are still optional future depth; the website itself
+  is deployed.
+- A full real-device pilot is still required even though the browser suite covers desktop and mobile
+  layouts.
+- Scheduled backups must be confirmed in Neon before real data is imported. The application cannot
+  see the database host's backup schedule. Use the provider's own daily backups and instant restore;
+  a nightly dump job was deliberately removed rather than move every client's name, phone number
+  and PAN between systems.
 - The many-to-many "pick an existing record" box on related lists. The API already supports it.
 
 > Conditional field visibility ("only show this field when…") was listed here as half-built. It

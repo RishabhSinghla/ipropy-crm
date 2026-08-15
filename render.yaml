@@ -30,7 +30,9 @@ services:
     plan: free
     region: singapore # closest Render region to India — lowest latency for the team
     branch: main
-    autoDeploy: true # every push to main redeploys
+    # Do not race production against CI. Render waits for every GitHub check on
+    # the main commit and deploys only when all of them pass.
+    autoDeployTrigger: checksPass
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
