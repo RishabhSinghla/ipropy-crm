@@ -301,12 +301,25 @@ docker exec -i ipropy-db psql -U ipropy -d ipropy_scale < scripts/load-test-data
 Measured at that size, all well indexed: lists 59ms, deep paging 73ms, text search 42ms,
 matching 33ms, comparables 8ms, dashboard 4ms.
 
-**The bug it found, and the shape to watch for.** `matchBuyersForProperty` pre-filtered with
-`ORDER BY ai_score DESC LIMIT 400`. At 99 leads that is everybody; at 60,000 it is the four
-hundred best leads *in the business*, which says nothing about whether any of them wants a
-4 BHK in Baner. Ten buyers per unit became zero, silently, from identical code. Any
-`ORDER BY <global ranking> LIMIT <n>` feeding an in-memory scorer has this defect — the
-ordering has to encode relevance to the specific thing being matched.
+**The shape to watch for**, which has now been found four times in this codebase: a
+bounded slice, ordered by something unrelated to what is done with it afterwards.
+
+* `matchBuyersForProperty` — `ORDER BY ai_score DESC LIMIT 400`. At 99 leads that is
+  everybody; at 60,000 it is the four hundred best leads *in the business*, which says
+  nothing about whether any wants a 4 BHK in Baner. Ten buyers per unit became zero.
+* **The scheduler** — every scheduled workflow walked `ORDER BY updated_at DESC LIMIT
+  5000`. Worse than truncation: each of those rules is about *neglect*, so the records
+  they exist to catch are the least recently updated and fall out of that slice first.
+  A lead untouched for sixty days ranked 60,075th of 60,085. Conditions are pushed into
+  SQL now via `buildWhere`; the in-memory pass still gates, so SQL only narrows.
+* **Inbound email** — a 5,000-row address map with no ORDER BY, so replies from anyone
+  outside it stopped threading. Now resolved per sender, memoised per poll.
+* `candidateInventory` — the sixty *cheapest* units in budget, then scored. Now ordered
+  by configuration and locality first, price as tiebreak.
+
+The rule: if a query takes `LIMIT n` and the rows are then filtered or scored in memory,
+the ORDER BY must encode relevance to *that specific decision*, and the cap must log when
+it bites. A silent cap is how all four of these hid.
 
 ---
 
