@@ -131,35 +131,61 @@ export async function runWorkflowsFor(
 
       const tasks = await getTasks(wf.id);
       let ran = 0;
+      const failures: string[] = [];
+
       for (const task of tasks) {
-        const delayMs = computeDelay(task, record);
-        if (delayMs > 0) {
-          await enqueue(wf.id, task.id, recordId, moduleName, new Date(Date.now() + delayMs), {
-            userId: opts.user?.id ?? null,
-            source: opts.source,
-          });
-        } else {
-          const ctx: TaskContext = {
-            workflowId: wf.id,
-            taskId: task.id,
-            module: moduleName,
-            recordId,
-            record,
-            previous: opts.previous,
-            user: opts.user,
-            source: `workflow:${wf.name}`,
-          };
-          await runTask(task.type, task.config, ctx);
+        // Each task stands on its own. A workflow is a list of independent
+        // things to do to a record, not a transaction: failing to *offer* a
+        // WhatsApp message is no reason to skip scoring it, tagging it and
+        // setting the follow-up date. Before this, one throw abandoned every
+        // later task — and `webhook` rethrows by design, while `trigger_call`
+        // throws on every run of an install with no telephony provider.
+        try {
+          const delayMs = computeDelay(task, record);
+          if (delayMs > 0) {
+            await enqueue(wf.id, task.id, recordId, moduleName, new Date(Date.now() + delayMs), {
+              userId: opts.user?.id ?? null,
+              source: opts.source,
+            });
+          } else {
+            const ctx: TaskContext = {
+              workflowId: wf.id,
+              taskId: task.id,
+              module: moduleName,
+              recordId,
+              record,
+              previous: opts.previous,
+              user: opts.user,
+              source: `workflow:${wf.name}`,
+            };
+            await runTask(task.type, task.config, ctx);
+          }
+          ran++;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          logger.error({ err, workflow: wf.name, task: task.name, type: task.type, recordId },
+            'workflow task failed; continuing with the rest');
+          failures.push(`${task.name || task.type}: ${message}`);
         }
-        ran++;
       }
 
+      // Recorded even when tasks failed, and this is the important half.
+      // `has_run` is what stops a `once` workflow firing again; leaving it
+      // false because task 3 of 5 threw means the next touch of this record
+      // re-runs tasks 1 and 2 — which have already sent their message.
       await recordState(wf.id, recordId, true, true);
       await db.query(
         `UPDATE ipy_workflow SET last_run_at = now(), run_count = run_count + 1 WHERE id = $1`,
         [wf.id],
       );
-      await log(wf.id, recordId, 'success', true, ran, Date.now() - started, null);
+      // 'partial' rather than 'success': the tasks that ran, ran, and the log
+      // says how many — but a run with a failure in it must never read as clean.
+      await log(
+        wf.id, recordId,
+        failures.length ? 'partial' : 'success',
+        true, ran, Date.now() - started,
+        failures.length ? failures.join(' | ') : null,
+      );
     } catch (err) {
       logger.error({ err, workflow: wf.name, recordId }, 'workflow execution failed');
       await log(wf.id, recordId, 'error', true, 0, Date.now() - started,
