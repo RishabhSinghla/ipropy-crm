@@ -247,6 +247,14 @@ export const config = {
     },
   },
 
+  // Where the slow work happens. The CRM posts to n8n when a shoot is finished
+  // and n8n posts back when it is done; neither call is required for the CRM to
+  // function, which is the whole point of keeping them apart.
+  automation: {
+    n8nWebhookUrl: str('N8N_WEBHOOK_URL'),
+    n8nCallbackSecret: str('N8N_CALLBACK_SECRET'),
+  },
+
   leadSources: {
     facebook: {
       appId: str('FACEBOOK_APP_ID'),

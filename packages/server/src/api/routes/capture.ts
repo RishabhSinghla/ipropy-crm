@@ -37,6 +37,8 @@ import { attachShootMedia, listUnnamedShoots, nameShoot } from '../../core/captu
 import {
   getPropertyStorageStatus, provisionPropertyFolder,
 } from '../../core/storage/propertyFolders.js';
+import { isConfigured as n8nConfigured, notifyShootFinished } from '../../integrations/automation/n8n.js';
+import { logger } from '../../utils/logger.js';
 
 export const captureRouter = Router();
 captureRouter.use(requireAuth);
@@ -220,7 +222,24 @@ captureRouter.post('/sessions/finish', asyncHandler(async (req, res) => {
 
   // A precise end can explain files that arrived before this final request.
   const claimed = await matchOrphansForSession(session.id).catch(() => 0);
-  res.json({ session, claimedMedia: claimed });
+
+  // Hand off to n8n *after* the orphan sweep, so the folder it is about to read
+  // already contains everything this session claimed.
+  //
+  // Deliberately not awaited. The rep is standing outside a building with one
+  // bar of signal; closing the visit must return at the speed of a database
+  // write, not at the speed of somebody else's automation platform. The call
+  // cannot throw — see integrations/automation/n8n.ts — so there is nothing
+  // here to catch beyond the promise itself.
+  void notifyShootFinished(session)
+    .then((handoff) => {
+      if (!handoff.sent && n8nConfigured()) {
+        logger.warn({ sessionId: session.id, reason: handoff.reason }, 'n8n was not told about this shoot');
+      }
+    })
+    .catch((err) => logger.error({ err, sessionId: session.id }, 'n8n handoff threw, which it should not'));
+
+  res.json({ session, claimedMedia: claimed, handedOff: n8nConfigured() });
 }));
 
 /** The evening review list. */

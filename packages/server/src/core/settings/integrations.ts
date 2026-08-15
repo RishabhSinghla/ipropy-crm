@@ -78,6 +78,12 @@ export interface ResolvedSettings {
   stt: {
     provider: 'none' | 'openai'; apiKey: string; baseUrl: string; model: string;
   };
+  automation: {
+    /** Where to tell n8n a shoot has finished. Blank switches the call off. */
+    n8nWebhookUrl: string;
+    /** What n8n must present on the way back in. Blank refuses every callback. */
+    n8nCallbackSecret: string;
+  };
   leadSources: {
     facebook: { appId: string; appSecret: string; pageAccessToken: string; verifyToken: string };
     googleAdsWebhookKey: string;
@@ -416,6 +422,7 @@ function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
   const webform = map.get('webform');
   const s3 = map.get('s3');
   const onedrive = map.get('onedrive');
+  const n8n = map.get('n8n');
 
   let telephonyProvider: 'none' | 'twilio' | 'exotel' = config.telephony.provider === 'twilio' || config.telephony.provider === 'exotel'
     ? config.telephony.provider : 'none';
@@ -482,6 +489,12 @@ function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
     },
     ai: resolveAi(map),
     stt: resolveStt(map, sttRow),
+    automation: {
+      n8nWebhookUrl: pick(n8n, 'config', 'webhookUrl', config.automation.n8nWebhookUrl),
+      // In credentials, not config: it is the only thing standing between the
+      // open webhooks router and anything that can raise a notification.
+      n8nCallbackSecret: pick(n8n, 'credentials', 'callbackSecret', config.automation.n8nCallbackSecret),
+    },
     leadSources: {
       facebook: {
         appId: pick(fb, 'config', 'appId', config.leadSources.facebook.appId),

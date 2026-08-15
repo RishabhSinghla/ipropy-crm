@@ -119,11 +119,32 @@ should be sitting there.
 
 ### 4. Then wire the CRM
 
-`POST /api/capture/sessions/finish` should call the webhook with
-`propertyId`, `folder` (the `folderKey` from `ipy_property_storage`) and
-`sessionId`. The workflow calls back to
-`POST /api/webhooks/n8n/content-ready`, **which does not exist yet** — that
-endpoint and the notification are the remaining CRM-side work.
+Both sides exist now. Set two things in the CRM's integration settings (or as
+env vars) and the loop closes:
+
+| Setting | Env var | What it is |
+|---|---|---|
+| `n8n` → config → `webhookUrl` | `N8N_WEBHOOK_URL` | the workflow's production webhook URL |
+| `n8n` → credentials → `callbackSecret` | `N8N_CALLBACK_SECRET` | any long random string |
+
+Put the same secret in n8n as a header credential named **`iPropy CRM API key`**
+sending `X-N8N-Secret`.
+
+Then:
+
+* `POST /api/capture/sessions/finish` posts `{propertyId, sessionId, folder,
+  crmBaseUrl}` to n8n — **without waiting**. A dead n8n cannot stop a rep
+  closing a site visit; it logs a warning and the session sits `ready` with no
+  content beside it.
+* `POST /api/webhooks/n8n/content-ready` takes the report and notifies the
+  property owner and whoever walked the site. It writes nothing to the record —
+  a model's opinion about which photographs are good has no business editing
+  inventory unasked.
+
+An unset secret **refuses every callback** rather than accepting them. That
+endpoint sits on the router mounted ahead of `requireAuth`, so an open one is a
+stranger able to push notifications at your whole team. There is a test that
+fails if anyone ever "fixes" that.
 
 ---
 

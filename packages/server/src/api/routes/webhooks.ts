@@ -411,6 +411,95 @@ webhooksRouter.post('/leads/generic', asyncHandler(async (req, res) => {
   res.status(result.status === 'created' ? 201 : 200).json(result);
 }));
 
+// ---------------------------------------------------------------------------
+// n8n — the content factory reporting back
+// ---------------------------------------------------------------------------
+
+/**
+ * n8n has finished working on a property's photos.
+ *
+ * This router is mounted ahead of `requireAuth`, so every route on it must
+ * authenticate itself. Here that is a shared secret in `X-N8N-Secret`, compared
+ * in constant time. **An unset secret refuses everything** rather than allowing
+ * everything: this endpoint raises notifications, and an open one is a stranger
+ * pushing "your content is ready" at the whole team.
+ *
+ * Nothing here writes to the property. n8n's output lives in OneDrive beside
+ * the photos, and a model's opinion about which pictures are good has no
+ * business editing inventory unasked. All this does is tell the right person to
+ * go and look.
+ */
+webhooksRouter.post('/n8n/content-ready', asyncHandler(async (req, res) => {
+  const expected = getSettings().automation.n8nCallbackSecret;
+  if (!expected) throw new UnauthorizedError('n8n callbacks are not configured');
+
+  const provided = req.headers['x-n8n-secret'];
+  if (typeof provided !== 'string' || !safeEqual(expected, provided)) {
+    throw new UnauthorizedError('Invalid n8n secret');
+  }
+
+  const input = z.object({
+    propertyId: z.string().uuid(),
+    sessionId: z.string().uuid().optional(),
+    folder: z.string().max(400).optional(),
+    summary: z.string().max(400).optional(),
+    // n8n sends this when a run failed partway. The team still wants telling —
+    // silence is indistinguishable from "not started yet".
+    ok: z.boolean().default(true),
+  }).parse(req.body);
+
+  const property = await db.queryOne<{ label: string; owner_id: string | null }>(
+    `SELECT r.label, r.owner_id
+       FROM ipy_record r
+      WHERE r.id = $1 AND r.module_name = 'properties' AND r.is_deleted = false`,
+    [input.propertyId],
+  );
+  if (!property) throw new NotFoundError('Property not found');
+
+  // The owner, plus whoever actually walked the site if that was someone else.
+  const recipients: string[] = [];
+  if (property.owner_id) recipients.push(property.owner_id);
+  if (input.sessionId) {
+    const session = await db.queryOne<{ user_id: string }>(
+      `SELECT user_id FROM ipy_shoot_session WHERE id = $1`, [input.sessionId],
+    );
+    if (session) recipients.push(session.user_id);
+  }
+  if (recipients.length === 0) {
+    logger.warn({ propertyId: input.propertyId }, 'n8n finished but the property has no owner to tell');
+    res.json({ ok: true, notified: 0 });
+    return;
+  }
+
+  await notifyMany(recipients, {
+    kind: 'content_ready',
+    title: input.ok
+      ? `Photos are ready for ${property.label}`
+      : `Photo processing had a problem on ${property.label}`,
+    body: input.summary ?? (input.ok ? 'Open the OneDrive folder to review.' : 'Check _status.json in the folder.'),
+    link: `/properties/${input.propertyId}`,
+    recordId: input.propertyId,
+  });
+
+  logger.info(
+    { propertyId: input.propertyId, notified: recipients.length, ok: input.ok },
+    'n8n content-ready callback handled',
+  );
+  res.json({ ok: true, notified: new Set(recipients).size });
+}));
+
+/**
+ * Constant-time compare that tolerates a length mismatch.
+ *
+ * `crypto.timingSafeEqual` throws when the buffers differ in length, and that
+ * throw is itself a signal — so both sides are hashed to a fixed width first.
+ */
+function safeEqual(expected: string, provided: string): boolean {
+  const a = crypto.createHash('sha256').update(expected).digest();
+  const b = crypto.createHash('sha256').update(provided).digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
 function escapeXml(s: string): string {
   return s.replace(/[<>&'"]/g, (c) => (
     { '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c] ?? c
