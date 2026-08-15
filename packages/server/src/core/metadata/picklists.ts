@@ -32,6 +32,23 @@ export interface PicklistFieldUse {
   isMulti: boolean;
 }
 
+/**
+ * Dropdowns the application reads by name, outside the field system.
+ *
+ * `fieldsUsingPicklist` answers "which form controls render this?", which is
+ * the question that matters for almost every dropdown — but a handful are
+ * fetched by name in code, so nothing points at them and they look unused.
+ * Deleting one empties a control that has no field behind it: the call logger's
+ * Disposition, and the two lists the call analyser is allowed to choose from.
+ *
+ * Keep this in step with the call sites — `web/pages/Calls.tsx` and
+ * `ai/callAnalysis.ts` as of migration 049.
+ */
+export const PICKLISTS_USED_IN_CODE: Record<string, string> = {
+  call_disposition: 'the outcome list on the call logger, and the values call analysis may choose from',
+  lead_status: 'the statuses call analysis may propose for a lead',
+};
+
 /** Every field, on every module, whose options come from this dropdown. */
 export async function fieldsUsingPicklist(name: string): Promise<PicklistFieldUse[]> {
   // Inactive modules included on purpose: their rows still hold the value, and

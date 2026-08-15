@@ -506,6 +506,8 @@ export const api = {
       sequence: number; isActive: boolean; isDefault: boolean;
     }[];
     usedBy: { module: string; moduleLabel: string; field: string; fieldLabel: string }[];
+    canDelete: boolean;
+    usedInCode: string | null;
   }[]>('/api/meta/picklist-catalogue'),
   savePicklistValues: (name: string, values: unknown[]) =>
     put<{ values: unknown[]; renamedRecords: number; renamedFilters: number }>(

@@ -232,9 +232,14 @@ export default function PicklistManager(): JSX.Element {
             </div>
           </div>
 
-          {current && current.usedBy.length > 0 && (
+          {current && (current.usedBy.length > 0 || current.usedInCode) && (
             <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-100 bg-slate-50/60 px-4 py-2 dark:border-slate-800 dark:bg-slate-800/40">
               <span className="text-2xs text-muted">Used by</span>
+              {current.usedInCode && (
+                <span className="rounded bg-white px-1.5 py-0.5 text-2xs dark:bg-slate-900">
+                  iPropy itself — {current.usedInCode}
+                </span>
+              )}
               {current.usedBy.map((u) => (
                 <span key={`${u.module}.${u.field}`} className="rounded bg-white px-1.5 py-0.5 text-2xs dark:bg-slate-900">
                   {u.moduleLabel} → {u.fieldLabel}
@@ -397,9 +402,9 @@ export default function PicklistManager(): JSX.Element {
               have it but stops it being chosen again. <strong className="font-medium">Delete</strong> removes
               it for good, and asks what to do with any records still using it.
             </span>
-            {current && !current.isSystem && (
+            {current?.canDelete && (
               <button
-                onClick={() => void deleteWholeList(current.name, current.label, current.usedBy.length, refresh)}
+                onClick={() => void deleteWholeList(current.name, current.label, refresh)}
                 className="ml-auto text-red-500 hover:underline"
               >
                 Delete this dropdown
@@ -435,18 +440,22 @@ export default function PicklistManager(): JSX.Element {
   );
 }
 
+/**
+ * Delete a whole dropdown.
+ *
+ * Only offered when the server says nothing depends on it — no field draws its
+ * options from it and iPropy does not read it by name. Twenty-five of the
+ * seeded lists are in that state, left behind by the modules that were removed,
+ * and tidying them up should not need a developer.
+ */
 async function deleteWholeList(
-  name: string, label: string, useCount: number, refresh: () => void,
+  name: string, label: string, refresh: () => void,
 ): Promise<void> {
-  if (useCount > 0) {
-    toast.error(
-      'This dropdown is in use',
-      `${useCount} field${useCount === 1 ? '' : 's'} still get their options from it. Point them elsewhere first.`,
-    );
-    return;
-  }
   // eslint-disable-next-line no-alert
-  if (!window.confirm(`Delete the "${label}" dropdown and all of its options? This cannot be undone.`)) return;
+  if (!window.confirm(
+    `Delete the "${label}" dropdown and all of its options?\n\n`
+    + 'Nothing currently uses it. This cannot be undone, and it stays deleted through restarts.',
+  )) return;
   try {
     await api.deletePicklist(name);
     toast.success('Dropdown deleted', `"${label}" is gone for good.`);

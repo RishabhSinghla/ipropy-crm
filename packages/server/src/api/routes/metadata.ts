@@ -7,7 +7,8 @@ import { blockApiKey, getUser, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, ConflictError, NotFoundError } from '../../utils/errors.js';
 import { registry } from '../../core/metadata/registry.js';
 import {
-  countRecordsWithValue, fieldsThatCannotBeCleared, fieldsUsingPicklist, replaceValueInRecords,
+  countRecordsWithValue, fieldsThatCannotBeCleared, fieldsUsingPicklist,
+  PICKLISTS_USED_IN_CODE, replaceValueInRecords,
 } from '../../core/metadata/picklists.js';
 import { assertCapability, canAccessModule, getFieldPermissions, getModulePermission, hasCapability, invalidatePermissions } from '../../core/permissions/index.js';
 import { FORMULA_FUNCTIONS, validateFormula } from '../../core/entity/formula.js';
@@ -797,15 +798,21 @@ metadataRouter.get('/picklist-catalogue', asyncHandler(async (req, res) => {
 
   const out = [];
   for (const row of rows.rows) {
+    const usedBy = await fieldsUsingPicklist(row.name);
     out.push({
       name: row.name,
       label: row.label,
       isSystem: row.is_system,
       allowAdhoc: row.allow_adhoc,
       values: all[row.name] ?? [],
-      usedBy: (await fieldsUsingPicklist(row.name)).map((u) => ({
+      usedBy: usedBy.map((u) => ({
         module: u.module, moduleLabel: u.moduleLabel, field: u.field, fieldLabel: u.fieldLabel,
       })),
+      // Whether the whole list can go. A built-in with nothing pointing at it —
+      // and there are 25 of those, left behind by the modules that were removed
+      // — is an admin's to tidy up; one the application reads by name is not.
+      canDelete: usedBy.length === 0 && !PICKLISTS_USED_IN_CODE[row.name],
+      usedInCode: PICKLISTS_USED_IN_CODE[row.name] ?? null,
     });
   }
   res.json(out);
@@ -900,6 +907,12 @@ metadataRouter.delete('/picklists/:name', asyncHandler(async (req, res) => {
       `${uses.length === 1 ? 'A field uses' : `${uses.length} fields use`} this dropdown: `
       + `${uses.map((u) => `${u.moduleLabel} → ${u.fieldLabel}`).join(', ')}. `
       + 'Point those fields at another dropdown first, or delete them.',
+    );
+  }
+  if (PICKLISTS_USED_IN_CODE[name]) {
+    throw new ConflictError(
+      `iPropy itself uses this dropdown — it is ${PICKLISTS_USED_IN_CODE[name]}. `
+      + 'Its options are yours to change, but the list has to stay.',
     );
   }
 
