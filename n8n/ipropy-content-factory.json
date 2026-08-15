@@ -1,0 +1,623 @@
+{
+  "name": "iPropy \u2014 site visit to content",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ipropy-shoot-finished",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "shoot-finished",
+      "name": "Shoot finished",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "ipropy-shoot-finished"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Everything downstream reads from one normalised object, so a change to the\n// CRM's payload is a change in exactly one place.\n//\n// `folder` is the property's OneDrive path *relative to the drive root* \u2014 the\n// CRM already knows it as `folderKey` and it looks like\n// \"IPROPY-PROPERTIES/GREENFIELD/B12-4BHK-250SQYD\".\nconst b = $json.body ?? $json;\n\nconst need = (k) => {\n  const v = b[k];\n  if (v === undefined || v === null || String(v).trim() === '') {\n    throw new Error(`The CRM did not send \"${k}\". Nothing can be filed without it.`);\n  }\n  return String(v).trim();\n};\n\nconst folder = need('folder').replace(/^\\/+|\\/+$/g, '');\n\nreturn [{\n  json: {\n    propertyId: need('propertyId'),\n    folder,\n    originalsPath: `${folder}/01 Originals`,\n    sessionId: b.sessionId ?? null,\n    crmBaseUrl: (b.crmBaseUrl ?? 'http://localhost:4000').replace(/\\/+$/, ''),\n    // A cap, not a target. Judging 200 photos would cost real money and the\n    // agent picks ~12 anyway; the cap is what stops one bad shoot day\n    // spending forty dollars.\n    maxPhotos: Math.min(Number(b.maxPhotos ?? 40), 60),\n    startedAt: new Date().toISOString(),\n  },\n}];"
+      },
+      "id": "read-the-request",
+      "name": "Read the request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.crmBaseUrl }}/api/records/properties/{{ $json.propertyId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "get-property-from-crm",
+      "name": "Get property from CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ipropy-crm",
+          "name": "iPropy CRM API key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "microsoftOneDriveOAuth2Api",
+        "method": "GET",
+        "url": "=https://graph.microsoft.com/v1.0/me/drive/root:/{{ $('Read the request').item.json.originalsPath.split(\"/\").map(encodeURIComponent).join(\"/\") }}:/children?$top=200&$select=id,name,size,file,photo",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "list-originals",
+      "name": "List originals",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        300
+      ],
+      "credentials": {
+        "microsoftOneDriveOAuth2Api": {
+          "id": "onedrive",
+          "name": "OneDrive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Only real images, newest last, capped. Anything OneDrive reports without a\n// `file.mimeType` starting image/ is a folder, a document, or a sync artefact.\nconst cfg = $('Read the request').first().json;\nconst items = $input.first().json.value ?? [];\n\nconst photos = items\n  .filter((f) => (f.file?.mimeType ?? '').startsWith('image/'))\n  .filter((f) => (f.size ?? 0) > 40 * 1024)   // thumbnails and junk\n  .sort((a, b) => (a.name > b.name ? 1 : -1))\n  .slice(0, cfg.maxPhotos);\n\nif (photos.length === 0) {\n  throw new Error(\n    `No photos in \"${cfg.originalsPath}\". Either the upload has not finished ` +\n    `syncing, or the CRM sent the wrong folder.`\n  );\n}\n\nreturn photos.map((f) => ({ json: { fileId: f.id, name: f.name, size: f.size } }));"
+      },
+      "id": "pick-photos-to-judge",
+      "name": "Pick photos to judge",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "each-photo",
+      "name": "Each photo",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "microsoftOneDriveOAuth2Api",
+        "method": "GET",
+        "url": "=https://graph.microsoft.com/v1.0/me/drive/items/{{ $json.fileId }}/content",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          },
+          "timeout": 120000
+        }
+      },
+      "id": "download-photo",
+      "name": "Download photo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        460
+      ],
+      "credentials": {
+        "microsoftOneDriveOAuth2Api": {
+          "id": "onedrive",
+          "name": "OneDrive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// The vision model takes a data URI. n8n already holds the bytes as base64 on\n// the binary property, so this is a rename rather than a re-encode.\nconst bin = $input.first().binary?.data;\nif (!bin) throw new Error('OneDrive returned no file body for this photo.');\n\nconst meta = $('Each photo').first().json;\nreturn [{\n  json: {\n    fileId: meta.fileId,\n    name: meta.name,\n    dataUri: `data:${bin.mimeType || 'image/jpeg'};base64,${bin.data}`,\n  },\n}];"
+      },
+      "id": "photo-to-data-uri",
+      "name": "Photo to data URI",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"model\": \"qwen/qwen3.7-flash\", \"temperature\": 0, \"response_format\": {\"type\": \"json_object\"}, \"messages\": [{\"role\": \"system\", \"content\": \"You grade estate-agency photographs of Indian builder floors. Answer with JSON only, no prose: {\\\"keep\\\":true|false,\\\"score\\\":0-10,\\\"room\\\":\\\"short label\\\",\\\"why\\\":\\\"under 12 words\\\"}. Set keep=false for anything blurred, badly exposed, a duplicate angle of the same room, a picture of a person, a screenshot, or a document. Judge it as a buyer scrolling a listing would.\"}, {\"role\": \"user\", \"content\": [{\"type\": \"text\", \"text\": \"=Filename: {{ $json.name }}\"}, {\"type\": \"image_url\", \"image_url\": {\"url\": \"={{ $json.dataUri }}\"}}]}]}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "rate-photo",
+      "name": "Rate photo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        460
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "openrouter",
+          "name": "OpenRouter API key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// A model that returns something unparseable must cost one photo, never the\n// whole run \u2014 so this never throws.\nconst meta = $('Photo to data URI').first().json;\nlet verdict = { keep: false, score: 0, room: 'unknown', why: 'could not be read' };\ntry {\n  verdict = { ...verdict, ...JSON.parse($json.choices[0].message.content) };\n} catch (e) {\n  verdict.why = `unreadable answer: ${String(e.message).slice(0, 60)}`;\n}\nreturn [{ json: { fileId: meta.fileId, name: meta.name, ...verdict } }];"
+      },
+      "id": "collect-rating",
+      "name": "Collect rating",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        460
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Every rating this run produced.\nconst all = $input.all().map((i) => i.json);\nconst kept = all.filter((r) => r.keep).sort((a, b) => b.score - a.score);\n\n// One photo per room first, then the best of the rest. A listing with eight\n// angles of the same drawing room reads as a thin property even when it isn't.\nconst seen = new Set();\nconst firstOfEachRoom = [];\nconst remainder = [];\nfor (const r of kept) {\n  const room = (r.room || 'unknown').toLowerCase();\n  if (seen.has(room)) { remainder.push(r); } else { seen.add(room); firstOfEachRoom.push(r); }\n}\nconst shortlist = [...firstOfEachRoom, ...remainder].slice(0, 12);\n\nreturn [{\n  json: {\n    judged: all.length,\n    kept: kept.length,\n    shortlist,\n    rejected: all.filter((r) => !r.keep),\n    rooms: [...seen],\n  },\n}];"
+      },
+      "id": "rank-and-shortlist",
+      "name": "Rank and shortlist",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"model\": \"qwen/qwen3.7-flash\", \"temperature\": 0.4, \"response_format\": {\"type\": \"json_object\"}, \"messages\": [{\"role\": \"system\", \"content\": \"You write listing copy for iPropy, an estate agency in Faridabad, Haryana. Plain Indian English. No emoji walls, no \\\"DM for price\\\", no invented facts \\u2014 if a number is not in the data you are given, do not state it. Prices in lakh/crore as Indians write them. Answer JSON only: {\\\"instagram\\\":\\\"...\\\",\\\"facebook\\\":\\\"...\\\",\\\"whatsapp\\\":\\\"...\\\",\\\"portal_title\\\":\\\"...\\\",\\\"portal_description\\\":\\\"...\\\",\\\"hashtags\\\":[\\\"...\\\"]}. WhatsApp text must be under 400 characters and readable as a message from a person, not an advert.\"}, {\"role\": \"user\", \"content\": \"=Property facts as JSON:\\n{{ JSON.stringify($('Get property from CRM').item.json) }}\\n\\nRooms photographed: {{ $json.rooms.join(\\\", \\\") }}\\nPhotos shortlisted: {{ $json.shortlist.length }}\"}]}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "write-the-words",
+      "name": "Write the words",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        140
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "openrouter",
+          "name": "OpenRouter API key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Turns the two model answers into the handful of files a person opens.\nconst cfg      = $('Read the request').first().json;\nconst ranked   = $('Rank and shortlist').first().json;\nconst property = $('Get property from CRM').first().json;\n\nlet copy = {};\ntry { copy = JSON.parse($json.choices[0].message.content); } catch { copy = {}; }\n\nconst line = (s) => (s ?? '').toString().trim();\nconst captions = [\n  `# Captions \u2014 ${property.label ?? cfg.propertyId}`,\n  ``,\n  `Written ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC. Read them before posting.`,\n  ``,\n  `## Instagram`, ``, line(copy.instagram), ``,\n  (copy.hashtags?.length ? `${copy.hashtags.map((h) => (h.startsWith('#') ? h : '#' + h)).join(' ')}\\n` : ''),\n  `## Facebook`, ``, line(copy.facebook), ``,\n  `## WhatsApp`, ``, line(copy.whatsapp), ``,\n].join('\\n');\n\nconst listing = [\n  `# Portal listing \u2014 ${property.label ?? cfg.propertyId}`,\n  ``,\n  `**Title**`, ``, line(copy.portal_title), ``,\n  `**Description**`, ``, line(copy.portal_description), ``,\n  `---`,\n  `Photos to upload, in this order:`,\n  ...ranked.shortlist.map((p, i) => `${i + 1}. ${p.name}  \u2014 ${p.room} (${p.score}/10)`),\n].join('\\n');\n\nconst status = {\n  ok: true,\n  finished_at: new Date().toISOString(),\n  started_at: cfg.startedAt,\n  property_id: cfg.propertyId,\n  folder: cfg.folder,\n  model: 'qwen/qwen3.7-flash',\n  photos_judged: ranked.judged,\n  photos_kept: ranked.kept,\n  photos_shortlisted: ranked.shortlist.length,\n  rooms: ranked.rooms,\n  wrote: ['_status.json', 'captions.md', 'listing.md', 'shortlist.json'],\n  // Kept so a bad selection can be argued with rather than guessed at.\n  rejected: ranked.rejected.map((r) => ({ name: r.name, why: r.why })),\n};\n\nreturn [{\n  json: {\n    captions,\n    listing,\n    shortlist: JSON.stringify({ shortlist: ranked.shortlist }, null, 2),\n    status: JSON.stringify(status, null, 2),\n    summary: `${ranked.shortlist.length} of ${ranked.judged} photos shortlisted`,\n  },\n}];"
+      },
+      "id": "build-the-files",
+      "name": "Build the files",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "microsoftOneDriveOAuth2Api",
+        "method": "PUT",
+        "url": "=https://graph.microsoft.com/v1.0/me/drive/root:/{{ $('Read the request').item.json.folder.split(\"/\").map(encodeURIComponent).join(\"/\") }}/captions.md:/content",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "text/plain; charset=utf-8",
+        "body": "={{ $json.captions }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "write-captions.md",
+      "name": "Write captions.md",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        -20
+      ],
+      "credentials": {
+        "microsoftOneDriveOAuth2Api": {
+          "id": "onedrive",
+          "name": "OneDrive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "microsoftOneDriveOAuth2Api",
+        "method": "PUT",
+        "url": "=https://graph.microsoft.com/v1.0/me/drive/root:/{{ $('Read the request').item.json.folder.split(\"/\").map(encodeURIComponent).join(\"/\") }}/listing.md:/content",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "text/plain; charset=utf-8",
+        "body": "={{ $json.listing }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "write-listing.md",
+      "name": "Write listing.md",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2200,
+        -20
+      ],
+      "credentials": {
+        "microsoftOneDriveOAuth2Api": {
+          "id": "onedrive",
+          "name": "OneDrive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "microsoftOneDriveOAuth2Api",
+        "method": "PUT",
+        "url": "=https://graph.microsoft.com/v1.0/me/drive/root:/{{ $('Read the request').item.json.folder.split(\"/\").map(encodeURIComponent).join(\"/\") }}/shortlist.json:/content",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "text/plain; charset=utf-8",
+        "body": "={{ $json.shortlist }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "write-shortlist.json",
+      "name": "Write shortlist.json",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2420,
+        -20
+      ],
+      "credentials": {
+        "microsoftOneDriveOAuth2Api": {
+          "id": "onedrive",
+          "name": "OneDrive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "microsoftOneDriveOAuth2Api",
+        "method": "PUT",
+        "url": "=https://graph.microsoft.com/v1.0/me/drive/root:/{{ $('Read the request').item.json.folder.split(\"/\").map(encodeURIComponent).join(\"/\") }}/_status.json:/content",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "text/plain; charset=utf-8",
+        "body": "={{ $json.status }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "write-_status.json",
+      "name": "Write _status.json",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        -20
+      ],
+      "credentials": {
+        "microsoftOneDriveOAuth2Api": {
+          "id": "onedrive",
+          "name": "OneDrive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Read the request').item.json.crmBaseUrl }}/api/webhooks/n8n/content-ready",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({propertyId: $('Read the request').item.json.propertyId,sessionId: $('Read the request').item.json.sessionId,folder: $('Read the request').item.json.folder,summary: $('Build the files').item.json.summary}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "tell-the-crm",
+      "name": "Tell the CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2860,
+        -20
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ipropy-crm",
+          "name": "iPropy CRM API key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, summary: $('Build the files').item.json.summary }) }}",
+        "options": {}
+      },
+      "id": "answer-the-crm",
+      "name": "Answer the CRM",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        3080,
+        -20
+      ]
+    }
+  ],
+  "connections": {
+    "Shoot finished": {
+      "main": [
+        [
+          {
+            "node": "Read the request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read the request": {
+      "main": [
+        [
+          {
+            "node": "Get property from CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get property from CRM": {
+      "main": [
+        [
+          {
+            "node": "List originals",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List originals": {
+      "main": [
+        [
+          {
+            "node": "Pick photos to judge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick photos to judge": {
+      "main": [
+        [
+          {
+            "node": "Each photo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Each photo": {
+      "main": [
+        [
+          {
+            "node": "Rank and shortlist",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Download photo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download photo": {
+      "main": [
+        [
+          {
+            "node": "Photo to data URI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Photo to data URI": {
+      "main": [
+        [
+          {
+            "node": "Rate photo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rate photo": {
+      "main": [
+        [
+          {
+            "node": "Collect rating",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect rating": {
+      "main": [
+        [
+          {
+            "node": "Each photo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rank and shortlist": {
+      "main": [
+        [
+          {
+            "node": "Write the words",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write the words": {
+      "main": [
+        [
+          {
+            "node": "Build the files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build the files": {
+      "main": [
+        [
+          {
+            "node": "Write captions.md",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write captions.md": {
+      "main": [
+        [
+          {
+            "node": "Write listing.md",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write listing.md": {
+      "main": [
+        [
+          {
+            "node": "Write shortlist.json",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write shortlist.json": {
+      "main": [
+        [
+          {
+            "node": "Write _status.json",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write _status.json": {
+      "main": [
+        [
+          {
+            "node": "Tell the CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tell the CRM": {
+      "main": [
+        [
+          {
+            "node": "Answer the CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "pinData": {},
+  "tags": []
+}
