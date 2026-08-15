@@ -13,7 +13,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import multer from 'multer';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { BadRequestError } from '../../utils/errors.js';
 import {
@@ -39,7 +39,11 @@ const deviceLimit = rateLimit({
   limit: 120,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => `dev:${bearer(req.headers.authorization) ?? req.ip ?? 'unknown'}`,
+  keyGenerator: (req) => {
+    const token = bearer(req.headers.authorization);
+    if (token) return `dev:t:${token}`;
+    return `dev:ip:${req.ip ? ipKeyGenerator(req.ip) : 'unknown'}`;
+  },
 });
 deviceRouter.use(deviceLimit);
 

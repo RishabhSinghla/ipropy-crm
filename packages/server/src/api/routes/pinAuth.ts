@@ -8,7 +8,7 @@
  */
 import crypto from 'node:crypto';
 import { Router } from 'express';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { z } from 'zod';
 import { config } from '../../config.js';
 import { db, queryOne, transaction } from '../../db/pool.js';
@@ -95,7 +95,11 @@ const enrolLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: true,
-  keyGenerator: (req) => `pin-enrol:${(req as { user?: { id?: string } }).user?.id ?? req.ip ?? 'unknown'}`,
+  keyGenerator: (req) => {
+    const userId = (req as { user?: { id?: string } }).user?.id;
+    if (userId) return `pin-enrol:u:${userId}`;
+    return `pin-enrol:ip:${req.ip ? ipKeyGenerator(req.ip) : 'unknown'}`;
+  },
   message: { error: 'rate_limited', message: 'Too many attempts. Try again in a few minutes.' },
 });
 
