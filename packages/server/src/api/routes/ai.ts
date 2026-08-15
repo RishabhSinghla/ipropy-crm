@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { z } from 'zod';
 import multer from 'multer';
 import { db } from '../../db/pool.js';
@@ -50,7 +50,11 @@ const modelLimiter = rateLimit({
   limit: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => `ai:${(req as { user?: { id?: string } }).user?.id ?? req.ip ?? 'unknown'}`,
+  keyGenerator: (req) => {
+    const userId = (req as { user?: { id?: string } }).user?.id;
+    if (userId) return `ai:u:${userId}`;
+    return `ai:ip:${req.ip ? ipKeyGenerator(req.ip) : 'unknown'}`;
+  },
   message: {
     error: 'rate_limited',
     message: 'Too many AI requests in a row. Give it a minute — this protects the shared daily quota.',

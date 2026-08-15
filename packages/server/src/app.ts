@@ -2,7 +2,7 @@ import express, { type Express, type Request } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import pinoHttp from 'pino-http';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
@@ -115,8 +115,13 @@ export function createApp(): Express {
     // (all from 127.0.0.1) would exhaust it fastest of all.
     const apiKey = req.headers['x-api-key'];
     if (typeof apiKey === 'string' && apiKey) return `k:${apiKey.slice(0, 8)}`;
-    // Mirrors express-rate-limit's own default, which this replaces.
-    return `ip:${req.ip ?? 'unknown'}`;
+    // `ipKeyGenerator`, not the raw `req.ip`. A single IPv6 customer is handed
+    // a whole /64, so keying on the exact address gives them a fresh bucket per
+    // request simply by picking another address out of their own prefix — the
+    // limit stops limiting for precisely the clients most able to rotate.
+    // The helper collapses IPv6 to its /64 and leaves IPv4 alone. This is what
+    // express-rate-limit 8 flags a custom keyGenerator for, and it was right.
+    return req.ip ? `ip:${ipKeyGenerator(req.ip)}` : 'ip:unknown';
   };
 
   // Webhooks are hit by providers, not browsers — they get their own budget.
