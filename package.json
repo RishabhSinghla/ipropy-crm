@@ -42,7 +42,7 @@
     "control": "npm run control -w @ipropy/server"
   },
   "devDependencies": {
-    "concurrently": "^9.1.0",
+    "concurrently": "^10.0.4",
     "typescript": "^5.7.2"
   }
 }
