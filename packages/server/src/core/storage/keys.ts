@@ -38,8 +38,19 @@ export const PROPERTY_MEDIA_FOLDERS = {
   crmWebsite: '05 CRM Website',
 } as const;
 
-/** Every real folder provisioned even before the first photo arrives. */
-export const PROPERTY_MEDIA_FOLDER_TREE = [...new Set(Object.values(PROPERTY_MEDIA_FOLDERS))];
+/**
+ * What the CRM creates when a property is made.
+ *
+ * Only the drop box. Everything downstream of it — the master, and the four
+ * delivery folders — is created by the media worker (`media-worker/`) as it
+ * publishes, because it is the thing that decides what goes in them.
+ *
+ * Pre-creating the rest was worse than useless: a photographer opening a
+ * property and seeing five empty folders cannot tell whether the run has not
+ * happened yet or has happened and produced nothing. An absent folder says
+ * "not yet" without ambiguity.
+ */
+export const PROPERTY_MEDIA_FOLDER_TREE = [PROPERTY_MEDIA_FOLDERS.originals];
 
 /**
  * Lowercase, hyphen-joined, ASCII only.

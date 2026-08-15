@@ -7,21 +7,25 @@ carries real JavaScript, and hand-escaping newlines and quotes inside JSON is
 how you end up with a workflow that imports but does not run. Here the JS is an
 ordinary Python string and json.dump does the escaping.
 
-Re-run after editing:  python3 n8n/build-workflow.py
+    python3 n8n/build-workflow.py
+
+The media worker does every byte of file handling. n8n never touches OneDrive,
+holds no Microsoft credentials and downloads no photographs — it asks the
+worker what is there, decides labels and order, writes the words, and asks the
+worker to publish. Two HTTP calls and some thinking in between.
 """
 import json
 import pathlib
 
 OUT = pathlib.Path(__file__).with_name('ipropy-content-factory.json')
 
-# Verified against OpenRouter's live API on 2026-08-15: $0.03/M in, $0.13/M out,
-# 1M context, and — unlike DeepSeek V4 Flash — it accepts images.
+# Verified against OpenRouter's live API: $0.03/M in, $0.13/M out, 1M context,
+# and — unlike DeepSeek V4 Flash — it accepts images.
 MODEL = 'qwen/qwen3.7-flash'
+WORKER = 'http://127.0.0.1:8712'
 
-GRAPH = 'https://graph.microsoft.com/v1.0'
-
-nodes = []
-conns = {}
+nodes: list[dict] = []
+conns: dict[str, dict] = {}
 Y = 300
 
 
@@ -49,12 +53,11 @@ def connect(src, dst, out=0):
     conns[src]['main'][out].append({'node': dst, 'type': 'main', 'index': 0})
 
 
-ONEDRIVE = {'authentication': 'predefinedCredentialType',
-            'nodeCredentialType': 'microsoftOneDriveOAuth2Api'}
+CRM_CRED = {'httpHeaderAuth': {'id': 'ipropy-crm', 'name': 'iPropy CRM API key'}}
+OR_CRED = {'httpHeaderAuth': {'id': 'openrouter', 'name': 'OpenRouter API key'}}
+WORKER_CRED = {'httpHeaderAuth': {'id': 'media-worker', 'name': 'iPropy media worker token'}}
 
-# --------------------------------------------------------------------------
-# 1. The CRM says a shoot is finished.
-# --------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 node('Shoot finished', 'n8n-nodes-base.webhook', {
     'httpMethod': 'POST',
     'path': 'ipropy-shoot-finished',
@@ -63,12 +66,8 @@ node('Shoot finished', 'n8n-nodes-base.webhook', {
 }, 0, type_version=2, extra={'webhookId': 'ipropy-shoot-finished'})
 
 READ_JS = r"""
-// Everything downstream reads from one normalised object, so a change to the
-// CRM's payload is a change in exactly one place.
-//
-// `folder` is the property's OneDrive path *relative to the drive root* — the
-// CRM already knows it as `folderKey` and it looks like
-// "IPROPY-PROPERTIES/GREENFIELD/B12-4BHK-250SQYD".
+// One normalised object for everything downstream, so a change to the CRM's
+// payload is a change in exactly one place.
 const b = $json.body ?? $json;
 
 const need = (k) => {
@@ -79,19 +78,13 @@ const need = (k) => {
   return String(v).trim();
 };
 
-const folder = need('folder').replace(/^\/+|\/+$/g, '');
-
 return [{
   json: {
     propertyId: need('propertyId'),
-    folder,
-    originalsPath: `${folder}/01 Originals`,
+    // Relative to the worker's root, e.g. "GREENFIELD/B12-4BHK-250SQYD".
+    folder: need('folder').replace(/^\/+|\/+$/g, ''),
     sessionId: b.sessionId ?? null,
     crmBaseUrl: (b.crmBaseUrl ?? 'http://localhost:4000').replace(/\/+$/, ''),
-    // A cap, not a target. Judging 200 photos would cost real money and the
-    // agent picks ~12 anyway; the cap is what stops one bad shoot day
-    // spending forty dollars.
-    maxPhotos: Math.min(Number(b.maxPhotos ?? 40), 60),
     startedAt: new Date().toISOString(),
   },
 }];
@@ -99,167 +92,151 @@ return [{
 node('Read the request', 'n8n-nodes-base.code',
      {'jsCode': READ_JS.strip()}, 220, type_version=2)
 
-# --------------------------------------------------------------------------
-# 2. Facts from the CRM, files from OneDrive.
-# --------------------------------------------------------------------------
 node('Get property from CRM', 'n8n-nodes-base.httpRequest', {
     'method': 'GET',
     'url': '={{ $json.crmBaseUrl }}/api/records/properties/{{ $json.propertyId }}',
     'authentication': 'genericCredentialType',
     'genericAuthType': 'httpHeaderAuth',
     'options': {'timeout': 30000},
-}, 440, type_version=4.2,
-    creds={'httpHeaderAuth': {'id': 'ipropy-crm', 'name': 'iPropy CRM API key'}})
+}, 440, type_version=4.2, creds=CRM_CRED)
 
-node('List originals', 'n8n-nodes-base.httpRequest', dict(ONEDRIVE, **{
-    'method': 'GET',
-    'url': '={{ $(\'Read the request\').item.json.originalsPath.split("/").map(encodeURIComponent).join("/") }}',
-    'options': {'timeout': 60000},
-}), 660, type_version=4.2,
-    creds={'microsoftOneDriveOAuth2Api': {'id': 'onedrive', 'name': 'OneDrive'}})
-# The URL above is replaced below with the full Graph call; kept separate so the
-# expression stays readable.
-nodes[-1]['parameters']['url'] = (
-    '=' + GRAPH + '/me/drive/root:/'
-    '{{ $(\'Read the request\').item.json.originalsPath.split("/").map(encodeURIComponent).join("/") }}'
-    ':/children?$top=200&$select=id,name,size,file,photo'
-)
+# --- the worker does the pixels -------------------------------------------
+node('Worker: prepare', 'n8n-nodes-base.httpRequest', {
+    'method': 'POST',
+    'url': f'{WORKER}/prepare',
+    'authentication': 'genericCredentialType',
+    'genericAuthType': 'httpHeaderAuth',
+    'sendBody': True,
+    'specifyBody': 'json',
+    'jsonBody': '={{ JSON.stringify({ folder: $(\'Read the request\').item.json.folder }) }}',
+    # Decoding and correcting forty 4032x3024 photographs takes real time.
+    'options': {'timeout': 900000},
+}, 660, type_version=4.2, creds=WORKER_CRED)
 
-PICK_JS = r"""
-// Only real images, newest last, capped. Anything OneDrive reports without a
-// `file.mimeType` starting image/ is a folder, a document, or a sync artefact.
-const cfg = $('Read the request').first().json;
-const items = $input.first().json.value ?? [];
-
-const photos = items
-  .filter((f) => (f.file?.mimeType ?? '').startsWith('image/'))
-  .filter((f) => (f.size ?? 0) > 40 * 1024)   // thumbnails and junk
-  .sort((a, b) => (a.name > b.name ? 1 : -1))
-  .slice(0, cfg.maxPhotos);
-
-if (photos.length === 0) {
+SPLIT_JS = r"""
+// One item per photo, each carrying its small preview.
+const res = $input.first().json;
+if (!res.previews || res.previews.length === 0) {
   throw new Error(
-    `No photos in "${cfg.originalsPath}". Either the upload has not finished ` +
-    `syncing, or the CRM sent the wrong folder.`
+    `The worker found no usable photos in "${res.folder}". Either the upload ` +
+    `has not finished syncing, or "01 Originals" is empty.`
   );
 }
-
-return photos.map((f) => ({ json: { fileId: f.id, name: f.name, size: f.size } }));
+return res.previews.map((p) => ({ json: p }));
 """
-node('Pick photos to judge', 'n8n-nodes-base.code',
-     {'jsCode': PICK_JS.strip()}, 880, type_version=2)
+node('Split previews', 'n8n-nodes-base.code',
+     {'jsCode': SPLIT_JS.strip()}, 880, type_version=2)
 
-# --------------------------------------------------------------------------
-# 3. Judge each photo. One at a time, so a single failure loses one photo.
-# --------------------------------------------------------------------------
 node('Each photo', 'n8n-nodes-base.splitInBatches',
      {'batchSize': 1, 'options': {}}, 1100, type_version=3)
 
-node('Download photo', 'n8n-nodes-base.httpRequest', dict(ONEDRIVE, **{
-    'method': 'GET',
-    'url': '=' + GRAPH + '/me/drive/items/{{ $json.fileId }}/content',
-    'options': {'response': {'response': {'responseFormat': 'file'}}, 'timeout': 120000},
-}), 1320, y=Y + 160, type_version=4.2,
-    creds={'microsoftOneDriveOAuth2Api': {'id': 'onedrive', 'name': 'OneDrive'}})
-
-TO_DATA_URI_JS = r"""
-// The vision model takes a data URI. n8n already holds the bytes as base64 on
-// the binary property, so this is a rename rather than a re-encode.
-const bin = $input.first().binary?.data;
-if (!bin) throw new Error('OneDrive returned no file body for this photo.');
-
-const meta = $('Each photo').first().json;
-return [{
-  json: {
-    fileId: meta.fileId,
-    name: meta.name,
-    dataUri: `data:${bin.mimeType || 'image/jpeg'};base64,${bin.data}`,
-  },
-}];
-"""
-node('Photo to data URI', 'n8n-nodes-base.code',
-     {'jsCode': TO_DATA_URI_JS.strip()}, 1540, y=Y + 160, type_version=2)
-
-RATE_BODY = {
+LOOK_BODY = {
     'model': MODEL,
     'temperature': 0,
     'response_format': {'type': 'json_object'},
     'messages': [
         {'role': 'system',
          'content': (
-             'You grade estate-agency photographs of Indian builder floors. '
-             'Answer with JSON only, no prose: '
-             '{"keep":true|false,"score":0-10,"room":"short label",'
-             '"why":"under 12 words"}. '
-             'Set keep=false for anything blurred, badly exposed, a duplicate '
-             'angle of the same room, a picture of a person, a screenshot, or '
-             'a document. Judge it as a buyer scrolling a listing would.'
+             'You label photographs of Indian builder-floor properties for an '
+             'estate agency. JSON only, no prose: '
+             '{"room":"two words at most","subject":"what it mainly shows, '
+             'under 8 words","broken":true|false,"why":"only if broken"}. '
+             'Use plain names a buyer would use: drawing room, kitchen, '
+             'bedroom, bathroom, balcony, terrace, lobby, exterior, parking. '
+             'Set broken=true ONLY for a photo that cannot be published at all '
+             '— badly out of focus, a shot of the floor or a shoe, a '
+             'screenshot, a document, or a picture of a person. A merely '
+             'ordinary photo is not broken.'
          )},
         {'role': 'user', 'content': [
-            {'type': 'text', 'text': '=Filename: {{ $json.name }}'},
-            {'type': 'image_url', 'image_url': {'url': '={{ $json.dataUri }}'}},
+            {'type': 'text', 'text': '=Filename: {{ $json.master }}'},
+            {'type': 'image_url', 'image_url': {'url': '={{ $json.preview }}'}},
         ]},
     ],
 }
-node('Rate photo', 'n8n-nodes-base.httpRequest', {
+node('Look at the photo', 'n8n-nodes-base.httpRequest', {
     'method': 'POST',
     'url': 'https://openrouter.ai/api/v1/chat/completions',
     'authentication': 'genericCredentialType',
     'genericAuthType': 'httpHeaderAuth',
     'sendBody': True,
     'specifyBody': 'json',
-    'jsonBody': '=' + json.dumps(RATE_BODY),
+    'jsonBody': '=' + json.dumps(LOOK_BODY),
     'options': {'timeout': 120000},
-}, 1760, y=Y + 160, type_version=4.2,
-    creds={'httpHeaderAuth': {'id': 'openrouter', 'name': 'OpenRouter API key'}})
+}, 1320, y=Y + 180, type_version=4.2, creds=OR_CRED)
 
 COLLECT_JS = r"""
-// A model that returns something unparseable must cost one photo, never the
-// whole run — so this never throws.
-const meta = $('Photo to data URI').first().json;
-let verdict = { keep: false, score: 0, room: 'unknown', why: 'could not be read' };
+// A model that answers with junk must cost one label, never the run — so this
+// never throws. An unlabelled photo is still published, just as "photo".
+const meta = $('Each photo').first().json;
+let seen = { room: 'photo', subject: '', broken: false };
 try {
-  verdict = { ...verdict, ...JSON.parse($json.choices[0].message.content) };
-} catch (e) {
-  verdict.why = `unreadable answer: ${String(e.message).slice(0, 60)}`;
+  seen = { ...seen, ...JSON.parse($json.choices[0].message.content) };
+} catch {
+  seen.subject = 'label unavailable';
 }
-return [{ json: { fileId: meta.fileId, name: meta.name, ...verdict } }];
+return [{ json: { master: meta.master, ...seen } }];
 """
-node('Collect rating', 'n8n-nodes-base.code',
-     {'jsCode': COLLECT_JS.strip()}, 1980, y=Y + 160, type_version=2,
+node('Collect label', 'n8n-nodes-base.code',
+     {'jsCode': COLLECT_JS.strip()}, 1540, y=Y + 180, type_version=2,
      extra={'onError': 'continueRegularOutput'})
 
-# --------------------------------------------------------------------------
-# 4. Shortlist, then write the words.
-# --------------------------------------------------------------------------
-SHORTLIST_JS = r"""
-// Every rating this run produced.
+ORDER_JS = r"""
+// Order, do not cull.
+//
+// The instruction is explicit: the photos are taken carefully, so nothing gets
+// thrown away for being merely ordinary. The only things dropped are photos
+// the model called genuinely unpublishable — a shot of a shoe, a screenshot —
+// and even those are recorded with the reason rather than vanishing.
+//
+// What this DOES decide is sequence, and that matters more than culling: the
+// photo sitting at position one on a 99acres listing is what decides whether
+// anybody clicks at all.
 const all = $input.all().map((i) => i.json);
-const kept = all.filter((r) => r.keep).sort((a, b) => b.score - a.score);
+const broken = all.filter((p) => p.broken);
+const usable = all.filter((p) => !p.broken);
 
-// One photo per room first, then the best of the rest. A listing with eight
-// angles of the same drawing room reads as a thin property even when it isn't.
-const seen = new Set();
-const firstOfEachRoom = [];
-const remainder = [];
-for (const r of kept) {
-  const room = (r.room || 'unknown').toLowerCase();
-  if (seen.has(room)) { remainder.push(r); } else { seen.add(room); firstOfEachRoom.push(r); }
+// The order a buyer wants to walk the property in.
+const ROOM_ORDER = [
+  'drawing room', 'living room', 'lobby', 'kitchen', 'dining',
+  'bedroom', 'master bedroom', 'bathroom', 'balcony', 'terrace',
+  'exterior', 'parking', 'staircase',
+];
+const rank = (room) => {
+  const r = (room || '').toLowerCase();
+  const i = ROOM_ORDER.findIndex((k) => r.includes(k) || k.includes(r));
+  return i === -1 ? ROOM_ORDER.length : i;
+};
+
+// One of each room first, in walking order, then the remaining angles behind
+// them in the same order. Eight views of one drawing room up front makes a
+// good property look thin; the same eight further down are just detail.
+const firstOfRoom = [];
+const rest = [];
+const seenRoom = new Set();
+for (const p of [...usable].sort((a, b) => rank(a.room) - rank(b.room))) {
+  const key = (p.room || 'photo').toLowerCase();
+  (seenRoom.has(key) ? rest : firstOfRoom).push(p);
+  seenRoom.add(key);
 }
-const shortlist = [...firstOfEachRoom, ...remainder].slice(0, 12);
 
-return [{
-  json: {
-    judged: all.length,
-    kept: kept.length,
-    shortlist,
-    rejected: all.filter((r) => !r.keep),
-    rooms: [...seen],
-  },
-}];
+const plan = [...firstOfRoom, ...rest].map((p, i) => ({
+  master: p.master,
+  label: p.room || 'photo',
+  order: i + 1,
+  subject: p.subject,
+}));
+
+return [{ json: {
+  plan,
+  rooms: [...seenRoom],
+  total: all.length,
+  publishing: plan.length,
+  dropped: broken.map((p) => ({ master: p.master, why: p.why || 'unpublishable' })),
+} }];
 """
-node('Rank and shortlist', 'n8n-nodes-base.code',
-     {'jsCode': SHORTLIST_JS.strip()}, 1320, y=Y - 160, type_version=2)
+node('Put them in order', 'n8n-nodes-base.code',
+     {'jsCode': ORDER_JS.strip()}, 1320, y=Y - 180, type_version=2)
 
 WORDS_BODY = {
     'model': MODEL,
@@ -270,17 +247,21 @@ WORDS_BODY = {
          'content': (
              'You write listing copy for iPropy, an estate agency in Faridabad, '
              'Haryana. Plain Indian English. No emoji walls, no "DM for price", '
-             'no invented facts — if a number is not in the data you are given, '
-             'do not state it. Prices in lakh/crore as Indians write them. '
-             'Answer JSON only: {"instagram":"...","facebook":"...",'
-             '"whatsapp":"...","portal_title":"...","portal_description":"...",'
-             '"hashtags":["..."]}. WhatsApp text must be under 400 characters '
-             'and readable as a message from a person, not an advert.'
+             'and never a fact you were not given — if a number is not in the '
+             'data, do not state it. Prices in lakh and crore as Indians write '
+             'them. JSON only: {"instagram":"...","facebook":"...",'
+             '"whatsapp":"...","status_line":"...","google":"...",'
+             '"shorts_title":"...","portal_title":"...",'
+             '"portal_description":"...","hashtags":["..."]}. '
+             'whatsapp must read like a message from a person, under 400 '
+             'characters. status_line is one short line. shorts_title is under '
+             '90 characters. portal_description is 4 to 6 sentences.'
          )},
         {'role': 'user',
-         'content': ('=Property facts as JSON:\n{{ JSON.stringify($(\'Get property from CRM\').item.json) }}'
+         'content': ('=Property facts as JSON:\n'
+                     '{{ JSON.stringify($(\'Get property from CRM\').item.json) }}'
                      '\n\nRooms photographed: {{ $json.rooms.join(", ") }}'
-                     '\nPhotos shortlisted: {{ $json.shortlist.length }}')},
+                     '\nPhotos being published: {{ $json.publishing }}')},
     ],
 }
 node('Write the words', 'n8n-nodes-base.httpRequest', {
@@ -292,38 +273,43 @@ node('Write the words', 'n8n-nodes-base.httpRequest', {
     'specifyBody': 'json',
     'jsonBody': '=' + json.dumps(WORDS_BODY),
     'options': {'timeout': 180000},
-}, 1540, y=Y - 160, type_version=4.2,
-    creds={'httpHeaderAuth': {'id': 'openrouter', 'name': 'OpenRouter API key'}})
+}, 1540, y=Y - 180, type_version=4.2, creds=OR_CRED)
 
 BUILD_JS = r"""
-// Turns the two model answers into the handful of files a person opens.
+// The three files a person actually opens, plus the plan the worker applies.
 const cfg      = $('Read the request').first().json;
-const ranked   = $('Rank and shortlist').first().json;
+const ordered  = $('Put them in order').first().json;
 const property = $('Get property from CRM').first().json;
 
 let copy = {};
 try { copy = JSON.parse($json.choices[0].message.content); } catch { copy = {}; }
-
 const line = (s) => (s ?? '').toString().trim();
+const tags = (copy.hashtags ?? []).map((h) => (h.startsWith('#') ? h : '#' + h)).join(' ');
+const name = property.label ?? cfg.propertyId;
+
 const captions = [
-  `# Captions — ${property.label ?? cfg.propertyId}`,
+  `# Captions — ${name}`,
   ``,
-  `Written ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC. Read them before posting.`,
+  `Written ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC. Read before posting.`,
   ``,
-  `## Instagram`, ``, line(copy.instagram), ``,
-  (copy.hashtags?.length ? `${copy.hashtags.map((h) => (h.startsWith('#') ? h : '#' + h)).join(' ')}\n` : ''),
-  `## Facebook`, ``, line(copy.facebook), ``,
-  `## WhatsApp`, ``, line(copy.whatsapp), ``,
+  `## Instagram (feed + reel)`, ``, line(copy.instagram), ``, tags, ``,
+  `## Facebook (page, groups, marketplace)`, ``, line(copy.facebook), ``,
+  `## WhatsApp — send to a buyer`, ``, line(copy.whatsapp), ``,
+  `## WhatsApp Status / Instagram Story`, ``, line(copy.status_line), ``,
+  `## Google Business update`, ``, line(copy.google), ``,
+  `## YouTube Shorts title`, ``, line(copy.shorts_title), ``,
 ].join('\n');
 
 const listing = [
-  `# Portal listing — ${property.label ?? cfg.propertyId}`,
+  `# Portal listing — ${name}`,
+  ``,
+  `For 99acres, MagicBricks, Housing, NoBroker and Facebook Marketplace.`,
+  `Photos are in "03 Portals and Website", already in this order.`,
   ``,
   `**Title**`, ``, line(copy.portal_title), ``,
   `**Description**`, ``, line(copy.portal_description), ``,
-  `---`,
-  `Photos to upload, in this order:`,
-  ...ranked.shortlist.map((p, i) => `${i + 1}. ${p.name}  — ${p.room} (${p.score}/10)`),
+  `---`, ``, `## Photo order`,
+  ...ordered.plan.map((p) => `${p.order}. ${p.label}${p.subject ? ' — ' + p.subject : ''}`),
 ].join('\n');
 
 const status = {
@@ -333,49 +319,41 @@ const status = {
   property_id: cfg.propertyId,
   folder: cfg.folder,
   model: 'qwen/qwen3.7-flash',
-  photos_judged: ranked.judged,
-  photos_kept: ranked.kept,
-  photos_shortlisted: ranked.shortlist.length,
-  rooms: ranked.rooms,
-  wrote: ['_status.json', 'captions.md', 'listing.md', 'shortlist.json'],
-  // Kept so a bad selection can be argued with rather than guessed at.
-  rejected: ranked.rejected.map((r) => ({ name: r.name, why: r.why })),
+  photos_seen: ordered.total,
+  photos_published: ordered.publishing,
+  rooms: ordered.rooms,
+  // Recorded, not hidden: a photo that disappeared without explanation is the
+  // thing that makes people stop trusting the whole pipeline.
+  not_published: ordered.dropped,
 };
 
-return [{
-  json: {
-    captions,
-    listing,
-    shortlist: JSON.stringify({ shortlist: ranked.shortlist }, null, 2),
-    status: JSON.stringify(status, null, 2),
-    summary: `${ranked.shortlist.length} of ${ranked.judged} photos shortlisted`,
+return [{ json: {
+  plan: ordered.plan,
+  files: {
+    'captions.md': captions,
+    'listing.md': listing,
+    '_status.json': JSON.stringify(status, null, 2),
   },
-}];
+  summary: `${ordered.publishing} photos published across 4 folders`,
+} }];
 """
 node('Build the files', 'n8n-nodes-base.code',
-     {'jsCode': BUILD_JS.strip()}, 1760, y=Y - 160, type_version=2)
+     {'jsCode': BUILD_JS.strip()}, 1760, y=Y - 180, type_version=2)
 
-
-def upload(label, filename, expr, x, y):
-    node(label, 'n8n-nodes-base.httpRequest', dict(ONEDRIVE, **{
-        'method': 'PUT',
-        'url': ('=' + GRAPH + '/me/drive/root:/'
-                '{{ $(\'Read the request\').item.json.folder.split("/").map(encodeURIComponent).join("/") }}'
-                f'/{filename}:/content'),
-        'sendBody': True,
-        'contentType': 'raw',
-        'rawContentType': 'text/plain; charset=utf-8',
-        'body': expr,
-        'options': {'timeout': 60000},
-    }), x, y=y, type_version=4.2,
-        creds={'microsoftOneDriveOAuth2Api': {'id': 'onedrive', 'name': 'OneDrive'}})
-    return label
-
-
-upload('Write captions.md', 'captions.md', '={{ $json.captions }}', 1980, Y - 320)
-upload('Write listing.md', 'listing.md', '={{ $json.listing }}', 2200, Y - 320)
-upload('Write shortlist.json', 'shortlist.json', '={{ $json.shortlist }}', 2420, Y - 320)
-upload('Write _status.json', '_status.json', '={{ $json.status }}', 2640, Y - 320)
+node('Worker: publish', 'n8n-nodes-base.httpRequest', {
+    'method': 'POST',
+    'url': f'{WORKER}/finish',
+    'authentication': 'genericCredentialType',
+    'genericAuthType': 'httpHeaderAuth',
+    'sendBody': True,
+    'specifyBody': 'json',
+    'jsonBody': ('={{ JSON.stringify({'
+                 'folder: $(\'Read the request\').item.json.folder,'
+                 'plan: $json.plan,'
+                 'files: $json.files'
+                 '}) }}'),
+    'options': {'timeout': 900000},
+}, 1980, y=Y - 180, type_version=4.2, creds=WORKER_CRED)
 
 node('Tell the CRM', 'n8n-nodes-base.httpRequest', {
     'method': 'POST',
@@ -391,40 +369,32 @@ node('Tell the CRM', 'n8n-nodes-base.httpRequest', {
                  'summary: $(\'Build the files\').item.json.summary'
                  '}) }}'),
     'options': {'timeout': 30000},
-}, 2860, y=Y - 320, type_version=4.2,
-    creds={'httpHeaderAuth': {'id': 'ipropy-crm', 'name': 'iPropy CRM API key'}})
+}, 2200, y=Y - 180, type_version=4.2,
+    creds={'httpHeaderAuth': {'id': 'crm-callback', 'name': 'iPropy CRM callback secret'}})
 
 node('Answer the CRM', 'n8n-nodes-base.respondToWebhook', {
     'respondWith': 'json',
     'responseBody': ('={{ JSON.stringify({ ok: true, summary: '
                      '$(\'Build the files\').item.json.summary }) }}'),
     'options': {},
-}, 3080, y=Y - 320, type_version=1)
+}, 2420, y=Y - 180, type_version=1)
 
-# --------------------------------------------------------------------------
-# Wiring. The loop is the only non-obvious part: Split In Batches sends
-# "everything is done" out of output 0 and "here is the next one" out of 1.
-# --------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 connect('Shoot finished', 'Read the request')
 connect('Read the request', 'Get property from CRM')
-connect('Get property from CRM', 'List originals')
-connect('List originals', 'Pick photos to judge')
-connect('Pick photos to judge', 'Each photo')
+connect('Get property from CRM', 'Worker: prepare')
+connect('Worker: prepare', 'Split previews')
+connect('Split previews', 'Each photo')
 
-connect('Each photo', 'Rank and shortlist', out=0)   # done
-connect('Each photo', 'Download photo', out=1)       # next photo
-connect('Download photo', 'Photo to data URI')
-connect('Photo to data URI', 'Rate photo')
-connect('Rate photo', 'Collect rating')
-connect('Collect rating', 'Each photo')              # back round
+connect('Each photo', 'Put them in order', out=0)   # done
+connect('Each photo', 'Look at the photo', out=1)   # next photo
+connect('Look at the photo', 'Collect label')
+connect('Collect label', 'Each photo')
 
-connect('Rank and shortlist', 'Write the words')
+connect('Put them in order', 'Write the words')
 connect('Write the words', 'Build the files')
-connect('Build the files', 'Write captions.md')
-connect('Write captions.md', 'Write listing.md')
-connect('Write listing.md', 'Write shortlist.json')
-connect('Write shortlist.json', 'Write _status.json')
-connect('Write _status.json', 'Tell the CRM')
+connect('Build the files', 'Worker: publish')
+connect('Worker: publish', 'Tell the CRM')
 connect('Tell the CRM', 'Answer the CRM')
 
 workflow = {
@@ -437,4 +407,5 @@ workflow = {
 }
 
 OUT.write_text(json.dumps(workflow, indent=2) + '\n')
-print(f'wrote {OUT.name}: {len(nodes)} nodes, {sum(len(v["main"][i]) for v in conns.values() for i in range(len(v["main"])))} connections')
+total = sum(len(v['main'][i]) for v in conns.values() for i in range(len(v['main'])))
+print(f'wrote {OUT.name}: {len(nodes)} nodes, {total} connections')

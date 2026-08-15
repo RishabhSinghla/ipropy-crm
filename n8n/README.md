@@ -1,9 +1,9 @@
 # The content factory — n8n
 
 `ipropy-content-factory.json` is an importable n8n workflow. The CRM tells it a
-shoot is finished; it reads the photos out of OneDrive, decides which ones are
-worth showing, writes the captions and the portal listing beside them, and tells
-the CRM when it is done.
+shoot is finished; it asks the media worker what is there, decides how the
+photos should be labelled and ordered, writes the words, and has the worker
+publish them. Then it tells the CRM.
 
 Nothing in here runs inside the CRM. That is the point: the CRM keeps answering
 requests while this does the slow work, and either one can be down without
@@ -11,160 +11,137 @@ taking the other with it.
 
 ---
 
+## How the whole thing fits together
+
+```
+  iPhone                OneDrive              CRM              n8n         worker
+    |                      |                   |                |            |
+ photograph  --auto-->  01 Originals           |                |            |
+    |                      |                   |                |            |
+ tap Finish ----------------------------->  session closed      |            |
+                                               |--- webhook --->|            |
+                                               |                |-- prepare->|
+                                               |                |<- previews-|
+                                               |                | (label each)
+                                               |                | (order, words)
+                                               |                |-- publish->|
+                                               |                |            | writes 02-06
+                                               |<-- content-ready ---|        | + the 3 files
+                                            notification                      |
+```
+
+You touch two things: the camera, and the Finish button.
+
 ## The folder plan
 
-**Use the eight folders the CRM already creates.** Not the 136-folder demo tree.
-
 ```
-IPROPY-PROPERTIES/<AREA>/<PROPERTY>/
-  01 Originals                              <- everything you shot, untouched
-  02 Compressed
-  03 Watermarked
-  04 Social Media/Instagram Feed
-  04 Social Media/Instagram Story and Reels
-  04 Social Media/Facebook
-  04 Social Media/WhatsApp
-  05 CRM Website
+IPROPY-PROPERTIES/properties/<property>/
+    captions.md       every channel's words, in one file
+    listing.md        portal title, description, photo order
+    _status.json      what ran, and what it refused to publish
 
-  _status.json      <- what this workflow did, and what it refused
-  captions.md       <- Instagram, Facebook, WhatsApp, in one file
-  listing.md        <- portal title, description, photo order
-  shortlist.json    <- the chosen photos, with scores
+    01 Originals               as shot — never touched, never renamed
+    02 Master                  compressed once, corrected, camera-named
+    03 Portals and Website     landscape, no watermark
+    04 Google and Marketplace  1:1, small logo
+    05 Instagram and Facebook  4:5, small logo
+    06 Reels Stories Status    9:16, small logo
 ```
 
-Twelve things to look at instead of a hundred and thirty-six.
+Five folders feed fifteen places. The same photo in four shapes, not four
+different sets of photos.
 
-**The argument against the big tree is not disk space.** 673 MB per property at
-30 a month is about 20 GB a month — a 1 TB OneDrive survives that for four
-years. The problem is that 136 folders, nine of them permanently empty, is a
-filing cabinet nobody opens. You cannot tell what is current, what was posted,
-or what is safe to delete. A structure people stop trusting is worse than a
-flat folder.
-
-**Do not store one crop per platform.** A 4:5 Instagram crop is a 200 ms
-operation on a photo you already have. Storing it forever, syncing it to every
-device, and then wondering whether it is the current version costs more than
-regenerating it. Keep originals, keep what you actually published, regenerate
-the rest.
-
-**Add a folder the day you need it, not before.** `08_BLOG` and `09_AEO_GEO` in
-the demo are real ambitions, but an empty folder teaches the team that the
-system is aspirational, and then they stop believing any of it.
-
----
+The CRM creates only `01 Originals`. The worker creates the rest as it
+publishes — an absent folder says "not run yet" without ambiguity, where five
+empty ones say nothing at all.
 
 ## The upload problem, and why it mostly already solved itself
 
-The design as described has you, per property: leave the CRM, open OneDrive,
-find the right folder among thirty, upload, come back, tap Finish. That is five
-steps at the exact moment you are hot, tired, and walking to the next building.
-On property 22 of 30 you will skip it, and the folder will sit empty.
-
-**Tapping Finish is fine. Choosing the folder is the poison.** Remove that.
+Having you find the right folder among thirty, on a phone, at the moment you
+are hot and walking to the next building, is the step that gets skipped on
+property 22 of 30. Tapping Finish is fine. Choosing a folder is the poison.
 
 The CRM already has the machinery, from `CLAUDE.md`:
 
 > A photo finds its property by the clock, never by GPS.
 
-A shoot session binds a property to a *window of time*. A photo taken inside
-that window belongs to that property — `matchOrphansForSession()` in
-`core/capture` already does this, and `POST /api/capture/sessions/finish`
-already calls it. Nothing needs inventing.
+A shoot session binds a property to a *window of time*, and
+`matchOrphansForSession()` already claims files that fall inside it. So:
 
-So:
-
-1. Turn on **Camera Upload** in the OneDrive iOS app, once, forever.
+1. Turn on **Camera Upload** in the OneDrive iOS app. Once, forever.
 2. Photograph the property. Touch nothing.
 3. Tap **Finish** in the CRM.
 
-Photos land in OneDrive by themselves. The CRM knows which window they fall in.
-Personal photos taken outside a shoot window are never claimed, so it is safe to
-leave switched on. You navigate to a folder exactly never.
+Personal photos taken outside a shoot window are never claimed, so it is safe
+to leave switched on. You navigate to a folder exactly never.
 
-The only real cost is that HEIC arrives instead of JPEG — which the CRM already
-transcodes at ingest, because that trap was found and fixed earlier.
-
----
+**Shoot landscape.** Every photo. Rooms look bigger, portals want it, and a
+landscape frame crops down to 4:5 and 1:1 — where a portrait one cannot be
+turned back into a good landscape, the sides are simply gone. Then shoot one
+vertical video for the Reel and the Status. Photos sideways, video upright.
 
 ## Setting it up
 
-### 1. Three credentials in n8n
+### 1. Start the media worker
+
+See `media-worker/README.md`. One command, no dependencies to install.
+
+### 2. Three credentials in n8n
 
 | Name it exactly | Type | Value |
 |---|---|---|
-| `OneDrive` | Microsoft OneDrive OAuth2 API | sign in with the account that owns IPROPY-PROPERTIES |
 | `OpenRouter API key` | Header Auth | Name `Authorization`, Value `Bearer sk-or-...` |
-| `iPropy CRM API key` | Header Auth | Name `X-API-Key`, Value from **Settings → Connected apps** |
+| `iPropy CRM API key` | Header Auth | Name `X-API-Key`, from **Settings → Connected apps** |
+| `iPropy CRM callback secret` | Header Auth | Name `X-N8N-Secret`, matching `N8N_CALLBACK_SECRET` |
+| `iPropy media worker token` | Header Auth | Name `X-Worker-Token`, matching `IPROPY_TOKEN` |
 
-The names matter — the workflow references them.
+The names matter — the workflow references them. **No Microsoft credential is
+needed anywhere**: n8n never touches OneDrive.
 
-### 2. Import
+### 3. Import and fire it by hand
 
-n8n → Workflows → Import from File → `ipropy-content-factory.json`.
-
-### 3. Fire it by hand first
-
-Do not wire the CRM up until you have watched it work once. Copy the webhook URL
-off the first node, then:
+n8n → Workflows → Import from File → `ipropy-content-factory.json`. Then, before
+wiring the CRM up, run one property yourself and watch it:
 
 ```bash
 curl -X POST http://localhost:5678/webhook-test/ipropy-shoot-finished \
   -H 'Content-Type: application/json' \
-  -d '{"propertyId":"<a real property id>","folder":"IPROPY-PROPERTIES/GREENFIELD/B12-4BHK","crmBaseUrl":"http://localhost:4000"}'
+  -d '{"propertyId":"<a real property id>","folder":"properties/<the folder>","crmBaseUrl":"http://localhost:4000"}'
 ```
-
-Watch it in the n8n editor. When it finishes, open the property folder in
-OneDrive: `captions.md`, `listing.md`, `shortlist.json` and `_status.json`
-should be sitting there.
 
 ### 4. Then wire the CRM
 
-Both sides exist now. Set two things in the CRM's integration settings (or as
-env vars) and the loop closes:
+Both sides exist. Set two things in the CRM's integration settings (or as env
+vars):
 
 | Setting | Env var | What it is |
 |---|---|---|
 | `n8n` → config → `webhookUrl` | `N8N_WEBHOOK_URL` | the workflow's production webhook URL |
 | `n8n` → credentials → `callbackSecret` | `N8N_CALLBACK_SECRET` | any long random string |
 
-Put the same secret in n8n as a header credential named **`iPropy CRM API key`**
-sending `X-N8N-Secret`.
+* `POST /api/capture/sessions/finish` posts to n8n **without waiting**. A dead
+  n8n cannot stop a rep closing a site visit.
+* `POST /api/webhooks/n8n/content-ready` notifies the property owner and
+  whoever walked the site. It writes nothing to the record.
 
-Then:
-
-* `POST /api/capture/sessions/finish` posts `{propertyId, sessionId, folder,
-  crmBaseUrl}` to n8n — **without waiting**. A dead n8n cannot stop a rep
-  closing a site visit; it logs a warning and the session sits `ready` with no
-  content beside it.
-* `POST /api/webhooks/n8n/content-ready` takes the report and notifies the
-  property owner and whoever walked the site. It writes nothing to the record —
-  a model's opinion about which photographs are good has no business editing
-  inventory unasked.
-
-An unset secret **refuses every callback** rather than accepting them. That
-endpoint sits on the router mounted ahead of `requireAuth`, so an open one is a
-stranger able to push notifications at your whole team. There is a test that
-fails if anyone ever "fixes" that.
-
----
+An unset secret **refuses every callback** rather than accepting them, and
+there is a test that fails if anyone ever "fixes" that.
 
 ## What it does, node by node
 
 ```
 Shoot finished (webhook)
-  -> Read the request            normalise, and refuse a request with no propertyId
-  -> Get property from CRM       the facts the copy must not contradict
-  -> List originals              OneDrive, "01 Originals"
-  -> Pick photos to judge        images only, junk and thumbnails dropped, capped
-  -> Each photo ─────────────┐
-       Download photo        │   one at a time, so one failure costs one photo
-       Photo to data URI     │
-       Rate photo            │   vision model: keep? score? which room?
-       Collect rating ───────┘
-  -> Rank and shortlist          one photo per room first, then the best of the rest
-  -> Write the words             captions + portal listing, from the real facts
-  -> Build the files
-  -> captions.md, listing.md, shortlist.json, _status.json
+  -> Read the request        normalise; refuse a request with no propertyId
+  -> Get property from CRM   the facts the copy must not contradict
+  -> Worker: prepare         HEIC decoded, corrected, compressed; previews back
+  -> Split previews          one item per photo
+  -> Each photo ─────────┐
+       Look at the photo │   which room? is it genuinely unpublishable?
+       Collect label ────┘   junk answer costs one label, never the run
+  -> Put them in order       order, do not cull
+  -> Write the words         every channel's copy, from the real facts
+  -> Build the files         captions.md, listing.md, _status.json
+  -> Worker: publish         crops, watermarks, renames, writes
   -> Tell the CRM
 ```
 
@@ -177,12 +154,18 @@ expensive on input *and* cannot see a photograph at all, which makes it the
 wrong tool for a business built on pictures. Judging 40 photos costs a few
 paise.
 
-**One photo per room before the second of anything.** Eight angles of the same
-drawing room reads as a thin property even when it is not.
+**Order, do not cull.** The photos are taken carefully, so nothing is dropped
+for being merely ordinary. The only things dropped are what the model calls
+genuinely unpublishable — a shot of a shoe, a screenshot — and even those are
+written into `_status.json` with the reason.
 
-**Rejected photos are written to `_status.json` with the reason.** A selection
-you can argue with is worth far more than a selection you have to trust, and
-the first week you will disagree with it.
+What it does decide is sequence, and that matters more: the photo at position
+one on a 99acres listing is what decides whether anybody clicks. One of each
+room first, in the order a buyer walks a property, then the remaining angles
+behind them.
+
+**Nothing disappears silently.** A photo that vanished without explanation is
+what makes people stop trusting the whole pipeline.
 
 **A model that answers with junk costs one photo, never the run.** That branch
 is tested.
@@ -208,11 +191,11 @@ comes out — including a junk model answer, an empty folder, a shoot where
 everything was rejected, and a property whose copy came back as prose instead of
 JSON. 22 checks.
 
-**What is not verified, and cannot be from here:** the OneDrive paths, the three
-credentials, the model's actual judgement, and the CRM callback endpoint that
-does not exist yet. Those need one real property. Everything above is why the
-first run should be the manual `curl`, watched, on a property you do not mind
-seeing rewritten.
+**What is not verified, and cannot be from here:** the four credentials, the
+real OneDrive paths, and the model's actual judgement — whether it calls that
+room a drawing room, and whether the caption is one you would post. Those need
+one real property. Everything else is covered, including the worker: run
+`python3 media-worker/end_to_end.py` for the pixel half.
 
 Edit `build-workflow.py` rather than the JSON, then re-run it — the JSON is
 generated, and hand-escaping JavaScript inside JSON is how you get a workflow

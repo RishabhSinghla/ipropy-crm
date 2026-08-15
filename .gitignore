@@ -16,3 +16,7 @@ backups/
 /test-results/
 /playwright-report/
 /blob-report/
+
+# Python bytecode from the media worker
+__pycache__/
+*.pyc

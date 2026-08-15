@@ -20,7 +20,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Everything downstream reads from one normalised object, so a change to the\n// CRM's payload is a change in exactly one place.\n//\n// `folder` is the property's OneDrive path *relative to the drive root* \u2014 the\n// CRM already knows it as `folderKey` and it looks like\n// \"IPROPY-PROPERTIES/GREENFIELD/B12-4BHK-250SQYD\".\nconst b = $json.body ?? $json;\n\nconst need = (k) => {\n  const v = b[k];\n  if (v === undefined || v === null || String(v).trim() === '') {\n    throw new Error(`The CRM did not send \"${k}\". Nothing can be filed without it.`);\n  }\n  return String(v).trim();\n};\n\nconst folder = need('folder').replace(/^\\/+|\\/+$/g, '');\n\nreturn [{\n  json: {\n    propertyId: need('propertyId'),\n    folder,\n    originalsPath: `${folder}/01 Originals`,\n    sessionId: b.sessionId ?? null,\n    crmBaseUrl: (b.crmBaseUrl ?? 'http://localhost:4000').replace(/\\/+$/, ''),\n    // A cap, not a target. Judging 200 photos would cost real money and the\n    // agent picks ~12 anyway; the cap is what stops one bad shoot day\n    // spending forty dollars.\n    maxPhotos: Math.min(Number(b.maxPhotos ?? 40), 60),\n    startedAt: new Date().toISOString(),\n  },\n}];"
+        "jsCode": "// One normalised object for everything downstream, so a change to the CRM's\n// payload is a change in exactly one place.\nconst b = $json.body ?? $json;\n\nconst need = (k) => {\n  const v = b[k];\n  if (v === undefined || v === null || String(v).trim() === '') {\n    throw new Error(`The CRM did not send \"${k}\". Nothing can be filed without it.`);\n  }\n  return String(v).trim();\n};\n\nreturn [{\n  json: {\n    propertyId: need('propertyId'),\n    // Relative to the worker's root, e.g. \"GREENFIELD/B12-4BHK-250SQYD\".\n    folder: need('folder').replace(/^\\/+|\\/+$/g, ''),\n    sessionId: b.sessionId ?? null,\n    crmBaseUrl: (b.crmBaseUrl ?? 'http://localhost:4000').replace(/\\/+$/, ''),\n    startedAt: new Date().toISOString(),\n  },\n}];"
       },
       "id": "read-the-request",
       "name": "Read the request",
@@ -58,16 +58,19 @@
     },
     {
       "parameters": {
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "microsoftOneDriveOAuth2Api",
-        "method": "GET",
-        "url": "=https://graph.microsoft.com/v1.0/me/drive/root:/{{ $('Read the request').item.json.originalsPath.split(\"/\").map(encodeURIComponent).join(\"/\") }}:/children?$top=200&$select=id,name,size,file,photo",
+        "method": "POST",
+        "url": "http://127.0.0.1:8712/prepare",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ folder: $('Read the request').item.json.folder }) }}",
         "options": {
-          "timeout": 60000
+          "timeout": 900000
         }
       },
-      "id": "list-originals",
-      "name": "List originals",
+      "id": "worker:-prepare",
+      "name": "Worker: prepare",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -75,18 +78,18 @@
         300
       ],
       "credentials": {
-        "microsoftOneDriveOAuth2Api": {
-          "id": "onedrive",
-          "name": "OneDrive"
+        "httpHeaderAuth": {
+          "id": "media-worker",
+          "name": "iPropy media worker token"
         }
       }
     },
     {
       "parameters": {
-        "jsCode": "// Only real images, newest last, capped. Anything OneDrive reports without a\n// `file.mimeType` starting image/ is a folder, a document, or a sync artefact.\nconst cfg = $('Read the request').first().json;\nconst items = $input.first().json.value ?? [];\n\nconst photos = items\n  .filter((f) => (f.file?.mimeType ?? '').startsWith('image/'))\n  .filter((f) => (f.size ?? 0) > 40 * 1024)   // thumbnails and junk\n  .sort((a, b) => (a.name > b.name ? 1 : -1))\n  .slice(0, cfg.maxPhotos);\n\nif (photos.length === 0) {\n  throw new Error(\n    `No photos in \"${cfg.originalsPath}\". Either the upload has not finished ` +\n    `syncing, or the CRM sent the wrong folder.`\n  );\n}\n\nreturn photos.map((f) => ({ json: { fileId: f.id, name: f.name, size: f.size } }));"
+        "jsCode": "// One item per photo, each carrying its small preview.\nconst res = $input.first().json;\nif (!res.previews || res.previews.length === 0) {\n  throw new Error(\n    `The worker found no usable photos in \"${res.folder}\". Either the upload ` +\n    `has not finished syncing, or \"01 Originals\" is empty.`\n  );\n}\nreturn res.previews.map((p) => ({ json: p }));"
       },
-      "id": "pick-photos-to-judge",
-      "name": "Pick photos to judge",
+      "id": "split-previews",
+      "name": "Split previews",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -110,67 +113,24 @@
     },
     {
       "parameters": {
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "microsoftOneDriveOAuth2Api",
-        "method": "GET",
-        "url": "=https://graph.microsoft.com/v1.0/me/drive/items/{{ $json.fileId }}/content",
-        "options": {
-          "response": {
-            "response": {
-              "responseFormat": "file"
-            }
-          },
-          "timeout": 120000
-        }
-      },
-      "id": "download-photo",
-      "name": "Download photo",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        1320,
-        460
-      ],
-      "credentials": {
-        "microsoftOneDriveOAuth2Api": {
-          "id": "onedrive",
-          "name": "OneDrive"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "// The vision model takes a data URI. n8n already holds the bytes as base64 on\n// the binary property, so this is a rename rather than a re-encode.\nconst bin = $input.first().binary?.data;\nif (!bin) throw new Error('OneDrive returned no file body for this photo.');\n\nconst meta = $('Each photo').first().json;\nreturn [{\n  json: {\n    fileId: meta.fileId,\n    name: meta.name,\n    dataUri: `data:${bin.mimeType || 'image/jpeg'};base64,${bin.data}`,\n  },\n}];"
-      },
-      "id": "photo-to-data-uri",
-      "name": "Photo to data URI",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1540,
-        460
-      ]
-    },
-    {
-      "parameters": {
         "method": "POST",
         "url": "https://openrouter.ai/api/v1/chat/completions",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"model\": \"qwen/qwen3.7-flash\", \"temperature\": 0, \"response_format\": {\"type\": \"json_object\"}, \"messages\": [{\"role\": \"system\", \"content\": \"You grade estate-agency photographs of Indian builder floors. Answer with JSON only, no prose: {\\\"keep\\\":true|false,\\\"score\\\":0-10,\\\"room\\\":\\\"short label\\\",\\\"why\\\":\\\"under 12 words\\\"}. Set keep=false for anything blurred, badly exposed, a duplicate angle of the same room, a picture of a person, a screenshot, or a document. Judge it as a buyer scrolling a listing would.\"}, {\"role\": \"user\", \"content\": [{\"type\": \"text\", \"text\": \"=Filename: {{ $json.name }}\"}, {\"type\": \"image_url\", \"image_url\": {\"url\": \"={{ $json.dataUri }}\"}}]}]}",
+        "jsonBody": "={\"model\": \"qwen/qwen3.7-flash\", \"temperature\": 0, \"response_format\": {\"type\": \"json_object\"}, \"messages\": [{\"role\": \"system\", \"content\": \"You label photographs of Indian builder-floor properties for an estate agency. JSON only, no prose: {\\\"room\\\":\\\"two words at most\\\",\\\"subject\\\":\\\"what it mainly shows, under 8 words\\\",\\\"broken\\\":true|false,\\\"why\\\":\\\"only if broken\\\"}. Use plain names a buyer would use: drawing room, kitchen, bedroom, bathroom, balcony, terrace, lobby, exterior, parking. Set broken=true ONLY for a photo that cannot be published at all \\u2014 badly out of focus, a shot of the floor or a shoe, a screenshot, a document, or a picture of a person. A merely ordinary photo is not broken.\"}, {\"role\": \"user\", \"content\": [{\"type\": \"text\", \"text\": \"=Filename: {{ $json.master }}\"}, {\"type\": \"image_url\", \"image_url\": {\"url\": \"={{ $json.preview }}\"}}]}]}",
         "options": {
           "timeout": 120000
         }
       },
-      "id": "rate-photo",
-      "name": "Rate photo",
+      "id": "look-at-the-photo",
+      "name": "Look at the photo",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1760,
-        460
+        1320,
+        480
       ],
       "credentials": {
         "httpHeaderAuth": {
@@ -181,29 +141,29 @@
     },
     {
       "parameters": {
-        "jsCode": "// A model that returns something unparseable must cost one photo, never the\n// whole run \u2014 so this never throws.\nconst meta = $('Photo to data URI').first().json;\nlet verdict = { keep: false, score: 0, room: 'unknown', why: 'could not be read' };\ntry {\n  verdict = { ...verdict, ...JSON.parse($json.choices[0].message.content) };\n} catch (e) {\n  verdict.why = `unreadable answer: ${String(e.message).slice(0, 60)}`;\n}\nreturn [{ json: { fileId: meta.fileId, name: meta.name, ...verdict } }];"
+        "jsCode": "// A model that answers with junk must cost one label, never the run \u2014 so this\n// never throws. An unlabelled photo is still published, just as \"photo\".\nconst meta = $('Each photo').first().json;\nlet seen = { room: 'photo', subject: '', broken: false };\ntry {\n  seen = { ...seen, ...JSON.parse($json.choices[0].message.content) };\n} catch {\n  seen.subject = 'label unavailable';\n}\nreturn [{ json: { master: meta.master, ...seen } }];"
       },
-      "id": "collect-rating",
-      "name": "Collect rating",
+      "id": "collect-label",
+      "name": "Collect label",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1980,
-        460
+        1540,
+        480
       ],
       "onError": "continueRegularOutput"
     },
     {
       "parameters": {
-        "jsCode": "// Every rating this run produced.\nconst all = $input.all().map((i) => i.json);\nconst kept = all.filter((r) => r.keep).sort((a, b) => b.score - a.score);\n\n// One photo per room first, then the best of the rest. A listing with eight\n// angles of the same drawing room reads as a thin property even when it isn't.\nconst seen = new Set();\nconst firstOfEachRoom = [];\nconst remainder = [];\nfor (const r of kept) {\n  const room = (r.room || 'unknown').toLowerCase();\n  if (seen.has(room)) { remainder.push(r); } else { seen.add(room); firstOfEachRoom.push(r); }\n}\nconst shortlist = [...firstOfEachRoom, ...remainder].slice(0, 12);\n\nreturn [{\n  json: {\n    judged: all.length,\n    kept: kept.length,\n    shortlist,\n    rejected: all.filter((r) => !r.keep),\n    rooms: [...seen],\n  },\n}];"
+        "jsCode": "// Order, do not cull.\n//\n// The instruction is explicit: the photos are taken carefully, so nothing gets\n// thrown away for being merely ordinary. The only things dropped are photos\n// the model called genuinely unpublishable \u2014 a shot of a shoe, a screenshot \u2014\n// and even those are recorded with the reason rather than vanishing.\n//\n// What this DOES decide is sequence, and that matters more than culling: the\n// photo sitting at position one on a 99acres listing is what decides whether\n// anybody clicks at all.\nconst all = $input.all().map((i) => i.json);\nconst broken = all.filter((p) => p.broken);\nconst usable = all.filter((p) => !p.broken);\n\n// The order a buyer wants to walk the property in.\nconst ROOM_ORDER = [\n  'drawing room', 'living room', 'lobby', 'kitchen', 'dining',\n  'bedroom', 'master bedroom', 'bathroom', 'balcony', 'terrace',\n  'exterior', 'parking', 'staircase',\n];\nconst rank = (room) => {\n  const r = (room || '').toLowerCase();\n  const i = ROOM_ORDER.findIndex((k) => r.includes(k) || k.includes(r));\n  return i === -1 ? ROOM_ORDER.length : i;\n};\n\n// One of each room first, in walking order, then the remaining angles behind\n// them in the same order. Eight views of one drawing room up front makes a\n// good property look thin; the same eight further down are just detail.\nconst firstOfRoom = [];\nconst rest = [];\nconst seenRoom = new Set();\nfor (const p of [...usable].sort((a, b) => rank(a.room) - rank(b.room))) {\n  const key = (p.room || 'photo').toLowerCase();\n  (seenRoom.has(key) ? rest : firstOfRoom).push(p);\n  seenRoom.add(key);\n}\n\nconst plan = [...firstOfRoom, ...rest].map((p, i) => ({\n  master: p.master,\n  label: p.room || 'photo',\n  order: i + 1,\n  subject: p.subject,\n}));\n\nreturn [{ json: {\n  plan,\n  rooms: [...seenRoom],\n  total: all.length,\n  publishing: plan.length,\n  dropped: broken.map((p) => ({ master: p.master, why: p.why || 'unpublishable' })),\n} }];"
       },
-      "id": "rank-and-shortlist",
-      "name": "Rank and shortlist",
+      "id": "put-them-in-order",
+      "name": "Put them in order",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
         1320,
-        140
+        120
       ]
     },
     {
@@ -214,7 +174,7 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"model\": \"qwen/qwen3.7-flash\", \"temperature\": 0.4, \"response_format\": {\"type\": \"json_object\"}, \"messages\": [{\"role\": \"system\", \"content\": \"You write listing copy for iPropy, an estate agency in Faridabad, Haryana. Plain Indian English. No emoji walls, no \\\"DM for price\\\", no invented facts \\u2014 if a number is not in the data you are given, do not state it. Prices in lakh/crore as Indians write them. Answer JSON only: {\\\"instagram\\\":\\\"...\\\",\\\"facebook\\\":\\\"...\\\",\\\"whatsapp\\\":\\\"...\\\",\\\"portal_title\\\":\\\"...\\\",\\\"portal_description\\\":\\\"...\\\",\\\"hashtags\\\":[\\\"...\\\"]}. WhatsApp text must be under 400 characters and readable as a message from a person, not an advert.\"}, {\"role\": \"user\", \"content\": \"=Property facts as JSON:\\n{{ JSON.stringify($('Get property from CRM').item.json) }}\\n\\nRooms photographed: {{ $json.rooms.join(\\\", \\\") }}\\nPhotos shortlisted: {{ $json.shortlist.length }}\"}]}",
+        "jsonBody": "={\"model\": \"qwen/qwen3.7-flash\", \"temperature\": 0.4, \"response_format\": {\"type\": \"json_object\"}, \"messages\": [{\"role\": \"system\", \"content\": \"You write listing copy for iPropy, an estate agency in Faridabad, Haryana. Plain Indian English. No emoji walls, no \\\"DM for price\\\", and never a fact you were not given \\u2014 if a number is not in the data, do not state it. Prices in lakh and crore as Indians write them. JSON only: {\\\"instagram\\\":\\\"...\\\",\\\"facebook\\\":\\\"...\\\",\\\"whatsapp\\\":\\\"...\\\",\\\"status_line\\\":\\\"...\\\",\\\"google\\\":\\\"...\\\",\\\"shorts_title\\\":\\\"...\\\",\\\"portal_title\\\":\\\"...\\\",\\\"portal_description\\\":\\\"...\\\",\\\"hashtags\\\":[\\\"...\\\"]}. whatsapp must read like a message from a person, under 400 characters. status_line is one short line. shorts_title is under 90 characters. portal_description is 4 to 6 sentences.\"}, {\"role\": \"user\", \"content\": \"=Property facts as JSON:\\n{{ JSON.stringify($('Get property from CRM').item.json) }}\\n\\nRooms photographed: {{ $json.rooms.join(\\\", \\\") }}\\nPhotos being published: {{ $json.publishing }}\"}]}",
         "options": {
           "timeout": 180000
         }
@@ -225,7 +185,7 @@
       "typeVersion": 4.2,
       "position": [
         1540,
-        140
+        120
       ],
       "credentials": {
         "httpHeaderAuth": {
@@ -236,7 +196,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Turns the two model answers into the handful of files a person opens.\nconst cfg      = $('Read the request').first().json;\nconst ranked   = $('Rank and shortlist').first().json;\nconst property = $('Get property from CRM').first().json;\n\nlet copy = {};\ntry { copy = JSON.parse($json.choices[0].message.content); } catch { copy = {}; }\n\nconst line = (s) => (s ?? '').toString().trim();\nconst captions = [\n  `# Captions \u2014 ${property.label ?? cfg.propertyId}`,\n  ``,\n  `Written ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC. Read them before posting.`,\n  ``,\n  `## Instagram`, ``, line(copy.instagram), ``,\n  (copy.hashtags?.length ? `${copy.hashtags.map((h) => (h.startsWith('#') ? h : '#' + h)).join(' ')}\\n` : ''),\n  `## Facebook`, ``, line(copy.facebook), ``,\n  `## WhatsApp`, ``, line(copy.whatsapp), ``,\n].join('\\n');\n\nconst listing = [\n  `# Portal listing \u2014 ${property.label ?? cfg.propertyId}`,\n  ``,\n  `**Title**`, ``, line(copy.portal_title), ``,\n  `**Description**`, ``, line(copy.portal_description), ``,\n  `---`,\n  `Photos to upload, in this order:`,\n  ...ranked.shortlist.map((p, i) => `${i + 1}. ${p.name}  \u2014 ${p.room} (${p.score}/10)`),\n].join('\\n');\n\nconst status = {\n  ok: true,\n  finished_at: new Date().toISOString(),\n  started_at: cfg.startedAt,\n  property_id: cfg.propertyId,\n  folder: cfg.folder,\n  model: 'qwen/qwen3.7-flash',\n  photos_judged: ranked.judged,\n  photos_kept: ranked.kept,\n  photos_shortlisted: ranked.shortlist.length,\n  rooms: ranked.rooms,\n  wrote: ['_status.json', 'captions.md', 'listing.md', 'shortlist.json'],\n  // Kept so a bad selection can be argued with rather than guessed at.\n  rejected: ranked.rejected.map((r) => ({ name: r.name, why: r.why })),\n};\n\nreturn [{\n  json: {\n    captions,\n    listing,\n    shortlist: JSON.stringify({ shortlist: ranked.shortlist }, null, 2),\n    status: JSON.stringify(status, null, 2),\n    summary: `${ranked.shortlist.length} of ${ranked.judged} photos shortlisted`,\n  },\n}];"
+        "jsCode": "// The three files a person actually opens, plus the plan the worker applies.\nconst cfg      = $('Read the request').first().json;\nconst ordered  = $('Put them in order').first().json;\nconst property = $('Get property from CRM').first().json;\n\nlet copy = {};\ntry { copy = JSON.parse($json.choices[0].message.content); } catch { copy = {}; }\nconst line = (s) => (s ?? '').toString().trim();\nconst tags = (copy.hashtags ?? []).map((h) => (h.startsWith('#') ? h : '#' + h)).join(' ');\nconst name = property.label ?? cfg.propertyId;\n\nconst captions = [\n  `# Captions \u2014 ${name}`,\n  ``,\n  `Written ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC. Read before posting.`,\n  ``,\n  `## Instagram (feed + reel)`, ``, line(copy.instagram), ``, tags, ``,\n  `## Facebook (page, groups, marketplace)`, ``, line(copy.facebook), ``,\n  `## WhatsApp \u2014 send to a buyer`, ``, line(copy.whatsapp), ``,\n  `## WhatsApp Status / Instagram Story`, ``, line(copy.status_line), ``,\n  `## Google Business update`, ``, line(copy.google), ``,\n  `## YouTube Shorts title`, ``, line(copy.shorts_title), ``,\n].join('\\n');\n\nconst listing = [\n  `# Portal listing \u2014 ${name}`,\n  ``,\n  `For 99acres, MagicBricks, Housing, NoBroker and Facebook Marketplace.`,\n  `Photos are in \"03 Portals and Website\", already in this order.`,\n  ``,\n  `**Title**`, ``, line(copy.portal_title), ``,\n  `**Description**`, ``, line(copy.portal_description), ``,\n  `---`, ``, `## Photo order`,\n  ...ordered.plan.map((p) => `${p.order}. ${p.label}${p.subject ? ' \u2014 ' + p.subject : ''}`),\n].join('\\n');\n\nconst status = {\n  ok: true,\n  finished_at: new Date().toISOString(),\n  started_at: cfg.startedAt,\n  property_id: cfg.propertyId,\n  folder: cfg.folder,\n  model: 'qwen/qwen3.7-flash',\n  photos_seen: ordered.total,\n  photos_published: ordered.publishing,\n  rooms: ordered.rooms,\n  // Recorded, not hidden: a photo that disappeared without explanation is the\n  // thing that makes people stop trusting the whole pipeline.\n  not_published: ordered.dropped,\n};\n\nreturn [{ json: {\n  plan: ordered.plan,\n  files: {\n    'captions.md': captions,\n    'listing.md': listing,\n    '_status.json': JSON.stringify(status, null, 2),\n  },\n  summary: `${ordered.publishing} photos published across 4 folders`,\n} }];"
       },
       "id": "build-the-files",
       "name": "Build the files",
@@ -244,122 +204,34 @@
       "typeVersion": 2,
       "position": [
         1760,
-        140
+        120
       ]
     },
     {
       "parameters": {
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "microsoftOneDriveOAuth2Api",
-        "method": "PUT",
-        "url": "=https://graph.microsoft.com/v1.0/me/drive/root:/{{ $('Read the request').item.json.folder.split(\"/\").map(encodeURIComponent).join(\"/\") }}/captions.md:/content",
+        "method": "POST",
+        "url": "http://127.0.0.1:8712/finish",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
-        "contentType": "raw",
-        "rawContentType": "text/plain; charset=utf-8",
-        "body": "={{ $json.captions }}",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({folder: $('Read the request').item.json.folder,plan: $json.plan,files: $json.files}) }}",
         "options": {
-          "timeout": 60000
+          "timeout": 900000
         }
       },
-      "id": "write-captions.md",
-      "name": "Write captions.md",
+      "id": "worker:-publish",
+      "name": "Worker: publish",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
         1980,
-        -20
+        120
       ],
       "credentials": {
-        "microsoftOneDriveOAuth2Api": {
-          "id": "onedrive",
-          "name": "OneDrive"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "microsoftOneDriveOAuth2Api",
-        "method": "PUT",
-        "url": "=https://graph.microsoft.com/v1.0/me/drive/root:/{{ $('Read the request').item.json.folder.split(\"/\").map(encodeURIComponent).join(\"/\") }}/listing.md:/content",
-        "sendBody": true,
-        "contentType": "raw",
-        "rawContentType": "text/plain; charset=utf-8",
-        "body": "={{ $json.listing }}",
-        "options": {
-          "timeout": 60000
-        }
-      },
-      "id": "write-listing.md",
-      "name": "Write listing.md",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        2200,
-        -20
-      ],
-      "credentials": {
-        "microsoftOneDriveOAuth2Api": {
-          "id": "onedrive",
-          "name": "OneDrive"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "microsoftOneDriveOAuth2Api",
-        "method": "PUT",
-        "url": "=https://graph.microsoft.com/v1.0/me/drive/root:/{{ $('Read the request').item.json.folder.split(\"/\").map(encodeURIComponent).join(\"/\") }}/shortlist.json:/content",
-        "sendBody": true,
-        "contentType": "raw",
-        "rawContentType": "text/plain; charset=utf-8",
-        "body": "={{ $json.shortlist }}",
-        "options": {
-          "timeout": 60000
-        }
-      },
-      "id": "write-shortlist.json",
-      "name": "Write shortlist.json",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        2420,
-        -20
-      ],
-      "credentials": {
-        "microsoftOneDriveOAuth2Api": {
-          "id": "onedrive",
-          "name": "OneDrive"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "microsoftOneDriveOAuth2Api",
-        "method": "PUT",
-        "url": "=https://graph.microsoft.com/v1.0/me/drive/root:/{{ $('Read the request').item.json.folder.split(\"/\").map(encodeURIComponent).join(\"/\") }}/_status.json:/content",
-        "sendBody": true,
-        "contentType": "raw",
-        "rawContentType": "text/plain; charset=utf-8",
-        "body": "={{ $json.status }}",
-        "options": {
-          "timeout": 60000
-        }
-      },
-      "id": "write-_status.json",
-      "name": "Write _status.json",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        2640,
-        -20
-      ],
-      "credentials": {
-        "microsoftOneDriveOAuth2Api": {
-          "id": "onedrive",
-          "name": "OneDrive"
+        "httpHeaderAuth": {
+          "id": "media-worker",
+          "name": "iPropy media worker token"
         }
       }
     },
@@ -381,13 +253,13 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2860,
-        -20
+        2200,
+        120
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "ipropy-crm",
-          "name": "iPropy CRM API key"
+          "id": "crm-callback",
+          "name": "iPropy CRM callback secret"
         }
       }
     },
@@ -402,8 +274,8 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
       "position": [
-        3080,
-        -20
+        2420,
+        120
       ]
     }
   ],
@@ -434,25 +306,25 @@
       "main": [
         [
           {
-            "node": "List originals",
+            "node": "Worker: prepare",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "List originals": {
+    "Worker: prepare": {
       "main": [
         [
           {
-            "node": "Pick photos to judge",
+            "node": "Split previews",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Pick photos to judge": {
+    "Split previews": {
       "main": [
         [
           {
@@ -467,54 +339,32 @@
       "main": [
         [
           {
-            "node": "Rank and shortlist",
+            "node": "Put them in order",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Download photo",
+            "node": "Look at the photo",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Download photo": {
+    "Look at the photo": {
       "main": [
         [
           {
-            "node": "Photo to data URI",
+            "node": "Collect label",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Photo to data URI": {
-      "main": [
-        [
-          {
-            "node": "Rate photo",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Rate photo": {
-      "main": [
-        [
-          {
-            "node": "Collect rating",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Collect rating": {
+    "Collect label": {
       "main": [
         [
           {
@@ -525,7 +375,7 @@
         ]
       ]
     },
-    "Rank and shortlist": {
+    "Put them in order": {
       "main": [
         [
           {
@@ -551,47 +401,14 @@
       "main": [
         [
           {
-            "node": "Write captions.md",
+            "node": "Worker: publish",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Write captions.md": {
-      "main": [
-        [
-          {
-            "node": "Write listing.md",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Write listing.md": {
-      "main": [
-        [
-          {
-            "node": "Write shortlist.json",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Write shortlist.json": {
-      "main": [
-        [
-          {
-            "node": "Write _status.json",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Write _status.json": {
+    "Worker: publish": {
       "main": [
         [
           {
