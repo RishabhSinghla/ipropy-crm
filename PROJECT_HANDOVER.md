@@ -1,10 +1,13 @@
 # iPropy CRM — Project Handover
 
-**Last updated:** 7 August 2026
-**Status:** Feature-complete build, verified end-to-end. **This session:** Channel Partner portal built (migration 009), DB backup/restore runbook added and verified, Vitest unit suite (107 tests), production hardening (JWT_SECRET/WHATSAPP_APP_SECRET generated, launchd timer installed); then a public, unauthenticated read API (`/api/public/*`) added for a new sibling customer-facing website — see §14. No work in progress.
-**Location:** `/Users/rishabhsinghla/Downloads/iPropy-crm`
-**Git:** initialised, pushed to `origin/main` (`https://github.com/RishabhSinghla/ipropy-crm.git`).
-Latest commit `086e2bc`. Working tree clean.
+**Last updated:** 15 August 2026
+**Status:** Core CRM and public website deployed; code is ready for a controlled team pilot. The
+remaining go-live gates are deployment-owned: persistent media storage, Neon backups, always-on
+hosting, real user accounts, phone alerts, provider credentials and a real site visit. Security
+audits, CodeQL, CI checks and the production Docker build run before Render deploys `main`.
+**Location:** `/Users/rishabhsinghla/Downloads/iPropy-Projects/iPropy-crm`
+**Git:** `main` at `https://github.com/RishabhSinghla/ipropy-crm`. Use a pull request; the protected
+branch requires review and green CI.
 
 > Reference implementation: the original Vtiger PHP source sits at
 > `/Users/rishabhsinghla/Downloads/vtigercrm`. It was used as an **architecture
@@ -23,30 +26,28 @@ adds WhatsApp, telephony, portal lead capture and an AI layer.
 
 | Capability | Detail |
 |---|---|
-| Lead → booking pipeline | Capture, score, qualify, site visit, negotiate, book, collect payments |
+| Lead → property sales flow | Capture, deduplicate, assign, score, follow up and match suitable inventory |
 | Runtime customisation | Add modules/fields/blocks/layouts/dropdowns/views without a deploy or DDL |
 | Kanban + table + filters | Drag-drop pipeline, nested AND/OR filter builder, saved views with live counts |
 | Interactive record view | Header summary, tabbed Overview/Timeline/Related/Files, AI sidebar, notes |
-| Unified timeline | Calls, WhatsApp, email, notes, tasks, site visits, payments, files, field changes, AI insights on one feed |
+| Unified timeline | Calls, WhatsApp, email, notes, follow-ups, files, field changes and AI insights on one feed |
 | WhatsApp inbox | Threads, 24-hour window enforcement, delivery receipts, templates, AI reply suggestions |
 | Telephony | Click-to-call, inbound routing/screen-pop, recordings, AI call analysis, coaching report |
-| Inventory board | Tower × floor stack plan, block/release units, "which buyers match this unit" |
-| Dashboards | 5 seeded, 39 widgets: metrics with period deltas, funnel, stacked inventory, leaderboards, AI insight tiles |
+| Property inventory | Table/kanban views, availability, pricing, blocks, comparables and buyer matching |
+| Dashboards | 5 seeded dashboards with metrics, funnel, inventory, leaderboards and AI insight tiles |
 | Reports | Ad-hoc summary + tabular with grouping, measures, CSV export |
-| Automation | 17 workflows, 14 task types, delayed + field-relative scheduling, assignment rules, SLA tracking |
+| Automation | Editable workflows, 14 task types, delayed scheduling, assignment rules and SLA tracking |
 | Admin panel | Module enable/disable, field builder, layout designer, dropdowns, users, roles, profiles, sharing, **field permissions per profile**, workflows (**full create/edit composer**), **integrations (editable in-UI, encrypted credentials)**, import, audit |
-| AI | Lead scoring, property matching, deal risk, call analysis, drafting, "Ask your CRM" NL→query |
+| AI | Lead scoring, property matching, call analysis, drafting and permission-scoped "Ask iPropy" |
 | Permissions | 4-layer: profile → org default → role hierarchy → sharing rules/per-record shares. Enforced in SQL, **including per-field hidden/readonly, with a UI to set it.** |
 | Realtime | Socket.IO client now actually connected — record edits, workflow/AI writes and metadata changes push live to every open screen, no refresh needed |
 | Record navigation | Prev/next via on-screen buttons or ← → keys through whatever list you last viewed, on every module |
 | Inline quick-edit | Click any picklist or owner field (status, pipeline stage, rating, assigned-to) on a list, kanban card or record header to change it without opening the edit form |
 | Dashboard drill-through | Every widget type (metric, gauge, bar, line, area, pie, donut, funnel, stacked, table) clicks through to a correctly pre-filtered record list; funnel uses cumulative stage semantics, filter panel stays closed on arrival |
 
-**Verified live metrics (current database):**
-91 tables · 3 modules · 160 fields · 58 picklists · 17 views · 9 layouts · 7 workflows ·
-5 dashboards / 23 widgets · 17 roles · 9 profiles · 13 users · 254 records.
-32 migrations applied. Backup/restore runbook verified (dump restores to a scratch DB with identical
-counts). The module count falls rather than rises on purpose — see §5.
+**Seeded product shape:** 3 modules · about 160 fields · 47 forward-only migrations. User, record,
+view, workflow and dashboard counts vary by deployment. The application cannot see Neon backup
+schedules, so verify them in the provider dashboard rather than copying an old count from here.
 
 ---
 
@@ -54,9 +55,9 @@ counts). The module count falls rather than rises on purpose — see §5.
 
 ```
 Node 20 (running v22.20.0) + TypeScript + Express 4 + PostgreSQL 16
-React 18 + Vite 6 + TailwindCSS 3 + TanStack Query 5 + React Router 6 + Recharts 2
-Socket.IO 4 (realtime) · Anthropic SDK (Claude) · Zod (validation) · Pino (logging)
-npm workspaces monorepo
+React 18 + Vite 6 + TailwindCSS 3 + TanStack Query 5 + React Router 7 + Recharts 2
+Socket.IO 4 (realtime) · pluggable AI providers · Zod (validation) · Pino (logging)
+npm workspaces: shared, MCP, server and web
 ```
 
 ### The metadata engine — the central idea
@@ -119,10 +120,10 @@ Real-estate specific: `currency` (accepts `"1.5 Cr"` → `15000000`), `area`, `s
 
 **Connection:** `postgres://ipropy:ipropy@localhost:5432/ipropy` (Docker container `ipropy-db`).
 
-### Migrations applied (all 38, verified in `ipy_migration`)
+### Migrations applied (all 47 in the current source tree)
 
 The first nine are described in full because they establish the shape of everything after them.
-`010`–`038` are one line each; every migration file carries a header comment explaining *why* it
+`010`–`047` are one line each; every migration file carries a header comment explaining *why* it
 exists, which is the authoritative account.
 
 | Migration | Landed | What it does |
@@ -176,6 +177,7 @@ exists, which is the authoritative account.
 | `044_device_pin.sql` | 2026-08-13 | Four-digit quick unlock bound to one browser; neither PIN nor device token stored |
 | `045_remove_studio.sql` | 2026-08-14 | Drops `ipy_design` and `ipy_render_job` — the Studio is gone |
 | `046_remove_blog_and_seo_audit.sql` | 2026-08-14 | Drops `ipy_seo_audit`, the blog residue and the `seo.*` settings |
+| `047_proposals_from_calls.sql` | 2026-08-15 | Lets a completed call propose a reviewable CRM update without pretending it came from chat |
 
 The migration runner (`db/migrate.ts`) is forward-only, applies each `.sql` in name order inside its
 own transaction, and records it in `ipy_migration`. It is safe to re-run (already-applied files are
@@ -361,9 +363,9 @@ iPropy-crm/
 
 **There is no task in progress. The last requested work is complete, verified, and merged to `main`.**
 
-> **Read §18 first — it is the current state.** The narrative immediately below is the 7 August
-> session, kept because it explains why several things are shaped the way they are. Sessions since
-> then are recorded in §17.1–§17.5 and §18, newest last.
+> **Use the status at the top of this document, `CLAUDE.md`, and current git/CI state for the present
+> tense.** The narrative below is dated history kept because it explains why the product is shaped
+> this way; §18 is the 12 August capture milestone, not the latest checkout.
 
 ### This session's work (7 August 2026)
 
@@ -607,107 +609,76 @@ counts are `ipy_migration`, `ipy_user`, `ipy_record`, `ipy_module`, `ipy_field`.
 | `priya.sharma@ipropy.com` | Sales Head | Whole-org visibility via role hierarchy |
 | `rahul.mehta@ipropy.com` | Sales Manager | Team-only visibility |
 | `aisha.khan@ipropy.com` | Sales Executive | Own records only |
-| `neha.gupta@ipropy.com` | Pre-Sales | Pricing fields hidden, Bookings blocked |
-| `arjun.nair@ipropy.com` | CRM/Post-Sales | Bookings, payments, documentation |
-| `sanjay.iyer@ipropy.com` | Finance | Collections, commissions |
+| `neha.gupta@ipropy.com` | Pre-Sales | Restricted fields and lead access |
+| `arjun.nair@ipropy.com` | CRM/Post-Sales | Legacy profile retained for permission testing |
+| `sanjay.iyer@ipropy.com` | Finance | Legacy profile retained for permission testing |
 
 ---
 
 ## 10. Testing commands
 
-**Vitest is in the repo.** `packages/server/tests/` holds 155 unit tests over the highest-risk pure
-logic — `query/builder`, `query/evaluate`, `entity/formula`, `validation` and `permissions` (the DB
-and metadata registry are stubbed; no Postgres needed), and `packages/web/tests/` a further 42.
-Beyond those: 90 integration tests against real throwaway Postgres databases — including the
-control plane, which provisions an actual customer, migrates and seeds their database and drives
-Razorpay's webhook shapes through it — and 22 Playwright e2e specs.
-The smoke scripts (`smoke.mjs`, `verify-merge.mjs`)
-referenced by older handovers lived in a session scratchpad and were never recovered — do not assume
-they still exist.
+The current baseline is 374 unit tests (320 server, 46 web and 8 MCP), 274 integration tests against
+real throwaway Postgres databases, and 28 Playwright tests across desktop and mobile. The integration
+suite provisions a real customer database and drives signed billing webhook fixtures through it.
+CI also runs a moderate-or-higher dependency audit, CodeQL and a clean Linux production-Docker build.
 
 ```bash
-npm test                      # vitest run — 107 tests, no DB required
-npm run typecheck             # all three packages — MUST be clean before committing
+npm test                      # 374 tests, no DB required
+npm run typecheck             # all four workspaces — MUST be clean before committing
 npm run build                 # full build incl. Vite production bundle
+npm audit --audit-level=moderate
 
 curl -s http://localhost:4000/api/health      # {"status":"ok","database":"connected",...}
 ```
 
-Write/API flows, permissions end-to-end and the UI still have no automated coverage — those are
-verified live (real API calls and browser interaction), with any test data reverted afterward.
+Write/API flows, permissions, the control plane and the UI have automated integration/browser
+coverage. Provider accounts, phone hardware and a real property visit remain human checks.
 
 ---
 
 ## 11. Deployment process
 
-**Not yet deployed anywhere.** No Dockerfile for the app, no CI/CD. The intended process:
+The CRM is live at `https://ipropy-crm.onrender.com`; the public website is live at
+`https://ipropy-website.vercel.app`. `Dockerfile`, `render.yaml` and GitHub Actions are the release
+path. Do not invent a second one here.
 
-```bash
-npm ci
-npm run build                 # → packages/{shared,server,web}/dist
-npm run db:migrate            # against the production DATABASE_URL
-npm run db:seed               # metadata only — set SEED_DEMO_DATA=false first
-node packages/server/dist/index.js
-```
+1. Work on a branch and open a pull request.
+2. GitHub runs the dependency audit, typecheck, build, unit, integration, browser, CodeQL and
+   production-Docker checks.
+3. Protected `main` requires one approval, resolved conversations and the `verify`, `docker` and
+   `e2e` checks. Administrators are included.
+4. `render.yaml` uses `autoDeployTrigger: checksPass`; Render deploys the `main` commit only after
+   its checks pass and keeps the previous version when they do not.
+5. The container migrates and seeds create-only metadata before starting the API and web bundle.
 
-Serve `packages/web/dist` as static files (nginx/CDN), proxying `/api` and `/socket.io` to the Node
-process.
-
-**Pre-deployment checklist (none of these are done):**
-
-- [ ] Set a strong `JWT_SECRET` — the server refuses to boot in production with the dev default
-- [ ] Set `WHATSAPP_APP_SECRET` — signature verification is skipped without it outside production
-- [ ] `SEED_DEMO_DATA=false`
-- [ ] `NODE_ENV=production`
-- [ ] TLS termination in front of the API
-- [ ] `APP_URL` set to the real origin (CORS + Socket.IO allow-list read from it)
-- [ ] Switch `STORAGE_DRIVER=s3` and configure the bucket (local disk won't survive a container)
-- [ ] Managed Postgres with automated backups (backup/restore runbook exists — §9 — but nothing
-      scheduled; wire into a cron/systemd timer for production)
-- [x] ~~Encrypt `ipy_integration.credentials` at rest~~ — done this session (AES-256-GCM, key from `JWT_SECRET`)
-- [ ] Decide scheduler ownership if running multiple instances (`ENABLE_SCHEDULER`)
+The in-app **Admin → System & Audit → Go live** page checks what the running CRM can observe. It
+cannot see the Render billing plan or Neon's backup schedule, so confirm those in their dashboards.
+The full account-owned checklist and rollback notes live in `DEPLOYMENT.md`.
 
 ---
 
 ## 12. Next tasks, in priority order
 
-Everything that was on this list and got done (git init, the `globalSearch` fix, secrets
-encryption, the workflow builder, stale-UI/realtime, module toggle, field hide/unhide, Toggle CSS,
-record navigation, quick-edit, dashboard drill-through, the Vitest unit suite, removal of the dead
-`converted_contact_id` column, dashboard drag-to-resize, the DB backup/restore runbook, the funnel
-drill-through + filter-panel fixes, the rollup aggregation engine, speech-to-text for call
-recordings, IMAP inbound email sync, **Channel Partner portal**, **production hardening** (secrets,
-launchd timer), the **site capture pipeline** (§18) and **property share links** (§18)) has been
-removed. What's left:
+### Required before importing all real data
 
-### Deployment and operations
+1. Confirm media uses R2/S3 or OneDrive, not an ephemeral Render filesystem.
+2. Enable daily Neon backups and a seven-day instant-restore window; perform one restore drill.
+3. Move Render off Free so scheduled workflows run overnight.
+4. Create individual accounts, deactivate demo logins and subscribe each person's phone to alerts.
+5. Configure and test only the WhatsApp, email, AI, storage and telephony providers the team will
+   actually use.
+6. Run the real workflow with two or three people for two weeks before moving the whole desk.
+7. Field-test capture on a real property visit: sunlight, one hand, no signal, iPhone EXIF, storage,
+   buyer share link and survival across a deploy.
 
-1. **Delete the two merged feature branches.** `fix/watermark-retry-loop` and
-   `feat/property-share-links` were squash-merged on 12 August and still exist on the remote; the
-   agent session's git credentials are scoped to its own branch, so `git push --delete` returns 403.
-   Two clicks in the GitHub UI, or turn on **Settings → General → Automatically delete head
-   branches** so it stops recurring.
-2. **Turn on scheduled backups for the deployed database.** The launchd timer covers a developer's
-   local Postgres only. This is an **ops action, not a code change**: upgrade Neon to Launch, enable
-   a daily schedule and a 7-day instant-restore window (`DEPLOYMENT.md` §7). A nightly dump job was
-   shipped once and removed on purpose — don't rebuild it without reading why.
-3. **Add an LLM provider key** (Admin → Integrations). Every AI feature is running on its
-   deterministic fallback, which now includes the shoot-vision worker — a real key is the difference
-   between "12 photos, 2:38–2:58 pm" and a description of the flat. Gemini/Groq/OpenRouter have free
-   tiers.
+### Useful product depth, not pilot blockers
 
-### Finish partially-built features
-
-4. Add the many-to-many related-list "select existing record" UI (API already supports it).
-5. **Field-test capture on a real site visit.** The whole pipeline has been verified in a browser at
-   390px and against a stand-in provider, but never on a phone at an actual gate — which is the only
-   place its assumptions (sunlight, one hand, no signal, EXIF offsets from a real camera) are
-   actually tested.
-
-### Product depth
-
-6. Mobile-responsive pass on ListView, RecordDetail and the Inventory board.
-7. Collapse `is_converted` into `lifecycle_stage` and simplify conversion logic (§8 technical debt 6).
+1. Add the many-to-many related-list "select existing record" UI (the API already supports it).
+2. Collapse `is_converted` into `lifecycle_stage` and simplify conversion logic.
+3. Add MCP OAuth when one-click Claude/ChatGPT connectors become a real requirement.
+4. Add a dedicated suspended-account screen before billing is used with an external customer.
+5. Do not build multi-customer request routing until separate deployment per customer becomes an
+   actual operational problem.
 
 ---
 
@@ -1332,7 +1303,7 @@ none of the three showed up as a failing check.
 
 ## 18. Site capture, and getting the photos back out (2026-08-11 → 12)
 
-**This is the current state of the project.** Two days of work, one theme: a property's photos are
+**This is the historical capture milestone as of 12 August.** Two days of work, one theme: a property's photos are
 taken by a person standing at a gate, and every step between that moment and a buyer's phone used to
 be somebody re-deriving a fact they already had.
 

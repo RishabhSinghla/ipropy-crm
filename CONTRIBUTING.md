@@ -48,11 +48,14 @@ git push -u origin feat/short-description
 ```
 
 Then open a **Pull Request** on GitHub. CI runs typecheck, build, unit and
-integration tests, plus browser tests on desktop and mobile. Get it green, get
-it reviewed, then merge.
+integration tests, browser tests on desktop and mobile, a dependency audit,
+CodeQL and the production Docker build. The protected branch requires the
+`verify`, `docker` and `e2e` checks, one review and resolved conversations.
+Get it green, get it reviewed, then merge.
 
-Merging to `main` deploys to production automatically. That is why nobody pushes
-straight to `main`.
+Merging to `main` deploys only after the main commit's CI checks pass. Render
+keeps the current working version live when any check fails. That is why nobody
+pushes straight to `main`.
 
 **Branch names:** `feat/…` for new work, `fix/…` for bugs, `docs/…` for
 documentation. Keep branches small and short-lived — a branch open for two weeks
@@ -64,8 +67,8 @@ is painful to merge.
 
 ### 1. Migration numbers collide
 
-Database migrations are numbered files (`037_…sql`, `038_…sql` — the highest is
-currently `038`). If you and someone else both create `039_` on separate
+Database migrations are numbered files (`046_…sql`, `047_…sql` — the highest is
+currently `047`). If you and someone else both create `048_` on separate
 branches, both merge, and the numbering is now broken and ambiguous.
 
 **Before creating a migration:** pull `main`, check the highest number that
@@ -98,6 +101,7 @@ reshaping modules or fields.
 |---|---|
 | Types are clean | `npm run typecheck` |
 | Unit tests pass | `npm test` |
+| Dependencies have no known moderate-or-higher advisory | `npm audit --audit-level=moderate` |
 | Nothing secret is staged | `git status` — is `.env` in there? It must not be |
 
 Two heavier suites you can run when your change warrants it:

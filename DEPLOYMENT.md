@@ -12,9 +12,9 @@ origin, the deployed bundle matches `main`, and the seed admin password is in
 effect (the repo's public default is rejected — `curl`-tested, not just "it
 loaded").
 
-Goal: both apps live on the internet, on free tiers, redeploying automatically
-every time you `git push`. Roughly 30 minutes end to end, almost all of it
-waiting for builds.
+Goal: both apps live on the internet, with production deploying only after the
+repository's required CI checks pass. The committed Render plan is still Free;
+move it to an always-on instance before relying on scheduled work.
 
 Everything in this guide needs **your** accounts and your click — I can prepare
 the configuration (all of it is already committed) but I can't create accounts,
@@ -192,12 +192,17 @@ are blocked by the browser. Save — Render redeploys automatically.
 
 ---
 
-## 6. Auto-deploy is already on
+## 6. Protected deployment is already configured
 
-- Push to `ipropy-crm` `main` → Render rebuilds and redeploys.
+- Merge to `ipropy-crm` `main` → GitHub runs the dependency audit, typecheck,
+  build, unit, integration, browser, CodeQL and production-Docker checks.
+- `render.yaml` uses `autoDeployTrigger: checksPass`, so Render deploys only
+  after the checks on that `main` commit pass. A failed check leaves the current
+  working version live.
 - Push to `ipropy-website` `main` → Vercel rebuilds and redeploys.
-- Both repos run GitHub Actions CI (typecheck, build, tests) on every push, so a
-  broken commit is visible even if the host deploys it.
+- The CRM's `main` branch requires a pull request, one approval, resolved
+  conversations and the `verify`, `docker` and `e2e` checks. Administrators are
+  covered by the same rule.
 
 Vercel also builds a unique preview URL for every pull request — useful for
 "what do you think of this change?" without touching the live site.
