@@ -47,15 +47,23 @@ git commit -m "feat: what changed and why"
 git push -u origin feat/short-description
 ```
 
-Then open a **Pull Request** on GitHub. CI runs typecheck, build, unit and
-integration tests, browser tests on desktop and mobile, a dependency audit,
-CodeQL and the production Docker build. The protected branch requires the
-`verify`, `docker` and `e2e` checks, one review and resolved conversations.
-Get it green, get it reviewed, then merge.
+CI runs typecheck, build, unit and integration tests, browser tests on desktop
+and mobile, a dependency audit and the production Docker build — on every push
+and on every pull request.
 
-Merging to `main` deploys only after the main commit's CI checks pass. Render
-keeps the current working version live when any check fails. That is why nobody
-pushes straight to `main`.
+`main` is **not** a protected branch: this is a single-owner repository, and
+GitHub does not let anyone approve their own pull request, so requiring a review
+would mean nothing could ever merge. Pushing straight to `main` is therefore
+fine and is how the owner works.
+
+Production is protected by `render.yaml` instead of by the branch.
+`autoDeployTrigger: checksPass` means Render deploys a `main` commit only once
+every GitHub check on it has passed, and keeps the current working version live
+when any check fails. A red build cannot reach the team even though a red commit
+can reach `main`.
+
+Use a branch and a pull request anyway when the change is large enough to want a
+second look at the diff, or when you want CI to report before `main` moves.
 
 **Branch names:** `feat/…` for new work, `fix/…` for bugs, `docs/…` for
 documentation. Keep branches small and short-lived — a branch open for two weeks

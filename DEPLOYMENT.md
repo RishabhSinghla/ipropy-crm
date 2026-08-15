@@ -192,17 +192,19 @@ are blocked by the browser. Save — Render redeploys automatically.
 
 ---
 
-## 6. Protected deployment is already configured
+## 6. The deploy is gated on CI, not on the branch
 
-- Merge to `ipropy-crm` `main` → GitHub runs the dependency audit, typecheck,
-  build, unit, integration, browser, CodeQL and production-Docker checks.
+- Push to `ipropy-crm` `main` → GitHub runs the dependency audit, typecheck,
+  build, unit, integration, browser and production-Docker checks.
 - `render.yaml` uses `autoDeployTrigger: checksPass`, so Render deploys only
   after the checks on that `main` commit pass. A failed check leaves the current
   working version live.
 - Push to `ipropy-website` `main` → Vercel rebuilds and redeploys.
-- The CRM's `main` branch requires a pull request, one approval, resolved
-  conversations and the `verify`, `docker` and `e2e` checks. Administrators are
-  covered by the same rule.
+- The CRM's `main` branch is **not** protected, deliberately: the repository has
+  a single owner, and GitHub does not let anyone approve their own pull request,
+  so a required review would mean nothing could ever merge. Pushing straight to
+  `main` is normal here. The gate that matters is the one above — a red check
+  stops the deploy, so a broken commit on `main` never reaches the team.
 
 Vercel also builds a unique preview URL for every pull request — useful for
 "what do you think of this change?" without touching the live site.

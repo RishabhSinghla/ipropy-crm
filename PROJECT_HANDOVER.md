@@ -4,10 +4,11 @@
 **Status:** Core CRM and public website deployed; code is ready for a controlled team pilot. The
 remaining go-live gates are deployment-owned: persistent media storage, Neon backups, always-on
 hosting, real user accounts, phone alerts, provider credentials and a real site visit. Security
-audits, CodeQL, CI checks and the production Docker build run before Render deploys `main`.
+audits, CI checks and the production Docker build run before Render deploys `main`.
 **Location:** `/Users/rishabhsinghla/Downloads/iPropy-Projects/iPropy-crm`
-**Git:** `main` at `https://github.com/RishabhSinghla/ipropy-crm`. Use a pull request; the protected
-branch requires review and green CI.
+**Git:** `main` at `https://github.com/RishabhSinghla/ipropy-crm` — **private**, single owner, no
+branch protection. Push straight to `main`; Render holds the deploy until CI on that commit is
+green (`autoDeployTrigger: checksPass`).
 
 > Reference implementation: the original Vtiger PHP source sits at
 > `/Users/rishabhsinghla/Downloads/vtigercrm`. It was used as an **architecture
@@ -620,7 +621,7 @@ counts are `ipy_migration`, `ipy_user`, `ipy_record`, `ipy_module`, `ipy_field`.
 The current baseline is 374 unit tests (320 server, 46 web and 8 MCP), 274 integration tests against
 real throwaway Postgres databases, and 28 Playwright tests across desktop and mobile. The integration
 suite provisions a real customer database and drives signed billing webhook fixtures through it.
-CI also runs a moderate-or-higher dependency audit, CodeQL and a clean Linux production-Docker build.
+CI also runs a moderate-or-higher dependency audit and a clean Linux production-Docker build.
 
 ```bash
 npm test                      # 374 tests, no DB required
@@ -642,11 +643,11 @@ The CRM is live at `https://ipropy-crm.onrender.com`; the public website is live
 `https://ipropy-website.vercel.app`. `Dockerfile`, `render.yaml` and GitHub Actions are the release
 path. Do not invent a second one here.
 
-1. Work on a branch and open a pull request.
-2. GitHub runs the dependency audit, typecheck, build, unit, integration, browser, CodeQL and
-   production-Docker checks.
-3. Protected `main` requires one approval, resolved conversations and the `verify`, `docker` and
-   `e2e` checks. Administrators are included.
+1. Commit to `main`, or use a branch and a pull request when the diff wants a second look.
+2. GitHub runs the dependency audit, typecheck, build, unit, integration, browser and
+   production-Docker checks on the pushed commit.
+3. `main` is not protected — a single owner cannot approve their own pull request, so a required
+   review would deadlock the repository. The deploy gate below is what guards production.
 4. `render.yaml` uses `autoDeployTrigger: checksPass`; Render deploys the `main` commit only after
    its checks pass and keeps the previous version when they do not.
 5. The container migrates and seeds create-only metadata before starting the API and web bundle.
