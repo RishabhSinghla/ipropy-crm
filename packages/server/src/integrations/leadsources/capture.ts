@@ -73,7 +73,11 @@ export async function captureLead(
      VALUES ($1,$2,$3,$4)
      ON CONFLICT (source, external_id) WHERE external_id IS NOT NULL DO NOTHING
      RETURNING id`,
-    [source, opts.externalId ?? normalized.externalId ?? null, JSON.stringify(raw), JSON.stringify(normalized)],
+    [
+      source,
+      opts.externalId ?? normalized.externalId ?? submissionFingerprint(source, normalized),
+      JSON.stringify(raw), JSON.stringify(normalized),
+    ],
   );
 
   // A conflict means we've already processed this exact submission.
@@ -84,6 +88,7 @@ export async function captureLead(
 
   try {
     const mobile = normalized.mobile ? toE164(normalized.mobile) : null;
+
     // The module keeps the country code and the national number in separate
     // fields, with a per-country digit count — so the E.164 string every source
     // hands over ("+919812345671") fails `mobile` outright with "must be
@@ -412,4 +417,48 @@ function toRupees(num: string, unit?: string): number | undefined {
     case 'k': return n * 1000;
     default: return n > 10_000 ? n : n * 100_000; // bare small numbers read as lakhs
   }
+}
+
+
+/**
+ * How long two identical submissions count as the same one.
+ *
+ * Only long enough to cover a retry or a double tap. A genuine second enquiry
+ * from the same person minutes later must get its own inbox row so it reaches
+ * `findRecentLead` and enriches the existing lead — being told "already
+ * captured" and dropped would lose the very signal a repeat enquiry carries.
+ */
+const REPLAY_WINDOW_SECONDS = 120;
+
+/**
+ * An identity for a submission that arrived without one.
+ *
+ * Sources that carry their own `external_id` — the portals, Facebook, Google —
+ * have always been safe here, because the insert above has a unique constraint
+ * to land on. The website form carries nothing, so two submissions arriving
+ * together both passed the dedupe SELECT and both created a lead. Measured: six
+ * simultaneous posts of one enquiry produced six leads, six owners and, once
+ * WhatsApp is live, six welcome messages to the same buyer. A visitor
+ * double-tapping Submit on a slow phone is the ordinary case, not a
+ * hypothetical.
+ *
+ * The first attempt at this was `pg_advisory_xact_lock`, which does nothing
+ * outside an explicit transaction — the lock released the instant its own
+ * statement committed, before the check it was meant to protect. Wrapping the
+ * whole capture in a transaction would have worked and would also have put
+ * record creation, assignment and event emission inside one, which is the
+ * deadlock this codebase already has a rule about.
+ *
+ * So the submission gets an identity instead, and the constraint that already
+ * exists does the work. The time bucket is what keeps a real repeat enquiry
+ * distinguishable from a replay; two posts straddling a bucket boundary can
+ * still both land, which turns "always duplicated" into "duplicated if two
+ * requests are seconds apart *and* fall either side of a two-minute line".
+ */
+function submissionFingerprint(source: string, normalized: NormalizedLead): string {
+  const identity = (normalized.mobile ?? normalized.email ?? normalized.firstName ?? '')
+    .trim().toLowerCase();
+  if (!identity) return `${source}:anonymous:${Date.now()}`;
+  const bucket = Math.floor(Date.now() / (REPLAY_WINDOW_SECONDS * 1000));
+  return `${source}:${identity}:${bucket}`;
 }
