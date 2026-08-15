@@ -29,7 +29,7 @@ jobs:
       DATABASE_URL: postgres://ipropy:ipropy@localhost:5432/ipropy
       JWT_SECRET: ci-secret-long-enough-to-pass-the-production-startup-checks
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v5
         with:
           node-version: 24
@@ -63,7 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Build the production image
         # linux/amd64 is what Render runs, and it is the runner's own
         # architecture, so this needs no emulation.
@@ -98,7 +98,7 @@ jobs:
       E2E_EMAIL: admin@ipropy.com
       E2E_PASSWORD: Admin@123
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v5
         with:
           node-version: 24
