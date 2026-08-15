@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 /**
  * Add / edit a dashboard widget.
  *

@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 /**
  * The evening review — the other half of speaking at the gate.
  *

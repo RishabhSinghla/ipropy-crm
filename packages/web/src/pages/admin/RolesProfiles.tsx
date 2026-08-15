@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, ChevronRight, Eye, EyeOff, Lock, Plus, Save, Shield, Users } from 'lucide-react';

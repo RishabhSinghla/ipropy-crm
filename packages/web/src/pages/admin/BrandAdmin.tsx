@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 /**
  * Brand line and the company's own social accounts.
  *

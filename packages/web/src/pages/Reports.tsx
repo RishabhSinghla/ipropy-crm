@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 /**
  * Ad-hoc reporting over any module.
  *

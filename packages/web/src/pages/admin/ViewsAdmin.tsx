@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 /**
  * The master for list view tabs — "All Records", "Open Leads", "Hot Leads".
  *

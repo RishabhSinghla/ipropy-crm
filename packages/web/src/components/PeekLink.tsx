@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 /**
  * A link to a record that also answers "who is this?" without going there.
  *

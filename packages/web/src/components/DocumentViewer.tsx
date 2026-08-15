@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 /**
  * In-CRM viewer for whatever anyone attaches.
  *

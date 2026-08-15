@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 /**
  * Outreach — everything that messages more than one person.
  *

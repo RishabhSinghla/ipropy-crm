@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 /**
  * What a long press on a record shows: the whole card, without opening it.
  *

@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 /**
  * Universal inline editing. Click any editable field's displayed value —
  * in a list table cell, a kanban card, or a record detail page — and change
@@ -381,8 +382,12 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
 function FloatingEditor({
   anchorRef, panelRef, coversValue, className, children,
 }: {
-  anchorRef: React.RefObject<HTMLElement>;
-  panelRef: React.RefObject<HTMLDivElement>;
+  // `| null` because that is the truth: React 19 types `useRef<T>(null)` as
+  // `RefObject<T | null>`, and a ref really is null until the element mounts.
+  // Both reads below already use `?.`, so nothing changes at runtime — the
+  // props were simply claiming a guarantee they never had.
+  anchorRef: React.RefObject<HTMLElement | null>;
+  panelRef: React.RefObject<HTMLDivElement | null>;
   /** the editor draws its own input box, so it sits *on* the value rather than under it */
   coversValue: boolean;
   className?: string;
