@@ -1,4 +1,28 @@
 version: 2
+
+# One pull request a week per ecosystem, instead of one per dependency.
+#
+# Dependabot cannot combine ecosystems, so a busy week is at most two PRs — npm
+# and GitHub Actions — and most weeks it is one.
+#
+# npm groups `minor` and `patch` only, and that split is not arbitrary. On
+# 15 Aug 2026 eight ungrouped PRs arrived at once. Six were fine as opened. The
+# two that needed real work were both majors:
+#
+#   * pino 9 -> 10 did not compile until pino-http moved to 11 with it;
+#   * react-dom 18 -> 19 was opened without bumping react, and React 19 removed
+#     the global JSX namespace, which took 43 files and a ref type with it.
+#
+# A major sharing a pull request with a dozen patches turns one red check into
+# an untangling job, and makes the batch unrevertable when a single line of it
+# is at fault. So routine updates travel together and usually merge on green;
+# majors arrive alone and get read.
+#
+# GitHub Actions groups *everything*, majors included. Action bumps are
+# CI-only — they fail loudly, immediately, and never reach the team — and
+# keeping them apart is what caused the one merge conflict of that day: three
+# separate PRs each editing the same two `steps:` blocks.
+
 updates:
   - package-ecosystem: npm
     directory: /
@@ -9,14 +33,34 @@ updates:
       timezone: Asia/Kolkata
     open-pull-requests-limit: 5
     labels:
+      # Not "security": these are routine version bumps. Labelling every one of
+      # them security is what makes a real advisory impossible to spot. GitHub
+      # raises actual security updates separately, ungrouped, so they can be
+      # merged the day they appear.
       - dependencies
-      - security
+    groups:
+      npm:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: monthly
+      interval: weekly
+      day: monday
+      time: "05:30"
+      timezone: Asia/Kolkata
     open-pull-requests-limit: 3
     labels:
       - dependencies
-      - security
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+          - major
