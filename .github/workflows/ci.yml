@@ -98,8 +98,13 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Build shared
-        run: npm run build:shared
+      - name: Build the workspaces the server imports
+        # Not just @ipropy/shared. The server imports @ipropy/mcp from
+        # api/routes/mcp.ts, and tsx resolves it to dist/lib.js at *runtime* —
+        # so with only shared built, playwright.config.ts starts the API, the
+        # API dies on ERR_MODULE_NOT_FOUND, and the only symptom is
+        # "Timed out waiting 120000ms from config.webServer".
+        run: npm run build:deps
       - name: Prepare database
         # Fresh Postgres every run, so the demo seed populates the records the
         # list-view specs need. SEED_DEMO_DATA defaults to true outside
