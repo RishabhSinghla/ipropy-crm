@@ -96,7 +96,7 @@ export default function ListView(): JSX.Element {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  const { data: liveMeta, isLoading: metaLoading, error: metaError } = useQuery({
+  const { data: liveMeta, isLoading: metaLoading, error: metaError, refetch: refetchMeta } = useQuery({
     queryKey: ['module', moduleName],
     queryFn: () => api.module(moduleName!),
     enabled: Boolean(moduleName),
@@ -266,6 +266,30 @@ export default function ListView(): JSX.Element {
           title={`There is no “${moduleName}” here`}
           body="The link may be out of date, or the module may have been renamed or removed."
           action={<Link to="/dashboard" className="btn-primary btn-sm">Go to the dashboard</Link>}
+        />
+      </div>
+    );
+  }
+
+  /**
+   * Any other failure gets a way out, rather than skeletons forever.
+   *
+   * Fixing the 404 left every *other* metadata failure — a 500, a rate limit, a
+   * request that timed out — rendering the loading state permanently, which is
+   * the same defect wearing a different status code. It surfaced as a flaky
+   * test of my own: under a full suite run every spec signs in as the same
+   * admin and shares one rate-limit bucket, so the metadata call occasionally
+   * came back 429 and the screen sat on skeletons until the assertion timed out.
+   * A rep would have sat there rather longer.
+   */
+  if (!meta && metaError) {
+    return (
+      <div className="p-4 sm:p-6">
+        <EmptyState
+          icon={<RefreshCw className="h-10 w-10" />}
+          title="Could not load this list"
+          body={(metaError as Error).message}
+          action={<button className="btn-primary btn-sm" onClick={() => void refetchMeta()}>Try again</button>}
         />
       </div>
     );

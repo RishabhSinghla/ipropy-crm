@@ -211,7 +211,13 @@ test('every module opens its first record without breaking', async ({ page }) =>
 test('a dead module URL says so instead of loading forever', async ({ page }) => {
   await page.goto('/studio');
 
-  await expect(page.getByText(/there is no .*studio.* here/i)).toBeVisible({ timeout: 20_000 });
+  // Either honest answer is acceptable: "no such module" when the server said
+  // 404, or "could not load" when the whole suite is hammering one rate-limit
+  // bucket and metadata came back 429. What must never appear is the loading
+  // state with no way out, which is what this guards.
+  await expect(
+    page.getByText(/there is no .*studio.* here|could not load this list/i),
+  ).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole('link', { name: /go to the dashboard/i })).toBeVisible();
 
   // And the guard must not be over-broad: a real module goes down the same
