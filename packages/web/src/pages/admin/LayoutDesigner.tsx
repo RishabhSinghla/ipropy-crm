@@ -35,6 +35,7 @@ interface DesignerConfig {
   blocks: LayoutBlock[];
   headerFields: string[];
   defaultTab: string;
+  showRecordNumber?: boolean;
   tabs?: DetailTabConfig[];
   capture?: CapturePanelConfig;
 }
@@ -74,6 +75,7 @@ export default function LayoutDesigner(): JSX.Element {
   const [blocks, setBlocks] = useState<LayoutBlock[]>([]);
   const [headerFields, setHeaderFields] = useState<string[]>([]);
   const [defaultTab, setDefaultTab] = useState('overview');
+  const [showRecordNumber, setShowRecordNumber] = useState(false);
   const [detailTabs, setDetailTabs] = useState<DetailTabConfig[]>([]);
   const [capturePanel, setCapturePanel] = useState<CapturePanelConfig>(DEFAULT_CAPTURE_PANEL);
   const [layoutId, setLayoutId] = useState<string | null>(null);
@@ -102,6 +104,7 @@ export default function LayoutDesigner(): JSX.Element {
       setBlocks(layout.config.blocks ?? []);
       setHeaderFields(layout.config.headerFields ?? []);
       setDefaultTab(layout.config.defaultTab ?? 'overview');
+      setShowRecordNumber(layout.config.showRecordNumber ?? false);
       setDetailTabs(layout.config.tabs ?? []);
       setCapturePanel({ ...DEFAULT_CAPTURE_PANEL, ...(layout.config.capture ?? {}) });
     } else if (meta) {
@@ -114,6 +117,7 @@ export default function LayoutDesigner(): JSX.Element {
       })));
       setHeaderFields(meta.blocks[0]?.fields.slice(0, 4).map((f) => f.name) ?? []);
       setDefaultTab('overview');
+      setShowRecordNumber(false);
       setDetailTabs([]);
       setCapturePanel(DEFAULT_CAPTURE_PANEL);
     }
@@ -188,7 +192,9 @@ export default function LayoutDesigner(): JSX.Element {
         blocks,
         // Only the detail view has a header strip and tabs; keeping them off the
         // edit/quick-create configs avoids writing keys nothing will read.
-        ...(layoutType === 'detail' ? { headerFields, defaultTab, tabs: detailTabOptions } : {}),
+        ...(layoutType === 'detail'
+          ? { headerFields, defaultTab, showRecordNumber, tabs: detailTabOptions }
+          : {}),
         ...(layoutType === 'quick_create' && moduleName === 'properties'
           ? { capture: capturePanel }
           : {}),
@@ -330,7 +336,9 @@ export default function LayoutDesigner(): JSX.Element {
                 tabOptions={tabOptions}
                 tabs={detailTabOptions}
                 availableTabs={availableTabs}
+                showRecordNumber={showRecordNumber}
                 onChange={(next) => { setHeaderFields(next); touch(); }}
+                onShowRecordNumberChange={(next) => { setShowRecordNumber(next); touch(); }}
                 onDefaultTabChange={(next) => { setDefaultTab(next); touch(); }}
                 onTabsChange={(next) => {
                   setDetailTabs(next);
@@ -512,8 +520,8 @@ export default function LayoutDesigner(): JSX.Element {
  * land there.
  */
 function HeaderStripEditor({
-  value, options, defaultTab, tabOptions, tabs, availableTabs,
-  onChange, onDefaultTabChange, onTabsChange,
+  value, options, defaultTab, tabOptions, tabs, availableTabs, showRecordNumber,
+  onChange, onDefaultTabChange, onTabsChange, onShowRecordNumberChange,
 }: {
   value: string[];
   options: { value: string; label: string }[];
@@ -521,9 +529,11 @@ function HeaderStripEditor({
   tabOptions: { value: string; label: string }[];
   tabs: DetailTabConfig[];
   availableTabs: { value: string; label: string }[];
+  showRecordNumber: boolean;
   onChange: (next: string[]) => void;
   onDefaultTabChange: (next: string) => void;
   onTabsChange: (next: DetailTabConfig[]) => void;
+  onShowRecordNumberChange: (next: boolean) => void;
 }): JSX.Element {
   const labelOf = (name: string): string => options.find((o) => o.value === name)?.label ?? name;
   const unused = options.filter((o) => !value.includes(o.value));
@@ -585,6 +595,22 @@ function HeaderStripEditor({
               />
             </div>
           )}
+        </div>
+
+        <div>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={showRecordNumber}
+              onChange={(event) => onShowRecordNumberChange(event.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+            />
+            Show the record number (LD-00003) beside the name
+          </label>
+          <p className="mt-1 text-2xs text-muted">
+            Off by default. The number is still on the record and still searchable — this
+            only controls whether it takes up space in the header.
+          </p>
         </div>
 
         <div>

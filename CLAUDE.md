@@ -60,8 +60,8 @@ Vtiger (at `../vtigercrm`) is an **architecture reference only**. No Vtiger code
 * **`ipy_record` is the shared id space.** Every `*_id` reference (including `contact_id`) points at
   `ipy_record(id)`, never at a payload table. This is why the Contacts→Leads merge preserved every
   foreign key without repointing.
-* **There are three modules:** `leads` (labelled "Leads & Contacts"), `properties`, `campaigns`.
-  Migrations `030` and `031` removed the other ten. Do not reintroduce one to hold a field —
+* **There are two modules:** `leads` (labelled "Leads & Contacts") and `properties`.
+  Migrations `030`, `031` and `048` removed the other eleven. Do not reintroduce one to hold a field —
   Projects and Activities both died because they existed only to carry a value the lead or the unit
   could hold itself.
 * **There is no separate Contacts module.** Leads is the single party record carrying
@@ -82,9 +82,23 @@ Vtiger (at `../vtigercrm`) is an **architecture reference only**. No Vtiger code
   deleted `ipy_field` row comes straight back. `ipy_field_tombstone` (migration `032`) is what makes
   the deletion durable, and `upsertModule`/`seedDefaultLayouts` consult it. A permanent delete also
   drops the column: several are `NOT NULL` with no default, so metadata-only deletion breaks inserts.
+* **Deleting a dropdown option needs a tombstone too.** Same trap, same fix:
+  `ipy_picklist_tombstone` (migration `049`), consulted by `upsertPicklist`. A row with `value = ''`
+  tombstones the whole dropdown. Adding the option back clears its tombstone — that is a decision,
+  not an accident.
+* **A dropdown option is a string on every record that chose it, not a foreign key.** Renaming the
+  *stored value* without rewriting those records orphans them: still stored, no longer offered,
+  matched by no filter, invisible until somebody runs a report. `core/metadata/picklists.ts` is the
+  one place that does both halves — records (column and `custom_fields`, single and multi) plus the
+  saved views, widget configs and workflow conditions that name the value. The editor sends
+  `previousValue` so the server can tell a rename from a delete-and-add.
 * **A layout an admin edited is off-limits to the seed.** `ipy_layout.is_customised` is set by
   `PUT /api/meta/layouts/:id`; `seedDefaultLayouts` skips those rows. Without it, re-seeding silently
   undoes the sections, header fields and default tab somebody arranged.
+* **The timeline is human events only.** `buildTimeline` merges audit, comments, messages, calls,
+  emails and attachments — deliberately *not* `ipy_ai_insight`. A score the model recalculates on
+  every change is not something that happened to the customer, and interleaving it buried the calls
+  and notes the page exists to show. Insights render in the AI Insights panel beside the feed.
 * **One filter grammar, two engines:** `core/query/builder.ts` → SQL (lists, widgets, reports);
   `core/query/evaluate.ts` → in-memory (workflow conditions, conditional visibility). Keep them in
   step.

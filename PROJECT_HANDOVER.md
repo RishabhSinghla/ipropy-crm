@@ -46,7 +46,7 @@ adds WhatsApp, telephony, portal lead capture and an AI layer.
 | Inline quick-edit | Click any picklist or owner field (status, pipeline stage, rating, assigned-to) on a list, kanban card or record header to change it without opening the edit form |
 | Dashboard drill-through | Every widget type (metric, gauge, bar, line, area, pie, donut, funnel, stacked, table) clicks through to a correctly pre-filtered record list; funnel uses cumulative stage semantics, filter panel stays closed on arrival |
 
-**Seeded product shape:** 3 modules · about 160 fields · 47 forward-only migrations. User, record,
+**Seeded product shape:** 2 modules · about 136 fields · 50 forward-only migrations. User, record,
 view, workflow and dashboard counts vary by deployment. The application cannot see Neon backup
 schedules, so verify them in the provider dashboard rather than copying an old count from here.
 
@@ -179,6 +179,9 @@ exists, which is the authoritative account.
 | `045_remove_studio.sql` | 2026-08-14 | Drops `ipy_design` and `ipy_render_job` — the Studio is gone |
 | `046_remove_blog_and_seo_audit.sql` | 2026-08-14 | Drops `ipy_seo_audit`, the blog residue and the `seo.*` settings |
 | `047_proposals_from_calls.sql` | 2026-08-15 | Lets a completed call propose a reviewable CRM update without pretending it came from chat |
+| `048_remove_campaigns.sql` | 2026-08-15 | Campaigns module deleted; `campaign_id` dropped from leads, messages, tracked numbers and broadcasts. Two modules remain |
+| `049_picklist_tombstones.sql` | 2026-08-15 | `ipy_picklist_tombstone` — makes a deleted dropdown option survive the re-seed that runs on every cold start |
+| `050_record_number_off_the_header.sql` | 2026-08-15 | Drops the auto-number from the header chips of layouts nobody customised |
 
 The migration runner (`db/migrate.ts`) is forward-only, applies each `.sql` in name order inside its
 own transaction, and records it in `ipy_migration`. It is safe to re-run (already-applied files are
@@ -273,7 +276,6 @@ that were only reachable from inside another record.
 |---|---|---|
 | **Leads & Contacts** | Sales | **Core.** The single party record; lifecycle Lead→Prospect→Customer→Past Customer. Carries the requirement, the follow-up date, calls, notes and timeline. |
 | Properties | Inventory | Units. Full pricing breakdown, formula-computed all-inclusive price. Each carries its development's name (`project_name`) as text. |
-| Campaigns | Marketing | Spend, attribution keys, formula-computed CPL and ROI. |
 
 **Core modules** (`is_core = true`): `leads`. It cannot be disabled — the rest of
 the CRM reads from it.

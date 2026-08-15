@@ -499,7 +499,31 @@ export const api = {
     post<{ id: string }>(`/api/meta/modules/${module}/layouts`, data),
   picklists: () => get<Record<string, { value: string; label: string; color: string | null }[]>>('/api/meta/picklists'),
   picklist: (name: string) => get<{ value: string; label: string; color: string | null }[]>(`/api/meta/picklists/${name}`),
-  savePicklistValues: (name: string, values: unknown[]) => put(`/api/meta/picklists/${name}/values`, { values }),
+  picklistCatalogue: () => get<{
+    name: string; label: string; isSystem: boolean; allowAdhoc: boolean;
+    values: {
+      value: string; label: string; color: string | null;
+      sequence: number; isActive: boolean; isDefault: boolean;
+    }[];
+    usedBy: { module: string; moduleLabel: string; field: string; fieldLabel: string }[];
+  }[]>('/api/meta/picklist-catalogue'),
+  savePicklistValues: (name: string, values: unknown[]) =>
+    put<{ values: unknown[]; renamedRecords: number; renamedFilters: number }>(
+      `/api/meta/picklists/${name}/values`, { values },
+    ),
+  createPicklist: (data: { name: string; label: string; values?: unknown[] }) =>
+    post('/api/meta/picklists', data),
+  renamePicklist: (name: string, label: string) => patch(`/api/meta/picklists/${name}`, { label }),
+  deletePicklist: (name: string) => del(`/api/meta/picklists/${name}`),
+  picklistValueUsage: (name: string, value: string) => get<{
+    total: number; byField: { module: string; field: string; count: number }[]; canClear: boolean;
+  }>(`/api/meta/picklists/${name}/value-usage?value=${encodeURIComponent(value)}`),
+  deletePicklistValue: (name: string, value: string, opts: { replaceWith?: string; clear?: boolean } = {}) =>
+    del<{ ok: boolean; movedRecords: number }>(
+      `/api/meta/picklists/${name}/values?value=${encodeURIComponent(value)}`
+      + (opts.replaceWith ? `&replaceWith=${encodeURIComponent(opts.replaceWith)}` : '')
+      + (opts.clear ? '&clear=true' : ''),
+    ),
   uitypes: () => get<{ uitypes: Record<string, unknown>[]; formulaFunctions: string[] }>('/api/meta/uitypes'),
   allModules: () => get<{
     id: string; name: string; label: string; singularLabel: string;

@@ -6,6 +6,9 @@ import { asyncHandler } from '../../middleware/errorHandler.js';
 import { blockApiKey, getUser, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, ConflictError, NotFoundError } from '../../utils/errors.js';
 import { registry } from '../../core/metadata/registry.js';
+import {
+  countRecordsWithValue, fieldsThatCannotBeCleared, fieldsUsingPicklist, replaceValueInRecords,
+} from '../../core/metadata/picklists.js';
 import { assertCapability, canAccessModule, getFieldPermissions, getModulePermission, hasCapability, invalidatePermissions } from '../../core/permissions/index.js';
 import { FORMULA_FUNCTIONS, validateFormula } from '../../core/entity/formula.js';
 import { quoteIdent } from '../../core/query/builder.js';
@@ -772,12 +775,65 @@ const picklistValueSchema = z.object({
   isActive: z.boolean().default(true),
   isDefault: z.boolean().default(false),
   meta: z.record(z.unknown()).optional(),
+  /**
+   * The value this row used to be stored as, when the admin edited it.
+   *
+   * Without it a rename is indistinguishable from "delete one, add another",
+   * and every record holding the old string is orphaned: still stored, no
+   * longer offered, matched by no filter. With it, the records come too.
+   */
+  previousValue: z.string().min(1).optional(),
 });
+
+const PICKLIST_NAME_RE = /^[a-z][a-z0-9_]{1,40}$/;
+
+/** Reads the catalogue, one entry per dropdown, for the admin editor. */
+metadataRouter.get('/picklist-catalogue', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.picklists');
+  const rows = await db.query<{ name: string; label: string; is_system: boolean; allow_adhoc: boolean }>(
+    `SELECT name, label, is_system, allow_adhoc FROM ipy_picklist ORDER BY label`,
+  );
+  const all = await registry.getAllPicklists();
+
+  const out = [];
+  for (const row of rows.rows) {
+    out.push({
+      name: row.name,
+      label: row.label,
+      isSystem: row.is_system,
+      allowAdhoc: row.allow_adhoc,
+      values: all[row.name] ?? [],
+      usedBy: (await fieldsUsingPicklist(row.name)).map((u) => ({
+        module: u.module, moduleLabel: u.moduleLabel, field: u.field, fieldLabel: u.fieldLabel,
+      })),
+    });
+  }
+  res.json(out);
+}));
+
+/**
+ * How many records hold one option — what the delete dialog asks before it acts.
+ *
+ * The option travels in the query string, not the path: a stored value is free
+ * text an admin typed ("Hoarding/OOH"), and a slash in a path segment is a
+ * routing decision in some proxies no matter how it was encoded.
+ */
+metadataRouter.get('/picklists/:name/value-usage', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.picklists');
+  const value = z.string().min(1).parse(req.query.value);
+  const [usage, blocked] = await Promise.all([
+    countRecordsWithValue(req.params.name, value),
+    fieldsThatCannotBeCleared(req.params.name),
+  ]);
+  // `canClear` lets the dialog stop offering "leave the field empty" on a
+  // required field, rather than offering it and then refusing.
+  res.json({ ...usage, canClear: blocked.length === 0 });
+}));
 
 metadataRouter.post('/picklists', asyncHandler(async (req, res) => {
   await assertCapability(getUser(req), 'admin.picklists');
   const { name, label, values } = z.object({
-    name: z.string().regex(/^[a-z][a-z0-9_]{1,40}$/),
+    name: z.string().regex(PICKLIST_NAME_RE, 'Use lower case letters, numbers and underscores'),
     label: z.string().min(1),
     values: z.array(picklistValueSchema).default([]),
   }).parse(req.body);
@@ -796,28 +852,177 @@ metadataRouter.post('/picklists', asyncHandler(async (req, res) => {
         [row!.id, v.value, v.label, v.color ?? null, i, v.isActive, v.isDefault, JSON.stringify(v.meta ?? {})],
       );
     }
+    // Recreating something previously deleted is a decision, so it clears the
+    // tombstone — otherwise the seed would delete it again on the next boot.
+    await tx.query(`DELETE FROM ipy_picklist_tombstone WHERE picklist_name = $1`, [name]);
   });
   invalidateAll();
   res.status(201).json(await registry.getPicklist(name));
 }));
 
-/** Replace the whole option list — how the picklist editor saves. */
-metadataRouter.put('/picklists/:name/values', asyncHandler(async (req, res) => {
+/** Rename a dropdown, or let non-admins add values to it on the fly. */
+metadataRouter.patch('/picklists/:name', asyncHandler(async (req, res) => {
   await assertCapability(getUser(req), 'admin.picklists');
-  const { values } = z.object({ values: z.array(picklistValueSchema) }).parse(req.body);
+  const { label, allowAdhoc } = z.object({
+    label: z.string().min(1).optional(),
+    allowAdhoc: z.boolean().optional(),
+  }).parse(req.body);
 
-  const picklist = await db.queryOne<{ id: string }>(`SELECT id FROM ipy_picklist WHERE name = $1`, [req.params.name]);
-  if (!picklist) throw new NotFoundError(`Unknown picklist '${req.params.name}'`);
+  const row = await db.queryOne<{ id: string }>(
+    `UPDATE ipy_picklist
+        SET label = COALESCE($2, label), allow_adhoc = COALESCE($3, allow_adhoc)
+      WHERE name = $1 RETURNING id`,
+    [req.params.name, label ?? null, allowAdhoc ?? null],
+  );
+  if (!row) throw new NotFoundError(`Unknown picklist '${req.params.name}'`);
+  invalidateAll();
+  res.json({ ok: true });
+}));
+
+/**
+ * Delete a whole dropdown.
+ *
+ * Refused while any field still draws its options from it — deleting it there
+ * would leave that field a text box with no choices, which is not what "delete
+ * this dropdown" means to anyone. Remove or repoint the field first.
+ */
+metadataRouter.delete('/picklists/:name', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'admin.picklists');
+  const name = req.params.name;
+
+  const picklist = await db.queryOne<{ id: string }>(`SELECT id FROM ipy_picklist WHERE name = $1`, [name]);
+  if (!picklist) throw new NotFoundError(`Unknown picklist '${name}'`);
+
+  const uses = await fieldsUsingPicklist(name);
+  if (uses.length) {
+    throw new ConflictError(
+      `${uses.length === 1 ? 'A field uses' : `${uses.length} fields use`} this dropdown: `
+      + `${uses.map((u) => `${u.moduleLabel} → ${u.fieldLabel}`).join(', ')}. `
+      + 'Point those fields at another dropdown first, or delete them.',
+    );
+  }
 
   await transaction(async (tx) => {
-    const keep = values.map((v) => v.value);
-    // Deactivate rather than delete: existing records may still hold the value.
+    await tx.query(`DELETE FROM ipy_picklist WHERE id = $1`, [picklist.id]);
     await tx.query(
-      `UPDATE ipy_picklist_value SET is_active = false
-       WHERE picklist_id = $1 AND NOT (value = ANY($2::text[]))`,
-      [picklist.id, keep],
+      `INSERT INTO ipy_picklist_tombstone (picklist_name, value, deleted_by)
+       VALUES ($1,'',$2) ON CONFLICT (picklist_name, value) DO NOTHING`,
+      [name, user.id],
     );
+  });
+  invalidateAll();
+  res.json({ ok: true });
+}));
+
+/**
+ * Delete one option, for good.
+ *
+ * `replaceWith` is what makes this safe on an option records already hold: the
+ * records are moved to the replacement (or cleared) *before* the option goes,
+ * so nothing is left storing a value the dropdown no longer offers. Without it
+ * the delete is refused while anything still uses the option — silently
+ * stranding a thousand leads is not a thing a delete button should do.
+ */
+metadataRouter.delete('/picklists/:name/values', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'admin.picklists');
+  const name = req.params.name;
+  const value = z.string().min(1).parse(req.query.value);
+  const replaceWith = typeof req.query.replaceWith === 'string' && req.query.replaceWith
+    ? req.query.replaceWith
+    : null;
+  const clear = req.query.clear === 'true';
+
+  const picklist = await db.queryOne<{ id: string }>(`SELECT id FROM ipy_picklist WHERE name = $1`, [name]);
+  if (!picklist) throw new NotFoundError(`Unknown picklist '${name}'`);
+
+  const usage = await countRecordsWithValue(name, value);
+  if (usage.total > 0 && !replaceWith && !clear) {
+    throw new ConflictError(
+      `${usage.total} record${usage.total === 1 ? '' : 's'} still ${usage.total === 1 ? 'has' : 'have'} this value. `
+      + 'Choose what those records should say instead, or clear the field on them.',
+      { recordCount: usage.total, byField: usage.byField },
+    );
+  }
+  if (replaceWith) {
+    const exists = await db.queryOne(
+      `SELECT 1 FROM ipy_picklist_value WHERE picklist_id = $1 AND value = $2`,
+      [picklist.id, replaceWith],
+    );
+    if (!exists) throw new BadRequestError(`'${replaceWith}' is not an option in this dropdown`);
+  } else if (usage.total > 0) {
+    // "Leave the field empty" is not available on a required column, and finding
+    // that out from a constraint violation halfway through is the worst way to
+    // learn it.
+    const blocked = await fieldsThatCannotBeCleared(name);
+    if (blocked.length) {
+      throw new ConflictError(
+        `${blocked.map((b) => `${b.moduleLabel} → ${b.fieldLabel}`).join(', ')} cannot be left empty, `
+        + 'so choose which option those records should move to instead.',
+        { mustReplace: true },
+      );
+    }
+  }
+
+  await transaction(async (tx) => {
+    if (usage.total > 0) await replaceValueInRecords(name, value, replaceWith, tx);
+    await tx.query(
+      `DELETE FROM ipy_picklist_value WHERE picklist_id = $1 AND value = $2`,
+      [picklist.id, value],
+    );
+    await tx.query(
+      `INSERT INTO ipy_picklist_tombstone (picklist_name, value, deleted_by, had_records, replaced_with)
+       VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (picklist_name, value) DO UPDATE SET
+         deleted_at = now(), deleted_by = EXCLUDED.deleted_by,
+         had_records = EXCLUDED.had_records, replaced_with = EXCLUDED.replaced_with`,
+      [name, value, user.id, usage.total, replaceWith],
+    );
+  });
+  invalidateAll();
+  res.json({ ok: true, movedRecords: usage.total, replacedWith: replaceWith });
+}));
+
+/**
+ * Save the option list — how the dropdown editor saves.
+ *
+ * Order, labels, colours, the active flag and which option is the default all
+ * come from the list as given. Renames carry `previousValue` and take the
+ * records with them. Options the admin removed are *not* handled here: they go
+ * through DELETE above, one at a time, because each one needs its own answer to
+ * "what happens to the records that hold it?".
+ */
+metadataRouter.put('/picklists/:name/values', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'admin.picklists');
+  const { values } = z.object({ values: z.array(picklistValueSchema) }).parse(req.body);
+
+  const name = req.params.name;
+  const picklist = await db.queryOne<{ id: string }>(`SELECT id FROM ipy_picklist WHERE name = $1`, [name]);
+  if (!picklist) throw new NotFoundError(`Unknown picklist '${name}'`);
+
+  const seen = new Set<string>();
+  for (const v of values) {
+    if (seen.has(v.value)) throw new BadRequestError(`'${v.value}' appears twice — stored values must be unique`);
+    seen.add(v.value);
+  }
+
+  let renamedRecords = 0;
+  let renamedFilters = 0;
+  await transaction(async (tx) => {
     for (const [i, v] of values.entries()) {
+      if (v.previousValue && v.previousValue !== v.value) {
+        // Move the records first: the option row is what the records are
+        // matched against, so renaming it first would leave nothing to find.
+        const moved = await replaceValueInRecords(name, v.previousValue, v.value, tx);
+        renamedRecords += moved.records;
+        renamedFilters += moved.filters;
+        await tx.query(
+          `UPDATE ipy_picklist_value SET value = $3 WHERE picklist_id = $1 AND value = $2`,
+          [picklist.id, v.previousValue, v.value],
+        );
+      }
       await tx.query(
         `INSERT INTO ipy_picklist_value (picklist_id, value, label, color, sequence, is_active, is_default, meta)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
@@ -826,18 +1031,25 @@ metadataRouter.put('/picklists/:name/values', asyncHandler(async (req, res) => {
            is_active = EXCLUDED.is_active, is_default = EXCLUDED.is_default, meta = EXCLUDED.meta`,
         [picklist.id, v.value, v.label, v.color ?? null, i, v.isActive, v.isDefault, JSON.stringify(v.meta ?? {})],
       );
-    }
-    // Only one default per picklist.
-    const def = values.find((v) => v.isDefault);
-    if (def) {
+      // Adding back something previously deleted is a decision; clear its
+      // tombstone or the next re-seed would take it away again.
       await tx.query(
-        `UPDATE ipy_picklist_value SET is_default = (value = $2) WHERE picklist_id = $1`,
-        [picklist.id, def.value],
+        `DELETE FROM ipy_picklist_tombstone WHERE picklist_name = $1 AND value = $2`,
+        [name, v.value],
       );
     }
+
+    // At most one default, and it must be one of the options given. Sending no
+    // default clears it rather than leaving a stale one behind.
+    const def = values.find((v) => v.isDefault);
+    await tx.query(
+      `UPDATE ipy_picklist_value SET is_default = ($2::text IS NOT NULL AND value = $2)
+        WHERE picklist_id = $1`,
+      [picklist.id, def?.value ?? null],
+    );
   });
   invalidateAll();
-  res.json(await registry.getPicklist(req.params.name));
+  res.json({ values: await registry.getPicklist(name), renamedRecords, renamedFilters });
 }));
 
 metadataRouter.put('/modules/:name/picklist-dependency', asyncHandler(async (req, res) => {

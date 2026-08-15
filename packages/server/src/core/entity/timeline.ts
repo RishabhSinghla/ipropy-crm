@@ -1,9 +1,18 @@
 /**
  * Unified record timeline.
  *
- * Merges audit entries, comments, WhatsApp/SMS messages, calls, emails,
- * attachments and AI insights into one chronological feed. This is what makes the contact view "interactive" — every
- * interaction with a person lands in the same place regardless of channel.
+ * Merges audit entries, comments, WhatsApp/SMS messages, calls, emails and
+ * attachments into one chronological feed. This is what makes the contact view
+ * "interactive" — every interaction with a person lands in the same place
+ * regardless of channel.
+ *
+ * **AI insights are deliberately not here.** A score the model recalculates
+ * whenever the record changes is not something that *happened* to the customer,
+ * and interleaving it with real calls and messages buried the events a
+ * salesperson opens this page to read. Insights live in the AI Insights panel
+ * beside the feed (`ipy_ai_insight`, served by `/ai/insights`), which is where
+ * the current one belongs — one panel, always the latest, rather than a growing
+ * pile of superseded copies in the history.
  */
 import type { TimelineEntry } from '@ipropy/shared';
 import { db, type Tx } from '../../db/pool.js';
@@ -23,7 +32,7 @@ export async function buildTimeline(
   const wanted = opts.types?.length ? new Set(opts.types) : null;
   const want = (t: string): boolean => !wanted || wanted.has(t);
 
-  const [audit, comments, messages, calls, emails, attachments, insights] =
+  const [audit, comments, messages, calls, emails, attachments] =
     await Promise.all([
       want('audit')
         ? conn.query<AuditRow>(
@@ -90,16 +99,6 @@ export async function buildTimeline(
             [recordId, limit],
           )
         : empty<AttachmentRow>(),
-
-      want('ai')
-        ? conn.query<InsightRow>(
-            `SELECT id::text, kind, title, body, score, created_at, model
-             FROM ipy_ai_insight
-             WHERE record_id = $1 AND dismissed_at IS NULL
-             ORDER BY created_at DESC LIMIT $2`,
-            [recordId, Math.min(20, limit)],
-          )
-        : empty<InsightRow>(),
     ]);
 
   const entries: TimelineEntry[] = [];
@@ -182,15 +181,6 @@ export async function buildTimeline(
     });
   }
 
-  for (const r of insights.rows) {
-    entries.push({
-      id: `ai-${r.id}`, type: 'ai', at: r.created_at,
-      actorId: null, actorName: 'AI Assistant',
-      title: r.title, body: r.body, icon: 'sparkles',
-      meta: { kind: r.kind, score: r.score, model: r.model },
-    });
-  }
-
   return entries
     .filter((e) => e.at)
     .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
@@ -229,4 +219,3 @@ interface EmailRow { id: string; subject: string | null; direction: string; stat
 interface VisitRow { id: string; subject: string; status: string; scheduled_at: string; interest_level: string | null; feedback: string | null; ai_summary: string | null; ai_sentiment: string | null; owner_id: string | null; user_name: string | null }
 interface PaymentRow { id: string; milestone: string | null; status: string; amount_due: number; amount_paid: number; paid_on: string | null; due_date: string | null; receipt_number: string | null; created_at: string }
 interface AttachmentRow { id: string; file_name: string; mime_type: string; size: number; created_at: string; uploaded_by: string | null; user_name: string | null }
-interface InsightRow { id: string; kind: string; title: string; body: string; score: number | null; created_at: string; model: string | null }

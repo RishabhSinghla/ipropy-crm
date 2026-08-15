@@ -111,6 +111,13 @@ export interface LayoutConfig {
   sidebar?: LayoutWidgetRef[];
   /** header summary fields shown as key-value chips */
   headerFields?: string[];
+  /**
+   * Show the auto-number (LD-00003) beside the record name.
+   *
+   * Off unless an admin turns it on: the number is an internal key, and a
+   * salesperson opening a lead wants the person's name, not the row's id.
+   */
+  showRecordNumber?: boolean;
   /** related lists shown, in order */
   relatedLists?: string[];
   /** which tabs appear on the detail view */

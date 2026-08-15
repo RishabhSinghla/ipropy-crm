@@ -63,7 +63,7 @@ Three things, and they're the whole personality of this product:
    lead still gets assigned. You just lose the pretty English sentences. Nothing ever shows an
    error because AI wasn't available.
 
-3. **It got smaller on purpose.** It started with 13 modules. It now has 3. Ten were deleted
+3. **It got smaller on purpose.** It started with 13 modules. It now has 2. Eleven were deleted
    because each of them existed only to hold one fact that the lead or the flat could hold itself
    — which meant a salesperson had to create a *second record* just to write down one thing. That
    was a tax on the busiest person in the building. (Part 3.4 tells the full story.)
@@ -146,21 +146,21 @@ ipy_module   ──<   ipy_block   ──<   ipy_field
  store, e.g.        on the form,        you ask, e.g.
  "Leads")           e.g. "KYC")         "PAN number")
 
-ipy_record  ──  ipy_e_leads / ipy_e_properties / ipy_e_campaigns
+ipy_record  ──  ipy_e_leads / ipy_e_properties                 
 (the shared        (the actual answers for each module)
  identity of
  every single
  record)
 ```
 
-- **Module** = a *type* of thing. Leads, Properties, Campaigns.
+- **Module** = a *type* of thing. Leads, Properties.
 - **Block** = a *group of fields* on a form. "Basic Information", "Requirement", "KYC".
 - **Field** = *one question*. "Mobile", "Budget (Max)", "Vastu Compliant".
 - **Record** = *one actual thing*. Ravi Kumar the lead. Tower A–1204 the flat.
 
 ## 2.4 `ipy_record` — the shared ID card (subtle but important)
 
-Every record in the whole system — every lead, every flat, every campaign — gets a row in **one
+Every record in the whole system — every lead, every flat — gets a row in **one
 single table** called `ipy_record`. That row holds the things that are true of *everything*:
 
 - who owns it,
@@ -283,7 +283,7 @@ Loan Required.
 > (Sq.ft. / Sq.yd.) rendered inside the box. A buyer says "about 1200 sq.ft", not "between 1100 and
 > 1300 carpet". Two fields were collecting one answer, and neither of them carried the unit.
 
-**Source & Attribution** — Lead Source, Sub Source, Campaign, Referred By, UTM Source / Medium /
+**Source & Attribution** — Lead Source, Sub Source, Referred By, UTM Source / Medium /
 Campaign / Term / Content, Landing Page, Google Click ID, Facebook Click ID, IP Address.
 (This is how you eventually know which ad actually sold a flat.)
 
@@ -359,28 +359,12 @@ plus Not For Sale.
 **Ready-made views:** All Inventory · Available Units · By Status (kanban) · Blocked Units ·
 Premium Units (≥ ₹2 Cr).
 
-## 3.3 Campaigns — *the money you spent to find buyers*
-
-**Campaign Information** — Campaign # (auto, `CMP-…`), Campaign Name, Type, Status, Channel,
-Start Date, End Date, Assigned To.
-
-**Budget & Targeting** — Budget, Actual Spend, Target Audience.
-
-**Performance** — includes two more **formula fields**: **Cost per Lead** and **ROI %**. Both
-compute themselves.
-
-**Attribution Keys** — the UTM tags that let a lead say "I came from this campaign".
-
-This closes the loop: you spend ₹40,000 on a Facebook campaign, the leads it produced carry its
-UTM tag, and the campaign record tells you what each of those leads cost — and whether any of them
-bought.
-
-## 3.4 Why there are only three modules (the subtraction story)
+## 3.3 Why there are only two modules (the subtraction story)
 
 iPropy once had thirteen modules: Leads, Contacts, Organisations, Projects, Properties, Deals,
 Site Visits, Bookings, Payments, Channel Partners, Documents, Campaigns, Activities, Blog.
 
-Ten are gone. **Every single one died the same death:** it existed to hold a value that the lead
+Eleven are gone. **Every single one died the same death:** it existed to hold a value that the lead
 or the flat could hold by itself — so a salesperson had to create a *second record* just to write
 down *one fact*.
 
@@ -390,6 +374,7 @@ down *one fact*.
 | **Projects** (a building) | `project_name`, plain text on the flat |
 | **Activities** (a to-do record) | A **date** on the lead — "Next Follow-up" — plus a note and a notification |
 | **Site Visits** | Folded into Activities, and went with them. The Pipeline Status still tracks visits |
+| **Campaigns** (spend, CPL, ROI) | The UTM tags on the lead itself, plus Outreach for the sending. Where an enquiry came from is answered on the enquiry |
 | Deals, Bookings, Payments, Organisations, Channel Partners, Documents, Blog | Removed |
 
 The Activities one is worth dwelling on. Its real job was *"chase this person on the 14th"*. The
@@ -523,7 +508,7 @@ how it's stored, how it's drawn on screen, and which filters make sense for it. 
 ### Links to other things
 | Type | What it is |
 |---|---|
-| `reference` | Points at one other record ("Campaign", "Referred By") |
+| `reference` | Points at one other record ("Referred By") |
 | `multireference` | Points at several. **No module uses this today** and there is no working editor for it |
 | `owner` | Who this record belongs to — a person *or* a team |
 | `user` | Points at a person |
@@ -553,7 +538,7 @@ workflow engine. Nobody has to update five places.
 # PART 6 — Every screen, one by one
 
 The left sidebar, top to bottom: **Dashboard · Inbox · Calls · Leads & Contacts · Properties ·
-Campaigns · Outreach · Site capture · Reports** — and at the bottom, **Settings** and **Admin**.
+Outreach · Site capture · Reports** — and at the bottom, **Settings** and **Admin**.
 
 ## 6.1 Login
 
@@ -592,7 +577,7 @@ Three things worth knowing:
   saved to the server, so it follows you to another computer. On a phone the widgets just stack
   in a sensible order.
 
-## 6.3 List view (the Leads / Properties / Campaigns screens)
+## 6.3 List view (the Leads / Properties screens)
 
 This one screen is used by every module, and it's the workhorse.
 
@@ -921,9 +906,22 @@ fields become the **summary chips** in the record header. Choose **which tab a r
 
 **4. List View Tabs** — manage the saved views that appear as tabs above each list.
 
-**5. Dropdowns** — every picklist. Add values, rename them, reorder them, give them colours,
-choose the default. 58 of them are seeded. You can also set up **dependent dropdowns** (picking a
-City narrows the Locality list) and restrict certain values to certain roles.
+**5. Dropdowns** — every picklist. Create a new one, rename it, add options, reorder them (drag,
+or the arrows on a phone), colour them, and star the one new records start on. You can also set up
+**dependent dropdowns** (picking a City narrows the Locality list) and restrict certain values to
+certain roles.
+
+Two things are worth understanding, because they are what people get wrong:
+
+- **The left box is the name, the right box is the stored value.** Renaming the *name* is free —
+  it is only what people read. Changing the *stored value* changes what is written on every record,
+  so when you do it, iPropy rewrites every record that held the old one, plus any saved view,
+  dashboard filter or workflow rule that mentions it. It tells you how many it changed.
+- **Inactive and Delete are different.** Switching an option **inactive** keeps it on records that
+  already have it and stops anyone choosing it again — the safe choice for a status you have retired
+  but whose history you want intact. **Delete** removes it for good; if records still hold it, you
+  are asked what those records should say instead before anything happens. A deleted option stays
+  deleted through restarts and redeploys.
 
 ## Group 2 — People
 
@@ -1425,8 +1423,8 @@ You don't need this to *use* the CRM. Read it to understand why it behaves as it
 
 ## 14.1 Numbers
 
-91 tables · 3 modules · 160 fields · 58 dropdown lists · 17 views · 9 layouts · 7 workflows ·
-5 dashboards · 17 roles · 9 profiles · 13 users · 254 records · 38 migrations applied.
+91 tables · 2 modules · 136 fields · 54 dropdown lists · 17 views · 9 layouts · 7 workflows ·
+5 dashboards · 17 roles · 9 profiles · 13 users · 254 records · 50 migrations applied.
 
 (Counts other than the migrations are from the 9 August audit and drift as records are added; the
 migration count is exact.)
@@ -1598,7 +1596,20 @@ required?, quick-create? → Save. It's live for everyone immediately. Then Admi
 to decide where it sits on the form.
 
 **Add a value to a dropdown**
-Admin → Dropdowns → find the list → Add value → give it a colour → drag to position.
+Admin → Dropdowns → find the list → Add option → name it → give it a colour → drag to position → Save.
+
+**Delete a value from a dropdown**
+Admin → Dropdowns → the bin icon on that row. If nothing uses it, it goes. If records still have it,
+you choose what those records should say instead first. To keep the history but stop it being picked
+again, switch it to **inactive** instead of deleting.
+
+**Create a whole new dropdown**
+Admin → Dropdowns → **+** beside the search box → name it → Save. Then point a field at it in
+Admin → Modules &amp; Fields.
+
+**Stop showing the record number (LD-00003) in the header**
+It is off by default. Admin → Layout Designer → the module → Record header → tick "Show the record
+number beside the name" if you want it back.
 
 **Hide prices from tele-callers**
 Admin → Roles & Profiles → the Pre-Sales profile → field permissions → set the price fields to
@@ -1666,7 +1677,7 @@ tokens and webhook keys are generated for you. Saving runs a real connection tes
 
 | Term | Plain meaning |
 |---|---|
-| **Module** | A type of thing you store. Leads, Properties, Campaigns |
+| **Module** | A type of thing you store. Leads, Properties |
 | **Record** | One actual thing. One lead, one flat |
 | **Field** | One question on a record |
 | **Block** | A group of fields shown as a section on the form |

@@ -85,6 +85,7 @@ export default function RecordDetail(): JSX.Element {
       headerFields?: string[];
       relatedLists?: string[];
       defaultTab?: string;
+      showRecordNumber?: boolean;
       tabs?: { key: string; label: string; icon?: string }[];
     }),
     [meta],
@@ -273,7 +274,10 @@ export default function RecordDetail(): JSX.Element {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="min-w-0 max-w-full truncate text-lg font-semibold tracking-tight sm:text-xl">{record.label}</h1>
-                  {record.recordNumber && (
+                  {/* Off unless an admin asks for it in Admin → Layout Designer.
+                      The auto-number is an internal key; the header is for the
+                      person, not the row id. */}
+                  {layoutConfig.showRecordNumber && record.recordNumber && (
                     <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-2xs text-muted dark:bg-slate-800">
                       {record.recordNumber}
                     </span>
@@ -688,7 +692,6 @@ function TimelineItem({ entry }: { entry: TimelineEntry }): JSX.Element {
     message: 'bg-emerald-100 text-positive dark:bg-emerald-950 dark:text-emerald-400',
     email: 'bg-sky-100 text-sky-600 dark:bg-sky-950 dark:text-sky-400',
     comment: 'bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400',
-    ai: 'bg-brand-100 text-brand-600 dark:bg-brand-950 dark:text-brand-400',
     site_visit: 'bg-orange-100 text-orange-600 dark:bg-orange-950 dark:text-orange-400',
     payment: 'bg-teal-100 text-teal-600 dark:bg-teal-950 dark:text-teal-400',
     task: 'bg-violet-100 text-violet-600 dark:bg-violet-950 dark:text-violet-400',

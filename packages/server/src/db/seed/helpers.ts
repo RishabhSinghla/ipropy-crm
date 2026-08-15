@@ -82,7 +82,29 @@ export interface PicklistDef {
   values: (string | { value: string; label?: string; color?: string; isDefault?: boolean; meta?: Record<string, unknown> })[];
 }
 
-export async function upsertPicklist(conn: Tx, def: PicklistDef): Promise<string> {
+/**
+ * Dropdowns and dropdown options an administrator deleted for good (migration 049).
+ *
+ * Same device, and same reason, as `tombstonedFields` below: this function
+ * recreates every seeded dropdown on each run, and the seed runs on every cold
+ * start. Without consulting the tombstones, "delete Lost" survives until the
+ * next restart — which on a free-tier instance is about an hour, and looks
+ * exactly like a broken button.
+ *
+ * A row with `value = ''` tombstones the whole dropdown.
+ */
+async function tombstonedValues(conn: Tx, picklistName: string): Promise<Set<string>> {
+  const rows = await conn.query<{ value: string }>(
+    `SELECT value FROM ipy_picklist_tombstone WHERE picklist_name = $1`,
+    [picklistName],
+  );
+  return new Set(rows.rows.map((r) => r.value));
+}
+
+export async function upsertPicklist(conn: Tx, def: PicklistDef): Promise<string | null> {
+  const tombstones = await tombstonedValues(conn, def.name);
+  if (tombstones.has('')) return null;
+
   const row = await conn.queryOne<{ id: string }>(
     `INSERT INTO ipy_picklist (name, label, is_global, is_system)
      VALUES ($1,$2,$3,true)
@@ -95,6 +117,7 @@ export async function upsertPicklist(conn: Tx, def: PicklistDef): Promise<string
   let seq = 0;
   for (const v of def.values) {
     const item = typeof v === 'string' ? { value: v } : v;
+    if (tombstones.has(item.value)) { seq++; continue; }
     // Create-only. Label, colour and order are admin controls in Settings →
     // Picklists, so overwriting them here undid every rename and re-colour on
     // the next seed run — and the seed runs on every cold start, not just on
@@ -363,7 +386,15 @@ export async function seedDefaultLayouts(conn: Tx, def: ModuleDef): Promise<void
       collapsed: b.collapsed ?? false,
       fields: visible(b.fields).map((f) => f.name),
     })),
-    headerFields: visible(def.blocks[0]?.fields ?? []).slice(0, 4).map((f) => f.name),
+    // The auto-number is skipped: it is always the first field of the first
+    // block, so it always won a header slot, and "LD-00003" is the least useful
+    // thing a salesperson opening a lead could be told. It is still on the
+    // record, still searchable, and an admin can put it back in the Layout
+    // Designer.
+    headerFields: visible(def.blocks[0]?.fields ?? [])
+      .filter((f) => f.uitype !== 'autonumber')
+      .slice(0, 4)
+      .map((f) => f.name),
     relatedLists: (def.relations ?? []).map((r) => r.name),
     /** Which tab a record opens on. Admin-settable in the Layout Designer. */
     defaultTab: 'overview',
