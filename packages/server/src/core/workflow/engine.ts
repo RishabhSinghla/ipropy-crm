@@ -13,6 +13,7 @@ import { bus, type RecordEventPayload } from '../events/bus.js';
 import { evaluateFilter } from '@ipropy/shared';
 import { registry } from '../metadata/registry.js';
 import { runTask, type TaskContext } from './tasks.js';
+import { organisationTimezone } from '../capture/captureTime.js';
 
 export interface WorkflowRow {
   id: string;
@@ -98,6 +99,14 @@ export async function runWorkflowsFor(
   const workflows = await getWorkflows(moduleName, triggers);
   if (!workflows.length) return;
 
+  // The organisation's day, not the server's. Without this a container running
+  // UTC — which is every container unless somebody sets TZ — evaluates `today`,
+  // `this_week` and `this_month` against a day that ends five and a half hours
+  // early, while the SQL side has always used `AT TIME ZONE`. Two engines, one
+  // grammar, different answers for records touched between midnight and 5:30am
+  // in Mumbai.
+  const timezone = await organisationTimezone();
+
   for (const wf of workflows) {
     const started = Date.now();
     try {
@@ -111,6 +120,7 @@ export async function runWorkflowsFor(
       const matched = evaluateFilter(wf.conditions, record, {
         userId: opts.user?.id,
         previous: opts.previous,
+        timezone,
       });
 
       const shouldRun = await checkExecutionMode(wf, recordId, matched);

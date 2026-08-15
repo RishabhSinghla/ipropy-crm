@@ -75,41 +75,84 @@ function asArray(v: unknown): unknown[] {
   return [v];
 }
 
-function startOf(unit: 'day' | 'week' | 'month' | 'quarter' | 'year', ref = new Date()): Date {
+/**
+ * The same instant, with its UTC fields holding the wall clock in `timeZone`.
+ *
+ * Period arithmetic below is written in UTC getters, so shifting both the value
+ * under test and "now" through here makes every comparison happen in the
+ * organisation's day rather than the server's.
+ *
+ * `sv-SE` because it formats as `YYYY-MM-DD HH:mm:ss`, which `Date` parses
+ * without ambiguity. Appending `Z` is what moves the wall clock into the UTC
+ * fields.
+ *
+ * India has no daylight saving, so this is exact for iPropy. For a zone that
+ * does, the offset is resolved per instant and only a period boundary landing
+ * inside a transition hour can be off — worth knowing, not worth solving here.
+ */
+function zoned(date: Date, timeZone: string | undefined): Date {
+  if (!timeZone) return date;
+  try {
+    return new Date(`${date.toLocaleString('sv-SE', { timeZone })}Z`);
+  } catch {
+    // An unknown zone should not take the filter down with it.
+    return date;
+  }
+}
+
+/**
+ * Start of the period containing `ref`, in wall-clock terms.
+ *
+ * Written with UTC getters throughout: callers pass a value already shifted by
+ * `zoned()`, so "UTC" here means "the organisation's wall clock". Using the
+ * local getters — as this did — silently meant the *server's* wall clock, which
+ * is UTC in a container and Asia/Kolkata on the developer's Mac. The SQL engine
+ * has always used `AT TIME ZONE` with the organisation's zone, so the two
+ * disagreed for the five and a half hours a day when the dates differ.
+ */
+function startOf(unit: 'day' | 'week' | 'month' | 'quarter' | 'year', ref: Date): Date {
   const d = new Date(ref);
-  d.setHours(0, 0, 0, 0);
+  d.setUTCHours(0, 0, 0, 0);
   switch (unit) {
     case 'day': return d;
     case 'week': {
       // Monday-start weeks, matching Postgres' date_trunc('week', ...)
-      const day = (d.getDay() + 6) % 7;
-      d.setDate(d.getDate() - day);
+      const day = (d.getUTCDay() + 6) % 7;
+      d.setUTCDate(d.getUTCDate() - day);
       return d;
     }
-    case 'month': d.setDate(1); return d;
-    case 'quarter': d.setMonth(Math.floor(d.getMonth() / 3) * 3, 1); return d;
-    case 'year': d.setMonth(0, 1); return d;
+    case 'month': d.setUTCDate(1); return d;
+    case 'quarter': d.setUTCMonth(Math.floor(d.getUTCMonth() / 3) * 3, 1); return d;
+    case 'year': d.setUTCMonth(0, 1); return d;
   }
 }
 
 function addUnit(date: Date, unit: 'day' | 'week' | 'month' | 'quarter' | 'year', n: number): Date {
   const d = new Date(date);
   switch (unit) {
-    case 'day': d.setDate(d.getDate() + n); break;
-    case 'week': d.setDate(d.getDate() + n * 7); break;
-    case 'month': d.setMonth(d.getMonth() + n); break;
-    case 'quarter': d.setMonth(d.getMonth() + n * 3); break;
-    case 'year': d.setFullYear(d.getFullYear() + n); break;
+    case 'day': d.setUTCDate(d.getUTCDate() + n); break;
+    case 'week': d.setUTCDate(d.getUTCDate() + n * 7); break;
+    case 'month': d.setUTCMonth(d.getUTCMonth() + n); break;
+    case 'quarter': d.setUTCMonth(d.getUTCMonth() + n * 3); break;
+    case 'year': d.setUTCFullYear(d.getUTCFullYear() + n); break;
   }
   return d;
 }
 
-function inPeriod(actual: unknown, unit: 'day' | 'week' | 'month' | 'quarter' | 'year', offset = 0): boolean {
+function inPeriod(
+  actual: unknown,
+  unit: 'day' | 'week' | 'month' | 'quarter' | 'year',
+  offset = 0,
+  timeZone?: string,
+): boolean {
   const d = asDate(actual);
   if (!d) return false;
-  const start = addUnit(startOf(unit), unit, offset);
+  // Both sides shifted the same way, so the comparison happens in the
+  // organisation's day rather than the server's.
+  const start = addUnit(startOf(unit, zoned(new Date(), timeZone)), unit, offset);
   const end = addUnit(start, unit, 1);
-  return d >= start && d < end;
+  const value = zoned(d, timeZone);
+  return value >= start && value < end;
 }
 
 export function applyOperator(
@@ -157,13 +200,13 @@ export function applyOperator(
     case 'is_true': return actual === true || actual === 'true' || actual === 1;
     case 'is_false': return actual === false || actual === 'false' || actual === 0 || isBlank(actual);
 
-    case 'today': return inPeriod(actual, 'day', 0);
-    case 'tomorrow': return inPeriod(actual, 'day', 1);
-    case 'yesterday': return inPeriod(actual, 'day', -1);
-    case 'this_week': return inPeriod(actual, 'week', 0);
-    case 'this_month': return inPeriod(actual, 'month', 0);
-    case 'this_quarter': return inPeriod(actual, 'quarter', 0);
-    case 'this_year': return inPeriod(actual, 'year', 0);
+    case 'today': return inPeriod(actual, 'day', 0, ctx.timezone);
+    case 'tomorrow': return inPeriod(actual, 'day', 1, ctx.timezone);
+    case 'yesterday': return inPeriod(actual, 'day', -1, ctx.timezone);
+    case 'this_week': return inPeriod(actual, 'week', 0, ctx.timezone);
+    case 'this_month': return inPeriod(actual, 'month', 0, ctx.timezone);
+    case 'this_quarter': return inPeriod(actual, 'quarter', 0, ctx.timezone);
+    case 'this_year': return inPeriod(actual, 'year', 0, ctx.timezone);
 
     case 'last_n_days': {
       const d = asDate(actual);

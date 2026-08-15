@@ -17,6 +17,12 @@ FROM node:20-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 ENV SERVE_WEB=true
+# The container's own clock, so logs and any date arithmetic that slips past the
+# organisation-timezone plumbing land in the same day the business is in. Not
+# load-bearing — the filter engines take the organisation zone explicitly — but
+# a UTC container reading "09:00" in a log while the office says 14:30 is a
+# false trail waiting to be followed at three in the morning.
+ENV TZ=Asia/Kolkata
 # ffmpeg is not optional. Video transcoding degrades gracefully without it
 # (clips serve unprocessed), but HEIC decoding does not have a fallback:
 # sharp's libvips ships with no HEVC decoder, so without ffmpeg every photo
