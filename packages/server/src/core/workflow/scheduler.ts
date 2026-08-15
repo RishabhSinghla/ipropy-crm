@@ -24,6 +24,10 @@ import { loadRecordValues, runWorkflowsFor } from './engine.js';
 import { runTask, type TaskContext } from './tasks.js';
 import { loadUser } from '../../middleware/auth.js';
 import { notify } from '../notifications/index.js';
+import type { FilterGroup, ModuleMeta } from '@ipropy/shared';
+import {
+  buildWhere, quoteIdent, ENTITY_ALIAS, RECORD_ALIAS, SqlParams, type BuildContext,
+} from '../query/builder.js';
 
 let timer: NodeJS.Timeout | null = null;
 let running = false;
@@ -267,8 +271,76 @@ interface ScheduledRow {
   module_name: string;
   name: string;
   schedule: { frequency: string; time?: string; daysOfWeek?: number[]; dayOfMonth?: number } | null;
-  conditions: never;
+  conditions: FilterGroup | null;
   next_run_at: string | null;
+}
+
+/**
+ * A ceiling that exists so a bad rule cannot melt the database, not a filter.
+ *
+ * With the workflow's own conditions now pushed into SQL, this only bites when
+ * a rule genuinely matches tens of thousands of records — which is a rule
+ * somebody should look at, so it is logged rather than passed over in silence.
+ */
+const MAX_SCHEDULED_CANDIDATES = 20_000;
+
+/**
+ * Which records a scheduled workflow should actually look at.
+ *
+ * This used to be "the 5,000 most recently updated", which is the wrong
+ * population and, for these particular workflows, precisely the inverse of the
+ * right one. Every scheduled rule in this product is about *neglect*: a lead
+ * nobody has contacted in two hours, one with no activity in fourteen days, a
+ * unit held and forgotten. Those records are by definition the least recently
+ * updated, so they fell out of a `updated_at DESC` slice first. A birthday
+ * greeting has no relationship to `updated_at` at all.
+ *
+ * Under about five thousand records nobody would ever have noticed, because
+ * the slice was everything. Past it the workflows would have gone on running,
+ * reporting success, and quietly skipping the leads they exist to catch.
+ *
+ * So the conditions are pushed into SQL through the same builder the list view
+ * uses. `runWorkflowsFor` still evaluates them in memory afterwards, which
+ * makes this purely a narrowing step: if the SQL translation is ever more
+ * permissive than the in-memory one, the record is still gated correctly — it
+ * has just been fetched needlessly.
+ */
+async function scheduledCandidates(
+  module: ModuleMeta,
+  conditions: FilterGroup | null,
+  workflowName: string,
+): Promise<string[]> {
+  const params = new SqlParams();
+  // No user: a scheduled workflow runs for the organisation, not on anybody's
+  // behalf. `is_me` and `is_my_team` are therefore meaningless here and resolve
+  // to nothing, which is the correct reading of "the scheduler's own team".
+  const ctx: BuildContext = { userId: '', subordinateIds: [], groupIds: [] };
+  const { sql: where, joins } = await buildWhere(module, conditions ?? undefined, params, ctx);
+
+  const clauses = [
+    `${RECORD_ALIAS}.module_id = ${params.add(module.id)}`,
+    `${RECORD_ALIAS}.is_deleted = false`,
+    ...(where ? [where] : []),
+  ];
+
+  const rows = await db.query<{ id: string }>(
+    `SELECT ${RECORD_ALIAS}.id
+     FROM ipy_record ${RECORD_ALIAS}
+     JOIN ${quoteIdent(module.tableName)} ${ENTITY_ALIAS} ON ${ENTITY_ALIAS}.record_id = ${RECORD_ALIAS}.id
+     ${joins.join('\n')}
+     WHERE ${clauses.join(' AND ')}
+     ORDER BY ${RECORD_ALIAS}.created_at ASC
+     LIMIT ${params.add(MAX_SCHEDULED_CANDIDATES)}`,
+    params.all(),
+  );
+
+  if (rows.rows.length === MAX_SCHEDULED_CANDIDATES) {
+    logger.warn(
+      { workflow: workflowName, cap: MAX_SCHEDULED_CANDIDATES },
+      'scheduled workflow hit the candidate cap — records were skipped this run; narrow its conditions',
+    );
+  }
+  return rows.rows.map((r) => r.id);
 }
 
 async function runScheduledWorkflows(): Promise<void> {
@@ -291,25 +363,17 @@ async function runScheduledWorkflows(): Promise<void> {
       const module = await import('../metadata/registry.js').then((m) => m.registry.getModule(wf.module_name));
       if (!module) continue;
 
-      // Only walk records that could match — capped so a bad rule can't melt the DB.
-      const candidates = await db.query<{ id: string }>(
-        `SELECT r.id FROM ipy_record r
-         WHERE r.module_id = $1 AND r.is_deleted = false
-         ORDER BY r.updated_at DESC LIMIT 5000`,
-        [module.id],
-      );
+      // Records this rule could actually match, chosen by the rule itself.
+      const candidates = await scheduledCandidates(module, wf.conditions, wf.name);
 
-      let matched = 0;
-      for (const row of candidates.rows) {
-        const record = await loadRecordValues(wf.module_name, row.id);
+      for (const id of candidates) {
+        const record = await loadRecordValues(wf.module_name, id);
         if (!record) continue;
-        const before = matched;
-        await runWorkflowsFor(wf.module_name, ['scheduled'], row.id, record, {
+        await runWorkflowsFor(wf.module_name, ['scheduled'], id, record, {
           user: null, source: 'scheduler',
         });
-        matched = before + 1;
       }
-      logger.info({ workflow: wf.name, scanned: candidates.rows.length }, 'scheduled workflow completed');
+      logger.info({ workflow: wf.name, scanned: candidates.length }, 'scheduled workflow completed');
     } catch (err) {
       logger.error({ err, workflow: wf.name }, 'scheduled workflow failed');
     }

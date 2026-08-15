@@ -447,19 +447,31 @@ export async function sendWhatsAppForWorkflow(input: WorkflowSendInput): Promise
   // was never fed from here.
   const { isConfigured } = await import('./provider.js');
   if (!(await isConfigured())) {
-    const body = text ?? (input.templateName ? await templateBody(input.templateName) : null);
-    if (!body) {
-      logger.info({ recordId: input.recordId }, 'whatsapp workflow skipped — no provider and no text to hand a person');
-      return;
+    // The whole branch is guarded, not just the queue call. A throw anywhere in
+    // here propagates out of the workflow task and abandons the rest of the
+    // run for that record — so one bad template name stops a lead being
+    // scored, tagged and followed up, over a message that was only ever going
+    // to be a suggestion. Failing to *offer* a message is not a reason to fail
+    // everything else the workflow was going to do.
+    try {
+      const body = text ?? (input.templateName
+        ? await renderedTemplate(input.templateName, input.scope)
+        : null);
+      if (!body) {
+        logger.info({ recordId: input.recordId }, 'whatsapp workflow skipped — no provider and no text to hand a person');
+        return;
+      }
+      const { queueDeviceSend, renderForRecord } = await import('./deviceSend.js');
+      await queueDeviceSend({
+        handle: input.to,
+        body: await renderForRecord(body, input.recordId ?? null, input.module ?? 'leads'),
+        recordId: input.recordId ?? null,
+        module: input.module ?? 'leads',
+        reason: 'Workflow — no WhatsApp Business account connected',
+      });
+    } catch (err) {
+      logger.warn({ err, recordId: input.recordId }, 'could not queue a message for manual sending');
     }
-    const { queueDeviceSend, renderForRecord } = await import('./deviceSend.js');
-    await queueDeviceSend({
-      handle: input.to,
-      body: await renderForRecord(body, input.recordId ?? null, input.module ?? 'leads'),
-      recordId: input.recordId ?? null,
-      module: input.module ?? 'leads',
-      reason: 'Workflow — no WhatsApp Business account connected',
-    }).catch((err) => logger.warn({ err, recordId: input.recordId }, 'could not queue a device send'));
     return;
   }
 
@@ -553,9 +565,59 @@ export async function broadcast(input: {
  * it means a workflow written for the API path still says something useful on
  * the phone path rather than silently doing nothing.
  */
+/**
+ * An approved template, with its numbered placeholders actually filled in.
+ *
+ * Meta templates use `{{1}}`, `{{2}}` and a `variable_map` that says what each
+ * one means — the API path resolves them through `bindTemplateParams`. The
+ * device-send path renders named `{{token}}` merges instead, so handing it a
+ * template body raw produced "Hi , just checking in on your home search. We
+ * have new inventory in  that fits your budget of ." and queued it for a rep
+ * to send to a customer.
+ *
+ * Bound here, with the same map, before the named-merge pass runs over what is
+ * left.
+ */
+async function renderedTemplate(
+  templateName: string,
+  scope: Record<string, unknown>,
+): Promise<string | null> {
+  const body = await templateBody(templateName);
+  if (!body) return null;
+
+  const params = await bindTemplateParams(templateName, scope);
+
+  // A placeholder with nothing behind it means this record cannot fill this
+  // template, and there is no good way to render that. Leaving the token
+  // visible does not survive the named-merge pass that runs afterwards, and
+  // blanking it produces "new inventory in  that fits your budget of ." — a
+  // sentence that reads finished, which is exactly why a rep sends it.
+  //
+  // So the message is not offered at all. A nurture template exists to say
+  // something specific about this buyer; with the specifics missing it has
+  // nothing to say, and silence is the honest version of that. The rest of the
+  // workflow — scoring, tagging, the follow-up date — is unaffected.
+  const missing = Object.keys(params).filter((index) => !params[index]);
+  if (missing.length) {
+    logger.info(
+      { templateName, missing },
+      'template not queued for manual sending — the record cannot fill its placeholders',
+    );
+    return null;
+  }
+
+  return body.replace(/\{\{\s*(\d+)\s*\}\}/g, (whole, index: string) => params[index] ?? whole);
+}
+
 async function templateBody(templateName: string): Promise<string | null> {
-  const row = await db.queryOne<{ body: string | null }>(
-    `SELECT body FROM ipy_whatsapp_template WHERE name = $1 LIMIT 1`, [templateName],
+  // `body_text`, not `body`. Getting this wrong threw rather than returning
+  // null, and the throw propagated out of the workflow task and abandoned the
+  // whole run for that record — so a nurture workflow naming a template and
+  // relying on the AI draft failed outright instead of falling back. Caught by
+  // running the scheduler against sixty thousand leads; the only workflow
+  // exercised before that had its own fallbackText and never reached here.
+  const row = await db.queryOne<{ body_text: string | null }>(
+    `SELECT body_text FROM ipy_whatsapp_template WHERE name = $1 LIMIT 1`, [templateName],
   );
-  return row?.body?.trim() || null;
+  return row?.body_text?.trim() || null;
 }
