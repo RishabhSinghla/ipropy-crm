@@ -30,7 +30,7 @@ jobs:
       JWT_SECRET: ci-secret-long-enough-to-pass-the-production-startup-checks
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -99,7 +99,7 @@ jobs:
       E2E_PASSWORD: Admin@123
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
