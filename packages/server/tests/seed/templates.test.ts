@@ -38,7 +38,7 @@ describe('industry templates', () => {
 
   it('still ships the real-estate model iPropy runs on', () => {
     const modules = resolveTemplate('real-estate').modules.map((m) => m.name).sort();
-    expect(modules).toEqual(['campaigns', 'leads', 'properties']);
+    expect(modules).toEqual(['leads', 'properties']);
   });
 });
 

@@ -45,7 +45,6 @@ export interface NormalizedLead {
   locations?: string[];
   timeline?: string;
   purpose?: string;
-  campaignExternalId?: string;
   utm?: Record<string, string>;
   landingPage?: string;
   ipAddress?: string;
@@ -109,8 +108,6 @@ export async function captureLead(
       return { status: 'duplicate', recordId: existing.record_id, message: 'Merged into the existing enquiry' };
     }
 
-    const campaignId = await resolveCampaign(normalized);
-
     const values: Record<string, unknown> = {
       // One name field, not two.
       //
@@ -145,7 +142,6 @@ export async function captureLead(
       lead_source: normalized.source,
       sub_source: normalized.subSource ?? null,
       interested_project: normalized.projectName ?? null,
-      campaign_id: campaignId,
       configuration: normalized.configuration ?? [],
       preferred_locations: normalized.locations ?? [],
       budget_min: normalized.budgetMin ?? null,
@@ -257,21 +253,6 @@ async function enrichExistingLead(recordId: string, normalized: NormalizedLead):
   }
 }
 
-async function resolveCampaign(n: NormalizedLead): Promise<string | null> {
-  const key = n.campaignExternalId ?? n.utm?.utm_campaign;
-  if (!key) return null;
-  const row = await db.queryOne<{ record_id: string }>(
-    `SELECT c.record_id FROM ipy_e_campaigns c JOIN ipy_record r ON r.id = c.record_id
-     WHERE r.is_deleted = false AND (c.external_id = $1 OR c.utm_campaign = $1) LIMIT 1`,
-    [key],
-  );
-  if (row) {
-    // Keep campaign counters live without a nightly job.
-    await db.query(`UPDATE ipy_e_campaigns SET leads_generated = leads_generated + 1 WHERE record_id = $1`, [row.record_id]);
-  }
-  return row?.record_id ?? null;
-}
-
 /** Start the SLA clock using the first matching policy. */
 async function startSla(recordId: string, values: Record<string, unknown>): Promise<void> {
   const policies = await db.query<{ id: string; conditions: never; first_response_minutes: number | null; resolution_minutes: number | null }>(
@@ -329,9 +310,13 @@ export function normalizeFacebook(payload: {
     message: fields.get('message') ?? fields.get('comments'),
     budgetMax: parseBudget(fields.get('budget')),
     timeline: fields.get('when_are_you_planning_to_buy') ?? fields.get('timeline'),
-    campaignExternalId: payload.campaign_id,
     externalId: payload.leadgen_id,
-    utm: { utm_source: 'facebook', utm_medium: 'paid_social', utm_campaign: payload.campaign_name ?? '' },
+    // The ad platform's own campaign name (or its id) is the attribution — it
+    // lands in `utm_campaign` on the lead, which is where reporting reads it.
+    utm: {
+      utm_source: 'facebook', utm_medium: 'paid_social',
+      utm_campaign: payload.campaign_name ?? payload.campaign_id ?? '',
+    },
   };
 }
 
@@ -355,9 +340,11 @@ export function normalizeGoogleAds(payload: {
     mobile: fields.get('PHONE_NUMBER'),
     source: 'Google Ads',
     subSource: 'Paid',
-    campaignExternalId: payload.campaign_id,
     externalId: payload.lead_id,
-    utm: { utm_source: 'google', utm_medium: 'cpc', gclid: payload.gcl_id ?? '' },
+    utm: {
+      utm_source: 'google', utm_medium: 'cpc', gclid: payload.gcl_id ?? '',
+      utm_campaign: payload.campaign_id ?? '',
+    },
   };
 }
 

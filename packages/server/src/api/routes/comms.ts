@@ -250,7 +250,7 @@ commsRouter.delete('/templates/:id', asyncHandler(async (req, res) => {
 }));
 
 // ---------------------------------------------------------------------------
-// Broadcast (campaign sends)
+// Broadcast (bulk template sends)
 // ---------------------------------------------------------------------------
 
 commsRouter.post('/broadcast', asyncHandler(async (req, res) => {
@@ -260,7 +260,6 @@ commsRouter.post('/broadcast', asyncHandler(async (req, res) => {
     templateName: z.string(),
     module: z.string(),
     recordIds: z.array(z.string().uuid()).min(1).max(2000),
-    campaignId: z.string().uuid().optional(),
     ratePerSecond: z.number().min(1).max(50).default(10),
   }).parse(req.body);
 
@@ -293,16 +292,9 @@ commsRouter.post('/broadcast', asyncHandler(async (req, res) => {
   void wa.broadcast({
     templateName: input.templateName,
     recipients,
-    campaignId: input.campaignId,
     sentBy: user.id,
     ratePerSecond: input.ratePerSecond,
   }).then(async (result) => {
-    if (input.campaignId) {
-      await db.query(
-        `UPDATE ipy_e_campaigns SET impressions = impressions + $2 WHERE record_id = $1`,
-        [input.campaignId, result.sent],
-      );
-    }
     // The whole point of answering 202 is that you can walk away, so the result
     // has to find you rather than wait in a tab you closed.
     await notify({

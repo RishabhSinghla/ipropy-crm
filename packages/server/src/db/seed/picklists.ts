@@ -111,14 +111,6 @@ export const PICKLISTS: PicklistDef[] = [
     { value: 'Silver', label: 'Silver', color: '#94a3b8' },
     { value: 'Bronze', label: 'Bronze', color: '#b45309' },
   ] },
-  { name: 'campaign_type', label: 'Campaign Type', values: ['Digital Ads', 'Social Media', 'Email', 'WhatsApp', 'SMS', 'Print', 'Hoarding/OOH', 'Radio', 'Event/Expo', 'Referral Program', 'Channel Partner Meet', 'Telecalling'] },
-  { name: 'campaign_status', label: 'Campaign Status', values: [
-    { value: 'Planning', label: 'Planning', color: '#94a3b8', isDefault: true },
-    { value: 'Active', label: 'Active', color: '#22c55e' },
-    { value: 'Paused', label: 'Paused', color: '#f59e0b' },
-    { value: 'Completed', label: 'Completed', color: '#0ea5e9' },
-    { value: 'Cancelled', label: 'Cancelled', color: '#ef4444' },
-  ] },
   { name: 'document_type', label: 'Document Type', values: [
     'Brochure', 'Floor Plan', 'Master Plan', 'Price List', 'Cost Sheet', 'Payment Plan',
     'Allotment Letter', 'Agreement to Sale', 'Sale Deed', 'RERA Certificate', 'Approval',

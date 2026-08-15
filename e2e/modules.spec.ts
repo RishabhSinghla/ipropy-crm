@@ -61,12 +61,12 @@ async function moduleRoutes(page: Page): Promise<string[]> {
 
   // Guard against the selector silently matching nothing, which would let this
   // pass while checking zero modules.
-  // Three modules plus the tool pages. The threshold used to be >5, written
+  // Two modules plus the tool pages. The threshold used to be >5, written
   // when there were thirteen modules — it now asserts on a product decision
   // (how many modules exist) rather than on the nav working. What matters is
   // that the sidebar lists the modules at all.
   expect(routes, `expected the module routes, got ${JSON.stringify(routes)}`)
-    .toEqual(expect.arrayContaining(['/leads', '/properties', '/campaigns']));
+    .toEqual(expect.arrayContaining(['/leads', '/properties']));
   return routes;
 }
 
@@ -139,7 +139,7 @@ test('every module in the sidebar opens without breaking', async ({ page }) => {
     // looks like a render bug. Clicking is also what a user actually does.
     await page.locator(`nav a[href="${route}"]`).click();
     // Match the *path*, not the end of the URL: a list restores its last view
-    // and sort into the query string on arrival, so `/campaigns$` never matches
+    // and sort into the query string on arrival, so `/properties$` never matches
     // once `?view=…&sort=…` lands — a race that passed locally and failed in CI.
     await page.waitForURL((url) => url.pathname === route);
 

@@ -362,10 +362,9 @@ telephonyRouter.delete('/devices/:id', asyncHandler(async (req, res) => {
 
 telephonyRouter.get('/numbers', asyncHandler(async (_req, res) => {
   const rows = await db.query(
-    `SELECT v.*, c.label AS campaign_label,
+    `SELECT v.*,
             g.name AS route_group_name, trim(u.first_name || ' ' || u.last_name) AS route_user_name
      FROM ipy_virtual_number v
-     LEFT JOIN ipy_record c ON c.id = v.campaign_id
      LEFT JOIN ipy_group g ON g.id = v.route_to_group_id
      LEFT JOIN ipy_user u ON u.id = v.route_to_user_id
      ORDER BY v.created_at DESC`,
@@ -379,7 +378,6 @@ telephonyRouter.post('/numbers', asyncHandler(async (req, res) => {
     number: z.string().min(6),
     label: z.string().optional(),
     provider: z.string().optional(),
-    campaignId: z.string().uuid().nullable().optional(),
     leadSource: z.string().optional(),
     routeToGroupId: z.string().uuid().nullable().optional(),
     routeToUserId: z.string().uuid().nullable().optional(),
@@ -387,16 +385,16 @@ telephonyRouter.post('/numbers', asyncHandler(async (req, res) => {
 
   const row = await db.queryOne<{ id: string }>(
     `INSERT INTO ipy_virtual_number
-      (number, label, provider, campaign_id, lead_source, route_to_group_id, route_to_user_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7)
+      (number, label, provider, lead_source, route_to_group_id, route_to_user_id)
+     VALUES ($1,$2,$3,$4,$5,$6)
      ON CONFLICT (number) DO UPDATE SET
-       label = EXCLUDED.label, campaign_id = EXCLUDED.campaign_id,
+       label = EXCLUDED.label,
        lead_source = EXCLUDED.lead_source,
        route_to_group_id = EXCLUDED.route_to_group_id, route_to_user_id = EXCLUDED.route_to_user_id
      RETURNING id`,
     [
       input.number, input.label ?? null, input.provider ?? null,
-      input.campaignId ?? null, input.leadSource ?? null,
+      input.leadSource ?? null,
       input.routeToGroupId ?? null, input.routeToUserId ?? null,
     ],
   );

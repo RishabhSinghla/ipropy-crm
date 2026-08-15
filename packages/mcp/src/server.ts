@@ -22,7 +22,7 @@ import { toolsFor } from './tools.js';
  */
 const INSTRUCTIONS =
   'iPropy is a CRM for an Indian real-estate business. Leads and contacts are one module '
-  + '("leads"); inventory is "properties"; marketing is "campaigns". Prices are in rupees — '
+  + '("leads") and inventory is "properties". Prices are in rupees — '
   + 'write them as ₹1.45 Cr or ₹85 L when talking to the user, but pass plain numbers to '
   + 'tools. You are acting as one named person: you can only see and change what they can, '
   + 'and you cannot delete anything. An empty result usually means exactly that, not an '

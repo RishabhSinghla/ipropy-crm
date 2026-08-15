@@ -77,7 +77,7 @@ interface ProfileDef {
   fieldOverrides?: Record<string, Record<string, 'hidden' | 'readonly'>>;
 }
 
-const ALL = ['leads', 'properties', 'campaigns'];
+const ALL = ['leads', 'properties'];
 
 function perms(
   modules: string[],
@@ -134,7 +134,6 @@ const PROFILES: ProfileDef[] = [
       bookings: [true, true, true, false, false, false],
       payments: [true, false, false, false, false, false],
       channel_partners: [true, false, false, false, false, false],
-      campaigns: [true, false, false, false, false, false],
       documents: [true, true, true, false, false, false],
     },
     fieldOverrides: {
@@ -153,7 +152,6 @@ const PROFILES: ProfileDef[] = [
       properties: [true, false, false, false, false, false],
       site_visits: [true, true, true, false, false, false],
       deals: [true, false, false, false, false, false],
-      campaigns: [true, false, false, false, false, false],
       organizations: [true, false, false, false, false, false],
       bookings: [false, false, false, false, false, false],
       payments: [false, false, false, false, false, false],
@@ -179,18 +177,16 @@ const PROFILES: ProfileDef[] = [
       bookings: [true, true, true, false, true, false],
       payments: [true, true, true, false, true, true],
       channel_partners: [true, false, false, false, false, false],
-      campaigns: [false, false, false, false, false, false],
       documents: [true, true, true, true, true, false],
     },
   },
   {
     name: 'Marketing',
-    description: 'Runs campaigns and analyses lead sources.',
+    description: 'Runs outreach and analyses lead sources.',
     capabilities: ['records.export', 'records.import', 'ai.use', 'whatsapp.send', 'whatsapp.templates', 'dashboards.share'],
     modules: {
       leads: [true, true, true, false, true, true],
       contacts: [true, false, false, false, true, false],
-      campaigns: [true, true, true, true, true, false],
       properties: [true, false, false, false, false, false],
       deals: [true, false, false, false, true, false],
       site_visits: [true, false, false, false, false, false],
@@ -218,7 +214,6 @@ const PROFILES: ProfileDef[] = [
       bookings: [true, false, true, false, true, false],
       payments: [true, true, true, true, true, true],
       channel_partners: [true, false, true, false, true, false],
-      campaigns: [true, false, false, false, true, false],
       documents: [true, true, true, false, true, false],
     },
   },
@@ -236,7 +231,6 @@ const PROFILES: ProfileDef[] = [
       bookings: [true, false, false, false, false, false],
       payments: [false, false, false, false, false, false],
       channel_partners: [false, false, false, false, false, false],
-      campaigns: [false, false, false, false, false, false],
       documents: [true, false, false, false, false, false],
     },
     fieldOverrides: {
@@ -316,7 +310,6 @@ const SHARING_DEFAULTS: Record<string, string> = {
   bookings: 'private',
   payments: 'private',
   channel_partners: 'public_read',
-  campaigns: 'public_read',
   documents: 'private',
 };
 
@@ -428,7 +421,7 @@ export async function seedGroups(conn: Tx, users: SeededUser[]): Promise<void> {
     { name: 'Inside Sales', description: 'Tele-calling and lead qualification pod', members: ['neha.gupta@ipropy.com', 'aisha.khan@ipropy.com'] },
     { name: 'Field Sales — West', description: 'Mumbai and Pune field team', members: ['rahul.mehta@ipropy.com', 'aisha.khan@ipropy.com', 'vikram.rao@ipropy.com'] },
     { name: 'Post-Sales & Collections', description: 'CRM, documentation and collections', members: ['arjun.nair@ipropy.com', 'sanjay.iyer@ipropy.com'] },
-    { name: 'Marketing', description: 'Campaign and demand generation team', members: ['divya.patel@ipropy.com'] },
+    { name: 'Marketing', description: 'Outreach and demand generation team', members: ['divya.patel@ipropy.com'] },
   ];
 
   for (const g of groups) {

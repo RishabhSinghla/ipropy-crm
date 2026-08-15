@@ -17,8 +17,8 @@
  * originals/branded/web for a human, and it works off `variants`, not the path.
  *
  * Deliberately generic — driven by `ipy_record.label` and `record_number`, which
- * every module maintains, rather than by anything property-shaped. Leads and
- * campaigns get the same treatment for free.
+ * every module maintains, rather than by anything property-shaped. Leads get
+ * the same treatment for free.
  *
  * Nothing migrates. Existing rows keep their old keys and keep working: every
  * read goes through `ipy_attachment.storage_key`, and no route resolves a file

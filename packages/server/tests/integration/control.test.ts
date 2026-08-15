@@ -123,7 +123,7 @@ describe('provisioning a customer', () => {
               (SELECT count(*) FROM ipy_field) AS fields,
               (SELECT count(*) FROM ipy_migration) AS migrations`,
     );
-    expect(Number(counts.modules)).toBe(3);
+    expect(Number(counts.modules)).toBe(2);
     expect(Number(counts.fields)).toBeGreaterThan(100);
     expect(Number(counts.migrations)).toBeGreaterThan(30);
   });

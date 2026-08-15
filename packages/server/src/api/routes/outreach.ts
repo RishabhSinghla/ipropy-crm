@@ -188,7 +188,6 @@ outreachRouter.post('/broadcasts', asyncHandler(async (req, res) => {
     module: z.string().default('leads'),
     viewId: z.string().uuid().optional(),
     recordIds: z.array(z.string().uuid()).min(1).max(5000).optional(),
-    campaignId: z.string().uuid().nullable().optional(),
     scheduledAt: z.string().datetime().nullable().optional(),
     ratePerSecond: z.number().min(0.5).max(50).default(10),
   }).refine((value) => Boolean(value.viewId || value.recordIds?.length), {

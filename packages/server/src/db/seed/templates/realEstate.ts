@@ -148,7 +148,6 @@ const MODULES: ModuleDef[] = [
         fields: [
           F.pick('lead_source', 'Lead Source', 'lead_source', { quickCreate: true }),
           F.pick('sub_source', 'Sub Source', 'lead_sub_source'),
-          F.ref('campaign_id', 'Campaign', ['campaigns']),
           F.ref('referred_by', 'Referred By', ['leads']),
           F.text('utm_source', 'UTM Source'),
           F.text('utm_medium', 'UTM Medium'),
@@ -494,88 +493,6 @@ const MODULES: ModuleDef[] = [
   // =========================================================================
   // CHANNEL PARTNERS
   // =========================================================================
-
-  // =========================================================================
-  // CAMPAIGNS
-  // =========================================================================
-  {
-    name: 'campaigns',
-    label: 'Campaigns',
-    singular: 'Campaign',
-    table: 'ipy_e_campaigns',
-    icon: 'megaphone',
-    color: '#ef4444',
-    sequence: 110,
-    menuGroup: 'Marketing',
-    labelFields: ['name'],
-    pipelineField: 'status',
-    blocks: [
-      {
-        name: 'campaign_information',
-        label: 'Campaign Information',
-        fields: [
-          F.autonum('campaign_number', 'Campaign #', 'CMP-'),
-          F.text('name', 'Campaign Name', { mandatory: true, quickCreate: true, searchable: true }),
-          F.pick('campaign_type', 'Type', 'campaign_type', { quickCreate: true }),
-          F.pick('status', 'Status', 'campaign_status', { mandatory: true, quickCreate: true }),
-          F.text('channel', 'Channel'),
-          F.date('start_date', 'Start Date', { quickCreate: true }),
-          F.date('end_date', 'End Date'),
-          F.owner(),
-        ],
-      },
-      {
-        name: 'budget',
-        label: 'Budget & Targeting',
-        fields: [
-          F.money('budget', 'Budget', { quickCreate: true }),
-          F.money('actual_cost', 'Actual Spend'),
-          F.textarea('target_audience', 'Target Audience'),
-        ],
-      },
-      {
-        name: 'performance',
-        label: 'Performance',
-        fields: [
-          F.num('impressions', 'Impressions'),
-          F.num('clicks', 'Clicks'),
-          F.num('leads_generated', 'Leads Generated', { readonly: true }),
-          F.num('qualified_leads', 'Qualified Leads', { readonly: true }),
-          F.num('site_visits', 'Site Visits', { readonly: true }),
-          F.num('bookings', 'Bookings', { readonly: true }),
-          F.money('revenue_generated', 'Revenue Generated', { readonly: true }),
-          {
-            name: 'cost_per_lead', label: 'Cost per Lead', uitype: 'formula', column: 'cost_per_lead',
-            readonly: true,
-            config: { formula: { expression: 'IF({leads_generated} > 0, {actual_cost} / {leads_generated}, 0)', returnType: 'number' }, currency: 'INR' },
-          },
-          {
-            name: 'roi_percent', label: 'ROI %', uitype: 'formula', column: 'roi_percent',
-            readonly: true,
-            config: { formula: { expression: 'IF({actual_cost} > 0, (({revenue_generated} - {actual_cost}) / {actual_cost}) * 100, 0)', returnType: 'number' } },
-          },
-        ],
-      },
-      {
-        name: 'attribution',
-        label: 'Attribution Keys',
-        collapsed: true,
-        fields: [
-          F.text('utm_campaign', 'UTM Campaign', { help: 'Inbound leads carrying this UTM auto-attribute here' }),
-          F.text('external_id', 'External ID', { help: 'Facebook / Google campaign id' }),
-          F.textarea('description', 'Description'),
-        ],
-      },
-    ],
-    relations: [
-      { name: 'campaign_leads', label: 'Leads', target: 'leads', type: 'one_to_many', foreignField: 'campaign_id' },
-    ],
-    views: [
-      { name: 'All Campaigns', isDefault: true, columns: ['campaign_number', 'name', 'campaign_type', 'status', 'start_date', 'budget', 'leads_generated', 'cost_per_lead', 'roi_percent'], sortBy: 'start_date' },
-      { name: 'Active Campaigns', showMetrics: true, columns: ['name', 'campaign_type', 'leads_generated', 'qualified_leads', 'actual_cost', 'cost_per_lead'], filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'equals', value: 'Active' }] } },
-      { name: 'ROI Leaderboard', columns: ['name', 'actual_cost', 'revenue_generated', 'roi_percent', 'bookings'], sortBy: 'roi_percent' },
-    ],
-  },
 
 ];
 

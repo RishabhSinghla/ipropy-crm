@@ -236,7 +236,7 @@ interface Guide {
 
 const GUIDES: Record<string, Guide> = {
   meta_whatsapp: {
-    outcome: 'Send and receive WhatsApp messages from the Inbox, and run campaigns.',
+    outcome: 'Send and receive WhatsApp messages from the Inbox, and run broadcasts.',
     minutes: 10,
     steps: [
       {
@@ -429,7 +429,7 @@ const GUIDES: Record<string, Guide> = {
 const CATALOGUE: { title: string; blurb: string; icon: typeof MessageCircle; providers: string[] }[] = [
   {
     title: 'Message customers on WhatsApp',
-    blurb: 'Two-way chat in the Inbox, plus templates and campaigns.',
+    blurb: 'Two-way chat in the Inbox, plus templates and broadcasts.',
     icon: MessageCircle,
     providers: ['meta_whatsapp'],
   },

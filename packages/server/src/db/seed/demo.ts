@@ -225,37 +225,12 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Campaigns
-  // -------------------------------------------------------------------------
-  const campaigns = [
-    { name: 'Aurum Launch — Meta Ads', type: 'Digital Ads', project: 0, budget: 18 * LAKH, spend: 14.2 * LAKH, impressions: 2_840_000, clicks: 51_200, leads: 640, qualified: 188, visits: 96, bookings: 11, revenue: 31 * CRORE, utm: 'aurum_meta_q3' },
-    { name: 'Verdant Pre-Launch — Google Search', type: 'Digital Ads', project: 1, budget: 12 * LAKH, spend: 9.8 * LAKH, impressions: 980_000, clicks: 33_400, leads: 412, qualified: 121, visits: 58, bookings: 7, revenue: 11 * CRORE, utm: 'verdant_gads_launch' },
-    { name: 'Crest Possession Drive — WhatsApp', type: 'WhatsApp', project: 2, budget: 3 * LAKH, spend: 2.1 * LAKH, impressions: 42_000, clicks: 8_900, leads: 187, qualified: 74, visits: 41, bookings: 9, revenue: 16 * CRORE, utm: 'crest_wa_possession' },
-    { name: 'NRI Roadshow — Dubai', type: 'Event/Expo', project: 0, budget: 22 * LAKH, spend: 21.4 * LAKH, impressions: 0, clicks: 0, leads: 96, qualified: 52, visits: 18, bookings: 6, revenue: 24 * CRORE, utm: 'nri_dubai_expo' },
-    { name: 'Channel Partner Meet — Q3', type: 'Channel Partner Meet', project: 1, budget: 6 * LAKH, spend: 5.6 * LAKH, impressions: 0, clicks: 0, leads: 143, qualified: 61, visits: 39, bookings: 8, revenue: 13 * CRORE, utm: 'cp_meet_q3' },
+  // The UTM values a paid enquiry arrives carrying. Attribution lives on the
+  // lead itself — there is no campaign record to point at.
+  const utmCampaigns = [
+    'aurum_meta_q3', 'verdant_gads_launch', 'crest_wa_possession',
+    'nri_dubai_expo', 'cp_meet_q3',
   ];
-  const campaignIds: string[] = [];
-  for (const [i, c] of campaigns.entries()) {
-    const id = await insertRecord(conn, {
-      module: 'campaigns', label: c.name, ownerId: ownerAt(6), createdBy: admin.id,
-      numberField: 'campaign_number', createdAt: daysAgo(120 - i * 15),
-      values: {
-        name: c.name, campaign_type: c.type, status: i < 3 ? 'Active' : 'Completed',
-        start_date: isoDate(daysAgo(120 - i * 15)),
-        end_date: isoDate(daysAhead(i < 3 ? 45 : -10)),
-        budget: c.budget, actual_cost: c.spend,
-        impressions: c.impressions, clicks: c.clicks,
-        leads_generated: c.leads, qualified_leads: c.qualified,
-        site_visits: c.visits, bookings: c.bookings, revenue_generated: c.revenue,
-        cost_per_lead: c.leads ? Math.round(c.spend / c.leads) : 0,
-        roi_percent: c.spend ? Math.round(((c.revenue - c.spend) / c.spend) * 100) : 0,
-        utm_campaign: c.utm, external_id: `ext_${c.utm}`,
-        target_audience: 'Working professionals, 30-45, household income above ₹30L, currently renting in the micro-market.',
-      },
-    });
-    campaignIds.push(id);
-  }
 
   // -------------------------------------------------------------------------
   // Leads
@@ -313,7 +288,6 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
         whatsapp_number: `+91${mobile}`,
         status, lead_source: source,
         sub_source: source.includes('Ads') ? 'Paid' : 'Organic',
-        campaign_id: source.includes('Ads') || source === 'WhatsApp' ? campaignIds[i % campaignIds.length] : null,
         interested_project: projectDefs[projectIdx].name,
         property_type: 'Apartment',
         configuration: [pick(configs, i), pick(configs, i + 1)],
@@ -332,7 +306,7 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
         contact_attempts: status === 'New' ? 0 : randInt(s * 5, 1, 6),
         utm_source: source.includes('Facebook') ? 'facebook' : source.includes('Google') ? 'google' : 'direct',
         utm_medium: source.includes('Ads') ? 'cpc' : 'organic',
-        utm_campaign: source.includes('Ads') ? campaigns[i % campaigns.length].utm : null,
+        utm_campaign: source.includes('Ads') ? utmCampaigns[i % utmCampaigns.length] : null,
         is_converted: isConverted,
         lost_reason: status === 'Lost' ? 'Budget Mismatch' : null,
         junk_reason: status === 'Junk' ? 'Broker Enquiry' : null,

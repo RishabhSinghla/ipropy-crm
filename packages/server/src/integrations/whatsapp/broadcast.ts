@@ -43,7 +43,6 @@ export interface CreateBroadcastInput {
   /** Already permission-filtered by recordService at the HTTP boundary. */
   records: RecordEnvelope[];
   audience?: Record<string, unknown>;
-  campaignId?: string | null;
   scheduledAt?: string | null;
   ratePerSecond?: number;
   createdBy: string;
@@ -70,13 +69,12 @@ export async function createBroadcast(input: CreateBroadcastInput): Promise<{ id
   const broadcast = await db.queryOne<{ id: string }>(
     `INSERT INTO ipy_broadcast
       (name, channel_mode, template_name, body_text, module_name, audience,
-       campaign_id, status, scheduled_at, rate_per_second, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       status, scheduled_at, rate_per_second, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
      RETURNING id`,
     [
       input.name, input.channelMode, input.templateName ?? null, input.bodyText ?? null,
       module, JSON.stringify(input.audience ?? { records: input.records.length, module }),
-      input.campaignId ?? null,
       input.scheduledAt ? 'scheduled' : 'draft',
       input.scheduledAt ?? null,
       input.ratePerSecond ?? 10,
@@ -166,7 +164,7 @@ export async function createBroadcast(input: CreateBroadcastInput): Promise<{ id
 export async function startBroadcast(broadcastId: string): Promise<void> {
   const broadcast = await db.queryOne<{
     id: string; channel_mode: ChannelMode; template_name: string | null; body_text: string | null;
-    module_name: string; campaign_id: string | null; rate_per_second: number;
+    module_name: string; rate_per_second: number;
     created_by: string | null; status: string; name: string;
   }>(`SELECT * FROM ipy_broadcast WHERE id = $1`, [broadcastId]);
   if (!broadcast) throw new NotFoundError('Broadcast not found');
@@ -205,7 +203,7 @@ function launchBroadcast(broadcastId: string): void {
 async function runBroadcast(broadcastId: string): Promise<void> {
   const broadcast = await db.queryOne<{
     channel_mode: ChannelMode; template_name: string | null; body_text: string | null;
-    module_name: string; campaign_id: string | null; rate_per_second: number;
+    module_name: string; rate_per_second: number;
     created_by: string | null; name: string;
   }>(`SELECT * FROM ipy_broadcast WHERE id = $1`, [broadcastId]);
   if (!broadcast) return;
@@ -265,7 +263,7 @@ async function runBroadcast(broadcastId: string): Promise<void> {
             templateName: broadcast.template_name ?? undefined,
             templateParams: broadcast.template_name ? r.params : undefined,
             text: broadcast.template_name ? undefined : (r.rendered_text ?? broadcast.body_text ?? ''),
-            campaignId: broadcast.campaign_id,
+            isBroadcast: true,
             sentBy: broadcast.created_by,
           });
           await db.query(

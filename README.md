@@ -108,7 +108,6 @@ permissions strip values from the API response, not just from the UI.
 |---|---|
 | **Sales** | Leads & Contacts |
 | **Inventory** | Properties/Units |
-| **Marketing** | Campaigns |
 
 Three, and the count has come down twice on purpose. The CRM started with
 thirteen; migrations `030` and `031` removed ten of them. Each one died the same

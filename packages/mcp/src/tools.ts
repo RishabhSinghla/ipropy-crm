@@ -397,7 +397,7 @@ const addNote: ToolDef = {
     + 'what was agreed. It appears on the record for the whole team and in the timeline.',
   writes: true,
   schema: {
-    module: z.enum(['leads', 'properties', 'campaigns']).default('leads'),
+    module: z.enum(['leads', 'properties']).default('leads'),
     recordId: z.string().describe('The record id'),
     note: z.string().min(1).max(10_000).describe('What to write'),
   },

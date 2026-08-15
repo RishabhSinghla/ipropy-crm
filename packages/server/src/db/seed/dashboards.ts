@@ -168,43 +168,37 @@ export const DASHBOARDS: DashboardSeed[] = [
   },
 
   {
+    // Reads the lead's own source and UTM fields, not a campaign record: where
+    // an enquiry came from is answered on the enquiry.
     name: 'Marketing Performance',
-    description: 'Spend, lead quality and campaign ROI.',
+    description: 'Volume, quality and source mix of the leads coming in.',
     widgets: [
       {
-        type: 'metric', title: 'Spend (This Month)', x: 0, y: 0, w: 3, h: 2,
-        config: {
-          module: 'campaigns', aggregate: 'sum', aggregateField: 'actual_cost', format: 'currency', color: '#ef4444',
-          filter: { logic: 'AND', conditions: [{ field: 'start_date', operator: 'this_month' }] },
-        },
-      },
-      {
-        type: 'metric', title: 'Leads Generated', x: 3, y: 0, w: 3, h: 2,
+        type: 'metric', title: 'Leads This Month', x: 0, y: 0, w: 4, h: 2,
         config: {
           module: 'leads', aggregate: 'count', color: '#8b5cf6',
           filter: { logic: 'AND', conditions: [{ field: 'created_at', operator: 'this_month' }] },
         },
       },
       {
-        type: 'metric', title: 'Qualified Leads', x: 6, y: 0, w: 3, h: 2,
+        type: 'metric', title: 'Qualified Leads', x: 4, y: 0, w: 4, h: 2,
         config: {
           module: 'leads', aggregate: 'count', color: '#22c55e',
           filter: { logic: 'AND', conditions: [{ field: 'created_at', operator: 'this_month' }, { field: 'status', operator: 'in', value: ['Qualified', 'Site Visit Scheduled', 'Site Visit Done', 'Negotiation', 'Converted'] }] },
         },
       },
       {
-        type: 'metric', title: 'Avg Lead Score', x: 9, y: 0, w: 3, h: 2,
+        type: 'metric', title: 'Avg Lead Score', x: 8, y: 0, w: 4, h: 2,
         config: {
           module: 'leads', aggregate: 'avg', aggregateField: 'ai_score', format: 'number', color: '#0ea5e9',
           filter: { logic: 'AND', conditions: [{ field: 'created_at', operator: 'this_month' }] },
         },
       },
       {
-        type: 'bar', title: 'Cost per Lead by Campaign', x: 0, y: 2, w: 6, h: 5,
+        type: 'bar', title: 'Leads by Source', x: 0, y: 2, w: 6, h: 5,
         config: {
-          module: 'campaigns', groupBy: 'name', aggregate: 'avg', aggregateField: 'cost_per_lead',
-          format: 'currency', limit: 10,
-          filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'equals', value: 'Active' }] },
+          module: 'leads', groupBy: 'lead_source', aggregate: 'count', limit: 12,
+          filter: { logic: 'AND', conditions: [{ field: 'created_at', operator: 'last_n_days', value: 90 }] },
         },
       },
       {
@@ -212,13 +206,6 @@ export const DASHBOARDS: DashboardSeed[] = [
         config: {
           module: 'leads', groupBy: 'lead_source', aggregate: 'avg', aggregateField: 'ai_score', limit: 12,
           filter: { logic: 'AND', conditions: [{ field: 'created_at', operator: 'last_n_days', value: 90 }] },
-        },
-      },
-      {
-        type: 'table', title: 'Campaign ROI', x: 0, y: 7, w: 12, h: 5,
-        config: {
-          module: 'campaigns', limit: 20, sortBy: 'roi_percent', sortDir: 'desc',
-          columns: ['name', 'campaign_type', 'actual_cost', 'leads_generated', 'cost_per_lead', 'revenue_generated', 'roi_percent'],
         },
       },
     ],

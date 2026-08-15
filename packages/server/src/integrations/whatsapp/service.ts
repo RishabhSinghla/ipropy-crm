@@ -263,7 +263,14 @@ export interface SendMessageInput {
   sentBy?: string | null;
   isAiGenerated?: boolean;
   workflowId?: string | null;
-  campaignId?: string | null;
+  /**
+   * Part of a bulk send rather than a reply somebody typed.
+   *
+   * Only consent reads it, and it has to be explicit: a broadcast dropping into
+   * a conversation that happens to be inside the 24-hour window is still
+   * marketing, and treating it as a session reply would let it past an opt-out.
+   */
+  isBroadcast?: boolean;
 }
 
 export async function sendMessage(input: SendMessageInput): Promise<{ messageId: string; status: string; error?: string }> {
@@ -283,12 +290,12 @@ export async function sendMessage(input: SendMessageInput): Promise<{ messageId:
   // for messaging people who opted out, and the number is the whole channel.
   // Replying inside an open session is exempt: they messaged us, and declining
   // to answer a live question is not what opting out of marketing means.
-  const consent = await maySend(handle, { sessionReply: windowOpen && !input.templateName && !input.campaignId });
+  const consent = await maySend(handle, { sessionReply: windowOpen && !input.templateName && !input.isBroadcast });
   if (!consent.allowed) {
     const blocked = await db.queryOne<{ id: string }>(
-      `INSERT INTO ipy_message (conversation_id, direction, channel, type, body, status, error, sent_by, campaign_id)
-       VALUES ($1,'outbound','whatsapp','text',$2,'blocked',$3,$4,$5) RETURNING id`,
-      [conversationId, input.text ?? input.templateName ?? null, consent.reason, input.sentBy ?? null, input.campaignId ?? null],
+      `INSERT INTO ipy_message (conversation_id, direction, channel, type, body, status, error, sent_by)
+       VALUES ($1,'outbound','whatsapp','text',$2,'blocked',$3,$4) RETURNING id`,
+      [conversationId, input.text ?? input.templateName ?? null, consent.reason, input.sentBy ?? null],
     );
     // Logged rather than thrown: a broadcast must skip this recipient and carry
     // on, and the operator needs to see that it was skipped and why.
@@ -352,8 +359,8 @@ export async function sendMessage(input: SendMessageInput): Promise<{ messageId:
     `INSERT INTO ipy_message
       (conversation_id, direction, channel, type, body, template_name, template_params,
        status, error_message, provider_message_id, provider, sent_by, is_ai_generated,
-       workflow_id, campaign_id, sent_via)
-     VALUES ($1,'outbound','whatsapp',$2,$3,$4,$5,$6,$7,$8,'meta',$9,$10,$11,$12,'api')
+       workflow_id, sent_via)
+     VALUES ($1,'outbound','whatsapp',$2,$3,$4,$5,$6,$7,$8,'meta',$9,$10,$11,'api')
      RETURNING id`,
     [
       conversationId, type, body,
@@ -361,7 +368,7 @@ export async function sendMessage(input: SendMessageInput): Promise<{ messageId:
       input.templateParams ? JSON.stringify(input.templateParams) : null,
       result.status, result.error ?? null, result.providerMessageId,
       input.sentBy ?? null, input.isAiGenerated ?? false,
-      input.workflowId ?? null, input.campaignId ?? null,
+      input.workflowId ?? null,
     ],
   );
 
@@ -526,11 +533,10 @@ export async function bindTemplateParams(
   return out;
 }
 
-/** Bulk send for campaigns — templates only, rate-limited to stay within tier caps. */
+/** Bulk send — templates only, rate-limited to stay within tier caps. */
 export async function broadcast(input: {
   templateName: string;
   recipients: { handle: string; params: Record<string, string>; recordId?: string }[];
-  campaignId?: string;
   sentBy?: string;
   ratePerSecond?: number;
 }): Promise<{ sent: number; failed: number }> {
@@ -544,7 +550,7 @@ export async function broadcast(input: {
         to: r.handle,
         templateName: input.templateName,
         templateParams: r.params,
-        campaignId: input.campaignId ?? null,
+        isBroadcast: true,
         sentBy: input.sentBy ?? null,
       });
       if (result.status === 'sent') sent++; else failed++;
