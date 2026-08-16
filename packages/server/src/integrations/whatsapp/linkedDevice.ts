@@ -453,8 +453,15 @@ export async function claimOutbox(): Promise<ClaimResult> {
   if (!open) {
     return {
       messages: [],
-      retryAfterSeconds: 600,
-      idleReason: `outside sending hours (${SEND_FROM_HOUR}:00–${SEND_UNTIL_HOUR}:00 ${timeZone})`,
+      // Short, not the ten minutes this used to be. Sending hours stop
+      // *automation*; a person typing a reply at eleven at night is exempt and
+      // is handled above. A long back-off here silently un-exempts them: the
+      // bridge is asleep, so a typed reply waits out the remainder of the nap
+      // and arrives up to ten minutes later. That is precisely what "why is
+      // nothing instant" looked like, and no amount of skipping the gap and
+      // the daily cap fixes a poll that is not happening.
+      retryAfterSeconds: 5,
+      idleReason: `outside sending hours for automation (${SEND_FROM_HOUR}:00–${SEND_UNTIL_HOUR}:00 ${timeZone}); typed replies still send`,
     };
   }
 
