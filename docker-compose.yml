@@ -1,6 +1,12 @@
 services:
   db:
-    image: postgres:16-alpine
+    # Matches the deployed database's major version. Neon is on 18, and a
+    # mismatch is not cosmetic: pg_dump refuses to read a server newer than
+    # itself, so `db:pull-prod` cannot copy production onto a local 16 at all.
+    # Changing this major version makes the existing data directory unreadable
+    # — the volume has to be recreated, which is why the script backs up local
+    # before it does anything.
+    image: postgres:18-alpine
     container_name: ipropy-db
     restart: unless-stopped
     environment:
@@ -10,7 +16,11 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - ipropy_pgdata:/var/lib/postgresql/data
+      # 18+ images store data in a major-version-specific subdirectory, so the
+      # mount is the parent now. Mounting /var/lib/postgresql/data as before
+      # makes the image refuse to start: it finds data at a path it no longer
+      # uses and stops rather than silently ignoring it.
+      - ipropy_pgdata:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ipropy -d ipropy"]
       interval: 5s

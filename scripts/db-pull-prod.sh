@@ -65,6 +65,34 @@ LOCAL_DUMP="$BACKUP_DIR/local-before-prod-pull-$STAMP.dump"
 
 # pg_dump runs *inside* the container so its version matches the server that
 # will restore it, and so no Postgres client tools are needed on the Mac.
+#
+# That only holds while the two are the same major version. pg_dump refuses to
+# read a server newer than itself, and its own message ("aborting because of
+# server version mismatch") does not say what to do about it — so check first
+# and say it plainly. Neon upgrades production without asking.
+LOCAL_MAJOR="$(docker exec "$CONTAINER" psql -U "$DB_USER" -d postgres -tA -c "SHOW server_version;" 2>/dev/null | cut -d. -f1)"
+PROD_MAJOR="$(docker exec "$CONTAINER" psql "$PROD_DATABASE_URL" -tA -c "SHOW server_version;" 2>/dev/null | cut -d. -f1)"
+if [ -n "$LOCAL_MAJOR" ] && [ -n "$PROD_MAJOR" ] && [ "$LOCAL_MAJOR" != "$PROD_MAJOR" ]; then
+  cat >&2 <<MISMATCH
+Production is PostgreSQL $PROD_MAJOR and this machine's Postgres is $LOCAL_MAJOR.
+pg_dump cannot read a database newer than itself, so the copy would fail here.
+
+Fix it by matching the version in docker-compose.yml:
+
+  image: postgres:$PROD_MAJOR-alpine
+
+Changing the major version makes the existing data directory unreadable, so the
+volume has to be recreated and the local database is lost. Back it up first:
+
+  npm run db:backup
+  docker compose down db && docker volume rm ${COMPOSE_PROJECT_NAME:-ipropy-crm}_ipropy_pgdata
+  docker compose up -d db
+
+Then run this again.
+MISMATCH
+  exit 1
+fi
+
 echo "→ Dumping production (read-only)…"
 docker exec -i "$CONTAINER" pg_dump -Fc --no-owner --no-acl "$PROD_DATABASE_URL" > "$PROD_DUMP"
 echo "  $(ls -lh "$PROD_DUMP" | awk '{print $5}')  $PROD_DUMP"
