@@ -905,6 +905,14 @@ function WhatsAppLinkCard(): JSX.Element {
   const mine = (data?.links ?? []).find((l) => l.userId === user?.id) ?? null;
   const waiting = mine?.status === 'pending';
 
+  // A code that has passed its expiry is not a code. WhatsApp rotates it every
+  // twenty seconds or so, and the bridge posts each new one — so a stale value
+  // sitting here means the bridge stopped, and showing it anyway invites
+  // somebody to scan something that cannot work and conclude the CRM is broken.
+  const liveQr = mine?.qr && mine.qrExpiresAt && new Date(mine.qrExpiresAt) > new Date()
+    ? mine.qr
+    : null;
+
   // Only while a code is on screen. WhatsApp rotates it roughly every twenty
   // seconds, so a rep looking at a stale one scans something that simply will
   // not work and concludes the feature is broken.
@@ -962,9 +970,9 @@ function WhatsAppLinkCard(): JSX.Element {
       ) : mine.status === 'pending' ? (
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
           <div className="shrink-0">
-            {mine.qr ? (
+            {liveQr ? (
               <img
-                src={mine.qr}
+                src={liveQr}
                 alt="Pairing code for WhatsApp"
                 className="h-44 w-44 rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-700"
               />
@@ -975,7 +983,7 @@ function WhatsAppLinkCard(): JSX.Element {
             )}
           </div>
           <div className="min-w-0 space-y-2 text-sm">
-            {mine.qr ? (
+            {liveQr ? (
               <>
                 <p className="font-medium">Scan this with the phone whose number you want to use</p>
                 <ol className="list-decimal space-y-1 pl-4 text-muted">
