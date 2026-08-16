@@ -286,14 +286,48 @@ export function slugify(text: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-/** Render "{{field}}" merge tags against a value bag. Used by templates + workflows. */
+/**
+ * Render `{{field}}` merge tags against a value bag. Used by templates,
+ * workflows, WhatsApp sends and AI drafts.
+ *
+ * `{{field|something else}}` supplies the wording to use when the field is
+ * empty, which most of them are: "Interested In" is optional free text, so
+ * `{{interested_project|our properties}}` is the difference between a welcome
+ * message that reads and one that says "thanks for your interest in ."
+ */
 export function renderTemplate(template: string, values: Record<string, unknown>): string {
-  return template.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_m, path: string) => {
-    const val = path.split('.').reduce<unknown>((acc, key) => {
-      if (acc && typeof acc === 'object') return (acc as Record<string, unknown>)[key];
-      return undefined;
-    }, values);
-    if (val === null || val === undefined) return '';
-    return String(val);
-  });
+  let blanked = false;
+
+  const rendered = template.replace(
+    /\{\{\s*([\w.]+)\s*(?:\|([^}]*))?\}\}/g,
+    (_m, path: string, fallback: string | undefined) => {
+      const val = path.split('.').reduce<unknown>((acc, key) => {
+        if (acc && typeof acc === 'object') return (acc as Record<string, unknown>)[key];
+        return undefined;
+      }, values);
+
+      const text = val === null || val === undefined ? '' : String(val);
+      if (text.trim()) return text;
+
+      const alt = (fallback ?? '').trim();
+      if (alt) return alt;
+      blanked = true;
+      return '';
+    },
+  );
+
+  if (!blanked) return rendered;
+
+  // A token that resolved to nothing leaves its punctuation standing on its
+  // own: an unfilled "Interested In" turned the welcome message into "thanks
+  // for your interest in ." and a one-word name turned a follow-up subject
+  // into "Call new lead: Rishabh ". Most merge fields are optional, so this is
+  // the common case rather than the odd one. Only runs when something actually
+  // blanked, so a template with every value present is passed through byte for
+  // byte and nobody's deliberate spacing is touched.
+  return rendered
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/[ \t]+([.,;:!?)\]])/g, '$1')
+    .replace(/([([])[ \t]+/g, '$1')
+    .replace(/[ \t]+$/gm, '');
 }

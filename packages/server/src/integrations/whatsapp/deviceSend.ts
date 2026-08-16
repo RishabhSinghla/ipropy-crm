@@ -113,28 +113,17 @@ export interface PendingDeviceSend {
   createdAt: string;
 }
 
-/**
- * The queue a rep works through.
- *
- * Unassigned rows are included for everyone: a follow-up nobody owns is still
- * a follow-up, and the failure mode of it sitting invisible is worse than two
- * people seeing it.
- */
-export async function listPending(userId: string, limit = 100): Promise<PendingDeviceSend[]> {
-  const rows = await db.query<{
-    id: string; handle: string; name: string | null; body: string; reason: string | null;
-    record_id: string | null; module_name: string | null; created_at: string;
-  }>(
-    `SELECT id, handle, name, body, reason, record_id, module_name, created_at
-     FROM ipy_device_send
-     WHERE status IN ('pending','opened')
-       AND (assigned_to = $1 OR assigned_to IS NULL)
-     ORDER BY created_at
-     LIMIT $2`,
-    [userId, limit],
-  );
+/** The columns every queue read selects, in the shape the API hands out. */
+interface QueueRow {
+  id: string; handle: string; name: string | null; body: string; reason: string | null;
+  record_id: string | null; module_name: string | null; created_at: string;
+}
 
-  return rows.rows.map((r) => ({
+const QUEUE_COLUMNS =
+  'd.id, d.handle, d.name, d.body, d.reason, d.record_id, d.module_name, d.created_at';
+
+function toPending(r: QueueRow): PendingDeviceSend {
+  return {
     id: r.id,
     handle: r.handle,
     name: r.name,
@@ -144,7 +133,36 @@ export async function listPending(userId: string, limit = 100): Promise<PendingD
     module: r.module_name,
     link: buildWaLink(r.handle, r.body),
     createdAt: r.created_at,
-  }));
+  };
+}
+
+/**
+ * The queue a rep works through.
+ *
+ * Unassigned rows are included for everyone: a follow-up nobody owns is still
+ * a follow-up, and the failure mode of it sitting invisible is worse than two
+ * people seeing it.
+ *
+ * Deleted records are not. Deleting a lead is a soft delete — the row stays in
+ * `ipy_record` with `is_deleted`, so the FK never fires and the queued message
+ * outlived the person it was addressed to. A rep who has just deleted somebody
+ * and then finds the CRM still asking them to WhatsApp them has been told the
+ * delete did not work. Filtered rather than cancelled on delete, so restoring
+ * from the recycle bin brings the queue back with the record.
+ */
+export async function listPending(userId: string, limit = 100): Promise<PendingDeviceSend[]> {
+  const rows = await db.query<QueueRow>(
+    `SELECT ${QUEUE_COLUMNS}
+     FROM ipy_device_send d
+     LEFT JOIN ipy_record r ON r.id = d.record_id
+     WHERE d.status IN ('pending','opened')
+       AND (d.assigned_to = $1 OR d.assigned_to IS NULL)
+       AND (d.record_id IS NULL OR r.is_deleted = false)
+     ORDER BY d.created_at
+     LIMIT $2`,
+    [userId, limit],
+  );
+  return rows.rows.map(toPending);
 }
 
 /**
@@ -174,6 +192,55 @@ export async function markSent(id: string, userId: string, isAdmin = false): Pro
     sentBy: userId,
   });
   return { messageId };
+}
+
+/** One waiting message, subject to the same assignment rules as the queue. */
+export async function findPending(
+  id: string,
+  userId: string,
+  isAdmin = false,
+): Promise<PendingDeviceSend | null> {
+  const row = await db.queryOne<QueueRow>(
+    `SELECT ${QUEUE_COLUMNS}
+     FROM ipy_device_send d
+     LEFT JOIN ipy_record r ON r.id = d.record_id
+     WHERE d.id = $1 AND d.status IN ('pending','opened')
+       AND (d.assigned_to = $2 OR d.assigned_to IS NULL OR $3)
+       AND (d.record_id IS NULL OR r.is_deleted = false)`,
+    [id, userId, isAdmin],
+  );
+  return row ? toPending(row) : null;
+}
+
+/**
+ * Reword a queued message before it goes out.
+ *
+ * The whole promise of the queue is that the CRM writes and a person sends, and
+ * a person who cannot change a word before sending it is not really the author.
+ * A generated opener is usually right and occasionally says something this
+ * particular buyer would find odd — the choice was previously send it as
+ * written or skip it entirely.
+ *
+ * Only while it is still waiting: editing something already marked sent would
+ * rewrite history, since the body is what got copied onto the timeline.
+ */
+export async function editBody(
+  id: string,
+  body: string,
+  userId: string,
+  isAdmin = false,
+): Promise<PendingDeviceSend | null> {
+  const text = body.trim();
+  if (!text) throw new BadRequestError('A message cannot be empty');
+
+  const row = await db.queryOne<QueueRow>(
+    `UPDATE ipy_device_send d SET body = $4
+     WHERE d.id = $1 AND d.status IN ('pending','opened')
+       AND (d.assigned_to = $2 OR d.assigned_to IS NULL OR $3)
+     RETURNING ${QUEUE_COLUMNS}`,
+    [id, userId, isAdmin, text.slice(0, MAX_PREFILL)],
+  );
+  return row ? toPending(row) : null;
 }
 
 export async function markOpened(id: string, userId: string, isAdmin = false): Promise<void> {

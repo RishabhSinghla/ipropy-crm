@@ -45,14 +45,14 @@ const WORKFLOWS: WorkflowSeed[] = [
         config: {
           to: '{{mobile}}',
           template: 'lead_welcome',
-          fallbackText: 'Hi {{first_name}}, thanks for your interest in {{interested_project}}. I am {{owner_name}} from iPropy. When would be a good time to call you?',
+          fallbackText: 'Hi {{first_name|there}}, thanks for your interest in {{interested_project|our properties}}. I am {{owner_name}} from iPropy. When would be a good time to call you?',
           skipIf: { logic: 'AND', conditions: [{ field: 'mobile', operator: 'is_empty' }] },
         },
       },
       {
         type: 'create_task', name: 'Create first-call task',
         config: {
-          subject: 'Call new lead: {{first_name}} {{last_name}}',
+          subject: 'Call new lead: {{full_name}}',
           activity_type: 'Call',
           priority: 'High',
           dueInMinutes: 30,
@@ -61,7 +61,7 @@ const WORKFLOWS: WorkflowSeed[] = [
       },
       {
         type: 'notify_user', name: 'Ping the owner',
-        config: { to: 'record_owner', title: 'New lead assigned', body: '{{first_name}} {{last_name}} — {{lead_source}} — {{mobile}}' },
+        config: { to: 'record_owner', title: 'New lead assigned', body: '{{full_name}} — {{lead_source}} — {{mobile}}' },
       },
     ],
   },
@@ -88,7 +88,7 @@ const WORKFLOWS: WorkflowSeed[] = [
       ],
     },
     tasks: [
-      { type: 'notify_user', name: 'Notify reporting manager', config: { to: 'owner_manager', title: 'Lead not contacted', body: '{{first_name}} {{last_name}} has been sitting untouched for over 2 hours.' } },
+      { type: 'notify_user', name: 'Notify reporting manager', config: { to: 'owner_manager', title: 'Lead not contacted', body: '{{full_name}} has been sitting untouched for over 2 hours.' } },
       { type: 'add_tag', name: 'Tag as SLA breach', config: { tags: ['sla-breach'] } },
     ],
   },

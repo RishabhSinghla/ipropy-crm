@@ -503,14 +503,24 @@ function DashboardGrid({ widgets, canEdit, dashboardId, editing, onEditWidget, o
 
 // ---------------------------------------------------------------------------
 
+/**
+ * The dashboard's own load is fast; the digest behind this banner is a model
+ * call and takes seconds. It used to hold a 96px skeleton and then render at
+ * 429px, so the whole dashboard lurched a third of a screen downwards while
+ * somebody was already reading it — the single biggest jump in the app, on the
+ * page every session starts at.
+ *
+ * The card is now drawn immediately at close to its final height, with the
+ * greeting and summary as placeholder lines and the four counters showing an
+ * em dash until they arrive. Nothing moves when the text lands.
+ */
 function DigestBanner(): JSX.Element | null {
   const { user } = useApp();
   const { data, isLoading } = useQuery({ queryKey: ['digest'], queryFn: () => api.digest() });
 
-  if (isLoading) return <Skeleton className="h-24 w-full" />;
-  if (!data) return null;
+  if (!isLoading && !data) return null;
 
-  const stats = data.stats ?? {};
+  const stats = data?.stats ?? {};
 
   return (
     <div className="card overflow-hidden bg-gradient-to-br from-brand-600 to-brand-700 text-white">
@@ -518,16 +528,32 @@ function DigestBanner(): JSX.Element | null {
           greeting into a three-word-tall column. Below `sm` it now sits under
           the greeting at full width instead of competing with it. */}
       <div className="flex flex-col gap-4 p-4 sm:flex-row sm:flex-wrap sm:items-start sm:gap-6 sm:p-5">
-        <div className="min-w-0 flex-1">
+        {/* The floor stops a short digest from being *smaller* than the
+            placeholder and jumping the other way. */}
+        <div className="min-h-[9.5rem] min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-brand-200" />
-            <h2 className="text-lg font-semibold">{data.greeting || `Welcome back, ${user?.firstName}`}</h2>
+            <Sparkles className={cn('h-4 w-4 text-brand-200', isLoading && 'animate-pulse')} />
+            <h2 className="text-lg font-semibold">
+              {data?.greeting || `Welcome back, ${user?.firstName}`}
+            </h2>
           </div>
-          {data.summary && (
+
+          {isLoading && (
+            <div className="mt-2 max-w-2xl space-y-2" aria-label="Reading today’s numbers">
+              <div className="h-3.5 w-full animate-pulse rounded bg-white/20" />
+              <div className="h-3.5 w-11/12 animate-pulse rounded bg-white/20" />
+              <div className="h-3.5 w-3/4 animate-pulse rounded bg-white/20" />
+              <div className="mt-3 flex flex-wrap gap-2 pt-1">
+                {[0, 1, 2, 3].map((i) => <div key={i} className="h-7 w-40 animate-pulse rounded-lg bg-white/10" />)}
+              </div>
+            </div>
+          )}
+
+          {data?.summary && (
             <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-brand-50">{data.summary}</p>
           )}
 
-          {data.priorities?.length > 0 && (
+          {data && data.priorities?.length > 0 && (
             <ul className="mt-3 flex flex-wrap gap-2">
               {data.priorities.slice(0, 4).map((raw, i) => {
                 const p = raw as { title: string; reason: string; recordId?: string; module?: string };
@@ -563,7 +589,9 @@ function DigestBanner(): JSX.Element | null {
             <div key={s.label}>
               <p className="text-2xs uppercase tracking-wide text-brand-200">{s.label}</p>
               <p className="text-lg font-semibold tnum">
-                {s.currency ? formatIndianPrice(Number(s.value ?? 0)) : (s.value ?? 0)}
+                {isLoading
+                  ? '—'
+                  : s.currency ? formatIndianPrice(Number(s.value ?? 0)) : (s.value ?? 0)}
               </p>
             </div>
           ))}

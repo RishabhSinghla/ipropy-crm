@@ -102,6 +102,29 @@ outreachRouter.post('/device-queue', asyncHandler(async (req, res) => {
   res.status(result.skipped ? 200 : 201).json(result);
 }));
 
+/** Reword a queued message. Merge tokens are re-rendered, as they are on queue. */
+outreachRouter.patch('/device-queue/:id', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'whatsapp.send');
+  const input = z.object({ body: z.string().min(1).max(1500) }).parse(req.body);
+
+  const existing = await device.findPending(req.params.id, user.id, user.isAdmin);
+  if (!existing) throw new NotFoundError('That message is no longer waiting to be sent');
+
+  const body = existing.recordId
+    ? await (async () => {
+        const record = await recordService.getRecord(
+          getScope(req), existing.module ?? 'leads', existing.recordId!,
+        );
+        return device.renderForValues(input.body, record.values, record.label);
+      })()
+    : input.body;
+
+  const updated = await device.editBody(req.params.id, body, user.id, user.isAdmin);
+  if (!updated) throw new NotFoundError('That message is no longer waiting to be sent');
+  res.json(updated);
+}));
+
 outreachRouter.post('/device-queue/:id/opened', asyncHandler(async (req, res) => {
   const user = getUser(req);
   await assertCapability(user, 'whatsapp.send');

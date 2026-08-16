@@ -213,6 +213,20 @@ async function advance(enrolment: {
 
   // --- stop conditions, cheapest first ------------------------------------
 
+  // A deleted lead is still a row — deletion is soft, so nothing about the
+  // enrolment breaks and the drip keeps messaging somebody the business has
+  // decided it is no longer talking to. This is the worst version of that bug
+  // class because it is the one that sends, rather than merely displays.
+  if (enrolment.record_id) {
+    const record = await db.queryOne<{ is_deleted: boolean }>(
+      `SELECT is_deleted FROM ipy_record WHERE id = $1`, [enrolment.record_id],
+    );
+    if (!record || record.is_deleted) {
+      await exitEnrolment(enrolment.id, 'Record deleted');
+      return 'exited';
+    }
+  }
+
   if (await isOptedOut(enrolment.handle)) {
     await exitEnrolment(enrolment.id, 'Opted out');
     return 'exited';

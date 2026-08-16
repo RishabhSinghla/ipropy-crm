@@ -206,6 +206,7 @@ async function load(conn: Tx = db): Promise<RegistryCache> {
   for (const m of moduleRes.rows) {
     const rawFields = fieldsByModule.get(m.id) ?? [];
     const fields: FieldMeta[] = rawFields.map((f) => toFieldMeta(f, m.name, picklists));
+    syncCountryCodes(fields);
 
     const fieldsByBlock = new Map<string, FieldMeta[]>();
     for (const f of fields) {
@@ -280,6 +281,38 @@ async function load(conn: Tx = db): Promise<RegistryCache> {
   }
 
   return { modules, modulesById, picklists, dependencies, loadedAt: Date.now() };
+}
+
+/**
+ * Make the phone control's country dropdown *be* the country picklist.
+ *
+ * A mobile field carries `config.countryCodes` — the list the little dropdown
+ * welded to the left of the number renders — and `config.digitsFrom`, naming
+ * the picklist field that stores the chosen code. Those were two separate
+ * lists that happened to be seeded with the same contents, and only one of
+ * them is the one an admin edits.
+ *
+ * So: delete every code except +91 in Admin → Dropdowns, and the dropdown on
+ * every lead form goes on offering eleven countries, because it was reading
+ * the copy. The seeded config even says it "mirrors the picklist", which it
+ * did exactly once, at seed time. Deriving it here means the admin's edit is
+ * the only list there is, it survives a restart, and it needs no migration —
+ * the registry is rebuilt on every metadata write.
+ */
+function syncCountryCodes(fields: FieldMeta[]): void {
+  const byName = new Map(fields.map((f) => [f.name, f]));
+
+  for (const field of fields) {
+    if (field.uitype !== 'phone' || !field.config.digitsFrom) continue;
+
+    const source = byName.get(String(field.config.digitsFrom));
+    if (!source?.options) continue;
+
+    field.config = {
+      ...field.config,
+      countryCodes: source.options.map((o) => ({ value: o.value, label: o.label })),
+    };
+  }
 }
 
 function toFieldMeta(f: FieldRow, moduleName: string, picklists: Map<string, PicklistOption[]>): FieldMeta {

@@ -241,6 +241,18 @@ async function runBroadcast(broadcastId: string): Promise<void> {
 
     for (const r of batch.rows) {
       try {
+        // The audience was resolved when the broadcast was built, which may
+        // have been days ago for a scheduled one. Somebody deleted since then
+        // is still a live row (deletion is soft) and would be messaged.
+        if (r.record_id && await isDeleted(r.record_id)) {
+          await db.query(
+            `UPDATE ipy_broadcast_recipient
+             SET status = 'skipped', error = 'Record was deleted', claimed_at = NULL WHERE id = $1`,
+            [r.id],
+          );
+          continue;
+        }
+
         if (broadcast.channel_mode === 'device') {
           const queued = await queueDeviceSend({
             handle: r.handle,
@@ -330,6 +342,19 @@ async function runBroadcast(broadcastId: string): Promise<void> {
   }
 
   logger.info({ broadcastId, ...totals, mode: broadcast.channel_mode }, 'broadcast complete');
+}
+
+/**
+ * Has this record been deleted since the audience was frozen?
+ *
+ * A missing row counts as deleted: a hard delete cascades the recipient away
+ * anyway, but a race between the two should fail closed.
+ */
+async function isDeleted(recordId: string): Promise<boolean> {
+  const row = await db.queryOne<{ is_deleted: boolean }>(
+    `SELECT is_deleted FROM ipy_record WHERE id = $1`, [recordId],
+  );
+  return !row || row.is_deleted;
 }
 
 export async function pauseBroadcast(id: string): Promise<void> {

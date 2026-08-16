@@ -53,6 +53,29 @@
     input, select, textarea { font-size: 16px; }
   }
 
+  /**
+   * Scrolling to the end of a panel must not move the page behind it.
+   *
+   * The shell is `h-screen overflow-hidden`, so every real scroll region in
+   * this app is an inner one — the list body, the notes column, the AI
+   * insights list, a kanban column, the view-tab strip, a dropdown menu.
+   * Without containment each of them chains its overscroll outward when it
+   * hits the end, which on a Mac trackpad is the rubber-band bounce, and on a
+   * phone drags the whole screen. Nothing useful is behind them to scroll to,
+   * so the chaining is all cost.
+   *
+   * Matched on the class attribute because Tailwind writes these literally and
+   * there is no CSS way to ask "is this element a bounded scroller". Responsive
+   * variants (`md:overflow-auto`) are caught by the same substring, which is
+   * what we want.
+   */
+  [class*="overflow-auto"],
+  [class*="overflow-y-auto"],
+  [class*="overflow-x-auto"],
+  [class*="overflow-y-scroll"] {
+    overscroll-behavior: contain;
+  }
+
   /* Tabular numerals keep price columns aligned. */
   .tnum { font-variant-numeric: tabular-nums; }
 
@@ -126,7 +149,13 @@
   .text-tinted { color: var(--tinted-fg); }
   .dark .text-tinted { color: var(--tinted-fg-dark); }
 
-  .table-cell { @apply whitespace-nowrap px-3 py-2.5 text-sm; }
+  /* One long value must not widen the whole table.
+     `whitespace-nowrap` with no bound meant a single unusually long name — an
+     imported record, a company with its full legal suffix — pushed the list
+     into horizontal scrolling for every row, and the name column scrolls away
+     first. Clipped at a readable width instead; the full value is a hover or a
+     tap away on the record. */
+  .table-cell { @apply max-w-[20rem] truncate px-3 py-2.5 text-sm; }
   .table-head {
     @apply sticky top-0 z-10 whitespace-nowrap bg-slate-50 px-3 py-2 text-left text-2xs font-semibold
            uppercase tracking-wide dark:bg-slate-800/80;

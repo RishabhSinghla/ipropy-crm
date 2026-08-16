@@ -74,7 +74,10 @@ export default function Layout(): JSX.Element {
       {/* Sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-40 flex flex-col border-r border-slate-200 bg-white transition-all dark:border-slate-800 dark:bg-slate-900 lg:static',
+          // Only the two properties that actually move. `transition-all` also
+          // animated background and border, so switching to dark mode faded
+          // the sidebar in behind an instantly-dark page.
+          'fixed inset-y-0 left-0 z-40 flex flex-col border-r border-slate-200 bg-white transition-[width,transform] duration-200 ease-out dark:border-slate-800 dark:bg-slate-900 lg:static',
           sidebarCollapsed ? 'w-[4.25rem]' : 'w-60',
           mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
         )}

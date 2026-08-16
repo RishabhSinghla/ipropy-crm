@@ -685,6 +685,8 @@ export const api = {
     post<{ link: string; body: string }>('/api/outreach/device-link', data),
   queueDeviceSend: (data: Record<string, unknown>) =>
     post<{ id: string; skipped?: string }>('/api/outreach/device-queue', data),
+  editDeviceSend: (id: string, body: string) =>
+    patch<DeviceSend>(`/api/outreach/device-queue/${id}`, { body }),
   deviceSendOpened: (id: string) => post(`/api/outreach/device-queue/${id}/opened`),
   deviceSendDone: (id: string) => post<{ messageId: string | null }>(`/api/outreach/device-queue/${id}/sent`),
   deviceSendSkip: (id: string, reason?: string) => post(`/api/outreach/device-queue/${id}/skip`, { reason }),

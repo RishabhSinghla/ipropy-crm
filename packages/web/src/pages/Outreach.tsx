@@ -10,7 +10,7 @@ import type { JSX } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Check, ChevronRight, Clock, MessageSquare, Play, Plus, Send, Trash2, Users, X, Zap,
+  Check, ChevronRight, Clock, MessageSquare, Pencil, Play, Plus, Send, Trash2, Users, X, Zap,
 } from 'lucide-react';
 import { api, type AutoReplyRule, type Broadcast, type DeviceSend, type Sequence, type SequenceStep } from '../lib/api';
 import { toast } from '../lib/store';
@@ -128,14 +128,20 @@ function SendQueue(): JSX.Element {
           item={item}
           onSent={() => done.mutate(item.id)}
           onSkip={() => skip.mutate(item.id)}
+          onEdited={invalidate}
         />
       ))}
     </div>
   );
 }
 
-function QueueRow({ item, onSent, onSkip }: { item: DeviceSend; onSent: () => void; onSkip: () => void }): JSX.Element {
+function QueueRow({
+  item, onSent, onSkip, onEdited,
+}: { item: DeviceSend; onSent: () => void; onSkip: () => void; onEdited: () => void }): JSX.Element {
   const [opened, setOpened] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(item.body);
+  const [saving, setSaving] = useState(false);
 
   const open = (): void => {
     setOpened(true);
@@ -143,6 +149,23 @@ function QueueRow({ item, onSent, onSkip }: { item: DeviceSend; onSent: () => vo
     // A new tab, not a redirect: on desktop this hands off to WhatsApp Web and
     // the queue must still be here when they come back.
     window.open(item.link, '_blank', 'noopener,noreferrer');
+  };
+
+  const save = async (): Promise<void> => {
+    if (!draft.trim() || draft === item.body) { setEditing(false); return; }
+    setSaving(true);
+    try {
+      await api.editDeviceSend(item.id, draft.trim());
+      setEditing(false);
+      // The link is built from the body server-side, so a stale row here would
+      // send the old wording however carefully it was edited.
+      onEdited();
+      toast.success('Message updated');
+    } catch (err) {
+      toast.error('Could not save that', (err as Error).message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -155,20 +178,61 @@ function QueueRow({ item, onSent, onSkip }: { item: DeviceSend; onSent: () => vo
         <span className="text-2xs text-muted">{relativeTime(item.createdAt)}</span>
       </div>
 
-      <p className="mt-2 whitespace-pre-wrap rounded bg-slate-50 p-2 text-sm dark:bg-slate-900">{item.body}</p>
+      {editing ? (
+        <div className="mt-2">
+          <Textarea
+            rows={4}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            maxLength={1500}
+            autoFocus
+            // Escape backs out, ⌘↵ saves — the two things a hand already on the
+            // keyboard reaches for before it reaches for a button.
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') { setDraft(item.body); setEditing(false); }
+              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') void save();
+            }}
+          />
+          <div className="mt-1.5 flex items-center gap-2">
+            <button onClick={() => void save()} disabled={saving || !draft.trim()} className="btn-primary text-sm">
+              {saving ? <Spinner className="mr-1.5 h-3.5 w-3.5" /> : <Check className="mr-1.5 h-3.5 w-3.5" />}
+              Save
+            </button>
+            <button
+              onClick={() => { setDraft(item.body); setEditing(false); }}
+              className="btn-ghost text-sm text-muted"
+            >
+              Cancel
+            </button>
+            <span className="ml-auto text-2xs text-muted tnum">{draft.length}/1500</span>
+          </div>
+        </div>
+      ) : (
+        <div className="group relative mt-2">
+          <p className="whitespace-pre-wrap rounded bg-slate-50 p-2 pr-9 text-sm dark:bg-slate-900">{item.body}</p>
+          <button
+            onClick={() => { setDraft(item.body); setEditing(true); }}
+            aria-label="Edit this message"
+            title="Edit this message"
+            className="absolute right-1.5 top-1.5 rounded p-1.5 text-slate-400 hover:bg-white hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
       <div className="mt-3 flex flex-wrap gap-2">
-        <button onClick={open} className="btn-primary text-sm">
+        <button onClick={open} disabled={editing} className="btn-primary text-sm disabled:opacity-40">
           <Send className="mr-1.5 h-3.5 w-3.5" /> Open WhatsApp
         </button>
         {/* Only offered after opening: marking a message sent that was never
             opened is the one way this queue can quietly lie. */}
-        {opened && (
+        {opened && !editing && (
           <button onClick={onSent} className="btn-secondary text-sm">
             <Check className="mr-1.5 h-3.5 w-3.5" /> I sent it
           </button>
         )}
-        <button onClick={onSkip} className="btn-ghost text-sm text-muted">Skip</button>
+        {!editing && <button onClick={onSkip} className="btn-ghost text-sm text-muted">Skip</button>}
       </div>
     </Card>
   );

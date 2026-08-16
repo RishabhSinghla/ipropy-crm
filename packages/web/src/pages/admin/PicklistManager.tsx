@@ -1,6 +1,7 @@
 import type { JSX } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import {
   ChevronDown, ChevronUp, GripVertical, ListTree, Pencil, Plus, Save, Star, Trash2,
 } from 'lucide-react';
@@ -46,7 +47,10 @@ const slug = (label: string): string =>
 
 export default function PicklistManager(): JSX.Element {
   const queryClient = useQueryClient();
-  const [selected, setSelected] = useState<string>('lead_status');
+  // `?picklist=` so anything that depends on a dropdown can link straight at
+  // it — the phone field's editor points here for its country codes.
+  const [params] = useSearchParams();
+  const [selected, setSelected] = useState<string>(params.get('picklist') || 'lead_status');
   const [options, setOptions] = useState<Option[]>([]);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);

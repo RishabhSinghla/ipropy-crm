@@ -2,7 +2,7 @@
   "name": "ipropy-crm",
   "version": "1.0.0",
   "private": true,
-  "description": "iPropy \u2014 AI-native, metadata-driven CRM for real estate",
+  "description": "iPropy — AI-native, metadata-driven CRM for real estate",
   "license": "UNLICENSED",
   "workspaces": [
     "packages/shared",
@@ -32,6 +32,7 @@
     "db:reset": "npm run db:reset -w @ipropy/server",
     "db:backup": "bash scripts/db-backup.sh",
     "db:restore": "bash scripts/db-restore.sh",
+    "db:pull-prod": "bash scripts/db-pull-prod.sh",
     "db:backup:verify": "bash scripts/db-verify-restore.sh",
     "setup": "npm install && npm run build:deps && npm run db:migrate && npm run db:seed",
     "test:integration": "npm run test:integration -w @ipropy/server",

@@ -464,8 +464,18 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
        */
       const codeField = field.config.digitsFrom ? String(field.config.digitsFrom) : '';
       const code = codeField ? String(props.formValues?.[codeField] ?? '') : '';
-      const codes = field.config.countryCodes ?? [];
-      const editableCode = Boolean(codeField && codes.length && props.onChangeOther && !readOnly);
+      const offered = field.config.countryCodes ?? [];
+      /**
+       * A code stored before its option was deleted still has to render.
+       * Without it the <select> has no matching option, shows blank, and the
+       * first stray change silently rewrites an NRI buyer's country.
+       */
+      const codes = code && !offered.some((c) => c.value === code)
+        ? [...offered, { value: code, label: code }]
+        : offered;
+      // One country is not a choice. When the admin has narrowed the picklist
+      // to +91 the dropdown is pure furniture, so it becomes a plain prefix.
+      const editableCode = Boolean(codeField && codes.length > 1 && props.onChangeOther && !readOnly);
       const expected = expectedDigits(field.config, props.formValues);
 
       return (

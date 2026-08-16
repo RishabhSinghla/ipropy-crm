@@ -1,5 +1,5 @@
 import type { JSX } from 'react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { FieldMeta, FilterCondition, FilterGroup, FilterOperator, ModuleMeta } from '@ipropy/shared';
 import { OPERATOR_LABELS, UITYPES, isFilterGroup, operatorTakesValue } from '@ipropy/shared';
 import { Plus, Trash2, X } from 'lucide-react';
@@ -184,13 +184,42 @@ function ConditionRow({
   );
 }
 
+/**
+ * What a generated field's *filter value* is typed into.
+ *
+ * On a record these render as a disabled "Generated automatically" box, which
+ * is right there and wrong here — nobody is editing the record number, they
+ * are typing the one they want to find.
+ */
+const FILTER_INPUT_UITYPE: Partial<Record<FieldMeta['uitype'], FieldMeta['uitype']>> = {
+  autonumber: 'string',
+  formula: 'string',
+  rollup: 'decimal',
+};
+
 function ValueEditor({
   field, value, onChange,
 }: { field: FieldMeta; value: unknown; onChange: (v: unknown) => void }): JSX.Element {
-  // Reuse the real field editor so filter values match what's stored.
+  /**
+   * Reuse the real field editor so filter values match what's stored — but not
+   * its read-only-ness.
+   *
+   * `FieldInput` disables itself for a readonly field, which is correct for a
+   * record and nonsense for a filter: an AI Score you cannot type is a score
+   * you cannot filter on. It made the value box of every computed and system
+   * field dead on arrival — AI Score, Last Scored, Record #, and Created At /
+   * Modified At / Last Activity, which are declared readonly right above.
+   */
+  const editable = useMemo<FieldMeta>(() => ({
+    ...field,
+    isReadonly: false,
+    displayType: 'default',
+    uitype: FILTER_INPUT_UITYPE[field.uitype] ?? field.uitype,
+  }), [field]);
+
   return (
     <div className="min-w-0 flex-1 [&_.input]:py-1.5 [&_.input]:text-xs">
-      <FieldInput field={field} value={value} onChange={onChange} />
+      <FieldInput field={editable} value={value} onChange={onChange} />
     </div>
   );
 }

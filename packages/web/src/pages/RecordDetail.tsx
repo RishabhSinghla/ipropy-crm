@@ -1,5 +1,5 @@
-import type { JSX } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import type { JSX, ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FieldMeta, ModuleMeta, RecordEnvelope, TimelineEntry } from '@ipropy/shared';
@@ -1263,8 +1263,12 @@ function PropertyPhotoCarousel({ recordId }: { recordId: string }): JSX.Element 
     if (index >= photos.length) setIndex(Math.max(0, photos.length - 1));
   }, [index, photos.length]);
 
-  if (isLoading) return <Skeleton className="aspect-[4/3] w-full rounded-xl" />;
-  if (!photos.length) return null;
+  // No placeholder while loading. Most properties have no photos yet, so a
+  // reserved 4:3 block meant the sidebar always jumped: a big grey rectangle
+  // appeared, then vanished, shoving the notes and the AI panel up with it.
+  // A panel that quietly arrives when there is something in it moves the page
+  // once; this moved it twice, and the second move was upwards.
+  if (isLoading || !photos.length) return null;
   const photo = photos[index]!;
   const go = (delta: number): void => setIndex((current) => (current + delta + photos.length) % photos.length);
 
@@ -1625,24 +1629,61 @@ function AiPanel({
   );
 }
 
+interface Colleague { id: string; fullName: string }
+
+/**
+ * Notes, with a working @mention.
+ *
+ * The server has always accepted a `mentions` array on a comment and turned it
+ * into a real notification — `notifyMany`, `kind: 'mention'`, straight to the
+ * person's phone. Nothing ever sent one. The composer was a bare textarea, so
+ * typing "@Priya can you call him back" filed a note that Priya would only
+ * discover by opening the record, which is precisely the record nobody opens.
+ *
+ * So the @ has to actually pick somebody. Typing it opens the directory; the
+ * chosen name is remembered against its id, and on post only the names still
+ * present in the text are notified — delete the mention and you have
+ * un-mentioned them, which is the behaviour anybody would assume.
+ */
 function CommentsPanel({
   module, id, currentUser,
 }: { module: string; id: string; currentUser: string }): JSX.Element {
   const queryClient = useQueryClient();
   const [body, setBody] = useState('');
   const [posting, setPosting] = useState(false);
+  // Everyone picked from the @ menu while writing this note. Kept as a list
+  // rather than a set of ids because resolving back to ids at post time needs
+  // the exact name that was inserted.
+  const [picked, setPicked] = useState<Colleague[]>([]);
 
   const { data } = useQuery({
     queryKey: ['comments', module, id],
     queryFn: () => api.comments(module, id),
   });
 
+  const { data: rawUsers } = useQuery({ queryKey: ['users'], queryFn: () => api.users() });
+  const colleagues = useMemo<Colleague[]>(
+    () => (rawUsers ?? []).map((u) => ({
+      id: String((u as { id: string }).id),
+      fullName: String((u as { fullName: string }).fullName ?? ''),
+    })).filter((u) => u.fullName),
+    [rawUsers],
+  );
+
   const post = async (): Promise<void> => {
     if (!body.trim()) return;
     setPosting(true);
     try {
-      await api.addComment(module, id, body.trim());
+      const text = body.trim();
+      const mentions = [...new Set(
+        picked.filter((p) => text.includes(`@${p.fullName}`)).map((p) => p.id),
+      )];
+      await api.addComment(module, id, text, mentions);
       setBody('');
+      setPicked([]);
+      if (mentions.length) {
+        toast.success(mentions.length === 1 ? 'Note posted, 1 person notified' : `Note posted, ${mentions.length} people notified`);
+      }
       void queryClient.invalidateQueries({ queryKey: ['comments', module, id] });
       void queryClient.invalidateQueries({ queryKey: ['timeline', module, id] });
     } catch (err) {
@@ -1659,18 +1700,17 @@ function CommentsPanel({
       </div>
 
       <div className="p-3">
-        <textarea
-          className="input text-sm"
-          rows={2}
-          placeholder="Add a note for the team…"
+        <MentionTextarea
           value={body}
-          onChange={(e) => setBody(e.target.value)}
-          onKeyDown={(e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') void post();
-          }}
+          onChange={setBody}
+          onMention={(person) => setPicked((prev) => (
+            prev.some((p) => p.id === person.id) ? prev : [...prev, person]
+          ))}
+          colleagues={colleagues}
+          onSubmit={() => void post()}
         />
         <div className="mt-2 flex items-center justify-between">
-          <span className="text-2xs text-muted">⌘↵ to post</span>
+          <span className="text-2xs text-muted">@ to notify someone · ⌘↵ to post</span>
           <button onClick={() => void post()} disabled={!body.trim() || posting} className="btn-primary btn-sm">
             {posting && <Spinner className="h-3 w-3" />} Post
           </button>
@@ -1688,7 +1728,9 @@ function CommentsPanel({
                   <span className="text-xs font-medium">{c.user_name}</span>
                   <span className="text-2xs text-muted">{relativeTime(c.created_at)}</span>
                 </div>
-                <p className="mt-0.5 whitespace-pre-wrap text-sm text-muted">{c.body}</p>
+                <p className="mt-0.5 whitespace-pre-wrap text-sm text-muted">
+                  {highlightMentions(c.body, colleagues)}
+                </p>
               </div>
             </div>
           );
@@ -1697,6 +1739,143 @@ function CommentsPanel({
           <p className="px-4 py-6 text-center text-xs text-muted">No notes yet</p>
         )}
       </div>
+    </div>
+  );
+}
+
+/** A note's text with every "@Someone" who is a real colleague picked out. */
+function highlightMentions(body: string, colleagues: Colleague[]): ReactNode {
+  if (!colleagues.length || !body.includes('@')) return body;
+
+  // Longest first: "@Anita Rao" must win over "@Anita".
+  const names = colleagues.map((c) => c.fullName).sort((a, b) => b.length - a.length);
+  const pattern = new RegExp(`@(${names.map(escapeRegExp).join('|')})`, 'g');
+
+  const out: ReactNode[] = [];
+  let last = 0;
+  for (const match of body.matchAll(pattern)) {
+    const at = match.index ?? 0;
+    if (at > last) out.push(body.slice(last, at));
+    out.push(
+      <span key={`${at}-${match[1]}`} className="font-medium text-brand-700 dark:text-brand-300">
+        {match[0]}
+      </span>,
+    );
+    last = at + match[0].length;
+  }
+  if (last < body.length) out.push(body.slice(last));
+  return out;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * A textarea that opens the team directory when you type "@".
+ *
+ * The trigger deliberately stops at whitespace: matching across spaces would
+ * mean every "@" followed by a sentence keeps a menu open while somebody
+ * writes, and closing it then becomes a thing they have to learn.
+ */
+function MentionTextarea({
+  value, onChange, onMention, colleagues, onSubmit,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onMention: (person: Colleague) => void;
+  colleagues: Colleague[];
+  onSubmit: () => void;
+}): JSX.Element {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const [query, setQuery] = useState<{ text: string; at: number } | null>(null);
+  const [active, setActive] = useState(0);
+
+  const matches = useMemo(() => {
+    if (!query) return [];
+    const needle = query.text.toLowerCase();
+    return colleagues
+      .filter((c) => c.fullName.toLowerCase().includes(needle))
+      .slice(0, 6);
+  }, [query, colleagues]);
+
+  const open = query !== null && matches.length > 0;
+
+  const readQuery = (text: string, caret: number): void => {
+    const before = text.slice(0, caret);
+    const match = /@([\p{L}\d._-]*)$/u.exec(before);
+    // Only at a word boundary — an email address is not a mention.
+    const at = match ? caret - match[0].length : -1;
+    const priorChar = at > 0 ? before[at - 1] : ' ';
+    if (!match || !/\s|[([]/.test(priorChar)) { setQuery(null); return; }
+    setQuery({ text: match[1], at });
+    setActive(0);
+  };
+
+  const choose = (person: Colleague): void => {
+    if (!query) return;
+    const caret = ref.current?.selectionStart ?? value.length;
+    const next = `${value.slice(0, query.at)}@${person.fullName} ${value.slice(caret)}`;
+    onChange(next);
+    onMention(person);
+    setQuery(null);
+    // Put the caret after the name we just inserted, not back at the start.
+    const cursor = query.at + person.fullName.length + 2;
+    requestAnimationFrame(() => {
+      ref.current?.focus();
+      ref.current?.setSelectionRange(cursor, cursor);
+    });
+  };
+
+  return (
+    <div className="relative">
+      <textarea
+        ref={ref}
+        className="input text-sm"
+        rows={2}
+        placeholder="Add a note for the team… type @ to notify someone"
+        value={value}
+        onChange={(e) => { onChange(e.target.value); readQuery(e.target.value, e.target.selectionStart); }}
+        onClick={(e) => readQuery(value, e.currentTarget.selectionStart)}
+        onBlur={() => setTimeout(() => setQuery(null), 120)}
+        onKeyDown={(e) => {
+          if (open) {
+            if (e.key === 'ArrowDown') { e.preventDefault(); setActive((i) => (i + 1) % matches.length); return; }
+            if (e.key === 'ArrowUp') { e.preventDefault(); setActive((i) => (i - 1 + matches.length) % matches.length); return; }
+            if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); choose(matches[active]); return; }
+            if (e.key === 'Escape') { e.preventDefault(); setQuery(null); return; }
+          }
+          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') onSubmit();
+        }}
+      />
+
+      {open && (
+        <ul
+          role="listbox"
+          aria-label="Mention a colleague"
+          className="absolute z-20 mt-1 max-h-52 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800"
+        >
+          {matches.map((person, i) => (
+            <li key={person.id}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={i === active}
+                onMouseDown={(e) => e.preventDefault()}
+                onMouseEnter={() => setActive(i)}
+                onClick={() => choose(person)}
+                className={cn(
+                  'flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm',
+                  i === active ? 'bg-slate-100 dark:bg-slate-700' : 'hover:bg-slate-50 dark:hover:bg-slate-700/60',
+                )}
+              >
+                <Avatar name={person.fullName} size={22} />
+                <span className="truncate">{person.fullName}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

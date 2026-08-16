@@ -1,7 +1,7 @@
 import type { JSX } from 'react';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import type { FieldMeta, FilterGroup, FilterOperator } from '@ipropy/shared';
 import { NULLARY_OPERATORS, UITYPE_LIST } from '@ipropy/shared';
 import { Blocks, ChevronDown, Edit3, Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
@@ -448,7 +448,23 @@ function FieldEditor({
   const needsFormula = spec?.requiresConfig?.includes('formula');
   const needsNumbering = spec?.requiresConfig?.includes('numbering');
   /** Area fields carry their unit list; phone fields their country codes. */
-  const supportsOptionList = uitype === 'area' || uitype === 'phone';
+  /**
+   * A phone field whose country code is stored in a picklist field has no
+   * option list of its own — the picklist is the list, and the server derives
+   * the dropdown from it. Offering a second editable copy here is how an admin
+   * ends up deleting every country but +91 and watching nothing change.
+   */
+  const codeSourceName = uitype === 'phone' && field?.config.digitsFrom
+    ? String(field.config.digitsFrom)
+    : '';
+  const codeSourceField = codeSourceName
+    ? module.fields.find((f) => f.name === codeSourceName)
+    : undefined;
+  const codePicklist = codeSourceField?.config.picklist
+    ? String(codeSourceField.config.picklist)
+    : '';
+
+  const supportsOptionList = uitype === 'area' || (uitype === 'phone' && !codePicklist);
   /** Only a scalar can be compared to another field of the same kind. */
   const comparable = COMPARABLE.includes(uitype);
 
@@ -830,6 +846,23 @@ function FieldEditor({
                   valuePlaceholder={uitype === 'area' ? 'sqyd' : '+971'}
                   labelPlaceholder={uitype === 'area' ? 'Sq.yd.' : 'UAE +971'}
                 />
+              )}
+
+              {codePicklist && (
+                <div className="rounded-lg border border-slate-200 p-3 text-xs dark:border-slate-700">
+                  <p className="font-medium">Country codes offered</p>
+                  <p className="mt-1 text-muted">
+                    Taken from the <strong>{codeSourceField?.label ?? codePicklist}</strong> dropdown,
+                    so there is one list rather than two that can disagree. Edit it in{' '}
+                    <Link
+                      to={`/admin/picklists?picklist=${encodeURIComponent(codePicklist)}`}
+                      className="text-brand-600 underline dark:text-brand-400"
+                    >
+                      Admin → Dropdowns
+                    </Link>
+                    {' '}and every mobile field follows immediately.
+                  </p>
+                </div>
               )}
             </div>
           )}

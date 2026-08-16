@@ -1,12 +1,12 @@
 import type { JSX } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FieldMeta, FilterGroup, ListQuery, ModuleMeta, RecordEnvelope } from '@ipropy/shared';
-import { formatIndianPrice } from '@ipropy/shared';
+import { formatIndianPrice, formatPhoneWithCode } from '@ipropy/shared';
 import {
   ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, CloudOff, Columns3, Compass, Download, Filter,
-  LayoutGrid, List, MailCheck, Plus, RefreshCw, Search, Settings2, Sparkles, Star, Trash2, Upload, Users, X,
+  LayoutGrid, List, MailCheck, Plus, RefreshCw, Save, Search, Settings2, Sparkles, Star, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { ApiError, api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
@@ -55,6 +55,31 @@ export default function ListView(): JSX.Element {
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   /**
+   * Which view the sort/columns effect below has already applied, and whether
+   * the URL we arrived on named a sort of its own.
+   *
+   * Both exist to settle the same argument. Two things want to decide the sort
+   * order — the saved view's default, and whatever the user last clicked — and
+   * the view was winning every time, because its query resolves *after* the
+   * URL has been read. That is the bug: sort by Name, open a lead, come back,
+   * and the list is silently back on the view's AI Score.
+   */
+  const adoptedView = useRef<string | null>(null);
+  const urlNamedSort = useRef(false);
+
+  /**
+   * Which module's query string has been read into state.
+   *
+   * The two effects below both run in the first flush after mount, in source
+   * order, and the second one's closure still holds the *pre-hydration* state.
+   * So the list arrived, read its filter and sort out of the URL, and then
+   * immediately wrote an empty URL back over them — self-healing only because
+   * the state it had just set re-triggered the write. Anything that read the
+   * URL in that window (the return link handed to every row) got the blank one.
+   */
+  const [hydratedFor, setHydratedFor] = useState<string | null>(null);
+
+  /**
    * Hydrate from the URL on arrival.
    *
    * The list's state lives in the query string, not just in React state, so
@@ -78,18 +103,22 @@ export default function ListView(): JSX.Element {
       }
     }
     const restoredSearch = searchParams.get('q') ?? '';
+    const restoredSort = searchParams.get('sort');
+    adoptedView.current = null;
+    urlNamedSort.current = Boolean(restoredSort);
     setPage(Number(searchParams.get('page')) || 1);
     setSearch(restoredSearch);
     setSearchInput(restoredSearch);
     setFilter(seeded);
     setSelected(new Set());
-    setSortBy(searchParams.get('sort') ?? undefined);
+    setSortBy(restoredSort ?? undefined);
     setSortDir(searchParams.get('dir') === 'asc' ? 'asc' : 'desc');
     setColumns([]);
     setViewId(searchParams.get('view') ?? undefined);
     // A restored filter is already applied — don't pop the panel open on
     // arrival (dashboard drill-through lands on the records, not the builder).
     setShowFilters(false);
+    setHydratedFor(moduleName ?? null);
   }, [moduleName]);
 
   useEffect(() => {
@@ -126,13 +155,34 @@ export default function ListView(): JSX.Element {
 
   const activeView = views?.find((v) => v.id === viewId) ?? views?.find((v) => v.isDefault) ?? views?.[0];
 
-  // Adopt the selected view's columns, sort and display mode.
+  /**
+   * Adopt the selected view's columns, sort and display mode.
+   *
+   * The sort half is conditional, and that condition is the whole fix. This
+   * effect cannot run on arrival — the views query resolves after the first
+   * paint — so it used to fire once the list was already on screen and
+   * overwrite the sort the URL had just restored. It also re-fires when the
+   * module metadata lands, which is a second chance to clobber the same value
+   * with the same default.
+   *
+   * So: adopt a view's sort when the user *picks* that view, and never when we
+   * are merely arriving at a link that already says how it wants to be sorted.
+   */
   useEffect(() => {
     if (!activeView) return;
+    const previous = adoptedView.current;
+    adoptedView.current = activeView.id;
+
     setColumns(activeView.columns?.length ? activeView.columns : defaultColumns(meta));
+    setDisplayMode(activeView.displayMode === 'kanban' ? 'kanban' : 'table');
+
+    // Same view, later render — metadata arriving is not a view change.
+    if (previous === activeView.id) return;
+    // Arriving on a link that names its own sort: the link wins.
+    if (previous === null && urlNamedSort.current) return;
+
     setSortBy(activeView.sortBy ?? undefined);
     setSortDir(activeView.sortDir ?? 'desc');
-    setDisplayMode(activeView.displayMode === 'kanban' ? 'kanban' : 'table');
   }, [activeView?.id, meta?.id]);
 
   /**
@@ -143,7 +193,8 @@ export default function ListView(): JSX.Element {
    * character at a time instead of leaving the list.
    */
   useEffect(() => {
-    if (!moduleName) return;
+    // Never write the URL from state that has not read it yet.
+    if (!moduleName || hydratedFor !== moduleName) return;
     const next = new URLSearchParams();
     if (activeView?.id) next.set('view', activeView.id);
     if (search) next.set('q', search);
@@ -155,7 +206,7 @@ export default function ListView(): JSX.Element {
     if (next.toString() !== searchParams.toString()) {
       setSearchParams(next, { replace: true });
     }
-  }, [moduleName, activeView?.id, search, sortBy, sortDir, page, filter]);
+  }, [moduleName, hydratedFor, activeView?.id, search, sortBy, sortDir, page, filter]);
 
   /** The URL to come back to — handed to every record link and the New button. */
   const returnTo = `/${moduleName}${searchParams.toString() ? `?${searchParams}` : ''}`;
@@ -206,6 +257,31 @@ export default function ListView(): JSX.Element {
       invalidateRecordQueries(queryClient, moduleName);
     },
     onError: (err: Error) => toast.error('Delete failed', err.message),
+  });
+
+  /**
+   * Make the arrangement on screen the view's own.
+   *
+   * Choosing columns, sorting and filtering were all local state: perfect until
+   * you reloaded, at which point the list went back to whatever the view was
+   * seeded with and the work had to be redone. Saving writes them onto the
+   * view, so the tab opens that way for good — and for everyone, if the view is
+   * shared. The one thing a rep can arrange about their day's list should not
+   * need a developer.
+   */
+  const saveViewMutation = useMutation({
+    mutationFn: () => api.updateView(moduleName!, activeView!.id, {
+      columns: columns.length ? columns : defaultColumns(meta),
+      sortBy: sortBy ?? null,
+      sortDir,
+      displayMode,
+      filter: countConditions(filter) ? filter : { logic: 'AND', conditions: [] },
+    }),
+    onSuccess: () => {
+      toast.success(`Saved to “${activeView?.name}”`, 'This tab will open this way from now on.');
+      void queryClient.invalidateQueries({ queryKey: ['views', moduleName] });
+    },
+    onError: (err: Error) => toast.error('Could not save this view', err.message),
   });
 
   const stageMutation = useMutation({
@@ -384,6 +460,14 @@ export default function ListView(): JSX.Element {
                   <DropdownItem icon={<Columns3 className="h-3.5 w-3.5" />} onClick={() => { setShowColumns(true); close(); }}>
                     Choose columns
                   </DropdownItem>
+                  {activeView && (
+                    <DropdownItem
+                      icon={<Save className="h-3.5 w-3.5" />}
+                      onClick={() => { saveViewMutation.mutate(); close(); }}
+                    >
+                      Save this layout to “{activeView.name}”
+                    </DropdownItem>
+                  )}
                   <DropdownItem icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => { void refetch(); close(); }}>
                     Refresh
                   </DropdownItem>
@@ -431,9 +515,18 @@ export default function ListView(): JSX.Element {
               <button
                 key={v.id}
                 onClick={() => {
+                  if (v.id === activeView?.id) return;
+                  // A view *is* a filter. Carrying an ad-hoc one across the
+                  // switch leaves the new tab quietly narrowed by conditions
+                  // belonging to the tab you just left. The URL is written by
+                  // the sync effect above — writing it here as well is how the
+                  // two ended up disagreeing.
                   setViewId(v.id);
                   setPage(1);
-                  setSearchParams({ view: v.id }, { replace: true });
+                  setFilter(EMPTY_FILTER);
+                  setSearch('');
+                  setSearchInput('');
+                  setSelected(new Set());
                 }}
                 className={cn(
                   'flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors',
@@ -519,8 +612,14 @@ export default function ListView(): JSX.Element {
           {/* Phones get stacked cards instead of the table: a 7-column grid on a
               375px screen is a horizontal-scroll maze, and the first column
               (the record's name) scrolls out of view the moment you look at any
-              other field. Same rows, same inline editing — just re-laid out. */}
-          <div className="divide-y divide-slate-100 md:hidden dark:divide-slate-800">
+              other field. Same rows, same inline editing — just re-laid out.
+
+              The cut-over is `lg`, not `md`. Seven columns plus a 240px sidebar
+              need about 1100px; at 768–1023 the table appeared and then scrolled
+              in both axes at once, inside a region already scrolling vertically.
+              That band is not a rarity — it is a laptop at a scaled resolution
+              and a window snapped to half a screen. */}
+          <div className="divide-y divide-slate-100 lg:hidden dark:divide-slate-800">
             {rows.map((row) => (
               <MobileRecordCard
                 key={row.id}
@@ -543,7 +642,7 @@ export default function ListView(): JSX.Element {
             ))}
           </div>
 
-          <table className="hidden w-full border-collapse md:table">
+          <table className="hidden w-full border-collapse lg:table">
             <thead>
               <tr>
                 <th className="table-head w-10">
@@ -720,7 +819,21 @@ export default function ListView(): JSX.Element {
         onClose={() => setShowColumns(false)}
         title="Choose columns"
         size="md"
-        footer={<button className="btn-primary" onClick={() => setShowColumns(false)}>Done</button>}
+        footer={
+          <>
+            {activeView && (
+              <button
+                className="btn-secondary"
+                disabled={saveViewMutation.isPending}
+                onClick={() => saveViewMutation.mutate()}
+              >
+                {saveViewMutation.isPending ? <Spinner /> : <Save className="h-3.5 w-3.5" />}
+                Save to “{activeView.name}”
+              </button>
+            )}
+            <button className="btn-primary" onClick={() => setShowColumns(false)}>Done</button>
+          </>
+        }
       >
         <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
           {meta.fields
@@ -978,7 +1091,24 @@ function KanbanBoard({
 
   // The first currency field becomes the column total — deal value, unit price.
   const amountField = module.fields.find((f) => f.uitype === 'currency');
-  const titleField = module.fields.find((f) => ['string'].includes(f.uitype));
+
+  /**
+   * The number on the card.
+   *
+   * A pipeline card had the budget on it, which on a lead desk is blank far
+   * more often than it is filled — and a blank currency is not blank, it is
+   * "₹0", printed on every card in every column. Zero rupees is not a fact
+   * about the lead; it is the absence of one, and it crowded out the only
+   * thing anybody actually wants from a card they are looking at in order to
+   * decide who to ring next.
+   *
+   * Found by uitype, not by name, because the engine must not know that leads
+   * call it `mobile` — see CLAUDE.md's rule about per-module branching.
+   */
+  const phoneField = module.fields.find((f) => f.uitype === 'phone' && f.isActive);
+  const codeFieldName = phoneField?.config.digitsFrom
+    ? String(phoneField.config.digitsFrom)
+    : null;
 
   return (
     <div className="flex h-full gap-3 overflow-x-auto p-4">
@@ -1035,7 +1165,23 @@ function KanbanBoard({
                     {attentionIds.has(row.id) && <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-brand-500 align-middle" title="Needs attention" />}
                     {row.label}
                   </p>
-                  {amountField && row.values[amountField.name] != null && (
+                  {phoneField && row.values[phoneField.name] ? (
+                    <a
+                      href={`tel:${[
+                        codeFieldName ? row.values[codeFieldName] : '',
+                        row.values[phoneField.name],
+                      ].join('')}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="mt-1 block text-xs text-slate-600 tnum hover:underline dark:text-slate-400"
+                    >
+                      {formatPhoneWithCode(
+                        codeFieldName ? String(row.values[codeFieldName] ?? '') : '',
+                        String(row.values[phoneField.name]),
+                      )}
+                    </a>
+                  ) : null}
+                  {/* Money only when there is some. */}
+                  {amountField && Number(row.values[amountField.name]) > 0 && (
                     <p className="mt-1 text-xs font-semibold text-slate-700 tnum dark:text-slate-300">
                       {formatIndianPrice(Number(row.values[amountField.name]))}
                     </p>

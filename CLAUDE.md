@@ -149,6 +149,10 @@ npm run db:reset              # DESTRUCTIVE: drops schema, re-migrates, re-seeds
 npm run db:backup             # pg_dump to backups/ (gitignored); retention 14
 npm run db:backup:verify      # restore newest dump into scratch DB, compare counts, drop it
 npm run db:restore <dump>     # DESTRUCTIVE: replaces the live DB (see PROJECT_HANDOVER.md §9)
+PROD_DATABASE_URL='…' npm run db:pull-prod
+                              # DESTRUCTIVE (local only): make localhost a copy of production,
+                              # backing up local first. Never writes to prod; does not copy
+                              # uploaded files, only rows.
 npm test                      # unit suites (no DB needed)
 npm run test:integration      # API + recordService against a real throwaway Postgres
 npm run test:e2e              # Playwright against a real browser and the dev stack
