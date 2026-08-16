@@ -156,14 +156,23 @@ async function startSession(link) {
     logger: waLogger,
     // Shows up in the phone's "Linked devices" list. A rep should be able to
     // look at that list and know what this is before deciding to remove it.
-    browser: Browsers.appropriate('iPropy CRM'),
+    browser: Browsers.macOS('iPropy CRM'),
     // Marking every incoming chat read from here would clear the unread badges
     // on the rep's own phone, which is their inbox and not ours to tidy.
     markOnlineOnConnect: false,
-    // Ask the phone for what it already has. The CRM throws away anything
-    // whose number is not a lead or customer, so the volume that actually
-    // lands is the business's conversations, not the owner's family group.
-    syncFullHistory: true,
+    // OFF, and it has to stay off. Asking WhatsApp for a full archive gets the
+    // connection closed the instant it opens — 428, no QR ever produced, retry
+    // forever — which presents as "the bridge is broken" rather than as
+    // anything to do with history. Measured both ways on the same session
+    // directory and the same account: false gives a code in under a second,
+    // true never does. A desktop browser identity does not rescue it.
+    //
+    // History still arrives. `messaging-history.set` fires either way; what
+    // this flag changes is how far back it reaches. Off, the phone hands over
+    // its recent conversations instead of everything it has ever held, which
+    // is the trade actually on the table: recent history and a working QR, or
+    // complete history and no way to link at all.
+    syncFullHistory: false,
   });
 
   sessions.set(link.id, { sock, status: 'starting', handle: link.handle, starting: false });
