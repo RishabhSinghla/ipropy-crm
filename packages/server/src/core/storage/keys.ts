@@ -30,7 +30,9 @@ import { db } from '../../db/pool.js';
 export const PROPERTY_MEDIA_FOLDERS = {
   originals: '01 Originals',
   compressed: '02 Compressed',
-  watermarked: '03 Watermarked',
+  // 03 was "Watermarked". The numbers are part of every path already written to
+  // storage, so the gap stays rather than renumbering folders out from under
+  // media that is already filed.
   instagramFeed: '04 Social Media/Instagram Feed',
   instagramStory: '04 Social Media/Instagram Story and Reels',
   facebook: '04 Social Media/Facebook',

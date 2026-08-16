@@ -320,7 +320,7 @@ publicRouter.get('/cities', asyncHandler(async (_req, res) => {
 // (`/api/files/<attachment-id>`), so this serves the same bytes without
 // auth, but only for an attachment whose owning record currently passes the
 // public-visibility filter above — an id alone isn't enough to fetch it.
-// ?size=thumb|medium|large serves the resized/watermarked derivative
+// ?size=thumb|medium|large serves the resized derivative
 // (core/media/pipeline.ts) when one exists, falling back to the untouched
 // original otherwise — this is the whole reason the website is fast: it
 // never downloads a multi-MB original just to show a listing thumbnail.

@@ -38,18 +38,16 @@ from typing import Iterable
 from PIL import Image, ImageEnhance, ImageOps
 
 HERE = pathlib.Path(__file__).parent
-WATERMARK_LIGHT = HERE / 'brand' / 'watermark-light.png'
-
 ORIGINALS = '01 Originals'
 MASTER = '02 Master'
 
-# Folder -> (aspect ratio or None to keep the master's, watermark?)
+# Folder -> aspect ratio, or None to keep the master's.
 # None means "whatever shape the master is", which for a landscape photo is
 # what portals and the website want.
-DERIVATIVES: dict[str, tuple[tuple[int, int] | None, bool]] = {
-    '03 Portals and Website':    (None,   False),  # portals can flag heavy branding
-    '04 Google and Marketplace': ((1, 1), True),
-    '05 Instagram and Facebook': ((4, 5), True),
+DERIVATIVES: dict[str, tuple[int, int] | None] = {
+    '03 Portals and Website':    None,
+    '04 Google and Marketplace': (1, 1),
+    '05 Instagram and Facebook': (4, 5),
     '06 Reels Stories Status':   ((9, 16), True),
 }
 
@@ -57,14 +55,6 @@ MASTER_LONG_EDGE = 2400
 MASTER_QUALITY = 88
 DERIVATIVE_QUALITY = 86
 
-# Watermark geometry, as a fraction of the image it sits on.
-WM_WIDTH = 0.16
-WM_INSET = 0.035
-WM_OPACITY = 0.52
-# Instagram and WhatsApp draw their own buttons over the bottom of a 9:16
-# frame, so the mark moves up out of that band rather than hiding under a
-# "Send message" bar.
-WM_TALL_BOTTOM_SAFE = 0.14
 
 IMAGE_SUFFIXES = {'.jpg', '.jpeg', '.png', '.heic', '.heif', '.webp'}
 VIDEO_SUFFIXES = {'.mov', '.mp4', '.m4v'}
@@ -200,33 +190,6 @@ def _fit_long_edge(im: Image.Image, long_edge: int) -> Image.Image:
     return im.resize((round(im.width * scale), round(im.height * scale)), Image.LANCZOS)
 
 
-def watermark(im: Image.Image, tall: bool = False) -> Image.Image:
-    """
-    The mark, bottom-left, small and quiet.
-
-    Bottom-**left** because portals and Instagram both like to put their own
-    furniture bottom-right. Semi-transparent white with a soft shadow so it
-    survives a pale wall without ever becoming the thing you look at.
-    """
-    if not WATERMARK_LIGHT.exists():
-        return im
-    mark = Image.open(WATERMARK_LIGHT).convert('RGBA')
-
-    target_w = max(90, round(im.width * WM_WIDTH))
-    mark = mark.resize((target_w, round(mark.height * target_w / mark.width)), Image.LANCZOS)
-
-    alpha = mark.getchannel('A').point(lambda v: int(v * WM_OPACITY))
-    mark.putalpha(alpha)
-
-    inset = round(im.width * WM_INSET)
-    bottom_gap = round(im.height * WM_TALL_BOTTOM_SAFE) if tall else inset
-    pos = (inset, im.height - mark.height - bottom_gap)
-
-    canvas = im.convert('RGBA')
-    canvas.alpha_composite(mark, pos)
-    return canvas.convert('RGB')
-
-
 # ---------------------------------------------------------------------------
 # The two jobs n8n asks for
 # ---------------------------------------------------------------------------
@@ -312,14 +275,11 @@ def finish(folder: pathlib.Path, plan: Iterable[dict]) -> dict:
         used.append({'master': src.name, 'published_as': name,
                      'label': item.get('label'), 'position': index})
 
-        for folder_name, (ratio, mark) in DERIVATIVES.items():
+        for folder_name, ratio in DERIVATIVES.items():
             target_dir = folder / folder_name
             target_dir.mkdir(parents=True, exist_ok=True)
 
             im = _crop_to(base, ratio) if ratio else base.copy()
-            tall = bool(ratio and ratio[0] / ratio[1] < 0.8)
-            if mark:
-                im = watermark(im, tall=tall)
             im.save(target_dir / name, 'JPEG', quality=DERIVATIVE_QUALITY,
                     optimize=True, progressive=True)
             made[folder_name].append(name)

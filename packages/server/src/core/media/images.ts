@@ -9,7 +9,6 @@
 import sharp from 'sharp';
 import type { StorageDriver } from '../storage/index.js';
 import { logger } from '../../utils/logger.js';
-import { watermarkFor } from './watermark.js';
 import {
   derivativeStorageKey, PROPERTY_MEDIA_FOLDERS,
 } from '../storage/keys.js';
@@ -21,7 +20,6 @@ interface Derivative {
   width?: number;
   height?: number;
   quality?: number;
-  watermark?: boolean;
   lossless?: boolean;
 }
 
@@ -29,7 +27,6 @@ const PROPERTY_DERIVATIVES: Derivative[] = [
   // Full decoded pixels, losslessly re-packed as WebP. The camera original is
   // still the true master in 01 Originals and is never rewritten.
   { key: 'compressed', destination: PROPERTY_MEDIA_FOLDERS.compressed, suffix: 'lossless', lossless: true },
-  { key: 'watermarked', destination: PROPERTY_MEDIA_FOLDERS.watermarked, suffix: 'watermarked', width: 2400, quality: 90, watermark: true },
 
   // Platform-ready canvases. `contain` below never crops a room to force a
   // ratio; any spare area gets a quiet neutral background.
@@ -86,20 +83,7 @@ export async function processImage(
         : { quality: derivative.quality ?? 82, effort: 4 })
       .toBuffer({ resolveWithObject: true });
 
-    let output = rendered.data;
-    if (derivative.watermark) {
-      const wm = await watermarkFor(rendered.info.width, rendered.info.height);
-      if (wm) {
-        output = await sharp(rendered.data)
-          .composite([{
-            input: wm.buffer,
-            left: rendered.info.width - wm.width - wm.margin,
-            top: rendered.info.height - wm.height - wm.margin,
-          }])
-          .webp({ quality: derivative.quality ?? 90, effort: 4 })
-          .toBuffer();
-      }
-    }
+    const output = rendered.data;
 
     const key = derivative.destination
       ? derivativeStorageKey(storageKey, derivative.destination, derivative.suffix, '.webp')

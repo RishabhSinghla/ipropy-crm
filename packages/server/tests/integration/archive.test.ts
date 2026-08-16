@@ -122,7 +122,7 @@ describe('per-record media archive', () => {
     expect([...entries.keys()].some((p) => p.includes('thumb'))).toBe(false);
   });
 
-  it('serves the watermarked derivative in branded, not the original', async () => {
+  it('serves the full-size web copy in branded, not the original', async () => {
     const entries = await archiveOf(recordId, 'B110 Greenfield', 'branded');
     expect(entries.get('B110 Greenfield/branded/IMG_9001.webp')).toBe('large-first');
     // `branded` must not drag several GB of originals along with it.

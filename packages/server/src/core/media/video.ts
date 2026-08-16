@@ -1,12 +1,12 @@
 /**
- * Video derivatives: one web-optimized transcode with a watermark, and
- * nothing else.
+ * Video derivatives: one web-optimized transcode, and nothing else.
  *
  * Self-hosted via ffmpeg — no cloud video-AI API, no per-video cost (confirmed
  * with the user). What this deliberately no longer does is decorate: the
- * branded title card and the background music bed are gone, because a clip
- * that is going to be cut in a real video editor gains nothing from an intro
- * this process glued on, and both stages cost ffmpeg time on every upload.
+ * branded title card, the background music bed and the corner watermark are
+ * all gone, because a clip that is going to be cut in a real video editor
+ * gains nothing from decoration this process glued on, and every one of those
+ * stages cost ffmpeg time on every upload.
  *
  * Same graceful-degradation shape as ai/client.ts: if ffmpeg isn't on PATH,
  * this logs once and returns null forever after — the original video keeps
@@ -17,14 +17,13 @@
  */
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createReadStream } from 'node:fs';
 import ffmpeg from 'fluent-ffmpeg';
 import type { StorageDriver } from '../storage/index.js';
 import { logger } from '../../utils/logger.js';
-import { watermarkFor } from './watermark.js';
 import { derivativeStorageKey, PROPERTY_MEDIA_FOLDERS } from '../storage/keys.js';
 
 const execFileAsync = promisify(execFile);
@@ -61,11 +60,11 @@ export async function processVideo(
       return null;
     }
 
-    const watermarked = join(work, 'watermarked.mp4');
-    await scaleAndWatermark(inputPath, watermarked);
+    const scaled = join(work, 'web.mp4');
+    await scaleForWeb(inputPath, scaled);
 
     const key = derivativeStorageKey(storageKey, PROPERTY_MEDIA_FOLDERS.crmWebsite, 'web', '.mp4');
-    await driver.save(key, createReadStream(watermarked), 'video/mp4');
+    await driver.save(key, createReadStream(scaled), 'video/mp4');
     return { web: key };
   } finally {
     await rm(work, { recursive: true, force: true });
@@ -86,45 +85,15 @@ function probe(path: string): Promise<Probe> {
   });
 }
 
-/** Caps the longer side at 1920 (never upscales), overlays the watermark bottom-right throughout, re-encodes for web (faststart H.264/AAC). */
-async function scaleAndWatermark(inputPath: string, outputPath: string): Promise<void> {
-  // Reference width for the watermark's proportions; the overlay filter's
-  // W/H expressions below position it correctly regardless of the actual
-  // (possibly portrait) output size — see watermark.ts.
-  // 1920x1080 is the nominal capped frame, not a measurement — the overlay's
-  // W/H expressions place the badge correctly whatever the real output is. At
-  // this size the badge always fits, so the null branch is unreachable; it is
-  // handled rather than asserted because "cannot happen" ages badly and an
-  // unwatermarked clip is a far better outcome than a failed job.
-  const wm = await watermarkFor(1920, 1080);
-
-  if (!wm) {
-    await runFfmpeg([
-      '-y', '-i', inputPath,
-      '-vf', `scale=w='min(1920,iw)':h='min(1920,ih)':force_original_aspect_ratio=decrease`,
-      '-c:v', 'libx264', '-preset', 'medium', '-crf', '23', '-pix_fmt', 'yuv420p',
-      '-c:a', 'aac', '-movflags', '+faststart',
-      outputPath,
-    ]);
-    return;
-  }
-
-  const wmPath = join(tmpdir(), `ipropy-wm-${Date.now()}.png`);
-  await writeFile(wmPath, wm.buffer);
-
-  try {
-    await runFfmpeg([
-      '-y', '-i', inputPath, '-i', wmPath,
-      '-filter_complex',
-      `[0:v]scale=w='min(1920,iw)':h='min(1920,ih)':force_original_aspect_ratio=decrease[scaled];[scaled][1:v]overlay=W-w-${wm.margin}:H-h-${wm.margin}[out]`,
-      '-map', '[out]', '-map', '0:a?',
-      '-c:v', 'libx264', '-preset', 'medium', '-crf', '23', '-pix_fmt', 'yuv420p',
-      '-c:a', 'aac', '-movflags', '+faststart',
-      outputPath,
-    ]);
-  } finally {
-    await rm(wmPath, { force: true }).catch(() => undefined);
-  }
+/** Caps the longer side at 1920 (never upscales) and re-encodes for web (faststart H.264/AAC). */
+async function scaleForWeb(inputPath: string, outputPath: string): Promise<void> {
+  await runFfmpeg([
+    '-y', '-i', inputPath,
+    '-vf', `scale=w='min(1920,iw)':h='min(1920,ih)':force_original_aspect_ratio=decrease`,
+    '-c:v', 'libx264', '-preset', 'medium', '-crf', '23', '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-movflags', '+faststart',
+    outputPath,
+  ]);
 }
 
 /**

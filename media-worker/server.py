@@ -176,8 +176,6 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> None:
     if not ROOT.exists():
         raise SystemExit(f'IPROPY_ROOT does not exist: {ROOT}')
-    if not pipeline.WATERMARK_LIGHT.exists():
-        print('  ! no watermark yet — run: python3 make_watermark.py')
     print(f'iPropy media worker on http://{HOST}:{PORT}')
     print(f'  root  {ROOT}')
     print(f'  token {"required" if TOKEN else "NOT SET (fine on a laptop, set IPROPY_TOKEN otherwise)"}')

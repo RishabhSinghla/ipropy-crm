@@ -287,7 +287,7 @@ miscRouter.post('/files', mediaUpload.single('file'), asyncHandler(async (req, r
     ],
   );
 
-  // Derivatives (resized/watermarked images, transcoded video) generate
+  // Derivatives (resized images, transcoded video) generate
   // asynchronously so the upload response never waits on processing — see
   // core/media/pipeline.ts, picked up by scheduler.ts's drainMediaQueue.
   if (row?.id && MEDIA_MIME_PREFIXES.some((p) => file.mimetype.startsWith(p))) {
@@ -504,7 +504,7 @@ miscRouter.put('/records/:recordId/files/order', asyncHandler(async (req, res) =
 /**
  * Everything attached to one record, as a zip of ordinary folders.
  *
- * `?set=` picks how much: `branded` (the default) is the watermarked set you
+ * `?set=` picks how much: `branded` (the default) is the full-size web set you
  * would actually send someone, and is small; `all` includes the untouched
  * originals and can be several gigabytes of 4K video, so it is never what you
  * get by accident.

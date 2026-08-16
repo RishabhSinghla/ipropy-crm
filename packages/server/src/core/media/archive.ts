@@ -9,7 +9,7 @@
  *
  *   B110 Greenfield/
  *     originals/      exactly what came off the phone, untouched
- *     branded/        the watermarked derivatives (and the titled video)
+ *     branded/        the full-size web copy of each photo and clip
  *     web/            the smaller website/WhatsApp sizes
  *     property.json
  *
@@ -120,9 +120,9 @@ function entriesFor(row: AttachmentRow, set: ArchiveSet): { folder: string; key:
   if (wants('originals')) {
     out.push({ folder: 'originals', key: row.storage_key, name: safeName(row.file_name, 'file') });
   }
-  // Images watermark at `large`; video's single `web` derivative is the one
-  // carrying the title card, so it is the branded artefact for a clip.
-  const branded = variants.watermarked ?? variants.large ?? variants.web;
+  // The biggest web-ready copy: `large` for a photo, and for a clip the single
+  // `web` transcode, which is all a video has.
+  const branded = variants.large ?? variants.web;
   if (wants('branded') && branded) {
     out.push({ folder: 'branded', key: branded, name: derivativeName(row.file_name, branded) });
   }

@@ -9,7 +9,8 @@ is checking the machinery, not the taste.
 
 What it proves that the unit checks cannot: the worker and the workflow agree
 about the shape of `plan`, the folders come out with the right names, the right
-ones carry a watermark, and the text files land where a person will look.
+are cropped to the shape each platform wants, and the text files land where a
+person will look.
 
     python3 end_to_end.py
 """
@@ -128,8 +129,8 @@ def main() -> int:
         check('originals were not touched',
               len(list((folder / '01 Originals').iterdir())) == 7)  # 6 photos + notes.txt
 
-        print('\n3. shapes and watermarks')
-        from PIL import Image
+        print('\n3. shapes')
+        from PIL import Image, ImageStat
         ratios = {}
         for name in expected:
             im = Image.open(folder / name / '01-drawing-room.jpg')
@@ -138,52 +139,6 @@ def main() -> int:
         check('google/marketplace is square', ratios['04 Google and Marketplace'] == 1.0)
         check('instagram is 4:5', abs(ratios['05 Instagram and Facebook'] - 0.8) < 0.02)
         check('stories are 9:16', abs(ratios['06 Reels Stories Status'] - 0.5625) < 0.02)
-
-        # Comparing the landscape file against the 4:5 file would compare two
-        # different crops of the room, which proves nothing. So: same image,
-        # with and without the mark.
-        import pipeline
-        from PIL import ImageChops, ImageStat
-
-        # Averaging over a big box understates a small mark to near nothing —
-        # 0.89 on a first attempt, which says more about the box than the
-        # watermark. So find *where* the pixels changed instead, which also
-        # checks the mark is in the corner it is supposed to be in.
-        sample = Image.open(folder / '02 Master' / 'IMG_4471.jpg').convert('RGB')
-        marked = pipeline.watermark(sample)
-        box = ImageChops.difference(sample, marked).convert('L').point(
-            lambda v: 255 if v > 8 else 0).getbbox()
-
-        check('the watermark changes pixels at all', box is not None, 'nothing moved')
-        if box:
-            left, top, right, bottom = box
-            check('it sits in the bottom-left quarter',
-                  left < sample.width * 0.1 and bottom > sample.height * 0.85,
-                  f'box {box} on {sample.size}')
-            check('it is small — a mark, not a banner',
-                  (right - left) < sample.width * 0.25 and (bottom - top) < sample.height * 0.2,
-                  f'{right - left}x{bottom - top} on {sample.size}')
-
-        # For the portals copy, look only at the patch the watermark would
-        # occupy. Comparing whole frames just finds JPEG noise — an 11x2 pixel
-        # artefact at the top corner is not a logo.
-        def wm_zone(im):
-            w, h = im.size
-            x0, y0 = int(w * 0.02), int(h * 0.74)
-            return im.convert('L').crop((x0, y0, int(w * 0.24), int(h * 0.98)))
-
-        portals = Image.open(folder / '03 Portals and Website' / '01-drawing-room.jpg').resize(sample.size)
-        marked_move = ImageStat.Stat(ImageChops.difference(wm_zone(sample), wm_zone(marked))).mean[0]
-        portal_move = ImageStat.Stat(ImageChops.difference(wm_zone(sample), wm_zone(portals))).mean[0]
-        # No absolute threshold here on purpose. How much a small translucent
-        # mark shifts the average of a patch depends on the patch size and on
-        # what is behind it, so any fixed number is a number I tuned until it
-        # passed — which tests nothing. That the mark exists, sits bottom-left
-        # and is small is already proven above, precisely, by the bounding box.
-        # What is left to prove is the difference between the two folders.
-        check('the marked copy differs far more than the clean one',
-              marked_move > portal_move * 10,
-              f'marked {marked_move:.2f} vs portals {portal_move:.2f}')
 
         tall = Image.open(folder / '06 Reels Stories Status' / '01-drawing-room.jpg')
         bottom = tall.convert('L').crop((0, int(tall.height * 0.93), tall.width, tall.height))

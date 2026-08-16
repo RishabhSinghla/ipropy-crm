@@ -1066,7 +1066,7 @@ function FilesTab({ module, id, canEdit }: { module: string; id: string; canEdit
           than the page holding it all in memory.
 
           "Branded" leads because it is what you actually send someone: the
-          watermarked set, and small. Originals are offered separately and
+          full-size web copies, and small. Originals are offered separately and
           labelled as large, so nobody starts a multi-gigabyte download by
           reaching for the obvious button.
         */}

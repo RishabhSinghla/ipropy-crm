@@ -14,7 +14,6 @@ which it is far better at than we would be.
 
 ```bash
 cd media-worker
-python3 make_watermark.py     # once, or whenever the logo changes
 IPROPY_TOKEN=pick-a-long-random-string python3 server.py
 ```
 
@@ -44,12 +43,12 @@ not be serving the filesystem.
       v
 02 Master             ~400 KB, corrected, still camera-named
       |
-      |   crop, watermark, rename to the published order
+      |   crop, rename to the published order
       v
-03 Portals and Website      landscape   no watermark
-04 Google and Marketplace   1:1         small logo
-05 Instagram and Facebook   4:5         small logo
-06 Reels Stories Status     9:16        small logo, lifted clear of the buttons
+03 Portals and Website      landscape
+04 Google and Marketplace   1:1
+05 Instagram and Facebook   4:5
+06 Reels Stories Status     9:16
 ```
 
 **Compressed once, cropped once.** Every derivative comes from the master in a
@@ -85,26 +84,6 @@ computer-vision library rather than a heuristic.
 **Culling.** Ordering and grouping is n8n's job. This applies a plan; it does
 not form one.
 
-### The watermark
-
-Generated from `brand/logo-source.jpg` by `make_watermark.py`, which crops away
-the border and the white field, turns the ink into an alpha mask and re-colours
-it to one flat tone.
-
-One colour, not the gold-and-navy original: a two-colour logo at 50% opacity
-over a beige wall goes muddy, while a single tone reads as an intentional mark.
-The key is much lighter than the wordmark, so the mask is stretched to stop the
-key fading out next to the letters.
-
-Bottom-**left**, 16% of the width, 52% opacity, with a soft shadow so it
-survives a pale wall. Left rather than right because portals and Instagram both
-put their own furniture bottom-right. On a 9:16 frame it lifts to 14% off the
-bottom, clear of where Instagram and WhatsApp draw their buttons.
-
-**Portals get no watermark at all.** 99acres and MagicBricks have rules about
-branding on images, and it is your own website — there is nobody to prove
-ownership to.
-
 ---
 
 ## The two calls n8n makes
@@ -133,7 +112,7 @@ without anybody downloading a 4 MB photograph.
   "files": { "captions.md": "...", "listing.md": "...", "_status.json": "..." } }
 ```
 
-Crops, watermarks, renames to `01-drawing-room.jpg` and writes the text files.
+Crops, renames to `01-drawing-room.jpg` and writes the text files.
 Anything the plan omits is simply not published.
 
 ---
@@ -147,19 +126,10 @@ python3 end_to_end.py
 Builds a fake property with the problems real ones have — 4032×3024 frames,
 HEIC files, tube-light yellow, black corners, a `notes.txt` that is not a
 photograph — starts the server, and runs the whole thing over real HTTP against
-real files. 20 checks: shapes, watermark presence and position, naming,
-originals untouched, and the total size.
+real files: shapes, naming, originals untouched, and the total size.
 
 Only the model is stubbed, because its answers are a matter of taste and this
 is checking the machinery.
-
-Two things worth knowing about how those checks are written. The watermark is
-verified by the **bounding box of what changed** — is there a change, is it
-bottom-left, is it small — rather than by an average brightness, because a
-small translucent mark barely moves the average of a large patch and any
-threshold you pick for that is a threshold you tuned until it passed. And there
-is deliberately no absolute number for how much the watermark should shift the
-pixels: how much it shifts depends on what is behind it.
 
 `make_test_property.py` writes the fixture on its own if you want to look at
 real output:

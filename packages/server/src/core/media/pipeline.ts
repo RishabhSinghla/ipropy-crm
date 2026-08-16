@@ -40,7 +40,7 @@ async function isPropertyAttachment(attachmentId: string): Promise<boolean> {
  * Swallows its own failures on purpose. Matching is an enhancement — the photo
  * is already stored and already attached to whatever the uploader said — so a
  * corrupt EXIF block or a video ffprobe cannot read must not fail the job and
- * cost the file its watermark and its web-sized copies.
+ * cost the file its web-sized copies.
  */
 async function fileAgainstVisit(attachmentId: string, readTime: () => Promise<Date | null>): Promise<void> {
   try {
@@ -71,8 +71,8 @@ export async function processAttachment(attachmentId: string): Promise<void> {
       return;
     }
     // Filed against its visit before the derivatives are made, and in its own
-    // try/catch: unreadable EXIF is not a reason to skip watermarking and
-    // resizing a perfectly good photo.
+    // try/catch: unreadable EXIF is not a reason to skip resizing a perfectly
+    // good photo.
     //
     // Read from the *original*, deliberately before any transcode: ffmpeg's
     // JPEG output carries no EXIF at all (`-map_metadata 0` included), so
