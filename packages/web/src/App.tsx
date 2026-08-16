@@ -18,6 +18,7 @@ const ListView = lazy(() => import('./pages/ListView'));
 const RecordDetail = lazy(() => import('./pages/RecordDetail'));
 const RecordEdit = lazy(() => import('./pages/RecordEdit'));
 const Inbox = lazy(() => import('./pages/Inbox'));
+const WhatsApp = lazy(() => import('./pages/WhatsApp'));
 const CapturePage = lazy(() => import('./pages/Capture'));
 const CaptureReviewPage = lazy(() => import('./pages/CaptureReview'));
 const CaptureShootsPage = lazy(() => import('./pages/CaptureShoots'));
@@ -76,6 +77,7 @@ export default function App(): JSX.Element {
               <Route path="dashboard" element={<DashboardPage />} />
               <Route path="dashboard/:id" element={<DashboardPage />} />
 
+              <Route path="whatsapp" element={<WhatsApp />} />
               <Route path="inbox" element={<Inbox />} />
               <Route path="inbox/:conversationId" element={<Inbox />} />
 

@@ -212,7 +212,7 @@ export default function Inbox(): JSX.Element {
   );
 }
 
-function Thread({ conversationId, onBack }: { conversationId: string; onBack: () => void }): JSX.Element {
+export function Thread({ conversationId, onBack }: { conversationId: string; onBack: () => void }): JSX.Element {
   const queryClient = useQueryClient();
   const { aiAvailable } = useApp();
   const [text, setText] = useState('');
