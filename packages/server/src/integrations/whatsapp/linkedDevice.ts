@@ -502,7 +502,14 @@ async function claimOneFor(
      WHERE d.id = (
        SELECT s.id FROM ipy_device_send s
        LEFT JOIN ipy_record r ON r.id = s.record_id
-       WHERE s.status = 'pending'
+       -- 'opened' as well as 'pending', and this is not a detail. A queued
+       -- message also sits in Outreach as a one-tap job, and merely *looking*
+       -- at it there marks it opened. Claiming only 'pending' therefore meant a
+       -- message could become permanently unsendable by the phone because
+       -- somebody glanced at the queue — which is exactly what happened on the
+       -- first real reply ever typed into the linked Inbox. Neither status
+       -- means sent; markSent and skip have always treated the two the same.
+       WHERE s.status IN ('pending', 'opened')
          AND s.priority = $3
          AND (s.assigned_to = $2 ${link.takesUnassigned ? 'OR s.assigned_to IS NULL' : ''})
          AND (s.record_id IS NULL OR r.is_deleted = false)
