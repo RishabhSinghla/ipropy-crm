@@ -160,19 +160,15 @@ async function startSession(link) {
     // Marking every incoming chat read from here would clear the unread badges
     // on the rep's own phone, which is their inbox and not ours to tidy.
     markOnlineOnConnect: false,
-    // OFF, and it has to stay off. Asking WhatsApp for a full archive gets the
-    // connection closed the instant it opens — 428, no QR ever produced, retry
-    // forever — which presents as "the bridge is broken" rather than as
-    // anything to do with history. Measured both ways on the same session
-    // directory and the same account: false gives a code in under a second,
-    // true never does. A desktop browser identity does not rescue it.
+    // Ask the phone for everything it has, which is what makes this feel like
+    // WhatsApp Web rather than a log that starts the day you scanned.
     //
-    // History still arrives. `messaging-history.set` fires either way; what
-    // this flag changes is how far back it reaches. Off, the phone hands over
-    // its recent conversations instead of everything it has ever held, which
-    // is the trade actually on the table: recent history and a working QR, or
-    // complete history and no way to link at all.
-    syncFullHistory: false,
+    // This flag was blamed for the 428 that stopped anyone linking, and that
+    // was wrong: the cause was baileys 6.7.24, a year old, being refused by
+    // WhatsApp's current servers when it asked for a full sync. On 7.0.0-rc14
+    // the same request produces a code in under a second. Keep the version
+    // current — see package.json for why the tags, not semver, decide that.
+    syncFullHistory: true,
   });
 
   sessions.set(link.id, { sock, status: 'starting', handle: link.handle, starting: false });
@@ -226,7 +222,16 @@ async function startSession(link) {
   // The phone handing over what it already had. Arrives in batches, in no
   // guaranteed order, and can arrive more than once — the CRM deduplicates on
   // the WhatsApp message id, so re-sending a batch is harmless.
-  sock.ev.on('messaging-history.set', async ({ messages }) => {
+  sock.ev.on('messaging-history.set', async (ev) => {
+    const { chats, contacts, messages, syncType, progress, isLatest } = ev ?? {};
+    // Logged unconditionally, including when it is all zeroes. History arrives
+    // exactly once, during the handshake after a scan, and there is no way to
+    // ask for it again without unlinking — so "nothing happened" has to be
+    // distinguishable from "the event never fired", and silence cannot tell
+    // you which. Not knowing which of those it was cost an evening.
+    log(`history event: ${chats?.length ?? 0} chats, ${contacts?.length ?? 0} contacts, `
+      + `${messages?.length ?? 0} messages, type ${syncType ?? '?'}, `
+      + `progress ${progress ?? '?'}, latest ${isLatest ?? '?'}`);
     if (!messages?.length) return;
     try {
       await forwardHistory(messages);

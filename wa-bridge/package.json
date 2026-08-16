@@ -11,7 +11,7 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "baileys": "6.7.24",
+    "baileys": "7.0.0-rc14",
     "qrcode": "1.5.4"
   }
 }
