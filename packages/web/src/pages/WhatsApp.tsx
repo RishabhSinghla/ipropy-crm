@@ -52,7 +52,17 @@ export default function WhatsApp(): JSX.Element {
     },
   });
 
-  const mine = (linkData?.links ?? []).find((l) => l.userId === user?.id) ?? null;
+  // Newest live link wins. A user accumulates rows — every unlink leaves a
+  // `logged_out` one behind — and picking the first match showed the dead link
+  // while the fresh one sat there holding the QR, so the button looked broken
+  // when it had worked perfectly.
+  const mine = (() => {
+    const ordered = (linkData?.links ?? []).filter((l) => l.userId === user?.id);
+    return ordered.find((l) => l.status === 'connected')
+      ?? ordered.find((l) => l.status === 'pending')
+      ?? ordered[ordered.length - 1]
+      ?? null;
+  })();
   const connected = mine?.status === 'connected';
 
   if (loadingLink) {

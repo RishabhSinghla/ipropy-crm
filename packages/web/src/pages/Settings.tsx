@@ -902,7 +902,17 @@ function WhatsAppLinkCard(): JSX.Element {
     queryFn: () => api.whatsappLinks(),
   });
 
-  const mine = (data?.links ?? []).find((l) => l.userId === user?.id) ?? null;
+  // Newest live link wins. A user accumulates rows — every unlink leaves a
+  // `logged_out` one behind — and picking the first match showed the dead link
+  // while the fresh one sat there holding the QR, so the button looked broken
+  // when it had worked perfectly.
+  const mine = (() => {
+    const ordered = (data?.links ?? []).filter((l) => l.userId === user?.id);
+    return ordered.find((l) => l.status === 'connected')
+      ?? ordered.find((l) => l.status === 'pending')
+      ?? ordered[ordered.length - 1]
+      ?? null;
+  })();
   const waiting = mine?.status === 'pending';
 
   // A code that has passed its expiry is not a code. WhatsApp rotates it every
