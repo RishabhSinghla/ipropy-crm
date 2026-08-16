@@ -46,7 +46,15 @@ export async function resolveHandle(handle: string, conn: Tx = db): Promise<Reso
               r.updated_at
        FROM ipy_e_leads l JOIN ipy_record r ON r.id = l.record_id
        WHERE r.is_deleted = false
-         AND (right(regexp_replace(COALESCE(l.whatsapp_number,''), '\\D', '', 'g'), 10) = $1
+         -- whatsapp_number is read through to_jsonb rather than named
+         -- directly, and that is not style. Fields here are admin-editable, so
+         -- a column present in the dev seed can be absent in a real database:
+         -- production has no whatsapp_number at all. Naming it makes the whole
+         -- statement fail with "column does not exist", which took down every
+         -- phone-number-to-lead lookup on that database — no history import,
+         -- no inbound matching, no queued send resolving an owner.
+         -- to_jsonb yields NULL for a missing key instead of throwing.
+         AND (right(regexp_replace(COALESCE(to_jsonb(l)->>'whatsapp_number',''), '\\D', '', 'g'), 10) = $1
            OR right(regexp_replace(COALESCE(l.mobile,''), '\\D', '', 'g'), 10) = $1)
      ) matches
      ORDER BY rank, updated_at DESC

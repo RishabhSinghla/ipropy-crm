@@ -313,12 +313,12 @@ async function forwardHistory(messages) {
 /**
  * Hand a customer's message to the CRM.
  *
- * Skips our own outgoing messages, groups, status broadcasts and anything
- * without a sender. A group is not a lead and filing one against a record would
- * put a dozen strangers' words on somebody's timeline.
+ * Skips groups, status broadcasts and anything without a sender. A group is
+ * not a lead, and filing one against a record would put a dozen strangers'
+ * words on somebody's timeline. Messages the rep sent from their own handset
+ * are kept — see below for why they take a different road in.
  */
 async function forwardInbound(m) {
-  if (m.key.fromMe) return;
   const jid = m.key.remoteJid ?? '';
   if (!jid.endsWith('@s.whatsapp.net')) return;
 
@@ -345,6 +345,20 @@ async function forwardInbound(m) {
 
   const mimeType = media ? msg[`${media}Message`]?.mimetype : undefined;
   const fileName = media === 'document' ? msg.documentMessage?.fileName : undefined;
+
+  // A message the rep typed on their own handset is still part of the
+  // conversation, and dropping it — which this did — left the CRM showing the
+  // customer's half of a dialogue and none of the answers. That is a
+  // transcript with pages torn out, not a chat window.
+  //
+  // It goes in through the history path rather than as inbound, because it is
+  // not an arriving message: it must not mark the thread unread, re-open the
+  // 24-hour window, start a response clock, or fire an auto-reply at somebody
+  // the rep has just answered by hand.
+  if (m.key.fromMe) {
+    await forwardHistory([m]);
+    return;
+  }
 
   const result = await crm('inbound', {
     from: `+${jid.split('@')[0]}`,
