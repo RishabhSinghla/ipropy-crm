@@ -269,23 +269,42 @@ export async function skip(id: string, userId: string, isAdmin = false, reason?:
  *
  * Exported because the record page sends directly without ever queuing —
  * pressing "WhatsApp" on a lead should not require a queue round-trip.
+ *
+ * `via` decides the recorded status, and the distinction is not cosmetic. A
+ * `wa.me` hand-off is marked `handed_off` because a person opened WhatsApp and
+ * we cannot see what they did next; a linked phone reports back that the
+ * message actually left, so that one is `sent`. Reporting both as sent would
+ * make the reporting a lie in one direction, and reporting both as handed off
+ * would throw away the one thing linking a phone buys us.
  */
 export async function logDeviceMessage(input: {
   handle: string;
   body: string;
   recordId?: string | null;
-  sentBy: string;
+  /** Null for an automated send with no person behind it. */
+  sentBy?: string | null;
   broadcastId?: string | null;
+  via?: 'device' | 'linked';
+  providerMessageId?: string | null;
 }): Promise<string | null> {
   try {
     const conversationId = await getOrCreateConversation(input.handle);
+    const via = input.via ?? 'device';
 
     const message = await db.queryOne<{ id: string }>(
       `INSERT INTO ipy_message
-        (conversation_id, direction, channel, type, body, status, provider, sent_via, sent_by)
-       VALUES ($1,'outbound','whatsapp','text',$2,'handed_off','device','device',$3)
+        (conversation_id, direction, channel, type, body, status, provider, sent_via, sent_by,
+         provider_message_id)
+       VALUES ($1,'outbound','whatsapp','text',$2,$3,$4,$4,$5,$6)
        RETURNING id`,
-      [conversationId, input.body, input.sentBy],
+      [
+        conversationId,
+        input.body,
+        via === 'linked' ? 'sent' : 'handed_off',
+        via,
+        input.sentBy ?? null,
+        input.providerMessageId ?? null,
+      ],
     );
 
     await db.query(

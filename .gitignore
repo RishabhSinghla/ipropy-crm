@@ -20,3 +20,10 @@ backups/
 # Python bytecode from the media worker
 __pycache__/
 *.pyc
+
+# Linked WhatsApp sessions. These are the keys to somebody's WhatsApp account:
+# anyone holding a copy can read and send as them. They live outside the repo by
+# default (~/.ipropy-wa-sessions); this catches the case where WA_SESSION_DIR is
+# pointed inside it.
+wa-bridge/sessions/
+.ipropy-wa-sessions/

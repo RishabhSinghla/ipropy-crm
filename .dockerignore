@@ -15,6 +15,10 @@
 **/*.tsbuildinfo
 storage
 backups
+# The WhatsApp bridge runs on the office Mac, never in the container: it holds
+# long-lived sessions that a restart would break, and its Baileys dependency has
+# no business in the deployed image. Excluded so `COPY . .` cannot drag it in.
+wa-bridge
 .env
 .env.*
 !.env.example

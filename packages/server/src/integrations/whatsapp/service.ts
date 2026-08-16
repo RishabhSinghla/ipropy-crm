@@ -106,6 +106,17 @@ export interface InboundMessage {
   location?: { latitude: number; longitude: number; name?: string };
   timestamp?: number;
   profileName?: string;
+  /**
+   * Which door this arrived through.
+   *
+   * Only two things read it, and both matter. Media resolution is a Meta API
+   * call, so it must not run for a message that came off a linked phone, where
+   * `mediaId` means nothing and the lookup would fail on every photo a buyer
+   * sends. And the stored value is what later tells anyone reading the
+   * conversation which channel it came in on, which is the difference between
+   * a number that is fine and a number that is about to be banned.
+   */
+  provider?: 'meta' | 'linked';
 }
 
 export async function handleInbound(msg: InboundMessage): Promise<{ conversationId: string; messageId: string }> {
@@ -113,9 +124,18 @@ export async function handleInbound(msg: InboundMessage): Promise<{ conversation
     const conversationId = await getOrCreateConversation(msg.from, 'whatsapp', tx);
     const now = msg.timestamp ? new Date(msg.timestamp * 1000) : new Date();
 
+    const source = msg.provider ?? 'meta';
+
     let media: Record<string, unknown> | null = null;
     if (msg.mediaId) {
-      const resolved = await provider.fetchMediaUrl(msg.mediaId);
+      // Only Meta hands out an id you can exchange for a URL. A linked phone
+      // has already received the bytes on the laptop holding the session, so
+      // the message is recorded with its type and caption and the file itself
+      // is not pulled in. A buyer's photo therefore shows in the thread as an
+      // attachment that arrived rather than as the picture — visibly
+      // incomplete, which is the right failure. Silently dropping the message
+      // would be the wrong one.
+      const resolved = source === 'meta' ? await provider.fetchMediaUrl(msg.mediaId) : null;
       media = {
         url: resolved?.url ?? null,
         mimeType: resolved?.mimeType ?? msg.mimeType ?? 'application/octet-stream',
@@ -134,9 +154,9 @@ export async function handleInbound(msg: InboundMessage): Promise<{ conversation
     const message = await tx.queryOne<{ id: string }>(
       `INSERT INTO ipy_message
         (conversation_id, direction, channel, type, body, media, status, provider_message_id, provider, created_at, delivered_at)
-       VALUES ($1,'inbound','whatsapp',$2,$3,$4,'delivered',$5,'meta',$6,$6)
+       VALUES ($1,'inbound','whatsapp',$2,$3,$4,'delivered',$5,$7,$6,$6)
        RETURNING id`,
-      [conversationId, msg.type, body, media ? JSON.stringify(media) : null, msg.providerMessageId, now],
+      [conversationId, msg.type, body, media ? JSON.stringify(media) : null, msg.providerMessageId, now, source],
     );
     const inboundCount = await tx.queryOne<{ count: number }>(
       `SELECT count(*)::int AS count FROM ipy_message
@@ -146,9 +166,22 @@ export async function handleInbound(msg: InboundMessage): Promise<{ conversation
 
     // An inbound message re-opens the 24h free-form window.
     await tx.query(
+      // `$2::timestamptz`, and the cast is load-bearing. Bound once as a plain
+      // `$2` it is read as a timestamp by `last_message_at` and as an interval
+      // by `$2 + interval`, since interval-plus-interval is also a real
+      // operator — so Postgres refuses the whole statement with "inconsistent
+      // types deduced for parameter $2" before it runs.
+      //
+      // This has been here since the first commit and had never executed once:
+      // inbound only arrives through a webhook, no WhatsApp Business account
+      // has ever been connected, and nothing in the suite calls handleInbound.
+      // So the very first real reply from a customer would have failed, and it
+      // took building a second way in to find out.
       `UPDATE ipy_conversation
-       SET last_message_at = $2, last_inbound_at = $2, last_message_preview = $3,
-           unread_count = unread_count + 1, window_expires_at = $2 + interval '${WINDOW_HOURS} hours',
+       SET last_message_at = $2::timestamptz, last_inbound_at = $2::timestamptz,
+           last_message_preview = $3,
+           unread_count = unread_count + 1,
+           window_expires_at = $2::timestamptz + interval '${WINDOW_HOURS} hours',
            status = CASE WHEN status = 'resolved' THEN 'open' ELSE status END,
            contact_name = COALESCE(contact_name, $4),
            updated_at = now()

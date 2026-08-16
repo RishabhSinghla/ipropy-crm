@@ -214,6 +214,13 @@ export const config = {
     apiVersion: str('WHATSAPP_API_VERSION', 'v21.0'),
   },
 
+  // The other WhatsApp: a rep's own phone, linked the way WhatsApp Web links a
+  // laptop. The bridge that holds those sessions runs outside this process, so
+  // all the CRM needs is the shared secret it must present.
+  whatsappLinked: {
+    bridgeToken: str('WA_BRIDGE_TOKEN'),
+  },
+
   telephony: {
     provider: str('TELEPHONY_PROVIDER', 'none'),
     twilio: {

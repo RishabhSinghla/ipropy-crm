@@ -1,0 +1,17 @@
+{
+  "name": "ipropy-wa-bridge",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Holds the linked WhatsApp sessions and carries messages between them and the CRM.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "baileys": "6.7.24",
+    "qrcode": "1.5.4"
+  }
+}

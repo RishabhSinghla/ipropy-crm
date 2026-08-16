@@ -488,6 +488,165 @@ webhooksRouter.post('/n8n/content-ready', asyncHandler(async (req, res) => {
   res.json({ ok: true, notified: new Set(recipients).size });
 }));
 
+// ---------------------------------------------------------------------------
+// The WhatsApp bridge
+//
+// A small process on an always-on machine holds the linked WhatsApp sessions
+// and talks to the CRM through these five endpoints. It lives out there rather
+// than in here for the same reason the media worker does: the session must
+// survive a redeploy, and a container Render restarts at will cannot hold one.
+//
+// The traffic is one-way by design. The bridge always calls the CRM; the CRM
+// never calls the bridge. That means the machine holding the sessions needs no
+// public address, no tunnel and no open port, which removes the entire question
+// of exposing a laptop to the internet.
+// ---------------------------------------------------------------------------
+
+/** Every bridge call proves it is the bridge. No token configured, no entry. */
+function assertBridge(req: Request): void {
+  const expected = getSettings().whatsappLinked.bridgeToken;
+  if (!expected) throw new UnauthorizedError('The WhatsApp bridge is not configured');
+  const provided = req.headers['x-bridge-token'];
+  if (typeof provided !== 'string' || !safeEqual(expected, provided)) {
+    throw new UnauthorizedError('Invalid bridge token');
+  }
+}
+
+/**
+ * The bridge's one repeated question: what should I be doing?
+ *
+ * Answers with the sessions it should be holding and at most one message per
+ * number to send. One, because the gap between messages is enforced here and a
+ * batch would hand that decision to a process that forgets everything when it
+ * restarts. See integrations/whatsapp/linkedDevice.ts.
+ */
+webhooksRouter.post('/wa-bridge/poll', asyncHandler(async (req, res) => {
+  assertBridge(req);
+
+  const { claimOutbox, linksForBridge, touchSeen, releaseStaleClaims } =
+    await import('../../integrations/whatsapp/linkedDevice.js');
+
+  // Anything a previous bridge claimed and never reported on goes back in the
+  // queue. Done on the poll rather than on a timer so it needs no scheduler
+  // entry, and a bridge that has been off all night finds a clean queue.
+  await releaseStaleClaims();
+
+  const links = await linksForBridge();
+  await touchSeen(links.map((l) => l.id));
+
+  const claim = await claimOutbox();
+
+  res.json({
+    links: links.map((l) => ({
+      id: l.id,
+      status: l.status,
+      handle: l.handle,
+      label: l.label,
+      userName: l.userName,
+    })),
+    outbox: claim.messages,
+    retryAfterSeconds: claim.retryAfterSeconds,
+    ...(claim.idleReason ? { idleReason: claim.idleReason } : {}),
+  });
+}));
+
+/** A fresh pairing code, on its way to the settings screen the rep is watching. */
+webhooksRouter.post('/wa-bridge/qr', asyncHandler(async (req, res) => {
+  assertBridge(req);
+  const input = z.object({
+    linkId: z.string().uuid(),
+    // A rendered PNG data URI, not the raw pairing string. The bridge already
+    // has to handle that string, so it draws the image too and neither the API
+    // nor the web bundle gains a QR library for one screen.
+    qr: z.string().min(1).max(40_000),
+  }).parse(req.body);
+
+  const { setQr } = await import('../../integrations/whatsapp/linkedDevice.js');
+  await setQr(input.linkId, input.qr);
+  res.json({ ok: true });
+}));
+
+/** Connected, or gone. Both are worth knowing the moment they happen. */
+webhooksRouter.post('/wa-bridge/state', asyncHandler(async (req, res) => {
+  assertBridge(req);
+  const input = z.object({
+    linkId: z.string().uuid(),
+    status: z.enum(['connected', 'logged_out']),
+    handle: z.string().max(32).optional(),
+    error: z.string().max(500).optional(),
+  }).parse(req.body);
+
+  const { markConnected, markLoggedOut } = await import('../../integrations/whatsapp/linkedDevice.js');
+  if (input.status === 'connected') {
+    if (!input.handle) throw new BadRequestError('A connected link must report its number');
+    await markConnected(input.linkId, input.handle);
+  } else {
+    await markLoggedOut(input.linkId, input.error ?? null);
+  }
+  res.json({ ok: true });
+}));
+
+/** What happened to a message the bridge was handed. */
+webhooksRouter.post('/wa-bridge/result', asyncHandler(async (req, res) => {
+  assertBridge(req);
+  const input = z.object({
+    sendId: z.string().uuid(),
+    ok: z.boolean(),
+    error: z.string().max(500).optional(),
+    providerMessageId: z.string().max(200).optional(),
+  }).parse(req.body);
+
+  const { reportResult } = await import('../../integrations/whatsapp/linkedDevice.js');
+  await reportResult({
+    sendId: input.sendId,
+    ok: input.ok,
+    error: input.error ?? null,
+    providerMessageId: input.providerMessageId ?? null,
+  });
+  res.json({ ok: true });
+}));
+
+/**
+ * A customer wrote back.
+ *
+ * Handed to the same `handleInbound` the Meta webhook uses, which is the reason
+ * this whole channel was worth building on top of the existing one rather than
+ * beside it: the 24-hour window, opt-out detection, sequence exit on reply,
+ * auto-replies, the SLA clock and the record timeline all keep working without
+ * knowing which door the message came through.
+ */
+webhooksRouter.post('/wa-bridge/inbound', asyncHandler(async (req, res) => {
+  assertBridge(req);
+  const input = z.object({
+    from: z.string().min(6).max(32),
+    providerMessageId: z.string().max(200),
+    type: z.string().max(40).default('text'),
+    text: z.string().max(8000).optional(),
+    caption: z.string().max(2000).optional(),
+    mediaId: z.string().max(200).optional(),
+    mimeType: z.string().max(200).optional(),
+    filename: z.string().max(300).optional(),
+    timestamp: z.number().int().positive().optional(),
+    profileName: z.string().max(200).optional(),
+  }).parse(req.body);
+
+  // A message the CRM already has is not an error. WhatsApp redelivers on
+  // reconnect, and a bridge restarting mid-conversation would otherwise file
+  // the same reply twice, re-open the window twice and fire the auto-reply
+  // twice at somebody who wrote once.
+  const seen = await db.queryOne<{ id: string }>(
+    `SELECT id FROM ipy_message WHERE provider_message_id = $1 LIMIT 1`,
+    [input.providerMessageId],
+  );
+  if (seen) {
+    res.json({ ok: true, duplicate: true });
+    return;
+  }
+
+  const result = await waService.handleInbound({ ...input, provider: 'linked' });
+  res.json({ ok: true, ...result });
+}));
+
 /**
  * Constant-time compare that tolerates a length mismatch.
  *

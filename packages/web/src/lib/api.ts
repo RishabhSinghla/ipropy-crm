@@ -372,6 +372,19 @@ export interface DeviceSend {
   link: string; createdAt: string;
 }
 
+/** A rep's own WhatsApp, linked to the CRM the way WhatsApp Web links a laptop. */
+export interface WaLink {
+  id: string; userId: string; userName: string | null;
+  handle: string | null; label: string | null;
+  status: 'pending' | 'connected' | 'logged_out' | 'disabled';
+  /** A PNG data URI while waiting to be scanned, null once connected. */
+  qr: string | null; qrExpiresAt: string | null;
+  linkedAt: string | null; lastSeenAt: string | null; lastSentAt: string | null;
+  lastError: string | null;
+  sentToday: number; sentTotal: number; dailyCap: number;
+  takesUnassigned: boolean;
+}
+
 export interface Broadcast {
   id: string; name: string; channel_mode: 'api' | 'device';
   template_name: string | null; body_text?: string | null;
@@ -687,6 +700,18 @@ export const api = {
   /** Whether WhatsApp can send by itself, or needs a human to tap send. */
   outreachChannel: () => get<{ apiReady: boolean; mode: 'api' | 'device'; message: string }>('/api/outreach/channel'),
   deviceQueue: () => get<DeviceSend[]>('/api/outreach/device-queue'),
+
+  // --- WhatsApp linked to a rep's own phone -------------------------------
+  whatsappLinks: () => get<{
+    enabled: boolean;
+    sendingHours: { from: number; until: number };
+    links: WaLink[];
+  }>('/api/outreach/whatsapp-links'),
+  createWhatsappLink: (data: { label?: string; takesUnassigned?: boolean }) =>
+    post<WaLink>('/api/outreach/whatsapp-links', data),
+  updateWhatsappLink: (id: string, data: { takesUnassigned?: boolean; dailyCap?: number | null }) =>
+    patch<WaLink>(`/api/outreach/whatsapp-links/${id}`, data),
+  removeWhatsappLink: (id: string) => del(`/api/outreach/whatsapp-links/${id}`),
   deviceLink: (data: { handle: string; body: string; recordId?: string | null; module?: string; render?: boolean }) =>
     post<{ link: string; body: string }>('/api/outreach/device-link', data),
   queueDeviceSend: (data: Record<string, unknown>) =>

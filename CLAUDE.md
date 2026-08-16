@@ -341,6 +341,47 @@ can set a header.
 
 ---
 
+## WhatsApp: three doors, one queue
+
+1. **Meta Cloud API** (`integrations/whatsapp/provider.ts`) — sanctioned, unconfigured,
+   needs approval and a paid BSP. Templates only outside the 24-hour window.
+2. **A linked phone** (`integrations/whatsapp/linkedDevice.ts` + `wa-bridge/`) — the
+   WhatsApp Web mechanism. The rep's own number, no approval, no window, no fee, and
+   against WhatsApp's terms. Added 2026-08-16 on the owner's explicit decision.
+3. **`wa.me` hand-off** (`integrations/whatsapp/deviceSend.ts`) — the CRM writes it, a
+   person taps send. The floor, and it never goes away: a queued message belonging to
+   somebody with no linked phone still waits in Outreach exactly as before.
+
+All three fill and drain **one queue**, `ipy_device_send`. A linked phone intercepts the
+rows it can send; everything else stays a job for a thumb.
+
+**Pacing lives in the CRM, not the bridge, and this is the load-bearing decision.** The
+bridge is a script on a laptop that gets restarted, run twice by accident and edited by
+whoever is curious; anything it remembers about how recently it sent is forgotten at
+exactly the wrong moment, and the first thing an amnesiac bridge does is send the backlog
+in one burst. So `claimOutbox()` hands out **one message per number** and refuses the next
+until the gap has passed. A bridge polling in a tight loop cannot hurry it.
+
+The limits (`linkedDevice.ts`, unit-tested): 40s + up to 80s random between messages;
+daily cap 25 → 50 → 100 → 200 over the first fortnight from `linked_at`; 08:00–21:00 in
+the **organisation's** timezone via `Intl`, never `getHours()`.
+
+Traffic is one-way: the bridge always calls the CRM, never the reverse, so the machine
+holding the sessions needs no tunnel and no open port. Endpoints are under
+`/api/webhooks/wa-bridge/*`, authenticated by `x-bridge-token`; an unset token **refuses
+every call** rather than allowing them.
+
+Inbound goes through the same `handleInbound` the Meta webhook uses, so the window,
+opt-out, sequence-exit-on-reply, auto-replies, the SLA clock and the timeline are shared
+rather than reimplemented. Media is recorded with its type and caption but **not
+downloaded** — a Meta `mediaId` means nothing on this path.
+
+**Pin Baileys to `6.7.24`.** `6.17.16` sorts highest by semver, was published a year
+*earlier*, and carries a message-spoofing advisory. The dist-tags are the truth here:
+`legacy` → 6.7.24, `latest` → 7.0.0-rc*.
+
+---
+
 ## Scale
 
 `scripts/load-test-data.sql` loads a realistic year — 60,000 leads, 8,000 units, 272,000

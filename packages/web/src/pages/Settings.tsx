@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
 import {
-  Bell, BellOff, Camera, Check, Copy, Fingerprint, KeyRound, Monitor, Moon, Plus, Save, Smartphone, Sun, Trash2, User,
+  Bell, BellOff, Camera, Check, Copy, Fingerprint, KeyRound, MessageCircle, Monitor, Moon, Plus,
+  Save, Smartphone, Sun, Trash2, User,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
@@ -884,6 +885,173 @@ function describeThisDevice(): string {
  * bearer credential for an unattended background sync, it is shown exactly
  * once and only its hash is stored. Revoking a phone kills it immediately.
  */
+/**
+ * Linking a rep's own WhatsApp.
+ *
+ * The pairing code is produced by the bridge, which runs on a machine the rep
+ * never touches, and shown here. So the whole thing they do is: press a button,
+ * point their phone at their screen. That is the entire reason the code travels
+ * through the CRM rather than being printed in a terminal somewhere.
+ */
+function WhatsAppLinkCard(): JSX.Element {
+  const { user } = useApp();
+  const [unlinking, setUnlinking] = useState<string | null>(null);
+
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ['whatsapp-links'],
+    queryFn: () => api.whatsappLinks(),
+  });
+
+  const mine = (data?.links ?? []).find((l) => l.userId === user?.id) ?? null;
+  const waiting = mine?.status === 'pending';
+
+  // Only while a code is on screen. WhatsApp rotates it roughly every twenty
+  // seconds, so a rep looking at a stale one scans something that simply will
+  // not work and concludes the feature is broken.
+  useEffect(() => {
+    if (!waiting) return;
+    const timer = setInterval(() => { void refetch(); }, 3000);
+    return () => clearInterval(timer);
+  }, [waiting, refetch]);
+
+  const link = useMutation({
+    mutationFn: () => api.createWhatsappLink({}),
+    onSuccess: () => { void refetch(); },
+    onError: (e: Error) => toast.error('Could not start linking', e.message),
+  });
+
+  const unlink = async (): Promise<void> => {
+    if (!unlinking) return;
+    await api.removeWhatsappLink(unlinking);
+    setUnlinking(null);
+    toast.success('WhatsApp unlinked', 'The CRM will stop sending from that number.');
+    await refetch();
+  };
+
+  return (
+    <div className="card space-y-5 p-5">
+      <div className="min-w-0 max-w-xl">
+        <p className="text-sm font-medium">Send WhatsApp from your own number</p>
+        <p className="mt-1 text-sm text-muted">
+          Link your WhatsApp the same way you link it to a laptop. The CRM can then send
+          follow-ups from your number by itself, and replies land in the Inbox against the
+          right customer.
+        </p>
+      </div>
+
+      {isLoading ? (
+        <Skeleton className="h-24 w-full" />
+      ) : !data?.enabled ? (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-muted dark:border-slate-700 dark:bg-slate-800/40">
+          Not switched on yet. An administrator turns this on in
+          Admin, Integrations, WhatsApp via linked phone, and the bridge has to be running on
+          the office machine before a code can appear here.
+        </div>
+      ) : !mine || mine.status === 'logged_out' ? (
+        <div className="space-y-3">
+          {mine?.status === 'logged_out' && (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+              Your phone removed this link{mine.lastError ? `: ${mine.lastError}` : '.'} Link it again to carry on.
+            </p>
+          )}
+          <button className="btn-primary btn-sm" disabled={link.isPending} onClick={() => link.mutate()}>
+            {link.isPending ? <Spinner /> : <MessageCircle className="h-3.5 w-3.5" />}
+            Link my WhatsApp
+          </button>
+        </div>
+      ) : mine.status === 'pending' ? (
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+          <div className="shrink-0">
+            {mine.qr ? (
+              <img
+                src={mine.qr}
+                alt="Pairing code for WhatsApp"
+                className="h-44 w-44 rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-700"
+              />
+            ) : (
+              <div className="flex h-44 w-44 items-center justify-center rounded-lg border border-dashed border-slate-300 dark:border-slate-700">
+                <Spinner className="text-slate-400" />
+              </div>
+            )}
+          </div>
+          <div className="min-w-0 space-y-2 text-sm">
+            {mine.qr ? (
+              <>
+                <p className="font-medium">Scan this with the phone whose number you want to use</p>
+                <ol className="list-decimal space-y-1 pl-4 text-muted">
+                  <li>Open WhatsApp on that phone</li>
+                  <li>Settings, then Linked devices</li>
+                  <li>Link a device</li>
+                  <li>Point the camera at this code</li>
+                </ol>
+                <p className="text-xs text-muted">
+                  The code changes every few seconds on its own. If the camera misses it, wait for
+                  the next one.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="font-medium">Waiting for a code</p>
+                <p className="text-muted">
+                  The code is produced by the bridge on the office machine. If nothing appears in
+                  a minute, that program is probably not running.
+                </p>
+              </>
+            )}
+            <button className="btn-ghost btn-sm text-negative" onClick={() => setUnlinking(mine.id)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge color="#22c55e">Connected</Badge>
+            <span className="font-medium">{mine.handle}</span>
+            {mine.takesUnassigned && (
+              <Badge>Also sends messages nobody owns</Badge>
+            )}
+          </div>
+          <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
+            <div>
+              <dt className="text-2xs uppercase tracking-wide text-muted">Sent today</dt>
+              <dd className="tnum">{mine.sentToday} of {mine.dailyCap}</dd>
+            </div>
+            <div>
+              <dt className="text-2xs uppercase tracking-wide text-muted">Sending hours</dt>
+              <dd className="tnum">
+                {data.sendingHours.from}:00 to {data.sendingHours.until}:00
+              </dd>
+            </div>
+            <div>
+              <dt className="text-2xs uppercase tracking-wide text-muted">Bridge last seen</dt>
+              <dd>{mine.lastSeenAt ? relativeTime(mine.lastSeenAt) : 'never'}</dd>
+            </div>
+          </dl>
+          <p className="text-xs text-muted">
+            The daily number starts low on a newly linked phone and rises over the first
+            fortnight. That is deliberate: a new number that sends a lot is the pattern WhatsApp
+            acts on.
+          </p>
+          <button className="btn-secondary btn-sm" onClick={() => setUnlinking(mine.id)}>
+            <Trash2 className="h-3.5 w-3.5" /> Unlink
+          </button>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={Boolean(unlinking)}
+        onClose={() => setUnlinking(null)}
+        onConfirm={unlink}
+        title="Unlink this WhatsApp?"
+        body="The CRM stops sending from that number. Messages waiting to go out go back to the one-tap queue in Outreach, so nothing is lost."
+        confirmLabel="Unlink"
+        danger
+      />
+    </div>
+  );
+}
+
 function PhonesTab(): JSX.Element {
   const { user } = useApp();
   const [pairOpen, setPairOpen] = useState(false);
@@ -902,6 +1070,9 @@ function PhonesTab(): JSX.Element {
   };
 
   return (
+    <div className="space-y-4">
+    <WhatsAppLinkCard />
+
     <div className="card space-y-5 p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 max-w-xl">
@@ -991,6 +1162,7 @@ function PhonesTab(): JSX.Element {
         body="It will stop syncing calls immediately. Pairing again later needs a fresh token from this screen."
         danger
       />
+    </div>
     </div>
   );
 }
