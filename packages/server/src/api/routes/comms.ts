@@ -50,13 +50,20 @@ commsRouter.get('/conversations', asyncHandler(async (req, res) => {
   params.push(limit, offset);
 
   const rows = await db.query(
-    `SELECT c.id, c.channel, c.handle, c.contact_name, c.record_id, c.record_module,
+    // A conversation outlives the lead: it is keyed by phone number and the
+    // messages really were exchanged, so deleting a duplicate lead must not
+    // erase the thread. What must go is the *link* — the row used to keep
+    // offering "Open lead" for a record that no longer exists, which lands on
+    // a 404 and reads as the CRM having lost it. The join condition nulls both
+    // the id and the label together, so the UI falls back to the number.
+    `SELECT c.id, c.channel, c.handle, c.contact_name,
+            r.id AS record_id, CASE WHEN r.id IS NULL THEN NULL ELSE c.record_module END AS record_module,
             c.assigned_to, c.status, c.unread_count, c.last_message_at, c.last_message_preview,
             c.window_expires_at, c.ai_auto_reply, c.sentiment, c.ai_intent, c.ai_summary, c.created_at,
             r.label AS record_label,
             trim(u.first_name || ' ' || u.last_name) AS assigned_name
      FROM ipy_conversation c
-     LEFT JOIN ipy_record r ON r.id = c.record_id
+     LEFT JOIN ipy_record r ON r.id = c.record_id AND r.is_deleted = false
      LEFT JOIN ipy_user u ON u.id = c.assigned_to
      ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
      ORDER BY c.last_message_at DESC NULLS LAST
@@ -72,10 +79,14 @@ commsRouter.get('/conversations', asyncHandler(async (req, res) => {
 
 commsRouter.get('/conversations/:id', asyncHandler(async (req, res) => {
   const conv = await db.queryOne(
-    `SELECT c.*, r.label AS record_label,
+    // Same treatment as the list: `c.*` would carry the dangling record_id, so
+    // the deleted case is overridden after it.
+    `SELECT c.*,
+            r.id AS record_id, CASE WHEN r.id IS NULL THEN NULL ELSE c.record_module END AS record_module,
+            r.label AS record_label,
             trim(u.first_name || ' ' || u.last_name) AS assigned_name
      FROM ipy_conversation c
-     LEFT JOIN ipy_record r ON r.id = c.record_id
+     LEFT JOIN ipy_record r ON r.id = c.record_id AND r.is_deleted = false
      LEFT JOIN ipy_user u ON u.id = c.assigned_to
      WHERE c.id = $1`,
     [req.params.id],

@@ -15,7 +15,7 @@ import { describe, expect, it, beforeAll } from 'vitest';
 import { db } from '../../src/db/pool.js';
 import { pairDevice, syncCalls, type AuthedDevice } from '../../src/integrations/telephony/deviceSync.js';
 import { logManualCall } from '../../src/integrations/telephony/service.js';
-import { createRecord } from '../../src/core/entity/recordService.js';
+import { createRecord, deleteRecord } from '../../src/core/entity/recordService.js';
 import { adminContext, leadInput } from './fixtures.js';
 
 /**
@@ -207,5 +207,53 @@ describe('a call logged by hand', () => {
       durationSeconds: 0,
     });
     expect(callId).toBeTruthy();
+  });
+});
+
+/**
+ * A call outlives the lead; the link to the lead does not.
+ *
+ * Deletion is soft, so `ipy_call.record_id` stays valid and the log went on
+ * showing the deleted lead's name next to an "Open record" button that landed
+ * on a 404. Losing the call would be worse — it happened, and the recording
+ * and the disposition are the evidence — so the row stays and the dead link
+ * goes. Same treatment in the Inbox, where a WhatsApp thread is keyed by phone
+ * number and survives the record entirely.
+ */
+describe('a call whose lead was deleted', () => {
+  it('keeps the call on the log but stops offering a link to nowhere', async () => {
+    const admin = await adminContext();
+    const lead = await createRecord(admin, 'leads', leadInput({
+      full_name: 'Deleted Call Lead',
+      mobile: `96${String(Date.now()).slice(-8)}`,
+    }));
+
+    const { callId } = await logManualCall({
+      userId: device.userId,
+      recordId: lead.id,
+      module: 'leads',
+      toNumber: '9700000789',
+      direction: 'outbound',
+      durationSeconds: 60,
+      disposition: 'Interested',
+    });
+
+    await deleteRecord(admin, 'leads', lead.id);
+
+    // The row is still there — the call is a fact about the business.
+    const stored = await db.queryOne<{ record_id: string | null }>(
+      `SELECT record_id FROM ipy_call WHERE id = $1`, [callId],
+    );
+    expect(stored?.record_id).toBe(lead.id);
+
+    // What the API hands the call log: no id, no module, no name to click.
+    const shown = await db.queryOne<{ record_id: string | null; record_label: string | null }>(
+      `SELECT r.id AS record_id, r.label AS record_label
+         FROM ipy_call c LEFT JOIN ipy_record r ON r.id = c.record_id AND r.is_deleted = false
+        WHERE c.id = $1`,
+      [callId],
+    );
+    expect(shown?.record_id).toBeNull();
+    expect(shown?.record_label).toBeNull();
   });
 });

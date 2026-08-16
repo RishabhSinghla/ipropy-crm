@@ -106,11 +106,16 @@ telephonyRouter.get('/calls', asyncHandler(async (req, res) => {
     `SELECT c.id, c.direction, c.from_number, c.to_number, c.status, c.duration_seconds,
             c.recording_url, c.disposition, c.notes, c.ai_summary, c.ai_sentiment,
             c.ai_next_actions, c.ai_objections, c.ai_score, c.ai_talk_ratio,
-            c.started_at, c.ended_at, c.record_id, c.record_module, c.source, c.device_id,
+            c.started_at, c.ended_at, c.source, c.device_id,
+            -- The call happened and stays on the log; the link to a deleted
+            -- lead does not, or the row offers a button that 404s. Nulled
+            -- together so the UI falls back to the phone number it already has.
+            r.id AS record_id,
+            CASE WHEN r.id IS NULL THEN NULL ELSE c.record_module END AS record_module,
             r.label AS record_label,
             trim(u.first_name || ' ' || u.last_name) AS agent_name
      FROM ipy_call c
-     LEFT JOIN ipy_record r ON r.id = c.record_id
+     LEFT JOIN ipy_record r ON r.id = c.record_id AND r.is_deleted = false
      LEFT JOIN ipy_user u ON u.id = c.user_id
      ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
      ORDER BY c.started_at DESC
@@ -122,9 +127,13 @@ telephonyRouter.get('/calls', asyncHandler(async (req, res) => {
 
 telephonyRouter.get('/calls/:id', asyncHandler(async (req, res) => {
   const row = await db.queryOne<Record<string, unknown> & { user_id: string | null }>(
-    `SELECT c.*, r.label AS record_label, trim(u.first_name || ' ' || u.last_name) AS agent_name
+    `SELECT c.*,
+            r.id AS record_id,
+            CASE WHEN r.id IS NULL THEN NULL ELSE c.record_module END AS record_module,
+            r.label AS record_label,
+            trim(u.first_name || ' ' || u.last_name) AS agent_name
      FROM ipy_call c
-     LEFT JOIN ipy_record r ON r.id = c.record_id
+     LEFT JOIN ipy_record r ON r.id = c.record_id AND r.is_deleted = false
      LEFT JOIN ipy_user u ON u.id = c.user_id
      WHERE c.id = $1`,
     [req.params.id],
@@ -254,8 +263,11 @@ telephonyRouter.get('/needs-disposition', asyncHandler(async (req, res) => {
   await assertCapability(user, 'telephony.call');
   const rows = await db.query(
     `SELECT c.id, c.direction, c.from_number, c.to_number, c.duration_seconds,
-            c.started_at, c.record_id, c.record_module, r.label AS record_label
-     FROM ipy_call c LEFT JOIN ipy_record r ON r.id = c.record_id
+            c.started_at,
+            r.id AS record_id,
+            CASE WHEN r.id IS NULL THEN NULL ELSE c.record_module END AS record_module,
+            r.label AS record_label
+     FROM ipy_call c LEFT JOIN ipy_record r ON r.id = c.record_id AND r.is_deleted = false
      WHERE c.user_id = $1 AND c.disposition IS NULL
        AND c.status = 'completed' AND c.duration_seconds > 0
        AND c.started_at > now() - interval '3 days'
