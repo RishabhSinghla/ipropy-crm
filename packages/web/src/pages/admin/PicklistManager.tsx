@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import {
-  ChevronDown, ChevronUp, GripVertical, ListTree, Pencil, Plus, Save, Star, Trash2,
+  AlertTriangle, ChevronDown, ChevronUp, GripVertical, ListTree, Pencil, Plus, Save, Star, Trash2,
 } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { toast } from '../../lib/store';
@@ -37,6 +37,12 @@ interface Option {
   isDefault: boolean;
   /** What this row was called when it was loaded — absent on a new row. */
   previousValue?: string;
+  /**
+   * What in the application matches this option by its stored text, if
+   * anything. Renaming rewrites records, saved views, widgets and workflow
+   * rules; it cannot rewrite a query, so these need saying out loud.
+   */
+  usedInCode?: string | null;
 }
 
 const SWATCHES = ['#64748b', '#ef4444', '#f97316', '#f59e0b', '#22c55e', '#14b8a6',
@@ -79,6 +85,7 @@ export default function PicklistManager(): JSX.Element {
       isActive: v.isActive,
       isDefault: v.isDefault,
       previousValue: v.value,
+      usedInCode: v.usedInCode ?? null,
     })));
     setDirty(false);
   }, [current]);
@@ -310,16 +317,30 @@ export default function PicklistManager(): JSX.Element {
                   }}
                 />
 
-                <input
-                  className="input w-40 py-1.5 font-mono text-xs"
-                  placeholder="Stored value"
-                  aria-label="Stored value"
-                  value={option.value}
-                  onChange={(e) => update(index, { value: e.target.value })}
-                  title={option.previousValue && option.previousValue !== option.value
-                    ? `Saving moves every record from "${option.previousValue}" to "${option.value}"`
-                    : 'What gets written on the record'}
-                />
+                <div className="relative">
+                  <input
+                    className={cn(
+                      'input w-40 py-1.5 font-mono text-xs',
+                      option.usedInCode && option.previousValue !== option.value
+                        && 'border-amber-400 focus:border-amber-500 focus:ring-amber-500',
+                    )}
+                    placeholder="Stored value"
+                    aria-label="Stored value"
+                    value={option.value}
+                    onChange={(e) => update(index, { value: e.target.value })}
+                    title={option.previousValue && option.previousValue !== option.value
+                      ? `Saving moves every record from "${option.previousValue}" to "${option.value}"`
+                      : 'What gets written on the record'}
+                  />
+                  {option.usedInCode && (
+                    <span
+                      className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300"
+                      title={`The app looks for this option by name — it drives ${option.usedInCode}. Renaming it will stop that working, with no error anywhere.`}
+                    >
+                      <AlertTriangle className="h-2.5 w-2.5" />
+                    </span>
+                  )}
+                </div>
 
                 <div className="flex items-center gap-1">
                   {SWATCHES.map((c) => (
@@ -595,7 +616,12 @@ function DeleteOptionDialog({
   onDeleted: () => void;
 }): JSX.Element {
   const [usage, setUsage] = useState<
-    { total: number; byField: { module: string; field: string; count: number }[]; canClear: boolean } | null
+    {
+      total: number;
+      byField: { module: string; field: string; count: number }[];
+      canClear: boolean;
+      usedInCode?: string | null;
+    } | null
   >(null);
   const [replaceWith, setReplaceWith] = useState('');
   const [busy, setBusy] = useState(false);
@@ -657,6 +683,22 @@ function DeleteOptionDialog({
         </>
       }
     >
+      {/* Renaming and deleting move every record and every saved filter. What
+          they cannot move is a query in the application that matches on this
+          exact word, and a few options have those. Said plainly, before the
+          button, rather than discovered later as "the website went blank". */}
+      {usage?.usedInCode && (
+        <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs dark:border-amber-900 dark:bg-amber-950/40">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <p className="text-amber-900 dark:text-amber-200">
+            <strong className="font-medium">The app looks for this option by name.</strong>{' '}
+            It drives {usage.usedInCode}. Removing or renaming it will stop that working, and
+            nothing will report an error — switching it to <strong className="font-medium">inactive</strong>{' '}
+            instead keeps it working while hiding it from new records.
+          </p>
+        </div>
+      )}
+
       {!usage ? (
         <div className="flex items-center gap-2 text-sm text-muted">
           <Spinner /> Checking which records use it…

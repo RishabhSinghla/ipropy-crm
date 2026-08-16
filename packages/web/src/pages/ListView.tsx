@@ -619,7 +619,11 @@ export default function ListView(): JSX.Element {
               in both axes at once, inside a region already scrolling vertically.
               That band is not a rarity — it is a laptop at a scaled resolution
               and a window snapped to half a screen. */}
-          <div className="divide-y divide-slate-100 lg:hidden dark:divide-slate-800">
+          {/* The test id is the stable handle. The mobile specs used to select
+              this by its `md:hidden` class, so moving the breakpoint broke
+              three of them — a Tailwind utility is a layout decision, not an
+              identifier. */}
+          <div data-testid="record-card-list" className="divide-y divide-slate-100 lg:hidden dark:divide-slate-800">
             {rows.map((row) => (
               <MobileRecordCard
                 key={row.id}

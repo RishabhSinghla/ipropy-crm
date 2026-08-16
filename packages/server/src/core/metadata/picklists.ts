@@ -49,6 +49,41 @@ export const PICKLISTS_USED_IN_CODE: Record<string, string> = {
   lead_status: 'the statuses call analysis may propose for a lead',
 };
 
+/**
+ * Individual options the application matches on by their stored text.
+ *
+ * Renaming an option is otherwise completely safe: `renameValueEverywhere`
+ * rewrites the records that hold it, the saved views that filter on it, the
+ * dashboard widgets that count it and the workflow rules that name it. What it
+ * cannot rewrite is a string literal in a query, and there are a couple of
+ * dozen of those — `p.status = 'Available'`, `status = 'New'`, `NOT IN
+ * ('Won','Lost','Junk')`.
+ *
+ * So the rename succeeds, every record moves, and a feature silently stops:
+ * rename "Available" and the public website's listings go blank, buyer-match
+ * alerts stop finding inventory, and nothing anywhere says why. That is the
+ * failure mode this map exists to make visible — the admin is still allowed to
+ * do it, they are simply told first.
+ *
+ * Keyed `picklist.value`. Keep in step with the call sites; the grep that
+ * finds them is `'Available'|'New'|'Junk'|'Lost'|'Converted'` under
+ * `core/`, `ai/`, `api/` and `integrations/`.
+ */
+export const VALUES_USED_IN_CODE: Record<string, string> = {
+  'property_status.Available': 'the public website catalogue, share links, and buyer-match alerts — all of which look for this exact word',
+  'lead_status.New': 'the “needs attention” highlight on lists, and the rule that moves a lead to Contacted the first time anyone reaches them',
+  'lead_status.Contacted': 'what a lead becomes on first contact, from a call, a WhatsApp send or an inbound reply',
+  'lead_status.Junk': 'the −60 lead-score penalty, and what a Wrong Number call disposition sets',
+  'lead_status.Lost': 'the −50 lead-score penalty, and the lost-lead revival that watches for a price drop',
+  'lead_status.Won': 'excluded from open-lead counts in Ask iPropy and the dashboard',
+  'lead_status.Converted': 'excluded from the nurture sequence and open-lead counts',
+};
+
+/** What breaks if this option is renamed or deleted — null when nothing does. */
+export function valueUsedInCode(picklist: string, value: string): string | null {
+  return VALUES_USED_IN_CODE[`${picklist}.${value}`] ?? null;
+}
+
 /** Every field, on every module, whose options come from this dropdown. */
 export async function fieldsUsingPicklist(name: string): Promise<PicklistFieldUse[]> {
   // Inactive modules included on purpose: their rows still hold the value, and

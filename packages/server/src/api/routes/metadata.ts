@@ -8,7 +8,7 @@ import { BadRequestError, ConflictError, NotFoundError } from '../../utils/error
 import { registry } from '../../core/metadata/registry.js';
 import {
   countRecordsWithValue, fieldsThatCannotBeCleared, fieldsUsingPicklist,
-  PICKLISTS_USED_IN_CODE, replaceValueInRecords,
+  PICKLISTS_USED_IN_CODE, replaceValueInRecords, valueUsedInCode,
 } from '../../core/metadata/picklists.js';
 import { assertCapability, canAccessModule, getFieldPermissions, getModulePermission, hasCapability, invalidatePermissions } from '../../core/permissions/index.js';
 import { FORMULA_FUNCTIONS, validateFormula } from '../../core/entity/formula.js';
@@ -804,7 +804,12 @@ metadataRouter.get('/picklist-catalogue', asyncHandler(async (req, res) => {
       label: row.label,
       isSystem: row.is_system,
       allowAdhoc: row.allow_adhoc,
-      values: all[row.name] ?? [],
+      // Each option carries what depends on it by name, so the editor can warn
+      // the moment somebody types over one rather than after they save.
+      values: (all[row.name] ?? []).map((v) => ({
+        ...v,
+        usedInCode: valueUsedInCode(row.name, v.value),
+      })),
       usedBy: usedBy.map((u) => ({
         module: u.module, moduleLabel: u.moduleLabel, field: u.field, fieldLabel: u.fieldLabel,
       })),
@@ -834,7 +839,15 @@ metadataRouter.get('/picklists/:name/value-usage', asyncHandler(async (req, res)
   ]);
   // `canClear` lets the dialog stop offering "leave the field empty" on a
   // required field, rather than offering it and then refusing.
-  res.json({ ...usage, canClear: blocked.length === 0 });
+  //
+  // `usedInCode` is the other half: renaming an option moves every record and
+  // every saved filter, and cannot move a string literal in a query. The admin
+  // keeps the decision; they stop making it blind.
+  res.json({
+    ...usage,
+    canClear: blocked.length === 0,
+    usedInCode: valueUsedInCode(req.params.name, value),
+  });
 }));
 
 metadataRouter.post('/picklists', asyncHandler(async (req, res) => {

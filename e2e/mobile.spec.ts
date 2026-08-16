@@ -11,8 +11,8 @@ import { unique, waitForRecords } from './helpers';
  * than no mobile coverage, because the green tick implied it existed.
  *
  * Phone size is genuinely different code, not a narrower rendering of the same
- * markup: ListView renders a card list (md:hidden) instead of the table, and
- * the sidebar becomes an overlay drawer (lg:hidden). Neither is reachable from
+ * markup: ListView renders a card list (`record-card-list`) instead of the
+ * table, and the sidebar becomes an overlay drawer. Neither is reachable from
  * the desktop project at any point, and the desktop axe scans skip both
  * because axe ignores elements that are display:none at the current viewport —
  * which is how two unlabelled drawer buttons survived the accessibility pass.
@@ -67,7 +67,7 @@ test.describe('phone', () => {
     await page.goto('/leads');
     await waitForRecords(page);
 
-    const card = page.locator('div.md\\:hidden > div').first();
+    const card = page.getByTestId('record-card-list').locator('> div').first();
     const box = await card.boundingBox();
     expect(box).not.toBeNull();
 
@@ -103,7 +103,7 @@ test.describe('phone', () => {
 
     // Search for something that is definitely there — the record the list is
     // already showing — rather than a hardcoded name that depends on seed data.
-    const label = ((await page.locator('div.md\\:hidden > div').first().locator('p').first().textContent()) ?? '').trim();
+    const label = ((await page.getByTestId('record-card-list').locator('> div').first().locator('p').first().textContent()) ?? '').trim();
     expect(label.length).toBeGreaterThan(1);
 
     const search = page.getByPlaceholder(/search everything/i);
@@ -139,7 +139,7 @@ test.describe('phone', () => {
     await page.goto('/leads');
     await waitForRecords(page);
 
-    const card = page.locator('div.md\\:hidden > div').first();
+    const card = page.getByTestId('record-card-list').locator('> div').first();
     const box = await card.boundingBox();
     await card.dispatchEvent('pointerdown', {
       pointerType: 'touch', pointerId: 1, clientX: box!.x + box!.width / 2, clientY: box!.y + 20,

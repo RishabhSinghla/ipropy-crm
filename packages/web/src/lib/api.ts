@@ -504,6 +504,8 @@ export const api = {
     values: {
       value: string; label: string; color: string | null;
       sequence: number; isActive: boolean; isDefault: boolean;
+      /** What the application matches on this exact word, if anything. */
+      usedInCode: string | null;
     }[];
     usedBy: { module: string; moduleLabel: string; field: string; fieldLabel: string }[];
     canDelete: boolean;
@@ -518,7 +520,11 @@ export const api = {
   renamePicklist: (name: string, label: string) => patch(`/api/meta/picklists/${name}`, { label }),
   deletePicklist: (name: string) => del(`/api/meta/picklists/${name}`),
   picklistValueUsage: (name: string, value: string) => get<{
-    total: number; byField: { module: string; field: string; count: number }[]; canClear: boolean;
+    total: number;
+    byField: { module: string; field: string; count: number }[];
+    canClear: boolean;
+    /** What in the application matches this option by name, if anything. */
+    usedInCode: string | null;
   }>(`/api/meta/picklists/${name}/value-usage?value=${encodeURIComponent(value)}`),
   deletePicklistValue: (name: string, value: string, opts: { replaceWith?: string; clear?: boolean } = {}) =>
     del<{ ok: boolean; movedRecords: number }>(
