@@ -46,6 +46,9 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
     { key: 'verifyToken', label: 'Webhook Verify Token', source: 'config', placeholder: 'ipropy-verify-token' },
     { key: 'apiVersion', label: 'API Version', source: 'config', placeholder: 'v21.0' },
   ],
+  whatsapp_linked: [
+    { key: 'bridgeToken', label: 'Bridge password', source: 'credentials', secret: true },
+  ],
   twilio: [
     { key: 'accountSid', label: 'Account SID', source: 'credentials' },
     { key: 'authToken', label: 'Auth Token', source: 'credentials', secret: true },
@@ -253,6 +256,26 @@ const GUIDES: Record<string, Guide> = {
       { title: 'Point Meta at us', help: 'WhatsApp → Configuration → Edit. Paste the URL below as the Callback URL and the verify token above as the Verify Token, then tick the "messages" field.', copyPath: '/api/webhooks/whatsapp' },
     ],
   },
+  whatsapp_linked: {
+    outcome: 'Each person links their own WhatsApp, like linking it to a laptop, and the CRM sends follow-ups from their number. No Meta approval and no monthly fee. WhatsApp does not permit this and can ban a number, so the CRM paces every send.',
+    minutes: 5,
+    steps: [
+      {
+        title: 'We made you a password for the bridge',
+        help: 'The bridge is the small program that holds the WhatsApp connection. This password is the only thing stopping anyone else talking to your CRM as if they were it. Save it now, because you paste it into the bridge in the next step.',
+        field: 'bridgeToken',
+        generate: true,
+      },
+      {
+        title: 'Start the bridge on the office machine',
+        help: 'On a computer that stays on, open a terminal in the wa-bridge folder and run: WA_BRIDGE_TOKEN=<the password above> CRM_URL=https://ipropy-crm.onrender.com npm start. Leave it running. It only ever calls out to the CRM, so the machine needs no open port.',
+      },
+      {
+        title: 'Switch this on, then link a phone',
+        help: 'Save this card and turn it on. Everyone then links their own number under Settings, Send WhatsApp from your own number. They press a button, a QR code appears, and they scan it with WhatsApp on their phone under Settings, Linked devices.',
+      },
+    ],
+  },
   twilio: {
     outcome: 'Click a phone number in the CRM and your phone rings, then connects the customer. Calls are logged and recorded.',
     minutes: 5,
@@ -431,7 +454,7 @@ const CATALOGUE: { title: string; blurb: string; icon: typeof MessageCircle; pro
     title: 'Message customers on WhatsApp',
     blurb: 'Two-way chat in the Inbox, plus templates and broadcasts.',
     icon: MessageCircle,
-    providers: ['meta_whatsapp'],
+    providers: ['meta_whatsapp', 'whatsapp_linked'],
   },
   {
     title: 'Make and record calls',
