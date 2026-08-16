@@ -16,11 +16,11 @@ import type { JSX } from 'react';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
-import { Loader2, MessageCircle, Search, Smartphone } from 'lucide-react';
+import { Loader2, LogOut, MessageCircle, Search, Smartphone } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
-import { Avatar, Badge, EmptyState, Skeleton, Spinner } from '../components/ui';
+import { Avatar, Badge, ConfirmDialog, EmptyState, Skeleton, Spinner } from '../components/ui';
 import { Thread } from './Inbox';
 
 interface Conversation {
@@ -40,6 +40,7 @@ export default function WhatsApp(): JSX.Element {
   const { user } = useApp();
   const [active, setActive] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [unlinking, setUnlinking] = useState<string | null>(null);
 
   const { data: linkData, isLoading: loadingLink, refetch } = useQuery({
     queryKey: ['whatsapp-links'],
@@ -87,6 +88,16 @@ export default function WhatsApp(): JSX.Element {
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
               {mine?.handle ?? 'Linked'}
             </span>
+            {mine && (
+              <button
+                className="btn-ghost p-1 text-muted"
+                title="Unlink this phone"
+                aria-label="Unlink this phone"
+                onClick={() => setUnlinking(mine.id)}
+              >
+                <LogOut className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
@@ -103,6 +114,25 @@ export default function WhatsApp(): JSX.Element {
           {mine ? `${mine.sentToday} of ${mine.dailyCap} automated messages sent today` : null}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={Boolean(unlinking)}
+        title="Unlink this WhatsApp?"
+        // Says what actually happens, because the second sentence is the whole
+        // reason somebody unlinks deliberately rather than by accident.
+        body="The CRM will stop sending from this number. Chats already saved stay where they are. Linking again re-scans your phone's history, which is how you pull in older conversations."
+        confirmLabel="Unlink"
+        danger
+        onClose={() => setUnlinking(null)}
+        onConfirm={async () => {
+          if (!unlinking) return;
+          await api.removeWhatsappLink(unlinking);
+          setUnlinking(null);
+          setActive(null);
+          toast.success('WhatsApp unlinked', 'Link it again to carry on.');
+          void refetch();
+        }}
+      />
 
       <div className={cn('min-w-0 flex-1', !active && 'hidden sm:block')}>
         {active
