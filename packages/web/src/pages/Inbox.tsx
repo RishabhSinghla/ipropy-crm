@@ -7,6 +7,7 @@ import {
   AlertTriangle, Check, CheckCheck, Clock, ExternalLink, MessageCircle, Paperclip, Search, Send, Sparkles, User,
 } from 'lucide-react';
 import { api, authedFileUrl } from '../lib/api';
+import { useWatchConversation } from '../lib/realtime';
 import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { Avatar, Badge, EmptyState, Select, Skeleton, Spinner } from '../components/ui';
@@ -90,7 +91,7 @@ export default function Inbox(): JSX.Element {
   const { data: conversations, isLoading } = useQuery({
     queryKey: ['conversations', statusFilter, search],
     queryFn: () => api.conversations({ status: statusFilter, search: search || undefined, limit: 60 }),
-    refetchInterval: 20_000,
+    refetchInterval: 60_000,
   });
 
   const list = (conversations ?? []) as unknown as Conversation[];
@@ -221,10 +222,14 @@ function Thread({ conversationId, onBack }: { conversationId: string; onBack: ()
   const [templateName, setTemplateName] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  useWatchConversation(conversationId);
+
   const { data, isLoading } = useQuery({
     queryKey: ['conversation', conversationId],
     queryFn: () => api.conversation(conversationId),
-    refetchInterval: 15_000,
+    // Messages arrive over the socket now. This is the safety net for a dropped
+    // connection, not the delivery mechanism, so it is slow on purpose.
+    refetchInterval: 60_000,
   });
 
   const { data: templates } = useQuery({

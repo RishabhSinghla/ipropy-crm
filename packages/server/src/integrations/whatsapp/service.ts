@@ -385,6 +385,21 @@ async function sendThroughLinkedPhone(args: {
       WHERE id = $1`,
     [conversationId, body.slice(0, 200)],
   );
+
+  // Announced at queue time, not at confirmation. The message is real and
+  // visible the moment it is written, and every other screen watching this
+  // thread should see it then rather than a minute later when the phone gets
+  // round to it. `linkedSendConfirmed` follows once it actually leaves.
+  bus.emitAsync('message.sent', {
+    conversationId,
+    messageId: message!.id,
+    direction: 'outbound',
+    channel: 'whatsapp',
+    body,
+    handle,
+    recordId: conversation?.record_id ?? null,
+  });
+
   return { messageId: message!.id, status: 'queued' };
 }
 

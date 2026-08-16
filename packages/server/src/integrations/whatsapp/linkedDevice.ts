@@ -38,6 +38,7 @@ import { db, type Tx } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { BadRequestError, NotFoundError } from '../../utils/errors.js';
 import { getSettings } from '../../core/settings/integrations.js';
+import { bus } from '../../core/events/bus.js';
 import { organisationTimezone } from '../../core/capture/captureTime.js';
 import { isOptedOut } from './consent.js';
 import { logDeviceMessage } from './deviceSend.js';
@@ -588,13 +589,27 @@ export async function reportResult(input: {
     // logDeviceMessage here instead would write a second message row and the
     // reply would appear twice in the thread the moment the phone confirmed it.
     if (row.message_id) {
-      await db.query(
+      const updated = await db.queryOne<{ conversation_id: string; body: string | null }>(
         `UPDATE ipy_message
             SET status = 'sent', provider_message_id = COALESCE($2, provider_message_id),
                 error_message = NULL
-          WHERE id = $1`,
+          WHERE id = $1
+        RETURNING conversation_id, body`,
         [row.message_id, input.providerMessageId ?? null],
       );
+      // So the clock on the bubble becomes a tick while somebody is looking at
+      // it, rather than on the next refetch.
+      if (updated) {
+        bus.emitAsync('message.sent', {
+          conversationId: updated.conversation_id,
+          messageId: row.message_id,
+          direction: 'outbound',
+          channel: 'whatsapp',
+          body: updated.body,
+          handle: row.handle,
+          recordId: row.record_id,
+        });
+      }
       return;
     }
     await logDeviceMessage({
@@ -628,10 +643,22 @@ export async function reportResult(input: {
   // retry is still coming would have somebody re-typing a message that is
   // about to send itself.
   if (giveUp && row.message_id) {
-    await db.query(
-      `UPDATE ipy_message SET status = 'failed', error_message = $2 WHERE id = $1`,
+    const failed = await db.queryOne<{ conversation_id: string }>(
+      `UPDATE ipy_message SET status = 'failed', error_message = $2 WHERE id = $1
+       RETURNING conversation_id`,
       [row.message_id, input.error ?? 'The linked phone could not send this message'],
     );
+    if (failed) {
+      bus.emitAsync('message.sent', {
+        conversationId: failed.conversation_id,
+        messageId: row.message_id,
+        direction: 'outbound',
+        channel: 'whatsapp',
+        body: row.body,
+        handle: row.handle,
+        recordId: row.record_id,
+      });
+    }
   }
   logger.warn(
     { sendId: input.sendId, error: input.error, giveUp },

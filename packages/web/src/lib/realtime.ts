@@ -102,6 +102,28 @@ export function useRealtime(enabled: boolean): void {
 }
 
 /**
+ * Subscribe to one conversation's room while its thread is open.
+ *
+ * `inbox:update` already reaches whoever the thread is assigned to, but the
+ * per-message event goes to this room only — so without joining it, a reply
+ * sent from somebody else's screen, or a linked phone confirming that a queued
+ * message actually left, arrives only on the next poll. That is the difference
+ * between a chat window and a page that refreshes.
+ */
+export function useWatchConversation(conversationId: string | undefined): void {
+  useEffect(() => {
+    if (!conversationId) return;
+    const s = getSocket();
+    if (!s) return;
+    const join = (): void => { s.emit('watch:conversation', conversationId); };
+    join();
+    // Rooms are lost on reconnect, so re-join rather than assuming membership.
+    s.on('connect', join);
+    return () => { s.off('connect', join); };
+  }, [conversationId]);
+}
+
+/**
  * Subscribe to one record's room while its detail page is open, so server-side
  * changes to that record (workflow updates, AI insights) arrive immediately.
  */
