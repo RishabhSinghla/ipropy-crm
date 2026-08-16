@@ -24,6 +24,7 @@ import {
   type ArchiveSet,
 } from '../../core/media/archive.js';
 import { applyFileSecurityHeaders } from '../../core/media/serving.js';
+import { PHOTO_ORDER } from '../../core/media/ordering.js';
 import { recordService } from '../../core/entity/recordService.js';
 import { unseenCounts } from '../../core/entity/unseen.js';
 import {
@@ -451,16 +452,53 @@ miscRouter.get('/records/:recordId/files', asyncHandler(async (req, res) => {
 
   const rows = await db.query(
     `SELECT a.id, a.file_name, a.mime_type, a.size, a.category, a.created_at, a.variants,
-            a.cull_state, a.cull_of, a.stats,
+            a.cull_state, a.cull_of, a.stats, a.sort_order,
             a.ai_category, a.ai_caption, a.ai_confidence, a.ai_classified_at,
             trim(u.first_name || ' ' || u.last_name) AS uploaded_by_name
      FROM ipy_attachment a LEFT JOIN ipy_user u ON u.id = a.uploaded_by
      WHERE a.record_id = $1
      ORDER BY CASE WHEN a.cull_state = 'keep' THEN 0 WHEN a.cull_state IS NULL THEN 1 ELSE 2 END,
-              a.captured_at NULLS LAST, a.created_at DESC`,
+              ${PHOTO_ORDER}, a.created_at DESC`,
     [req.params.recordId],
   );
   res.json(rows.rows);
+}));
+
+/**
+ * Arrange a record's photos.
+ *
+ * The whole list is sent, not a pair of swapped ids: a partial reorder has to
+ * be reconciled against positions the client cannot see, and two people
+ * arranging the same property would interleave into an order neither chose.
+ * Sending the list makes the last save win, visibly and completely — the same
+ * reasoning as the sequence-steps editor in outreach.ts.
+ *
+ * Ids that do not belong to this record are ignored rather than rejected, so a
+ * photo deleted in another tab does not fail the save of the other nineteen.
+ */
+miscRouter.put('/records/:recordId/files/order', asyncHandler(async (req, res) => {
+  const scope = getScope(req);
+  const input = z.object({ ids: z.array(z.string().uuid()).max(500) }).parse(req.body);
+
+  const record = await db.queryOne<{ module_name: string }>(
+    `SELECT module_name FROM ipy_record WHERE id = $1 AND is_deleted = false`,
+    [req.params.recordId],
+  );
+  if (!record) throw new NotFoundError('Record not found');
+  if (!(await canAccessRecord(scope, record.module_name, req.params.recordId, 'edit'))) {
+    throw new ForbiddenError('You cannot arrange files on this record');
+  }
+
+  await transaction(async (conn) => {
+    for (const [index, id] of input.ids.entries()) {
+      await conn.query(
+        `UPDATE ipy_attachment SET sort_order = $3 WHERE id = $1 AND record_id = $2`,
+        [id, req.params.recordId, index],
+      );
+    }
+  });
+
+  res.json({ ok: true, ordered: input.ids.length });
 }));
 
 /**

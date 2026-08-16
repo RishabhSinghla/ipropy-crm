@@ -826,6 +826,9 @@ export const api = {
     get<{ notifications: Record<string, unknown>[]; unreadCount: number }>(`/api/notifications${qs({ unread })}`),
   markNotificationsRead: (ids?: string[]) => post('/api/notifications/read', { ids }),
   files: (recordId: string) => get<Record<string, unknown>[]>(`/api/records/${recordId}/files`),
+  /** Full list in the wanted order — the server assigns positions from it. */
+  reorderFiles: (recordId: string, ids: string[]) =>
+    put<{ ok: true; ordered: number }>(`/api/records/${recordId}/files/order`, { ids }),
   uploadFile: (file: File, recordId?: string, module?: string, shootSessionId?: string) => {
     const form = new FormData();
     form.append('file', file);

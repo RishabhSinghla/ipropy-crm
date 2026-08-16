@@ -483,7 +483,9 @@ export default function RecordDetail(): JSX.Element {
             wrote before anything a model inferred, and the AI panel grows with
             however many insights exist — below it, notes were often offscreen. */}
         <div className="space-y-4">
-          {moduleName === 'properties' && <PropertyPhotoCarousel recordId={id!} />}
+          {moduleName === 'properties' && (
+            <PropertyPhotoCarousel recordId={id!} canEdit={Boolean(record.can?.edit)} />
+          )}
           <ReplyReady recordId={id!} />
           <PendingProposals module={moduleName!} recordId={id!} />
           <CommentsPanel module={moduleName!} id={id!} currentUser={user?.fullName ?? ''} />
@@ -1248,9 +1250,14 @@ function EditFileModal({
 // Sidebar panels
 // ---------------------------------------------------------------------------
 
-function PropertyPhotoCarousel({ recordId }: { recordId: string }): JSX.Element | null {
+function PropertyPhotoCarousel({
+  recordId, canEdit,
+}: { recordId: string; canEdit: boolean }): JSX.Element | null {
+  const queryClient = useQueryClient();
   const [index, setIndex] = useState(0);
   const [preview, setPreview] = useState<ViewableFile | null>(null);
+  const [dragFrom, setDragFrom] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
   const { data, isLoading } = useQuery({
     queryKey: ['files', recordId],
     queryFn: () => api.files(recordId),
@@ -1262,6 +1269,35 @@ function PropertyPhotoCarousel({ recordId }: { recordId: string }): JSX.Element 
   useEffect(() => {
     if (index >= photos.length) setIndex(Math.max(0, photos.length - 1));
   }, [index, photos.length]);
+
+  /**
+   * Write the whole arrangement, not the one photo that moved.
+   *
+   * The server assigns positions from the list it is given, so sending the
+   * full order is what makes the last save win completely instead of two
+   * people's partial moves interleaving into an order neither chose.
+   */
+  const arrange = async (ids: string[], message: string): Promise<void> => {
+    setSaving(true);
+    try {
+      await api.reorderFiles(recordId, ids);
+      await queryClient.invalidateQueries({ queryKey: ['files', recordId] });
+      toast.success(message, 'Buyers see them in this order too.');
+    } catch (err) {
+      toast.error('Could not save that order', (err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const move = (from: number, to: number): void => {
+    if (from === to) return;
+    const next = photos.map((p) => p.id);
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setIndex(to);
+    void arrange(next, to === 0 ? 'Cover photo set' : 'Photos rearranged');
+  };
 
   // No placeholder while loading. Most properties have no photos yet, so a
   // reserved 4:3 block meant the sidebar always jumped: a big grey rectangle
@@ -1276,7 +1312,9 @@ function PropertyPhotoCarousel({ recordId }: { recordId: string }): JSX.Element 
     <div className="card overflow-hidden">
       <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2 dark:border-slate-800">
         <p className="flex items-center gap-1.5 text-sm font-medium"><Images className="h-3.5 w-3.5" /> Property photos</p>
-        <span className="text-2xs text-muted">{index + 1} / {photos.length}</span>
+        <span className="text-2xs text-muted">
+          {saving ? 'Saving…' : `${index + 1} / ${photos.length}`}
+        </span>
       </div>
       <div className="group relative bg-slate-100 dark:bg-slate-950">
         <button type="button" className="block w-full" onClick={() => setPreview(photo)} aria-label={`Open ${photo.fileName}`}>
@@ -1286,6 +1324,23 @@ function PropertyPhotoCarousel({ recordId }: { recordId: string }): JSX.Element 
             className="aspect-[4/3] w-full object-contain"
           />
         </button>
+        {index === 0 && (
+          <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-2xs font-medium text-white">
+            Cover
+          </span>
+        )}
+        {/* The one operation anybody actually wants from a photo list: this is
+            the shot on the share link, in the zip and at the top of the set. */}
+        {canEdit && photos.length > 1 && index !== 0 && (
+          <button
+            type="button"
+            onClick={() => move(index, 0)}
+            disabled={saving}
+            className="absolute left-2 top-2 rounded-full bg-black/60 px-2.5 py-1 text-2xs font-medium text-white hover:bg-black/75 disabled:opacity-50"
+          >
+            Make cover
+          </button>
+        )}
         {photos.length > 1 && (
           <>
             <button type="button" className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-black/55 p-1.5 text-white" onClick={() => go(-1)} aria-label="Previous photo">
@@ -1298,22 +1353,41 @@ function PropertyPhotoCarousel({ recordId }: { recordId: string }): JSX.Element 
         )}
       </div>
       {photos.length > 1 && (
-        <div className="flex gap-1.5 overflow-x-auto p-2">
-          {photos.map((item, itemIndex) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setIndex(itemIndex)}
-              className={cn(
-                'h-14 w-14 shrink-0 overflow-hidden rounded border-2 bg-subtle',
-                itemIndex === index ? 'border-brand-500' : 'border-transparent',
-              )}
-              aria-label={`Show photo ${itemIndex + 1}`}
-            >
-              <img src={authedFileUrl(`/api/files/${item.id}`, { size: 'thumb' })} alt="" className="h-full w-full object-cover" loading="lazy" />
-            </button>
-          ))}
-        </div>
+        <>
+          <div className="flex gap-1.5 overflow-x-auto p-2">
+            {photos.map((item, itemIndex) => (
+              <button
+                key={item.id}
+                type="button"
+                draggable={canEdit && !saving}
+                onDragStart={() => setDragFrom(itemIndex)}
+                onDragEnd={() => setDragFrom(null)}
+                onDragOver={(e) => { if (dragFrom !== null) e.preventDefault(); }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (dragFrom !== null) move(dragFrom, itemIndex);
+                  setDragFrom(null);
+                }}
+                onClick={() => setIndex(itemIndex)}
+                className={cn(
+                  'h-14 w-14 shrink-0 overflow-hidden rounded border-2 bg-subtle transition-opacity',
+                  itemIndex === index ? 'border-brand-500' : 'border-transparent',
+                  canEdit && 'cursor-grab active:cursor-grabbing',
+                  dragFrom === itemIndex && 'opacity-40',
+                )}
+                aria-label={`Show photo ${itemIndex + 1}`}
+              >
+                <img src={authedFileUrl(`/api/files/${item.id}`, { size: 'thumb' })} alt="" className="h-full w-full object-cover" loading="lazy" />
+              </button>
+            ))}
+          </div>
+          {canEdit && (
+            <p className="px-3 pb-2 text-2xs text-muted">
+              Drag a thumbnail to reorder. The first one is the cover — it leads the share
+              link, the download and the website.
+            </p>
+          )}
+        </>
       )}
       {preview && (
         <DocumentViewer file={preview} files={photos} onNavigate={setPreview} onClose={() => setPreview(null)} />

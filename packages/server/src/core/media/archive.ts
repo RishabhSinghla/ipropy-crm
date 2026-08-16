@@ -35,6 +35,7 @@ import { extname } from 'node:path';
 import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { getDriver } from '../storage/index.js';
+import { photoOrderBy } from './ordering.js';
 
 /** Which folders the caller wants. `branded` is the useful default for sharing. */
 export type ArchiveSet = 'all' | 'originals' | 'branded' | 'web';
@@ -194,10 +195,13 @@ export async function writeRecordArchive(
   out: Writable,
 ): Promise<ArchiveResult> {
   const { rows } = await db.query<AttachmentRow>(
+    // Same order the carousel and the share link use, so a zip somebody sends
+    // by hand opens in the arrangement they curated rather than in upload
+    // order — see core/media/ordering.ts.
     `SELECT id, file_name, mime_type, storage_key, variants, created_at
        FROM ipy_attachment
       WHERE record_id = $1
-      ORDER BY created_at`,
+      ORDER BY ${photoOrderBy('')}, created_at`,
     [recordId],
   );
 

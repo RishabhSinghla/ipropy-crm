@@ -20,6 +20,7 @@ import { getDriver, getStorageSettings } from '../../core/storage/index.js';
 import { logger } from '../../utils/logger.js';
 import { recordShareView, resolveShareToken } from '../../core/sharing/shareLinks.js';
 import { getPropertyShareConfig, loadSharedProperty } from '../../core/sharing/propertyShare.js';
+import { photoOrderBy } from '../../core/media/ordering.js';
 
 export const publicRouter = Router();
 
@@ -421,8 +422,14 @@ publicRouter.get('/share/:token', asyncHandler(async (req, res) => {
 
   // The record's own photos, not the `gallery` field. Gallery is curated by
   // hand and is empty on a property that arrived through capture — which is
-  // every property this feature exists for. Ordered by when they were shot, so
-  // the buyer walks the floor in the order it was walked.
+  // every property this feature exists for. Ordered by the arrangement
+  // somebody made, falling back to when they were shot, so the buyer walks the
+  // floor in the order it was walked.
+  //
+  // This used to lead with `ai_category`, which grouped the set by room type
+  // and meant the first thing a buyer saw was whatever the model happened to
+  // sort first. A cover photo is a decision, so it now outranks a guess — see
+  // core/media/ordering.ts.
   const photos = shared.showPhotos
     ? (await db.query<{ id: string; file_name: string }>(
       `SELECT id, file_name
@@ -430,7 +437,7 @@ publicRouter.get('/share/:token', asyncHandler(async (req, res) => {
         WHERE record_id = $1
           AND mime_type LIKE 'image/%'
           AND (cull_state IS NULL OR cull_state = 'keep')
-        ORDER BY ai_category NULLS LAST, captured_at NULLS LAST, created_at
+        ORDER BY ${photoOrderBy('')}, ai_category NULLS LAST, created_at
         LIMIT 60`,
       [link.recordId],
     )).rows
