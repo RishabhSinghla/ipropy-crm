@@ -127,6 +127,46 @@ commsRouter.get('/conversations/:id', asyncHandler(async (req, res) => {
   });
 }));
 
+/**
+ * The photo, voice note, video or document a customer sent.
+ *
+ * Served from here rather than from the generic file route because this is not
+ * an attachment on a record — it belongs to a message, and the thing that
+ * decides who may see it is whether the reader may open the conversation.
+ *
+ * Only ever serves what the bridge actually stored. A message whose media was
+ * announced but never transferred has no `storageKey`, and that is a 404 rather
+ * than an empty body, so the thread can say "not downloaded" instead of showing
+ * a broken picture.
+ */
+commsRouter.get('/messages/:id/media', asyncHandler(async (req, res) => {
+  // Signed in is the bar, exactly as it is for reading the conversation this
+  // file belongs to. There is no `whatsapp.view` capability — sending and
+  // managing templates are the two that exist — so requiring one would have
+  // meant every rep seeing a broken image while an admin saw the photo.
+  const row = await db.queryOne<{ media: Record<string, unknown> | null; type: string }>(
+    `SELECT m.media, m.type FROM ipy_message m WHERE m.id = $1`,
+    [req.params.id],
+  );
+  const media = row?.media as { storageKey?: string; mimeType?: string; fileName?: string } | null;
+  if (!media?.storageKey) throw new NotFoundError('This message has no stored file');
+
+  const { getDriver } = await import('../../core/storage/index.js');
+  const { applyFileSecurityHeaders } = await import('../../core/media/serving.js');
+  const driver = await getDriver();
+  const bytes = await driver.read(media.storageKey);
+  if (!bytes) throw new NotFoundError('The stored file is no longer in storage');
+
+  const mimeType = media.mimeType ?? 'application/octet-stream';
+  applyFileSecurityHeaders(
+    res,
+    mimeType,
+    media.fileName ?? `whatsapp-${row!.type}`,
+    req.query.download === '1',
+  );
+  res.send(bytes);
+}));
+
 const sendSchema = z.object({
   text: z.string().max(4096).optional(),
   templateName: z.string().optional(),

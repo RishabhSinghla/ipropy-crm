@@ -130,12 +130,11 @@ export async function handleInbound(msg: InboundMessage): Promise<{ conversation
     let media: Record<string, unknown> | null = null;
     if (msg.mediaId) {
       // Only Meta hands out an id you can exchange for a URL. A linked phone
-      // has already received the bytes on the laptop holding the session, so
-      // the message is recorded with its type and caption and the file itself
-      // is not pulled in. A buyer's photo therefore shows in the thread as an
-      // attachment that arrived rather than as the picture — visibly
-      // incomplete, which is the right failure. Silently dropping the message
-      // would be the wrong one.
+      // already has the bytes on the machine holding the session and posts them
+      // to `/wa-bridge/media` straight after this, which merges a `storageKey`
+      // into what is written here. So on that path the record is deliberately
+      // incomplete for a moment, and the thread reads `storageKey` rather than
+      // `url` to decide whether it has a file it can actually show.
       const resolved = source === 'meta' ? await provider.fetchMediaUrl(msg.mediaId) : null;
       media = {
         url: resolved?.url ?? null,

@@ -5,7 +5,7 @@
  * on its own terms (signature verification, verify tokens, or a public form key)
  * and returns 200 quickly so providers don't retry.
  */
-import { Router, type Request } from 'express';
+import express, { Router, type Request } from 'express';
 import crypto from 'node:crypto';
 import { z } from 'zod';
 import { config } from '../../config.js';
@@ -646,6 +646,82 @@ webhooksRouter.post('/wa-bridge/inbound', asyncHandler(async (req, res) => {
   const result = await waService.handleInbound({ ...input, provider: 'linked' });
   res.json({ ok: true, ...result });
 }));
+
+/**
+ * The bytes behind an inbound photo, voice note, video or document.
+ *
+ * A second call rather than part of `/inbound`, and deliberately so. The
+ * message is what matters: it must land, be deduplicated and fire the
+ * auto-reply whether or not a 40MB video transfers. So the text arrives first
+ * and the file follows, and a failure here costs the picture, never the
+ * message.
+ *
+ * Raw body, not base64 in JSON. Base64 inflates by a third and would have to be
+ * held as a string in memory before it could be decoded; `express.raw` hands
+ * over a Buffer that goes straight to the storage driver. The global JSON
+ * parser ignores this route because the bridge sends octet-stream.
+ */
+webhooksRouter.post(
+  '/wa-bridge/media',
+  express.raw({ type: '*/*', limit: '64mb' }),
+  asyncHandler(async (req, res) => {
+    assertBridge(req);
+
+    const messageId = z.string().uuid().parse(req.query.messageId);
+    const mimeType = z.string().max(200).default('application/octet-stream')
+      .parse(req.query.mimeType ?? 'application/octet-stream');
+    const fileName = z.string().max(300).optional().parse(req.query.fileName || undefined);
+
+    const bytes = req.body as Buffer;
+    if (!Buffer.isBuffer(bytes) || bytes.length === 0) {
+      throw new BadRequestError('No file content was sent');
+    }
+
+    const message = await db.queryOne<{ id: string; conversation_id: string; media: Record<string, unknown> | null }>(
+      `SELECT id, conversation_id, media FROM ipy_message WHERE id = $1`,
+      [messageId],
+    );
+    if (!message) throw new NotFoundError('No such message');
+
+    const { getDriver } = await import('../../core/storage/index.js');
+    const driver = await getDriver();
+    const key = `whatsapp/${message.conversation_id}/${messageId}${extensionFor(mimeType, fileName)}`;
+    await driver.save(key, bytes, mimeType);
+
+    // Merged into whatever `/inbound` already recorded, so the caption and the
+    // type it wrote survive. `storageKey` is the flag the thread reads to know
+    // the file is really here rather than merely announced.
+    await db.query(
+      `UPDATE ipy_message
+          SET media = COALESCE(media, '{}'::jsonb) || $2::jsonb
+        WHERE id = $1`,
+      [
+        messageId,
+        JSON.stringify({
+          storageKey: key,
+          mimeType,
+          size: bytes.length,
+          ...(fileName ? { fileName } : {}),
+        }),
+      ],
+    );
+
+    logger.info({ messageId, bytes: bytes.length, mimeType }, 'stored inbound WhatsApp media');
+    res.json({ ok: true });
+  }),
+);
+
+/** Keeps a recognisable extension on the stored object, without trusting one. */
+function extensionFor(mimeType: string, fileName?: string): string {
+  const fromName = fileName?.match(/(\.[A-Za-z0-9]{1,8})$/)?.[1];
+  if (fromName) return fromName.toLowerCase();
+  const known: Record<string, string> = {
+    'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif',
+    'video/mp4': '.mp4', 'video/3gpp': '.3gp', 'audio/mpeg': '.mp3', 'audio/mp4': '.m4a',
+    'audio/ogg': '.ogg', 'application/pdf': '.pdf',
+  };
+  return known[mimeType.split(';')[0]!.trim()] ?? '';
+}
 
 /**
  * Constant-time compare that tolerates a length mismatch.

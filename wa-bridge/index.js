@@ -41,6 +41,7 @@ import { homedir } from 'node:os';
 import makeWASocket, {
   Browsers,
   DisconnectReason,
+  downloadMediaMessage,
   fetchLatestBaileysVersion,
   useMultiFileAuthState,
 } from 'baileys';
@@ -82,6 +83,29 @@ const waLogger = {
 // ---------------------------------------------------------------------------
 // Talking to the CRM
 // ---------------------------------------------------------------------------
+
+/**
+ * Hand the CRM the actual bytes of a photo, voice note, video or document.
+ *
+ * Separate from crm() because this is not JSON: base64 would inflate a 40MB
+ * video by a third and force the whole thing through a string on both sides.
+ * The metadata travels in the query string so the body stays exactly the file.
+ */
+async function crmMedia(messageId, buffer, mimeType, fileName) {
+  const query = new URLSearchParams({ messageId, mimeType: mimeType || 'application/octet-stream' });
+  if (fileName) query.set('fileName', fileName);
+  const res = await fetch(`${CRM_URL}/api/webhooks/wa-bridge/media?${query}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream', 'x-bridge-token': TOKEN },
+    body: buffer,
+    // Longer than the JSON calls: this one is carrying a file over whatever
+    // connection the office has, not a few hundred bytes of text.
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!res.ok) {
+    throw new Error(`CRM media answered ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  }
+}
 
 async function crm(path, body) {
   const res = await fetch(`${CRM_URL}/api/webhooks/wa-bridge/${path}`, {
@@ -232,15 +256,38 @@ async function forwardInbound(m) {
   // message. Filing it would put an empty row on somebody's timeline.
   if (!text && !media) return;
 
-  await crm('inbound', {
+  const mimeType = media ? msg[`${media}Message`]?.mimetype : undefined;
+  const fileName = media === 'document' ? msg.documentMessage?.fileName : undefined;
+
+  const result = await crm('inbound', {
     from: `+${jid.split('@')[0]}`,
     providerMessageId: m.key.id,
     type: media ?? 'text',
     ...(text ? { text } : {}),
-    ...(media ? { mediaId: m.key.id, mimeType: msg[`${media}Message`]?.mimetype } : {}),
+    ...(media ? { mediaId: m.key.id, mimeType, ...(fileName ? { filename: fileName } : {}) } : {}),
     timestamp: Number(m.messageTimestamp) || undefined,
     profileName: m.pushName || undefined,
   });
+
+  // The file follows the message, and only after the message is safely filed.
+  //
+  // Its own try/catch on purpose: the message is the thing that must not be
+  // lost, and it is already saved by the time we get here. A download that
+  // fails, times out or is simply too big costs the picture and leaves the
+  // message, its caption and the auto-reply exactly as they were. WhatsApp
+  // also expires media on its servers, so an old message replayed after a
+  // reconnect can legitimately have nothing left to fetch.
+  if (media && result?.messageId && !result.duplicate) {
+    try {
+      const buffer = await downloadMediaMessage(m, 'buffer', {});
+      if (buffer?.length) {
+        await crmMedia(result.messageId, buffer, mimeType, fileName);
+        log(`link: stored ${media} of ${(buffer.length / 1024).toFixed(0)} KB`);
+      }
+    } catch (err) {
+      log(`could not download the ${media} on a message:`, err.message);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
