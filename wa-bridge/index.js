@@ -297,6 +297,10 @@ async function forwardHistory(messages) {
       direction: m.key.fromMe ? 'outbound' : 'inbound',
       type,
       ...(text ? { text } : {}),
+      // Only ever present on messages *from* the other person — a message we
+      // sent carries our own name, not theirs. Without it a chat with someone
+      // who is not a lead shows as bare digits.
+      ...(!m.key.fromMe && m.pushName ? { name: m.pushName } : {}),
       timestamp,
     });
   }

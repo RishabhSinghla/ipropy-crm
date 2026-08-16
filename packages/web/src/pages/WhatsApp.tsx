@@ -172,7 +172,7 @@ function ChatList({ search, active, onPick }: {
       <EmptyState
         icon={<MessageCircle className="h-8 w-8" />}
         title="No chats yet"
-        body="Conversations with people already in your CRM appear here. Personal chats stay on your phone."
+        body="Your WhatsApp conversations appear here once a phone is linked. Group chats stay on the phone."
       />
     );
   }

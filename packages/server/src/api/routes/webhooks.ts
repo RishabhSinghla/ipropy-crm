@@ -723,9 +723,15 @@ webhooksRouter.post(
  * of threads unread and re-open windows that closed months ago. History is a
  * record of what happened, so it is written and nothing else.
  *
- * Only numbers already in the CRM are kept — his decision when asked, and the
- * reason the volume stays sane. A phone's full history is mostly family,
- * delivery drivers and group chats, none of which belong in a CRM database.
+ * Every one-to-one chat is kept, not only numbers already in the CRM. That was
+ * the other way round until he saw the result: 821 chats offered, 2 kept,
+ * because a filter matching against three leads discards a phone. Chats with
+ * strangers still resolve to no record, so they sit in WhatsApp and touch no
+ * lead's timeline — they are conversations, not CRM data.
+ *
+ * Groups are still dropped, in the bridge. A group is not a person, filing one
+ * against a record puts a dozen strangers' words on somebody's timeline, and
+ * nothing downstream knows what to do with many senders in one thread.
  */
 webhooksRouter.post('/wa-bridge/history', asyncHandler(async (req, res) => {
   assertBridge(req);
@@ -740,17 +746,15 @@ webhooksRouter.post('/wa-bridge/history', asyncHandler(async (req, res) => {
       mimeType: z.string().max(200).optional(),
       filename: z.string().max(300).optional(),
       timestamp: z.number().int().positive(),
+      /** What the phone calls this person, used when they are not a lead. */
+      name: z.string().max(200).optional(),
     })).max(500),
   }).parse(req.body);
 
   let imported = 0;
-  let skippedNotInCrm = 0;
   let duplicate = 0;
 
   for (const m of input.messages) {
-    const contact = await waService.resolveHandle(m.from);
-    if (!contact.recordId) { skippedNotInCrm += 1; continue; }
-
     const seen = await db.queryOne<{ id: string }>(
       `SELECT id FROM ipy_message WHERE provider_message_id = $1 LIMIT 1`,
       [m.providerMessageId],
@@ -759,6 +763,18 @@ webhooksRouter.post('/wa-bridge/history', asyncHandler(async (req, res) => {
 
     const conversationId = await waService.getOrCreateConversation(m.from);
     const at = new Date(m.timestamp * 1000);
+
+    // A number that is not a lead has no name in the CRM, so the thread would
+    // read as raw digits. The phone knows what to call them, so use that —
+    // only to fill a blank, never to overwrite a name the CRM already has,
+    // which is somebody's own record and outranks a phone's address book.
+    if (m.name) {
+      await db.query(
+        `UPDATE ipy_conversation SET contact_name = $2
+          WHERE id = $1 AND (contact_name IS NULL OR contact_name = '')`,
+        [conversationId, m.name],
+      );
+    }
 
     await db.query(
       `INSERT INTO ipy_message
@@ -794,8 +810,8 @@ webhooksRouter.post('/wa-bridge/history', asyncHandler(async (req, res) => {
     );
   }
 
-  if (imported) logger.info({ imported, duplicate, skippedNotInCrm }, 'imported WhatsApp history');
-  res.json({ ok: true, imported, duplicate, skippedNotInCrm });
+  if (imported) logger.info({ imported, duplicate }, 'imported WhatsApp history');
+  res.json({ ok: true, imported, duplicate });
 }));
 
 /** Keeps a recognisable extension on the stored object, without trusting one. */
