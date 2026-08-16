@@ -197,6 +197,20 @@ To check the real thing before pushing:
 docker build --platform linux/amd64 -t ipropy-crm:local .   # what Render runs; CI runs this too
 ```
 
+And after pushing, ask the running site rather than assuming:
+
+```bash
+scripts/verify-deploy.sh 'a string only the new code has'
+```
+
+**CI is the deploy gate, not advice.** `render.yaml` sets `autoDeployTrigger: checksPass`,
+so a red run means Render never builds — while the container happily restarts for other
+reasons, which looks exactly like a slow deploy. Check `gh run list` before concluding one
+is stuck. Two traps the script exists to encode: `grep` on a fetched bundle needs `-a` (BSD
+grep calls it binary and silently prints nothing), and the lazy route chunks are **not**
+named in `index.html` — their filenames live inside the entry chunk, so checking only what
+the HTML references finds nothing and reads as a failed deploy.
+
 Adding a workspace also means adding its `package.json` to the Dockerfile's `deps` stage. npm still
 links a missing workspace from the lockfile, so leaving it out fails quietly rather than loudly.
 
