@@ -14,6 +14,7 @@ import { touchActivity } from '../../core/entity/recordService.js';
 import { notify } from '../../core/notifications/index.js';
 import * as provider from './provider.js';
 import { detectConsentKeyword, maySend, recordConsent } from './consent.js';
+import { isLinkedSendingEnabled } from './linkedDevice.js';
 import { runAutoReply } from './autoreply.js';
 import { exitAllForHandle } from './sequences.js';
 
@@ -306,6 +307,88 @@ export interface SendMessageInput {
   isBroadcast?: boolean;
 }
 
+/**
+ * Deliver a message through a rep's own linked WhatsApp.
+ *
+ * The bubble is drawn first and the queue row points back at it, so the thread
+ * shows the message the instant somebody presses send and the state moves
+ * queued → sent when the phone confirms. Writing the message only on
+ * confirmation would leave a second or two where a person has sent something
+ * and can see no evidence of it, which is when people press send again.
+ *
+ * Media is not carried yet. A linked send is text, so a caption goes out on its
+ * own rather than silently dropping the picture and looking like it worked.
+ */
+async function sendThroughLinkedPhone(args: {
+  conversationId: string;
+  handle: string;
+  input: SendMessageInput;
+}): Promise<{ messageId: string; status: string; error?: string }> {
+  const { conversationId, handle, input } = args;
+
+  const body = input.text
+    ?? (input.templateName ? await renderedTemplate(input.templateName, {}) : null)
+    ?? input.media?.caption
+    ?? null;
+  if (!body) {
+    throw new BadRequestError('There is nothing to send. A linked phone sends text; type a message.');
+  }
+  if (input.media) {
+    logger.info(
+      { conversationId },
+      'linked send: media is not carried on this path — sending the caption only',
+    );
+  }
+
+  const conversation = await db.queryOne<{ record_id: string | null; record_module: string | null }>(
+    `SELECT record_id, record_module FROM ipy_conversation WHERE id = $1`,
+    [conversationId],
+  );
+
+  const message = await db.queryOne<{ id: string }>(
+    `INSERT INTO ipy_message
+       (conversation_id, direction, channel, type, body, status, sent_by, is_ai_generated,
+        workflow_id, provider, sent_via)
+     VALUES ($1,'outbound','whatsapp','text',$2,'queued',$3,$4,$5,'linked','linked')
+     RETURNING id`,
+    [
+      conversationId, body, input.sentBy ?? null,
+      input.isAiGenerated ?? false, input.workflowId ?? null,
+    ],
+  );
+
+  const { queueDeviceSend } = await import('./deviceSend.js');
+  const queued = await queueDeviceSend({
+    handle,
+    body,
+    recordId: conversation?.record_id ?? null,
+    module: conversation?.record_module ?? null,
+    assignedTo: input.sentBy ?? null,
+    // A person at a keyboard is the only thing that skips the pacing. A
+    // workflow or a broadcast reaching this path is still automation and waits
+    // its turn exactly as it did before.
+    priority: input.sentBy && !input.isBroadcast && !input.workflowId ? 'immediate' : 'paced',
+    messageId: message!.id,
+    ...(input.isBroadcast ? { reason: 'Broadcast' } : {}),
+  });
+
+  if (queued.skipped) {
+    await db.query(
+      `UPDATE ipy_message SET status = 'blocked', error_message = $2 WHERE id = $1`,
+      [message!.id, queued.skipped],
+    );
+    return { messageId: message!.id, status: 'blocked', error: queued.skipped };
+  }
+
+  await db.query(
+    `UPDATE ipy_conversation
+        SET last_message_at = now(), last_message_preview = $2, updated_at = now()
+      WHERE id = $1`,
+    [conversationId, body.slice(0, 200)],
+  );
+  return { messageId: message!.id, status: 'queued' };
+}
+
 export async function sendMessage(input: SendMessageInput): Promise<{ messageId: string; status: string; error?: string }> {
   const handle = input.to
     ? toE164(input.to)
@@ -334,6 +417,27 @@ export async function sendMessage(input: SendMessageInput): Promise<{ messageId:
     // on, and the operator needs to see that it was skipped and why.
     return { messageId: blocked?.id ?? '', status: 'blocked', error: consent.reason };
   }
+  // The other door.
+  //
+  // Everything below this point talks to Meta's Cloud API, which most of the
+  // time is not connected — and until now that meant a reply typed in the Inbox
+  // threw, even for somebody whose own phone was linked and sitting there able
+  // to send it. The queue a linked phone drains was only ever fed by workflows,
+  // broadcasts and sequences, so the one place a person actually holds a
+  // conversation was the one place that could not.
+  //
+  // The 24-hour window does not apply here either. That rule is Meta's billing
+  // and policy boundary for the Cloud API; a linked phone is the WhatsApp app,
+  // where a person may message whoever they like whenever they like. Consent is
+  // still enforced — that check is above this, on every path.
+  if (!(await provider.isConfigured()) && isLinkedSendingEnabled()) {
+    return sendThroughLinkedPhone({
+      conversationId,
+      handle,
+      input,
+    });
+  }
+
   if (!windowOpen && !input.templateName && !input.media) {
     throw new BadRequestError(
       'This conversation is outside the 24-hour WhatsApp window. Send an approved template to re-open it.',

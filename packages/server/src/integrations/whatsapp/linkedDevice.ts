@@ -56,6 +56,27 @@ import { logDeviceMessage } from './deviceSend.js';
  * send messages exactly every forty seconds for an hour.
  */
 export const MIN_GAP_SECONDS = 40;
+
+/**
+ * The most human-typed replies one number will send in a rolling hour.
+ *
+ * Not a pacing policy — the pacing is the daily cap and the gap, and typed
+ * replies deliberately skip both. This is the stop on a runaway loop: nobody
+ * types a hundred and twenty messages in an hour, so hitting this means code
+ * is sending them, and the number is worth more than the backlog.
+ */
+export const HUMAN_HOURLY_CEILING = 120;
+
+/** Typed replies actually sent from this number in the last rolling hour. */
+async function sentInLastHour(linkId: string): Promise<number> {
+  const row = await db.queryOne<{ n: string }>(
+    `SELECT count(*) AS n FROM ipy_device_send
+      WHERE wa_link_id = $1 AND priority = 'immediate'
+        AND status = 'sent' AND completed_at > now() - interval '1 hour'`,
+    [linkId],
+  );
+  return Number(row?.n ?? 0);
+}
 export const GAP_JITTER_SECONDS = 80;
 
 /**
@@ -393,16 +414,8 @@ export async function claimOutbox(): Promise<ClaimResult> {
 
   const timeZone = await organisationTimezone();
   const now = new Date();
-
-  if (!withinSendingHours(timeZone, now)) {
-    return {
-      messages: [],
-      retryAfterSeconds: 600,
-      idleReason: `outside sending hours (${SEND_FROM_HOUR}:00–${SEND_UNTIL_HOUR}:00 ${timeZone})`,
-    };
-  }
-
   const today = todayIn(timeZone, now);
+
   const links = (await linksForBridge()).filter((l) => l.status === 'connected');
   if (!links.length) {
     return { messages: [], retryAfterSeconds: 30, idleReason: 'no connected numbers' };
@@ -410,6 +423,39 @@ export async function claimOutbox(): Promise<ClaimResult> {
 
   const messages: ClaimedSend[] = [];
   const reasons: string[] = [];
+
+  // A reply somebody typed goes first, and goes now.
+  //
+  // Every limit below this exists because *unsolicited automated* traffic is
+  // what costs a number. Someone answering a customer who just messaged them is
+  // the ordinary use of WhatsApp, and holding that for up to eighty seconds, or
+  // until eight in the morning, makes a chat window nobody will use. The one
+  // limit an immediate send keeps is consent, re-read inside claimOneFor: a
+  // person typing into a thread cannot overrule an opt-out either.
+  //
+  // The ceiling is per hour rather than per day, and generous, because it is
+  // not really a policy — it is a stop on a loop. A person cannot type a
+  // hundred replies in an hour; code with a bug can.
+  const open = withinSendingHours(timeZone, now);
+  for (const link of links) {
+    if (await sentInLastHour(link.id) >= HUMAN_HOURLY_CEILING) {
+      reasons.push(`${link.handle ?? link.id}: ${HUMAN_HOURLY_CEILING} messages in the last hour`);
+      continue;
+    }
+    const claimed = await claimOneFor(link, today, 'immediate');
+    if (claimed) messages.push(claimed);
+  }
+  if (messages.length) {
+    return { messages, retryAfterSeconds: 1 };
+  }
+
+  if (!open) {
+    return {
+      messages: [],
+      retryAfterSeconds: 600,
+      idleReason: `outside sending hours (${SEND_FROM_HOUR}:00–${SEND_UNTIL_HOUR}:00 ${timeZone})`,
+    };
+  }
 
   for (const link of links) {
     if (link.sentToday >= link.dailyCap) {
@@ -420,12 +466,15 @@ export async function claimOutbox(): Promise<ClaimResult> {
     const gap = MIN_GAP_SECONDS + Math.random() * GAP_JITTER_SECONDS;
     if (waited < gap) continue;
 
-    const claimed = await claimOneFor(link, today);
+    const claimed = await claimOneFor(link, today, 'paced');
     if (claimed) messages.push(claimed);
   }
 
   return {
     messages,
+    // One second while a person is mid-conversation, twenty when idle. The
+    // bridge polls; this is what stops it hammering and what stops a typed
+    // reply sitting behind a twenty-second sleep.
     retryAfterSeconds: messages.length ? MIN_GAP_SECONDS : 20,
     ...(messages.length ? {} : reasons.length ? { idleReason: reasons.join('; ') } : {}),
   };
@@ -440,7 +489,11 @@ export async function claimOutbox(): Promise<ClaimResult> {
  * deletes the person it is addressed to, and without this the CRM cheerfully
  * messages them anyway.
  */
-async function claimOneFor(link: WaLink, today: string): Promise<ClaimedSend | null> {
+async function claimOneFor(
+  link: WaLink,
+  today: string,
+  priority: 'paced' | 'immediate',
+): Promise<ClaimedSend | null> {
   const row = await db.queryOne<{ id: string; handle: string; body: string; name: string | null }>(
     `UPDATE ipy_device_send d
      SET status = 'claimed', claimed_at = now(), wa_link_id = $1,
@@ -449,6 +502,7 @@ async function claimOneFor(link: WaLink, today: string): Promise<ClaimedSend | n
        SELECT s.id FROM ipy_device_send s
        LEFT JOIN ipy_record r ON r.id = s.record_id
        WHERE s.status = 'pending'
+         AND s.priority = $3
          AND (s.assigned_to = $2 ${link.takesUnassigned ? 'OR s.assigned_to IS NULL' : ''})
          AND (s.record_id IS NULL OR r.is_deleted = false)
        ORDER BY s.created_at
@@ -460,7 +514,7 @@ async function claimOneFor(link: WaLink, today: string): Promise<ClaimedSend | n
        FOR UPDATE OF s SKIP LOCKED
      )
      RETURNING d.id, d.handle, d.body, d.name`,
-    [link.id, link.userId],
+    [link.id, link.userId, priority],
   );
   if (!row) return null;
 
@@ -511,9 +565,9 @@ export async function reportResult(input: {
 }): Promise<void> {
   const row = await db.queryOne<{
     handle: string; body: string; record_id: string | null; attempts: number;
-    wa_link_id: string | null; assigned_to: string | null;
+    wa_link_id: string | null; assigned_to: string | null; message_id: string | null;
   }>(
-    `SELECT handle, body, record_id, attempts, wa_link_id, assigned_to
+    `SELECT handle, body, record_id, attempts, wa_link_id, assigned_to, message_id
      FROM ipy_device_send WHERE id = $1 AND status = 'claimed'`,
     [input.sendId],
   );
@@ -529,6 +583,19 @@ export async function reportResult(input: {
     );
     if (row.wa_link_id) {
       await db.query(`UPDATE ipy_wa_link SET sent_total = sent_total + 1 WHERE id = $1`, [row.wa_link_id]);
+    }
+    // A send the Inbox already drew updates that bubble. Calling
+    // logDeviceMessage here instead would write a second message row and the
+    // reply would appear twice in the thread the moment the phone confirmed it.
+    if (row.message_id) {
+      await db.query(
+        `UPDATE ipy_message
+            SET status = 'sent', provider_message_id = COALESCE($2, provider_message_id),
+                error_message = NULL
+          WHERE id = $1`,
+        [row.message_id, input.providerMessageId ?? null],
+      );
+      return;
     }
     await logDeviceMessage({
       handle: row.handle,
@@ -557,6 +624,15 @@ export async function reportResult(input: {
       input.error ? `Could not send from the linked phone: ${input.error}` : null,
     ],
   );
+  // Only once it has actually given up. Saying "failed" in the thread while a
+  // retry is still coming would have somebody re-typing a message that is
+  // about to send itself.
+  if (giveUp && row.message_id) {
+    await db.query(
+      `UPDATE ipy_message SET status = 'failed', error_message = $2 WHERE id = $1`,
+      [row.message_id, input.error ?? 'The linked phone could not send this message'],
+    );
+  }
   logger.warn(
     { sendId: input.sendId, error: input.error, giveUp },
     giveUp ? 'linked send failed twice; leaving it for a person' : 'linked send failed; will retry',

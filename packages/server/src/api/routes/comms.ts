@@ -107,9 +107,22 @@ commsRouter.get('/conversations/:id', asyncHandler(async (req, res) => {
   await db.query(`UPDATE ipy_conversation SET unread_count = 0 WHERE id = $1`, [req.params.id]);
 
   const expires = (conv as { window_expires_at?: string | null }).window_expires_at;
+  const windowOpen = Boolean(expires && new Date(expires) > new Date());
+
+  // The 24-hour window is Meta's rule, not WhatsApp's. Through a linked phone
+  // this is the ordinary app, where a person messages whoever they like
+  // whenever they like — so the composer must not tell somebody to send a
+  // template when they can simply type. `canSendFreely` is what the screen
+  // should ask; `windowOpen` stays because the header still reports the real
+  // Meta state and templates still exist for when Meta is the transport.
+  const { isLinkedSendingEnabled } = await import('../../integrations/whatsapp/linkedDevice.js');
+  const linkedSending = isLinkedSendingEnabled();
+
   res.json({
     ...conv,
-    windowOpen: Boolean(expires && new Date(expires) > new Date()),
+    windowOpen,
+    linkedSending,
+    canSendFreely: windowOpen || linkedSending,
     messages: messages.rows,
   });
 }));

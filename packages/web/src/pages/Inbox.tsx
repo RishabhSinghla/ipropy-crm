@@ -17,6 +17,8 @@ interface Conversation {
   assigned_to: string | null; assigned_name: string | null;
   status: string; unread_count: number; last_message_at: string | null;
   last_message_preview: string | null; windowOpen: boolean;
+  /** True when a reply can just be typed: inside Meta's window, or a linked phone is on. */
+  canSendFreely?: boolean; linkedSending?: boolean;
   sentiment: string | null; ai_summary: string | null; ai_intent: string | null;
 }
 
@@ -217,6 +219,11 @@ function Thread({ conversationId, onBack }: { conversationId: string; onBack: ()
     return <div className="space-y-3 p-4">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12" />)}</div>;
   }
 
+  // Meta's 24-hour rule does not apply to a rep's own linked phone, so the
+  // composer asks whether a reply can be sent at all rather than whether Meta
+  // would allow one. `?? conv.windowOpen` keeps an older server working.
+  const freeReply = conv.canSendFreely ?? conv.windowOpen;
+
   return (
     <div className="flex h-full flex-col">
       {/* Thread header */}
@@ -305,7 +312,7 @@ function Thread({ conversationId, onBack }: { conversationId: string; onBack: ()
 
       {/* Composer */}
       <div className="shrink-0 border-t border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-        {!conv.windowOpen && (
+        {!freeReply && (
           <div className="mb-2 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
             <Clock className="h-3.5 w-3.5 shrink-0" />
             <span>
@@ -328,7 +335,7 @@ function Thread({ conversationId, onBack }: { conversationId: string; onBack: ()
           </div>
         )}
 
-        {!conv.windowOpen && templates && (
+        {!freeReply && templates && (
           <Select
             value={templateName}
             onChange={setTemplateName}
@@ -345,15 +352,15 @@ function Thread({ conversationId, onBack }: { conversationId: string; onBack: ()
           <textarea
             className="input resize-none"
             rows={2}
-            placeholder={conv.windowOpen ? 'Type a message…' : 'Free-form replies are blocked outside the window'}
+            placeholder={freeReply ? 'Type a message…' : 'Free-form replies are blocked outside the window'}
             value={text}
-            disabled={!conv.windowOpen && !templateName}
+            disabled={!freeReply && !templateName}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); }
             }}
           />
-          {aiAvailable && conv.windowOpen && (
+          {aiAvailable && freeReply && (
             <button
               onClick={() => void loadSuggestions()}
               disabled={loadingSuggestions}
