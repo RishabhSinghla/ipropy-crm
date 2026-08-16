@@ -160,7 +160,10 @@ async function startSession(link) {
     // Marking every incoming chat read from here would clear the unread badges
     // on the rep's own phone, which is their inbox and not ours to tidy.
     markOnlineOnConnect: false,
-    syncFullHistory: false,
+    // Ask the phone for what it already has. The CRM throws away anything
+    // whose number is not a lead or customer, so the volume that actually
+    // lands is the business's conversations, not the owner's family group.
+    syncFullHistory: true,
   });
 
   sessions.set(link.id, { sock, status: 'starting', handle: link.handle, starting: false });
@@ -211,6 +214,18 @@ async function startSession(link) {
     }
   });
 
+  // The phone handing over what it already had. Arrives in batches, in no
+  // guaranteed order, and can arrive more than once — the CRM deduplicates on
+  // the WhatsApp message id, so re-sending a batch is harmless.
+  sock.ev.on('messaging-history.set', async ({ messages }) => {
+    if (!messages?.length) return;
+    try {
+      await forwardHistory(messages);
+    } catch (err) {
+      log('could not forward history:', err.message);
+    }
+  });
+
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return;
     for (const m of messages) {
@@ -221,6 +236,64 @@ async function startSession(link) {
       }
     }
   });
+}
+
+/**
+ * Send old conversations to the CRM, in chunks.
+ *
+ * Both directions, deliberately: a thread showing only what the customer said
+ * is not a conversation. Groups and status broadcasts are dropped here rather
+ * than in the CRM, and everything else is filtered there against the lead list.
+ *
+ * Chunked at 200 because a phone can hand over tens of thousands of messages
+ * at once and one request carrying all of them would time out and lose the lot.
+ */
+async function forwardHistory(messages) {
+  const rows = [];
+  for (const m of messages) {
+    const jid = m.key?.remoteJid ?? '';
+    if (!jid.endsWith('@s.whatsapp.net')) continue;
+    if (!m.key?.id) continue;
+
+    const msg = m.message ?? {};
+    const text =
+      msg.conversation
+      ?? msg.extendedTextMessage?.text
+      ?? msg.imageMessage?.caption
+      ?? msg.videoMessage?.caption
+      ?? null;
+
+    const type =
+      msg.imageMessage ? 'image'
+        : msg.videoMessage ? 'video'
+          : msg.documentMessage ? 'document'
+            : msg.audioMessage ? 'audio'
+              : 'text';
+
+    // Nothing to show and nothing attached: a reaction, a receipt, a protocol
+    // message. Same rule the live path uses.
+    if (!text && type === 'text') continue;
+
+    const timestamp = Number(m.messageTimestamp) || 0;
+    if (!timestamp) continue;
+
+    rows.push({
+      from: `+${jid.split('@')[0]}`,
+      providerMessageId: m.key.id,
+      direction: m.key.fromMe ? 'outbound' : 'inbound',
+      type,
+      ...(text ? { text } : {}),
+      timestamp,
+    });
+  }
+  if (!rows.length) return;
+
+  let imported = 0;
+  for (let i = 0; i < rows.length; i += 200) {
+    const result = await crm('history', { messages: rows.slice(i, i + 200) });
+    imported += result?.imported ?? 0;
+  }
+  log(`history: offered ${rows.length}, CRM kept ${imported}`);
 }
 
 /**

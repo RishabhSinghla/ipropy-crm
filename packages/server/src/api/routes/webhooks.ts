@@ -711,6 +711,93 @@ webhooksRouter.post(
   }),
 );
 
+/**
+ * Chats that already existed on the phone before it was linked.
+ *
+ * Emphatically **not** `/inbound`. That path is for a message arriving now, and
+ * it does eight other things: bumps the unread count, re-opens the 24-hour
+ * window, starts the SLA response clock, notifies the owner, exits the lead
+ * from its sequences, records consent keywords and fires the auto-reply.
+ * Running a year of old conversations through it would text every one of his
+ * customers an automatic reply to something they said in March, mark hundreds
+ * of threads unread and re-open windows that closed months ago. History is a
+ * record of what happened, so it is written and nothing else.
+ *
+ * Only numbers already in the CRM are kept — his decision when asked, and the
+ * reason the volume stays sane. A phone's full history is mostly family,
+ * delivery drivers and group chats, none of which belong in a CRM database.
+ */
+webhooksRouter.post('/wa-bridge/history', asyncHandler(async (req, res) => {
+  assertBridge(req);
+
+  const input = z.object({
+    messages: z.array(z.object({
+      from: z.string().min(6).max(32),
+      providerMessageId: z.string().max(200),
+      direction: z.enum(['inbound', 'outbound']),
+      type: z.string().max(40).default('text'),
+      text: z.string().max(8000).optional(),
+      mimeType: z.string().max(200).optional(),
+      filename: z.string().max(300).optional(),
+      timestamp: z.number().int().positive(),
+    })).max(500),
+  }).parse(req.body);
+
+  let imported = 0;
+  let skippedNotInCrm = 0;
+  let duplicate = 0;
+
+  for (const m of input.messages) {
+    const contact = await waService.resolveHandle(m.from);
+    if (!contact.recordId) { skippedNotInCrm += 1; continue; }
+
+    const seen = await db.queryOne<{ id: string }>(
+      `SELECT id FROM ipy_message WHERE provider_message_id = $1 LIMIT 1`,
+      [m.providerMessageId],
+    );
+    if (seen) { duplicate += 1; continue; }
+
+    const conversationId = await waService.getOrCreateConversation(m.from);
+    const at = new Date(m.timestamp * 1000);
+
+    await db.query(
+      `INSERT INTO ipy_message
+         (conversation_id, direction, channel, type, body, status,
+          provider_message_id, provider, created_at, delivered_at, sent_via)
+       VALUES ($1,$2,'whatsapp',$3,$4,$5,$6,'linked',$7,$7,'linked')`,
+      [
+        conversationId,
+        m.direction,
+        m.type,
+        m.text ?? null,
+        // An old outbound message did leave, and an old inbound one did arrive.
+        // 'queued' would put a clock on a message from last year. 'delivered'
+        // is what the live inbound path writes, so the ticks match.
+        m.direction === 'outbound' ? 'sent' : 'delivered',
+        m.providerMessageId,
+        at,
+      ],
+    );
+    imported += 1;
+
+    // Only ever moves the preview forward. History arrives in whatever order
+    // the phone hands it over, and a conversation whose last line is from
+    // March because that batch landed last is worse than no history at all.
+    await db.query(
+      `UPDATE ipy_conversation
+          SET last_message_at = GREATEST(COALESCE(last_message_at, $2::timestamptz), $2::timestamptz),
+              last_message_preview = CASE
+                WHEN last_message_at IS NULL OR last_message_at <= $2::timestamptz
+                THEN $3 ELSE last_message_preview END
+        WHERE id = $1`,
+      [conversationId, at, (m.text ?? `[${m.type}]`).slice(0, 200)],
+    );
+  }
+
+  if (imported) logger.info({ imported, duplicate, skippedNotInCrm }, 'imported WhatsApp history');
+  res.json({ ok: true, imported, duplicate, skippedNotInCrm });
+}));
+
 /** Keeps a recognisable extension on the stored object, without trusting one. */
 function extensionFor(mimeType: string, fileName?: string): string {
   const fromName = fileName?.match(/(\.[A-Za-z0-9]{1,8})$/)?.[1];
