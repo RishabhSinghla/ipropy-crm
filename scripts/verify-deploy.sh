@@ -19,7 +19,10 @@
 #      the vendor chunks are. Every screen worth checking (ListView,
 #      RecordDetail, Outreach, Admin) is a dynamic import whose filename
 #      appears *inside* the entry chunk. Checking only what the HTML mentions
-#      finds nothing and looks like a failed deploy.
+#      finds nothing and looks like a failed deploy. And one level is not
+#      enough either: Admin lazily imports PicklistManager, so that chunk's
+#      name only appears inside Admin's. The crawl below follows references
+#      until it stops finding new ones.
 #   3. A restarted container is not a new build. render.yaml sets
 #      `autoDeployTrigger: checksPass`, so a red CI run means Render never
 #      builds at all while the process happily restarts for other reasons.
@@ -37,18 +40,23 @@ ENTRY=$(printf '%s' "$HTML" | grep -oE 'src="/assets/[A-Za-z0-9._-]+\.js"' | hea
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
-curl -fsS -m 60 "$BASE$ENTRY" -o "$WORK/entry.js" || { echo "could not fetch $ENTRY" >&2; exit 1; }
+: > "$WORK/all.js"
+: > "$WORK/fetched"
+echo "${ENTRY#/}" > "$WORK/queue"
 
-# The entry chunk names every lazily-imported route chunk. That list plus the
-# entry itself is the whole client.
-CHUNKS=$( { echo "${ENTRY#/}"; grep -ao 'assets/[A-Za-z0-9._-]*\.js' "$WORK/entry.js"; } | sort -u)
-COUNT=$(printf '%s\n' "$CHUNKS" | wc -l | tr -d ' ')
-echo "checking $COUNT chunks from $ENTRY"
-
-for c in $CHUNKS; do
-  curl -fsS -m 60 "$BASE/$c" >> "$WORK/all.js" 2>/dev/null || true
-  printf '\n' >> "$WORK/all.js"
+# Breadth-first over chunk references. A route chunk names the chunks *it*
+# lazily imports, so stopping at the entry chunk's list misses anything one
+# more hop away — Admin → PicklistManager is exactly that.
+while [ -s "$WORK/queue" ]; do
+  c=$(head -1 "$WORK/queue"); sed -i.bak '1d' "$WORK/queue"
+  grep -qxF "$c" "$WORK/fetched" && continue
+  echo "$c" >> "$WORK/fetched"
+  body=$(curl -fsS -m 60 "$BASE/$c" 2>/dev/null) || continue
+  printf '%s\n' "$body" >> "$WORK/all.js"
+  printf '%s' "$body" | grep -ao 'assets/[A-Za-z0-9._-]*\.js' | sort -u >> "$WORK/queue"
 done
+
+echo "checked $(wc -l < "$WORK/fetched" | tr -d ' ') chunks reachable from $ENTRY"
 
 STATUS=0
 for marker in "$@"; do
