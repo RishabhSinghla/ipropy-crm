@@ -737,6 +737,8 @@ webhooksRouter.post('/wa-bridge/history', asyncHandler(async (req, res) => {
   assertBridge(req);
 
   const input = z.object({
+    /** Whose phone this history came off, so a private chat can be scoped to them. */
+    linkId: z.string().uuid().optional(),
     messages: z.array(z.object({
       from: z.string().min(6).max(32),
       providerMessageId: z.string().max(200),
@@ -751,6 +753,16 @@ webhooksRouter.post('/wa-bridge/history', asyncHandler(async (req, res) => {
     })).max(500),
   }).parse(req.body);
 
+  // Who this phone belongs to. A chat that matches no CRM record is that
+  // person's private life, not shared inbox material, so it is scoped to them
+  // rather than left unassigned — which the conversation list shows to
+  // everybody.
+  const owner = input.linkId
+    ? (await db.queryOne<{ user_id: string }>(
+        `SELECT user_id FROM ipy_wa_link WHERE id = $1`, [input.linkId],
+      ))?.user_id ?? null
+    : null;
+
   let imported = 0;
   let duplicate = 0;
 
@@ -763,6 +775,18 @@ webhooksRouter.post('/wa-bridge/history', asyncHandler(async (req, res) => {
 
     const conversationId = await waService.getOrCreateConversation(m.from);
     const at = new Date(m.timestamp * 1000);
+
+    // Only ever set, never cleared: a thread that later matches a lead becomes
+    // business and stops being private, but one that was business already must
+    // not be hidden because a batch arrived without a record resolving.
+    if (owner) {
+      await db.query(
+        `UPDATE ipy_conversation
+            SET private_to_user_id = CASE WHEN record_id IS NULL THEN $2 ELSE NULL END
+          WHERE id = $1`,
+        [conversationId, owner],
+      );
+    }
 
     // A number that is not a lead has no name in the CRM, so the thread would
     // read as raw digits. The phone knows what to call them, so use that —

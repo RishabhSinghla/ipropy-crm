@@ -84,10 +84,38 @@ beforeAll(async () => {
     `SELECT value #>> '{}' AS value FROM ipy_setting WHERE key = 'org.timezone'`,
   );
   previousTimezone = existing?.value ?? null;
+
+  // Pinned to UTC, this suite passed in the afternoon and failed overnight.
+  // Claiming refuses outside 08:00-21:00 in the organisation's timezone, so at
+  // 04:40 UTC six tests got an empty queue and reported it as "hands out one
+  // message" being broken — a real behaviour, the wrong assertion, and a
+  // failure that healed itself by morning.
+  //
+  // So the zone is chosen to put *now* in the middle of the working day rather
+  // than assumed. Etc/GMT offsets are inverted from the name (Etc/GMT+5 is
+  // UTC-5), which is why this searches instead of computing.
+  const workingZone = ['UTC', ...Array.from({ length: 25 }, (_, i) =>
+    `Etc/GMT${i <= 12 ? `+${i}` : `-${i - 12}`}`)]
+    .find((zone) => {
+      const now = new Date();
+      const hour = Number(new Intl.DateTimeFormat('en-GB', {
+        timeZone: zone, hour: '2-digit', hour12: false,
+      }).format(now)) % 24;
+      // Same calendar day as UTC too, not just a working hour. The daily cap is
+      // counted against the date in the organisation's zone while this suite
+      // writes sent_today_on = CURRENT_DATE, which is the server's. A zone that
+      // is mid-afternoon on yesterday makes the cap read as zero, and the
+      // message goes out in the one test that exists to prove it does not.
+      const sameDate = new Intl.DateTimeFormat('en-CA', { timeZone: zone }).format(now)
+        === new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC' }).format(now);
+      return hour >= 10 && hour <= 18 && sameDate;
+    }) ?? 'UTC';
+
   await db.query(
     `INSERT INTO ipy_setting (key, value, category, label)
-     VALUES ('org.timezone', '"UTC"', 'general', 'Timezone')
-     ON CONFLICT (key) DO UPDATE SET value = '"UTC"'`,
+     VALUES ('org.timezone', to_jsonb($1::text), 'general', 'Timezone')
+     ON CONFLICT (key) DO UPDATE SET value = to_jsonb($1::text)`,
+    [workingZone],
   );
 
   await enableLinkedSending();

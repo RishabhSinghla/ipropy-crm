@@ -234,7 +234,7 @@ async function startSession(link) {
       + `progress ${progress ?? '?'}, latest ${isLatest ?? '?'}`);
     if (!messages?.length) return;
     try {
-      await forwardHistory(messages);
+      await forwardHistory(messages, link.id);
     } catch (err) {
       log('could not forward history:', err.message);
     }
@@ -244,7 +244,7 @@ async function startSession(link) {
     if (type !== 'notify') return;
     for (const m of messages) {
       try {
-        await forwardInbound(m);
+        await forwardInbound(m, link.id);
       } catch (err) {
         log('could not forward an inbound message:', err.message);
       }
@@ -262,7 +262,7 @@ async function startSession(link) {
  * Chunked at 200 because a phone can hand over tens of thousands of messages
  * at once and one request carrying all of them would time out and lose the lot.
  */
-async function forwardHistory(messages) {
+async function forwardHistory(messages, linkId) {
   const rows = [];
   for (const m of messages) {
     const jid = m.key?.remoteJid ?? '';
@@ -308,7 +308,7 @@ async function forwardHistory(messages) {
 
   let imported = 0;
   for (let i = 0; i < rows.length; i += 200) {
-    const result = await crm('history', { messages: rows.slice(i, i + 200) });
+    const result = await crm('history', { linkId, messages: rows.slice(i, i + 200) });
     imported += result?.imported ?? 0;
   }
   log(`history: offered ${rows.length}, CRM kept ${imported}`);
@@ -322,7 +322,7 @@ async function forwardHistory(messages) {
  * words on somebody's timeline. Messages the rep sent from their own handset
  * are kept — see below for why they take a different road in.
  */
-async function forwardInbound(m) {
+async function forwardInbound(m, linkId) {
   const jid = m.key.remoteJid ?? '';
   if (!jid.endsWith('@s.whatsapp.net')) return;
 
@@ -360,7 +360,7 @@ async function forwardInbound(m) {
   // 24-hour window, start a response clock, or fire an auto-reply at somebody
   // the rep has just answered by hand.
   if (m.key.fromMe) {
-    await forwardHistory([m]);
+    await forwardHistory([m], linkId);
     return;
   }
 

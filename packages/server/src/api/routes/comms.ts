@@ -47,6 +47,11 @@ commsRouter.get('/conversations', asyncHandler(async (req, res) => {
     params.push(user.id);
     clauses.push(`(c.assigned_to = $${params.length} OR c.assigned_to IS NULL)`);
   }
+  // A chat off somebody's linked phone that matches no CRM record is their
+  // private life. This filter applies to admins too, deliberately: an admin
+  // outranks a rep on CRM data, not on their conversation with their mother.
+  params.push(user.id);
+  clauses.push(`(c.private_to_user_id IS NULL OR c.private_to_user_id = $${params.length})`);
   params.push(limit, offset);
 
   const rows = await db.query(
@@ -78,6 +83,7 @@ commsRouter.get('/conversations', asyncHandler(async (req, res) => {
 }));
 
 commsRouter.get('/conversations/:id', asyncHandler(async (req, res) => {
+  const viewer = getUser(req);
   const conv = await db.queryOne(
     // Same treatment as the list: `c.*` would carry the dangling record_id, so
     // the deleted case is overridden after it.
@@ -88,8 +94,13 @@ commsRouter.get('/conversations/:id', asyncHandler(async (req, res) => {
      FROM ipy_conversation c
      LEFT JOIN ipy_record r ON r.id = c.record_id AND r.is_deleted = false
      LEFT JOIN ipy_user u ON u.id = c.assigned_to
-     WHERE c.id = $1`,
-    [req.params.id],
+     -- Filtering the list is not enough; an id in the address bar is a read.
+     -- Same rule, applied to admins too: a private chat off somebody's phone
+     -- is theirs. Folded into the WHERE rather than checked afterwards so the
+     -- answer is an ordinary 404 and not a 403 that confirms it exists.
+     WHERE c.id = $1
+       AND (c.private_to_user_id IS NULL OR c.private_to_user_id = $2)`,
+    [req.params.id, viewer.id],
   );
   if (!conv) throw new NotFoundError('Conversation not found');
 
@@ -144,9 +155,17 @@ commsRouter.get('/messages/:id/media', asyncHandler(async (req, res) => {
   // file belongs to. There is no `whatsapp.view` capability — sending and
   // managing templates are the two that exist — so requiring one would have
   // meant every rep seeing a broken image while an admin saw the photo.
+  const viewer = getUser(req);
   const row = await db.queryOne<{ media: Record<string, unknown> | null; type: string }>(
-    `SELECT m.media, m.type FROM ipy_message m WHERE m.id = $1`,
-    [req.params.id],
+    // Joined to the conversation for the privacy check. A photo in somebody's
+    // private chat is as private as the words around it, and this route hands
+    // over bytes by message id alone.
+    `SELECT m.media, m.type
+       FROM ipy_message m
+       JOIN ipy_conversation c ON c.id = m.conversation_id
+      WHERE m.id = $1
+        AND (c.private_to_user_id IS NULL OR c.private_to_user_id = $2)`,
+    [req.params.id, viewer.id],
   );
   const media = row?.media as { storageKey?: string; mimeType?: string; fileName?: string } | null;
   if (!media?.storageKey) throw new NotFoundError('This message has no stored file');
