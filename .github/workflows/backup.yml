@@ -21,7 +21,7 @@ jobs:
   dump:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # pg_dump refuses to read a server newer than itself, and Neon upgrades
       # without asking. Pinning the client to the server's major is what stops
@@ -32,7 +32,12 @@ jobs:
           curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
           sudo apt-get update -qq
           sudo apt-get install -y -qq postgresql-client-18
-          pg_dump --version
+          # Installing 18 is not the same as running it. The runner ships its
+          # own postgresql-client-16 and that is what is first on PATH, so
+          # `pg_dump` stays 16 and dies on a version mismatch it has already
+          # been warned about. Put 18's binaries in front for every later step.
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+          /usr/lib/postgresql/18/bin/pg_dump --version
 
       - name: Dump production
         env:
