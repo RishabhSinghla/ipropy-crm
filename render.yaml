@@ -86,7 +86,13 @@ services:
       # Media storage. Blank = local disk = files lost on every free-tier
       # redeploy. Fill these with Cloudflare R2 credentials to keep them.
       - key: STORAGE_DRIVER
-        value: local
+        # Not pinned here on purpose. A literal value is re-applied on every
+        # deploy, so hardcoding "local" silently overwrote the setting each
+        # time — files were configured to go to R2 and kept landing on the
+        # container's disk, where the next deploy deleted them. The CRM's own
+        # Admin → Integrations → S3 card is the place to set this now; this
+        # entry stays only as the fallback for a fresh install.
+        sync: false
       - key: S3_BUCKET
         sync: false
       - key: S3_ENDPOINT

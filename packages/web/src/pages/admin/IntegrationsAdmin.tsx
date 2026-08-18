@@ -125,10 +125,10 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
     { key: 'webhookKey', label: 'Webhook Key', source: 'credentials', secret: true },
   ],
   s3: [
-    { key: 'driver', label: 'Driver — "local" or "s3"', source: 'config', placeholder: 'local' },
-    { key: 'bucket', label: 'Bucket', source: 'config', placeholder: 'ipropy-files' },
-    { key: 'region', label: 'Region', source: 'config', placeholder: 'ap-south-1' },
-    { key: 'endpoint', label: 'Custom endpoint (MinIO/other S3-compatible)', source: 'config', placeholder: 'https://s3.ap-south-1.amazonaws.com' },
+    { key: 'driver', label: 'Where files are saved — type "s3" to use the cloud, "local" for this server', source: 'config', placeholder: 'local' },
+    { key: 'bucket', label: 'Bucket name', source: 'config', placeholder: 'ipropy-files' },
+    { key: 'region', label: 'Region — "auto" for Cloudflare R2', source: 'config', placeholder: 'auto' },
+    { key: 'endpoint', label: 'Endpoint address (required for Cloudflare R2)', source: 'config', placeholder: 'https://<account-id>.r2.cloudflarestorage.com' },
     { key: 'accessKeyId', label: 'Access Key ID', source: 'credentials' },
     { key: 'secretAccessKey', label: 'Secret Access Key', source: 'credentials', secret: true },
   ],
@@ -396,14 +396,43 @@ const GUIDES: Record<string, Guide> = {
     ],
   },
   s3: {
-    outcome: 'Photos and documents are stored in your own cloud bucket rather than on this server.',
+    outcome: 'Photos and videos are kept in your own cloud storage instead of on this server. Without this, every update to the CRM deletes every photo anyone has uploaded.',
     minutes: 6,
     steps: [
-      { title: 'Switch the driver on', help: 'Type "s3" here. Leaving it as "local" keeps files on this machine, which is fine for a single server.', field: 'driver' },
-      { title: 'Bucket name', help: 'The bucket you created in AWS S3, or in any S3-compatible service.', field: 'bucket' },
-      { title: 'Region', help: 'ap-south-1 for Mumbai.', field: 'region' },
-      { title: 'Access Key ID', help: 'From an IAM user with read/write on that bucket only.', field: 'accessKeyId' },
-      { title: 'Secret Access Key', help: 'Shown once when the key is created — if you did not save it, make a new key.', field: 'secretAccessKey' },
+      {
+        title: 'Open your bucket',
+        help: 'Cloudflare dashboard, then R2, then your bucket. If you have not made one, Create bucket and give it any name. R2 is free up to 10GB, which is thousands of property photos.',
+      },
+      {
+        title: 'Copy the bucket name',
+        help: 'Exactly as it appears in Cloudflare, lower case.',
+        field: 'bucket',
+      },
+      {
+        title: 'Copy the endpoint address',
+        help: 'On the bucket page, under Settings, it is the S3 API address and looks like https://<a long id>.r2.cloudflarestorage.com — the part ending in .com, with no bucket name after it. This step is the one people miss, and without it nothing saves.',
+        field: 'endpoint',
+      },
+      {
+        title: 'Region',
+        help: 'Type auto. Cloudflare ignores this, but the connection refuses to start without something in the box.',
+        field: 'region',
+      },
+      {
+        title: 'Create an API token',
+        help: 'R2, then Manage API tokens, then Create token. Give it Object Read & Write on this bucket. Cloudflare shows an Access Key ID and a Secret — copy the Access Key ID here.',
+        field: 'accessKeyId',
+      },
+      {
+        title: 'And the secret',
+        help: 'Shown once, on the same screen. If you have already closed it, make a new token; you cannot get this one back.',
+        field: 'secretAccessKey',
+      },
+      {
+        title: 'Turn it on',
+        help: 'Type s3 in this box. Until you do, the CRM keeps saving to this server no matter what you filled in above. Leaving it as local is only right if you never update the CRM.',
+        field: 'driver',
+      },
     ],
   },
   onedrive: {
