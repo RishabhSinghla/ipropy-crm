@@ -1,0 +1,56 @@
+# Point production at the automation server, and give both ends one secret.
+#
+# Run manually. The secret is generated here and printed once: production
+# stores it, and it is the only thing standing between the open webhooks
+# router and anything that can raise a notification, so it is never committed.
+name: Set n8n config
+on:
+  workflow_dispatch:
+    inputs:
+      webhook_url:
+        description: "n8n webhook URL, or leave blank if n8n only polls"
+        required: false
+        default: ""
+
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install psql 18
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: Write the config
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          WEBHOOK_URL: ${{ inputs.webhook_url }}
+        run: |
+          set -euo pipefail
+          SECRET="$(openssl rand -hex 24)"
+
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<SQL
+          INSERT INTO ipy_integration (provider, kind, label, is_active, status, config, credentials)
+          SELECT 'n8n', 'storage', 'n8n automation', true, 'connected',
+                 jsonb_build_object('webhookUrl', '${WEBHOOK_URL}'),
+                 jsonb_build_object('callbackSecret', '${SECRET}')
+          WHERE NOT EXISTS (SELECT 1 FROM ipy_integration WHERE provider = 'n8n');
+
+          UPDATE ipy_integration
+             SET is_active = true,
+                 status = 'connected',
+                 config = COALESCE(config,'{}'::jsonb) || jsonb_build_object('webhookUrl', '${WEBHOOK_URL}'),
+                 credentials = COALESCE(credentials,'{}'::jsonb) || jsonb_build_object('callbackSecret', '${SECRET}')
+           WHERE provider = 'n8n';
+          SQL
+
+          echo "::notice::n8n configured on production."
+          echo "Put this on the n8n machine as IPROPY_CALLBACK_SECRET:"
+          echo "$SECRET"
+
+      - name: Say what still needs doing
+        run: |
+          echo "The CRM must be restarted for this to take effect — its"
+          echo "integration settings are an in-memory snapshot warmed at boot."
