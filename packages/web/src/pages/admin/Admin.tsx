@@ -1,9 +1,11 @@
+import SettingsAdmin from './SettingsAdmin';
 import type { JSX } from 'react';
 import { Suspense, lazy } from 'react';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {
   Activity, Blocks, Database, GitBranch, Globe, KeyRound, Layers, LayoutTemplate,
   Columns3, ListTree, Plug, Settings2, Shield, Sliders, Sparkles, ToggleLeft, Users, Workflow,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { Spinner } from '../../components/ui';
 import { cn } from '../../lib/utils';
@@ -52,6 +54,7 @@ const SECTIONS = [
     group: 'Platform',
     items: [
       { path: 'integrations', label: 'Integrations', icon: Plug, element: <IntegrationsAdmin /> },
+      { path: 'settings', label: 'Settings', icon: SlidersHorizontal, element: <SettingsAdmin /> },
       { path: 'brand', label: 'Brand & Social', icon: Sparkles, element: <BrandAdmin /> },
       { path: 'system', label: 'System & Audit', icon: Activity, element: <SystemAdmin /> },
     ],
