@@ -1,0 +1,44 @@
+# Read-only look at production, for questions the deployed site cannot answer
+# without a login.
+#
+# Exists because the person building this cannot sign in to production and
+# should not be asking the owner to read values back over chat — that is how
+# "I connected it" and "it is connected" drift apart. The runner already holds
+# the database URL for the nightly backup; this borrows it to answer yes/no
+# questions and prints no secret, only whether one is present.
+name: Check production
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install PostgreSQL 18 client
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: What production actually has configured
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT provider,
+                   is_active                       AS switched_on,
+                   config->>'driver'               AS driver,
+                   config->>'bucket'               AS bucket,
+                   (config->>'endpoint' <> '')     AS has_endpoint,
+                   (credentials ? 'accessKeyId')   AS has_key,
+                   (credentials ? 'secretAccessKey') AS has_secret
+              FROM ipy_integration
+             WHERE provider IN ('s3','onedrive');"
+          echo "--- what the CRM is storing files with ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -tAc "
+            SELECT 'attachments: ' || count(*) ||
+                   ', on R2-style keys: ' || count(*) FILTER (WHERE storage_key NOT LIKE 'unfiled/%')
+              FROM ipy_attachment;"
