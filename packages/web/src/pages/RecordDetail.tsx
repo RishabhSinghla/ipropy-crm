@@ -8,6 +8,7 @@ import {
   Activity, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Edit3, Eye, FileQuestion, FileText, Images, LayoutDashboard, Link2, MessageCircle, MoreHorizontal, Paperclip, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Trash2, Upload, UserCheck, X,
 } from 'lucide-react';
 import { api, authedFileUrl } from '../lib/api';
+import { compressImage, formatBytes } from '../lib/compressImage';
 import { toast, useApp } from '../lib/store';
 import { useWatchRecord } from '../lib/realtime';
 import { invalidateRecordQueries } from '../lib/invalidate';
@@ -1309,17 +1310,34 @@ function PropertyPhotoCarousel({
     }
     setUploading(images.length);
     let done = 0;
+    let before = 0;
+    let after = 0;
     try {
       for (const file of images) {
-        await api.uploadFile(file, recordId, 'properties');
+        // Shrunk in the browser, not on the server: a 12MB phone photo that is
+        // never sent is 12MB of upload time saved on an office connection as
+        // well as 12MB of storage. Declines to act on anything it cannot decode
+        // or cannot meaningfully improve, and hands back the original, so a
+        // photo is never lost to compression failing.
+        const result = await compressImage(file);
+        before += result.originalBytes;
+        after += result.finalBytes;
+        await api.uploadFile(result.file, recordId, 'properties');
         done += 1;
         setUploading(images.length - done);
       }
       await queryClient.invalidateQueries({ queryKey: ['files', recordId] });
-      toast.success(
-        done === 1 ? 'Photo added' : `${done} photos added`,
-        skipped ? `${skipped} file${skipped === 1 ? '' : 's'} skipped — not an image.` : 'Drag a thumbnail to change the order.',
-      );
+
+      const saved = before - after;
+      const note = skipped
+        ? `${skipped} file${skipped === 1 ? '' : 's'} skipped — not an image.`
+        : saved > 200_000
+          // Said plainly, because somebody uploading from an iPhone is about to
+          // wonder where the other 11MB went and should not have to guess.
+          ? `Resized before upload: ${formatBytes(before)} became ${formatBytes(after)}, saving ${Math.round((saved / before) * 100)}%.`
+          : 'Drag a thumbnail to change the order.';
+
+      toast.success(done === 1 ? 'Photo added' : `${done} photos added`, note);
     } catch (err) {
       // Says how many made it, because "upload failed" after eleven of twelve
       // sends somebody back to re-add all twelve.
