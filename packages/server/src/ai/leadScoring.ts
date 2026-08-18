@@ -8,6 +8,7 @@
  * stands on its own, so scoring never silently stops working.
  */
 import type { LeadScoreResult } from '@ipropy/shared';
+import { scoringThresholds, temperatureFor, gradeFor } from '../core/settings/scoring.js';
 import { formatIndianPrice } from '@ipropy/shared';
 import { db } from '../db/pool.js';
 import { logger } from '../utils/logger.js';
@@ -226,10 +227,11 @@ export async function scoreLead(recordId: string, opts: { persist?: boolean } = 
   if (!ctx) return null;
 
   const rules = applyRules(ctx);
+  const thresholds = await scoringThresholds();
   let result: LeadScoreResult = {
     score: rules.score,
-    grade: gradeFor(rules.score),
-    temperature: rules.score >= 70 ? 'Hot' : rules.score >= 45 ? 'Warm' : 'Cold',
+    grade: gradeFor(rules.score, thresholds),
+    temperature: temperatureFor(rules.score, thresholds),
     reasons: rules.reasons.slice(0, 6),
     risks: rules.risks.slice(0, 4),
     recommendedActions: defaultActions(ctx, rules.score),
@@ -272,6 +274,7 @@ export async function scoreLead(recordId: string, opts: { persist?: boolean } = 
 }
 
 async function refineWithAi(ctx: LeadContext, rules: RuleOutcome): Promise<LeadScoreResult | null> {
+  const thresholds = await scoringThresholds();
   const v = ctx.values;
 
   const prompt = `Assess this real-estate lead and refine the rule-based score.
@@ -340,10 +343,10 @@ Return JSON:
 
   return {
     score,
-    grade: (['A', 'B', 'C', 'D'].includes(parsed.grade) ? parsed.grade : gradeFor(score)) as LeadScoreResult['grade'],
+    grade: (['A', 'B', 'C', 'D'].includes(parsed.grade)
+      ? parsed.grade : gradeFor(score, thresholds)) as LeadScoreResult['grade'],
     temperature: (['Hot', 'Warm', 'Cold'].includes(parsed.temperature)
-      ? parsed.temperature
-      : score >= 70 ? 'Hot' : score >= 45 ? 'Warm' : 'Cold') as LeadScoreResult['temperature'],
+      ? parsed.temperature : temperatureFor(score, thresholds)) as LeadScoreResult['temperature'],
     reasons: (parsed.reasons ?? rules.reasons).slice(0, 6),
     risks: (parsed.risks ?? rules.risks).slice(0, 4),
     recommendedActions: (parsed.recommendedActions ?? defaultActions(ctx, score)).slice(0, 4),
@@ -352,12 +355,7 @@ Return JSON:
   };
 }
 
-function gradeFor(score: number): LeadScoreResult['grade'] {
-  if (score >= 80) return 'A';
-  if (score >= 60) return 'B';
-  if (score >= 40) return 'C';
-  return 'D';
-}
+
 
 function defaultActions(ctx: LeadContext, score: number): string[] {
   const actions: string[] = [];

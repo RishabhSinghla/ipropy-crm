@@ -7,6 +7,7 @@
  * actually pastes into a WhatsApp message.
  */
 import type { PropertyMatch } from '@ipropy/shared';
+import { scoringThresholds } from '../core/settings/scoring.js';
 import { formatArea, formatIndianPrice } from '@ipropy/shared';
 import { db } from '../db/pool.js';
 import { completeJson, isAiAvailable, saveInsight, REAL_ESTATE_SYSTEM } from './client.js';
@@ -478,6 +479,7 @@ export interface BuyerMatch {
  * Used when a unit is released or repriced.
  */
 export async function matchBuyersForProperty(propertyId: string, limit = 10): Promise<BuyerMatch[]> {
+  const { matchFloor } = await scoringThresholds();
   const property = await db.queryOne<PropertyRow>(
     `SELECT p.record_id, r.label, p.name, p.configuration, p.carpet_area, p.total_price, p.base_price,
             p.floor, p.facing, p.vastu_compliant, p.status, p.possession_date, p.possession_status,
@@ -572,7 +574,7 @@ export async function matchBuyersForProperty(propertyId: string, limit = 10): Pr
     .filter(({ wasLost, match }) => !wasLost || match.revival)
     // A revival is a colder call than a live enquiry — the person has already
     // said no once — so it clears a higher bar to earn the interruption.
-    .filter(({ match }) => match.score >= (match.revival ? REVIVAL_SCORE_FLOOR : 55))
+    .filter(({ match }) => match.score >= (match.revival ? REVIVAL_SCORE_FLOOR : matchFloor))
     .map(({ match }) => match)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);

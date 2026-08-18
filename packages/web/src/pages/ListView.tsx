@@ -1208,8 +1208,18 @@ function KanbanBoard({
                         )}
                       </span>
                     )}
+                    {/* Coloured from the rating the server already worked out,
+                        not by re-deciding here what Hot means. The two numbers
+                        that used to live in this line are also in the scoring
+                        engine, so an admin raising the Hot threshold moved the
+                        word and left this badge on the old boundary. */}
                     {typeof row.values.ai_score === 'number' && (
-                      <Badge color={row.values.ai_score >= 70 ? '#22c55e' : row.values.ai_score >= 45 ? '#f59e0b' : '#94a3b8'}>
+                      <Badge color={
+                        row.values.rating === 'Hot' ? '#22c55e'
+                          : row.values.rating === 'Warm' ? '#f59e0b'
+                          : row.values.rating === 'Cold' ? '#94a3b8'
+                          : '#94a3b8'
+                      }>
                         {row.values.ai_score}
                       </Badge>
                     )}
