@@ -17,6 +17,8 @@ import { db } from '../../db/pool.js';
 import { formatIndianPrice } from '@ipropy/shared';
 import type { StorageDriver } from './index.js';
 
+import { PROPERTY_MEDIA_FOLDERS } from './keys.js';
+
 export const DETAILS_FILE = 'PROPERTY DETAILS.txt';
 
 interface Row {
@@ -89,5 +91,12 @@ export async function writePropertyDetails(
     `Property ID: ${recordId}`,
   );
 
-  await driver.save(`${folder}/${DETAILS_FILE}`, Buffer.from(`${lines.join('\n')}\n`, 'utf8'), 'text/plain');
+  // In 00_PROPERTY_DATA rather than loose in the property root: the root is what
+  // somebody opens on a phone in a lift, and it should show the numbered folders
+  // in order, not a text file wedged above them.
+  await driver.save(
+    `${folder}/${PROPERTY_MEDIA_FOLDERS.data}/${DETAILS_FILE}`,
+    Buffer.from(`${lines.join('\n')}\n`, 'utf8'),
+    'text/plain',
+  );
 }

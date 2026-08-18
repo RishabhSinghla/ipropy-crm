@@ -27,18 +27,44 @@
 import { randomUUID } from 'node:crypto';
 import { db } from '../../db/pool.js';
 
+/**
+ * The folder names, which are the owner's, not this codebase's.
+ *
+ * He had already designed a structure in OneDrive by hand and the CRM was
+ * writing a different one beside it — three competing conventions in one drive,
+ * which is the filesystem version of the duplicated-list bug this project keeps
+ * paying for. His numbering wins because his team reads it every day.
+ *
+ * Only the folders the pipeline actually fills are here. His full design runs to
+ * several hundred folders covering portals, blog and distribution; creating all
+ * of them up front would mean a property whose folder tree is mostly empty
+ * promises, and an empty folder is indistinguishable from a step that failed.
+ * They can be added as the work that fills them is built.
+ */
 export const PROPERTY_MEDIA_FOLDERS = {
-  originals: '01 Originals',
-  compressed: '02 Compressed',
-  // 03 was "Watermarked". The numbers are part of every path already written to
-  // storage, so the gap stays rather than renumbering folders out from under
-  // media that is already filed.
-  instagramFeed: '04 Social Media/Instagram Feed',
-  instagramStory: '04 Social Media/Instagram Story and Reels',
-  facebook: '04 Social Media/Facebook',
-  whatsapp: '04 Social Media/WhatsApp',
-  crmWebsite: '05 CRM Website',
+  data: '00_PROPERTY_DATA',
+  originals: '01_RAW_UPLOADS/PHOTOS',
+  originalVideos: '01_RAW_UPLOADS/VIDEOS',
+  compressed: '03_EDITED_MEDIA/CLEAN',
+  watermarked: '03_EDITED_MEDIA/WATERMARKED',
+  thumbnails: '03_EDITED_MEDIA/THUMBNAILS',
+  instagramFeed: '04_SOCIAL/INSTAGRAM/FEED',
+  instagramStory: '04_SOCIAL/INSTAGRAM/STORIES',
+  facebook: '04_SOCIAL/FACEBOOK',
+  whatsapp: '04_SOCIAL/WHATSAPP',
+  crmWebsite: '07_WEBSITE',
+  archive: '99_ARCHIVE',
 } as const;
+
+/**
+ * What `01 Originals` and friends were called before.
+ *
+ * Keys already written to storage still contain these, and no read resolves a
+ * file by path, so nothing needs migrating. But `derivativeStorageKey` has to
+ * recognise an old parent to strip it, or a derivative of a pre-rename photo
+ * lands one level too deep and the zip export loses it.
+ */
+const LEGACY_ORIGINALS = ['01 Originals'];
 
 /**
  * What the CRM creates when a property is made.
@@ -56,14 +82,18 @@ export const PROPERTY_MEDIA_FOLDERS = {
  * one that breaks on first use.
  */
 export const PROPERTY_MEDIA_FOLDER_TREE = [
+  PROPERTY_MEDIA_FOLDERS.data,
   PROPERTY_MEDIA_FOLDERS.originals,
+  PROPERTY_MEDIA_FOLDERS.originalVideos,
   PROPERTY_MEDIA_FOLDERS.compressed,
-  '03 Watermarked',
+  PROPERTY_MEDIA_FOLDERS.watermarked,
+  PROPERTY_MEDIA_FOLDERS.thumbnails,
   PROPERTY_MEDIA_FOLDERS.instagramFeed,
   PROPERTY_MEDIA_FOLDERS.instagramStory,
   PROPERTY_MEDIA_FOLDERS.facebook,
   PROPERTY_MEDIA_FOLDERS.whatsapp,
   PROPERTY_MEDIA_FOLDERS.crmWebsite,
+  PROPERTY_MEDIA_FOLDERS.archive,
 ];
 
 /**
@@ -136,7 +166,26 @@ export function derivativeStorageKey(
 ): string {
   const parts = originalKey.split('/').filter(Boolean);
   const file = parts.pop() ?? 'file';
-  if (parts.at(-1) === PROPERTY_MEDIA_FOLDERS.originals) parts.pop();
+
+  // `originals` is a nested path now (`01_RAW_UPLOADS/PHOTOS`), so stripping one
+  // trailing segment is no longer enough — a derivative of a photo would land
+  // inside `01_RAW_UPLOADS/` rather than beside the other sets. Strip whichever
+  // known drop-box the key ends with, old name or new, longest first so a
+  // multi-segment match is preferred over a single-segment one.
+  const dropBoxes = [
+    PROPERTY_MEDIA_FOLDERS.originals,
+    PROPERTY_MEDIA_FOLDERS.originalVideos,
+    ...LEGACY_ORIGINALS,
+  ].sort((a, b) => b.split('/').length - a.split('/').length);
+
+  for (const box of dropBoxes) {
+    const segments = box.split('/');
+    if (parts.length >= segments.length
+      && parts.slice(-segments.length).join('/') === box) {
+      parts.splice(-segments.length);
+      break;
+    }
+  }
   const dot = file.lastIndexOf('.');
   const stem = dot > 0 ? file.slice(0, dot) : file;
   const ext = extension.startsWith('.') ? extension : `.${extension}`;

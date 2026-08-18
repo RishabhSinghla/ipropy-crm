@@ -34,7 +34,9 @@ describe('storage keys', () => {
     expect(key).toMatch(/^properties\//);
     expect(key).toContain('verdant-greens-tower-d-unit-702');
     // Still obviously the photo it came from, with a tail for uniqueness.
-    expect(key).toMatch(/\/01 Originals\/img-9001-[0-9a-f]{8}\.heic$/);
+    expect(key).toMatch(
+      new RegExp(`/${PROPERTY_MEDIA_FOLDERS.originals}/img-9001-[0-9a-f]{8}\\.heic$`),
+    );
   });
 
   it('leads the folder with the record number, since that is what people quote', async () => {
@@ -64,10 +66,15 @@ describe('storage keys', () => {
     const created = await recordService.createRecord(ctx, 'properties', { name: 'ग्रीनफील्ड' });
     const key = await buildStorageKey({ recordId: created.id, originalName: 'फोटो.jpg', ext: '.jpg' });
 
-    const [module, folder, originals, file] = key.split('/');
+    // The drop box is a nested path, so take it off the end rather than
+    // destructuring a fixed number of segments.
+    const segments = key.split('/');
+    const file = segments.pop()!;
+    const originals = segments.splice(-PROPERTY_MEDIA_FOLDERS.originals.split('/').length).join('/');
+    const [module, folder] = segments;
     expect(module).toBe('properties');
     expect(folder).not.toBe('');
-    expect(originals).toBe('01 Originals');
+    expect(originals).toBe(PROPERTY_MEDIA_FOLDERS.originals);
     expect(file).toMatch(/^[a-z0-9-]+\.jpg$/);
     // Whatever it fell back to, it is still ASCII and still a usable path.
     expect(key).toMatch(/^[A-Za-z0-9 /_.-]+$/);
@@ -100,7 +107,9 @@ describe('storage keys', () => {
     const created = await recordService.createRecord(ctx, 'properties', { name: 'Derivative Home' });
     const key = await buildStorageKey({ recordId: created.id, originalName: 'IMG_1.jpg', ext: '.jpg' });
     const derivative = derivativeStorageKey(key, PROPERTY_MEDIA_FOLDERS.crmWebsite, 'large', '.webp');
-    expect(derivative).toContain('/05 CRM Website/');
+    expect(derivative).toContain(`/${PROPERTY_MEDIA_FOLDERS.crmWebsite}/`);
+    // and the nested drop box is gone, not merely its last segment
+    expect(derivative).not.toContain('01_RAW_UPLOADS');
     expect(derivative).toMatch(/\/img-1-[0-9a-f]{8}-large\.webp$/);
   });
 
