@@ -211,6 +211,37 @@ Vercel also builds a unique preview URL for every pull request — useful for
 
 ---
 
+### Backups: nightly to R2, verified
+
+**Changed 2026-08-18.** This repo previously carried a dump job, it was removed,
+and the standing decision was to buy Neon's Launch plan instead — on the
+reasoning that a backup job you maintain yourself is a backup job that quietly
+stops working.
+
+That reasoning is right and is why the job that replaced it does something the
+old one did not: **every night it restores the dump it just took into a throwaway
+Postgres and counts the tables and records.** A backup nobody has ever restored
+is not a backup, and this one is restored every single night before it is kept.
+
+It runs in GitHub Actions (`.github/workflows/backup.yml`), not on the server and
+not on a laptop. Render restarts the container whenever it likes, so a job living
+inside it has no schedule you can trust, and a Mac is asleep at 1am. GitHub runs
+it whether or not the site is up — which is precisely when you want a backup to
+have happened.
+
+What you get: last night. What you do not get: point-in-time restore to 4:07pm
+yesterday. That is the difference Neon's paid plan sells, and it is a deliberate
+trade at this size rather than an oversight.
+
+**Five repository secrets are required** (Settings → Secrets and variables →
+Actions): `PROD_DATABASE_URL`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
+`R2_ENDPOINT`, `R2_BACKUP_BUCKET`. Without them the job fails loudly on its first
+run rather than appearing to succeed.
+
+The `pg_dump` client is pinned to PostgreSQL 18 to match Neon. A client older
+than the server refuses to read it at all, and Neon upgrades without asking —
+that has already broken this once.
+
 ## 7. Backups and monitoring (10 min, do this before real client data)
 
 ### Backups: use Neon's, don't build your own

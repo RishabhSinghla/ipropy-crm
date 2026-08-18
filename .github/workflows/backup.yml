@@ -1,0 +1,92 @@
+# Nightly backup of the deployed database into Cloudflare R2.
+#
+# Runs here rather than on the server or a laptop, and that is the point. The
+# CRM's own container is restarted by Render whenever it likes, so a job living
+# inside it has no schedule you can rely on; a Mac is asleep at 3am. GitHub runs
+# this whether or not the site is up, which is exactly when you most want a
+# backup to have happened.
+#
+# What it is not: point-in-time restore. This gets you back to last night, not
+# to 4:07pm yesterday. That difference is what Neon's paid plan sells, and it is
+# a fair trade at this size — but it is a trade, not a free lunch.
+name: Backup
+
+on:
+  schedule:
+    # 19:30 UTC = 01:00 IST. After the working day, before anyone starts.
+    - cron: '30 19 * * *'
+  workflow_dispatch:
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # pg_dump refuses to read a server newer than itself, and Neon upgrades
+      # without asking. Pinning the client to the server's major is what stops
+      # this job dying silently one morning months from now.
+      - name: Install PostgreSQL 18 client
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18
+          pg_dump --version
+
+      - name: Dump production
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          test -n "$PROD_DATABASE_URL" || { echo "PROD_DATABASE_URL is not set"; exit 1; }
+          STAMP=$(date -u +%Y%m%d-%H%M%S)
+          echo "STAMP=$STAMP" >> "$GITHUB_ENV"
+          # Custom format: compressed, and restorable table-by-table rather than
+          # all-or-nothing, which is what you want at 2am with one table wrong.
+          pg_dump --no-owner --no-acl -Fc "$PROD_DATABASE_URL" > "ipropy-$STAMP.dump"
+          ls -lh "ipropy-$STAMP.dump"
+
+      # A dump that restores into nothing is not a backup. This spends thirty
+      # seconds proving the file is readable and carries the tables it should,
+      # because the failure everyone actually has is a backup nobody ever tried.
+      - name: Prove it restores
+        run: |
+          docker run -d --name verify -e POSTGRES_PASSWORD=verify -p 5433:5432 postgres:18-alpine
+          for i in $(seq 1 30); do docker exec verify pg_isready -U postgres >/dev/null 2>&1 && break; sleep 2; done
+          PGPASSWORD=verify pg_restore --no-owner --no-acl -h localhost -p 5433 -U postgres -d postgres "ipropy-$STAMP.dump" || true
+          TABLES=$(PGPASSWORD=verify psql -h localhost -p 5433 -U postgres -d postgres -tAc \
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name LIKE 'ipy_%';")
+          echo "restored $TABLES iPropy tables"
+          test "$TABLES" -ge 40 || { echo "Too few tables restored — this dump is not trustworthy"; exit 1; }
+          RECORDS=$(PGPASSWORD=verify psql -h localhost -p 5433 -U postgres -d postgres -tAc \
+            "SELECT count(*) FROM ipy_record;")
+          echo "restored $RECORDS records"
+
+      - name: Upload to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BACKUP_BUCKET }}
+        run: |
+          aws s3 cp "ipropy-$STAMP.dump" "s3://$R2_BUCKET/db/ipropy-$STAMP.dump" \
+            --endpoint-url "$R2_ENDPOINT"
+          echo "uploaded db/ipropy-$STAMP.dump"
+
+      # Thirty nights is about a month of mistakes you can still walk back from,
+      # and a month of dumps is small enough to stay inside R2's free tier.
+      - name: Keep the last 30
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BACKUP_BUCKET }}
+        run: |
+          aws s3 ls "s3://$R2_BUCKET/db/" --endpoint-url "$R2_ENDPOINT" \
+            | awk '{print $4}' | sort | head -n -30 | while read -r old; do
+              [ -n "$old" ] || continue
+              echo "pruning $old"
+              aws s3 rm "s3://$R2_BUCKET/db/$old" --endpoint-url "$R2_ENDPOINT"
+            done
