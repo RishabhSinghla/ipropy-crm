@@ -121,15 +121,29 @@
     },
     {
       "parameters": {
-        "operation": "resize",
-        "width": 1080,
-        "height": 1350,
-        "resizeOption": "ignoreAspectRatio",
+        "operation": "multiStep",
+        "dataPropertyName": "data",
+        "operations": {
+          "operations": [
+            {
+              "operation": "resize",
+              "width": "={{ Math.round($json.size.width * Math.max(1080/$json.size.width, 1350/$json.size.height)) }}",
+              "height": "={{ Math.round($json.size.height * Math.max(1080/$json.size.width, 1350/$json.size.height)) }}",
+              "resizeOption": "ignoreAspectRatio"
+            },
+            {
+              "operation": "crop",
+              "width": 1080,
+              "height": 1350,
+              "positionX": "={{ Math.round((Math.round($json.size.width * Math.max(1080/$json.size.width, 1350/$json.size.height)) - 1080)/2) }}",
+              "positionY": "={{ Math.round((Math.round($json.size.height * Math.max(1080/$json.size.width, 1350/$json.size.height)) - 1350)/2) }}"
+            }
+          ]
+        },
         "options": {
           "format": "jpeg",
           "quality": 86
-        },
-        "dataPropertyName": "data"
+        }
       },
       "id": "a1000000-0000-4000-8000-000000000007",
       "name": "Make the Instagram post",
@@ -158,15 +172,29 @@
     },
     {
       "parameters": {
-        "operation": "resize",
-        "width": 1080,
-        "height": 1920,
-        "resizeOption": "ignoreAspectRatio",
+        "operation": "multiStep",
+        "dataPropertyName": "data",
+        "operations": {
+          "operations": [
+            {
+              "operation": "resize",
+              "width": "={{ Math.round($json.size.width * Math.max(1080/$json.size.width, 1920/$json.size.height)) }}",
+              "height": "={{ Math.round($json.size.height * Math.max(1080/$json.size.width, 1920/$json.size.height)) }}",
+              "resizeOption": "ignoreAspectRatio"
+            },
+            {
+              "operation": "crop",
+              "width": 1080,
+              "height": 1920,
+              "positionX": "={{ Math.round((Math.round($json.size.width * Math.max(1080/$json.size.width, 1920/$json.size.height)) - 1080)/2) }}",
+              "positionY": "={{ Math.round((Math.round($json.size.height * Math.max(1080/$json.size.width, 1920/$json.size.height)) - 1920)/2) }}"
+            }
+          ]
+        },
         "options": {
           "format": "jpeg",
           "quality": 86
-        },
-        "dataPropertyName": "data"
+        }
       },
       "id": "a1000000-0000-4000-8000-000000000009",
       "name": "Make the Instagram story",
@@ -315,6 +343,20 @@
         -420,
         760
       ]
+    },
+    {
+      "parameters": {
+        "operation": "information",
+        "dataPropertyName": "data"
+      },
+      "id": "d1000000-0000-4000-8000-000000000001",
+      "name": "Measure the photo",
+      "type": "n8n-nodes-base.editImage",
+      "typeVersion": 1,
+      "position": [
+        160,
+        380
+      ]
     }
   ],
   "connections": {
@@ -349,22 +391,7 @@
       "main": [
         [
           {
-            "node": "Make the website copy",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Make the Instagram post",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Make the Instagram story",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Stamp the watermark",
+            "node": "Measure the photo",
             "type": "main",
             "index": 0
           }
@@ -458,6 +485,32 @@
         [
           {
             "node": "Work out the folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Measure the photo": {
+      "main": [
+        [
+          {
+            "node": "Make the website copy",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Make the Instagram post",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Make the Instagram story",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Stamp the watermark",
             "type": "main",
             "index": 0
           }
