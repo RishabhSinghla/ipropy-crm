@@ -60,11 +60,6 @@ export interface ResolvedSettings {
    * Meta. Separate from `whatsapp` above because the two are different channels
    * that happen to reach the same app, and a number can only be on one of them.
    */
-  whatsappLinked: {
-    active: boolean;
-    /** What the bridge presents on every call. Blank refuses all of them. */
-    bridgeToken: string;
-  };
   telephony: {
     provider: 'none' | 'twilio' | 'exotel';
     twilio: { accountSid: string; authToken: string; callerId: string; appSid: string };
@@ -433,7 +428,6 @@ function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
   const s3 = map.get('s3');
   const onedrive = map.get('onedrive');
   const n8n = map.get('n8n');
-  const waLinked = map.get('whatsapp_linked');
 
   let telephonyProvider: 'none' | 'twilio' | 'exotel' = config.telephony.provider === 'twilio' || config.telephony.provider === 'exotel'
     ? config.telephony.provider : 'none';
@@ -467,13 +461,6 @@ function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
       appSecret: pick(wa, 'credentials', 'appSecret', config.whatsapp.appSecret),
       apiVersion: pick(wa, 'config', 'apiVersion', config.whatsapp.apiVersion) || config.whatsapp.apiVersion,
       active: Boolean(wa?.isActive),
-    },
-    whatsappLinked: {
-      // Both halves required. An active provider with no token would leave the
-      // bridge endpoints open to anything that can reach them, and a token with
-      // the provider switched off should send nothing.
-      active: Boolean(waLinked?.isActive) && Boolean(pick(waLinked, 'credentials', 'bridgeToken', config.whatsappLinked.bridgeToken)),
-      bridgeToken: pick(waLinked, 'credentials', 'bridgeToken', config.whatsappLinked.bridgeToken),
     },
     telephony: {
       provider: telephonyProvider,

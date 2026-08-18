@@ -341,46 +341,35 @@ can set a header.
 
 ---
 
-## WhatsApp: three doors, one queue
+## WhatsApp: two doors, one queue
 
 1. **Meta Cloud API** (`integrations/whatsapp/provider.ts`) — sanctioned, unconfigured,
    needs approval and a paid BSP. Templates only outside the 24-hour window.
-2. **A linked phone** (`integrations/whatsapp/linkedDevice.ts` + `wa-bridge/`) — the
-   WhatsApp Web mechanism. The rep's own number, no approval, no window, no fee, and
-   against WhatsApp's terms. Added 2026-08-16 on the owner's explicit decision.
-3. **`wa.me` hand-off** (`integrations/whatsapp/deviceSend.ts`) — the CRM writes it, a
-   person taps send. The floor, and it never goes away: a queued message belonging to
-   somebody with no linked phone still waits in Outreach exactly as before.
+2. **`wa.me` hand-off** (`integrations/whatsapp/deviceSend.ts`) — the CRM writes the
+   message, a person taps send. The floor, and it never goes away.
 
-All three fill and drain **one queue**, `ipy_device_send`. A linked phone intercepts the
-rows it can send; everything else stays a job for a thumb.
+Both fill and drain `ipy_device_send`.
 
-**Pacing lives in the CRM, not the bridge, and this is the load-bearing decision.** The
-bridge is a script on a laptop that gets restarted, run twice by accident and edited by
-whoever is curious; anything it remembers about how recently it sent is forgotten at
-exactly the wrong moment, and the first thing an amnesiac bridge does is send the backlog
-in one burst. So `claimOutbox()` hands out **one message per number** and refuses the next
-until the gap has passed. A bridge polling in a tight loop cannot hurry it.
+**A third door existed and was removed on 2026-08-18 (migration `060`).** A linked phone,
+the WhatsApp Web mechanism, run through a `wa-bridge/` process: the rep's own number, no
+approval, no fee, against WhatsApp's terms. It worked, and working is what killed it —
+pointed at a real handset it imported 821 chats, which is a person's private life in a
+business database. Scoping them per-user (migration `056`) hid them from colleagues, and
+holding them was still the wrong thing.
 
-The limits (`linkedDevice.ts`, unit-tested): 40s + up to 80s random between messages;
-daily cap 25 → 50 → 100 → 200 over the first fortnight from `linked_at`; 08:00–21:00 in
-the **organisation's** timezone via `Intl`, never `getHours()`.
+Removed with it: `ipy_wa_link`, `wa_link_id`/`claimed_at`/`priority`/`message_id` on the
+queue, `private_to_user_id` on conversations, the bridge endpoints, the WhatsApp sidebar
+page and the `whatsapp_linked` provider. The owner asked for a clean slate so it can be
+rebuilt deliberately later.
 
-Traffic is one-way: the bridge always calls the CRM, never the reverse, so the machine
-holding the sessions needs no tunnel and no open port. Endpoints are under
-`/api/webhooks/wa-bridge/*`, authenticated by `x-bridge-token`; an unset token **refuses
-every call** rather than allowing them.
-
-Inbound goes through the same `handleInbound` the Meta webhook uses, so the window,
-opt-out, sequence-exit-on-reply, auto-replies, the SLA clock and the timeline are shared
-rather than reimplemented. Media is recorded with its type and caption but **not
-downloaded** — a Meta `mediaId` means nothing on this path.
-
-**Pin Baileys to `6.7.24`.** `6.17.16` sorts highest by semver, was published a year
-*earlier*, and carries a message-spoofing advisory. The dist-tags are the truth here:
-`legacy` → 6.7.24, `latest` → 7.0.0-rc*.
-
----
+**If it is rebuilt, the things that cost a night to learn:** history arrives exactly once
+during the handshake after a scan and cannot be re-requested; Baileys must be on the
+`latest` dist-tag, since a year-old client is refused the moment it asks for a full sync
+(presenting as an endless 428 with no QR); history must never be replayed through
+`handleInbound`, which would auto-reply to every customer about something they said months
+ago; and pacing belongs in the CRM, never in a laptop script that forgets on restart. It
+must also decide, up front, that a business CRM has no business storing a rep's personal
+chats.
 
 ## Scale
 

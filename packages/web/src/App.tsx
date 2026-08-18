@@ -18,7 +18,6 @@ const ListView = lazy(() => import('./pages/ListView'));
 const RecordDetail = lazy(() => import('./pages/RecordDetail'));
 const RecordEdit = lazy(() => import('./pages/RecordEdit'));
 const Inbox = lazy(() => import('./pages/Inbox'));
-const WhatsApp = lazy(() => import('./pages/WhatsApp'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const CapturePage = lazy(() => import('./pages/Capture'));
 const CaptureReviewPage = lazy(() => import('./pages/CaptureReview'));
@@ -69,9 +68,7 @@ export default function App(): JSX.Element {
         <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/login" element={<Login />} />
-            {/* Both halves of recovery live on one component; the token in the
-                query decides which renders. Public by necessity — somebody
-                locked out cannot be asked to sign in first. */}
+
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ForgotPassword />} />
             {/* Public: a buyer opening a link has no account, so this sits
@@ -83,8 +80,7 @@ export default function App(): JSX.Element {
               <Route path="dashboard" element={<DashboardPage />} />
               <Route path="dashboard/:id" element={<DashboardPage />} />
 
-              <Route path="whatsapp" element={<WhatsApp />} />
-              <Route path="inbox" element={<Inbox />} />
+                <Route path="inbox" element={<Inbox />} />
               <Route path="inbox/:conversationId" element={<Inbox />} />
 
               <Route path="calls" element={<CallsPage />} />

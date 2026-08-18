@@ -710,16 +710,6 @@ export const api = {
   deviceQueue: () => get<DeviceSend[]>('/api/outreach/device-queue'),
 
   // --- WhatsApp linked to a rep's own phone -------------------------------
-  whatsappLinks: () => get<{
-    enabled: boolean;
-    sendingHours: { from: number; until: number };
-    links: WaLink[];
-  }>('/api/outreach/whatsapp-links'),
-  createWhatsappLink: (data: { label?: string; takesUnassigned?: boolean }) =>
-    post<WaLink>('/api/outreach/whatsapp-links', data),
-  updateWhatsappLink: (id: string, data: { takesUnassigned?: boolean; dailyCap?: number | null }) =>
-    patch<WaLink>(`/api/outreach/whatsapp-links/${id}`, data),
-  removeWhatsappLink: (id: string) => del(`/api/outreach/whatsapp-links/${id}`),
   deviceLink: (data: { handle: string; body: string; recordId?: string | null; module?: string; render?: boolean }) =>
     post<{ link: string; body: string }>('/api/outreach/device-link', data),
   queueDeviceSend: (data: Record<string, unknown>) =>

@@ -47,11 +47,6 @@ commsRouter.get('/conversations', asyncHandler(async (req, res) => {
     params.push(user.id);
     clauses.push(`(c.assigned_to = $${params.length} OR c.assigned_to IS NULL)`);
   }
-  // A chat off somebody's linked phone that matches no CRM record is their
-  // private life. This filter applies to admins too, deliberately: an admin
-  // outranks a rep on CRM data, not on their conversation with their mother.
-  params.push(user.id);
-  clauses.push(`(c.private_to_user_id IS NULL OR c.private_to_user_id = $${params.length})`);
   params.push(limit, offset);
 
   const rows = await db.query(
@@ -83,7 +78,6 @@ commsRouter.get('/conversations', asyncHandler(async (req, res) => {
 }));
 
 commsRouter.get('/conversations/:id', asyncHandler(async (req, res) => {
-  const viewer = getUser(req);
   const conv = await db.queryOne(
     // Same treatment as the list: `c.*` would carry the dangling record_id, so
     // the deleted case is overridden after it.
@@ -94,13 +88,8 @@ commsRouter.get('/conversations/:id', asyncHandler(async (req, res) => {
      FROM ipy_conversation c
      LEFT JOIN ipy_record r ON r.id = c.record_id AND r.is_deleted = false
      LEFT JOIN ipy_user u ON u.id = c.assigned_to
-     -- Filtering the list is not enough; an id in the address bar is a read.
-     -- Same rule, applied to admins too: a private chat off somebody's phone
-     -- is theirs. Folded into the WHERE rather than checked afterwards so the
-     -- answer is an ordinary 404 and not a 403 that confirms it exists.
-     WHERE c.id = $1
-       AND (c.private_to_user_id IS NULL OR c.private_to_user_id = $2)`,
-    [req.params.id, viewer.id],
+     WHERE c.id = $1`,
+    [req.params.id],
   );
   if (!conv) throw new NotFoundError('Conversation not found');
 
@@ -120,70 +109,12 @@ commsRouter.get('/conversations/:id', asyncHandler(async (req, res) => {
   const expires = (conv as { window_expires_at?: string | null }).window_expires_at;
   const windowOpen = Boolean(expires && new Date(expires) > new Date());
 
-  // The 24-hour window is Meta's rule, not WhatsApp's. Through a linked phone
-  // this is the ordinary app, where a person messages whoever they like
-  // whenever they like — so the composer must not tell somebody to send a
-  // template when they can simply type. `canSendFreely` is what the screen
-  // should ask; `windowOpen` stays because the header still reports the real
-  // Meta state and templates still exist for when Meta is the transport.
-  const { isLinkedSendingEnabled } = await import('../../integrations/whatsapp/linkedDevice.js');
-  const linkedSending = isLinkedSendingEnabled();
 
   res.json({
     ...conv,
     windowOpen,
-    linkedSending,
-    canSendFreely: windowOpen || linkedSending,
     messages: messages.rows,
   });
-}));
-
-/**
- * The photo, voice note, video or document a customer sent.
- *
- * Served from here rather than from the generic file route because this is not
- * an attachment on a record — it belongs to a message, and the thing that
- * decides who may see it is whether the reader may open the conversation.
- *
- * Only ever serves what the bridge actually stored. A message whose media was
- * announced but never transferred has no `storageKey`, and that is a 404 rather
- * than an empty body, so the thread can say "not downloaded" instead of showing
- * a broken picture.
- */
-commsRouter.get('/messages/:id/media', asyncHandler(async (req, res) => {
-  // Signed in is the bar, exactly as it is for reading the conversation this
-  // file belongs to. There is no `whatsapp.view` capability — sending and
-  // managing templates are the two that exist — so requiring one would have
-  // meant every rep seeing a broken image while an admin saw the photo.
-  const viewer = getUser(req);
-  const row = await db.queryOne<{ media: Record<string, unknown> | null; type: string }>(
-    // Joined to the conversation for the privacy check. A photo in somebody's
-    // private chat is as private as the words around it, and this route hands
-    // over bytes by message id alone.
-    `SELECT m.media, m.type
-       FROM ipy_message m
-       JOIN ipy_conversation c ON c.id = m.conversation_id
-      WHERE m.id = $1
-        AND (c.private_to_user_id IS NULL OR c.private_to_user_id = $2)`,
-    [req.params.id, viewer.id],
-  );
-  const media = row?.media as { storageKey?: string; mimeType?: string; fileName?: string } | null;
-  if (!media?.storageKey) throw new NotFoundError('This message has no stored file');
-
-  const { getDriver } = await import('../../core/storage/index.js');
-  const { applyFileSecurityHeaders } = await import('../../core/media/serving.js');
-  const driver = await getDriver();
-  const bytes = await driver.read(media.storageKey);
-  if (!bytes) throw new NotFoundError('The stored file is no longer in storage');
-
-  const mimeType = media.mimeType ?? 'application/octet-stream';
-  applyFileSecurityHeaders(
-    res,
-    mimeType,
-    media.fileName ?? `whatsapp-${row!.type}`,
-    req.query.download === '1',
-  );
-  res.send(bytes);
 }));
 
 const sendSchema = z.object({

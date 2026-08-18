@@ -6,7 +6,7 @@ import { relativeTime } from '@ipropy/shared';
 import {
   AlertTriangle, Check, CheckCheck, Clock, ExternalLink, MessageCircle, Paperclip, Search, Send, Sparkles, User,
 } from 'lucide-react';
-import { api, authedFileUrl } from '../lib/api';
+import { api } from '../lib/api';
 import { useWatchConversation } from '../lib/realtime';
 import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
@@ -18,8 +18,6 @@ interface Conversation {
   assigned_to: string | null; assigned_name: string | null;
   status: string; unread_count: number; last_message_at: string | null;
   last_message_preview: string | null; windowOpen: boolean;
-  /** True when a reply can just be typed: inside Meta's window, or a linked phone is on. */
-  canSendFreely?: boolean; linkedSending?: boolean;
   sentiment: string | null; ai_summary: string | null; ai_intent: string | null;
 }
 
@@ -27,59 +25,6 @@ interface Message {
   id: string; direction: 'inbound' | 'outbound'; type: string; body: string | null;
   status: string; is_ai_generated: boolean; created_at: string; sent_by_name: string | null;
   template_name: string | null; error_message: string | null;
-  /** `storageKey` is the only honest test that the file itself actually arrived. */
-  media: { storageKey?: string; mimeType?: string; fileName?: string; size?: number } | null;
-}
-
-/**
- * What a customer sent, shown as the thing it is.
- *
- * A message can name a photo without the photo having arrived: the bridge files
- * the message first and posts the bytes after, and a download can fail or the
- * file can have expired on WhatsApp's servers. So this renders from
- * `storageKey`, and says plainly when there is nothing to show rather than
- * drawing a broken image.
- */
-function MessageMedia({ msg }: { msg: Message }): JSX.Element | null {
-  if (!['image', 'video', 'audio', 'document'].includes(msg.type)) return null;
-
-  // `<img>`, `<video>` and `<audio>` cannot send an Authorization header, and
-  // this route is permission-checked, so embeds use the same `?access_token=`
-  // fallback the document viewer already relies on.
-  const src = authedFileUrl(`/api/comms/messages/${msg.id}/media`);
-  const mime = msg.media?.mimeType ?? '';
-
-  if (!msg.media?.storageKey) {
-    return (
-      <div className="mb-1.5 flex items-center gap-2 rounded-lg bg-black/5 px-2.5 py-2 text-xs dark:bg-white/10">
-        <Paperclip className="h-3.5 w-3.5 shrink-0" />
-        <span>A {msg.type} was sent but has not been downloaded.</span>
-      </div>
-    );
-  }
-
-  if (mime.startsWith('image/')) {
-    return (
-      <a href={src} target="_blank" rel="noreferrer" className="mb-1.5 block">
-        <img src={src} alt={msg.body ?? 'Photo'} className="max-h-72 w-auto rounded-lg" loading="lazy" />
-      </a>
-    );
-  }
-  if (mime.startsWith('video/')) {
-    return <video src={src} controls className="mb-1.5 max-h-72 w-auto rounded-lg" />;
-  }
-  if (mime.startsWith('audio/')) {
-    return <audio src={src} controls className="mb-1.5 w-56 max-w-full" />;
-  }
-  return (
-    <a
-      href={authedFileUrl(`/api/comms/messages/${msg.id}/media`, { download: '1' })}
-      className="mb-1.5 flex items-center gap-2 rounded-lg bg-black/5 px-2.5 py-2 text-xs underline dark:bg-white/10"
-    >
-      <Paperclip className="h-3.5 w-3.5 shrink-0" />
-      <span className="truncate">{msg.media.fileName ?? 'Document'}</span>
-    </a>
-  );
 }
 
 export default function Inbox(): JSX.Element {
@@ -277,10 +222,6 @@ export function Thread({ conversationId, onBack }: { conversationId: string; onB
     return <div className="space-y-3 p-4">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12" />)}</div>;
   }
 
-  // Meta's 24-hour rule does not apply to a rep's own linked phone, so the
-  // composer asks whether a reply can be sent at all rather than whether Meta
-  // would allow one. `?? conv.windowOpen` keeps an older server working.
-  const freeReply = conv.canSendFreely ?? conv.windowOpen;
 
   return (
     <div className="flex h-full flex-col">
@@ -343,8 +284,7 @@ export function Thread({ conversationId, onBack }: { conversationId: string; onB
                   Template · {msg.template_name}
                 </p>
               )}
-              <MessageMedia msg={msg} />
-              {msg.body && <p className="whitespace-pre-wrap text-sm">{msg.body}</p>}
+              <p className="whitespace-pre-wrap text-sm">{msg.body ?? `[${msg.type}]`}</p>
               <div className={cn(
                 'mt-1 flex items-center justify-end gap-1 text-[10px]',
                 msg.direction === 'outbound' ? 'text-emerald-100' : 'text-muted',
@@ -371,7 +311,7 @@ export function Thread({ conversationId, onBack }: { conversationId: string; onB
 
       {/* Composer */}
       <div className="shrink-0 border-t border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-        {!freeReply && (
+        {!conv.windowOpen && (
           <div className="mb-2 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
             <Clock className="h-3.5 w-3.5 shrink-0" />
             <span>
@@ -394,7 +334,7 @@ export function Thread({ conversationId, onBack }: { conversationId: string; onB
           </div>
         )}
 
-        {!freeReply && templates && (
+        {!conv.windowOpen && templates && (
           <Select
             value={templateName}
             onChange={setTemplateName}
@@ -411,15 +351,15 @@ export function Thread({ conversationId, onBack }: { conversationId: string; onB
           <textarea
             className="input resize-none"
             rows={2}
-            placeholder={freeReply ? 'Type a message…' : 'Free-form replies are blocked outside the window'}
+            placeholder={conv.windowOpen ? 'Type a message…' : 'Free-form replies are blocked outside the window'}
             value={text}
-            disabled={!freeReply && !templateName}
+            disabled={!conv.windowOpen && !templateName}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); }
             }}
           />
-          {aiAvailable && freeReply && (
+          {aiAvailable && conv.windowOpen && (
             <button
               onClick={() => void loadSuggestions()}
               disabled={loadingSuggestions}

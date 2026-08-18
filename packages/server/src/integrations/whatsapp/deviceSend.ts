@@ -46,15 +46,6 @@ export interface DeviceSendInput {
   broadcastId?: string | null;
   sequenceId?: string | null;
   assignedTo?: string | null;
-  /**
-   * `immediate` is a person typing a reply; it skips the pacing a linked phone
-   * applies to automation. Everything that is not somebody at a keyboard right
-   * now stays `paced` — see migration 055 for why the two are not the same
-   * kind of traffic.
-   */
-  priority?: 'paced' | 'immediate';
-  /** The already-drawn `ipy_message` this send is delivering, if there is one. */
-  messageId?: string | null;
 }
 
 /**
@@ -92,9 +83,8 @@ export async function queueDeviceSend(input: DeviceSendInput, conn: Tx = db): Pr
 
   const row = await conn.queryOne<{ id: string }>(
     `INSERT INTO ipy_device_send
-      (record_id, module_name, handle, name, body, reason, broadcast_id, sequence_id, assigned_to,
-       priority, message_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+      (record_id, module_name, handle, name, body, reason, broadcast_id, sequence_id, assigned_to)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
      RETURNING id`,
     [
       input.recordId ?? resolved?.recordId ?? null,
@@ -106,8 +96,6 @@ export async function queueDeviceSend(input: DeviceSendInput, conn: Tx = db): Pr
       input.broadcastId ?? null,
       input.sequenceId ?? null,
       input.assignedTo ?? resolved?.ownerId ?? null,
-      input.priority ?? 'paced',
-      input.messageId ?? null,
     ],
   );
   return { id: row!.id };
