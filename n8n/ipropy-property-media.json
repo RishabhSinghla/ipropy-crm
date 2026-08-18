@@ -1,35 +1,35 @@
 {
-  "name": "iPropy \u2014 property media (local OneDrive)",
+  "name": "iPropy \u2014 property media",
   "nodes": [
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "ipropy-property-finished",
+        "path": "ipropy-property-media",
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "property-finished",
+      "id": "a1000000-0000-4000-8000-000000000001",
       "name": "Property finished",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        -520,
+        -400,
         300
       ],
-      "webhookId": "ipropy-property-finished"
+      "webhookId": "a1000000-0000-4000-8000-000000000001"
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ accepted: true, propertyId: $json.body.propertyId }) }}",
+        "responseBody": "={{ { \"ok\": true, \"property\": $json.body.propertyId } }}",
         "options": {}
       },
-      "id": "answer-at-once",
+      "id": "a1000000-0000-4000-8000-000000000002",
       "name": "Answer at once",
       "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1,
+      "typeVersion": 1.1,
       "position": [
-        -300,
+        -180,
         140
       ]
     },
@@ -38,124 +38,211 @@
         "assignments": {
           "assignments": [
             {
-              "id": "p",
+              "id": "r1",
+              "name": "root",
+              "value": "=/data/properties/{{ $json.body.folder }}",
+              "type": "string"
+            },
+            {
+              "id": "r2",
               "name": "propertyId",
               "value": "={{ $json.body.propertyId }}",
               "type": "string"
             },
             {
-              "id": "c",
+              "id": "r3",
               "name": "crmBaseUrl",
               "value": "={{ $json.body.crmBaseUrl }}",
-              "type": "string"
-            },
-            {
-              "id": "f",
-              "name": "folderName",
-              "value": "={{ ($json.body.folder || '').split('/').filter(Boolean).pop() }}",
-              "type": "string"
-            },
-            {
-              "id": "r",
-              "name": "root",
-              "value": "/Users/rishabhsinghla/OneDrive/IPROPY-PROPERTIES",
               "type": "string"
             }
           ]
         },
         "options": {}
       },
-      "id": "work-out-the-folder",
+      "id": "a1000000-0000-4000-8000-000000000003",
       "name": "Work out the folder",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        -300,
-        420
+        -180,
+        380
       ]
     },
     {
       "parameters": {
-        "executeOnce": true,
-        "command": "={{ `set -e\nROOT='${$json.root}'\nNAME='${$json.folderName}'\nBASE=$(find \"$ROOT\" -maxdepth 2 -type d -name \"$NAME\" | head -1)\ntest -n \"$BASE\" || { echo \"no folder called $NAME under $ROOT\"; exit 1; }\nSRC=\"$BASE/01 Originals\"\ntest -d \"$SRC\" || { echo \"no '01 Originals' in $BASE\"; exit 1; }\nmkdir -p \"$BASE/02 Compressed\" \"$BASE/03 Watermarked\" \"$BASE/05 CRM Website\" \\\\\n  \"$BASE/04 Social Media/Instagram Feed\" \"$BASE/04 Social Media/WhatsApp\"\nshopt -s nullglob nocaseglob\ncount=0\nfor f in \"$SRC\"/*.{jpg,jpeg,png,heic,webp}; do\n  stem=$(basename \"$f\"); stem=\"${stem%.*}\"\n  sips -s format jpeg -Z 2560 \"$f\" --out \"$BASE/02 Compressed/$stem.jpg\" >/dev/null\n  sips -s format jpeg -Z 1600 \"$f\" --out \"$BASE/05 CRM Website/$stem.jpg\" >/dev/null\n  sips -s format jpeg -Z 1080 \"$f\" --out \"$BASE/04 Social Media/Instagram Feed/$stem.jpg\" >/dev/null\n  sips -s format jpeg -Z 1080 \"$f\" --out \"$BASE/04 Social Media/WhatsApp/$stem.jpg\" >/dev/null\n  cp \"$BASE/02 Compressed/$stem.jpg\" \"$BASE/03 Watermarked/$stem.jpg\"\n  count=$((count+1))\ndone\necho \"BASE=$BASE\"\necho \"DONE=$count\"\n` }}"
+        "fileSelector": "={{ $json.root }}/01_RAW_UPLOADS/PHOTOS/*",
+        "options": {
+          "fileName": true
+        }
       },
-      "id": "build-every-version",
-      "name": "Build every version",
-      "type": "n8n-nodes-base.executeCommand",
+      "id": "a1000000-0000-4000-8000-000000000004",
+      "name": "Read the originals",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        60,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "resize",
+        "width": 1920,
+        "height": 1920,
+        "resizeOption": "onlyIfLarger",
+        "options": {
+          "format": "jpeg",
+          "quality": 82
+        }
+      },
+      "id": "a1000000-0000-4000-8000-000000000005",
+      "name": "Make the website copy",
+      "type": "n8n-nodes-base.editImage",
       "typeVersion": 1,
       "position": [
-        -80,
-        420
+        300,
+        60
       ]
     },
     {
       "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "d",
-              "name": "processed",
-              "value": "={{ Number(($json.stdout.match(/DONE=(\\d+)/) || [0,0])[1]) }}",
-              "type": "number"
-            },
-            {
-              "id": "b",
-              "name": "base",
-              "value": "={{ ($json.stdout.match(/BASE=(.*)/) || ['',''])[1].trim() }}",
-              "type": "string"
-            }
-          ]
-        },
+        "operation": "write",
+        "fileName": "={{ $('Work out the folder').first().json.root }}/07_WEBSITE/{{ $binary.data.fileName.replace(/\\.[^.]+$/, '') }}-web.jpg",
+        "dataPropertyName": "data",
         "options": {}
       },
-      "id": "read-the-result",
-      "name": "Read the result",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
+      "id": "a1000000-0000-4000-8000-000000000006",
+      "name": "Save the website copy",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
       "position": [
-        140,
-        420
+        540,
+        60
       ]
     },
     {
       "parameters": {
-        "executeOnce": true,
-        "command": "={{ `set -e\nBASE='${$json.base}'\nCRM='${$('Work out the folder').first().json.crmBaseUrl}'\nPID='${$('Work out the folder').first().json.propertyId}'\nKEY=\"$IPROPY_API_KEY\"\ntest -n \"$KEY\" || { echo 'IPROPY_API_KEY is not set in n8n'; exit 1; }\nsent=0\nfor f in \"$BASE/05 CRM Website\"/*.jpg; do\n  [ -e \"$f\" ] || continue\n  curl -sS -f -X POST \"$CRM/api/files\" \\\\\n    -H \"x-api-key: $KEY\" \\\\\n    -F \"recordId=$PID\" -F 'module=properties' \\\\\n    -F \"file=@$f\" >/dev/null && sent=$((sent+1))\ndone\necho \"SENT=$sent\"\n` }}"
+        "operation": "resize",
+        "width": 1080,
+        "height": 1350,
+        "resizeOption": "ignoreAspectRatio",
+        "options": {
+          "format": "jpeg",
+          "quality": 86
+        }
       },
-      "id": "send-website-copies-to-the-crm",
-      "name": "Send website copies to the CRM",
-      "type": "n8n-nodes-base.executeCommand",
+      "id": "a1000000-0000-4000-8000-000000000007",
+      "name": "Make the Instagram post",
+      "type": "n8n-nodes-base.editImage",
       "typeVersion": 1,
       "position": [
-        360,
-        420
+        300,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "={{ $('Work out the folder').first().json.root }}/04_SOCIAL/INSTAGRAM/FEED/{{ $binary.data.fileName.replace(/\\.[^.]+$/, '') }}-feed.jpg",
+        "dataPropertyName": "data",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000008",
+      "name": "Save the Instagram post",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "resize",
+        "width": 1080,
+        "height": 1920,
+        "resizeOption": "ignoreAspectRatio",
+        "options": {
+          "format": "jpeg",
+          "quality": 86
+        }
+      },
+      "id": "a1000000-0000-4000-8000-000000000009",
+      "name": "Make the Instagram story",
+      "type": "n8n-nodes-base.editImage",
+      "typeVersion": 1,
+      "position": [
+        300,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "={{ $('Work out the folder').first().json.root }}/04_SOCIAL/INSTAGRAM/STORIES/{{ $binary.data.fileName.replace(/\\.[^.]+$/, '') }}-story.jpg",
+        "dataPropertyName": "data",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000010",
+      "name": "Save the Instagram story",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        540,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "text",
+        "text": "iPropy",
+        "fontSize": 48,
+        "fontColor": "#FFFFFF",
+        "positionX": 40,
+        "positionY": 40,
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000011",
+      "name": "Stamp the watermark",
+      "type": "n8n-nodes-base.editImage",
+      "typeVersion": 1,
+      "position": [
+        300,
+        660
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "={{ $('Work out the folder').first().json.root }}/03_EDITED_MEDIA/WATERMARKED/{{ $binary.data.fileName.replace(/\\.[^.]+$/, '') }}-wm.jpg",
+        "dataPropertyName": "data",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000012",
+      "name": "Save the watermarked copy",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        540,
+        660
       ]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('Work out the folder').first().json.crmBaseUrl }}/api/webhooks/n8n/content-ready",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "x-n8n-secret",
-              "value": "={{ $env.IPROPY_CALLBACK_SECRET }}"
-            }
-          ]
-        },
+        "url": "={{ $('Work out the folder').first().json.crmBaseUrl }}/api/webhooks/n8n/property-media-ready",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ propertyId: $('Work out the folder').first().json.propertyId, folder: $('Read the result').first().json.base, ok: true, summary: $('Read the result').first().json.processed + ' photos processed into OneDrive; website copies uploaded to the CRM.' }) }}",
+        "jsonBody": "={{ JSON.stringify({ propertyId: $('Work out the folder').first().json.propertyId }) }}",
         "options": {}
       },
-      "id": "tell-the-crm-it-is-done",
+      "id": "a1000000-0000-4000-8000-000000000013",
       "name": "Tell the CRM it is done",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        580,
-        420
+        800,
+        360
       ]
     }
   ],
@@ -180,36 +267,84 @@
       "main": [
         [
           {
-            "node": "Build every version",
+            "node": "Read the originals",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Build every version": {
+    "Read the originals": {
       "main": [
         [
           {
-            "node": "Read the result",
+            "node": "Make the website copy",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Make the Instagram post",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Make the Instagram story",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Stamp the watermark",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Read the result": {
+    "Make the website copy": {
       "main": [
         [
           {
-            "node": "Send website copies to the CRM",
+            "node": "Save the website copy",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Send website copies to the CRM": {
+    "Make the Instagram post": {
+      "main": [
+        [
+          {
+            "node": "Save the Instagram post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Make the Instagram story": {
+      "main": [
+        [
+          {
+            "node": "Save the Instagram story",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stamp the watermark": {
+      "main": [
+        [
+          {
+            "node": "Save the watermarked copy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save the website copy": {
       "main": [
         [
           {
@@ -224,5 +359,7 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "pinData": {}
+  "pinData": {},
+  "id": "ipropyPropertyMedia1",
+  "active": false
 }
