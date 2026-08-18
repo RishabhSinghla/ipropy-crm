@@ -5,10 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FieldMeta, ModuleMeta, RecordEnvelope, TimelineEntry } from '@ipropy/shared';
 import { CALL_DISPOSITIONS, formatIndianPrice, relativeTime } from '@ipropy/shared';
 import {
-  Activity, Check, ChevronDown, Eye, FileQuestion, ChevronLeft, ChevronRight, Download, Edit3, FileText, Images, LayoutDashboard,
-  PhoneIncoming, PhoneMissed, PhoneOutgoing,
-  Link2, MessageCircle, MoreHorizontal, Paperclip, Phone, Plus, RefreshCw, Search, Send, Sparkles,
-  Star, Trash2, UserCheck, X,
+  Activity, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Edit3, Eye, FileQuestion, FileText, Images, LayoutDashboard, Link2, MessageCircle, MoreHorizontal, Paperclip, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Trash2, Upload, UserCheck, X,
 } from 'lucide-react';
 import { api, authedFileUrl } from '../lib/api';
 import { toast, useApp } from '../lib/store';
@@ -1258,6 +1255,10 @@ function PropertyPhotoCarousel({
   const [preview, setPreview] = useState<ViewableFile | null>(null);
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(0);
+  const [dropping, setDropping] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<ViewableFile | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   const { data, isLoading } = useQuery({
     queryKey: ['files', recordId],
     queryFn: () => api.files(recordId),
@@ -1290,6 +1291,80 @@ function PropertyPhotoCarousel({
     }
   };
 
+  /**
+   * Upload straight into the panel.
+   *
+   * Sequential rather than parallel: a site visit's worth of 4K photos fired
+   * at once saturates an office connection and the browser starts cancelling
+   * its own requests, which reads as "some photos did not upload" with no
+   * pattern to it. One at a time is slower to finish and far more likely to
+   * finish at all, and the counter tells somebody it is still working.
+   */
+  const upload = async (files: FileList | File[]): Promise<void> => {
+    const images = [...files].filter((f) => f.type.startsWith('image/'));
+    const skipped = [...files].length - images.length;
+    if (!images.length) {
+      toast.error('Those are not photos', 'This panel takes images. Use the Files tab for documents.');
+      return;
+    }
+    setUploading(images.length);
+    let done = 0;
+    try {
+      for (const file of images) {
+        await api.uploadFile(file, recordId, 'properties');
+        done += 1;
+        setUploading(images.length - done);
+      }
+      await queryClient.invalidateQueries({ queryKey: ['files', recordId] });
+      toast.success(
+        done === 1 ? 'Photo added' : `${done} photos added`,
+        skipped ? `${skipped} file${skipped === 1 ? '' : 's'} skipped — not an image.` : 'Drag a thumbnail to change the order.',
+      );
+    } catch (err) {
+      // Says how many made it, because "upload failed" after eleven of twelve
+      // sends somebody back to re-add all twelve.
+      toast.error(
+        done ? `Stopped after ${done} of ${images.length}` : 'Could not upload',
+        (err as Error).message,
+      );
+      await queryClient.invalidateQueries({ queryKey: ['files', recordId] });
+    } finally {
+      setUploading(0);
+    }
+  };
+
+  const remove = async (file: ViewableFile): Promise<void> => {
+    setSaving(true);
+    try {
+      await api.deleteFile(file.id);
+      await queryClient.invalidateQueries({ queryKey: ['files', recordId] });
+      toast.success('Photo deleted', 'It is gone from the share link and the website too.');
+    } catch (err) {
+      toast.error('Could not delete that photo', (err as Error).message);
+    } finally {
+      setSaving(false);
+      setConfirmDelete(null);
+    }
+  };
+
+  /** One drop target, used by both the empty panel and the full one. */
+  const dropProps = canEdit ? {
+    onDragOver: (e: React.DragEvent) => {
+      // Only for files. Without this the thumbnail reorder drag also lights up
+      // the whole panel as a drop zone, which is a lie about what will happen.
+      if (dragFrom !== null) return;
+      e.preventDefault();
+      setDropping(true);
+    },
+    onDragLeave: () => setDropping(false),
+    onDrop: (e: React.DragEvent) => {
+      if (dragFrom !== null) return;
+      e.preventDefault();
+      setDropping(false);
+      if (e.dataTransfer.files?.length) void upload(e.dataTransfer.files);
+    },
+  } : {};
+
   const move = (from: number, to: number): void => {
     if (from === to) return;
     const next = photos.map((p) => p.id);
@@ -1304,19 +1379,107 @@ function PropertyPhotoCarousel({
   // appeared, then vanished, shoving the notes and the AI panel up with it.
   // A panel that quietly arrives when there is something in it moves the page
   // once; this moved it twice, and the second move was upwards.
-  if (isLoading || !photos.length) return null;
-  const photo = photos[index]!;
+  // Still nothing while loading — a reserved 4:3 block made the sidebar jump
+  // twice, and the second jump was upwards. But once loaded, a property with
+  // no photos gets the panel rather than nothing: "there are no photos and
+  // here is where they go" is the whole point of the empty state, and hiding
+  // it is what forced everybody into Edit → scroll → Media to add the first one.
+  if (isLoading) return null;
+
+  const hidden = canEdit ? (
+    <input
+      ref={fileInput}
+      type="file"
+      accept="image/*"
+      multiple
+      className="hidden"
+      onChange={(e) => {
+        if (e.target.files?.length) void upload(e.target.files);
+        // Cleared so choosing the same file twice in a row still fires.
+        e.target.value = '';
+      }}
+    />
+  ) : null;
+
+  if (!photos.length) {
+    if (!canEdit) return null;
+    return (
+      <div className="card overflow-hidden">
+        <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2 dark:border-slate-800">
+          <p className="flex items-center gap-1.5 text-sm font-medium"><Images className="h-3.5 w-3.5" /> Property photos</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => fileInput.current?.click()}
+          {...dropProps}
+          className={cn(
+            'flex w-full flex-col items-center gap-2 px-4 py-8 text-center transition-colors',
+            dropping ? 'bg-brand-50 dark:bg-brand-950/40' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50',
+          )}
+        >
+          {uploading > 0 ? (
+            <>
+              <Spinner />
+              <p className="text-sm font-medium">Uploading… {uploading} to go</p>
+            </>
+          ) : (
+            <>
+              <Upload className={cn('h-7 w-7', dropping ? 'text-brand-500' : 'text-slate-400')} />
+              <p className="text-sm font-medium">{dropping ? 'Drop them here' : 'Add photos'}</p>
+              <p className="text-xs text-muted">
+                Drag them in from your desktop, or click to choose. The first one becomes the cover.
+              </p>
+            </>
+          )}
+        </button>
+        {hidden}
+      </div>
+    );
+  }
+
+  // Clamped here, during render, not only in the effect below.
+  //
+  // Deleting the last photo re-renders with an index that is now past the end,
+  // and the effect that fixes it does not run until after this render has
+  // already read `photos[index]` — so the panel crashed on `photo.fileName`
+  // with the delete having succeeded. Found by deleting a photo rather than by
+  // reading the code: the old panel had no delete, so nothing ever shortened
+  // the list underneath the index.
+  const safeIndex = Math.min(index, photos.length - 1);
+  const photo = photos[safeIndex]!;
   const go = (delta: number): void => setIndex((current) => (current + delta + photos.length) % photos.length);
 
   return (
     <div className="card overflow-hidden">
       <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2 dark:border-slate-800">
         <p className="flex items-center gap-1.5 text-sm font-medium"><Images className="h-3.5 w-3.5" /> Property photos</p>
-        <span className="text-2xs text-muted">
-          {saving ? 'Saving…' : `${index + 1} / ${photos.length}`}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-2xs text-muted">
+            {uploading > 0 ? `Uploading… ${uploading} to go` : saving ? 'Saving…' : `${safeIndex + 1} / ${photos.length}`}
+          </span>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => fileInput.current?.click()}
+              disabled={uploading > 0}
+              className="btn-ghost p-1 text-muted disabled:opacity-50"
+              title="Add photos"
+              aria-label="Add photos"
+            >
+              <Upload className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
       </div>
-      <div className="group relative bg-slate-100 dark:bg-slate-950">
+      <div className="group relative bg-slate-100 dark:bg-slate-950" {...dropProps}>
+        {/* Covers the image while a file is over the panel. Without it there is
+            no promise that letting go will do anything. */}
+        {dropping && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-1 bg-brand-500/90 text-white">
+            <Upload className="h-7 w-7" />
+            <p className="text-sm font-medium">Drop to add</p>
+          </div>
+        )}
         <button type="button" className="block w-full" onClick={() => setPreview(photo)} aria-label={`Open ${photo.fileName}`}>
           <img
             src={authedFileUrl(`/api/files/${photo.id}`, { size: 'medium' })}
@@ -1324,21 +1487,33 @@ function PropertyPhotoCarousel({
             className="aspect-[4/3] w-full object-contain"
           />
         </button>
-        {index === 0 && (
+        {safeIndex === 0 && (
           <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-2xs font-medium text-white">
             Cover
           </span>
         )}
         {/* The one operation anybody actually wants from a photo list: this is
             the shot on the share link, in the zip and at the top of the set. */}
-        {canEdit && photos.length > 1 && index !== 0 && (
+        {canEdit && photos.length > 1 && safeIndex !== 0 && (
           <button
             type="button"
-            onClick={() => move(index, 0)}
+            onClick={() => move(safeIndex, 0)}
             disabled={saving}
             className="absolute left-2 top-2 rounded-full bg-black/60 px-2.5 py-1 text-2xs font-medium text-white hover:bg-black/75 disabled:opacity-50"
           >
             Make cover
+          </button>
+        )}
+        {canEdit && (
+          <button
+            type="button"
+            onClick={() => setConfirmDelete(photo)}
+            disabled={saving || uploading > 0}
+            className="absolute right-2 top-2 rounded-full bg-black/60 p-1.5 text-white hover:bg-red-600 disabled:opacity-50"
+            title="Delete this photo"
+            aria-label="Delete this photo"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
           </button>
         )}
         {photos.length > 1 && (
@@ -1371,7 +1546,7 @@ function PropertyPhotoCarousel({
                 onClick={() => setIndex(itemIndex)}
                 className={cn(
                   'h-14 w-14 shrink-0 overflow-hidden rounded border-2 bg-subtle transition-opacity',
-                  itemIndex === index ? 'border-brand-500' : 'border-transparent',
+                  itemIndex === safeIndex ? 'border-brand-500' : 'border-transparent',
                   canEdit && 'cursor-grab active:cursor-grabbing',
                   dragFrom === itemIndex && 'opacity-40',
                 )}
@@ -1389,6 +1564,19 @@ function PropertyPhotoCarousel({
           )}
         </>
       )}
+      {hidden}
+      <ConfirmDialog
+        open={Boolean(confirmDelete)}
+        title="Delete this photo?"
+        // Says where else it disappears from, because a photo on a share link
+        // already sent to a buyer is the thing somebody would want to know
+        // before pressing this, not after.
+        body="It is removed from this property, the share link, the download and the public website. This cannot be undone."
+        confirmLabel="Delete"
+        danger
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={() => confirmDelete && remove(confirmDelete)}
+      />
       {preview && (
         <DocumentViewer file={preview} files={photos} onNavigate={setPreview} onClose={() => setPreview(null)} />
       )}
