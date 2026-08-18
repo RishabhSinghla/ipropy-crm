@@ -1,0 +1,64 @@
+# Mint an API key on production for a server-to-server integration.
+#
+# The normal way is Settings in the app, which needs a browser session. This
+# exists because the automation server has to be given a key without anybody
+# being at a keyboard, and the production database credentials live here rather
+# than on a laptop.
+#
+# The key is printed once and never stored. It is bound to an existing user, so
+# it inherits that user's permissions and can be revoked on its own.
+name: Create API key
+on:
+  workflow_dispatch:
+    inputs:
+      name:
+        description: "What the key is for, e.g. 'n8n media pipeline'"
+        required: true
+      user_email:
+        description: "Bind it to this user"
+        required: true
+        default: "rishabhsinghla2112@gmail.com"
+
+jobs:
+  mint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install psql 18
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: Mint it
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          KEY_NAME: ${{ inputs.name }}
+          USER_EMAIL: ${{ inputs.user_email }}
+        run: |
+          set -euo pipefail
+          npm i --silent --no-save bcryptjs@2 >/dev/null 2>&1
+
+          # Same shape and same cost as the app's own endpoint, so a key made
+          # here is indistinguishable from one made in the browser.
+          eval "$(node -e '
+            const crypto = require("crypto");
+            const bcrypt = require("bcryptjs");
+            const raw = "ipy_" + crypto.randomBytes(24).toString("base64url");
+            const hash = bcrypt.hashSync(raw, 12);
+            console.log("RAW=" + JSON.stringify(raw));
+            console.log("HASH=" + JSON.stringify(hash));
+            console.log("PREFIX=" + JSON.stringify(raw.slice(0, 8)));
+          ')"
+
+          USER_ID="$(psql "$DATABASE_URL" -tAc "SELECT id FROM ipy_user WHERE lower(email) = lower('${USER_EMAIL}') AND is_active = true LIMIT 1")"
+          if [ -z "$USER_ID" ]; then
+            echo "No active user with that email. Refusing to make an unbound key."
+            exit 1
+          fi
+
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c \
+            "INSERT INTO ipy_api_key (name, key_prefix, key_hash, user_id) VALUES ('${KEY_NAME}', '${PREFIX}', '${HASH}', '${USER_ID}');"
+
+          echo "::notice::Key created for ${USER_EMAIL}. Copy it now — it is not stored anywhere."
+          echo "$RAW"
