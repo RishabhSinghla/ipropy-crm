@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FieldMeta, ModuleMeta, RecordEnvelope, TimelineEntry } from '@ipropy/shared';
 import { CALL_DISPOSITIONS, formatIndianPrice, relativeTime } from '@ipropy/shared';
 import {
-  Activity, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Edit3, Eye, FileQuestion, FileText, Images, LayoutDashboard, Link2, MessageCircle, MoreHorizontal, Paperclip, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Trash2, Upload, UserCheck, X,
+  Activity, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Edit3, ExternalLink, Eye, FileQuestion, FileText, FolderOpen, Images, LayoutDashboard, Link2, MessageCircle, MoreHorizontal, Paperclip, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Trash2, Upload, UserCheck, X,
 } from 'lucide-react';
 import { api, authedFileUrl } from '../lib/api';
 import { compressImage, formatBytes } from '../lib/compressImage';
@@ -482,7 +482,10 @@ export default function RecordDetail(): JSX.Element {
             however many insights exist — below it, notes were often offscreen. */}
         <div className="space-y-4">
           {moduleName === 'properties' && (
-            <PropertyPhotoCarousel recordId={id!} canEdit={Boolean(record.can?.edit)} />
+            <>
+              <PropertyMediaHandoff recordId={id!} />
+              <PropertyPhotoCarousel recordId={id!} canEdit={Boolean(record.can?.edit)} />
+            </>
           )}
           <ReplyReady recordId={id!} />
           <PendingProposals module={moduleName!} recordId={id!} />
@@ -1255,6 +1258,85 @@ function EditFileModal({
 // ---------------------------------------------------------------------------
 // Sidebar panels
 // ---------------------------------------------------------------------------
+
+/**
+ * Where the originals go, and the button that says they are there.
+ *
+ * The whole media flow in one panel, because the flow itself is now three
+ * steps: open the folder, drop the files in, press Finish. Everything after
+ * that happens in n8n inside OneDrive — renaming, compressing, watermarking,
+ * the social and website folders — and the CRM deliberately knows nothing
+ * about it.
+ */
+function PropertyMediaHandoff({ recordId }: { recordId: string }): JSX.Element | null {
+  const [finishing, setFinishing] = useState(false);
+  const { data } = useQuery({
+    queryKey: ['property-storage', recordId],
+    queryFn: () => api.propertyStorage(recordId),
+    // The folder is made by a background pass, so a property added seconds ago
+    // has none yet. Poll until it appears, then stop.
+    refetchInterval: (q) => ((q.state.data as { status?: string } | null)?.status === 'ready' ? false : 5000),
+  });
+
+  if (!data) return null;
+
+  const ready = data.status === 'ready';
+
+  const finish = async (): Promise<void> => {
+    setFinishing(true);
+    try {
+      const result = await api.finishProperty(recordId);
+      if (result.sent) {
+        toast.success('Sent for processing', 'The compressed, watermarked and social folders will appear in OneDrive shortly.');
+      } else {
+        // Never dressed up as success. Somebody who thinks their photos are
+        // being processed will not come back to check.
+        toast.error('Nothing is processing it yet', `${result.reason}. Your originals are safe in the folder — press Finish again once it is running.`);
+      }
+    } catch (err) {
+      toast.error('Could not send it', (err as Error).message);
+    } finally {
+      setFinishing(false);
+    }
+  };
+
+  return (
+    <div className="card p-4">
+      <p className="flex items-center gap-1.5 text-sm font-medium">
+        <FolderOpen className="h-3.5 w-3.5" /> Photos and videos
+      </p>
+
+      {!ready ? (
+        <p className="mt-2 text-xs text-muted">
+          {data.status === 'failed'
+            ? `The folder could not be created. ${data.lastError ?? ''}`
+            : 'Creating this property’s folder…'}
+        </p>
+      ) : (
+        <>
+          <ol className="mt-3 space-y-1.5 text-xs text-muted">
+            <li>1. Open the folder and put the originals in it.</li>
+            <li>2. Come back here and press Finish.</li>
+            <li>3. Everything else is done for you.</li>
+          </ol>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {data.externalUrl && (
+              <a href={data.externalUrl} target="_blank" rel="noreferrer" className="btn-secondary btn-sm">
+                Open the folder <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
+            <button className="btn-primary btn-sm" onClick={() => void finish()} disabled={finishing}>
+              {finishing ? <Spinner /> : <Check className="h-3.5 w-3.5" />} Finish
+            </button>
+          </div>
+          <p className="mt-2 text-2xs text-muted">
+            The folder has a text file with this property’s details, so you can be sure it is the right one.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
 
 function PropertyPhotoCarousel({
   recordId, canEdit,

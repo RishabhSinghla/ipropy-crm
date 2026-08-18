@@ -14,6 +14,7 @@
  *    megaphone for strangers.
  */
 import { beforeAll, afterAll, describe, expect, it, vi } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { createServer } from 'node:http';
 import { db } from '../../src/db/pool.js';
@@ -133,9 +134,9 @@ describe('POST /api/webhooks/n8n/content-ready', () => {
 describe('the outbound handoff', () => {
   it('does nothing, and says so, when no URL is configured', async () => {
     withAutomation({ n8nWebhookUrl: '' });
-    const { notifyShootFinished, isConfigured } = await import('../../src/integrations/automation/n8n.js');
+    const { notifyPropertyFinished, isConfigured } = await import('../../src/integrations/automation/n8n.js');
     expect(isConfigured()).toBe(false);
-    const out = await notifyShootFinished({ id: 'x', recordId: propertyId } as never);
+    const out = await notifyPropertyFinished(propertyId);
     expect(out.sent).toBe(false);
     expect(out.reason).toMatch(/no n8n webhook URL/i);
   });
@@ -143,19 +144,19 @@ describe('the outbound handoff', () => {
   it('never throws when n8n is unreachable', async () => {
     // Port 9 is discard: refused instantly rather than hanging for the timeout.
     withAutomation({ n8nWebhookUrl: 'http://127.0.0.1:9/webhook/nope' });
-    const { notifyShootFinished } = await import('../../src/integrations/automation/n8n.js');
+    const { notifyPropertyFinished } = await import('../../src/integrations/automation/n8n.js');
 
-    const out = await notifyShootFinished({ id: 'x', recordId: propertyId } as never);
+    const out = await notifyPropertyFinished(propertyId);
     expect(out.sent, 'a dead n8n must not stop a site visit closing').toBe(false);
     expect(typeof out.reason).toBe('string');
   });
 
-  it('skips a session with no property instead of guessing one', async () => {
+  it('skips a property with no folder instead of guessing one', async () => {
     withAutomation({ n8nWebhookUrl: 'http://127.0.0.1:9/webhook/nope' });
-    const { notifyShootFinished } = await import('../../src/integrations/automation/n8n.js');
-    const out = await notifyShootFinished({ id: 'x', recordId: null } as never);
+    const { notifyPropertyFinished } = await import('../../src/integrations/automation/n8n.js');
+    const out = await notifyPropertyFinished(randomUUID());
     expect(out.sent).toBe(false);
-    expect(out.reason).toMatch(/not attached to a property/i);
+    expect(out.reason).toMatch(/no storage folder/i);
   });
 
   it('sends the folder n8n needs, and nothing it does not', async () => {
@@ -181,16 +182,18 @@ describe('the outbound handoff', () => {
       );
 
       withAutomation({ n8nWebhookUrl: `http://127.0.0.1:${port}/webhook/shoot` });
-      const { notifyShootFinished } = await import('../../src/integrations/automation/n8n.js');
-      const out = await notifyShootFinished({ id: 'sess-1', recordId: propertyId } as never);
+      const { notifyPropertyFinished } = await import('../../src/integrations/automation/n8n.js');
+      const out = await notifyPropertyFinished(propertyId);
 
       expect(out.sent).toBe(true);
       expect(seen).toHaveLength(1);
       expect(seen[0].body).toMatchObject({
         propertyId,
-        sessionId: 'sess-1',
         folder: 'IPROPY-PROPERTIES/GREENFIELD/TEST-B12',
       });
+      // The shoot session is gone; n8n is told the property and the folder,
+      // and works the folder out from there.
+      expect(seen[0].body).not.toHaveProperty('sessionId');
       // n8n calls us back, so it must be told where we are.
       expect(String(seen[0].body.crmBaseUrl)).toMatch(/^https?:\/\//);
     } finally {
@@ -201,8 +204,8 @@ describe('the outbound handoff', () => {
   it('will not hand off a folder that is not ready yet', async () => {
     await db.query(`UPDATE ipy_property_storage SET status = 'pending' WHERE record_id = $1`, [propertyId]);
     withAutomation({ n8nWebhookUrl: 'http://127.0.0.1:9/webhook/nope' });
-    const { notifyShootFinished } = await import('../../src/integrations/automation/n8n.js');
-    const out = await notifyShootFinished({ id: 'x', recordId: propertyId } as never);
+    const { notifyPropertyFinished } = await import('../../src/integrations/automation/n8n.js');
+    const out = await notifyPropertyFinished(propertyId);
     expect(out.sent, 'n8n would find an empty folder').toBe(false);
     expect(out.reason).toMatch(/pending|not ready/i);
   });

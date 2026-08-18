@@ -19,9 +19,6 @@ const RecordDetail = lazy(() => import('./pages/RecordDetail'));
 const RecordEdit = lazy(() => import('./pages/RecordEdit'));
 const Inbox = lazy(() => import('./pages/Inbox'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
-const CapturePage = lazy(() => import('./pages/Capture'));
-const CaptureReviewPage = lazy(() => import('./pages/CaptureReview'));
-const CaptureShootsPage = lazy(() => import('./pages/CaptureShoots'));
 const SharedPropertyPage = lazy(() => import('./pages/SharedProperty'));
 const Outreach = lazy(() => import('./pages/Outreach'));
 const CallsPage = lazy(() => import('./pages/Calls'));
@@ -85,9 +82,6 @@ export default function App(): JSX.Element {
 
               <Route path="calls" element={<CallsPage />} />
               <Route path="reports" element={<ReportsPage />} />
-              <Route path="capture" element={<CapturePage />} />
-              <Route path="capture/review" element={<CaptureReviewPage />} />
-              <Route path="capture/shoots" element={<CaptureShootsPage />} />
               <Route path="outreach" element={<Outreach />} />
 
               <Route path="settings" element={<SettingsPage />} />

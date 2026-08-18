@@ -449,6 +449,10 @@ export const api = {
 
   // --- auth ---------------------------------------------------------------
   /** `identifier` is an email address or a mobile number. */
+  finishProperty: (id: string) =>
+    post<{ sent: boolean; reason?: string }>(`/api/records/properties/${id}/finish`, {}),
+  propertyStorage: (id: string) =>
+    get<{ recordId: string; folderKey: string | null; status: string; externalUrl: string | null; lastError: string | null } | null>(`/api/records/properties/${id}/storage`),
   gettingStarted: () =>
     get<{ steps: { id: string; title: string; why: string; done: boolean; href: string; action: string; adminOnly: boolean }[]; doneCount: number }>('/api/getting-started'),
   forgotPassword: (email: string) =>
@@ -881,51 +885,6 @@ export const api = {
    */
   archiveUrl: (recordId: string, set: 'all' | 'originals' | 'branded' | 'web' = 'branded') =>
     authedFileUrl(`/api/records/${recordId}/archive`, { set }),
-
-  // --- site capture --------------------------------------------------------
-  /**
-   * Start a visit. Callers go through lib/captureQueue rather than calling this
-   * directly — the screen must not wait on a network that is often not there.
-   */
-  startCapture: (body: Record<string, unknown>) =>
-    post<{ session: CaptureSession; replayed: boolean }>('/api/capture/sessions', body),
-  finishCapture: (body: { clientRef: string; endedAt: string }) =>
-    post<{ session: CaptureSession; claimedMedia: number }>('/api/capture/sessions/finish', body),
-  currentCapture: () => get<{ session: CaptureSession | null }>('/api/capture/sessions/current'),
-  captureStorage: (clientRef: string) => get<{
-    sessionId: string; recordId: string | null; storage: CaptureStorageStatus | null;
-  }>(`/api/capture/sessions/client/${encodeURIComponent(clientRef)}/storage`),
-  captureSessions: (limit = 25) =>
-    get<CaptureSessionRow[]>(`/api/capture/sessions${qs({ limit })}`),
-  assignCaptureRecord: (id: string, recordId: string) =>
-    patch<CaptureSession>(`/api/capture/sessions/${id}`, { recordId }),
-  captureSession: (id: string) => get<CaptureSessionDetail>(`/api/capture/sessions/${id}`),
-  /** Everything shot that still has no property on it. */
-  unnamedShoots: (limit = 50) => get<UnnamedShoot[]>(`/api/capture/shoots/unnamed${qs({ limit })}`),
-  /**
-   * Name one shoot — either an existing property or the values to create one.
-   * Creating is the common case: a floor photographed this morning usually is
-   * not in the CRM yet.
-   */
-  nameShoot: (id: string, body: { recordId: string } | { property: { module: string; values: Record<string, unknown> } }) =>
-    post<{ session: CaptureSession; recordId: string; photosAttached: number }>(
-      `/api/capture/shoots/${id}/name`, body,
-    ),
-  /** Write the accepted details onto the property and mark the visit done. */
-  reviewCaptureSession: (id: string, values: Record<string, unknown>) =>
-    post<{ session: CaptureSession; record: unknown }>(`/api/capture/sessions/${id}/review`, { values }),
-  /**
-   * The note recorded at the gate. Sent after the visit exists, because it
-   * needs the session's id — and separately from it, because the tap must land
-   * even when a hundred kilobytes of audio will not.
-   */
-  uploadCaptureVoice: (sessionId: string, audio: Blob, fileName: string) => {
-    const form = new FormData();
-    form.append('audio', audio, fileName);
-    return request<{ voiceNoteId: string; session: CaptureSession }>(
-      `/api/capture/sessions/${sessionId}/voice`, { method: 'POST', body: form },
-    );
-  },
   shareLinks: (module: string, id: string) =>
     get<ShareLink[]>(`/api/records/${module}/${id}/share-links`),
   createShareLink: (module: string, id: string, body: { label?: string; expiresInDays?: number }) =>

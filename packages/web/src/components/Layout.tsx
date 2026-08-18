@@ -147,7 +147,6 @@ export default function Layout(): JSX.Element {
             )}
             <div className="space-y-0.5">
               <NavItem to="/outreach" icon="send" label="Outreach" collapsed={sidebarCollapsed} badge={<QueueBadge />} />
-              <NavItem to="/capture" icon="camera" label="Site capture" collapsed={sidebarCollapsed} />
               <NavItem to="/reports" icon="bar-chart-3" label="Reports" collapsed={sidebarCollapsed} />
             </div>
           </div>

@@ -13,8 +13,6 @@ import { logger } from '../../utils/logger.js';
 import { processImage } from './images.js';
 import { needsTranscode, transcodeToJpeg } from './transcode.js';
 import { processVideo } from './video.js';
-import { captureTimeFromImage, captureTimeFromVideo } from '../capture/captureTime.js';
-import { matchAttachment } from '../capture/matching.js';
 
 interface AttachmentRow {
   id: string;
@@ -32,22 +30,6 @@ async function isPropertyAttachment(attachmentId: string): Promise<boolean> {
     [attachmentId],
   );
   return owner?.module_name === 'properties';
-}
-
-/**
- * Read when this was shot and file it against the visit it belongs to.
- *
- * Swallows its own failures on purpose. Matching is an enhancement — the photo
- * is already stored and already attached to whatever the uploader said — so a
- * corrupt EXIF block or a video ffprobe cannot read must not fail the job and
- * cost the file its web-sized copies.
- */
-async function fileAgainstVisit(attachmentId: string, readTime: () => Promise<Date | null>): Promise<void> {
-  try {
-    await matchAttachment(attachmentId, await readTime());
-  } catch (err) {
-    logger.warn({ err, attachmentId }, 'media job: could not file this against a visit, continuing');
-  }
 }
 
 export async function processAttachment(attachmentId: string): Promise<void> {
@@ -70,28 +52,6 @@ export async function processAttachment(attachmentId: string): Promise<void> {
       logger.warn({ attachmentId }, 'media job: original missing from storage, skipping');
       return;
     }
-    // Filed against its visit before the derivatives are made, and in its own
-    // try/catch: unreadable EXIF is not a reason to skip resizing a perfectly
-    // good photo.
-    //
-    // Read from the *original*, deliberately before any transcode: ffmpeg's
-    // JPEG output carries no EXIF at all (`-map_metadata 0` included), so
-    // reading capture time from the transcode would lose it for every photo.
-    //
-    // On a full-size HEIC this usually gets nothing anyway. libheif refuses the
-    // container before it reaches the EXIF — a 4032x3024 iPhone frame is stored
-    // as a tiled grid, and "Number of references in iref box (48) exceeds the
-    // security limits of 16" is a refusal, not a decode failure, so no sharp
-    // option turns it off. Small HEICs parse fine, which is exactly why this
-    // looks like it works when you test it with one.
-    //
-    // Not worked around here. Capture time is no longer how a photo finds its
-    // property — the folder it was dropped into says that — and it now only
-    // affects gallery ordering, which the cull/classify pass re-decides anyway.
-    // Where it does matter, the folder bridge reads it on the Mac with Apple's
-    // own decoder and sends it with the upload, rather than this process
-    // guessing at an ISO box layout.
-    await fileAgainstVisit(attachment.id, () => captureTimeFromImage(original));
     // Most iPhones shoot HEIC. The original is retained byte-for-byte; ffmpeg
     // supplies only a temporary decoded frame because Sharp's common libvips
     // build cannot decode HEVC pixels even when it recognises the container.
@@ -116,7 +76,6 @@ export async function processAttachment(attachmentId: string): Promise<void> {
       return;
     }
     try {
-      await fileAgainstVisit(attachment.id, () => captureTimeFromVideo(input.path));
       variants = await processVideo(driver, attachment.id, attachment.storage_key, input.path);
     } finally {
       await input.cleanup();

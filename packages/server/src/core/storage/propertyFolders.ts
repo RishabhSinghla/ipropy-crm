@@ -77,6 +77,15 @@ async function provisionClaimed(
     for (const child of PROPERTY_MEDIA_FOLDER_TREE) {
       await driver.ensureFolder?.(`${folder}/${child}`);
     }
+    // Its own try/catch: somebody standing in OneDrive wants the folder more
+    // than they want the note in it, and a text file that failed to write must
+    // not mark the whole folder as failed and stop uploads.
+    try {
+      const { writePropertyDetails } = await import('./propertyDetails.js');
+      await writePropertyDetails(driver, row.record_id, folder);
+    } catch (err) {
+      logger.warn({ err, recordId: row.record_id }, 'could not write the property details file');
+    }
     await db.query(
       `UPDATE ipy_property_storage
           SET status = 'ready', provisioned_driver = $2, external_url = COALESCE($3, external_url), attempts = 0,

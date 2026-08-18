@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { logger } from '../../utils/logger.js';
 import { z } from 'zod';
 import { createShareLink, listShareLinks, revokeShareLink } from '../../core/sharing/shareLinks.js';
 import type { FilterGroup } from '@ipropy/shared';
@@ -600,4 +601,35 @@ recordsRouter.delete('/:module/:id/share-links/:linkId', asyncHandler(async (req
   const revoked = await revokeShareLink(linkId, id);
   if (!revoked) throw new NotFoundError('Link not found');
   res.status(204).end();
+}));
+
+/**
+ * "The originals are in the folder — go and process them."
+ *
+ * The whole handoff, and deliberately the only thing the CRM does about media
+ * after making the folder. Everything slow happens in n8n, inside OneDrive:
+ * renaming the originals, the compressed copies, the watermarked set, the
+ * social and website folders.
+ *
+ * Answers 202 whether or not n8n took it, with a reason attached. A rep who has
+ * finished uploading has finished, and the CRM refusing that because an
+ * automation server is down would be the CRM inventing a problem it does not
+ * have. Pressing Finish again re-sends it, which is the retry.
+ */
+recordsRouter.post('/properties/:id/finish', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const { notifyPropertyFinished } = await import('../../integrations/automation/n8n.js');
+  const result = await notifyPropertyFinished(req.params.id);
+
+  logger.info(
+    { recordId: req.params.id, userId: user.id, sent: result.sent, reason: result.reason },
+    'property finished',
+  );
+  res.status(202).json(result);
+}));
+
+/** Where this property's originals live, so the CRM can link straight to it. */
+recordsRouter.get('/properties/:id/storage', asyncHandler(async (req, res) => {
+  const { getPropertyStorageStatus } = await import('../../core/storage/propertyFolders.js');
+  res.json(await getPropertyStorageStatus(req.params.id));
 }));

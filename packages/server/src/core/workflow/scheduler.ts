@@ -12,12 +12,6 @@
 import { db, transaction } from '../../db/pool.js';
 import { config } from '../../config.js';
 import { logger } from '../../utils/logger.js';
-import { closeStaleSessions } from '../capture/sessions.js';
-import { groupUnfiledPhotos } from '../capture/grouping.js';
-import { processPendingVoiceNotes } from '../capture/voice.js';
-import { processPendingShootVisions } from '../capture/vision.js';
-import { cullPendingRecords } from '../capture/cull.js';
-import { classifyPendingPropertyPhotos } from '../capture/classify.js';
 import { provisionPendingPropertyFolders } from '../storage/propertyFolders.js';
 import { ingestOneDriveOriginals } from '../storage/onedriveIngest.js';
 import { loadRecordValues, runWorkflowsFor } from './engine.js';
@@ -431,27 +425,13 @@ async function housekeeping(): Promise<void> {
     expireWhatsAppWindows(),
     pruneOldQueueRows(),
     pollInboundEmail(),
-    // The day's last site visit has no successor to close it, so without this
-    // it stays open and keeps claiming photos taken the following morning.
-    closeStaleSessions(),
-    // Gather photos nobody opened a visit for into the shoots they came from,
-    // so a forgotten tap at the gate costs one tap that evening instead of the
-    // whole day's filing.
-    groupUnfiledPhotos(),
-    // Transcribe what was said at the gate. A no-op without an STT key.
-    processPendingVoiceNotes(),
-    // Read the photos in a nameless shoot, so the evening screen can say what
-    // it is instead of only when it was. A no-op without an AI provider.
-    processPendingShootVisions(),
-    // Create the complete OneDrive/local folder tree without making capture
-    // wait on a cloud call. Driver changes replay ready properties automatically.
+    // Make each property's OneDrive folder without the person adding it waiting
+    // on a cloud call. Driver changes replay ready properties automatically.
     provisionPendingPropertyFolders(),
-    // The OneDrive phone app is also a valid capture surface: originals placed
-    // there become normal CRM attachments and enter this same queue.
+    // Originals dropped into that folder become normal CRM attachments. This is
+    // now the only way photos arrive: the team uploads to OneDrive directly and
+    // n8n does everything after they press Finish.
     ingestOneDriveOriginals(),
-    // Conservative arithmetic first; vision labels only the photos it keeps.
-    cullPendingRecords(),
-    classifyPendingPropertyPhotos(),
   ]);
 }
 
