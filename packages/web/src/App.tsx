@@ -22,6 +22,7 @@ const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const SharedPropertyPage = lazy(() => import('./pages/SharedProperty'));
 const Outreach = lazy(() => import('./pages/Outreach'));
 const CallsPage = lazy(() => import('./pages/Calls'));
+const SiteCapture = lazy(() => import('./pages/SiteCapture'));
 const ReportsPage = lazy(() => import('./pages/Reports'));
 const SettingsPage = lazy(() => import('./pages/Settings'));
 const AdminPage = lazy(() => import('./pages/admin/Admin'));
@@ -81,6 +82,7 @@ export default function App(): JSX.Element {
               <Route path="inbox/:conversationId" element={<Inbox />} />
 
               <Route path="calls" element={<CallsPage />} />
+              <Route path="capture" element={<SiteCapture />} />
               <Route path="reports" element={<ReportsPage />} />
               <Route path="outreach" element={<Outreach />} />
 

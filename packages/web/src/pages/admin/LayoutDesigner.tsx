@@ -48,16 +48,12 @@ interface DetailTabConfig {
 
 interface CapturePanelConfig {
   primaryFieldCount: number;
-  voiceEnabled: boolean;
   gpsEnabled: boolean;
-  defaultMode: 'site' | 'office';
 }
 
 const DEFAULT_CAPTURE_PANEL: CapturePanelConfig = {
   primaryFieldCount: 4,
-  voiceEnabled: true,
   gpsEnabled: true,
-  defaultMode: 'site',
 };
 
 /** Tabs the record page can open on. Relation tabs are appended per module. */
@@ -269,10 +265,10 @@ export default function LayoutDesigner(): JSX.Element {
                 <div className="mb-3">
                   <p className="text-sm font-semibold">Property capture panel</p>
                   <p className="text-xs text-muted">
-                    The field order below is the capture order. Choose how many stay visible as the fast gate fields.
+                    Drives the Site visit screen. The field order below is the order it asks for them; choose how many stay visible before "More details".
                   </p>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="grid gap-3 sm:grid-cols-2">
                   <label>
                     <span className="label">Fast fields shown</span>
                     <Select
@@ -285,32 +281,6 @@ export default function LayoutDesigner(): JSX.Element {
                         value: String(i + 1), label: String(i + 1),
                       }))}
                     />
-                  </label>
-                  <label>
-                    <span className="label">Default capture mode</span>
-                    <Select
-                      value={capturePanel.defaultMode}
-                      onChange={(value) => {
-                        setCapturePanel((prev) => ({ ...prev, defaultMode: value as 'site' | 'office' }));
-                        touch();
-                      }}
-                      options={[
-                        { value: 'site', label: 'At property' },
-                        { value: 'office', label: 'From office' },
-                      ]}
-                    />
-                  </label>
-                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={capturePanel.voiceEnabled}
-                      onChange={(event) => {
-                        setCapturePanel((prev) => ({ ...prev, voiceEnabled: event.target.checked }));
-                        touch();
-                      }}
-                      className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-                    />
-                    Offer voice note
                   </label>
                   <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700">
                     <input

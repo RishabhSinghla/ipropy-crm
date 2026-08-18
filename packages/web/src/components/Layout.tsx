@@ -112,6 +112,7 @@ export default function Layout(): JSX.Element {
             <NavItem to="/dashboard" icon="layout-dashboard" label="Dashboard" collapsed={sidebarCollapsed} />
             <NavItem to="/inbox" icon="message-circle" label="Inbox" collapsed={sidebarCollapsed} badge={<InboxBadge />} />
             <NavItem to="/calls" icon="phone" label="Calls" collapsed={sidebarCollapsed} />
+            <NavItem to="/capture" icon="map-pin" label="Site visit" collapsed={sidebarCollapsed} />
           </div>
 
           {grouped.map(([group, list]) => (
