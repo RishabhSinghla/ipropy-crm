@@ -178,6 +178,25 @@ async function s3Driver(settings: StorageSettings): Promise<StorageDriver> {
   };
 }
 
+/**
+ * The driver that owns the *folders people open*, which is not always the one
+ * that serves files.
+ *
+ * With OneDrive switched on, property folders live there — somewhere a person
+ * can open, drop originals into, and read the details file — while the website
+ * carries on serving from R2. With it off, folders fall back to whatever serves
+ * files, which is right for a single-server install and does nothing useful on
+ * R2, where a folder is a prefix that does not exist until a file is in it.
+ */
+export async function getFolderDriver(): Promise<StorageDriver> {
+  const settings = getStorageSettings();
+  if (getSettings().storage.foldersInOneDrive) {
+    const { createOneDriveDriver } = await import('./onedrive.js');
+    return createOneDriveDriver(settings.onedrive);
+  }
+  return getDriver();
+}
+
 export async function getDriver(): Promise<StorageDriver> {
   const settings = getStorageSettings();
   if (settings.driver === 'onedrive') {

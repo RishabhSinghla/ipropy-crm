@@ -1,7 +1,7 @@
 /** Retryable creation of the human-facing folder tree for each property. */
 import { db, transaction } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
-import { getDriver, getStorageSettings } from './index.js';
+import { getFolderDriver, getStorageSettings } from './index.js';
 import {
   PROPERTY_MEDIA_FOLDER_TREE, recordStorageRoot,
 } from './keys.js';
@@ -65,7 +65,7 @@ export interface FolderProvisionSummary { ready: number; failed: number }
 async function provisionClaimed(
   row: ClaimedRow,
   storage: ReturnType<typeof getStorageSettings>,
-  driver: Awaited<ReturnType<typeof getDriver>>,
+  driver: Awaited<ReturnType<typeof getFolderDriver>>,
 ): Promise<boolean> {
   try {
     const folder = await folderFor(row);
@@ -128,7 +128,7 @@ export async function provisionPropertyFolder(recordId: string): Promise<Propert
       [recordId],
     );
   });
-  if (claimed) await provisionClaimed(claimed, storage, await getDriver());
+  if (claimed) await provisionClaimed(claimed, storage, await getFolderDriver());
   return getPropertyStorageStatus(recordId);
 }
 
@@ -176,11 +176,11 @@ export async function provisionPendingPropertyFolders(limit = BATCH): Promise<Fo
 
   let ready = 0;
   let failed = 0;
-  let driver: Awaited<ReturnType<typeof getDriver>> | null = null;
+  let driver: Awaited<ReturnType<typeof getFolderDriver>> | null = null;
 
   for (const row of claimed) {
     try {
-      driver ??= await getDriver();
+      driver ??= await getFolderDriver();
       if (await provisionClaimed(row, storage, driver)) ready += 1;
       else failed += 1;
     } catch (err) {

@@ -96,6 +96,8 @@ export interface ResolvedSettings {
   };
   storage: {
     driver: 'local' | 's3' | 'onedrive';
+    /** Property folders live in OneDrive regardless of what serves the files. */
+    foldersInOneDrive: boolean;
     bucket: string;
     region: string;
     accessKeyId: string;
@@ -444,9 +446,26 @@ function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
     ),
   );
   const requestedStorageDriver = config.storage.driver;
-  const storageDriver: ResolvedSettings['storage']['driver'] = onedrive?.isActive && oneDriveConfigured
-    ? 'onedrive'
-    : pick(s3, 'config', 'driver', requestedStorageDriver) === 's3'
+
+  // Two different jobs, and they stopped being the same question the moment the
+  // team started working in OneDrive by hand.
+  //
+  //  * `driver` is what the CRM and the public website *serve* from. That wants
+  //    R2: no charge for traffic, and it can sit on your own domain. Serving a
+  //    listing's photos out of OneDrive means an authenticated Microsoft API
+  //    call per image, with rate limits, and it falls over the first time a
+  //    property gets shared around.
+  //  * `foldersInOneDrive` is where the *people* work: the folder somebody
+  //    opens to drop originals in, and the details file that tells them which
+  //    property it is. R2 cannot do that at all — its folders are not real,
+  //    they are prefixes that appear once a file exists, so there is nothing to
+  //    open and nothing to drop into.
+  //
+  // Turning the OneDrive card on used to force the serving driver with it,
+  // which meant you could have browsable folders or a fast website, never both.
+  const foldersInOneDrive = Boolean(onedrive?.isActive && oneDriveConfigured);
+  const storageDriver: ResolvedSettings['storage']['driver'] =
+    pick(s3, 'config', 'driver', requestedStorageDriver) === 's3'
       ? 's3'
       : requestedStorageDriver === 'onedrive' && oneDriveConfigured
         ? 'onedrive'
@@ -512,6 +531,7 @@ function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
     },
     storage: {
       driver: storageDriver,
+      foldersInOneDrive,
       bucket: pick(s3, 'config', 'bucket', config.storage.s3.bucket),
       region: pick(s3, 'config', 'region', config.storage.s3.region) || config.storage.s3.region,
       accessKeyId: pick(s3, 'credentials', 'accessKeyId', config.storage.s3.accessKeyId),

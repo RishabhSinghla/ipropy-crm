@@ -43,16 +43,28 @@ export const PROPERTY_MEDIA_FOLDERS = {
 /**
  * What the CRM creates when a property is made.
  *
- * Only the drop box. Everything downstream of it — the master, and the four
- * delivery folders — is created by the media worker (`media-worker/`) as it
- * publishes, because it is the thing that decides what goes in them.
+ * All of them, up front. The team drops originals into `01 Originals` by hand
+ * and presses Finish; n8n writes the processed sets into the rest. A workflow
+ * that has to create a folder before it can write to it fails in a way nobody
+ * can read — "item not found" on an upload, halfway through a property.
  *
- * Pre-creating the rest was worse than useless: a photographer opening a
- * property and seeing five empty folders cannot tell whether the run has not
- * happened yet or has happened and produced nothing. An absent folder says
- * "not yet" without ambiguity.
+ * This used to create only the drop box, on the reasoning that an absent folder
+ * says "not processed yet" without ambiguity. That was right when the CRM did
+ * the processing and could be trusted to make each folder as it filled it. It
+ * is wrong now that the work happens elsewhere: the folders are the contract
+ * between the CRM and n8n, and a contract you have to create on first use is
+ * one that breaks on first use.
  */
-export const PROPERTY_MEDIA_FOLDER_TREE = [PROPERTY_MEDIA_FOLDERS.originals];
+export const PROPERTY_MEDIA_FOLDER_TREE = [
+  PROPERTY_MEDIA_FOLDERS.originals,
+  PROPERTY_MEDIA_FOLDERS.compressed,
+  '03 Watermarked',
+  PROPERTY_MEDIA_FOLDERS.instagramFeed,
+  PROPERTY_MEDIA_FOLDERS.instagramStory,
+  PROPERTY_MEDIA_FOLDERS.facebook,
+  PROPERTY_MEDIA_FOLDERS.whatsapp,
+  PROPERTY_MEDIA_FOLDERS.crmWebsite,
+];
 
 /**
  * Lowercase, hyphen-joined, ASCII only.
