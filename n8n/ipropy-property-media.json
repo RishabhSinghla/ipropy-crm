@@ -1,5 +1,5 @@
 {
-  "name": "iPropy \u2014 property media factory",
+  "name": "iPropy \u2014 property media (local OneDrive)",
   "nodes": [
     {
       "parameters": {
@@ -13,7 +13,7 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        -460,
+        -520,
         300
       ],
       "webhookId": "ipropy-property-finished"
@@ -24,12 +24,12 @@
         "responseBody": "={{ JSON.stringify({ accepted: true, propertyId: $json.body.propertyId }) }}",
         "options": {}
       },
-      "id": "answer-immediately",
-      "name": "Answer immediately",
+      "id": "answer-at-once",
+      "name": "Answer at once",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
       "position": [
-        -240,
+        -300,
         140
       ]
     },
@@ -38,276 +38,103 @@
         "assignments": {
           "assignments": [
             {
-              "id": "a1",
+              "id": "p",
               "name": "propertyId",
               "value": "={{ $json.body.propertyId }}",
               "type": "string"
             },
             {
-              "id": "a2",
-              "name": "folder",
-              "value": "={{ $json.body.folder }}",
-              "type": "string"
-            },
-            {
-              "id": "a3",
+              "id": "c",
               "name": "crmBaseUrl",
               "value": "={{ $json.body.crmBaseUrl }}",
               "type": "string"
             },
             {
-              "id": "a4",
-              "name": "originals",
-              "value": "={{ $json.body.folder }}/01 Originals",
+              "id": "f",
+              "name": "folderName",
+              "value": "={{ ($json.body.folder || '').split('/').filter(Boolean).pop() }}",
+              "type": "string"
+            },
+            {
+              "id": "r",
+              "name": "root",
+              "value": "/Users/rishabhsinghla/OneDrive/IPROPY-PROPERTIES",
               "type": "string"
             }
           ]
         },
         "options": {}
       },
-      "id": "read-the-job",
-      "name": "Read the job",
+      "id": "work-out-the-folder",
+      "name": "Work out the folder",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        -240,
+        -300,
         420
       ]
     },
     {
       "parameters": {
-        "resource": "folder",
-        "operation": "search",
-        "query": "={{ $json.originals }}",
-        "options": {}
+        "executeOnce": true,
+        "command": "={{ `set -e\nROOT='${$json.root}'\nNAME='${$json.folderName}'\nBASE=$(find \"$ROOT\" -maxdepth 2 -type d -name \"$NAME\" | head -1)\ntest -n \"$BASE\" || { echo \"no folder called $NAME under $ROOT\"; exit 1; }\nSRC=\"$BASE/01 Originals\"\ntest -d \"$SRC\" || { echo \"no '01 Originals' in $BASE\"; exit 1; }\nmkdir -p \"$BASE/02 Compressed\" \"$BASE/03 Watermarked\" \"$BASE/05 CRM Website\" \\\\\n  \"$BASE/04 Social Media/Instagram Feed\" \"$BASE/04 Social Media/WhatsApp\"\nshopt -s nullglob nocaseglob\ncount=0\nfor f in \"$SRC\"/*.{jpg,jpeg,png,heic,webp}; do\n  stem=$(basename \"$f\"); stem=\"${stem%.*}\"\n  sips -s format jpeg -Z 2560 \"$f\" --out \"$BASE/02 Compressed/$stem.jpg\" >/dev/null\n  sips -s format jpeg -Z 1600 \"$f\" --out \"$BASE/05 CRM Website/$stem.jpg\" >/dev/null\n  sips -s format jpeg -Z 1080 \"$f\" --out \"$BASE/04 Social Media/Instagram Feed/$stem.jpg\" >/dev/null\n  sips -s format jpeg -Z 1080 \"$f\" --out \"$BASE/04 Social Media/WhatsApp/$stem.jpg\" >/dev/null\n  cp \"$BASE/02 Compressed/$stem.jpg\" \"$BASE/03 Watermarked/$stem.jpg\"\n  count=$((count+1))\ndone\necho \"BASE=$BASE\"\necho \"DONE=$count\"\n` }}"
       },
-      "id": "list-the-originals",
-      "name": "List the originals",
-      "type": "n8n-nodes-base.microsoftOneDrive",
+      "id": "build-every-version",
+      "name": "Build every version",
+      "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
       "position": [
-        -20,
+        -80,
         420
       ]
     },
     {
       "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": false,
-            "version": 2
-          },
-          "conditions": [
+        "assignments": {
+          "assignments": [
             {
-              "id": "c1",
-              "leftValue": "={{ $json.name }}",
-              "rightValue": "\\\\.(jpe?g|png|heic|webp)$",
-              "operator": {
-                "type": "string",
-                "operation": "regex"
-              }
+              "id": "d",
+              "name": "processed",
+              "value": "={{ Number(($json.stdout.match(/DONE=(\\d+)/) || [0,0])[1]) }}",
+              "type": "number"
+            },
+            {
+              "id": "b",
+              "name": "base",
+              "value": "={{ ($json.stdout.match(/BASE=(.*)/) || ['',''])[1].trim() }}",
+              "type": "string"
             }
-          ],
-          "combinator": "and"
+          ]
         },
         "options": {}
       },
-      "id": "only-photos",
-      "name": "Only photos",
-      "type": "n8n-nodes-base.filter",
-      "typeVersion": 2.2,
+      "id": "read-the-result",
+      "name": "Read the result",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
       "position": [
-        200,
+        140,
         420
       ]
     },
     {
       "parameters": {
-        "batchSize": 1,
-        "options": {}
+        "executeOnce": true,
+        "command": "={{ `set -e\nBASE='${$json.base}'\nCRM='${$('Work out the folder').first().json.crmBaseUrl}'\nPID='${$('Work out the folder').first().json.propertyId}'\nKEY=\"$IPROPY_API_KEY\"\ntest -n \"$KEY\" || { echo 'IPROPY_API_KEY is not set in n8n'; exit 1; }\nsent=0\nfor f in \"$BASE/05 CRM Website\"/*.jpg; do\n  [ -e \"$f\" ] || continue\n  curl -sS -f -X POST \"$CRM/api/files\" \\\\\n    -H \"x-api-key: $KEY\" \\\\\n    -F \"recordId=$PID\" -F 'module=properties' \\\\\n    -F \"file=@$f\" >/dev/null && sent=$((sent+1))\ndone\necho \"SENT=$sent\"\n` }}"
       },
-      "id": "one-photo-at-a-time",
-      "name": "One photo at a time",
-      "type": "n8n-nodes-base.splitInBatches",
-      "typeVersion": 3,
+      "id": "send-website-copies-to-the-crm",
+      "name": "Send website copies to the CRM",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
       "position": [
-        420,
+        360,
         420
-      ]
-    },
-    {
-      "parameters": {
-        "resource": "file",
-        "operation": "download",
-        "fileId": "={{ $json.id }}",
-        "options": {}
-      },
-      "id": "download-it",
-      "name": "Download it",
-      "type": "n8n-nodes-base.microsoftOneDrive",
-      "typeVersion": 1,
-      "position": [
-        640,
-        500
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "resize",
-        "width": 2560,
-        "height": 2560,
-        "resizeOption": "onlyIfLarger",
-        "options": {
-          "quality": 82,
-          "format": "jpeg"
-        }
-      },
-      "id": "compressed-copy",
-      "name": "Compressed copy",
-      "type": "n8n-nodes-base.editImage",
-      "typeVersion": 1,
-      "position": [
-        860,
-        380
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "text",
-        "text": "={{ $('Read the job').first().json.folder.split('/').pop() }}",
-        "fontSize": 42,
-        "fontColor": "#ffffffcc",
-        "positionX": 40,
-        "positionY": 40,
-        "options": {
-          "format": "jpeg"
-        }
-      },
-      "id": "watermarked-copy",
-      "name": "Watermarked copy",
-      "type": "n8n-nodes-base.editImage",
-      "typeVersion": 1,
-      "position": [
-        860,
-        620
-      ]
-    },
-    {
-      "parameters": {
-        "resource": "file",
-        "operation": "upload",
-        "fileName": "={{ $('One photo at a time').first().json.name.replace(/\\.[^.]+$/, '') }}-compressed.jpg",
-        "parentId": "={{ $('Read the job').first().json.folder }}/02 Compressed",
-        "binaryData": true,
-        "options": {}
-      },
-      "id": "save-compressed",
-      "name": "Save compressed",
-      "type": "n8n-nodes-base.microsoftOneDrive",
-      "typeVersion": 1,
-      "position": [
-        1080,
-        380
-      ]
-    },
-    {
-      "parameters": {
-        "resource": "file",
-        "operation": "upload",
-        "fileName": "={{ $('One photo at a time').first().json.name.replace(/\\.[^.]+$/, '') }}-watermarked.jpg",
-        "parentId": "={{ $('Read the job').first().json.folder }}/03 Watermarked",
-        "binaryData": true,
-        "options": {}
-      },
-      "id": "save-watermarked",
-      "name": "Save watermarked",
-      "type": "n8n-nodes-base.microsoftOneDrive",
-      "typeVersion": 1,
-      "position": [
-        1080,
-        620
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "resize",
-        "width": 1600,
-        "height": 1600,
-        "resizeOption": "onlyIfLarger",
-        "options": {
-          "quality": 84,
-          "format": "jpeg"
-        }
-      },
-      "id": "website-size",
-      "name": "Website size",
-      "type": "n8n-nodes-base.editImage",
-      "typeVersion": 1,
-      "position": [
-        860,
-        240
-      ]
-    },
-    {
-      "parameters": {
-        "resource": "file",
-        "operation": "upload",
-        "fileName": "={{ $('One photo at a time').first().json.name.replace(/\\.[^.]+$/, '') }}-web.jpg",
-        "parentId": "={{ $('Read the job').first().json.folder }}/05 CRM Website",
-        "binaryData": true,
-        "options": {}
-      },
-      "id": "save-for-website",
-      "name": "Save for website",
-      "type": "n8n-nodes-base.microsoftOneDrive",
-      "typeVersion": 1,
-      "position": [
-        1080,
-        240
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "resize",
-        "width": 1080,
-        "height": 1350,
-        "resizeOption": "onlyIfLarger",
-        "options": {
-          "quality": 86,
-          "format": "jpeg"
-        }
-      },
-      "id": "social-size",
-      "name": "Social size",
-      "type": "n8n-nodes-base.editImage",
-      "typeVersion": 1,
-      "position": [
-        860,
-        760
-      ]
-    },
-    {
-      "parameters": {
-        "resource": "file",
-        "operation": "upload",
-        "fileName": "={{ $('One photo at a time').first().json.name.replace(/\\.[^.]+$/, '') }}-social.jpg",
-        "parentId": "={{ $('Read the job').first().json.folder }}/04 Social Media",
-        "binaryData": true,
-        "options": {}
-      },
-      "id": "save-for-social",
-      "name": "Save for social",
-      "type": "n8n-nodes-base.microsoftOneDrive",
-      "typeVersion": 1,
-      "position": [
-        1080,
-        760
       ]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('Read the job').first().json.crmBaseUrl }}/api/webhooks/n8n/content-ready",
+        "url": "={{ $('Work out the folder').first().json.crmBaseUrl }}/api/webhooks/n8n/content-ready",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -319,16 +146,16 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ propertyId: $('Read the job').first().json.propertyId, folder: $('Read the job').first().json.folder, ok: true, summary: 'Compressed, watermarked, website and social copies are in OneDrive.' }) }}",
+        "jsonBody": "={{ JSON.stringify({ propertyId: $('Work out the folder').first().json.propertyId, folder: $('Read the result').first().json.base, ok: true, summary: $('Read the result').first().json.processed + ' photos processed into OneDrive; website copies uploaded to the CRM.' }) }}",
         "options": {}
       },
-      "id": "tell-the-crm",
-      "name": "Tell the CRM",
+      "id": "tell-the-crm-it-is-done",
+      "name": "Tell the CRM it is done",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        640,
-        200
+        580,
+        420
       ]
     }
   ],
@@ -337,144 +164,56 @@
       "main": [
         [
           {
-            "node": "Answer immediately",
+            "node": "Answer at once",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Read the job",
+            "node": "Work out the folder",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Read the job": {
+    "Work out the folder": {
       "main": [
         [
           {
-            "node": "List the originals",
+            "node": "Build every version",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "List the originals": {
+    "Build every version": {
       "main": [
         [
           {
-            "node": "Only photos",
+            "node": "Read the result",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Only photos": {
+    "Read the result": {
       "main": [
         [
           {
-            "node": "One photo at a time",
+            "node": "Send website copies to the CRM",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "One photo at a time": {
+    "Send website copies to the CRM": {
       "main": [
         [
           {
-            "node": "Tell the CRM",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Download it",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Download it": {
-      "main": [
-        [
-          {
-            "node": "Website size",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Compressed copy",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Watermarked copy",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Social size",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Website size": {
-      "main": [
-        [
-          {
-            "node": "Save for website",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Compressed copy": {
-      "main": [
-        [
-          {
-            "node": "Save compressed",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Watermarked copy": {
-      "main": [
-        [
-          {
-            "node": "Save watermarked",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Social size": {
-      "main": [
-        [
-          {
-            "node": "Save for social",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Save compressed": {
-      "main": [
-        [
-          {
-            "node": "One photo at a time",
+            "node": "Tell the CRM it is done",
             "type": "main",
             "index": 0
           }
