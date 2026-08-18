@@ -464,22 +464,52 @@ webhooksRouter.get('/n8n/pending-folders', asyncHandler(async (req, res) => {
     `SELECT s.record_id, s.folder_key, r.module_name, r.label, r.record_number
        FROM ipy_property_storage s
        JOIN ipy_record r ON r.id = s.record_id
-      WHERE s.onedrive_folder_at IS NULL
+      WHERE (s.onedrive_folder_at IS NULL OR s.onedrive_folder_at < r.updated_at)
         AND r.is_deleted = false
       ORDER BY s.created_at
       LIMIT 50`,
   );
 
-  const { recordStorageRoot, PROPERTY_MEDIA_FOLDER_TREE } = await import('../../core/storage/keys.js');
+  const { recordStorageRoot, PROPERTY_MEDIA_FOLDER_TREE, PROPERTY_MEDIA_FOLDERS } = await import('../../core/storage/keys.js');
+  const { buildPropertyDetailsText, DETAILS_FILE } = await import('../../core/storage/propertyDetails.js');
 
   res.json({
-    folders: rows.map((row) => ({
+    folders: await Promise.all(rows.map(async (row) => ({
       propertyId: row.record_id,
       folder: row.folder_key
         ?? recordStorageRoot(row.module_name, row.record_number, row.label, row.record_id),
       subfolders: PROPERTY_MEDIA_FOLDER_TREE,
-    })),
+      // The sheet travels with the folder request rather than being written by
+      // the CRM, because only n8n can reach the drive these folders live on.
+      detailsPath: `${PROPERTY_MEDIA_FOLDERS.data}/${DETAILS_FILE}`,
+      detailsText: (await buildPropertyDetailsText(row.record_id)) ?? '',
+    }))),
   });
+}));
+
+/**
+ * Properties somebody pressed Finish on that n8n has not processed yet.
+ *
+ * Same reversed arrow as the folders. The webhook still fires when the two can
+ * see each other, which keeps it instant on a laptop; this is what makes it
+ * arrive at all in production.
+ */
+webhooksRouter.get('/n8n/pending-media', asyncHandler(async (req, res) => {
+  requireN8nSecret(req);
+
+  const { rows } = await db.query<{ record_id: string; folder_key: string }>(
+    `SELECT s.record_id, s.folder_key
+       FROM ipy_property_storage s
+       JOIN ipy_record r ON r.id = s.record_id
+      WHERE s.media_requested_at IS NOT NULL
+        AND (s.media_done_at IS NULL OR s.media_done_at < s.media_requested_at)
+        AND s.folder_key IS NOT NULL
+        AND r.is_deleted = false
+      ORDER BY s.media_requested_at
+      LIMIT 10`,
+  );
+
+  res.json({ properties: rows.map((r) => ({ propertyId: r.record_id, folder: r.folder_key })) });
 }));
 
 /** n8n made the folders on disk; record that so the CRM stops asking. */
@@ -526,6 +556,13 @@ webhooksRouter.post('/n8n/content-ready', asyncHandler(async (req, res) => {
     // silence is indistinguishable from "not started yet".
     ok: z.boolean().default(true),
   }).parse(req.body);
+
+  // Stops n8n collecting the same property forever.
+  await db.query(
+    `UPDATE ipy_property_storage SET media_done_at = now(), updated_at = now()
+      WHERE record_id = $1`,
+    [input.propertyId],
+  );
 
   const property = await db.queryOne<{ label: string; owner_id: string | null }>(
     `SELECT r.label, r.owner_id

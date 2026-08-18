@@ -47,17 +47,20 @@ function line(label: string, value: string): string {
   return `${label.padEnd(22)}${value}`;
 }
 
-export async function writePropertyDetails(
-  driver: StorageDriver,
-  recordId: string,
-  folder: string,
-): Promise<void> {
+/**
+ * The sheet's text, without deciding where it goes.
+ *
+ * Split out because the folder now lives on somebody's Mac and only n8n can
+ * write there — so the CRM hands over the words and lets n8n put them on disk.
+ * One builder, so the copy cannot drift between the two paths.
+ */
+export async function buildPropertyDetailsText(recordId: string): Promise<string | null> {
   const row = await db.queryOne<Row>(
     `SELECT r.label, p.* FROM ipy_e_properties p JOIN ipy_record r ON r.id = p.record_id
       WHERE p.record_id = $1`,
     [recordId],
   );
-  if (!row) return;
+  if (!row) return null;
 
   const lines: string[] = [
     String(row.label ?? 'Property'),
@@ -91,12 +94,24 @@ export async function writePropertyDetails(
     `Property ID: ${recordId}`,
   );
 
+  return `${lines.join('\n')}\n`;
+}
+
+/** Write it through a storage driver, for the deployments that can. */
+export async function writePropertyDetails(
+  driver: StorageDriver,
+  recordId: string,
+  folder: string,
+): Promise<void> {
+  const text = await buildPropertyDetailsText(recordId);
+  if (!text) return;
+
   // In 00_PROPERTY_DATA rather than loose in the property root: the root is what
   // somebody opens on a phone in a lift, and it should show the numbered folders
   // in order, not a text file wedged above them.
   await driver.save(
     `${folder}/${PROPERTY_MEDIA_FOLDERS.data}/${DETAILS_FILE}`,
-    Buffer.from(`${lines.join('\n')}\n`, 'utf8'),
+    Buffer.from(text, 'utf8'),
     'text/plain',
   );
 }

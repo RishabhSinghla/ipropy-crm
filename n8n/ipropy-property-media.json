@@ -40,19 +40,19 @@
             {
               "id": "r1",
               "name": "root",
-              "value": "=/data/properties/{{ $json.body.folder }}",
+              "value": "=/data/properties/{{ $json.body ? $json.body.folder : $json.folder }}",
               "type": "string"
             },
             {
               "id": "r2",
               "name": "propertyId",
-              "value": "={{ $json.body.propertyId }}",
+              "value": "={{ $json.body ? $json.body.propertyId : $json.propertyId }}",
               "type": "string"
             },
             {
               "id": "r3",
               "name": "crmBaseUrl",
-              "value": "={{ $json.body.crmBaseUrl }}",
+              "value": "={{ $json.body ? $json.body.crmBaseUrl : $env.IPROPY_CRM_URL }}",
               "type": "string"
             }
           ]
@@ -257,6 +257,64 @@
         660
       ],
       "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 2
+            }
+          ]
+        }
+      },
+      "id": "c1000000-0000-4000-8000-000000000001",
+      "name": "Every couple of minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -660,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.IPROPY_CRM_URL }}/api/webhooks/n8n/pending-media",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-n8n-secret",
+              "value": "={{ $env.IPROPY_CALLBACK_SECRET }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c1000000-0000-4000-8000-000000000002",
+      "name": "Ask what was finished",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -420,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "properties",
+        "options": {}
+      },
+      "id": "c1000000-0000-4000-8000-000000000003",
+      "name": "One property at a time",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        -420,
+        760
+      ]
     }
   ],
   "connections": {
@@ -367,6 +425,39 @@
         [
           {
             "node": "Tell the CRM it is done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every couple of minutes": {
+      "main": [
+        [
+          {
+            "node": "Ask what was finished",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask what was finished": {
+      "main": [
+        [
+          {
+            "node": "One property at a time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One property at a time": {
+      "main": [
+        [
+          {
+            "node": "Work out the folder",
             "type": "main",
             "index": 0
           }

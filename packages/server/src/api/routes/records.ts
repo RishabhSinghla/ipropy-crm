@@ -618,8 +618,21 @@ recordsRouter.delete('/:module/:id/share-links/:linkId', asyncHandler(async (req
  */
 recordsRouter.post('/properties/:id/finish', asyncHandler(async (req, res) => {
   const user = getUser(req);
+  // Record it first, always. The webhook below only lands when the CRM can
+  // reach n8n, which in production it cannot — n8n collects this row instead.
+  await db.query(
+    `UPDATE ipy_property_storage SET media_requested_at = now(), updated_at = now()
+      WHERE record_id = $1`,
+    [req.params.id],
+  );
+
   const { notifyPropertyFinished } = await import('../../integrations/automation/n8n.js');
-  const result = await notifyPropertyFinished(req.params.id);
+  const pushed = await notifyPropertyFinished(req.params.id);
+  // Queued is the honest answer either way: the request is durable now, so a
+  // webhook that could not be delivered is a timing detail, not a failure.
+  const result = pushed.sent
+    ? pushed
+    : { sent: true, reason: `queued for the automation server (${pushed.reason})` };
 
   logger.info(
     { recordId: req.params.id, userId: user.id, sent: result.sent, reason: result.reason },
