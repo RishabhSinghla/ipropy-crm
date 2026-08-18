@@ -33,14 +33,42 @@ export async function getPropertyStorageStatus(recordId: string): Promise<Proper
        FROM ipy_property_storage WHERE record_id = $1`,
     [recordId],
   );
-  return row ? {
-    recordId: row.record_id,
-    folderKey: row.folder_key,
-    status: row.status,
-    provisionedDriver: row.provisioned_driver,
-    externalUrl: row.external_url,
-    lastError: row.last_error,
-  } : null;
+  if (row) {
+    return {
+      recordId: row.record_id,
+      folderKey: row.folder_key,
+      status: row.status,
+      provisionedDriver: row.provisioned_driver,
+      externalUrl: row.external_url,
+      lastError: row.last_error,
+    };
+  }
+
+  // No row is not "no answer" — it is a property nobody has queued yet.
+  //
+  // Returning null here made the whole Photos and videos panel vanish from the
+  // record, which reads as a deleted feature rather than as work not started.
+  // Migration 040 backfilled the properties that existed then; anything whose
+  // creation predates the folder worker, or whose enqueue was missed, sat with
+  // no row and therefore no panel, for good. Queue it on first look instead.
+  const isProperty = await db.queryOne<{ id: string }>(
+    `SELECT id FROM ipy_record WHERE id = $1 AND module_name = 'properties' AND is_deleted = false`,
+    [recordId],
+  );
+  if (!isProperty) return null;
+
+  await db.query(
+    `INSERT INTO ipy_property_storage (record_id) VALUES ($1) ON CONFLICT DO NOTHING`,
+    [recordId],
+  );
+  return {
+    recordId,
+    folderKey: null,
+    status: 'pending',
+    provisionedDriver: null,
+    externalUrl: null,
+    lastError: null,
+  };
 }
 
 async function folderFor(row: ClaimedRow): Promise<string | null> {
