@@ -71,9 +71,7 @@
     {
       "parameters": {
         "fileSelector": "={{ $json.root }}/01_RAW_UPLOADS/PHOTOS/*",
-        "options": {
-          "fileName": true
-        }
+        "options": {}
       },
       "id": "a1000000-0000-4000-8000-000000000004",
       "name": "Read the originals",
@@ -93,7 +91,8 @@
         "options": {
           "format": "jpeg",
           "quality": 82
-        }
+        },
+        "dataPropertyName": "data"
       },
       "id": "a1000000-0000-4000-8000-000000000005",
       "name": "Make the website copy",
@@ -129,7 +128,8 @@
         "options": {
           "format": "jpeg",
           "quality": 86
-        }
+        },
+        "dataPropertyName": "data"
       },
       "id": "a1000000-0000-4000-8000-000000000007",
       "name": "Make the Instagram post",
@@ -165,7 +165,8 @@
         "options": {
           "format": "jpeg",
           "quality": 86
-        }
+        },
+        "dataPropertyName": "data"
       },
       "id": "a1000000-0000-4000-8000-000000000009",
       "name": "Make the Instagram story",
@@ -200,7 +201,8 @@
         "fontColor": "#FFFFFF",
         "positionX": 40,
         "positionY": 40,
-        "options": {}
+        "options": {},
+        "dataPropertyName": "data"
       },
       "id": "a1000000-0000-4000-8000-000000000011",
       "name": "Stamp the watermark",
@@ -230,11 +232,21 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('Work out the folder').first().json.crmBaseUrl }}/api/webhooks/n8n/property-media-ready",
+        "url": "={{ $('Work out the folder').first().json.crmBaseUrl }}/api/webhooks/n8n/content-ready",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ propertyId: $('Work out the folder').first().json.propertyId }) }}",
-        "options": {}
+        "jsonBody": "={{ JSON.stringify({ propertyId: $('Work out the folder').first().json.propertyId, folder: $('Work out the folder').first().json.root, ok: true }) }}",
+        "options": {},
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-n8n-secret",
+              "value": "={{ $env.IPROPY_CALLBACK_SECRET }}"
+            }
+          ]
+        }
       },
       "id": "a1000000-0000-4000-8000-000000000013",
       "name": "Tell the CRM it is done",
@@ -242,8 +254,9 @@
       "typeVersion": 4.2,
       "position": [
         800,
-        360
-      ]
+        660
+      ],
+      "onError": "continueRegularOutput"
     }
   ],
   "connections": {
@@ -345,6 +358,11 @@
       ]
     },
     "Save the website copy": {
+      "main": [
+        []
+      ]
+    },
+    "Save the watermarked copy": {
       "main": [
         [
           {
