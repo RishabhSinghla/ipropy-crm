@@ -39,17 +39,18 @@ jobs:
           set -euo pipefail
           npm i --silent --no-save bcryptjs@2 >/dev/null 2>&1
 
-          # Same shape and same cost as the app's own endpoint, so a key made
-          # here is indistinguishable from one made in the browser.
-          eval "$(node -e '
+          # Written to files, never eval'd: a bcrypt hash starts with $2b$12$
+          # and a shell expands those as variables the moment it sees them.
+          node -e '
             const crypto = require("crypto");
             const bcrypt = require("bcryptjs");
+            const fs = require("fs");
             const raw = "ipy_" + crypto.randomBytes(24).toString("base64url");
-            const hash = bcrypt.hashSync(raw, 12);
-            console.log("RAW=" + JSON.stringify(raw));
-            console.log("HASH=" + JSON.stringify(hash));
-            console.log("PREFIX=" + JSON.stringify(raw.slice(0, 8)));
-          ')"
+            fs.writeFileSync("/tmp/raw", raw);
+            fs.writeFileSync("/tmp/hash", bcrypt.hashSync(raw, 12));
+            fs.writeFileSync("/tmp/prefix", raw.slice(0, 8));
+          '
+          RAW="$(cat /tmp/raw)"; HASH="$(cat /tmp/hash)"; PREFIX="$(cat /tmp/prefix)"
 
           USER_ID="$(psql "$DATABASE_URL" -tAc "SELECT id FROM ipy_user WHERE lower(email) = lower('${USER_EMAIL}') AND is_active = true LIMIT 1")"
           if [ -z "$USER_ID" ]; then
@@ -57,8 +58,10 @@ jobs:
             exit 1
           fi
 
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c \
-            "INSERT INTO ipy_api_key (name, key_prefix, key_hash, user_id) VALUES ('${KEY_NAME}', '${PREFIX}', '${HASH}', '${USER_ID}');"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -v name="$KEY_NAME" -v prefix="$PREFIX" -v hash="$HASH" -v uid="$USER_ID" \
+            -c "INSERT INTO ipy_api_key (name, key_prefix, key_hash, user_id) VALUES (:'name', :'prefix', :'hash', :'uid');"
 
           echo "::notice::Key created for ${USER_EMAIL}. Copy it now — it is not stored anywhere."
           echo "$RAW"
+          rm -f /tmp/hash /tmp/prefix
