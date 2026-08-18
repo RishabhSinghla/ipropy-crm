@@ -621,8 +621,9 @@ adminRouter.put('/settings', asyncHandler(async (req, res) => {
   // Scoring caches its thresholds because it runs on every record change. An
   // edit that only takes effect after a restart is the "it doesn't persist"
   // complaint in a different costume.
-  const { invalidateScoring } = await import('../../core/settings/scoring.js');
+  const { invalidateScoring, invalidatePublicStatuses } = await import('../../core/settings/scoring.js');
   invalidateScoring();
+  invalidatePublicStatuses();
   res.json({ ok: true });
 }));
 

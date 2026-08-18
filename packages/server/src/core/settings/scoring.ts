@@ -106,3 +106,44 @@ export function gradeFor(score: number, t: ScoringThresholds): 'A' | 'B' | 'C' |
   if (score >= t.gradeCAt) return 'C';
   return 'D';
 }
+
+// ---------------------------------------------------------------------------
+// Which properties the public website shows
+// ---------------------------------------------------------------------------
+
+/** What the code did before this was a setting. */
+const FALLBACK_PUBLIC_STATUSES = ['Available'];
+
+let cachedStatuses: string[] | null = null;
+
+export function invalidatePublicStatuses(): void {
+  cachedStatuses = null;
+}
+
+/**
+ * Read as a list of non-empty strings.
+ *
+ * An empty list is refused rather than honoured. Saving one would be read as
+ * "show nothing", and an empty public website looks like an outage rather than
+ * a setting — nobody would connect a blank site to a checkbox they cleared an
+ * hour ago. So an empty value falls back to the default and the site keeps
+ * working while somebody notices.
+ */
+export async function publicPropertyStatuses(): Promise<string[]> {
+  if (cachedStatuses) return cachedStatuses;
+  try {
+    const row = await db.queryOne<{ value: unknown }>(
+      `SELECT value FROM ipy_setting WHERE key = 'website.public_statuses'`,
+    );
+    const raw = row?.value;
+    const list = (Array.isArray(raw) ? raw : [])
+      .filter((v): v is string => typeof v === 'string')
+      .map((v) => v.trim())
+      .filter(Boolean);
+    cachedStatuses = list.length ? list : FALLBACK_PUBLIC_STATUSES;
+    return cachedStatuses;
+  } catch (err) {
+    logger.warn({ err }, 'could not read the public property statuses, using the default');
+    return FALLBACK_PUBLIC_STATUSES;
+  }
+}

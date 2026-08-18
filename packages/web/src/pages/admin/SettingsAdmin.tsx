@@ -30,6 +30,11 @@ interface Setting {
 /** Categories the CRM edits elsewhere, so they are not duplicated here. */
 const OWNED_ELSEWHERE = new Set(['brand', 'social']);
 
+/** A flat list of strings is editable as text; a list of objects is not. */
+function isStringList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((v) => typeof v === 'string');
+}
+
 const CATEGORY_TITLES: Record<string, string> = {
   scoring: 'Lead scoring',
   ai: 'AI',
@@ -39,6 +44,7 @@ const CATEGORY_TITLES: Record<string, string> = {
   branding: 'Branding',
   security: 'Security',
   storage: 'Storage',
+  website: 'Public website',
 };
 
 export default function SettingsAdmin(): JSX.Element {
@@ -164,12 +170,26 @@ function Row({ setting, value, onChange }: {
             value={typeof value === 'string' ? value : ''}
             onChange={(e) => onChange(e.target.value)}
           />
+        ) : isStringList(setting.value) ? (
+          // A list of words, edited as words. Typed comma-separated and parsed
+          // back to an array on the way out, so what is stored stays a list and
+          // whatever reads it keeps working. The description on each of these
+          // says what the valid entries are.
+          <input
+            type="text"
+            className="input w-72"
+            value={Array.isArray(value) ? value.join(', ') : ''}
+            placeholder="Available, Booked"
+            onChange={(e) => onChange(
+              e.target.value.split(',').map((v) => v.trim()).filter(Boolean),
+            )}
+          />
         ) : (
-          // Structured values — business hours, an address — are shown and not
-          // edited. A text box holding {"end":"19:00",...} is a developer tool
-          // wearing a settings screen's clothes, and worse, typing in it would
+          // Anything else structured — business hours, an address — is shown and
+          // not edited. A text box holding {"end":"19:00",...} is a developer
+          // tool wearing a settings screen's clothes, and typing in it would
           // save the object back as a string and break whatever reads it. Each
-          // of these earns a proper editor; until then, visible beats corrupt.
+          // earns a proper control; until then, visible beats corrupt.
           <div className="max-w-xs text-right">
             <p className="truncate font-mono text-2xs text-muted" title={JSON.stringify(value)}>
               {JSON.stringify(value)}

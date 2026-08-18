@@ -21,13 +21,15 @@ import { logger } from '../../utils/logger.js';
 import { recordShareView, resolveShareToken } from '../../core/sharing/shareLinks.js';
 import { getPropertyShareConfig, loadSharedProperty } from '../../core/sharing/propertyShare.js';
 import { photoOrderBy } from '../../core/media/ordering.js';
+import { publicPropertyStatuses } from '../../core/settings/scoring.js';
 
 export const publicRouter = Router();
 
-// Only records in these statuses are shown to the public, regardless of
-// whatever else the query filters on. Matches the CRM's own "Active
-// Inventory" / "Available Units" system views (db/seed/templates/realEstate.ts).
-const PUBLIC_PROPERTY_STATUS = 'Available';
+// Which statuses reach the public is a setting now — see migration 059. It is
+// the most customer-visible decision in this file: it chooses what every
+// visitor to the website sees, and "show Booked units too, a half-sold tower
+// sells the other half" is a sales decision rather than a code change.
+// Read per request; the reader caches and is invalidated when settings save.
 
 // publish_to_web (db/seed/templates/realEstate.ts) is a JSON-storage custom field,
 // default true — an admin can hide a specific record from the website
@@ -102,7 +104,7 @@ const PROJECT_FROM = `
 
 /** Every derived project query shares these: published, available, named. */
 const PROJECT_BASE_CONDS = (): string[] =>
-  [`u.status = $1`, publishClause('u'), `u.project_name IS NOT NULL`, `btrim(u.project_name) <> ''`];
+  [`u.status = ANY($1)`, publishClause('u'), `u.project_name IS NOT NULL`, `btrim(u.project_name) <> ''`];
 
 const PROJECT_GROUP = `GROUP BY lower(regexp_replace(btrim(u.project_name), '[^a-zA-Z0-9]+', '-', 'g'))`;
 
@@ -127,7 +129,7 @@ const PROPERTY_FIELDS = `
 
 publicRouter.get('/projects', asyncHandler(async (req, res) => {
   const conds = PROJECT_BASE_CONDS();
-  const params: unknown[] = [PUBLIC_PROPERTY_STATUS];
+  const params: unknown[] = [await publicPropertyStatuses()];
 
   const push = (sql: string, value: unknown) => { params.push(value); conds.push(sql.replace('?', `$${params.length}`)); };
 
@@ -171,7 +173,7 @@ publicRouter.get('/projects/:id', asyncHandler(async (req, res) => {
      ${PROJECT_FROM}
      WHERE ${[...PROJECT_BASE_CONDS(), slug].join(' AND ')}
      ${PROJECT_GROUP}`,
-    [PUBLIC_PROPERTY_STATUS, req.params.id],
+    [await publicPropertyStatuses(), req.params.id],
   );
   if (!project) throw new NotFoundError('Project not found');
 
@@ -180,7 +182,7 @@ publicRouter.get('/projects/:id', asyncHandler(async (req, res) => {
      FROM ipy_e_properties u
      WHERE ${[...PROJECT_BASE_CONDS(), slug].join(' AND ')}
      ORDER BY u.total_price ASC NULLS LAST`,
-    [PUBLIC_PROPERTY_STATUS, req.params.id],
+    [await publicPropertyStatuses(), req.params.id],
   );
 
   const similar = await db.query(
@@ -190,7 +192,7 @@ publicRouter.get('/projects/:id', asyncHandler(async (req, res) => {
      ${PROJECT_GROUP}
      ORDER BY MIN(u.possession_date) ASC NULLS LAST
      LIMIT 4`,
-    [PUBLIC_PROPERTY_STATUS, project.city, project.name],
+    [await publicPropertyStatuses(), project.city, project.name],
   );
 
   res.json({
@@ -206,7 +208,7 @@ publicRouter.get('/projects/:id', asyncHandler(async (req, res) => {
 
 publicRouter.get('/properties', asyncHandler(async (req, res) => {
   const conds: string[] = [`u.status = $1`, publishClause('u')];
-  const params: unknown[] = [PUBLIC_PROPERTY_STATUS];
+  const params: unknown[] = [await publicPropertyStatuses()];
 
   const push = (sql: string, value: unknown) => { params.push(value); conds.push(sql.replace('?', `$${params.length}`)); };
 
@@ -244,8 +246,8 @@ publicRouter.get('/properties/:id', asyncHandler(async (req, res) => {
   const unit = await db.queryOne(
     `SELECT ${PROPERTY_FIELDS}
      FROM ipy_e_properties u
-     WHERE u.record_id = $1 AND u.status = $2 AND ${publishClause('u')}`,
-    [req.params.id, PUBLIC_PROPERTY_STATUS],
+     WHERE u.record_id = $1 AND u.status = ANY($2) AND ${publishClause('u')}`,
+    [req.params.id, await publicPropertyStatuses()],
   );
   if (!unit) throw new NotFoundError('Property not found');
   res.json(toPublicMedia(unit, 'large'));
@@ -309,7 +311,7 @@ publicRouter.get('/cities', asyncHandler(async (_req, res) => {
      WHERE u.status = $1 AND ${publishClause('u')} AND u.city IS NOT NULL
      GROUP BY u.city
      ORDER BY project_count DESC`,
-    [PUBLIC_PROPERTY_STATUS],
+    [await publicPropertyStatuses()],
   );
   res.json({ items: rows.rows });
 }));
@@ -341,8 +343,8 @@ publicRouter.get('/media/:attachmentId', asyncHandler(async (req, res) => {
   if (!file?.record_id) throw new NotFoundError('File not found');
 
   const visible = await db.queryOne(
-    `SELECT 1 FROM ipy_e_properties WHERE record_id = $1 AND status = $2 AND ${publishClause('ipy_e_properties')}`,
-    [file.record_id, PUBLIC_PROPERTY_STATUS],
+    `SELECT 1 FROM ipy_e_properties WHERE record_id = $1 AND status = ANY($2) AND ${publishClause('ipy_e_properties')}`,
+    [file.record_id, await publicPropertyStatuses()],
   );
   if (!visible) throw new NotFoundError('File not found');
 
