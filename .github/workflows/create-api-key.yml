@@ -51,9 +51,15 @@ jobs:
             exit 1
           fi
 
+          # On stdin, not -c: psql does no variable substitution for -c, so
+          # :'hash' arrived at the server literally and it complained about the
+          # colon. Quoting the values in still beats interpolating a bcrypt
+          # hash into a string by hand.
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
-            -v name="$KEY_NAME" -v prefix="$PREFIX" -v hash="$HASH" -v uid="$USER_ID" \
-            -c "INSERT INTO ipy_api_key (name, key_prefix, key_hash, user_id) VALUES (:'name', :'prefix', :'hash', :'uid');"
+            -v name="$KEY_NAME" -v prefix="$PREFIX" -v hash="$HASH" -v uid="$USER_ID" <<'SQL'
+          INSERT INTO ipy_api_key (name, key_prefix, key_hash, user_id)
+          VALUES (:'name', :'prefix', :'hash', :'uid');
+          SQL
 
           echo "::notice::Key created for ${USER_EMAIL}. Copy it now — it is not stored anywhere."
           echo "$RAW"
