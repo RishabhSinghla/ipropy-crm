@@ -25,7 +25,7 @@ jobs:
 
       - name: Write the config
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
           WEBHOOK_URL: ${{ inputs.webhook_url }}
         run: |
           set -euo pipefail
