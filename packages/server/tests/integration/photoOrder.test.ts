@@ -25,8 +25,8 @@ const ids: string[] = [];
 async function seedPhoto(name: string, capturedAt: string, aiCategory: string | null): Promise<string> {
   const row = await db.queryOne<{ id: string }>(
     `INSERT INTO ipy_attachment
-       (record_id, file_name, mime_type, size, storage_key, captured_at, ai_category, cull_state)
-     VALUES ($1,$2,'image/png',100,$3,$4,$5,'keep')
+       (record_id, file_name, mime_type, size, storage_key, captured_at, ai_category)
+     VALUES ($1,$2,'image/png',100,$3,$4,$5)
      RETURNING id`,
     [recordId, name, `test/${name}`, capturedAt, aiCategory],
   );

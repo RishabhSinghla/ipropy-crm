@@ -438,7 +438,6 @@ publicRouter.get('/share/:token', asyncHandler(async (req, res) => {
          FROM ipy_attachment
         WHERE record_id = $1
           AND mime_type LIKE 'image/%'
-          AND (cull_state IS NULL OR cull_state = 'keep')
         ORDER BY ${photoOrderBy('')}, ai_category NULLS LAST, created_at
         LIMIT 60`,
       [link.recordId],
@@ -478,8 +477,7 @@ publicRouter.get('/share/:token/media/:attachmentId', asyncHandler(async (req, r
   }>(
     `SELECT storage_key, mime_type, variants
        FROM ipy_attachment
-      WHERE id = $1 AND record_id = $2 AND mime_type LIKE 'image/%'
-        AND (cull_state IS NULL OR cull_state = 'keep')`,
+      WHERE id = $1 AND record_id = $2 AND mime_type LIKE 'image/%'`,
     [req.params.attachmentId, link.recordId],
   );
   if (!file) throw new NotFoundError('File not found');

@@ -440,7 +440,6 @@ webhooksRouter.post('/n8n/content-ready', asyncHandler(async (req, res) => {
 
   const input = z.object({
     propertyId: z.string().uuid(),
-    sessionId: z.string().uuid().optional(),
     folder: z.string().max(400).optional(),
     summary: z.string().max(400).optional(),
     // n8n sends this when a run failed partway. The team still wants telling —
@@ -456,15 +455,10 @@ webhooksRouter.post('/n8n/content-ready', asyncHandler(async (req, res) => {
   );
   if (!property) throw new NotFoundError('Property not found');
 
-  // The owner, plus whoever actually walked the site if that was someone else.
+  // The owner. Shoot sessions are gone, so there is no second person to find:
+  // whoever uploaded did it in OneDrive, which the CRM never saw.
   const recipients: string[] = [];
   if (property.owner_id) recipients.push(property.owner_id);
-  if (input.sessionId) {
-    const session = await db.queryOne<{ user_id: string }>(
-      `SELECT user_id FROM ipy_shoot_session WHERE id = $1`, [input.sessionId],
-    );
-    if (session) recipients.push(session.user_id);
-  }
   if (recipients.length === 0) {
     logger.warn({ propertyId: input.propertyId }, 'n8n finished but the property has no owner to tell');
     res.json({ ok: true, notified: 0 });
