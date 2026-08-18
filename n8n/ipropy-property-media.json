@@ -357,6 +357,51 @@
         160,
         380
       ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Work out the folder').first().json.crmBaseUrl }}/api/files",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.IPROPY_API_KEY }}"
+            }
+          ]
+        },
+        "contentType": "multipart-form-data",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "recordId",
+              "value": "={{ $('Work out the folder').first().json.propertyId }}"
+            },
+            {
+              "name": "module",
+              "value": "properties"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "onError": "continueRegularOutput",
+      "id": "e1000000-0000-4000-8000-000000000001",
+      "name": "Send it to the CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        60
+      ]
     }
   ],
   "connections": {
@@ -444,7 +489,13 @@
     },
     "Save the website copy": {
       "main": [
-        []
+        [
+          {
+            "node": "Send it to the CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Save the watermarked copy": {
