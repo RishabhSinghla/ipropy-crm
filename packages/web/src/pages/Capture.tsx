@@ -33,6 +33,7 @@ import {
   Building2, Camera, Check, CheckCircle2, ChevronDown, ChevronRight, Clock,
   CloudOff, FolderOpen, Images, MapPin, Mic, RefreshCw, Trash2, Upload, Wifi,
 } from 'lucide-react';
+import { compressImage, formatBytes } from '../lib/compressImage';
 import { api, type CaptureSessionRow } from '../lib/api';
 import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
@@ -357,12 +358,31 @@ export default function CapturePage(): JSX.Element {
     setUploading(true);
     let sent = 0;
     try {
+      let before = 0;
+      let after = 0;
       for (const file of Array.from(files)) {
-        await api.uploadFile(file, recordId, CAPTURE_MODULE, storageQuery.data?.sessionId);
+        // Shrunk here, on the phone, before it crosses a site's mobile signal.
+        // This is where the volume is — a walkthrough is forty photos, not one —
+        // and it is also where the connection is worst.
+        //
+        // The compressor carries EXIF across, which on this path is not
+        // optional: a capture photo is filed against a property by its
+        // DateTimeOriginal, so a stripped tag means the right photo on the
+        // wrong floor, silently.
+        const result = await compressImage(file);
+        before += result.originalBytes;
+        after += result.finalBytes;
+        await api.uploadFile(result.file, recordId, CAPTURE_MODULE, storageQuery.data?.sessionId);
         sent += 1;
         setUploadedCount((count) => count + 1);
       }
-      toast.success(`${sent} file${sent === 1 ? '' : 's'} added`, 'Originals are safe; processing continues automatically.');
+      const saved = before - after;
+      toast.success(
+        `${sent} file${sent === 1 ? '' : 's'} added`,
+        saved > 200_000
+          ? `Resized before upload: ${formatBytes(before)} became ${formatBytes(after)}. Times and originals are unaffected.`
+          : 'Originals are safe; processing continues automatically.',
+      );
     } catch (err) {
       toast.error('Upload stopped', `${sent} saved. ${(err as Error).message}`);
     } finally {

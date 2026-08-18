@@ -1033,8 +1033,16 @@ function FilesTab({ module, id, canEdit }: { module: string; id: string; canEdit
   const upload = async (file: File): Promise<void> => {
     setUploading(true);
     try {
-      await api.uploadFile(file, id, module);
-      toast.success('File uploaded', file.name);
+      // Photos are shrunk; documents and everything else pass straight through,
+      // which the compressor decides for itself.
+      const result = await compressImage(file);
+      await api.uploadFile(result.file, id, module);
+      toast.success(
+        'File uploaded',
+        result.compressed
+          ? `${file.name} — resized from ${formatBytes(result.originalBytes)} to ${formatBytes(result.finalBytes)}.`
+          : file.name,
+      );
       void queryClient.invalidateQueries({ queryKey: ['files', id] });
       void queryClient.invalidateQueries({ queryKey: ['timeline', module, id] });
     } catch (err) {
