@@ -1,0 +1,73 @@
+{
+  "id": "ipropyPropertyFolders1",
+  "name": "iPropy — make property folders",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": { "rule": { "interval": [ { "field": "minutes", "minutesInterval": 2 } ] } },
+      "id": "b1000000-0000-4000-8000-000000000001",
+      "name": "Every couple of minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-420, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.IPROPY_CRM_URL }}/api/webhooks/n8n/pending-folders",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": { "parameters": [ { "name": "x-n8n-secret", "value": "={{ $env.IPROPY_CALLBACK_SECRET }}" } ] },
+        "options": {}
+      },
+      "id": "b1000000-0000-4000-8000-000000000002",
+      "name": "Ask the CRM what needs a folder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-180, 300]
+    },
+    {
+      "parameters": { "fieldToSplitOut": "folders", "options": {} },
+      "id": "b1000000-0000-4000-8000-000000000003",
+      "name": "One property at a time",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [60, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// The folder tree the CRM asked for, made on the one machine that can\n// actually write to OneDrive. mkdir -p semantics: already-there is success,\n// because this runs every two minutes and must not fail on its own past work.\nconst fs = require('fs');\nconst path = require('path');\nconst out = [];\nfor (const item of $input.all()) {\n  const folder = item.json.folder;\n  const subs = item.json.subfolders || [];\n  const root = path.join('/data/properties', folder);\n  try {\n    for (const sub of subs) fs.mkdirSync(path.join(root, sub), { recursive: true });\n    out.push({ json: { propertyId: item.json.propertyId, folder, ok: true } });\n  } catch (err) {\n    out.push({ json: { propertyId: item.json.propertyId, folder, ok: false, error: String(err.message || err).slice(0, 300) } });\n  }\n}\nreturn out;"
+      },
+      "id": "b1000000-0000-4000-8000-000000000004",
+      "name": "Make the folders",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [300, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.IPROPY_CRM_URL }}/api/webhooks/n8n/folder-ready",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": { "parameters": [ { "name": "x-n8n-secret", "value": "={{ $env.IPROPY_CALLBACK_SECRET }}" } ] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ propertyId: $json.propertyId, folder: $json.folder, ok: $json.ok, error: $json.error }) }}",
+        "options": {}
+      },
+      "id": "b1000000-0000-4000-8000-000000000005",
+      "name": "Tell the CRM the folder exists",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [540, 300]
+    }
+  ],
+  "connections": {
+    "Every couple of minutes": { "main": [[{ "node": "Ask the CRM what needs a folder", "type": "main", "index": 0 }]] },
+    "Ask the CRM what needs a folder": { "main": [[{ "node": "One property at a time", "type": "main", "index": 0 }]] },
+    "One property at a time": { "main": [[{ "node": "Make the folders", "type": "main", "index": 0 }]] },
+    "Make the folders": { "main": [[{ "node": "Tell the CRM the folder exists", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "pinData": {}
+}

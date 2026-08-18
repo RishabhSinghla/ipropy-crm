@@ -429,6 +429,86 @@ webhooksRouter.post('/leads/generic', asyncHandler(async (req, res) => {
  * business editing inventory unasked. All this does is tell the right person to
  * go and look.
  */
+/** Same secret as the content-ready callback, checked the same way. */
+function requireN8nSecret(req: Request): void {
+  const expected = getSettings().automation.n8nCallbackSecret;
+  if (!expected) throw new UnauthorizedError('n8n callbacks are not configured');
+  const provided = req.headers['x-n8n-secret'];
+  if (typeof provided !== 'string' || !safeEqual(expected, provided)) {
+    throw new UnauthorizedError('Invalid n8n secret');
+  }
+}
+
+/**
+ * The work n8n cannot be told about, so it comes and asks.
+ *
+ * The CRM runs on Render and n8n runs on somebody's Mac behind a home router,
+ * which means the CRM can never open a connection to it. Every "the CRM will
+ * call n8n" design dies on that fact, including the Finish button, which only
+ * works today because both happen to be on one laptop.
+ *
+ * So the arrow is reversed. n8n asks what needs doing on a timer, does it, and
+ * says so. No tunnel, no port forwarding, nothing of his exposed to the
+ * internet — and the folder gets made on the one machine that can actually
+ * write to his OneDrive.
+ *
+ * Returns the folder name the CRM has already decided on, never lets n8n choose
+ * it: the name is derived from the record number and label and is what every
+ * uploaded file's storage key is built from. If the two ever disagreed, media
+ * would land in a folder nothing reads.
+ */
+webhooksRouter.get('/n8n/pending-folders', asyncHandler(async (req, res) => {
+  requireN8nSecret(req);
+
+  const { rows } = await db.query<{ record_id: string; folder_key: string | null; module_name: string; label: string; record_number: string | null }>(
+    `SELECT s.record_id, s.folder_key, r.module_name, r.label, r.record_number
+       FROM ipy_property_storage s
+       JOIN ipy_record r ON r.id = s.record_id
+      WHERE s.onedrive_folder_at IS NULL
+        AND r.is_deleted = false
+      ORDER BY s.created_at
+      LIMIT 50`,
+  );
+
+  const { recordStorageRoot, PROPERTY_MEDIA_FOLDER_TREE } = await import('../../core/storage/keys.js');
+
+  res.json({
+    folders: rows.map((row) => ({
+      propertyId: row.record_id,
+      folder: row.folder_key
+        ?? recordStorageRoot(row.module_name, row.record_number, row.label, row.record_id),
+      subfolders: PROPERTY_MEDIA_FOLDER_TREE,
+    })),
+  });
+}));
+
+/** n8n made the folders on disk; record that so the CRM stops asking. */
+webhooksRouter.post('/n8n/folder-ready', asyncHandler(async (req, res) => {
+  requireN8nSecret(req);
+
+  const input = z.object({
+    propertyId: z.string().uuid(),
+    folder: z.string().min(1).max(400),
+    ok: z.boolean().default(true),
+    error: z.string().max(400).optional(),
+  }).parse(req.body);
+
+  await db.query(
+    // Only the OneDrive marker moves. status and provisioned_driver belong to
+    // the CRM's own worker, and writing them here is what would set the two
+    // fighting over the same row.
+    `UPDATE ipy_property_storage
+        SET onedrive_folder_at = CASE WHEN $2 THEN now() ELSE onedrive_folder_at END,
+            folder_key = COALESCE(folder_key, $3),
+            last_error = $4,
+            updated_at = now()
+      WHERE record_id = $1`,
+    [input.propertyId, input.ok, input.folder, input.ok ? null : (input.error ?? 'n8n could not create the folder')],
+  );
+
+  res.json({ ok: true });
+}));
+
 webhooksRouter.post('/n8n/content-ready', asyncHandler(async (req, res) => {
   const expected = getSettings().automation.n8nCallbackSecret;
   if (!expected) throw new UnauthorizedError('n8n callbacks are not configured');
