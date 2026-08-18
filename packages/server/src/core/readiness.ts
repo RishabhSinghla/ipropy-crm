@@ -64,7 +64,23 @@ export async function readinessReport(): Promise<{
  * looking at an empty gallery.
  */
 function photosSurviveDeploys(): ReadinessCheck {
-  const { driver, s3 } = config.storage;
+  // Read what the CRM is actually using, not what the environment asked for.
+  //
+  // `config.storage` is the env var; the Admin → Integrations → S3 card writes
+  // to the database, and `getSettings()` is what every upload resolves through.
+  // Reading the env var here meant somebody could configure R2 correctly, watch
+  // their files go to R2, and still be told on this very screen that every
+  // deploy would delete them. A go-live check that is wrong about go-live is
+  // worse than no check: it is the one screen a person trusts on this question.
+  const resolved = getSettings().storage;
+  const driver = resolved.driver;
+  const s3 = {
+    bucket: resolved.bucket,
+    region: resolved.region,
+    accessKeyId: resolved.accessKeyId,
+    secretAccessKey: resolved.secretAccessKey,
+    endpoint: resolved.endpoint,
+  };
   if (driver === 'local') {
     return {
       id: 'storage',
