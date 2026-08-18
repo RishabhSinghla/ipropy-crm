@@ -4,6 +4,7 @@ import { z } from 'zod';
 import rateLimit from 'express-rate-limit';
 import { db, queryOne } from '../../db/pool.js';
 import { config } from '../../config.js';
+import { logger } from '../../utils/logger.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import {
   getUser, hashPassword, loadUser, requireAuth, signAccessToken, verifyPassword,
@@ -151,6 +152,144 @@ const passwordSchema = z.object({
   currentPassword: z.string().min(1),
   newPassword: z.string().min(8, 'Password must be at least 8 characters'),
 });
+
+/**
+ * Forgotten password, step one: ask for a link.
+ *
+ * Answers the same way whether or not the address exists. An endpoint that says
+ * "no such user" is a tool for discovering who works here, and this one is
+ * public. So the response is fixed and the work happens quietly behind it.
+ *
+ * Rate limited per account as well as per IP. Without that, anybody who knows
+ * an address can fill that person's inbox by submitting this form in a loop,
+ * and every one of those emails costs against a small monthly allowance.
+ */
+authRouter.post('/forgot-password', loginLimiter, asyncHandler(async (req, res) => {
+  const { email } = z.object({ email: z.string().email().max(200) }).parse(req.body);
+
+  // Said before anything else, and identically in every branch below.
+  const answer = { ok: true as const };
+
+  const user = await queryOne<{ id: string; email: string; first_name: string | null }>(
+    `SELECT id, email, first_name FROM ipy_user
+      WHERE lower(email) = lower($1) AND is_active = true`,
+    [email],
+  );
+  if (!user) { res.json(answer); return; }
+
+  const recent = await queryOne<{ n: string }>(
+    `SELECT count(*) AS n FROM ipy_password_reset
+      WHERE user_id = $1 AND created_at > now() - interval '1 hour'`,
+    [user.id],
+  );
+  if (Number(recent?.n ?? 0) >= 3) {
+    logger.warn({ userId: user.id }, 'password reset throttled: three requests in an hour');
+    res.json(answer);
+    return;
+  }
+
+  // Random, long, and stored only as a hash. The plaintext exists in this
+  // function and in one email, and nowhere else ever.
+  const token = crypto.randomBytes(32).toString('base64url');
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+  await db.query(
+    `INSERT INTO ipy_password_reset (user_id, token_hash, expires_at, requested_ip)
+     VALUES ($1, $2, now() + interval '1 hour', $3)`,
+    [user.id, tokenHash, req.ip ?? null],
+  );
+
+  const link = `${config.appUrl.replace(/\/+$/, '')}/reset-password?token=${token}`;
+  const name = user.first_name?.trim() || 'there';
+
+  try {
+    const { sendEmail } = await import('../../integrations/email/service.js');
+    await sendEmail({
+      to: user.email,
+      subject: 'Reset your iPropy password',
+      html: `<div style="font-family:system-ui,-apple-system,Segoe UI,sans-serif;font-size:15px;color:#0f172a">
+  <p>Hi ${escapeHtml(name)},</p>
+  <p>Someone asked to reset the password for your iPropy account. If that was you, use the link below. It works once and expires in an hour.</p>
+  <p><a href="${link}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">Choose a new password</a></p>
+  <p style="color:#64748b;font-size:13px">If it was not you, nothing has changed and you can ignore this. Your current password still works.</p>
+</div>`,
+      // No open tracking on a security email. A pixel on a password reset is
+      // both pointless and the sort of thing that gets a domain reported.
+      track: false,
+    });
+  } catch (err) {
+    // Never surfaced. A mail failure telling the caller the address exists is
+    // the enumeration hole this endpoint is built to avoid.
+    logger.error({ err, userId: user.id }, 'could not send a password reset email');
+  }
+
+  res.json(answer);
+}));
+
+/** Minimal escaping for the one name that reaches the email body. */
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] ?? c
+  ));
+}
+
+/**
+ * Step two: hand back the token with a new password.
+ *
+ * The token is consumed inside the same statement that finds it, so two
+ * simultaneous submissions cannot both succeed. Everything else follows
+ * change-password exactly: sessions and device PINs die, because a reset is a
+ * recovery from "somebody may have my account", not a convenience.
+ */
+authRouter.post('/reset-password', loginLimiter, asyncHandler(async (req, res) => {
+  const { token, newPassword } = z.object({
+    token: z.string().min(20).max(200),
+    newPassword: z.string().min(8).max(200),
+  }).parse(req.body);
+
+  if (!/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/\d/.test(newPassword)) {
+    throw new ValidationError('Password must contain upper case, lower case and a number');
+  }
+
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+  // Claimed and checked in one write. A SELECT then UPDATE leaves a window
+  // where the same link works twice.
+  const claimed = await queryOne<{ user_id: string }>(
+    `UPDATE ipy_password_reset
+        SET used_at = now()
+      WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()
+      RETURNING user_id`,
+    [tokenHash],
+  );
+  if (!claimed) {
+    throw new BadRequestError('That reset link has already been used or has expired. Ask for a new one.');
+  }
+
+  await db.query(
+    `UPDATE ipy_user SET password_hash = $2, password_changed_at = now() WHERE id = $1`,
+    [claimed.user_id, await hashPassword(newPassword)],
+  );
+  await db.query(
+    `UPDATE ipy_session SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`,
+    [claimed.user_id],
+  );
+  await db.query(
+    `UPDATE ipy_pin_device SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`,
+    [claimed.user_id],
+  );
+  // Any other outstanding link for this account dies with it. Two reset emails
+  // in a drawer is two ways in.
+  await db.query(
+    `UPDATE ipy_password_reset SET used_at = now()
+      WHERE user_id = $1 AND used_at IS NULL`,
+    [claimed.user_id],
+  );
+  clearPinDeviceCookie(res);
+
+  logger.info({ userId: claimed.user_id }, 'password reset completed');
+  res.json({ ok: true });
+}));
 
 authRouter.post('/change-password', requireAuth, asyncHandler(async (req, res) => {
   const user = getUser(req);

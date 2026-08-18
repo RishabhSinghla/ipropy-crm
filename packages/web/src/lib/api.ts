@@ -449,6 +449,14 @@ export const api = {
 
   // --- auth ---------------------------------------------------------------
   /** `identifier` is an email address or a mobile number. */
+  forgotPassword: (email: string) =>
+    request<{ ok: true }>('/api/auth/forgot-password', {
+      method: 'POST', body: { email }, skipRefresh: true,
+    }),
+  resetPassword: (token: string, newPassword: string) =>
+    request<{ ok: true }>('/api/auth/reset-password', {
+      method: 'POST', body: { token, newPassword }, skipRefresh: true,
+    }),
   login: (identifier: string, password: string) =>
     request<{ token: string; refreshToken: string; user: AuthUser }>('/api/auth/login', {
       method: 'POST', body: { identifier, password }, skipRefresh: true,

@@ -1,6 +1,6 @@
 import type { JSX } from 'react';
 import { useEffect, useState } from 'react';
-import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Building2, Eye, EyeOff, Fingerprint, KeyRound, Sparkles } from 'lucide-react';
 import { useApp } from '../lib/store';
@@ -229,7 +229,12 @@ export default function Login(): JSX.Element {
             </div>
 
             <div>
-              <label className="label" htmlFor="password">Password</label>
+              <div className="flex items-baseline justify-between">
+                <label className="label" htmlFor="password">Password</label>
+                <Link to="/forgot-password" className="text-xs text-brand-600 hover:underline dark:text-brand-400">
+                  Forgot password?
+                </Link>
+              </div>
               <div className="relative">
                 <input
                   id="password"
