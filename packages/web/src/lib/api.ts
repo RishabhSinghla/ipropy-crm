@@ -449,6 +449,8 @@ export const api = {
 
   // --- auth ---------------------------------------------------------------
   /** `identifier` is an email address or a mobile number. */
+  gettingStarted: () =>
+    get<{ steps: { id: string; title: string; why: string; done: boolean; href: string; action: string; adminOnly: boolean }[]; doneCount: number }>('/api/getting-started'),
   forgotPassword: (email: string) =>
     request<{ ok: true }>('/api/auth/forgot-password', {
       method: 'POST', body: { email }, skipRefresh: true,

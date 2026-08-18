@@ -76,6 +76,24 @@ miscRouter.get('/unseen-counts', asyncHandler(async (req, res) => {
  * capability — every user needs the sidebar's social bar and the brand line,
  * and none of this is sensitive. Writes still go through the admin route.
  */
+/**
+ * What is left to do before this CRM is somebody's working day.
+ *
+ * On the dashboard rather than behind an admin screen, because the person who
+ * needs it is the person who just signed in and does not yet know the admin
+ * screen exists. Admin-only steps are filtered out here rather than shown
+ * greyed out — a rep does not need to know the business address is missing,
+ * and a checklist with items you cannot action is a checklist people stop
+ * reading.
+ */
+miscRouter.get('/getting-started', asyncHandler(async (req, res) => {
+  const { gettingStarted } = await import('../../core/gettingStarted.js');
+  const { steps } = await gettingStarted();
+  const isAdmin = getUser(req).isAdmin;
+  const visible = steps.filter((s) => isAdmin || !s.adminOnly);
+  res.json({ steps: visible, doneCount: visible.filter((s) => s.done).length });
+}));
+
 miscRouter.get('/brand', asyncHandler(async (_req, res) => {
   const rows = await db.query<{ key: string; value: unknown }>(
     `SELECT key, value FROM ipy_setting

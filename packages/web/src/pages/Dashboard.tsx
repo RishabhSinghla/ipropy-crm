@@ -18,6 +18,7 @@ import {
   ArrowDownRight, ArrowUpRight, Check, ChevronDown, Copy, LayoutDashboard, MoreHorizontal,
   Pencil, Plus, Sparkles, Star, TrendingUp, Trash2,
 } from 'lucide-react';
+import GettingStarted from '../components/GettingStarted';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { tintedTextVars } from '../lib/color';
@@ -107,6 +108,12 @@ export default function DashboardPage(): JSX.Element {
   return (
     <div className="p-4 sm:p-6">
       <DigestBanner />
+      {/* Above everything, because it is only here at all when the CRM is not
+          yet somebody's working day, and under the charts is where a new
+          person never scrolls. */}
+      <div className="mb-4">
+        <GettingStarted />
+      </div>
 
       {/* Title and controls stack on a phone. Sharing one flex row meant a
           name like "Collections & Finance" wrapped *behind* the button group,
