@@ -7,6 +7,7 @@ import { CALL_DISPOSITIONS, formatIndianPrice, relativeTime } from '@ipropy/shar
 import {
   Activity, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Edit3, ExternalLink, Eye, FileQuestion, FileText, FolderOpen, Images, LayoutDashboard, Link2, MessageCircle, MoreHorizontal, Paperclip, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Trash2, Upload, UserCheck, X,
 } from 'lucide-react';
+import type { PropertyStorageInfo } from '../lib/api';
 import { api, authedFileUrl } from '../lib/api';
 import { compressImage, formatBytes } from '../lib/compressImage';
 import { toast, useApp } from '../lib/store';
@@ -1329,10 +1330,54 @@ function PropertyMediaHandoff({ recordId }: { recordId: string }): JSX.Element |
               {finishing ? <Spinner /> : <Check className="h-3.5 w-3.5" />} Finish
             </button>
           </div>
+          <MediaProgress data={data} />
           <p className="mt-2 text-2xs text-muted">
             The folder has a text file with this property’s details, so you can be sure it is the right one.
           </p>
         </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * How far the processing has actually got.
+ *
+ * Without this the panel had one state — a Finish button — and everything after
+ * pressing it was invisible. A property whose processing failed looked exactly
+ * like one nobody had touched, so the only way to know was to open OneDrive and
+ * count files. Worse, the honest answer to "did it work" was a shrug, and the
+ * team's response to a shrug is to press Finish again.
+ *
+ * Deliberately three plain lines rather than a progress bar: the work happens on
+ * somebody else's machine on a two-minute timer, so a bar would be inventing a
+ * precision this cannot have.
+ */
+function MediaProgress({ data }: { data: PropertyStorageInfo }): JSX.Element | null {
+  const requested = data.mediaRequestedAt ? new Date(data.mediaRequestedAt) : null;
+  const done = data.mediaDoneAt ? new Date(data.mediaDoneAt) : null;
+  if (!requested) return null;
+
+  // Done *before* it was last asked for means somebody pressed Finish again
+  // after adding more photos. That is a fresh run, not a finished one.
+  const finished = done !== null && done >= requested;
+  const waitedMinutes = Math.floor((Date.now() - requested.getTime()) / 60_000);
+  // The timer runs every two minutes, so anything past about five is not slow,
+  // it is stuck — usually the machine that does the work being asleep.
+  const stuck = !finished && waitedMinutes >= 5;
+
+  return (
+    <div className="mt-3 border-t border-slate-200 pt-2.5 dark:border-slate-800">
+      <p className="text-2xs font-semibold uppercase tracking-wider text-muted">Processing</p>
+      <p className={cn('mt-1 text-xs', finished ? 'text-positive' : stuck ? 'text-negative' : 'text-muted')}>
+        {finished
+          ? `Done ${done!.toLocaleString()}. The website copies are on this property.`
+          : stuck
+            ? `Asked for it ${waitedMinutes} minutes ago and nothing has come back. Is the machine that processes media switched on?`
+            : 'Working on it. The copies usually appear within a couple of minutes.'}
+      </p>
+      {data.lastError && (
+        <p className="mt-1 text-xs text-negative">{data.lastError}</p>
       )}
     </div>
   );

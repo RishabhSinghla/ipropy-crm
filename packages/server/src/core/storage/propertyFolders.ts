@@ -22,14 +22,28 @@ export interface PropertyStorageStatus {
   provisionedDriver: string | null;
   externalUrl: string | null;
   lastError: string | null;
+  /**
+   * Where the media processing has actually got to.
+   *
+   * Reported because silence and success looked identical: a property whose
+   * processing died halfway rendered exactly like one nobody had touched, so
+   * the only way to find out was to go and count files in OneDrive. These three
+   * timestamps are the whole story — folders made, processing asked for,
+   * processing finished — and the panel can say which of them has happened.
+   */
+  folderMadeAt: string | null;
+  mediaRequestedAt: string | null;
+  mediaDoneAt: string | null;
 }
 
 export async function getPropertyStorageStatus(recordId: string): Promise<PropertyStorageStatus | null> {
   const row = await db.queryOne<{
     record_id: string; folder_key: string | null; status: PropertyStorageStatus['status'];
     provisioned_driver: string | null; external_url: string | null; last_error: string | null;
+    onedrive_folder_at: string | null; media_requested_at: string | null; media_done_at: string | null;
   }>(
-    `SELECT record_id, folder_key, status, provisioned_driver, external_url, last_error
+    `SELECT record_id, folder_key, status, provisioned_driver, external_url, last_error,
+            onedrive_folder_at, media_requested_at, media_done_at
        FROM ipy_property_storage WHERE record_id = $1`,
     [recordId],
   );
@@ -41,6 +55,9 @@ export async function getPropertyStorageStatus(recordId: string): Promise<Proper
       provisionedDriver: row.provisioned_driver,
       externalUrl: row.external_url,
       lastError: row.last_error,
+      folderMadeAt: row.onedrive_folder_at,
+      mediaRequestedAt: row.media_requested_at,
+      mediaDoneAt: row.media_done_at,
     };
   }
 
@@ -68,6 +85,9 @@ export async function getPropertyStorageStatus(recordId: string): Promise<Proper
     provisionedDriver: null,
     externalUrl: null,
     lastError: null,
+    folderMadeAt: null,
+    mediaRequestedAt: null,
+    mediaDoneAt: null,
   };
 }
 

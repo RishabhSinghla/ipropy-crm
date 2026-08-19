@@ -210,13 +210,24 @@ export interface CaptureSessionRow extends CaptureSession {
   recordLabel: string | null;
 }
 
-export interface CaptureStorageStatus {
+/**
+ * Where a property's media has got to.
+ *
+ * Was `CaptureStorageStatus`, left behind when the capture screens were removed
+ * and referenced by nothing. The three timestamps are what let the record say
+ * whether processing is working, finished or stuck, instead of going quiet after
+ * Finish and looking identical to a property nobody had touched.
+ */
+export interface PropertyStorageInfo {
   recordId: string;
   folderKey: string | null;
   status: 'pending' | 'running' | 'ready' | 'failed';
   provisionedDriver: string | null;
   externalUrl: string | null;
   lastError: string | null;
+  folderMadeAt: string | null;
+  mediaRequestedAt: string | null;
+  mediaDoneAt: string | null;
 }
 
 export interface AiAssistantAction {
@@ -452,7 +463,7 @@ export const api = {
   finishProperty: (id: string) =>
     post<{ sent: boolean; reason?: string }>(`/api/records/properties/${id}/finish`, {}),
   propertyStorage: (id: string) =>
-    get<{ recordId: string; folderKey: string | null; status: string; externalUrl: string | null; lastError: string | null } | null>(`/api/records/properties/${id}/storage`),
+    get<PropertyStorageInfo | null>(`/api/records/properties/${id}/storage`),
   gettingStarted: () =>
     get<{ steps: { id: string; title: string; why: string; done: boolean; href: string; action: string; adminOnly: boolean }[]; doneCount: number }>('/api/getting-started'),
   forgotPassword: (email: string) =>
