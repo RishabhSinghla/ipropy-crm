@@ -1,0 +1,557 @@
+{
+  "name": "iPropy \u2014 property media (server)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ipropy-property-media",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000001",
+      "name": "Property finished",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        300
+      ],
+      "webhookId": "a1000000-0000-4000-8000-000000000001"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"ok\": true, \"property\": $json.body.propertyId } }}",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000002",
+      "name": "Answer at once",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -180,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "r1",
+              "name": "root",
+              "value": "=/data/properties/{{ $json.body ? $json.body.folder : $json.folder }}",
+              "type": "string"
+            },
+            {
+              "id": "r2",
+              "name": "propertyId",
+              "value": "={{ $json.body ? $json.body.propertyId : $json.propertyId }}",
+              "type": "string"
+            },
+            {
+              "id": "r3",
+              "name": "crmBaseUrl",
+              "value": "={{ $json.body ? $json.body.crmBaseUrl : $env.IPROPY_CRM_URL }}",
+              "type": "string"
+            },
+            {
+              "id": "r4",
+              "name": "folder",
+              "value": "={{ $json.body ? $json.body.folder : $json.folder }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000003",
+      "name": "Work out the folder",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -180,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ $json.root }}/01_RAW_UPLOADS/PHOTOS/*",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000004",
+      "name": "Read the originals",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        60,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "resize",
+        "width": 1920,
+        "height": 1920,
+        "resizeOption": "onlyIfLarger",
+        "options": {
+          "format": "jpeg",
+          "quality": 82
+        },
+        "dataPropertyName": "data"
+      },
+      "id": "a1000000-0000-4000-8000-000000000005",
+      "name": "Make the website copy",
+      "type": "n8n-nodes-base.editImage",
+      "typeVersion": 1,
+      "position": [
+        300,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "={{ $('Work out the folder').first().json.root }}/07_WEBSITE/{{ $binary.data.fileName.replace(/\\.[^.]+$/, '') }}-web.jpg",
+        "dataPropertyName": "data",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000006",
+      "name": "Save the website copy",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        540,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "multiStep",
+        "dataPropertyName": "data",
+        "operations": {
+          "operations": [
+            {
+              "operation": "resize",
+              "width": "={{ Math.round($json.size.width * Math.max(1080/$json.size.width, 1350/$json.size.height)) }}",
+              "height": "={{ Math.round($json.size.height * Math.max(1080/$json.size.width, 1350/$json.size.height)) }}",
+              "resizeOption": "ignoreAspectRatio"
+            },
+            {
+              "operation": "crop",
+              "width": 1080,
+              "height": 1350,
+              "positionX": "={{ Math.round((Math.round($json.size.width * Math.max(1080/$json.size.width, 1350/$json.size.height)) - 1080)/2) }}",
+              "positionY": "={{ Math.round((Math.round($json.size.height * Math.max(1080/$json.size.width, 1350/$json.size.height)) - 1350)/2) }}"
+            }
+          ]
+        },
+        "options": {
+          "format": "jpeg",
+          "quality": 86
+        }
+      },
+      "id": "a1000000-0000-4000-8000-000000000007",
+      "name": "Make the Instagram post",
+      "type": "n8n-nodes-base.editImage",
+      "typeVersion": 1,
+      "position": [
+        300,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "={{ $('Work out the folder').first().json.root }}/04_SOCIAL/INSTAGRAM/FEED/{{ $binary.data.fileName.replace(/\\.[^.]+$/, '') }}-feed.jpg",
+        "dataPropertyName": "data",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000008",
+      "name": "Save the Instagram post",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "multiStep",
+        "dataPropertyName": "data",
+        "operations": {
+          "operations": [
+            {
+              "operation": "resize",
+              "width": "={{ Math.round($json.size.width * Math.max(1080/$json.size.width, 1920/$json.size.height)) }}",
+              "height": "={{ Math.round($json.size.height * Math.max(1080/$json.size.width, 1920/$json.size.height)) }}",
+              "resizeOption": "ignoreAspectRatio"
+            },
+            {
+              "operation": "crop",
+              "width": 1080,
+              "height": 1920,
+              "positionX": "={{ Math.round((Math.round($json.size.width * Math.max(1080/$json.size.width, 1920/$json.size.height)) - 1080)/2) }}",
+              "positionY": "={{ Math.round((Math.round($json.size.height * Math.max(1080/$json.size.width, 1920/$json.size.height)) - 1920)/2) }}"
+            }
+          ]
+        },
+        "options": {
+          "format": "jpeg",
+          "quality": 86
+        }
+      },
+      "id": "a1000000-0000-4000-8000-000000000009",
+      "name": "Make the Instagram story",
+      "type": "n8n-nodes-base.editImage",
+      "typeVersion": 1,
+      "position": [
+        300,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "={{ $('Work out the folder').first().json.root }}/04_SOCIAL/INSTAGRAM/STORIES/{{ $binary.data.fileName.replace(/\\.[^.]+$/, '') }}-story.jpg",
+        "dataPropertyName": "data",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000010",
+      "name": "Save the Instagram story",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        540,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Work out the folder').first().json.crmBaseUrl }}/api/webhooks/n8n/content-ready",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ propertyId: $('Work out the folder').first().json.propertyId, folder: $('Work out the folder').first().json.root, ok: true }) }}",
+        "options": {},
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-n8n-secret",
+              "value": "={{ $env.IPROPY_CALLBACK_SECRET }}"
+            }
+          ]
+        }
+      },
+      "id": "a1000000-0000-4000-8000-000000000013",
+      "name": "Tell the CRM it is done",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        660
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 2
+            }
+          ]
+        }
+      },
+      "id": "c1000000-0000-4000-8000-000000000001",
+      "name": "Every couple of minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -660,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.IPROPY_CRM_URL }}/api/webhooks/n8n/pending-media",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-n8n-secret",
+              "value": "={{ $env.IPROPY_CALLBACK_SECRET }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c1000000-0000-4000-8000-000000000002",
+      "name": "Ask what was finished",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -420,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "properties",
+        "options": {}
+      },
+      "id": "c1000000-0000-4000-8000-000000000003",
+      "name": "One property at a time",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        -420,
+        760
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "information",
+        "dataPropertyName": "data"
+      },
+      "id": "d1000000-0000-4000-8000-000000000001",
+      "name": "Measure the photo",
+      "type": "n8n-nodes-base.editImage",
+      "typeVersion": 1,
+      "position": [
+        160,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Work out the folder').first().json.crmBaseUrl }}/api/files",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.IPROPY_API_KEY }}"
+            }
+          ]
+        },
+        "contentType": "multipart-form-data",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "recordId",
+              "value": "={{ $('Work out the folder').first().json.propertyId }}"
+            },
+            {
+              "name": "module",
+              "value": "properties"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "onError": "continueRegularOutput",
+      "id": "e1000000-0000-4000-8000-000000000001",
+      "name": "Send it to the CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.MEDIA_SERVICE_URL }}/run",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-media-token",
+              "value": "={{ $env.MEDIA_SERVICE_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ job: 'watermark', folder: $('Work out the folder').first().json.folder + '/01_RAW_UPLOADS/PHOTOS', args: ['/data/properties/' + $('Work out the folder').first().json.folder + '/03_EDITED_MEDIA/WATERMARKED'] }) }}",
+        "options": {
+          "timeout": 1800000
+        }
+      },
+      "onError": "continueRegularOutput",
+      "id": "f1000000-0000-4000-8000-000000000001",
+      "name": "Watermark with the real logo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        300,
+        660
+      ]
+    }
+  ],
+  "connections": {
+    "Property finished": {
+      "main": [
+        [
+          {
+            "node": "Answer at once",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Work out the folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Work out the folder": {
+      "main": [
+        [
+          {
+            "node": "Read the originals",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read the originals": {
+      "main": [
+        [
+          {
+            "node": "Measure the photo",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Watermark with the real logo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Make the website copy": {
+      "main": [
+        [
+          {
+            "node": "Save the website copy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Make the Instagram post": {
+      "main": [
+        [
+          {
+            "node": "Save the Instagram post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Make the Instagram story": {
+      "main": [
+        [
+          {
+            "node": "Save the Instagram story",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save the website copy": {
+      "main": [
+        [
+          {
+            "node": "Send it to the CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every couple of minutes": {
+      "main": [
+        [
+          {
+            "node": "Ask what was finished",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask what was finished": {
+      "main": [
+        [
+          {
+            "node": "One property at a time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One property at a time": {
+      "main": [
+        [
+          {
+            "node": "Work out the folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Measure the photo": {
+      "main": [
+        [
+          {
+            "node": "Make the website copy",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Make the Instagram post",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Make the Instagram story",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "id": "ipropyPropertyMediaSrv",
+  "active": false
+}
