@@ -1,0 +1,65 @@
+# The automation half of iPropy, as a thing a server runs.
+#
+# Until now n8n and the media scripts lived on the owner's Mac. That was right
+# for proving the idea and wrong for a team: a closed lid stopped every property
+# folder, every watermark and every photo reaching the CRM, and nothing said so.
+#
+# Two containers, because they have nothing in common except the folder they
+# both touch. n8n orchestrates and holds the schedule; the media worker holds
+# Python, ffmpeg and GraphicsMagick. n8n's published image is a hardened one
+# with no package manager, so this split is not a preference — there is no
+# supported way to put Python inside it.
+#
+#   docker compose up -d
+#
+# Everything is read from a .env beside this file. See .env.example.
+services:
+  n8n:
+    image: n8nio/n8n:2.34.6
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ${MEDIA_PATH:?set MEDIA_PATH to the property media folder}:/data/properties
+    environment:
+      GENERIC_TIMEZONE: Asia/Kolkata
+      TZ: Asia/Kolkata
+      # n8n 2.0 refuses every filesystem path unless one is named. Scoped to the
+      # media folder so a mistaken workflow cannot reach the rest of the host.
+      N8N_RESTRICT_FILE_ACCESS_TO: /data/properties
+      # The workflows read their secrets from the environment rather than
+      # carrying them, so this file can live in a repository.
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      NODE_FUNCTION_ALLOW_BUILTIN: fs,path
+      IPROPY_CRM_URL: ${IPROPY_CRM_URL:?set IPROPY_CRM_URL}
+      IPROPY_CALLBACK_SECRET: ${IPROPY_CALLBACK_SECRET:?set IPROPY_CALLBACK_SECRET}
+      IPROPY_API_KEY: ${IPROPY_API_KEY:?set IPROPY_API_KEY}
+      MEDIA_SERVICE_URL: http://media:8080
+      MEDIA_SERVICE_TOKEN: ${MEDIA_SERVICE_TOKEN:?set MEDIA_SERVICE_TOKEN}
+      # Behind a reverse proxy on a real host, n8n needs to know its own address
+      # or the editor's webhook URLs come out as localhost.
+      N8N_HOST: ${N8N_HOST:-localhost}
+      N8N_PROTOCOL: ${N8N_PROTOCOL:-http}
+      WEBHOOK_URL: ${WEBHOOK_URL:-http://localhost:5678/}
+    depends_on:
+      media:
+        condition: service_healthy
+
+  media:
+    build: .
+    image: ipropy-media:latest
+    restart: unless-stopped
+    # Deliberately not published. Only n8n talks to it, over the internal
+    # network — this process takes a path and runs a subprocess with it, and it
+    # has no business being reachable from the internet.
+    expose:
+      - "8080"
+    volumes:
+      - ${MEDIA_PATH:?set MEDIA_PATH to the property media folder}:/data/properties
+    environment:
+      MEDIA_ROOT: /data/properties
+      MEDIA_SERVICE_TOKEN: ${MEDIA_SERVICE_TOKEN:?set MEDIA_SERVICE_TOKEN}
+
+volumes:
+  n8n_data:

@@ -25,3 +25,4 @@ wa-bridge
 .git
 *.log
 .DS_Store
+media-service
