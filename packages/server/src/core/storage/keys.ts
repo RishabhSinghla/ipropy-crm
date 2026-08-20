@@ -52,6 +52,11 @@ export const PROPERTY_MEDIA_FOLDERS = {
   instagramStory: '04_SOCIAL/INSTAGRAM/STORIES',
   facebook: '04_SOCIAL/FACEBOOK',
   whatsapp: '04_SOCIAL/WHATSAPP',
+  googleBusiness: '04_SOCIAL/GOOGLE_BUSINESS',
+  // Where an Indian buyer actually searches: 99acres, Housing, Magicbricks,
+  // NoBroker, OLX. They all want landscape and every social shape wants
+  // portrait, so this is the one shape the pipeline produced nothing for.
+  portals: '05_PORTALS',
   crmWebsite: '07_WEBSITE',
   archive: '99_ARCHIVE',
 } as const;
@@ -92,6 +97,8 @@ export const PROPERTY_MEDIA_FOLDER_TREE = [
   PROPERTY_MEDIA_FOLDERS.instagramStory,
   PROPERTY_MEDIA_FOLDERS.facebook,
   PROPERTY_MEDIA_FOLDERS.whatsapp,
+  PROPERTY_MEDIA_FOLDERS.googleBusiness,
+  PROPERTY_MEDIA_FOLDERS.portals,
   PROPERTY_MEDIA_FOLDERS.crmWebsite,
   PROPERTY_MEDIA_FOLDERS.archive,
 ];

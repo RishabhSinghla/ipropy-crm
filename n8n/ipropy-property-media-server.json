@@ -127,108 +127,6 @@
     },
     {
       "parameters": {
-        "operation": "multiStep",
-        "dataPropertyName": "data",
-        "operations": {
-          "operations": [
-            {
-              "operation": "resize",
-              "width": "={{ Math.round($json.size.width * Math.max(1080/$json.size.width, 1350/$json.size.height)) }}",
-              "height": "={{ Math.round($json.size.height * Math.max(1080/$json.size.width, 1350/$json.size.height)) }}",
-              "resizeOption": "ignoreAspectRatio"
-            },
-            {
-              "operation": "crop",
-              "width": 1080,
-              "height": 1350,
-              "positionX": "={{ Math.round((Math.round($json.size.width * Math.max(1080/$json.size.width, 1350/$json.size.height)) - 1080)/2) }}",
-              "positionY": "={{ Math.round((Math.round($json.size.height * Math.max(1080/$json.size.width, 1350/$json.size.height)) - 1350)/2) }}"
-            }
-          ]
-        },
-        "options": {
-          "format": "jpeg",
-          "quality": 86
-        }
-      },
-      "id": "a1000000-0000-4000-8000-000000000007",
-      "name": "Make the Instagram post",
-      "type": "n8n-nodes-base.editImage",
-      "typeVersion": 1,
-      "position": [
-        300,
-        260
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "write",
-        "fileName": "={{ $('Work out the folder').first().json.root }}/04_SOCIAL/INSTAGRAM/FEED/{{ $binary.data.fileName.replace(/\\.[^.]+$/, '') }}-feed.jpg",
-        "dataPropertyName": "data",
-        "options": {}
-      },
-      "id": "a1000000-0000-4000-8000-000000000008",
-      "name": "Save the Instagram post",
-      "type": "n8n-nodes-base.readWriteFile",
-      "typeVersion": 1.1,
-      "position": [
-        540,
-        260
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "multiStep",
-        "dataPropertyName": "data",
-        "operations": {
-          "operations": [
-            {
-              "operation": "resize",
-              "width": "={{ Math.round($json.size.width * Math.max(1080/$json.size.width, 1920/$json.size.height)) }}",
-              "height": "={{ Math.round($json.size.height * Math.max(1080/$json.size.width, 1920/$json.size.height)) }}",
-              "resizeOption": "ignoreAspectRatio"
-            },
-            {
-              "operation": "crop",
-              "width": 1080,
-              "height": 1920,
-              "positionX": "={{ Math.round((Math.round($json.size.width * Math.max(1080/$json.size.width, 1920/$json.size.height)) - 1080)/2) }}",
-              "positionY": "={{ Math.round((Math.round($json.size.height * Math.max(1080/$json.size.width, 1920/$json.size.height)) - 1920)/2) }}"
-            }
-          ]
-        },
-        "options": {
-          "format": "jpeg",
-          "quality": 86
-        }
-      },
-      "id": "a1000000-0000-4000-8000-000000000009",
-      "name": "Make the Instagram story",
-      "type": "n8n-nodes-base.editImage",
-      "typeVersion": 1,
-      "position": [
-        300,
-        460
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "write",
-        "fileName": "={{ $('Work out the folder').first().json.root }}/04_SOCIAL/INSTAGRAM/STORIES/{{ $binary.data.fileName.replace(/\\.[^.]+$/, '') }}-story.jpg",
-        "dataPropertyName": "data",
-        "options": {}
-      },
-      "id": "a1000000-0000-4000-8000-000000000010",
-      "name": "Save the Instagram story",
-      "type": "n8n-nodes-base.readWriteFile",
-      "typeVersion": 1.1,
-      "position": [
-        540,
-        460
-      ]
-    },
-    {
-      "parameters": {
         "method": "POST",
         "url": "={{ $('Work out the folder').first().json.crmBaseUrl }}/api/webhooks/n8n/content-ready",
         "sendBody": true,
@@ -316,20 +214,6 @@
     },
     {
       "parameters": {
-        "operation": "information",
-        "dataPropertyName": "data"
-      },
-      "id": "d1000000-0000-4000-8000-000000000001",
-      "name": "Measure the photo",
-      "type": "n8n-nodes-base.editImage",
-      "typeVersion": 1,
-      "position": [
-        160,
-        380
-      ]
-    },
-    {
-      "parameters": {
         "method": "POST",
         "url": "={{ $('Work out the folder').first().json.crmBaseUrl }}/api/files",
         "sendHeaders": true,
@@ -403,6 +287,37 @@
         300,
         660
       ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.MEDIA_SERVICE_URL }}/run",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-media-token",
+              "value": "={{ $env.MEDIA_SERVICE_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ job: 'shapes', folder: $('Work out the folder').first().json.folder, args: [] }) }}",
+        "options": {
+          "timeout": 1800000
+        }
+      },
+      "onError": "continueRegularOutput",
+      "id": "a2000000-0000-4000-8000-000000000001",
+      "name": "Make every shape",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        900
+      ]
     }
   ],
   "connections": {
@@ -437,12 +352,17 @@
       "main": [
         [
           {
-            "node": "Measure the photo",
+            "node": "Make every shape",
             "type": "main",
             "index": 0
           },
           {
             "node": "Watermark with the real logo",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Make the website copy",
             "type": "main",
             "index": 0
           }
@@ -454,28 +374,6 @@
         [
           {
             "node": "Save the website copy",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Make the Instagram post": {
-      "main": [
-        [
-          {
-            "node": "Save the Instagram post",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Make the Instagram story": {
-      "main": [
-        [
-          {
-            "node": "Save the Instagram story",
             "type": "main",
             "index": 0
           }
@@ -520,27 +418,6 @@
         [
           {
             "node": "Work out the folder",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Measure the photo": {
-      "main": [
-        [
-          {
-            "node": "Make the website copy",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Make the Instagram post",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Make the Instagram story",
             "type": "main",
             "index": 0
           }

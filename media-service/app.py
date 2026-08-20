@@ -37,6 +37,11 @@ JOBS = {
     "finish": "professional_photo_finish.py",
     "compress": "compress_iphone_media.py",
     "walkthrough": "create_ipropy_walkthrough.py",
+    # Every shape a broker posts, from one horizontal photo. Crops where the
+    # target is close to the source and fits onto a blurred backdrop where it is
+    # not, because a 9:16 crop of a landscape room keeps 31% of it.
+    "shapes": "make_all_shapes.sh",
+    "video": "make_video_shapes.sh",
 }
 
 
@@ -63,7 +68,10 @@ def run_job(job: str, folder: str, extra: list[str]) -> dict:
     if not target.exists():
         raise FileNotFoundError(f"{folder} does not exist")
 
-    argv = [sys.executable, str(SCRIPTS / script), str(target), *extra]
+    # Shell scripts need a shell; the Python ones need the interpreter. Keyed
+    # off the extension so adding a script never means editing this line.
+    runner = ["sh"] if script.endswith(".sh") else [sys.executable]
+    argv = [*runner, str(SCRIPTS / script), str(target), *extra]
     if job in {"watermark", "finish"}:
         argv += ["--logo", str(LOGO)]
 
