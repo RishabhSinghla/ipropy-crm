@@ -318,6 +318,37 @@
         560,
         900
       ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.MEDIA_SERVICE_URL }}/run",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-media-token",
+              "value": "={{ $env.MEDIA_SERVICE_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ job: 'video', folder: $('Work out the folder').first().json.folder + '/01_RAW_UPLOADS/VIDEOS', args: ['/data/properties/' + $('Work out the folder').first().json.folder + '/06_VIDEO'] }) }}",
+        "options": {
+          "timeout": 1800000
+        }
+      },
+      "onError": "continueRegularOutput",
+      "id": "a3000000-0000-4000-8000-000000000001",
+      "name": "Make every video shape",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        1060
+      ]
     }
   ],
   "connections": {
@@ -342,6 +373,11 @@
         [
           {
             "node": "Read the originals",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Make every video shape",
             "type": "main",
             "index": 0
           }

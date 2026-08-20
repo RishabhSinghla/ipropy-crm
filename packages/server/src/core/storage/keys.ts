@@ -57,6 +57,10 @@ export const PROPERTY_MEDIA_FOLDERS = {
   // NoBroker, OLX. They all want landscape and every social shape wants
   // portrait, so this is the one shape the pipeline produced nothing for.
   portals: '05_PORTALS',
+  // The walkthrough, in both shapes plus a cover frame. Separate from the
+  // photos because a property often has one video and twenty stills, and the
+  // two arrive at different times.
+  video: '06_VIDEO',
   crmWebsite: '07_WEBSITE',
   archive: '99_ARCHIVE',
 } as const;
@@ -99,6 +103,7 @@ export const PROPERTY_MEDIA_FOLDER_TREE = [
   PROPERTY_MEDIA_FOLDERS.whatsapp,
   PROPERTY_MEDIA_FOLDERS.googleBusiness,
   PROPERTY_MEDIA_FOLDERS.portals,
+  PROPERTY_MEDIA_FOLDERS.video,
   PROPERTY_MEDIA_FOLDERS.crmWebsite,
   PROPERTY_MEDIA_FOLDERS.archive,
 ];
