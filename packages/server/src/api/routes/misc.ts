@@ -284,6 +284,24 @@ miscRouter.post('/files', mediaUpload.single('file'), asyncHandler(async (req, r
   await driver.save(key, createReadStream(file.path), file.mimetype);
   await unlink(file.path).catch(() => undefined);
 
+  // Opt-in replace, for callers that re-send the same file.
+  //
+  // The automation re-uploads a property's website copies every time somebody
+  // presses Finish, and Finish is pressed again whenever more photos are added.
+  // Without this each press left another copy of every existing photo on the
+  // record: one real property reached four copies of two photos before anyone
+  // noticed, because nothing about a duplicate looks like an error.
+  //
+  // Deliberately not the default. A person uploading two genuinely different
+  // photos that happen to share a name expects both to survive, and silently
+  // discarding one of those would be a worse bug than the one this fixes.
+  if (recordId && String(req.body.replaceExisting) === 'true') {
+    await db.query(
+      `DELETE FROM ipy_attachment WHERE record_id = $1 AND file_name = $2`,
+      [recordId, file.originalname],
+    );
+  }
+
   const row = await db.queryOne<{ id: string }>(
     `INSERT INTO ipy_attachment
        (record_id, file_name, mime_type, size, storage_key, url, category, uploaded_by)

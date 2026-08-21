@@ -90,43 +90,6 @@
     },
     {
       "parameters": {
-        "operation": "resize",
-        "width": 1920,
-        "height": 1920,
-        "resizeOption": "onlyIfLarger",
-        "options": {
-          "format": "jpeg",
-          "quality": 82
-        },
-        "dataPropertyName": "data"
-      },
-      "id": "a1000000-0000-4000-8000-000000000005",
-      "name": "Make the website copy",
-      "type": "n8n-nodes-base.editImage",
-      "typeVersion": 1,
-      "position": [
-        300,
-        60
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "write",
-        "fileName": "={{ $('Work out the folder').first().json.root }}/07_WEBSITE/{{ $binary.data.fileName.replace(/\\.[^.]+$/, '') }}-web.jpg",
-        "dataPropertyName": "data",
-        "options": {}
-      },
-      "id": "a1000000-0000-4000-8000-000000000006",
-      "name": "Save the website copy",
-      "type": "n8n-nodes-base.readWriteFile",
-      "typeVersion": 1.1,
-      "position": [
-        540,
-        60
-      ]
-    },
-    {
-      "parameters": {
         "method": "POST",
         "url": "={{ $('Work out the folder').first().json.crmBaseUrl }}/api/webhooks/n8n/content-ready",
         "sendBody": true,
@@ -242,6 +205,10 @@
             {
               "name": "module",
               "value": "properties"
+            },
+            {
+              "name": "replaceExisting",
+              "value": "true"
             }
           ]
         },
@@ -349,6 +316,20 @@
         560,
         1060
       ]
+    },
+    {
+      "parameters": {
+        "fileSelector": "=/data/properties/{{ $('Work out the folder').first().json.folder }}/07_WEBSITE/*",
+        "options": {}
+      },
+      "id": "b7000000-0000-4000-8000-000000000001",
+      "name": "Read the website copies",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        800,
+        60
+      ]
     }
   ],
   "connections": {
@@ -396,33 +377,6 @@
             "node": "Watermark with the real logo",
             "type": "main",
             "index": 0
-          },
-          {
-            "node": "Make the website copy",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Make the website copy": {
-      "main": [
-        [
-          {
-            "node": "Save the website copy",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Save the website copy": {
-      "main": [
-        [
-          {
-            "node": "Send it to the CRM",
-            "type": "main",
-            "index": 0
           }
         ]
       ]
@@ -454,6 +408,28 @@
         [
           {
             "node": "Work out the folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Make every shape": {
+      "main": [
+        [
+          {
+            "node": "Read the website copies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read the website copies": {
+      "main": [
+        [
+          {
+            "node": "Send it to the CRM",
             "type": "main",
             "index": 0
           }
