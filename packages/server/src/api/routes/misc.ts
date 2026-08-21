@@ -284,23 +284,6 @@ miscRouter.post('/files', mediaUpload.single('file'), asyncHandler(async (req, r
   await driver.save(key, createReadStream(file.path), file.mimetype);
   await unlink(file.path).catch(() => undefined);
 
-  // Opt-in replace, for callers that re-send the same file.
-  //
-  // The automation re-uploads a property's website copies every time somebody
-  // presses Finish, and Finish is pressed again whenever more photos are added.
-  // Without this each press left another copy of every existing photo on the
-  // record: one real property reached four copies of two photos before anyone
-  // noticed, because nothing about a duplicate looks like an error.
-  //
-  // Deliberately not the default. A person uploading two genuinely different
-  // photos that happen to share a name expects both to survive, and silently
-  // discarding one of those would be a worse bug than the one this fixes.
-  if (recordId && String(req.body.replaceExisting) === 'true') {
-    await db.query(
-      `DELETE FROM ipy_attachment WHERE record_id = $1 AND file_name = $2`,
-      [recordId, file.originalname],
-    );
-  }
 
   const row = await db.queryOne<{ id: string }>(
     `INSERT INTO ipy_attachment
@@ -311,6 +294,31 @@ miscRouter.post('/files', mediaUpload.single('file'), asyncHandler(async (req, r
       `/api/files/${key}`, req.body.category ?? null, user.id,
     ],
   );
+
+  // Opt-in replace, for callers that re-send the same file.
+  //
+  // The automation re-uploads a property's website copies every time somebody
+  // presses Finish, and Finish gets pressed again whenever more photos arrive.
+  // Without this, each press left another copy of every existing photo: one
+  // real property reached four copies of two photos before anyone noticed,
+  // because nothing about a duplicate looks like an error.
+  //
+  // Cleaning up *after* the insert rather than before it, on purpose. Deleting
+  // first opens a window where the record has no copy at all, and two runs
+  // overlapping in that window leave both of their inserts behind — which is
+  // exactly what happened when Finish was pressed twice while the first run was
+  // still going. Insert then prune keeps the newest and can never empty it.
+  //
+  // Deliberately not the default. Someone uploading two genuinely different
+  // photos that share a name expects both to survive, and silently discarding
+  // one of those would be a worse bug than this one.
+  if (row?.id && recordId && String(req.body.replaceExisting) === 'true') {
+    await db.query(
+      `DELETE FROM ipy_attachment
+        WHERE record_id = $1 AND file_name = $2 AND id <> $3`,
+      [recordId, file.originalname, row.id],
+    );
+  }
 
   // Derivatives (resized images, transcoded video) generate
   // asynchronously so the upload response never waits on processing — see
