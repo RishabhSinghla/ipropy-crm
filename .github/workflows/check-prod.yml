@@ -49,7 +49,7 @@ jobs:
         run: |
           echo "--- migrations, newest first ---"
           psql "$PROD_DATABASE_URL" -P pager=off -tAc "
-            SELECT filename FROM ipy_migration ORDER BY filename DESC LIMIT 6;"
+            SELECT name FROM ipy_migration ORDER BY name DESC LIMIT 6;"
 
           echo "--- phone fields and the code they show ---"
           psql "$PROD_DATABASE_URL" -P pager=off -c "
