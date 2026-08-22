@@ -45,6 +45,15 @@ export interface PropertyStorageStatus {
   folderMadeAt: string | null;
   mediaRequestedAt: string | null;
   mediaDoneAt: string | null;
+  /**
+   * How many photos have actually reached this record.
+   *
+   * The handover from OneDrive to the CRM happens once. After it, the folder is
+   * the team's to reorganise however they like and the CRM is where the photos
+   * are managed, so Finish stops being offered — a button that stays forever
+   * invites somebody to press it and wonder why nothing changed.
+   */
+  photosInCrm: number;
 }
 
 export async function getPropertyStorageStatus(recordId: string): Promise<PropertyStorageStatus | null> {
@@ -58,8 +67,16 @@ export async function getPropertyStorageStatus(recordId: string): Promise<Proper
        FROM ipy_property_storage WHERE record_id = $1`,
     [recordId],
   );
+  const attached = await db.queryOne<{ n: string }>(
+    `SELECT count(*) AS n FROM ipy_attachment
+      WHERE record_id = $1 AND mime_type LIKE 'image/%'`,
+    [recordId],
+  );
+  const photosInCrm = Number(attached?.n ?? 0);
+
   if (row) {
     return {
+      photosInCrm,
       recordId: row.record_id,
       folderKey: row.folder_key,
       status: row.status,
@@ -90,6 +107,7 @@ export async function getPropertyStorageStatus(recordId: string): Promise<Proper
     [recordId],
   );
   return {
+    photosInCrm,
     recordId,
     folderKey: null,
     status: 'pending',

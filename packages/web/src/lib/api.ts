@@ -228,6 +228,7 @@ export interface PropertyStorageInfo {
   folderMadeAt: string | null;
   mediaRequestedAt: string | null;
   mediaDoneAt: string | null;
+  photosInCrm: number;
 }
 
 export interface AiAssistantAction {

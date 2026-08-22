@@ -1283,6 +1283,15 @@ function PropertyMediaHandoff({ recordId }: { recordId: string }): JSX.Element |
 
   const ready = data.status === 'ready';
 
+  // The handover happens once.
+  //
+  // After photos have reached the record, the folder is the team's to
+  // reorganise however they like and the CRM is where the photos are managed —
+  // the panel below this one already does add, delete and reorder. Leaving
+  // Finish on screen forever invites somebody to press it and wonder why
+  // nothing changed, and pressing it does real work for no reason.
+  const handedOver = data.photosInCrm > 0;
+
   const finish = async (): Promise<void> => {
     setFinishing(true);
     try {
@@ -1315,25 +1324,37 @@ function PropertyMediaHandoff({ recordId }: { recordId: string }): JSX.Element |
         </p>
       ) : (
         <>
-          <ol className="mt-3 space-y-1.5 text-xs text-muted">
-            <li>1. Open the folder and put the originals in it.</li>
-            <li>2. Come back here and press Finish.</li>
-            <li>3. Everything else is done for you.</li>
-          </ol>
+          {handedOver ? (
+            <p className="mt-2 text-xs text-muted">
+              {data.photosInCrm} photo{data.photosInCrm === 1 ? '' : 's'} are on this property and
+              managed below. The folder is yours to arrange however you like — nothing here reads
+              it again.
+            </p>
+          ) : (
+            <ol className="mt-3 space-y-1.5 text-xs text-muted">
+              <li>1. Open the folder and put the originals in it.</li>
+              <li>2. Come back here and press Finish.</li>
+              <li>3. Everything else is done for you.</li>
+            </ol>
+          )}
           <div className="mt-3 flex flex-wrap gap-2">
             {data.externalUrl && (
               <a href={data.externalUrl} target="_blank" rel="noreferrer" className="btn-secondary btn-sm">
                 Open the folder <ExternalLink className="h-3 w-3" />
               </a>
             )}
-            <button className="btn-primary btn-sm" onClick={() => void finish()} disabled={finishing}>
-              {finishing ? <Spinner /> : <Check className="h-3.5 w-3.5" />} Finish
-            </button>
+            {!handedOver && (
+              <button className="btn-primary btn-sm" onClick={() => void finish()} disabled={finishing}>
+                {finishing ? <Spinner /> : <Check className="h-3.5 w-3.5" />} Finish
+              </button>
+            )}
           </div>
-          <MediaProgress data={data} />
-          <p className="mt-2 text-2xs text-muted">
-            The folder has a text file with this property’s details, so you can be sure it is the right one.
-          </p>
+          {!handedOver && <MediaProgress data={data} />}
+          {!handedOver && (
+            <p className="mt-2 text-2xs text-muted">
+              The folder has a text file with this property’s details, so you can be sure it is the right one.
+            </p>
+          )}
         </>
       )}
     </div>
