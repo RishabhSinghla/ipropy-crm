@@ -1219,13 +1219,43 @@ export async function globalSearch(
   );
 
   const labelByName = new Map(modules.map((m) => [m.name, m.label]));
-  return res.rows.map((r) => ({
+  const found = res.rows.map((r) => ({
     id: r.id,
     module: r.module_name,
     moduleLabel: labelByName.get(r.module_name) ?? r.module_name,
     label: r.label,
     recordNumber: r.record_number,
   }));
+
+  /**
+   * When the words did not match, try the meaning.
+   *
+   * Only when the keyword pass came back thin *and* what was typed reads like a
+   * phrase rather than a prefix. Somebody typing "sha" on the way to "Sharma"
+   * wants the instant list, not an embedding call per keystroke — and the
+   * models that do this well are free ones with rate limits worth spending on
+   * the searches that actually failed.
+   */
+  const phrase = term.trim().split(/\s+/).length >= 3 || term.trim().length >= 15;
+  if (found.length >= 5 || !phrase || ctx.system) return found;
+
+  const { search: semanticSearch } = await import('../search/semantic.js');
+  const hits = await semanticSearch(term, ctx, { top: limit - found.length })
+    .catch(() => []);
+
+  const seen = new Set(found.map((r) => r.id));
+  for (const hit of hits) {
+    if (seen.has(hit.recordId)) continue;
+    seen.add(hit.recordId);
+    found.push({
+      id: hit.recordId,
+      module: hit.moduleName,
+      moduleLabel: labelByName.get(hit.moduleName) ?? hit.moduleName,
+      label: hit.label,
+      recordNumber: null,
+    });
+  }
+  return found.slice(0, limit);
 }
 
 export const recordService = {

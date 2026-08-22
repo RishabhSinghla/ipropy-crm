@@ -210,7 +210,14 @@ async function answerFromWorkspace(
   ctx: ServiceContext,
   assistantContext = '',
 ): Promise<AskResult> {
-  const digest = await dailyDigest(ctx).catch(() => null);
+  const { contextFor } = await import('../core/search/semantic.js');
+  // The digest is what is *due*; the search is what was *said*. Asked in
+  // parallel because they are independent and the assistant should feel like
+  // one question rather than two.
+  const [digest, relevant] = await Promise.all([
+    dailyDigest(ctx).catch(() => null),
+    contextFor(question, ctx, { top: 6 }).catch(() => ''),
+  ]);
 
   const priorities = (digest?.priorities ?? [])
     .slice(0, 10)
@@ -226,13 +233,15 @@ You are answering inside the CRM for ${ctx.user.fullName}. Use only the figures 
 
 ${assistantContext}
 
+${relevant}
+
 ## Their numbers right now
 ${JSON.stringify(digest?.stats ?? {}, null, 2)}
 
 ## What is on their plate
 ${priorities || '(nothing flagged)'}
 
-Answer in 2-5 sentences, in plain British English. Be specific: name records and numbers from the data above. If they asked what to do, give an ordered list of concrete next actions. Never invent a record, a name or a figure that is not shown here.`,
+Answer in 2-5 sentences, in plain British English. Be specific: name records and numbers from the data above. Where a note, a message or a call is what answers the question, say which one and roughly what it said. If they asked what to do, give an ordered list of concrete next actions. Never invent a record, a name or a figure that is not shown here.`,
     fast: true,
     maxTokens: 800,
     userId: ctx.user.id,

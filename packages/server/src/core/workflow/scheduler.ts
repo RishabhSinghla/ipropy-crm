@@ -432,7 +432,27 @@ async function housekeeping(): Promise<void> {
     // now the only way photos arrive: the team uploads to OneDrive directly and
     // n8n does everything after they press Finish.
     ingestOneDriveOriginals(),
+    // Keep the meaning index behind the CRM current. Batched and hash-checked,
+    // so a quiet minute costs one query and a busy one costs one API call.
+    refreshSemanticIndex(),
   ]);
+}
+
+let lastIndexAt = 0;
+
+/**
+ * Embed what has changed, at its own pace.
+ *
+ * Throttled to five minutes rather than run on the 60 second tick: the models
+ * that do this well are free ones with rate limits, and nothing in a CRM
+ * becomes unsearchable for being four minutes old.
+ */
+async function refreshSemanticIndex(): Promise<void> {
+  if (Date.now() - lastIndexAt < 5 * 60_000) return;
+  lastIndexAt = Date.now();
+  const { indexPending } = await import('../search/semantic.js');
+  const result = await indexPending();
+  if (result.embedded) logger.info({ ...result }, 'semantic index refreshed');
 }
 
 let lastImapPollAt = 0;
