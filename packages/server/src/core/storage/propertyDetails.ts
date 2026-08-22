@@ -20,6 +20,153 @@ import type { StorageDriver } from './index.js';
 import { PROPERTY_MEDIA_FOLDERS } from './keys.js';
 
 export const DETAILS_FILE = 'PROPERTY DETAILS.txt';
+export const WHERE_TO_POST_FILE = 'WHERE TO POST.txt';
+
+/**
+ * The map from a shape to every place that shape belongs.
+ *
+ * Folders are named after the shape because five platforms wanting 4:5 should
+ * not mean five copies of the same photo. The cost of that is somebody has to
+ * know Instagram wants 4:5, and this file is where they find out. It names the
+ * exact post type, not just the app: "Instagram" is useless when Instagram has
+ * a feed, a reel, a story and a broadcast channel that do not all want the same
+ * thing.
+ *
+ * Written into every property folder, so the answer is next to the files rather
+ * than in somebody's head.
+ */
+const WHERE_TO_POST: { folder: string; size: string; uses: string[] }[] = [
+  {
+    folder: '02_SHAPES/4x5',
+    size: '1080 x 1350 — tall, the one you will use most',
+    uses: [
+      'Instagram  ->  feed photo, feed carousel, feed video cover',
+      'Facebook   ->  page post, profile post, group post, photo album',
+      'LinkedIn   ->  photo post, multiple photo post',
+      'Threads    ->  photo post, carousel',
+      'WhatsApp   ->  sending in a chat or a group',
+      'Pinterest  ->  carousel pin',
+    ],
+  },
+  {
+    folder: '02_SHAPES/9x16',
+    size: '1080 x 1920 — full phone screen, top to bottom',
+    uses: [
+      'Instagram  ->  reel cover, story, story with a link, highlight',
+      'Facebook   ->  reel, page reel, story, page story',
+      'YouTube    ->  short',
+      'TikTok     ->  video post, photo mode, story',
+      'WhatsApp   ->  status photo, status video',
+      'Telegram   ->  story',
+      'Snapchat   ->  story, spotlight',
+      'Pinterest  ->  video pin, idea pin',
+    ],
+  },
+  {
+    folder: '02_SHAPES/4x3',
+    size: '1600 x 1200 — wide, shows the whole room. This is the property one',
+    uses: [
+      '99acres      ->  sale listing, rent listing, project listing',
+      'Housing.com  ->  sale listing, rent listing',
+      'Magicbricks  ->  sale listing, rent listing',
+      'NoBroker     ->  sale listing, rent listing',
+      'OLX          ->  property ad',
+      'Facebook     ->  marketplace listing, photo album',
+      'Google       ->  business photos, maps photo',
+      'Your website ->  property gallery  (the CRM takes these automatically)',
+    ],
+  },
+  {
+    folder: '02_SHAPES/1x1',
+    size: '1080 x 1080 — square',
+    uses: [
+      'Google Business  ->  business update, offer post, event post, product',
+      'X (Twitter)      ->  post, multiple image post',
+      'Instagram        ->  feed, when you want square instead of tall',
+      'YouTube          ->  community post',
+    ],
+  },
+  {
+    folder: '02_SHAPES/16x9',
+    size: '1920 x 1080 — widescreen, like a television',
+    uses: [
+      'YouTube      ->  video thumbnail, playlist cover, channel trailer',
+      'Your website ->  page hero image, blog article, locality guide',
+      'LinkedIn     ->  article image, newsletter image',
+      'Facebook     ->  link preview image',
+    ],
+  },
+  {
+    folder: '02_SHAPES/2x3',
+    size: '1000 x 1500 — very tall. Pinterest only',
+    uses: ['Pinterest  ->  image pin'],
+  },
+  {
+    folder: '02_SHAPES/1.91x1',
+    size: '1200 x 627 — wide and short. Link previews',
+    uses: [
+      'Email     ->  property email, newsletter header',
+      'LinkedIn  ->  the picture that shows when you share a link',
+      'Facebook  ->  the picture that shows when you share a link',
+    ],
+  },
+  {
+    folder: '03_EDITED_MEDIA/WATERMARKED',
+    size: 'full size, with the iPropy logo on it',
+    uses: [
+      'Anywhere you are worried about the photo being taken and reused.',
+      'Portals and marketplace listings are the usual reason.',
+    ],
+  },
+  {
+    folder: '06_VIDEO',
+    size: 'the walkthrough, in both shapes, plus a cover picture',
+    uses: [
+      '<name>-9x16.mp4   ->  reels, shorts, tiktok, whatsapp status, stories',
+      '<name>-16x9.mp4   ->  youtube, your website, facebook video post',
+      '<name>-cover.jpg  ->  the thumbnail, wherever one is asked for',
+    ],
+  },
+];
+
+/** The whole guide, as plain text, for the property root. */
+export function whereToPostText(): string {
+  const lines: string[] = [
+    'WHERE TO POST WHAT',
+    '='.repeat(60),
+    '',
+    'Every photo you uploaded has been made in several shapes. The folders are',
+    'named after the shape rather than the app, because the same shape is used',
+    'in a lot of places and one copy is easier to keep straight than six.',
+    '',
+    'Find the place you are posting to below, and open the folder next to it.',
+    '',
+  ];
+
+  for (const entry of WHERE_TO_POST) {
+    lines.push('-'.repeat(60), entry.folder, `  ${entry.size}`, '');
+    for (const use of entry.uses) lines.push(`  ${use}`);
+    lines.push('');
+  }
+
+  lines.push(
+    '-'.repeat(60),
+    'A few things worth knowing',
+    '',
+    '  The originals you uploaded are never touched. They stay exactly as they',
+    '  came off the camera in 01_RAW_UPLOADS.',
+    '',
+    '  Add more photos any time and press Finish again. Only the new ones are',
+    '  worked on, so it takes seconds rather than minutes.',
+    '',
+    '  Wide photos are fitted rather than cropped when a tall shape is needed.',
+    '  Cropping a whole room down to a phone screen throws away about two',
+    '  thirds of it, which is a sliver of wall nobody can identify.',
+    '',
+  );
+  return `${lines.join('\n')}\n`;
+}
+
 
 interface Row {
   label: string | null;

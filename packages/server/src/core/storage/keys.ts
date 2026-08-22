@@ -45,23 +45,32 @@ export const PROPERTY_MEDIA_FOLDERS = {
   data: '00_PROPERTY_DATA',
   originals: '01_RAW_UPLOADS/PHOTOS',
   originalVideos: '01_RAW_UPLOADS/VIDEOS',
-  compressed: '03_EDITED_MEDIA/CLEAN',
+
+  // Folders are named after the SHAPE, not the platform.
+  //
+  // Five platforms want 4:5, so platform folders meant five byte-identical
+  // copies of the same photo — about a quarter of all derivative storage, and
+  // no way to tell which copy was current. Shapes also outlive platforms: when
+  // Instagram next changes its preferred ratio nothing here has to move, and
+  // the tree stays at seven folders however many places you post to.
+  //
+  // Knowing which shape a platform wants is a documentation problem, and
+  // WHERE-TO-POST.txt at the property root solves it.
+  shape4x5: '02_SHAPES/4x5',
+  shape9x16: '02_SHAPES/9x16',
+  shape1x1: '02_SHAPES/1x1',
+  shape4x3: '02_SHAPES/4x3',
+  shape16x9: '02_SHAPES/16x9',
+  shape2x3: '02_SHAPES/2x3',
+  shape191x1: '02_SHAPES/1.91x1',
+
   watermarked: '03_EDITED_MEDIA/WATERMARKED',
   thumbnails: '03_EDITED_MEDIA/THUMBNAILS',
-  instagramFeed: '04_SOCIAL/INSTAGRAM/FEED',
-  instagramStory: '04_SOCIAL/INSTAGRAM/STORIES',
-  facebook: '04_SOCIAL/FACEBOOK',
-  whatsapp: '04_SOCIAL/WHATSAPP',
-  googleBusiness: '04_SOCIAL/GOOGLE_BUSINESS',
-  // Where an Indian buyer actually searches: 99acres, Housing, Magicbricks,
-  // NoBroker, OLX. They all want landscape and every social shape wants
-  // portrait, so this is the one shape the pipeline produced nothing for.
-  portals: '05_PORTALS',
-  // The walkthrough, in both shapes plus a cover frame. Separate from the
-  // photos because a property often has one video and twenty stills, and the
-  // two arrive at different times.
   video: '06_VIDEO',
-  crmWebsite: '07_WEBSITE',
+  // What gets pushed onto the property in the CRM and onto the public site.
+  // 4:3 rather than a portrait crop: a property page and a portal listing both
+  // show a room better in landscape, and it is the same shape the portals want.
+  crmWebsite: '02_SHAPES/4x3',
   archive: '99_ARCHIVE',
 } as const;
 
@@ -73,7 +82,7 @@ export const PROPERTY_MEDIA_FOLDERS = {
  * recognise an old parent to strip it, or a derivative of a pre-rename photo
  * lands one level too deep and the zip export loses it.
  */
-const LEGACY_ORIGINALS = ['01 Originals'];
+const LEGACY_ORIGINALS = ['01 Originals', '01_RAW_UPLOADS/PHOTOS'];
 
 /**
  * What the CRM creates when a property is made.
@@ -94,17 +103,16 @@ export const PROPERTY_MEDIA_FOLDER_TREE = [
   PROPERTY_MEDIA_FOLDERS.data,
   PROPERTY_MEDIA_FOLDERS.originals,
   PROPERTY_MEDIA_FOLDERS.originalVideos,
-  PROPERTY_MEDIA_FOLDERS.compressed,
+  PROPERTY_MEDIA_FOLDERS.shape4x5,
+  PROPERTY_MEDIA_FOLDERS.shape9x16,
+  PROPERTY_MEDIA_FOLDERS.shape1x1,
+  PROPERTY_MEDIA_FOLDERS.shape4x3,
+  PROPERTY_MEDIA_FOLDERS.shape16x9,
+  PROPERTY_MEDIA_FOLDERS.shape2x3,
+  PROPERTY_MEDIA_FOLDERS.shape191x1,
   PROPERTY_MEDIA_FOLDERS.watermarked,
   PROPERTY_MEDIA_FOLDERS.thumbnails,
-  PROPERTY_MEDIA_FOLDERS.instagramFeed,
-  PROPERTY_MEDIA_FOLDERS.instagramStory,
-  PROPERTY_MEDIA_FOLDERS.facebook,
-  PROPERTY_MEDIA_FOLDERS.whatsapp,
-  PROPERTY_MEDIA_FOLDERS.googleBusiness,
-  PROPERTY_MEDIA_FOLDERS.portals,
   PROPERTY_MEDIA_FOLDERS.video,
-  PROPERTY_MEDIA_FOLDERS.crmWebsite,
   PROPERTY_MEDIA_FOLDERS.archive,
 ];
 

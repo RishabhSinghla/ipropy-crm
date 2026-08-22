@@ -34,39 +34,34 @@ EOF
   echo "  $(basename "$out") ${W}x${H} $([ "$keep" -ge "$KEEP_MIN" ] && echo crop || echo fit)"
 }
 
-for f in "$SRC"/*.jpg "$SRC"/*.JPG "$SRC"/*.jpeg "$SRC"/*.heic "$SRC"/*.HEIC; do
+for f in "$SRC"/*.jpg "$SRC"/*.JPG "$SRC"/*.jpeg "$SRC"/*.JPEG "$SRC"/*.heic "$SRC"/*.HEIC; do
   [ -f "$f" ] || continue
   n=$(basename "$f"); n="${n%.*}"
   SEQ=$((SEQ+1))
   # Two digits so a folder of twenty sorts the way a person expects.
   [ -n "$PREFIX" ] && n=$(printf "%s-%02d" "$PREFIX" "$SEQ")
 
-  # Skip a photo whose work is already done.
-  #
-  # Finish gets pressed again every time a photo is added, and every press was
-  # re-cutting all twenty from scratch. The outputs are the record: if the
-  # portal copy exists and is not older than the original, nothing about this
-  # photo has changed and there is nothing to redo. Deleting an output folder
-  # is how you force a rebuild.
-  done_marker="$ROOT/05_PORTALS/$n.jpg"
+  # Skip a photo whose work is already done. The outputs are the record: if the
+  # 4x3 exists and is not older than the original, nothing has changed. Deleting
+  # an output folder is how you force a rebuild.
+  done_marker="$ROOT/02_SHAPES/4x3/$n.jpg"
   if [ -f "$done_marker" ] && [ ! "$f" -nt "$done_marker" ]; then
     echo "$n (already done, skipped)"
     continue
   fi
   echo "$n"
-  mkdir -p "$ROOT/05_PORTALS" "$ROOT/07_WEBSITE" "$ROOT/04_SOCIAL/INSTAGRAM/FEED" \
-           "$ROOT/04_SOCIAL/INSTAGRAM/STORIES" "$ROOT/04_SOCIAL/FACEBOOK" \
-           "$ROOT/04_SOCIAL/WHATSAPP" "$ROOT/04_SOCIAL/GOOGLE_BUSINESS" \
-           "$ROOT/03_EDITED_MEDIA/THUMBNAILS"
-  # Portals want landscape and are where a buyer actually searches.
-  shape "$f" "$ROOT/05_PORTALS/$n.jpg"                    1600 1200 88
-  shape "$f" "$ROOT/07_WEBSITE/$n.jpg"                    1920 1080 84
-  shape "$f" "$ROOT/04_SOCIAL/INSTAGRAM/FEED/$n.jpg"      1080 1350 86
-  shape "$f" "$ROOT/04_SOCIAL/INSTAGRAM/STORIES/$n.jpg"   1080 1920 86
-  shape "$f" "$ROOT/04_SOCIAL/GOOGLE_BUSINESS/$n.jpg"     1080 1080 86
-  shape "$f" "$ROOT/03_EDITED_MEDIA/THUMBNAILS/$n.jpg"     480  480 78
-  # Facebook and WhatsApp both want the 4:5 that already exists. Copy rather
-  # than re-encode: same pixels, and the folder stops looking like a failure.
-  cp "$ROOT/04_SOCIAL/INSTAGRAM/FEED/$n.jpg" "$ROOT/04_SOCIAL/FACEBOOK/$n.jpg"
-  cp "$ROOT/04_SOCIAL/INSTAGRAM/FEED/$n.jpg" "$ROOT/04_SOCIAL/WHATSAPP/$n.jpg"
+
+  mkdir -p "$ROOT/02_SHAPES/4x5" "$ROOT/02_SHAPES/9x16" "$ROOT/02_SHAPES/1x1" \
+           "$ROOT/02_SHAPES/4x3" "$ROOT/02_SHAPES/16x9" "$ROOT/02_SHAPES/2x3" \
+           "$ROOT/02_SHAPES/1.91x1" "$ROOT/03_EDITED_MEDIA/THUMBNAILS"
+
+  # One file per shape. Five platforms want 4:5 and they all read the same one.
+  shape "$f" "$ROOT/02_SHAPES/4x3/$n.jpg"     1600 1200 88
+  shape "$f" "$ROOT/02_SHAPES/16x9/$n.jpg"    1920 1080 84
+  shape "$f" "$ROOT/02_SHAPES/4x5/$n.jpg"     1080 1350 86
+  shape "$f" "$ROOT/02_SHAPES/9x16/$n.jpg"    1080 1920 86
+  shape "$f" "$ROOT/02_SHAPES/1x1/$n.jpg"     1080 1080 86
+  shape "$f" "$ROOT/02_SHAPES/2x3/$n.jpg"     1000 1500 86
+  shape "$f" "$ROOT/02_SHAPES/1.91x1/$n.jpg"  1200  627 84
+  shape "$f" "$ROOT/03_EDITED_MEDIA/THUMBNAILS/$n.jpg" 480 480 78
 done

@@ -471,7 +471,10 @@ webhooksRouter.get('/n8n/pending-folders', asyncHandler(async (req, res) => {
   );
 
   const { recordStorageRoot, PROPERTY_MEDIA_FOLDER_TREE, PROPERTY_MEDIA_FOLDERS } = await import('../../core/storage/keys.js');
-  const { buildPropertyDetailsText, DETAILS_FILE } = await import('../../core/storage/propertyDetails.js');
+  const { buildPropertyDetailsText, whereToPostText, DETAILS_FILE, WHERE_TO_POST_FILE } =
+    await import('../../core/storage/propertyDetails.js');
+  // The same for every property, so it is built once rather than per row.
+  const guide = whereToPostText();
 
   res.json({
     folders: await Promise.all(rows.map(async (row) => ({
@@ -483,6 +486,10 @@ webhooksRouter.get('/n8n/pending-folders', asyncHandler(async (req, res) => {
       // the CRM, because only n8n can reach the drive these folders live on.
       detailsPath: `${PROPERTY_MEDIA_FOLDERS.data}/${DETAILS_FILE}`,
       detailsText: (await buildPropertyDetailsText(row.record_id)) ?? '',
+      // At the property root, not tucked inside a subfolder: it answers the
+      // question somebody has the moment they open the folder.
+      wherePath: WHERE_TO_POST_FILE,
+      whereText: guide,
     }))),
   });
 }));

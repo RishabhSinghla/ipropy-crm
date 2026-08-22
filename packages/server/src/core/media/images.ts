@@ -24,21 +24,18 @@ interface Derivative {
 }
 
 const PROPERTY_DERIVATIVES: Derivative[] = [
-  // Full decoded pixels, losslessly re-packed as WebP. The camera original is
-  // still the true master in 01 Originals and is never rewritten.
-  { key: 'compressed', destination: PROPERTY_MEDIA_FOLDERS.compressed, suffix: 'lossless', lossless: true },
+  // Named after the shape, matching the folders. `contain` below never crops a
+  // room to force a ratio; spare area gets a quiet neutral background, because
+  // a landscape room cropped to 9:16 keeps under a third of itself.
+  { key: 'shape4x5', destination: PROPERTY_MEDIA_FOLDERS.shape4x5, suffix: '4x5', width: 1080, height: 1350, quality: 86 },
+  { key: 'shape9x16', destination: PROPERTY_MEDIA_FOLDERS.shape9x16, suffix: '9x16', width: 1080, height: 1920, quality: 86 },
+  { key: 'shape1x1', destination: PROPERTY_MEDIA_FOLDERS.shape1x1, suffix: '1x1', width: 1080, height: 1080, quality: 86 },
+  { key: 'shape4x3', destination: PROPERTY_MEDIA_FOLDERS.shape4x3, suffix: '4x3', width: 1600, height: 1200, quality: 88 },
+  { key: 'shape16x9', destination: PROPERTY_MEDIA_FOLDERS.shape16x9, suffix: '16x9', width: 1920, height: 1080, quality: 84 },
+  { key: 'shape2x3', destination: PROPERTY_MEDIA_FOLDERS.shape2x3, suffix: '2x3', width: 1000, height: 1500, quality: 86 },
+  { key: 'shape191x1', destination: PROPERTY_MEDIA_FOLDERS.shape191x1, suffix: '1.91x1', width: 1200, height: 627, quality: 84 },
 
-  // Platform-ready canvases. `contain` below never crops a room to force a
-  // ratio; any spare area gets a quiet neutral background.
-  { key: 'instagramFeed', destination: PROPERTY_MEDIA_FOLDERS.instagramFeed, suffix: 'instagram-feed', width: 1080, height: 1350, quality: 86 },
-  { key: 'instagramStory', destination: PROPERTY_MEDIA_FOLDERS.instagramStory, suffix: 'instagram-story', width: 1080, height: 1920, quality: 86 },
-  { key: 'facebook', destination: PROPERTY_MEDIA_FOLDERS.facebook, suffix: 'facebook', width: 1200, height: 630, quality: 84 },
-  { key: 'whatsapp', destination: PROPERTY_MEDIA_FOLDERS.whatsapp, suffix: 'whatsapp', width: 1080, height: 1350, quality: 78 },
-
-  // Existing public contract: website and CRM continue asking for these names.
-  { key: 'thumb', destination: PROPERTY_MEDIA_FOLDERS.crmWebsite, suffix: 'thumb', width: 480, quality: 76 },
-  { key: 'medium', destination: PROPERTY_MEDIA_FOLDERS.crmWebsite, suffix: 'medium', width: 1200, quality: 82 },
-  { key: 'large', destination: PROPERTY_MEDIA_FOLDERS.crmWebsite, suffix: 'large', width: 1600, quality: 84 },
+  { key: 'thumb', destination: PROPERTY_MEDIA_FOLDERS.thumbnails, suffix: 'thumb', width: 480, quality: 76 },
 ];
 
 /** Preserve the old lightweight behaviour for avatars and non-property files. */
