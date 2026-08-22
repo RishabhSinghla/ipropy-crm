@@ -42,3 +42,48 @@ jobs:
             SELECT 'attachments: ' || count(*) ||
                    ', on R2-style keys: ' || count(*) FILTER (WHERE storage_key NOT LIKE 'unfiled/%')
               FROM ipy_attachment;"
+
+      - name: The data model, as production actually has it
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          echo "--- migrations, newest first ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -tAc "
+            SELECT filename FROM ipy_migration ORDER BY filename DESC LIMIT 6;"
+
+          echo "--- phone fields and the code they show ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT m.name AS module, f.name AS field, f.config::text
+              FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+             WHERE f.uitype = 'phone' ORDER BY m.name, f.name;"
+
+          echo "--- is the country field really gone ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -tAc "
+            SELECT 'field rows: '   || (SELECT count(*) FROM ipy_field WHERE name = 'country_code')
+              || ' | column: '      || (SELECT count(*) FROM information_schema.columns
+                                         WHERE table_name = 'ipy_e_leads' AND column_name = 'country_code')
+              || ' | dropdown: '    || (SELECT count(*) FROM ipy_picklist WHERE name = 'country_code')
+              || ' | tombstoned: '  || (SELECT count(*) FROM ipy_field_tombstone WHERE field_name = 'country_code');"
+
+          echo "--- what a new record starts as ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT p.name AS dropdown, v.value AS starts_as
+              FROM ipy_picklist_value v JOIN ipy_picklist p ON p.id = v.picklist_id
+             WHERE v.is_default ORDER BY p.name;"
+
+          echo "--- sections, and which ones the admin has claimed ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT m.name AS module, b.name, b.label, b.is_customised,
+                   (SELECT count(*) FROM ipy_field f WHERE f.block_id = b.id) AS fields
+              FROM ipy_block b JOIN ipy_module m ON m.id = b.module_id
+             ORDER BY m.name, b.sequence;"
+
+          echo "--- admin edits that must have survived the deploy ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -tAc "
+            SELECT 'fields the admin has edited: ' || count(*) FROM ipy_field WHERE is_customised;"
+          psql "$PROD_DATABASE_URL" -P pager=off -tAc "
+            SELECT 'layouts the admin has edited: ' || count(*) FROM ipy_layout WHERE is_customised;"
+          psql "$PROD_DATABASE_URL" -P pager=off -tAc "
+            SELECT 'leads: ' || (SELECT count(*) FROM ipy_record WHERE module_name = 'leads' AND NOT is_deleted)
+              || ' | properties: ' || (SELECT count(*) FROM ipy_record WHERE module_name = 'properties' AND NOT is_deleted)
+              || ' | mobiles still stored: ' || (SELECT count(*) FROM ipy_e_leads WHERE mobile IS NOT NULL);"
