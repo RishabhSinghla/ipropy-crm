@@ -165,15 +165,62 @@ export default function LayoutDesigner(): JSX.Element {
     touch();
   };
 
-  const addSection = (): void => {
+  /**
+   * A section is one thing, not one per layout.
+   *
+   * Adding and deleting used to happen only in this component's own state, so a
+   * section created here never appeared in the Section dropdown on Modules &
+   * Fields — no field could ever be put in it — and one deleted here stayed on
+   * that page for ever, showing as an empty block nobody could remove. Both
+   * halves now go through the module's real sections, and this layout follows.
+   */
+  const blockIdFor = (key: string): string | undefined =>
+    (meta?.blocks ?? []).find((b) => b.name === key)?.id;
+
+  const addSection = async (): Promise<void> => {
+    const label = window.prompt('Name the new section');
+    if (!label?.trim()) return;
     // Keyed on time rather than the label so renaming a section never collides
     // with another one, and so two "New section"s can coexist while being named.
     const key = `section_${Date.now().toString(36)}`;
-    setBlocks((prev) => [...prev, { key, label: 'New section', columns: 2, fields: [] }]);
+    try {
+      await api.createBlock(moduleName, { name: key, label: label.trim() });
+    } catch (err) {
+      toast.error('Could not add the section', (err as Error).message);
+      return;
+    }
+    await queryClient.invalidateQueries({ queryKey: ['module', moduleName] });
+    setBlocks((prev) => [...prev, { key, label: label.trim(), columns: 2, fields: [] }]);
     touch();
   };
 
-  const removeSection = (key: string): void => {
+  const renameSection = async (key: string, label: string): Promise<void> => {
+    const id = blockIdFor(key);
+    const current = (meta?.blocks ?? []).find((b) => b.name === key)?.label;
+    if (!id || !label.trim() || label.trim() === current) return;
+    try {
+      await api.updateBlock(id, { label: label.trim() });
+      await queryClient.invalidateQueries({ queryKey: ['module', moduleName] });
+    } catch (err) {
+      toast.error('Could not rename the section', (err as Error).message);
+    }
+  };
+
+  const removeSection = async (key: string): Promise<void> => {
+    const id = blockIdFor(key);
+    // No matching section means this one exists only in this layout — an older
+    // layout naming a section that has since gone. Dropping it locally is the
+    // whole job.
+    if (id) {
+      try {
+        await api.deleteBlock(id);
+      } catch (err) {
+        toast.error('Could not delete the section', (err as Error).message);
+        return;
+      }
+      await queryClient.invalidateQueries({ queryKey: ['module', moduleName] });
+      toast.success('Section deleted', 'Gone from every layout and from Modules & Fields.');
+    }
     setBlocks((prev) => prev.filter((b) => b.key !== key));
     touch();
   };
@@ -350,6 +397,10 @@ export default function LayoutDesigner(): JSX.Element {
                       setBlocks((prev) => prev.map((b) => b.key === block.key ? { ...b, label: e.target.value } : b));
                       touch();
                     }}
+                    // The section is renamed for the module, not just for this
+                    // layout — otherwise the heading here and the one on
+                    // Modules & Fields drift apart and neither is wrong.
+                    onBlur={() => void renameSection(block.key, block.label)}
                   />
 
                   <label className="flex shrink-0 items-center gap-1 text-2xs text-muted">
@@ -376,9 +427,9 @@ export default function LayoutDesigner(): JSX.Element {
                   />
 
                   <button
-                    onClick={() => removeSection(block.key)}
+                    onClick={() => void removeSection(block.key)}
                     className="btn-ghost shrink-0 p-1 text-slate-400 hover:text-red-500"
-                    title="Delete this section — its fields go back to the unplaced list"
+                    title="Delete this section everywhere — move its fields out first"
                     aria-label={`Delete section ${block.label}`}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -444,7 +495,7 @@ export default function LayoutDesigner(): JSX.Element {
               </div>
             ))}
 
-            <button onClick={addSection} className="btn-secondary btn-sm">
+            <button onClick={() => void addSection()} className="btn-secondary btn-sm">
               <Plus className="h-3.5 w-3.5" /> Add section
             </button>
           </div>

@@ -316,7 +316,6 @@ const createLead: ToolDef = {
     const created = await crm.post<{ id: string; recordNumber?: string; label: string }>('/api/records/leads', {
       full_name: args.fullName,
       mobile: digits,
-      country_code: '+91',
       email: args.email,
       budget_min: args.budgetMin,
       budget_max: args.budgetMax,

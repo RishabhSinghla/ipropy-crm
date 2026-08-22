@@ -37,11 +37,11 @@ const indianMobile = (): string => `98${Math.floor(10000000 + Math.random() * 89
 
 async function leadRow(recordId: string) {
   return db.queryOne<{
-    label: string; full_name: string; country_code: string | null;
+    label: string; full_name: string;
     mobile: string | null; whatsapp_number: string | null;
     lead_source: string | null; sub_source: string | null; status: string;
   }>(
-    `SELECT r.label, l.full_name, l.country_code, l.mobile, l.whatsapp_number,
+    `SELECT r.label, l.full_name, l.mobile, l.whatsapp_number,
             l.lead_source, l.sub_source, l.status
        FROM ipy_record r JOIN ipy_e_leads l ON l.record_id = r.id
       WHERE r.id = $1`,
@@ -86,22 +86,20 @@ describe('captureLead', () => {
     expect((await leadRow(result.recordId!))?.full_name).toBe('Unknown');
   });
 
-  it('splits an Indian number into the country field and ten national digits', async () => {
-    const result = await captureLead('webform', {}, webformLead({ mobile: '9812345670' }));
+  it('stores an Indian number as ten bare digits', async () => {
+    const result = await captureLead('webform', {}, webformLead({ mobile: '+919812345670' }));
     const row = await leadRow(result.recordId!);
-    expect(row?.country_code).toBe('+91');
     expect(row?.mobile).toBe('9812345670');
     // The dialable form is kept separately — this is what a wa.me link uses.
     expect(row?.whatsapp_number).toBe('+919812345670');
   });
 
-  it('keeps an overseas buyer on their own country code', async () => {
-    // The case the split exists for: defaulting a Dubai number to +91 sends the
-    // WhatsApp to a stranger in India. UAE numbers are nine digits, not ten.
+  it('refuses a number that is not an Indian mobile rather than filing it as one', async () => {
+    // Migration 064 dropped the country field: every lead is +91. A nine-digit
+    // Dubai number must not be quietly stored as though it were Indian, so it
+    // fails the ten-digit rule and lands in the inbox where somebody sees it.
     const result = await captureLead('webform', {}, webformLead({ mobile: '+971501234567' }));
-    const row = await leadRow(result.recordId!);
-    expect(row?.country_code).toBe('+971');
-    expect(row?.mobile).toBe('501234567');
+    expect(result.status).toBe('failed');
   });
 
   it('records the failure rather than throwing when a value is rejected', async () => {

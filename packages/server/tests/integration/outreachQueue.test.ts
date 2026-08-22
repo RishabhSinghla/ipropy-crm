@@ -38,7 +38,6 @@ beforeAll(async () => {
   const lead = await createRecord(admin, 'leads', leadInput({
     full_name: 'Queue Test Lead',
     mobile: MOBILE,
-    country_code: '+91',
   }));
   leadId = lead.id;
 

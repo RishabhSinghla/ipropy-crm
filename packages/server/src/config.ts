@@ -23,7 +23,17 @@ function bool(key: string, fallback = false): boolean {
 export const config = {
   env: str('NODE_ENV', 'development'),
   isProd: str('NODE_ENV', 'development') === 'production',
-  port: num('PORT', 4000),
+  /**
+   * `API_PORT` first, `PORT` second.
+   *
+   * Render sets `PORT` and that is the one that must win there. Locally, the
+   * preview harness also sets `PORT` — for the port it waits on, which is
+   * Vite's — and the API read the same variable and bound 5173 alongside it.
+   * The app then loaded and every request in it 502'd, which reads as a broken
+   * feature rather than as two servers on one port. A variable only the API
+   * answers to is what makes that impossible.
+   */
+  port: num('API_PORT', num('PORT', 4000)),
   appUrl: str('APP_URL', 'http://localhost:5173'),
   apiUrl: str('API_URL', 'http://localhost:4000'),
   logLevel: str('LOG_LEVEL', 'info'),

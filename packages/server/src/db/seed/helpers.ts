@@ -1,5 +1,6 @@
 import type { Tx } from '../pool.js';
 import type { FieldConfig, FilterGroup, UIType } from '@ipropy/shared';
+import { COLUMN_TYPES } from '../../core/metadata/fieldTypes.js';
 
 /**
  * Declarative seed helpers. The module definitions read like a schema DSL so
@@ -148,6 +149,21 @@ export async function upsertPicklist(conn: Tx, def: PicklistDef): Promise<string
  * deleted row came straight back on the next run. Consulting the tombstones
  * makes the deletion durable across re-seeds and redeploys.
  */
+/**
+ * Sections an administrator deleted (migration 066).
+ *
+ * Third instance of the same trap: this function recreates every section on
+ * each run, and the seed runs on every cold start, so "delete KYC" held until
+ * the container next restarted and then quietly undid itself.
+ */
+async function tombstonedBlocks(conn: Tx, moduleName: string): Promise<Set<string>> {
+  const rows = await conn.query<{ block_name: string }>(
+    `SELECT block_name FROM ipy_block_tombstone WHERE module_name = $1`,
+    [moduleName],
+  );
+  return new Set(rows.rows.map((r) => r.block_name));
+}
+
 async function tombstonedFields(conn: Tx, moduleName: string): Promise<Set<string>> {
   const rows = await conn.query<{ field_name: string }>(
     `SELECT field_name FROM ipy_field_tombstone WHERE module_name = $1`,
@@ -155,24 +171,6 @@ async function tombstonedFields(conn: Tx, moduleName: string): Promise<Set<strin
   );
   return new Set(rows.rows.map((r) => r.field_name));
 }
-
-/**
- * SQL type behind each column-backed uitype.
- *
- * Mirrors what migrations 002 onwards actually created — verified against the
- * live schema, not guessed. Only used to re-create a column that metadata says
- * should exist but the database is missing.
- */
-const COLUMN_TYPES: Record<string, string> = {
-  string: 'TEXT', textarea: 'TEXT', richtext: 'TEXT', email: 'TEXT', phone: 'TEXT',
-  url: 'TEXT', autonumber: 'TEXT', image: 'TEXT', time: 'TEXT',
-  integer: 'INTEGER', score: 'INTEGER',
-  decimal: 'NUMERIC', currency: 'NUMERIC', percent: 'NUMERIC', area: 'NUMERIC',
-  boolean: 'BOOLEAN', date: 'DATE', datetime: 'TIMESTAMPTZ',
-  reference: 'UUID', owner: 'UUID', user: 'UUID',
-  json: 'JSONB', address: 'JSONB', multipicklist: 'JSONB', multireference: 'JSONB', tags: 'JSONB',
-  picklist: 'TEXT',
-};
 
 /**
  * Put back a column the metadata expects but the table does not have.
@@ -203,6 +201,61 @@ async function ensureColumn(conn: Tx, table: string, column: string, field: Fiel
   await conn.query(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS "${column}" ${type}`);
 }
 
+/**
+ * One field, upserted into one section.
+ *
+ * Its own function only because a field whose section has been deleted still
+ * needs a home — see `fallbackBlockId` in `upsertModule`.
+ */
+async function upsertField(
+  conn: Tx, def: ModuleDef, moduleId: string, blockId: string, f: FieldDef, fieldSeq: number,
+): Promise<void> {
+  const storage = f.storage ?? (f.column ? 'column' : 'json');
+  if (storage === 'column') await ensureColumn(conn, def.table, f.column ?? f.name, f);
+  await conn.query(
+    `INSERT INTO ipy_field AS f
+      (module_id, block_id, name, label, uitype, storage, column_name, sequence,
+       is_mandatory, is_readonly, is_unique, display_type, default_value, max_length,
+       help_text, config, quick_create, mass_editable, searchable)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+     ON CONFLICT (module_id, name) DO UPDATE SET
+       -- Plumbing, always refreshed: neither is exposed by the field editor
+       -- (see the map in api/routes/metadata.ts), and the query builder
+       -- breaks if metadata disagrees with where the value actually lives.
+       storage = EXCLUDED.storage, column_name = EXCLUDED.column_name,
+       -- Everything below is an admin control. Once the field editor has
+       -- touched this field, the seed must not have an opinion about it —
+       -- otherwise a validation rule or a relabelled field is undone on the
+       -- next cold start. Same contract as ipy_layout.is_customised.
+       block_id = CASE WHEN f.is_customised THEN f.block_id ELSE EXCLUDED.block_id END,
+       label = CASE WHEN f.is_customised THEN f.label ELSE EXCLUDED.label END,
+       uitype = CASE WHEN f.is_customised THEN f.uitype ELSE EXCLUDED.uitype END,
+       sequence = CASE WHEN f.is_customised THEN f.sequence ELSE EXCLUDED.sequence END,
+       is_mandatory = CASE WHEN f.is_customised THEN f.is_mandatory ELSE EXCLUDED.is_mandatory END,
+       is_readonly = CASE WHEN f.is_customised THEN f.is_readonly ELSE EXCLUDED.is_readonly END,
+       is_unique = CASE WHEN f.is_customised THEN f.is_unique ELSE EXCLUDED.is_unique END,
+       display_type = CASE WHEN f.is_customised THEN f.display_type ELSE EXCLUDED.display_type END,
+       default_value = CASE WHEN f.is_customised THEN f.default_value ELSE EXCLUDED.default_value END,
+       max_length = CASE WHEN f.is_customised THEN f.max_length ELSE EXCLUDED.max_length END,
+       help_text = CASE WHEN f.is_customised THEN f.help_text ELSE EXCLUDED.help_text END,
+       config = CASE WHEN f.is_customised THEN f.config ELSE EXCLUDED.config END,
+       quick_create = CASE WHEN f.is_customised THEN f.quick_create ELSE EXCLUDED.quick_create END,
+       mass_editable = CASE WHEN f.is_customised THEN f.mass_editable ELSE EXCLUDED.mass_editable END,
+       searchable = CASE WHEN f.is_customised THEN f.searchable ELSE EXCLUDED.searchable END,
+       updated_at = now()`,
+    [
+      moduleId, blockId, f.name, f.label, f.uitype, storage,
+      f.column ?? f.name, fieldSeq,
+      f.mandatory ?? false, f.readonly ?? false, f.unique ?? false,
+      f.displayType ?? 'default',
+      f.default !== undefined ? JSON.stringify(f.default) : null,
+      f.maxLength ?? null, f.help ?? null,
+      JSON.stringify(f.config ?? {}),
+      f.quickCreate ?? false, f.massEditable ?? true, f.searchable ?? false,
+    ],
+  );
+}
+
 export async function upsertModule(conn: Tx, def: ModuleDef): Promise<string> {
   const deleted = await tombstonedFields(conn, def.name);
   const row = await conn.queryOne<{ id: string }>(
@@ -227,66 +280,51 @@ export async function upsertModule(conn: Tx, def: ModuleDef): Promise<string> {
   );
   const moduleId = row!.id;
 
+  const removedBlocks = await tombstonedBlocks(conn, def.name);
   let blockSeq = 0;
+  /**
+   * Somewhere for a field to go when its section has been deleted.
+   *
+   * A section can only be deleted once it is empty, so in practice its fields
+   * were already moved (which marks them customised, and the upsert below then
+   * keeps where they were put) or deleted themselves. This is the safety net
+   * for the remaining case: a field added to the template *after* somebody
+   * deleted the section it was written into.
+   */
+  let fallbackBlockId: string | null = null;
+
   for (const block of def.blocks) {
+    if (removedBlocks.has(block.name)) {
+      blockSeq++;
+      if (fallbackBlockId) {
+        for (const f of block.fields) {
+          if (deleted.has(f.name)) continue;
+          await upsertField(conn, def, moduleId, fallbackBlockId, f, 0);
+        }
+      }
+      continue;
+    }
     const blockRow = await conn.queryOne<{ id: string }>(
-      `INSERT INTO ipy_block (module_id, name, label, sequence, columns, is_collapsed)
+      `INSERT INTO ipy_block AS b (module_id, name, label, sequence, columns, is_collapsed)
        VALUES ($1,$2,$3,$4,$5,$6)
        ON CONFLICT (module_id, name) DO UPDATE SET
-         label = EXCLUDED.label, sequence = EXCLUDED.sequence,
-         columns = EXCLUDED.columns, is_collapsed = EXCLUDED.is_collapsed
+         -- Order stays the template's; the rest is the admin's once they have
+         -- touched it, the same contract ipy_field.is_customised has. Without
+         -- this a renamed section reverted on the next cold start.
+         label = CASE WHEN b.is_customised THEN b.label ELSE EXCLUDED.label END,
+         sequence = EXCLUDED.sequence,
+         columns = CASE WHEN b.is_customised THEN b.columns ELSE EXCLUDED.columns END,
+         is_collapsed = CASE WHEN b.is_customised THEN b.is_collapsed ELSE EXCLUDED.is_collapsed END
        RETURNING id`,
       [moduleId, block.name, block.label, blockSeq++, block.columns ?? 2, block.collapsed ?? false],
     );
     const blockId = blockRow!.id;
+    fallbackBlockId ??= blockId;
 
     let fieldSeq = 0;
     for (const f of block.fields) {
       if (deleted.has(f.name)) continue;
-      const storage = f.storage ?? (f.column ? 'column' : 'json');
-      if (storage === 'column') await ensureColumn(conn, def.table, f.column ?? f.name, f);
-      await conn.query(
-        `INSERT INTO ipy_field AS f
-          (module_id, block_id, name, label, uitype, storage, column_name, sequence,
-           is_mandatory, is_readonly, is_unique, display_type, default_value, max_length,
-           help_text, config, quick_create, mass_editable, searchable)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
-         ON CONFLICT (module_id, name) DO UPDATE SET
-           -- Plumbing, always refreshed: neither is exposed by the field editor
-           -- (see the map in api/routes/metadata.ts), and the query builder
-           -- breaks if metadata disagrees with where the value actually lives.
-           storage = EXCLUDED.storage, column_name = EXCLUDED.column_name,
-           -- Everything below is an admin control. Once the field editor has
-           -- touched this field, the seed must not have an opinion about it —
-           -- otherwise a validation rule or a relabelled field is undone on the
-           -- next cold start. Same contract as ipy_layout.is_customised.
-           block_id = CASE WHEN f.is_customised THEN f.block_id ELSE EXCLUDED.block_id END,
-           label = CASE WHEN f.is_customised THEN f.label ELSE EXCLUDED.label END,
-           uitype = CASE WHEN f.is_customised THEN f.uitype ELSE EXCLUDED.uitype END,
-           sequence = CASE WHEN f.is_customised THEN f.sequence ELSE EXCLUDED.sequence END,
-           is_mandatory = CASE WHEN f.is_customised THEN f.is_mandatory ELSE EXCLUDED.is_mandatory END,
-           is_readonly = CASE WHEN f.is_customised THEN f.is_readonly ELSE EXCLUDED.is_readonly END,
-           is_unique = CASE WHEN f.is_customised THEN f.is_unique ELSE EXCLUDED.is_unique END,
-           display_type = CASE WHEN f.is_customised THEN f.display_type ELSE EXCLUDED.display_type END,
-           default_value = CASE WHEN f.is_customised THEN f.default_value ELSE EXCLUDED.default_value END,
-           max_length = CASE WHEN f.is_customised THEN f.max_length ELSE EXCLUDED.max_length END,
-           help_text = CASE WHEN f.is_customised THEN f.help_text ELSE EXCLUDED.help_text END,
-           config = CASE WHEN f.is_customised THEN f.config ELSE EXCLUDED.config END,
-           quick_create = CASE WHEN f.is_customised THEN f.quick_create ELSE EXCLUDED.quick_create END,
-           mass_editable = CASE WHEN f.is_customised THEN f.mass_editable ELSE EXCLUDED.mass_editable END,
-           searchable = CASE WHEN f.is_customised THEN f.searchable ELSE EXCLUDED.searchable END,
-           updated_at = now()`,
-        [
-          moduleId, blockId, f.name, f.label, f.uitype, storage,
-          f.column ?? f.name, fieldSeq++,
-          f.mandatory ?? false, f.readonly ?? false, f.unique ?? false,
-          f.displayType ?? 'default',
-          f.default !== undefined ? JSON.stringify(f.default) : null,
-          f.maxLength ?? null, f.help ?? null,
-          JSON.stringify(f.config ?? {}),
-          f.quickCreate ?? false, f.massEditable ?? true, f.searchable ?? false,
-        ],
-      );
+      await upsertField(conn, def, moduleId, blockId, f, fieldSeq++);
     }
   }
 

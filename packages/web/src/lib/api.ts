@@ -596,7 +596,10 @@ export const api = {
     ),
   reorderFields: (fields: { id: string; blockId: string; sequence: number }[]) =>
     post('/api/meta/fields/reorder', { fields }),
-  createBlock: (module: string, data: Record<string, unknown>) => post(`/api/meta/modules/${module}/blocks`, data),
+  createBlock: (module: string, data: Record<string, unknown>) =>
+    post<{ id: string }>(`/api/meta/modules/${module}/blocks`, data),
+  updateBlock: (id: string, data: Record<string, unknown>) => patch(`/api/meta/blocks/${id}`, data),
+  deleteBlock: (id: string) => del<{ ok: boolean; deleted?: string }>(`/api/meta/blocks/${id}`),
   validateFormula: (expression: string) => post<{ valid: boolean; error?: string }>('/api/meta/fields/validate-formula', { expression }),
 
   // --- records ------------------------------------------------------------

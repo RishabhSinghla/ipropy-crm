@@ -20,6 +20,11 @@ export default function ModuleBuilder(): JSX.Element {
   // Two different destructive actions, so the dialog has to know which one.
   // "hide" is reversible and keeps the data; "delete" drops the column.
   const [pendingRemoval, setPendingRemoval] = useState<{ field: FieldMeta; mode: 'hide' | 'delete' } | null>(null);
+  // Sections used to be editable only in the Layout Designer, which edits a
+  // layout and not the section — so one deleted there stayed in this list, and
+  // in the Section dropdown, for ever. This is where a section actually lives.
+  const [pendingSection, setPendingSection] = useState<{ id: string; label: string } | null>(null);
+  const [renamingSection, setRenamingSection] = useState<{ id: string; label: string } | null>(null);
 
   const { data: fieldModules = [], isLoading: isModulesLoading } = useQuery({
     queryKey: ['field-modules'],
@@ -66,6 +71,35 @@ export default function ModuleBuilder(): JSX.Element {
       invalidateModule();
     },
     onError: (err: Error) => toast.error('Could not remove the field', err.message),
+  });
+
+  const sectionMutation = useMutation({
+    mutationFn: ({ id, label }: { id: string; label: string }) => api.updateBlock(id, { label }),
+    onSuccess: () => { toast.success('Section renamed'); invalidateModule(); },
+    onError: (err: Error) => toast.error('Could not rename the section', err.message),
+  });
+
+  const deleteSectionMutation = useMutation({
+    mutationFn: (id: string) => api.deleteBlock(id),
+    onSuccess: () => {
+      toast.success('Section deleted', 'It is off this page, the Section dropdown and every layout.');
+      invalidateModule();
+      void queryClient.invalidateQueries({ queryKey: ['layouts'] });
+    },
+    onError: (err: Error) => toast.error('Could not delete the section', err.message),
+  });
+
+  const addSectionMutation = useMutation({
+    mutationFn: (label: string) => {
+      // The name is an identifier, not the heading — the API needs at least two
+      // characters of one, so a section called "X" falls back to a made-up name
+      // rather than being refused with a regular expression.
+      const derived = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+      const name = /^[a-z][a-z0-9_]{1,40}$/.test(derived) ? derived : `section_${Date.now().toString(36)}`;
+      return api.createBlock(selectedModule, { name, label });
+    },
+    onSuccess: () => { toast.success('Section added'); invalidateModule(); },
+    onError: (err: Error) => toast.error('Could not add the section', err.message),
   });
 
   const unhideMutation = useMutation({
@@ -133,7 +167,16 @@ export default function ModuleBuilder(): JSX.Element {
                 <span className="text-2xs text-muted tnum">
                   {meta.fields.length} fields · {meta.blocks.length} blocks
                 </span>
-                <button onClick={() => setCreatingField(true)} className="btn-primary btn-sm ml-auto">
+                <button
+                  onClick={() => {
+                    const label = window.prompt('Name the new section');
+                    if (label?.trim()) addSectionMutation.mutate(label.trim());
+                  }}
+                  className="btn-secondary btn-sm ml-auto"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add section
+                </button>
+                <button onClick={() => setCreatingField(true)} className="btn-primary btn-sm">
                   <Plus className="h-3.5 w-3.5" /> Add field
                 </button>
               </div>
@@ -141,10 +184,26 @@ export default function ModuleBuilder(): JSX.Element {
               <div className="divide-y divide-slate-100 dark:divide-slate-800">
                 {meta.blocks.map((block) => (
                   <div key={block.id}>
-                    <div className="bg-slate-50/60 px-4 py-1.5 dark:bg-slate-800/40">
-                      <p className="text-2xs font-semibold uppercase tracking-wide text-muted">
+                    <div className="flex items-center gap-2 bg-slate-50/60 px-4 py-1.5 dark:bg-slate-800/40">
+                      <p className="flex-1 truncate text-2xs font-semibold uppercase tracking-wide text-muted">
                         {block.label}
                       </p>
+                      <button
+                        onClick={() => setRenamingSection({ id: block.id, label: block.label })}
+                        className="btn-ghost btn-sm px-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                        title="Rename this section"
+                        aria-label={`Rename section ${block.label}`}
+                      >
+                        <Edit3 className="h-3 w-3" />
+                      </button>
+                      <button
+                        onClick={() => setPendingSection({ id: block.id, label: block.label })}
+                        className="btn-ghost btn-sm px-1.5 text-slate-400 hover:text-red-600"
+                        title="Delete this section"
+                        aria-label={`Delete section ${block.label}`}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
                     </div>
                     {block.fields.map((field) => (
                       <div
@@ -216,7 +275,9 @@ export default function ModuleBuilder(): JSX.Element {
                       </div>
                     ))}
                     {block.fields.length === 0 && (
-                      <p className="px-4 py-3 text-xs text-muted">No fields in this block</p>
+                      <p className="px-4 py-3 text-xs text-muted">
+                        Nothing in this section yet — drop a field into it, or delete it.
+                      </p>
                     )}
                   </div>
                 ))}
@@ -253,6 +314,27 @@ export default function ModuleBuilder(): JSX.Element {
       )}
 
       <ConfirmDialog
+        open={Boolean(pendingSection)}
+        onClose={() => setPendingSection(null)}
+        onConfirm={() => deleteSectionMutation.mutateAsync(pendingSection!.id)}
+        title={`Delete the “${pendingSection?.label}” section?`}
+        body="The section comes off this page, off the Section dropdown and off every layout that used it. Fields are never deleted with it — a section still holding fields is refused until you have moved them."
+        confirmLabel="Delete section"
+        danger
+      />
+
+      {renamingSection && (
+        <SectionRenamer
+          label={renamingSection.label}
+          onClose={() => setRenamingSection(null)}
+          onSave={(label) => {
+            sectionMutation.mutate({ id: renamingSection.id, label });
+            setRenamingSection(null);
+          }}
+        />
+      )}
+
+      <ConfirmDialog
         open={Boolean(pendingRemoval)}
         onClose={() => setPendingRemoval(null)}
         onConfirm={() => deleteMutation.mutateAsync({
@@ -269,6 +351,45 @@ export default function ModuleBuilder(): JSX.Element {
         danger
       />
     </div>
+  );
+}
+
+/** Rename a section without leaving the page it lives on. */
+function SectionRenamer({
+  label, onClose, onSave,
+}: { label: string; onClose: () => void; onSave: (label: string) => void }): JSX.Element {
+  const [value, setValue] = useState(label);
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Rename section"
+      size="sm"
+      footer={
+        <>
+          <button className="btn-secondary" onClick={onClose}>Cancel</button>
+          <button
+            className="btn-primary"
+            disabled={!value.trim() || value.trim() === label}
+            onClick={() => onSave(value.trim())}
+          >
+            Save
+          </button>
+        </>
+      }
+    >
+      <label className="label" htmlFor="section-label">Section name</label>
+      <input
+        id="section-label"
+        className="input"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        autoFocus
+      />
+      <p className="mt-1.5 text-2xs text-muted">
+        This is the heading above the fields on every record page and form.
+      </p>
+    </Modal>
   );
 }
 
@@ -431,6 +552,9 @@ function FieldEditor({
   const [notBeforeField, setNotBeforeField] = useState((field?.config.notBeforeField as string) ?? '');
   const [pattern, setPattern] = useState((field?.config.pattern as string) ?? '');
   const [patternMessage, setPatternMessage] = useState((field?.config.patternMessage as string) ?? '');
+  const [codePrefix, setCodePrefix] = useState(
+    (field?.config.codePrefix as string) ?? (field ? '' : '+91'),
+  );
   const [listOptions, setListOptions] = useState<{ value: string; label: string }[]>(
     (field?.config.unitOptions as { value: string; label: string }[])
       ?? (field?.config.countryCodes as { value: string; label: string }[])
@@ -464,7 +588,13 @@ function FieldEditor({
     ? String(codeSourceField.config.picklist)
     : '';
 
-  const supportsOptionList = uitype === 'area' || (uitype === 'phone' && !codePicklist);
+  /**
+   * Country codes stopped being a list an admin maintains (migration 064). A
+   * phone field now carries the one code it puts in front of the box, so this
+   * editor offers a box for that code rather than a table of countries nobody
+   * in this business dials.
+   */
+  const supportsOptionList = uitype === 'area';
   /** Only a scalar can be compared to another field of the same kind. */
   const comparable = COMPARABLE.includes(uitype);
 
@@ -521,8 +651,10 @@ function FieldEditor({
       } else { clear('pattern'); clear('patternMessage'); }
 
       if (supportsOptionList) {
-        const key = uitype === 'area' ? 'unitOptions' : 'countryCodes';
-        if (listOptions.length) config[key] = listOptions; else clear(key);
+        if (listOptions.length) config.unitOptions = listOptions; else clear('unitOptions');
+      }
+      if (uitype === 'phone') {
+        if (codePrefix.trim()) config.codePrefix = codePrefix.trim(); else clear('codePrefix');
       }
 
       const payload = {
@@ -568,10 +700,15 @@ function FieldEditor({
             <input
               className="input font-mono text-xs"
               value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={isEdit}
+              onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_'))}
             />
-            {isEdit && <p className="mt-1 text-2xs text-muted">The API name cannot be changed.</p>}
+            {isEdit && (
+              <p className="mt-1 text-2xs text-muted">
+                {name === field!.name
+                  ? 'The name this field goes by in imports, exports and connected apps. Change it and every view, layout, filter and automation follows.'
+                  : `Renaming moves no data — every value stays exactly where it is. Views, layouts, filters, automations and reports that name “${field!.name}” are rewritten with it.`}
+              </p>
+            )}
           </div>
         </div>
 
@@ -582,7 +719,6 @@ function FieldEditor({
               className="input"
               value={uitype}
               onChange={(e) => setUitype(e.target.value as typeof uitype)}
-              disabled={isEdit && !field?.isCustom}
             >
               {Object.entries(
                 UITYPE_LIST.reduce<Record<string, typeof UITYPE_LIST>>((acc, u) => {
@@ -605,6 +741,23 @@ function FieldEditor({
             />
           </div>
         </div>
+
+        {uitype === 'phone' && (
+          <div>
+            <label className="label">Country code</label>
+            <input
+              className="input w-32 font-mono text-sm tnum"
+              value={codePrefix}
+              onChange={(e) => setCodePrefix(e.target.value)}
+              placeholder="+91"
+              aria-label="Country code shown in front of the number"
+            />
+            <p className="mt-1 text-2xs text-muted">
+              Painted on the front of the box and never typed in. The number itself is stored without
+              it, and every call, WhatsApp link and export puts it back. Leave empty for no code.
+            </p>
+          </div>
+        )}
 
         {needsPicklist && (
           <div>

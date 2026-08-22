@@ -89,7 +89,7 @@ describe('records API', () => {
     const create = await request(app)
       .post('/api/records/leads')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ full_name: originalName, country_code: '+91', mobile: '9812345678' })
+      .send({ full_name: originalName, mobile: '9812345678' })
       .expect(201);
 
     const id = create.body.id as string;
@@ -124,7 +124,7 @@ describe('records API', () => {
     const res = await request(app)
       .post('/api/records/leads')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ full_name: 'No Mobile', country_code: '+91' })
+      .send({ full_name: 'No Mobile' })
       .expect(422);
 
     expect(res.body.error).toBe('validation_error');

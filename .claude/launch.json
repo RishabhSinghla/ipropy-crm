@@ -2,18 +2,18 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "//": "`npm run dev` starts BOTH halves — the API and Vite — from one command. The preview harness injects PORT for the server it waits on (5173) and the API reads the same variable, so without pinning it the API binds 5173 too, Vite's /api proxy finds nothing on 4000, and every request in the app fails with ECONNREFUSED: the page loads and nothing in it works. ANTHROPIC_API_KEY is unset because an agent shell exports one; it wins AI provider resolution and is not usable this way, so every AI call fails through it instead of reaching Gemini.",
+      "//": "`npm run dev` starts BOTH halves \u2014 the API and Vite \u2014 from one command. The harness injects PORT for the port it waits on (5173); the API answers to API_PORT so it can never bind that one too. Without it the app loads and every request in it 502s. ANTHROPIC_API_KEY is unset because an agent shell exports one; it wins AI provider resolution and is not usable this way, so every AI call fails through it instead of reaching the configured provider.",
       "name": "ipropy",
       "runtimeExecutable": "bash",
       "runtimeArgs": [
         "-c",
-        "cd /Users/rishabhsinghla/Downloads/iPropy-Projects/iPropy-crm && env -u ANTHROPIC_API_KEY PORT=4000 npm run dev"
+        "env -u ANTHROPIC_API_KEY API_PORT=4000 npm run dev"
       ],
       "port": 5173,
       "autoPort": false
     },
     {
-      "//": "Reads live from the CRM API, so start the `ipropy` configuration first or every page renders empty. PORT is pinned for the same reason as above — Next.js honours it, and the CRM's CORS/APP_URL expects the site on 3000.",
+      "//": "Reads live from the CRM API, so start the `ipropy` configuration first or every page renders empty. PORT is pinned for the same reason as above \u2014 Next.js honours it, and the CRM's CORS/APP_URL expects the site on 3000.",
       "name": "ipropy-website",
       "runtimeExecutable": "bash",
       "runtimeArgs": [

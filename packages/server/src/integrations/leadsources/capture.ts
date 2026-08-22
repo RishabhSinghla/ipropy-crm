@@ -133,7 +133,10 @@ export async function captureLead(
         .filter(Boolean)
         .join(' ') || 'Unknown',
       email: normalized.email ?? null,
-      country_code: parts?.countryCode ?? '+91',
+      // The national digits only. Every lead this business takes is an Indian
+      // mobile (migration 064), so a number arriving with a foreign code keeps
+      // its own digits here and fails the ten-digit rule loudly in the lead
+      // inbox rather than being filed as an Indian number it is not.
       mobile: parts?.national ?? null,
       // Keeps its full dialable form: this is what a wa.me link and the Cloud
       // API actually send to, and it has no per-country length rule.

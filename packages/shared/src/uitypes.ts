@@ -421,6 +421,16 @@ export interface FieldConfig {
    */
   countryCodes?: { value: string; label: string }[];
   /**
+   * The code shown in front of the number when there is no country field.
+   *
+   * One country is not a question. A business that only ever calls Indian
+   * mobiles stores ten digits and paints `+91` on the box — no dropdown, no
+   * second field to fill in, nothing to get wrong on an import. It is still a
+   * setting rather than a constant, so a business that later sells in Dubai
+   * changes one field instead of waiting for a deploy.
+   */
+  codePrefix?: string;
+  /**
    * area: name of the field holding the unit, rendered as a dropdown beside
    * the number. `unit` stays the fallback for areas with a fixed unit.
    */

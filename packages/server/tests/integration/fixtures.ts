@@ -80,7 +80,6 @@ export function leadInput(overrides: Record<string, unknown> = {}): Record<strin
   const unique = Math.random().toString(36).slice(2, 10);
   return {
     full_name: `Integration Test-${unique}`,
-    country_code: '+91',
     mobile: `99${Math.floor(10000000 + Math.random() * 89999999)}`,
     ...overrides,
   };

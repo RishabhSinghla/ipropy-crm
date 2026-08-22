@@ -454,16 +454,17 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
       /**
        * One control: country code, then the national number.
        *
-       * The code is a separate stored field — that part is deliberate, since a
-       * silent +91 makes an NRI buyer unreachable — but it is not a separate
-       * *question*. Every site that asks for a mobile puts the code in a small
-       * dropdown welded to the left of the box, so this does too. Where the
-       * caller can't write a second field (an inline edit of just this cell) it
-       * degrades to the code as a static prefix, which is still what stops
-       * people typing "+91" into the number itself.
+       * The code is not a separate question. This business dials one country,
+       * so `codePrefix` on the field is painted on the front of the box and
+       * nobody fills it in — created, read, updated or deleted, the number is
+       * ten digits and the +91 is simply always there. A module that does keep
+       * a country field (`digitsFrom`) still gets the dropdown, welded to the
+       * left of the box the way every other site asks for a phone; where the
+       * caller can't write a second field, that degrades to a static prefix.
        */
       const codeField = field.config.digitsFrom ? String(field.config.digitsFrom) : '';
-      const code = codeField ? String(props.formValues?.[codeField] ?? '') : '';
+      const prefix = String(field.config.codePrefix ?? '');
+      const code = codeField ? String(props.formValues?.[codeField] ?? prefix) : prefix;
       const offered = field.config.countryCodes ?? [];
       /**
        * A code stored before its option was deleted still has to render.
@@ -515,12 +516,31 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
             // Stripping non-digits on the way in rather than validating after
             // the fact: a pasted "+91 98765-43210" becomes the right ten digits
             // instead of an error the user has to work out how to fix.
+            //
+            // The code itself is dropped too, and only when dropping it leaves
+            // exactly a full number. Somebody handed a number reads it out with
+            // its code — the whole point of a fixed prefix is that they never
+            // have to think about that — and clipping to ten digits first kept
+            // the wrong end of it: "+91 98115 33636" became 9198115336. A real
+            // ten-digit number that happens to start 91 is untouched, because
+            // taking the code off it would leave eight digits, not ten.
             onChange={(e) => {
-              const digits = e.target.value.replace(/\D/g, '');
+              let digits = e.target.value.replace(/\D/g, '');
+              const bare = code.replace(/\D/g, '');
+              const overLength = expected ? digits.length > expected : true;
+              // Something has to be left that could be a real subscriber
+              // number, or "+91" typed on its own eats itself.
+              const remainder = digits.length - bare.length;
+              if (bare && overLength && digits.startsWith(bare) && remainder >= 6
+                && (!expected || remainder <= expected)) {
+                digits = digits.slice(bare.length);
+              }
               onChange((expected ? digits.slice(0, expected) : digits) || null);
             }}
             disabled={readOnly}
-            maxLength={expected || undefined}
+            // One over the limit, so a number typed or pasted with its country
+            // code in front still reaches the handler that takes the code off.
+            maxLength={expected ? expected + String(code).replace(/\D/g, '').length : undefined}
             placeholder={expected ? '9'.repeat(Math.min(expected, 10)) : '98765 43210'}
             autoFocus={autoFocus}
           />

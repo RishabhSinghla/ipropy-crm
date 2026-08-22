@@ -14,6 +14,7 @@ import { AlertTriangle, ChevronDown, Save, TrendingUp, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import { invalidateRecordQueries } from '../lib/invalidate';
+import { startingValues } from '../lib/recordDefaults';
 import { cn, deepEqual } from '../lib/utils';
 import { FieldInput } from './FieldRenderer';
 import { Spinner } from './ui';
@@ -123,6 +124,7 @@ export default function RecordForm({
   const isCreate = !record;
   const queryClient = useQueryClient();
   const [values, setValues] = useState<Record<string, unknown>>(() => ({
+    ...(isCreate ? startingValues(module) : {}),
     ...(record?.values ?? {}),
     ...(initialValues ?? {}),
   }));

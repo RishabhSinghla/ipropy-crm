@@ -128,9 +128,10 @@ export function propertySummary(row: RecordEnvelope, opts: { full?: boolean } = 
 /**
  * The number, put back together.
  *
- * Migration 026 split a lead's phone into a country code and national digits,
- * so neither half alone is dialable and reading only `mobile` gives a model a
- * number it will confidently recite wrong.
+ * A lead stores ten bare digits, so `mobile` alone is not dialable and gives a
+ * model a number it will confidently recite wrong. The code is +91 — that is
+ * the only country this business sells in (migration 064) — but an older record
+ * that still carries one of its own is trusted over the default.
  */
 function phone(v: Record<string, unknown>): string | null {
   const national = typeof v.mobile === 'string' ? v.mobile.trim() : '';

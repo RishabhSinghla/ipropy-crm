@@ -88,7 +88,7 @@ describe('create', () => {
   });
 
   it('rejects a missing mandatory field', async () => {
-    await expect(createRecord(admin, 'leads', { full_name: 'No Mobile', country_code: '+91' }))
+    await expect(createRecord(admin, 'leads', { full_name: 'No Mobile' }))
       .rejects.toThrow();
   });
 

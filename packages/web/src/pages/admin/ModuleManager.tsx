@@ -150,13 +150,8 @@ export default function ModuleManager(): JSX.Element {
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         <div>
           <p>
-            <strong>Leads</strong> and <strong>Activities</strong> are core — the rest of the CRM
-            reads from them, so they cannot be switched off.
-          </p>
-          <p className="mt-1">
-            Disabling a module that others look up (say Projects, referenced by Properties and Deals)
-            leaves those lookup fields empty rather than breaking them. The dependency is listed above
-            so you can see the effect before you commit.
+            <strong>Leads &amp; Contacts</strong> is core — the rest of the CRM reads from it, so it
+            cannot be switched off.
           </p>
         </div>
       </div>

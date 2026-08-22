@@ -1113,6 +1113,8 @@ function KanbanBoard({
   const codeFieldName = phoneField?.config.digitsFrom
     ? String(phoneField.config.digitsFrom)
     : null;
+  /** The code to paint in front when there is no country field to read one from. */
+  const codePrefix = String(phoneField?.config.codePrefix ?? '');
 
   return (
     <div className="flex h-full gap-3 overflow-x-auto p-4">
@@ -1172,14 +1174,14 @@ function KanbanBoard({
                   {phoneField && row.values[phoneField.name] ? (
                     <a
                       href={`tel:${[
-                        codeFieldName ? row.values[codeFieldName] : '',
+                        codeFieldName ? row.values[codeFieldName] ?? codePrefix : codePrefix,
                         row.values[phoneField.name],
                       ].join('')}`}
                       onClick={(e) => e.stopPropagation()}
                       className="mt-1 block text-xs text-slate-600 tnum hover:underline dark:text-slate-400"
                     >
                       {formatPhoneWithCode(
-                        codeFieldName ? String(row.values[codeFieldName] ?? '') : '',
+                        codeFieldName ? String(row.values[codeFieldName] ?? codePrefix) : codePrefix,
                         String(row.values[phoneField.name]),
                       )}
                     </a>

@@ -35,6 +35,7 @@ import type { FieldMeta, ModuleMeta } from '@ipropy/shared';
 import { collectFieldErrors } from '@ipropy/shared';
 import { Check, ChevronDown, Images, MapPin, Plus } from 'lucide-react';
 import { api, ApiError } from '../lib/api';
+import { startingValues } from '../lib/recordDefaults';
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
@@ -117,6 +118,12 @@ export default function SiteCapture(): JSX.Element {
   const queryClient = useQueryClient();
 
   const [values, setValues] = useState<Record<string, unknown>>({});
+  /**
+   * Whatever the module says a new record starts with — a field's default, or
+   * the option starred in Admin → Dropdowns. Applied once the module arrives
+   * and only over an untouched form, so it can never overwrite typing.
+   */
+  const [defaultsApplied, setDefaultsApplied] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showAll, setShowAll] = useState(false);
   const [useGps, setUseGps] = useState(true);
@@ -137,6 +144,13 @@ export default function SiteCapture(): JSX.Element {
     staleTime: 5 * 60_000,
     retry: false,
   });
+
+  useEffect(() => {
+    if (!module || defaultsApplied) return;
+    setDefaultsApplied(true);
+    const defaults = startingValues(module as ModuleMeta);
+    if (Object.keys(defaults).length) setValues((prev) => ({ ...defaults, ...prev }));
+  }, [module, defaultsApplied]);
 
   const panel = ((layout?.config as { capture?: CapturePanelConfig } | undefined)?.capture
     ?? {}) as CapturePanelConfig;

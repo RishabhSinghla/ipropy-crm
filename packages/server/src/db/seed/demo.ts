@@ -283,7 +283,7 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
       values: {
         salutation: i % 3 === 0 ? 'Mr.' : i % 3 === 1 ? 'Ms.' : 'Mrs.',
         first_name: first, last_name: last, full_name: `${first} ${last}`,
-        country_code: '+91', mobile,
+        mobile,
         email: `${first.toLowerCase()}.${last.toLowerCase()}${i}@example.com`,
         whatsapp_number: `+91${mobile}`,
         status, lead_source: source,
@@ -334,7 +334,7 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
       values: {
         salutation: i % 2 === 0 ? 'Mr.' : 'Mrs.',
         first_name: first, last_name: last, full_name: `${first} ${last}`,
-        country_code: '+91', mobile,
+        mobile,
         whatsapp_number: `+91${mobile}`,
         email: `${first.toLowerCase()}.${last.toLowerCase()}@example.com`,
         // Past the enquiry pipeline: these are prospects and customers.

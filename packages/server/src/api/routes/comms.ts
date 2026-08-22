@@ -289,10 +289,7 @@ commsRouter.post('/broadcast', asyncHandler(async (req, res) => {
       [recordId],
     );
     if (!row) continue;
-    const handle = toInternational(
-      String(row.country_code ?? ''),
-      String(row.whatsapp_number ?? row.mobile ?? ''),
-    ) ?? '';
+    const handle = toInternational(null, String(row.whatsapp_number ?? row.mobile ?? '')) ?? '';
     if (!handle) continue;
     if (row.do_not_whatsapp === true) continue;
 

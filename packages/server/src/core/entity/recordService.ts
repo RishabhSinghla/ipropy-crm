@@ -443,11 +443,15 @@ async function resolveDisplayValues(
     if (f.uitype === 'reference') recordIds.add(String(v));
     else if (f.uitype === 'multireference' && Array.isArray(v)) v.forEach((x) => recordIds.add(String(x)));
     else if (f.uitype === 'user' || f.uitype === 'owner') userIds.add(String(v));
-    else if (f.uitype === 'phone' && f.config.digitsFrom) {
-      // The code lives in its own column but reads as part of the number, so
-      // it is joined here — once, server-side — rather than in each of the
-      // list, detail, kanban and export renderers.
-      display[f.name] = formatPhoneWithCode(String(values[String(f.config.digitsFrom)] ?? ''), String(v));
+    else if (f.uitype === 'phone' && (f.config.digitsFrom || f.config.codePrefix)) {
+      // A number reads as one value, so the code is joined here — once,
+      // server-side — rather than in each of the list, detail, kanban and
+      // export renderers. It comes from a country field where one exists, and
+      // from the field's own `codePrefix` where it does not (migration 064).
+      const code = f.config.digitsFrom
+        ? String(values[String(f.config.digitsFrom)] ?? f.config.codePrefix ?? '')
+        : String(f.config.codePrefix ?? '');
+      display[f.name] = formatPhoneWithCode(code, String(v));
     } else if (f.uitype === 'area' && f.config.unitField) {
       display[f.name] = formatArea(Number(v), String(values[String(f.config.unitField)] ?? f.config.unit ?? 'sqft'));
     } else display[f.name] = formatValue(f, v);

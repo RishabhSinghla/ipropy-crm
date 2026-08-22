@@ -14,27 +14,6 @@ import type { IndustryTemplate } from './types.js';
  * is a different file next to this one, not a fork of the engine.
  */
 
-/**
- * Codes offered by the dropdown inside a Mobile field.
- *
- * Mirrors the `country_code` picklist (migration 026) — the picklist is what
- * the value is validated against, this is what the phone control lists, since
- * that control has only its own field's metadata to work from.
- */
-const COUNTRY_CODES = [
-  { value: '+91', label: 'India +91' },
-  { value: '+971', label: 'UAE +971' },
-  { value: '+966', label: 'Saudi Arabia +966' },
-  { value: '+974', label: 'Qatar +974' },
-  { value: '+968', label: 'Oman +968' },
-  { value: '+965', label: 'Kuwait +965' },
-  { value: '+973', label: 'Bahrain +973' },
-  { value: '+65', label: 'Singapore +65' },
-  { value: '+61', label: 'Australia +61' },
-  { value: '+44', label: 'United Kingdom +44' },
-  { value: '+1', label: 'USA / Canada +1' },
-];
-
 /** The two units an Indian buyer's requirement is ever quoted in. */
 const AREA_UNITS = [
   { value: 'sqft', label: 'Sq.ft.' },
@@ -74,34 +53,24 @@ const MODULES: ModuleDef[] = [
           F.text('full_name', 'Full Name', {
             mandatory: true, quickCreate: true, searchable: true, maxLength: 120,
           }),
-          // The country code stays a stored field of its own — a silent +91
-          // default sends an NRI buyer's WhatsApp to a stranger in India — but
-          // it is not a form row of its own. `displayType: 'hidden'` keeps it
-          // out of the layout while the Mobile control renders it as the
-          // dropdown welded to the left of the number, the way every other
-          // site asks for a phone.
-          F.pick('country_code', 'Country Code', 'country_code', {
-            mandatory: true, default: '+91', displayType: 'hidden',
-          }),
+          // The country code is not a question anybody in this business is
+          // asked. It was a mandatory dropdown of its own until migration 064;
+          // every lead is an Indian mobile, so the code became a setting on the
+          // field — `codePrefix` — that the phone control paints in front of
+          // the box and nothing has to fill in. Change it in one place and
+          // every create form, every list and every WhatsApp link follows.
           F.phone('mobile', 'Mobile', {
             mandatory: true, quickCreate: true, maxLength: 10,
-            // National-number length per country. India is ten — which is what
-            // the business asked for — without making an NRI buyer's UAE
-            // number unenterable.
-            config: {
-              digits: 10,
-              digitsFrom: 'country_code',
-              digitsMap: {
-                '+91': 10, '+971': 9, '+966': 9, '+974': 8, '+968': 8,
-                '+965': 8, '+973': 8, '+65': 8, '+61': 9, '+44': 10, '+1': 10,
-              },
-              countryCodes: COUNTRY_CODES,
-            },
-            help: 'Pick the country code, then the number without it',
+            config: { digits: 10, codePrefix: '+91' },
+            help: 'Ten digits, without the country code',
           }),
           F.email('email', 'Email', { quickCreate: true }),
           F.email('secondary_email', 'Secondary Email'),
-          F.phone('alternate_phone', 'Alternate Phone'),
+          F.phone('alternate_phone', 'Alternate Phone', { config: { codePrefix: '+91' } }),
+          // No prefix on this one, deliberately: it stores the *full* dialable
+          // number, which is what a wa.me link and the Cloud API send to. A
+          // code painted in front of a value that already carries one reads as
+          // +91 +91.
           F.phone('whatsapp_number', 'WhatsApp Number', { help: 'Defaults to mobile if left blank' }),
           F.pick('lifecycle_stage', 'Lifecycle Stage', 'lifecycle_stage', {
             mandatory: true, quickCreate: true,

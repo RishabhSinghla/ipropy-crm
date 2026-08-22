@@ -90,12 +90,8 @@ export async function createBroadcast(input: CreateBroadcastInput): Promise<{ id
     const row = record.values;
     const recordId = record.id;
     const name = record.label;
-    // The lead stores a country code and ten digits separately; a broadcast
-    // needs the dialable form or an NRI buyer's message goes to India.
-    const handle = toInternational(
-      String(row.country_code ?? ''),
-      String(row.whatsapp_number ?? row.mobile ?? ''),
-    ) ?? '';
+    // Leads store ten bare digits; a broadcast needs the dialable form.
+    const handle = toInternational(null, String(row.whatsapp_number ?? row.mobile ?? '')) ?? '';
 
     if (!handle) {
       skips.push({ recordId, handle: '', name, reason: 'No WhatsApp number on the record' });

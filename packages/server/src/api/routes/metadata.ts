@@ -10,6 +10,8 @@ import {
   countRecordsWithValue, fieldsThatCannotBeCleared, fieldsUsingPicklist,
   PICKLISTS_USED_IN_CODE, replaceValueInRecords, valueUsedInCode,
 } from '../../core/metadata/picklists.js';
+import { interchangeableTypes } from '../../core/metadata/fieldTypes.js';
+import { FIELDS_USED_IN_CODE, renameFieldEverywhere } from '../../core/metadata/fieldRename.js';
 import { assertCapability, canAccessModule, getFieldPermissions, getModulePermission, hasCapability, invalidatePermissions } from '../../core/permissions/index.js';
 import { FORMULA_FUNCTIONS, validateFormula } from '../../core/entity/formula.js';
 import { quoteIdent } from '../../core/query/builder.js';
@@ -414,6 +416,12 @@ metadataRouter.post('/modules/:name/blocks', asyncHandler(async (req, res) => {
   const module = await registry.requireModule(req.params.name, { allowDisabled: true });
   const input = blockSchema.parse(req.body);
   const seq = input.sequence ?? module.blocks.length;
+  // Adding a section back lifts its tombstone, the same way re-adding a deleted
+  // dropdown option does. That is somebody changing their mind, not an accident.
+  await db.query(
+    `DELETE FROM ipy_block_tombstone WHERE module_name = $1 AND block_name = $2`,
+    [module.name, input.name],
+  );
   const row = await db.queryOne<{ id: string }>(
     `INSERT INTO ipy_block (module_id, name, label, sequence, columns, is_collapsed, is_custom)
      VALUES ($1,$2,$3,$4,$5,$6,true)
@@ -437,22 +445,80 @@ metadataRouter.patch('/blocks/:id', asyncHandler(async (req, res) => {
     params.push(v);
     sets.push(`${col} = $${params.length}`);
   }
-  if (sets.length) await db.query(`UPDATE ipy_block SET ${sets.join(', ')} WHERE id = $1`, params);
+  if (sets.length) {
+    // Claim it as admin-owned, or the next cold start puts the template's name
+    // back — the same contract ipy_field.is_customised has.
+    sets.push('is_customised = true');
+    await db.query(`UPDATE ipy_block SET ${sets.join(', ')} WHERE id = $1`, params);
+  }
   invalidateAll();
   res.json({ ok: true });
 }));
 
+/**
+ * Delete a section.
+ *
+ * Two things used to make this impossible and both looked like a bug. It only
+ * deleted `is_custom` rows, so the sections that came with the CRM — KYC,
+ * Communication Preferences — could never be removed no matter how empty they
+ * were; and the Layout Designer's own delete only ever edited a layout, so a
+ * section removed there stayed in the Section dropdown and kept showing on this
+ * page as "No fields in this block". One section, two lists, and neither was
+ * the truth.
+ *
+ * Now there is one: the section itself goes, and it comes off every layout that
+ * placed it. A section with fields still in it is refused with the count,
+ * because a delete that quietly moved somebody's fields elsewhere is worse than
+ * one that says what is in the way.
+ */
 metadataRouter.delete('/blocks/:id', asyncHandler(async (req, res) => {
   await assertCapability(getUser(req), 'admin.fields');
+  const block = await db.queryOne<{ id: string; name: string; label: string; module_id: string }>(
+    `SELECT id, name, label, module_id FROM ipy_block WHERE id = $1`, [req.params.id],
+  );
+  if (!block) throw new NotFoundError('Section not found');
+
   const fields = await db.queryOne<{ count: number }>(
     `SELECT COUNT(*)::int AS count FROM ipy_field WHERE block_id = $1`, [req.params.id],
   );
-  if ((fields?.count ?? 0) > 0) {
-    throw new ConflictError('Move or delete the fields in this block first.');
+  const count = fields?.count ?? 0;
+  if (count > 0) {
+    throw new ConflictError(
+      `“${block.label}” still holds ${count} field${count === 1 ? '' : 's'}. `
+      + 'Move them to another section, or delete them, and this section can go.',
+    );
   }
-  await db.query(`DELETE FROM ipy_block WHERE id = $1 AND is_custom = true`, [req.params.id]);
+
+  const siblings = await db.queryOne<{ count: number }>(
+    `SELECT COUNT(*)::int AS count FROM ipy_block WHERE module_id = $1`, [block.module_id],
+  );
+  if ((siblings?.count ?? 0) <= 1) {
+    throw new ConflictError('A module needs at least one section — fields have to live somewhere.');
+  }
+
+  const moduleRow = await registry.getModuleById(block.module_id);
+  await transaction(async (tx) => {
+    // Durable, or the seed rebuilds it on the next cold start and the section
+    // is back within the hour with nothing to show what happened.
+    await tx.query(
+      `INSERT INTO ipy_block_tombstone (module_name, block_name, deleted_by, label)
+       VALUES ($1,$2,$3,$4) ON CONFLICT (module_name, block_name) DO NOTHING`,
+      [moduleRow?.name ?? '', block.name, getUser(req).id, block.label],
+    );
+    await tx.query(`DELETE FROM ipy_block WHERE id = $1`, [block.id]);
+    // Layouts name their sections by the block's `name`, not its id.
+    await tx.query(
+      `UPDATE ipy_layout
+          SET config = jsonb_set(config, '{blocks}', COALESCE((
+                SELECT jsonb_agg(b) FROM jsonb_array_elements(config -> 'blocks') AS b
+                 WHERE b ->> 'key' <> $2
+              ), '[]'::jsonb))
+        WHERE module_id = $1 AND jsonb_typeof(config -> 'blocks') = 'array'`,
+      [block.module_id, block.name],
+    );
+  });
   invalidateAll();
-  res.json({ ok: true });
+  res.json({ ok: true, deleted: block.name });
 }));
 
 // ---------------------------------------------------------------------------
@@ -555,16 +621,78 @@ metadataRouter.post('/modules/:name/fields', asyncHandler(async (req, res) => {
 
 metadataRouter.patch('/fields/:id', asyncHandler(async (req, res) => {
   await assertCapability(getUser(req), 'admin.fields');
-  const input = fieldSchema.partial().omit({ name: true }).parse(req.body);
+  const input = fieldSchema.partial().parse(req.body);
 
-  const current = await db.queryOne<{ uitype: string; config: Record<string, unknown>; is_custom: boolean; module_id: string; display_type: string }>(
-    `SELECT uitype, config, is_custom, module_id, display_type FROM ipy_field WHERE id = $1`, [req.params.id],
+  const current = await db.queryOne<{
+    name: string; label: string; uitype: string; config: Record<string, unknown>;
+    is_custom: boolean; storage: string; module_id: string; display_type: string;
+  }>(
+    `SELECT name, label, uitype, config, is_custom, storage, module_id, display_type
+       FROM ipy_field WHERE id = $1`,
+    [req.params.id],
   );
   if (!current) throw new NotFoundError('Field not found');
+  const module = await registry.getModuleById(current.module_id);
+  if (!module) throw new NotFoundError('Field not found');
 
-  if (input.uitype && input.uitype !== current.uitype && !current.is_custom) {
-    throw new BadRequestError('The type of a built-in field cannot be changed.');
+  /**
+   * Changing a field's type.
+   *
+   * This used to refuse outright for anything the admin had not created, which
+   * made "metadata-driven" a promise the admin panel did not keep — a Text
+   * field seeded as Text stayed Text for ever. What actually constrains it is
+   * storage, not who created it: an admin-created field lives in a JSONB
+   * document that holds any shape, while a built-in field is a real column with
+   * a real type. Email → Text is free; Date → Text is a write that fails on the
+   * row rather than on the form.
+   */
+  if (input.uitype && input.uitype !== current.uitype && current.storage === 'column') {
+    const allowed = interchangeableTypes(current.uitype);
+    if (!allowed.includes(input.uitype)) {
+      const names = allowed
+        .filter((u) => u !== current.uitype)
+        .map((u) => UITYPES[u as keyof typeof UITYPES]?.label ?? u);
+      throw new BadRequestError(
+        `“${current.label}” is stored as ${current.uitype}, so it can only become ${
+          names.length ? names.join(', ') : 'the same type'
+        }. To make it ${input.uitype}, add a new field of that type and delete this one.`,
+      );
+    }
   }
+
+  /**
+   * Changing a field's API name.
+   *
+   * Safe in a way that is not obvious: records are stored under `column_name`,
+   * never under `name`, so a rename moves no data and can lose no value. What
+   * it does break is every reference by name — saved views, filters, layouts,
+   * workflows, widgets, reports, formulas — and `renameFieldEverywhere` is what
+   * puts those back. Without it the rename appears to work and a view quietly
+   * renders a blank column.
+   */
+  let renamed: { from: string; to: string; references: number } | null = null;
+  if (input.name && input.name !== current.name) {
+    const taken = module.fields.some((f) => f.name === input.name);
+    if (taken) throw new ConflictError(`${module.label} already has a field named '${input.name}'`);
+    const usedInCode = FIELDS_USED_IN_CODE[`${module.name}.${current.name}`];
+    if (usedInCode) {
+      throw new BadRequestError(
+        `The API name “${current.name}” cannot be changed because the CRM reads it directly: ${usedInCode}. `
+        + `Renaming it would leave that working on a field that no longer exists. `
+        + `The Label above it is what everyone actually sees, and that you can change to anything.`,
+      );
+    }
+    // `record_id` is the join between a record and its payload row, not a
+    // field anybody filled in. Everything else the module reads by name —
+    // the naming fields, the pipeline field — is rewritten by the pass below.
+    if (current.name === 'record_id') {
+      throw new BadRequestError('“record_id” is the record identifier itself and cannot be renamed.');
+    }
+    const { references } = await transaction((tx) =>
+      renameFieldEverywhere(current.module_id, module.name, current.name, input.name!, tx));
+    renamed = { from: current.name, to: input.name, references };
+  }
+
   const nextType = input.uitype ?? current.uitype;
   /**
    * Config is merged, not replaced — a caller patching only `label` must not
@@ -587,6 +715,7 @@ metadataRouter.patch('/fields/:id', asyncHandler(async (req, res) => {
   }
 
   const map: Record<string, string> = {
+    name: 'name',
     label: 'label', uitype: 'uitype', blockId: 'block_id', sequence: 'sequence',
     isMandatory: 'is_mandatory', isReadonly: 'is_readonly', isUnique: 'is_unique', isActive: 'is_active',
     displayType: 'display_type', maxLength: 'max_length', helpText: 'help_text',
@@ -611,8 +740,12 @@ metadataRouter.patch('/fields/:id', asyncHandler(async (req, res) => {
   }
   invalidateAll();
 
-  const module = await registry.getModuleById(current.module_id);
-  res.json(module ? await registry.getField(module.name, (await db.queryOne<{ name: string }>(`SELECT name FROM ipy_field WHERE id = $1`, [req.params.id]))!.name) : { ok: true });
+  const stored = await db.queryOne<{ name: string }>(`SELECT name FROM ipy_field WHERE id = $1`, [req.params.id]);
+  const saved = await registry.getField(module.name, stored!.name);
+  // The rename count goes back so the editor can say what moved with it —
+  // "renamed, and 6 views, layouts and rules followed" is the difference
+  // between a change somebody trusts and one they undo out of caution.
+  res.json(renamed ? { ...saved, renamed } : saved);
 }));
 
 /** Bulk reorder after a drag in the layout designer. */

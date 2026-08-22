@@ -36,7 +36,6 @@ describe('live list attention and favourites', () => {
     const marker = randomUUID().slice(0, 8);
     const created = await auth('post', '/api/records/leads').send({
       full_name: `Pipeline New ${marker}`,
-      country_code: '+91',
       mobile: `98${Math.floor(10_000_000 + Math.random() * 89_999_999)}`,
       status: 'New',
     }).expect(201);
@@ -75,7 +74,6 @@ describe('live list attention and favourites', () => {
     const marker = `Summary ${randomUUID()}`;
     const created = await auth('post', '/api/records/leads').send({
       full_name: marker,
-      country_code: '+91',
       mobile: `97${Math.floor(10_000_000 + Math.random() * 89_999_999)}`,
     }).expect(201);
 
