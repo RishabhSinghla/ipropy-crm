@@ -472,6 +472,16 @@ webhooksRouter.get('/n8n/pending-folders', asyncHandler(async (req, res) => {
        JOIN ipy_record r ON r.id = s.record_id
       WHERE (s.onedrive_folder_at IS NULL OR s.onedrive_folder_at < r.updated_at)
         AND r.is_deleted = false
+        -- Once photos have reached the record, stop touching the folder at all.
+        --
+        -- The folder is the team's after the handover: theirs to rename, empty
+        -- or reorganise. A details file quietly reappearing in a folder
+        -- somebody has tidied is the software arguing with them, and it makes
+        -- the boundary conditional when the whole point is that it is not.
+        AND NOT EXISTS (
+          SELECT 1 FROM ipy_attachment a
+           WHERE a.record_id = r.id AND a.mime_type LIKE 'image/%'
+        )
       ORDER BY s.created_at
       LIMIT 50`,
   );
