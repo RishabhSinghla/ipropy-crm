@@ -25,6 +25,7 @@
  * fire-and-forget POST.
  */
 import { config } from '../../config.js';
+import { db } from '../../db/pool.js';
 import { getSettings } from '../../core/settings/integrations.js';
 import { logger } from '../../utils/logger.js';
 import { getPropertyStorageStatus } from '../../core/storage/propertyFolders.js';
@@ -48,6 +49,29 @@ export function isConfigured(): boolean {
  * Returns rather than throws, so the caller can log the outcome without
  * wrapping the call in a try/catch it would only ever swallow.
  */
+/** `b12-greenfield-4-bhk-250-sqyd`, from whatever the record actually has. */
+export async function propertyNamePrefix(recordId: string): Promise<string> {
+  const { slug } = await import('../../core/storage/keys.js');
+  const row = await db.queryOne<{
+    label: string; project_name: string | null; configuration: string | null;
+    locality: string | null; plot_area: number | null; area_unit: string | null;
+  }>(
+    `SELECT r.label, p.project_name, p.configuration, p.locality, p.plot_area, p.area_unit
+       FROM ipy_record r JOIN ipy_e_properties p ON p.record_id = r.id
+      WHERE r.id = $1`,
+    [recordId],
+  );
+  if (!row) return 'property';
+
+  const parts = [row.label, row.project_name, row.locality, row.configuration,
+    row.plot_area ? `${row.plot_area} ${row.area_unit ?? ''}` : null]
+    .filter((v): v is string => Boolean(v && String(v).trim()))
+    .map((v) => slug(String(v), 32))
+    .filter(Boolean);
+
+  return parts.join('-').slice(0, 90) || 'property';
+}
+
 export async function notifyPropertyFinished(recordId: string): Promise<HandoffResult> {
   const url = getSettings().automation.n8nWebhookUrl;
   if (!url) return { sent: false, reason: 'no n8n webhook URL configured' };
@@ -66,6 +90,13 @@ export async function notifyPropertyFinished(recordId: string): Promise<HandoffR
   const payload = {
     propertyId: recordId,
     folder: storage.folderKey,
+    // What every file for this property should be called.
+    //
+    // IMG_4371.jpg says nothing to a buyer, to Google, or to whoever opens the
+    // folder in six months. Built from whatever the record actually has, so a
+    // half-filled property still gets a usable name rather than a row of
+    // hyphens.
+    namePrefix: await propertyNamePrefix(recordId),
     // n8n calls back to us, so it should be told where "us" is rather than
     // guessing from a hardcoded default.
     crmBaseUrl: config.apiUrl,

@@ -9,6 +9,10 @@
 #   make_all_shapes.sh <property-root>
 set -eu
 ROOT="$1"
+# Supplied by the CRM, which is the only thing that knows what this property is
+# called. Empty is fine: the camera's own name is used and nothing breaks.
+PREFIX="${2:-}"
+SEQ=0
 SRC="$ROOT/01_RAW_UPLOADS/PHOTOS"
 KEEP_MIN=60          # below this % of the image surviving a crop, fit instead
 
@@ -33,6 +37,9 @@ EOF
 for f in "$SRC"/*.jpg "$SRC"/*.JPG "$SRC"/*.jpeg "$SRC"/*.heic "$SRC"/*.HEIC; do
   [ -f "$f" ] || continue
   n=$(basename "$f"); n="${n%.*}"
+  SEQ=$((SEQ+1))
+  # Two digits so a folder of twenty sorts the way a person expects.
+  [ -n "$PREFIX" ] && n=$(printf "%s-%02d" "$PREFIX" "$SEQ")
 
   # Skip a photo whose work is already done.
   #

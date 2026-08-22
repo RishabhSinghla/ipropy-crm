@@ -61,12 +61,15 @@ PROPERTY_STEPS = (
 )
 
 
-def run_property(folder: str) -> dict:
+def run_property(folder: str, prefix: str = "") -> dict:
     root = str(safe_target(folder))
     done, failed, log = [], [], []
     for label, job, suffix, args in PROPERTY_STEPS:
         try:
-            r = run_job(job, folder + suffix, [a.format(root=root) for a in args])
+            extra = [a.format(root=root) for a in args]
+            if label == "photos" and prefix:
+                extra.append(prefix)
+            r = run_job(job, folder + suffix, extra)
         except FileNotFoundError:
             # No video folder, or no photos yet. Ordinary, not broken.
             log.append(f"{label}: nothing to do")
@@ -159,7 +162,7 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
             body = json.loads(self.rfile.read(length) or b"{}")
             if body["job"] == "property":
-                result = run_property(body["folder"])
+                result = run_property(body["folder"], body.get("prefix", ""))
             else:
                 result = run_job(body["job"], body["folder"], body.get("args", []))
             self._reply(200 if result["ok"] else 500, result)

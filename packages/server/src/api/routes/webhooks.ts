@@ -509,7 +509,14 @@ webhooksRouter.get('/n8n/pending-media', asyncHandler(async (req, res) => {
       LIMIT 10`,
   );
 
-  res.json({ properties: rows.map((r) => ({ propertyId: r.record_id, folder: r.folder_key })) });
+  const { propertyNamePrefix } = await import('../../integrations/automation/n8n.js');
+  res.json({
+    properties: await Promise.all(rows.map(async (r) => ({
+      propertyId: r.record_id,
+      folder: r.folder_key,
+      namePrefix: await propertyNamePrefix(r.record_id),
+    }))),
+  });
 }));
 
 /** n8n made the folders on disk; record that so the CRM stops asking. */

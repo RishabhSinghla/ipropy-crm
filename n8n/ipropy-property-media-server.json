@@ -60,6 +60,12 @@
               "name": "folder",
               "value": "={{ $json.body ? $json.body.folder : $json.folder }}",
               "type": "string"
+            },
+            {
+              "id": "r5",
+              "name": "namePrefix",
+              "value": "={{ $json.body ? $json.body.namePrefix : $json.namePrefix }}",
+              "type": "string"
             }
           ]
         },
@@ -240,7 +246,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ job: 'property', folder: $('Work out the folder').first().json.folder }) }}",
+        "jsonBody": "={{ JSON.stringify({ job: 'property', folder: $('Work out the folder').first().json.folder, prefix: $('Work out the folder').first().json.namePrefix || '' }) }}",
         "options": {
           "timeout": 1800000,
           "response": {
