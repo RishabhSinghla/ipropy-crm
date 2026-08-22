@@ -209,6 +209,40 @@ describe('the outbound handoff', () => {
     expect(out.sent, 'n8n would find an empty folder').toBe(false);
     expect(out.reason).toMatch(/pending|not ready/i);
   });
+
+  it('buzzes once for a run, however many times the pipeline reports it', async () => {
+    withAutomation({ n8nCallbackSecret: SECRET });
+    // The owner got eight "photos are ready" alerts for one property. Both the
+    // webhook and the poller can pick the same property up, and pressing Finish
+    // twice after adding photos is ordinary, so every run was notifying again.
+    await db.query(
+      `UPDATE ipy_property_storage
+          SET media_requested_at = now(), media_done_at = NULL, last_error = NULL
+        WHERE record_id = $1`,
+      [propertyId],
+    );
+
+    const send = () => request(app)
+      .post('/api/webhooks/n8n/content-ready')
+      .set('x-n8n-secret', SECRET)
+      .send({ propertyId, ok: true, summary: 'ready' });
+
+    const first = await send();
+    const second = await send();
+    const third = await send();
+
+    expect(first.body.notified).toBeGreaterThan(0);
+    expect(second.body.duplicate).toBe(true);
+    expect(second.body.notified).toBe(0);
+    expect(third.body.notified).toBe(0);
+
+    // But a failure after a success is new information, not a repeat.
+    const failed = await request(app)
+      .post('/api/webhooks/n8n/content-ready')
+      .set('x-n8n-secret', SECRET)
+      .send({ propertyId, ok: false, summary: 'the video was unreadable' });
+    expect(failed.body.notified).toBeGreaterThan(0);
+  });
 });
 
 async function countNotifications(): Promise<number> {

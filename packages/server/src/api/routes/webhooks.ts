@@ -564,33 +564,6 @@ webhooksRouter.post('/n8n/content-ready', asyncHandler(async (req, res) => {
     ok: z.boolean().default(true),
   }).parse(req.body);
 
-  // Stops n8n collecting the same property forever, and decides whether this
-  // call is the one that gets to tell anybody.
-  //
-  // This used to set the timestamp unconditionally and then notify every time,
-  // so a phone buzzed once per pipeline run rather than once per Finish. A day
-  // of testing sent the owner eight "photos are ready" alerts for one property,
-  // and it would have done the same to his team: the poller and the webhook can
-  // both pick up the same property, and pressing Finish twice is normal.
-  //
-  // The WHERE clause is what makes it safe rather than a check-then-act. Two
-  // runs finishing together both try; exactly one updates a row, and only that
-  // one notifies.
-  const claimed = await db.query(
-    `UPDATE ipy_property_storage
-        SET media_done_at = now(), updated_at = now()
-      WHERE record_id = $1
-        AND (media_done_at IS NULL OR media_done_at < media_requested_at)
-      RETURNING record_id`,
-    [input.propertyId],
-  );
-
-  if (claimed.rowCount === 0) {
-    logger.info({ propertyId: input.propertyId }, 'n8n reported again on an already-reported run; not notifying');
-    res.json({ ok: true, notified: 0, duplicate: true });
-    return;
-  }
-
   const property = await db.queryOne<{ label: string; owner_id: string | null }>(
     `SELECT r.label, r.owner_id
        FROM ipy_record r
@@ -598,6 +571,48 @@ webhooksRouter.post('/n8n/content-ready', asyncHandler(async (req, res) => {
     [input.propertyId],
   );
   if (!property) throw new NotFoundError('Property not found');
+
+  // Decide whether this call is the one that gets to tell anybody.
+  //
+  // The owner's phone got eight "photos are ready" alerts for one property.
+  // Both entry paths can pick up the same property, and pressing Finish twice
+  // after adding photos is ordinary use, so every run was buzzing him again. An
+  // alert that fires eight times is an alert people switch off.
+  //
+  // Suppressing repeats is not the same as going quiet. A failure arriving
+  // after a success is new information and must always get through, and so must
+  // a recovery — silence there is indistinguishable from never having started.
+  // So the test is whether the *outcome* changed, using last_error as the record
+  // of what was last reported, not merely whether we have reported before.
+  //
+  // The WHERE clause does the deciding rather than a read-then-write, so two
+  // runs finishing together end up with exactly one of them notifying.
+  const prior = await db.queryOne<{ had_error: boolean; already: boolean }>(
+    `SELECT last_error IS NOT NULL AS had_error,
+            (media_done_at IS NOT NULL AND media_done_at >= media_requested_at) AS already
+       FROM ipy_property_storage WHERE record_id = $1`,
+    [input.propertyId],
+  );
+  const outcomeChanged = prior ? prior.had_error === input.ok : true;
+
+  const claimed = await db.query(
+    `UPDATE ipy_property_storage
+        SET media_done_at = now(),
+            last_error = $2,
+            updated_at = now()
+      WHERE record_id = $1
+      RETURNING record_id`,
+    [input.propertyId, input.ok ? null : (input.summary ?? 'processing failed')],
+  );
+
+  if (claimed.rowCount > 0 && prior?.already && !outcomeChanged) {
+    logger.info(
+      { propertyId: input.propertyId, ok: input.ok },
+      'n8n reported the same outcome again; not notifying',
+    );
+    res.json({ ok: true, notified: 0, duplicate: true });
+    return;
+  }
 
   // The owner. Shoot sessions are gone, so there is no second person to find:
   // whoever uploaded did it in OneDrive, which the CRM never saw.
