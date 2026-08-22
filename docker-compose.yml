@@ -6,7 +6,12 @@ services:
     # Changing this major version makes the existing data directory unreadable
     # — the volume has to be recreated, which is why the script backs up local
     # before it does anything.
-    image: postgres:18-alpine
+    # pgvector rather than plain Postgres, because production has it and
+    # semantic search is a real column type rather than a library call. Neon
+    # ships pgvector 0.8.6; this is the closest local equivalent, and a local
+    # database that cannot hold a vector fails the migration on boot rather
+    # than quietly running a CRM with search switched off.
+    image: pgvector/pgvector:pg18
     container_name: ipropy-db
     restart: unless-stopped
     environment:

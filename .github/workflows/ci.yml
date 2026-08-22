@@ -16,7 +16,7 @@ jobs:
     # scratch database inside this one (see tests/integration/globalSetup.ts).
     services:
       postgres:
-        image: postgres:16-alpine
+        image: pgvector/pgvector:pg18
         env:
           POSTGRES_USER: ipropy
           POSTGRES_PASSWORD: ipropy
@@ -79,7 +79,7 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        image: postgres:16-alpine
+        image: pgvector/pgvector:pg18
         env:
           POSTGRES_USER: ipropy
           POSTGRES_PASSWORD: ipropy

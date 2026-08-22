@@ -56,7 +56,7 @@ jobs:
       # because the failure everyone actually has is a backup nobody ever tried.
       - name: Prove it restores
         run: |
-          docker run -d --name verify -e POSTGRES_PASSWORD=verify -p 5433:5432 postgres:18-alpine
+          docker run -d --name verify -e POSTGRES_PASSWORD=verify -p 5433:5432 pgvector/pgvector:pg18
           for i in $(seq 1 30); do docker exec verify pg_isready -U postgres >/dev/null 2>&1 && break; sleep 2; done
           PGPASSWORD=verify pg_restore --no-owner --no-acl -h localhost -p 5433 -U postgres -d postgres "ipropy-$STAMP.dump" || true
           TABLES=$(PGPASSWORD=verify psql -h localhost -p 5433 -U postgres -d postgres -tAc \
