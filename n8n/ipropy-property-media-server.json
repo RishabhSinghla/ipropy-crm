@@ -76,25 +76,11 @@
     },
     {
       "parameters": {
-        "fileSelector": "={{ $json.root }}/01_RAW_UPLOADS/PHOTOS/*",
-        "options": {}
-      },
-      "id": "a1000000-0000-4000-8000-000000000004",
-      "name": "Read the originals",
-      "type": "n8n-nodes-base.readWriteFile",
-      "typeVersion": 1.1,
-      "position": [
-        60,
-        380
-      ]
-    },
-    {
-      "parameters": {
         "method": "POST",
         "url": "={{ $('Work out the folder').first().json.crmBaseUrl }}/api/webhooks/n8n/content-ready",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ propertyId: $('Work out the folder').first().json.propertyId, folder: $('Work out the folder').first().json.root, ok: true }) }}",
+        "jsonBody": "={{ JSON.stringify({ propertyId: $('Work out the folder').first().json.propertyId, folder: $('Work out the folder').first().json.root, ok: $('Process the property').first().json.ok === true, summary: $('Process the property').first().json.summary}) }}",
         "options": {},
         "sendHeaders": true,
         "specifyHeaders": "keypair",
@@ -226,99 +212,6 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "={{ $env.MEDIA_SERVICE_URL }}/run",
-        "sendHeaders": true,
-        "specifyHeaders": "keypair",
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "x-media-token",
-              "value": "={{ $env.MEDIA_SERVICE_TOKEN }}"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ job: 'watermark', folder: $('Work out the folder').first().json.folder + '/01_RAW_UPLOADS/PHOTOS', args: ['/data/properties/' + $('Work out the folder').first().json.folder + '/03_EDITED_MEDIA/WATERMARKED'] }) }}",
-        "options": {
-          "timeout": 1800000
-        }
-      },
-      "onError": "continueRegularOutput",
-      "id": "f1000000-0000-4000-8000-000000000001",
-      "name": "Watermark with the real logo",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        300,
-        660
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "={{ $env.MEDIA_SERVICE_URL }}/run",
-        "sendHeaders": true,
-        "specifyHeaders": "keypair",
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "x-media-token",
-              "value": "={{ $env.MEDIA_SERVICE_TOKEN }}"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ job: 'shapes', folder: $('Work out the folder').first().json.folder, args: [] }) }}",
-        "options": {
-          "timeout": 1800000
-        }
-      },
-      "onError": "continueRegularOutput",
-      "id": "a2000000-0000-4000-8000-000000000001",
-      "name": "Make every shape",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        560,
-        900
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "={{ $env.MEDIA_SERVICE_URL }}/run",
-        "sendHeaders": true,
-        "specifyHeaders": "keypair",
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "x-media-token",
-              "value": "={{ $env.MEDIA_SERVICE_TOKEN }}"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ job: 'video', folder: $('Work out the folder').first().json.folder + '/01_RAW_UPLOADS/VIDEOS', args: ['/data/properties/' + $('Work out the folder').first().json.folder + '/06_VIDEO'] }) }}",
-        "options": {
-          "timeout": 1800000
-        }
-      },
-      "onError": "continueRegularOutput",
-      "id": "a3000000-0000-4000-8000-000000000001",
-      "name": "Make every video shape",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        560,
-        1060
-      ]
-    },
-    {
-      "parameters": {
         "fileSelector": "=/data/properties/{{ $('Work out the folder').first().json.folder }}/07_WEBSITE/*",
         "options": {}
       },
@@ -329,6 +222,42 @@
       "position": [
         800,
         60
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.MEDIA_SERVICE_URL }}/run",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-media-token",
+              "value": "={{ $env.MEDIA_SERVICE_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ job: 'property', folder: $('Work out the folder').first().json.folder }) }}",
+        "options": {
+          "timeout": 1800000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "c9000000-0000-4000-8000-000000000001",
+      "name": "Process the property",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        300,
+        380
       ]
     }
   ],
@@ -353,28 +282,7 @@
       "main": [
         [
           {
-            "node": "Read the originals",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Make every video shape",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Read the originals": {
-      "main": [
-        [
-          {
-            "node": "Make every shape",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Watermark with the real logo",
+            "node": "Process the property",
             "type": "main",
             "index": 0
           }
@@ -414,22 +322,33 @@
         ]
       ]
     },
-    "Make every shape": {
+    "Read the website copies": {
       "main": [
         [
           {
-            "node": "Read the website copies",
+            "node": "Send it to the CRM",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Read the website copies": {
+    "Send it to the CRM": {
       "main": [
         [
           {
-            "node": "Send it to the CRM",
+            "node": "Tell the CRM it is done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process the property": {
+      "main": [
+        [
+          {
+            "node": "Read the website copies",
             "type": "main",
             "index": 0
           }

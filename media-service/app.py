@@ -44,6 +44,52 @@ JOBS = {
     "video": "make_video_shapes.sh",
 }
 
+# Everything one property needs, in one call.
+#
+# Split across three n8n steps this could not report honestly: a step that
+# fails hands on an error object rather than a result, so the run had no
+# reliable way to see what went wrong and told the CRM everything was fine.
+# A property with no photos and a green tick is worse than a red one.
+#
+# Doing it here instead means one call, one answer, and a reason in plain
+# words. Each part still runs even if an earlier one failed, because a bad
+# video should not cost you the photos.
+PROPERTY_STEPS = (
+    ("photos", "shapes", "", []),
+    ("watermark", "watermark", "/01_RAW_UPLOADS/PHOTOS", ["{root}/03_EDITED_MEDIA/WATERMARKED"]),
+    ("video", "video", "/01_RAW_UPLOADS/VIDEOS", ["{root}/06_VIDEO"]),
+)
+
+
+def run_property(folder: str) -> dict:
+    root = str(safe_target(folder))
+    done, failed, log = [], [], []
+    for label, job, suffix, args in PROPERTY_STEPS:
+        try:
+            r = run_job(job, folder + suffix, [a.format(root=root) for a in args])
+        except FileNotFoundError:
+            # No video folder, or no photos yet. Ordinary, not broken.
+            log.append(f"{label}: nothing to do")
+            done.append(label)
+            continue
+        except Exception as err:  # noqa: BLE001
+            failed.append(label)
+            log.append(f"{label}: {err}")
+            continue
+        (done if r["ok"] else failed).append(label)
+        log.append(f"{label}: {'ok' if r['ok'] else (r['error'] or '').strip()[-200:]}")
+
+    return {
+        "ok": not failed,
+        "done": done,
+        "failed": failed,
+        "summary": ("Photos, social sizes and the walkthrough are ready."
+                    if not failed else
+                    f"These did not finish: {', '.join(failed)}. "
+                    "Your originals are safe. Press Finish again once fixed."),
+        "output": "\n".join(log),
+    }
+
 
 def safe_target(raw: str) -> Path:
     """Resolve a caller-supplied path and refuse anything outside the media root.
@@ -98,7 +144,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         if self.path == "/health":
-            self._reply(200, {"ok": True, "root": str(MEDIA_ROOT), "jobs": sorted(JOBS)})
+            self._reply(200, {"ok": True, "root": str(MEDIA_ROOT), "jobs": sorted([*JOBS, "property"])})
         else:
             self._reply(404, {"error": "not found"})
 
@@ -112,7 +158,10 @@ class Handler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get("Content-Length", "0"))
             body = json.loads(self.rfile.read(length) or b"{}")
-            result = run_job(body["job"], body["folder"], body.get("args", []))
+            if body["job"] == "property":
+                result = run_property(body["folder"])
+            else:
+                result = run_job(body["job"], body["folder"], body.get("args", []))
             self._reply(200 if result["ok"] else 500, result)
         except Exception as err:  # noqa: BLE001
             self._reply(400, {"ok": False, "error": str(err)})
