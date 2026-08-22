@@ -336,6 +336,15 @@ function isUnreachable(candidate: ResolvedSettings['ai']): boolean {
  */
 const STT_CAPABLE: { provider: Exclude<AiProvider, 'none'>; baseUrl: string; model: string }[] = [
   { provider: 'groq', baseUrl: 'https://api.groq.com/openai/v1', model: 'whisper-large-v3-turbo' },
+  // Nemotron's streaming multilingual model costs $0.012 an hour of audio and
+  // was trained on code-mixed speech, which is what a Faridabad sales call
+  // actually sounds like. Below Groq only because Groq's free tier costs
+  // nothing at all; either is a rounding error against a month of calls.
+  {
+    provider: 'openrouter',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    model: 'nvidia/nemotron-3.5-asr-streaming-multilingual-0.6b',
+  },
   { provider: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'whisper-1' },
 ];
 

@@ -14,12 +14,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ffmpeg \
       libheif1 \
       libde265-0 \
+      fonts-dejavu-core \
+      fonts-liberation2 \
     && rm -rf /var/lib/apt/lists/*
 
+# The fonts are not decoration. ffmpeg's drawtext refuses to run without a font
+# file on disk, so a title card with no font installed is not ugly, it is a
+# failed render.
+#
 # Pillow reads the ordinary formats; GraphicsMagick is the fallback for HEIC,
 # standing in for the macOS `sips` the scripts originally shelled out to.
+# numpy is here for one job: finding the beats in a music track so the reel
+# cuts on them instead of on a stopwatch. That difference is most of what
+# separates a property reel from a slideshow, and ffmpeg has no beat detector.
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir "Pillow>=11" "imageio[ffmpeg]>=2.34"
+    && pip install --no-cache-dir "Pillow>=11" "imageio[ffmpeg]>=2.34" "numpy>=2.0"
 
 WORKDIR /app
 COPY scripts/ /app/scripts/

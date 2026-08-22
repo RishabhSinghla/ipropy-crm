@@ -37,11 +37,20 @@ JOBS = {
     "finish": "professional_photo_finish.py",
     "compress": "compress_iphone_media.py",
     "walkthrough": "create_ipropy_walkthrough.py",
+    # HEIC to JPEG, then the professional finish, into EDITED/FINISHED. Runs
+    # before the shapes so all five come off a corrected photograph.
+    "prepare": "prepare_photos.sh",
+    # A model looks at every photo, names it, orders it, and rewrites the
+    # listing copy from what is actually in the rooms.
+    "name": "name_and_describe.py",
     # Every shape a broker posts, from one horizontal photo. Crops where the
     # target is close to the source and fits onto a blurred backdrop where it is
     # not, because a 9:16 crop of a landscape room keeps 31% of it.
     "shapes": "make_all_shapes.sh",
     "video": "make_video_shapes.sh",
+    # The two that make a video worth watching. Neither generates a frame.
+    "reel": "make_photo_reel.py",
+    "edit": "edit_walkthrough.py",
 }
 
 # Everything one property needs, in one call.
@@ -54,10 +63,26 @@ JOBS = {
 # Doing it here instead means one call, one answer, and a reason in plain
 # words. Each part still runs even if an earlier one failed, because a bad
 # video should not cost you the photos.
+# Order is not arbitrary and each step depends on the one above it.
+#
+#   name      renames the originals. Everything downstream keys off the
+#             filename, so this cannot run later without five folders
+#             disagreeing about what a photograph is called.
+#   prepare   HEIC to JPEG and the professional finish.
+#   photos    the five shapes, cut from the finished copies.
+#   watermark the logo, on the 4x3 only. After the crop, or the crop eats it.
+#   reel      a vertical reel from the photographs.
+#   edit      the walkthrough he shot, cut down.
+#   video     the plain 9:16 conversion, as a floor under `edit`.
+#
 # Paths carry the unit, which is the first part of the property folder name.
 PROPERTY_STEPS = (
+    ("name", "name", "", ["{u}", "{facts}"]),
+    ("prepare", "prepare", "", ["{u}"]),
     ("photos", "shapes", "", []),
     ("watermark", "watermark", "/{u}-SHAPES/4x3", ["{root}/{u}-EDITED/WATERMARKED"]),
+    ("reel", "reel", "", ["{u}", "{facts}"]),
+    ("walkthrough", "edit", "", ["{u}", "{facts}"]),
     ("video", "video", "/{u}-RAW-UPLOADS/VIDEOS", ["{root}/{u}-VIDEO", "{prefix}"]),
 )
 
@@ -68,17 +93,25 @@ def unit_of(folder: str) -> str:
     return (last.split("-")[0] or "PROPERTY").upper()
 
 
-def run_property(folder: str, prefix: str = "") -> dict:
+def run_property(folder: str, prefix: str = "", facts: dict | None = None) -> dict:
     root = str(safe_target(folder))
     unit = unit_of(folder)
+    facts_json = json.dumps(facts or {})
+    index_path = Path(root, f"{unit}-PHOTO-INDEX.json")
     done, failed, log = [], [], []
     for label, job, suffix, args in PROPERTY_STEPS:
         try:
-            extra = [a.format(root=root, u=unit, prefix=prefix or unit) for a in args]
+            extra = [a.format(root=root, u=unit, prefix=prefix or unit, facts=facts_json) for a in args]
             if label == "photos":
                 # The shape maker takes the name to use, then the unit whose
-                # folders it writes into.
-                extra.extend([prefix, unit])
+                # folders it writes into. An empty name means "keep the one the
+                # file already has".
+                #
+                # Checked here rather than at the top of the run, because the
+                # naming pass a few lines above is what creates the index. Read
+                # too early and every photo it just named is renamed back to
+                # A1818-01, A1818-02, and the room is thrown away.
+                extra.extend(["" if index_path.is_file() else prefix, unit])
             r = run_job(job, folder + suffix.format(u=unit), extra)
         except FileNotFoundError:
             # No video folder, or no photos yet. Ordinary, not broken.
@@ -96,7 +129,8 @@ def run_property(folder: str, prefix: str = "") -> dict:
         "ok": not failed,
         "done": done,
         "failed": failed,
-        "summary": ("Photos, social sizes and the walkthrough are ready."
+        "summary": ("Photos are named and finished, every social size is cut, "
+                    "and both videos are ready."
                     if not failed else
                     f"These did not finish: {', '.join(failed)}. "
                     "Your originals are safe. Press Finish again once fixed."),
@@ -172,7 +206,7 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
             body = json.loads(self.rfile.read(length) or b"{}")
             if body["job"] == "property":
-                result = run_property(body["folder"], body.get("prefix", ""))
+                result = run_property(body["folder"], body.get("prefix", ""), body.get("facts"))
             else:
                 result = run_job(body["job"], body["folder"], body.get("args", []))
             self._reply(200 if result["ok"] else 500, result)

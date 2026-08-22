@@ -21,6 +21,8 @@ import {
   captureLead, normalizeFacebook, normalizeGoogleAds, normalizePortal, type NormalizedLead,
 } from '../../integrations/leadsources/capture.js';
 import { recordOpen } from '../../integrations/email/service.js';
+import { complete } from '../../ai/client.js';
+import { MEDIA_MODELS, mediaAiStatus, music, speak } from '../../ai/media.js';
 import { notifyMany } from '../../core/notifications/index.js';
 
 export const webhooksRouter = Router();
@@ -534,13 +536,128 @@ webhooksRouter.get('/n8n/pending-media', asyncHandler(async (req, res) => {
   );
 
   const { propertyNamePrefix } = await import('../../integrations/automation/n8n.js');
+  const { propertyFacts } = await import('../../core/storage/propertyDetails.js');
   res.json({
+    // Facts travel with the job. The worker has the pixels and the CRM has the
+    // price, the configuration and the locality; a caption needs both, and
+    // sending them together is cheaper than a second round trip per property.
     properties: await Promise.all(rows.map(async (r) => ({
       propertyId: r.record_id,
       folder: r.folder_key,
       namePrefix: await propertyNamePrefix(r.record_id),
+      facts: await propertyFacts(r.record_id),
     }))),
   });
+}));
+
+/**
+ * AI for the media worker, through the CRM's own key.
+ *
+ * The worker renders pixels and knows nothing else. It could hold an OpenRouter
+ * key of its own, and that is exactly the trap this project keeps finding: two
+ * copies of one setting, one of them editable, quietly disagreeing. The key
+ * lives in Admin → Integrations, where an admin can rotate it or switch
+ * provider, and the worker borrows it over the channel it already trusts.
+ *
+ * Guarded by the same n8n secret as everything else here, and deliberately not
+ * a general proxy: three named jobs with fixed shapes, so a leaked secret buys
+ * an attacker some captions rather than an open relay to any model.
+ */
+const visionSchema = z.object({
+  prompt: z.string().min(1).max(20_000),
+  system: z.string().max(8_000).optional(),
+  // Eight at a time keeps a batch inside the 5MB body limit at the ~200KB
+  // preview size the worker sends. More than that and the request is refused
+  // rather than silently truncated.
+  images: z.array(z.object({
+    data: z.string().min(1),
+    mimeType: z.enum(['image/jpeg', 'image/png', 'image/webp']).default('image/jpeg'),
+  })).max(8).default([]),
+  maxTokens: z.number().int().min(64).max(16_000).optional(),
+  recordId: z.string().uuid().optional(),
+});
+
+webhooksRouter.post('/n8n/ai/vision', asyncHandler(async (req, res) => {
+  requireN8nSecret(req);
+  const input = visionSchema.parse(req.body);
+
+  const result = await complete({
+    feature: 'property_vision',
+    system: input.system ?? 'You are a property photographer and marketer. Answer only with the JSON asked for.',
+    prompt: input.prompt,
+    // No pictures is a normal call, not an empty one: the pass that writes the
+    // listing copy reasons over the notes the photo pass already produced.
+    ...(input.images.length
+      ? { images: input.images.map((i) => ({ data: Buffer.from(i.data, 'base64'), mimeType: i.mimeType })) }
+      : {}),
+    maxTokens: input.maxTokens ?? 4000,
+    temperature: 0.2,
+    recordId: input.recordId ?? null,
+  });
+
+  // 200 with `ok: false` rather than a 5xx: the worker has photos to process
+  // either way, and a failed caption must not read to n8n as a failed property.
+  if (!result) {
+    res.json({ ok: false, reason: 'No AI provider answered. Check Admin → Integrations.' });
+    return;
+  }
+  res.json({ ok: true, text: result.text, model: result.model });
+}));
+
+webhooksRouter.post('/n8n/ai/speech', asyncHandler(async (req, res) => {
+  requireN8nSecret(req);
+  const input = z.object({
+    text: z.string().min(1).max(8_000),
+    voice: z.string().max(60).optional(),
+    format: z.enum(['mp3', 'wav', 'opus']).default('mp3'),
+    speed: z.number().min(0.5).max(1.5).optional(),
+    model: z.string().max(120).optional(),
+    recordId: z.string().uuid().optional(),
+  }).parse(req.body);
+
+  const audio = await speak({
+    text: input.text,
+    voice: input.voice,
+    format: input.format,
+    speed: input.speed,
+    model: input.model,
+    recordId: input.recordId ?? null,
+  });
+  if (!audio) {
+    res.json({ ok: false, reason: mediaAiStatus().reason ?? 'The voice model did not answer.' });
+    return;
+  }
+  // Base64 in JSON rather than raw bytes, so one failure shape covers both
+  // outcomes and the worker never has to sniff a content type to find out
+  // whether it got audio or an apology.
+  res.json({ ok: true, format: input.format, audio: audio.toString('base64') });
+}));
+
+webhooksRouter.post('/n8n/ai/music', asyncHandler(async (req, res) => {
+  requireN8nSecret(req);
+  const input = z.object({
+    brief: z.string().min(1).max(2_000),
+    seconds: z.number().int().min(5).max(120).default(30),
+    model: z.string().max(120).optional(),
+    recordId: z.string().uuid().optional(),
+  }).parse(req.body);
+
+  const audio = await music(input.brief, {
+    seconds: input.seconds,
+    model: input.model,
+    recordId: input.recordId ?? null,
+  });
+  if (!audio) {
+    res.json({ ok: false, reason: mediaAiStatus().reason ?? 'The music model did not answer.' });
+    return;
+  }
+  res.json({ ok: true, format: 'mp3', audio: audio.toString('base64') });
+}));
+
+/** What the worker can expect to work before it starts a long job. */
+webhooksRouter.get('/n8n/ai/status', asyncHandler(async (req, res) => {
+  requireN8nSecret(req);
+  res.json({ ...mediaAiStatus(), models: MEDIA_MODELS });
 }));
 
 /** n8n made the folders on disk; record that so the CRM stops asking. */

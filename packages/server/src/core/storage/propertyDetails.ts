@@ -278,6 +278,35 @@ export async function writePropertyDetails(
 
 
 /**
+ * The property's facts as data rather than as a text file.
+ *
+ * The same list the details file prints, handed to whatever needs to *reason*
+ * about the property instead of display it — the vision pass that writes
+ * captions, above all. A model told only "here are 25 photos" writes a caption
+ * about a nice room; told the unit is a 4 BHK builder floor on 250 square yards
+ * in Greenfield Colony at 1.45 Cr, it writes the one somebody would answer.
+ */
+export async function propertyFacts(recordId: string): Promise<Record<string, string>> {
+  const row = await db.queryOne<Row>(
+    `SELECT r.label, r.record_number, p.* FROM ipy_e_properties p
+       JOIN ipy_record r ON r.id = p.record_id WHERE p.record_id = $1`,
+    [recordId],
+  );
+  if (!row) return {};
+
+  const facts: Record<string, string> = {};
+  for (const f of FIELDS) {
+    const raw = row[f.key];
+    if (raw === null || raw === undefined || raw === '') continue;
+    const value = f.money && typeof raw === 'number'
+      ? formatIndianPrice(raw)
+      : Array.isArray(raw) ? raw.join(', ') : String(raw);
+    if (value.trim()) facts[f.label] = value.trim();
+  }
+  return facts;
+}
+
+/**
  * The descriptions file for one property, ready to write.
  *
  * The three texts come from the record's own facts today. With a model

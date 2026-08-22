@@ -702,6 +702,7 @@ function TimelineItem({ entry }: { entry: TimelineEntry }): JSX.Element {
   };
 
   const recordingUrl = entry.meta?.recordingUrl as string | undefined;
+  const callId = entry.meta?.callId as string | undefined;
 
   return (
     <li className="relative">
@@ -735,7 +736,108 @@ function TimelineItem({ entry }: { entry: TimelineEntry }): JSX.Element {
       {recordingUrl && (
         <audio controls src={recordingUrl} className="mt-2 h-8 w-full max-w-sm" />
       )}
+
+      {entry.type === 'call' && callId && recordingUrl && (
+        <CallTranscript
+          callId={callId}
+          transcript={(entry.meta?.transcript as string | null) ?? null}
+          summary={(entry.meta?.summary as string | null) ?? null}
+        />
+      )}
     </li>
+  );
+}
+
+/**
+ * Read a call, or have it read back to you, where the call happened.
+ *
+ * Both of these already existed on the Calls page, which is the wrong place to
+ * put them: nobody opens Calls to catch up on one customer, they open the
+ * customer. So the recording, its words and its summary all live on the
+ * timeline entry, next to the WhatsApp messages and the site visit they belong
+ * with.
+ *
+ * Nothing runs on its own. A recording is only transcribed when somebody asks,
+ * which keeps the bill at zero for the calls nobody needs to revisit and keeps
+ * the timeline from filling with walls of text.
+ */
+function CallTranscript({ callId, transcript, summary }: {
+  callId: string; transcript: string | null; summary: string | null;
+}): JSX.Element {
+  const queryClient = useQueryClient();
+  const [text, setText] = useState(transcript);
+  const [gist, setGist] = useState(summary);
+  const [busy, setBusy] = useState<'transcribe' | 'summarise' | null>(null);
+  const [open, setOpen] = useState(false);
+
+  const transcribe = async (): Promise<void> => {
+    setBusy('transcribe');
+    try {
+      const result = await api.transcribeCall(callId);
+      setText(result.transcript);
+      setOpen(true);
+      toast.success('Recording transcribed');
+    } catch (err) {
+      toast.error('Could not transcribe this call', (err as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const summarise = async (): Promise<void> => {
+    setBusy('summarise');
+    try {
+      const result = await api.analyseCall(callId) as { summary?: string };
+      if (result.summary) setGist(result.summary);
+      void queryClient.invalidateQueries({ queryKey: ['timeline'] });
+      toast.success('Call summarised');
+    } catch (err) {
+      toast.error('Could not summarise this call', (err as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="mt-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {!text && (
+          <button
+            onClick={() => void transcribe()}
+            disabled={busy !== null}
+            className="btn-secondary btn-sm"
+          >
+            {busy === 'transcribe' && <Spinner />} Transcribe
+          </button>
+        )}
+        {text && (
+          <button onClick={() => setOpen(!open)} className="btn-ghost btn-sm px-2">
+            {open ? 'Hide' : 'Read'} transcript
+          </button>
+        )}
+        {text && !gist && (
+          <button
+            onClick={() => void summarise()}
+            disabled={busy !== null}
+            className="btn-secondary btn-sm"
+          >
+            {busy === 'summarise' && <Spinner />} Summarise
+          </button>
+        )}
+      </div>
+
+      {gist && !summary && (
+        <p className="mt-1.5 rounded-lg bg-slate-50 p-2 text-sm text-slate-700 dark:bg-slate-800/60 dark:text-slate-300">
+          {gist}
+        </p>
+      )}
+
+      {open && text && (
+        <p className="mt-1.5 max-h-64 overflow-y-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-2.5 text-sm text-muted dark:bg-slate-800/60">
+          {text}
+        </p>
+      )}
+    </div>
   );
 }
 

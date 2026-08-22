@@ -71,7 +71,7 @@ export async function buildTimeline(
         ? conn.query<CallRow>(
             `SELECT c.id::text, c.direction, c.status, c.duration_seconds, c.disposition,
                     c.recording_url, c.ai_summary, c.ai_sentiment, c.started_at, c.user_id,
-                    c.from_number, c.to_number,
+                    c.from_number, c.to_number, c.transcript,
                     trim(u.first_name || ' ' || u.last_name) AS user_name
              FROM ipy_call c LEFT JOIN ipy_user u ON u.id = c.user_id
              WHERE c.record_id = $1 ORDER BY c.started_at DESC LIMIT $2`,
@@ -158,6 +158,10 @@ export async function buildTimeline(
         direction: r.direction, status: r.status, duration: r.duration_seconds,
         disposition: r.disposition, recordingUrl: r.recording_url, sentiment: r.ai_sentiment,
         from: r.from_number, to: r.to_number,
+        // The id and the transcript travel with the entry so the timeline can
+        // offer Transcribe and Summarise where the call happened, rather than
+        // sending somebody to the Calls page to find the same recording again.
+        callId: r.id, transcript: r.transcript, summary: r.ai_summary,
       },
     });
   }
@@ -214,7 +218,7 @@ function empty<T>(): Promise<{ rows: T[]; rowCount: number }> {
 interface AuditRow { id: string; action: string; changes: unknown[]; created_at: string; source: string; user_id: string | null; user_name: string | null }
 interface CommentRow { id: string; body: string; created_at: string; user_id: string; user_name: string; is_private: boolean }
 interface MessageRow { id: string; direction: string; channel: string; type: string; body: string | null; status: string; is_ai_generated: boolean; created_at: string; sent_by: string | null; user_name: string | null; media: unknown }
-interface CallRow { id: string; direction: string; status: string; duration_seconds: number; disposition: string | null; recording_url: string | null; ai_summary: string | null; ai_sentiment: string | null; started_at: string; user_id: string | null; user_name: string | null; from_number: string; to_number: string }
+interface CallRow { id: string; direction: string; status: string; duration_seconds: number; disposition: string | null; recording_url: string | null; ai_summary: string | null; ai_sentiment: string | null; started_at: string; user_id: string | null; user_name: string | null; from_number: string; to_number: string; transcript: string | null }
 interface EmailRow { id: string; subject: string | null; direction: string; status: string; to_addresses: unknown; opened_at: string | null; open_count: number; created_at: string; sent_by: string | null; user_name: string | null }
 interface VisitRow { id: string; subject: string; status: string; scheduled_at: string; interest_level: string | null; feedback: string | null; ai_summary: string | null; ai_sentiment: string | null; owner_id: string | null; user_name: string | null }
 interface PaymentRow { id: string; milestone: string | null; status: string; amount_due: number; amount_paid: number; paid_on: string | null; due_date: string | null; receipt_number: string | null; created_at: string }

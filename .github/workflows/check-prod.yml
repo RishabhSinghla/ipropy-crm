@@ -47,6 +47,11 @@ jobs:
         env:
           PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
         run: |
+          echo "--- can this database do vector search ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT name, default_version, installed_version
+              FROM pg_available_extensions WHERE name IN ('vector','pg_trgm');"
+
           echo "--- migrations, newest first ---"
           psql "$PROD_DATABASE_URL" -P pager=off -tAc "
             SELECT name FROM ipy_migration ORDER BY name DESC LIMIT 6;"

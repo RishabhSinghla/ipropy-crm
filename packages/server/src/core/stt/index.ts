@@ -6,6 +6,7 @@
  * clear "not configured" signal and call analysis keeps requiring a manual
  * transcript — nothing throws, nothing blocks.
  */
+import { transcribe as transcribeViaOpenRouter } from '../../ai/media.js';
 import { logger } from '../../utils/logger.js';
 
 export interface SttSettings {
@@ -46,6 +47,21 @@ export async function transcribeAudio(
   s: SttSettings,
   opts: { language?: string; prompt?: string } = {},
 ): Promise<string> {
+  // OpenRouter serves this endpoint too, and does not speak multipart: it wants
+  // the audio base64-encoded inside JSON. Same job, different envelope, so the
+  // shape is chosen by who is answering rather than by a second setting for an
+  // admin to get wrong.
+  if (/openrouter\.ai/i.test(s.baseUrl)) {
+    const extension = fileName.includes('.') ? fileName.split('.').pop()! : 'mp3';
+    const result = await transcribeViaOpenRouter(
+      Buffer.isBuffer(audio) ? audio : Buffer.from(audio),
+      extension,
+      { model: s.model, language: opts.language },
+    );
+    if (!result?.text) throw new SttError('Transcription returned an empty result');
+    return result.text;
+  }
+
   const endpoint = `${s.baseUrl.replace(/\/$/, '')}/audio/transcriptions`;
   const form = new FormData();
   form.append('model', s.model);

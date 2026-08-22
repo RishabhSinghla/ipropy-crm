@@ -14,7 +14,11 @@ ROOT="$1"
 PREFIX="${2:-}"
 # The unit, which every folder inside this property is named after.
 UNIT="${3:-$(basename "$ROOT" | cut -d- -f1 | tr "[:lower:]" "[:upper:]")}"
-SRC="$ROOT/$UNIT-RAW-UPLOADS/PHOTOS"
+# The corrected copies when prepare_photos.sh has run, the originals when it
+# has not. Cutting five shapes from a photograph that has not been straightened
+# and balanced means five crooked shapes rather than one.
+SRC="$ROOT/$UNIT-EDITED/FINISHED"
+[ -d "$SRC" ] || SRC="$ROOT/$UNIT-RAW-UPLOADS/PHOTOS"
 SHAPES="$ROOT/$UNIT-SHAPES"
 SEQ=0
 KEEP_MIN=60          # below this % of the image surviving a crop, fit instead
