@@ -13,6 +13,15 @@ FOUND=0
 for SRC in "$IN"/*.mov "$IN"/*.MOV "$IN"/*.mp4 "$IN"/*.MP4 "$IN"/*.m4v; do
   [ -f "$SRC" ] || continue
   FOUND=1
+
+  # Re-encoding a walkthrough is the slowest thing this pipeline does, minutes
+  # rather than seconds, and it happens on every Finish. If the output is
+  # already there and no older than the source, there is nothing to redo.
+  base=$(basename "${SRC%.*}")
+  if [ -f "$OUT/$base-9x16.mp4" ] && [ ! "$SRC" -nt "$OUT/$base-9x16.mp4" ]; then
+    echo "$base (already done, skipped)"
+    continue
+  fi
 W=$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of default=nw=1:nk=1 "$SRC")
 H=$(ffprobe -v error -select_streams v:0 -show_entries stream=height -of default=nw=1:nk=1 "$SRC")
 echo "source ${W}x${H}"

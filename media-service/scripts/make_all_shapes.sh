@@ -33,6 +33,19 @@ EOF
 for f in "$SRC"/*.jpg "$SRC"/*.JPG "$SRC"/*.jpeg "$SRC"/*.heic "$SRC"/*.HEIC; do
   [ -f "$f" ] || continue
   n=$(basename "$f"); n="${n%.*}"
+
+  # Skip a photo whose work is already done.
+  #
+  # Finish gets pressed again every time a photo is added, and every press was
+  # re-cutting all twenty from scratch. The outputs are the record: if the
+  # portal copy exists and is not older than the original, nothing about this
+  # photo has changed and there is nothing to redo. Deleting an output folder
+  # is how you force a rebuild.
+  done_marker="$ROOT/05_PORTALS/$n.jpg"
+  if [ -f "$done_marker" ] && [ ! "$f" -nt "$done_marker" ]; then
+    echo "$n (already done, skipped)"
+    continue
+  fi
   echo "$n"
   mkdir -p "$ROOT/05_PORTALS" "$ROOT/07_WEBSITE" "$ROOT/04_SOCIAL/INSTAGRAM/FEED" \
            "$ROOT/04_SOCIAL/INSTAGRAM/STORIES" "$ROOT/04_SOCIAL/FACEBOOK" \
