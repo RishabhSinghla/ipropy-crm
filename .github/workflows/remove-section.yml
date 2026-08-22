@@ -1,0 +1,99 @@
+# Delete an empty section from production, when nobody can reach the admin panel.
+#
+# The button in Modules & Fields is the way to do this and does exactly the same
+# thing. This exists for the one case it cannot cover: the person building the
+# CRM has no login to production, and telling the owner to go and click three
+# times is how "I fixed it" and "it is fixed" drift apart.
+#
+# Refuses the same two cases the route refuses — a section still holding fields,
+# and a module's last remaining section — and writes the same tombstone, without
+# which the seed rebuilds the section on the next cold start.
+name: Remove a section
+
+on:
+  workflow_dispatch:
+    inputs:
+      module:
+        description: "Module name, e.g. leads"
+        required: true
+      sections:
+        description: "Section names to remove, comma separated, e.g. kyc,preferences,more"
+        required: true
+
+jobs:
+  remove:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install psql 18
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: Remove them
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          MODULE: ${{ inputs.module }}
+          SECTIONS: ${{ inputs.sections }}
+        run: |
+          set -euo pipefail
+          # Values reach psql as bound parameters, never as interpolated SQL.
+          IFS=',' read -ra NAMES <<< "$SECTIONS"
+          for raw in "${NAMES[@]}"; do
+            name="$(echo "$raw" | tr -d '[:space:]')"
+            [ -z "$name" ] && continue
+            echo "--- $MODULE / $name"
+            psql "$DATABASE_URL" -P pager=off -v ON_ERROR_STOP=1 \
+              -v mod="$MODULE" -v blk="$name" <<'SQL'
+            DO $$
+            DECLARE
+              m_id   UUID;
+              b_id   UUID;
+              b_lbl  TEXT;
+              n_flds INT;
+              n_blks INT;
+            BEGIN
+              SELECT id INTO m_id FROM ipy_module WHERE name = :'mod';
+              IF m_id IS NULL THEN RAISE EXCEPTION 'no module called %', :'mod'; END IF;
+
+              SELECT id, label INTO b_id, b_lbl
+                FROM ipy_block WHERE module_id = m_id AND name = :'blk';
+              IF b_id IS NULL THEN
+                RAISE NOTICE 'already gone: %', :'blk';
+                RETURN;
+              END IF;
+
+              SELECT count(*) INTO n_flds FROM ipy_field WHERE block_id = b_id;
+              IF n_flds > 0 THEN
+                RAISE EXCEPTION '% still holds % field(s) — move them first', :'blk', n_flds;
+              END IF;
+
+              SELECT count(*) INTO n_blks FROM ipy_block WHERE module_id = m_id;
+              IF n_blks <= 1 THEN
+                RAISE EXCEPTION 'a module needs at least one section';
+              END IF;
+
+              INSERT INTO ipy_block_tombstone (module_name, block_name, label)
+              VALUES (:'mod', :'blk', b_lbl)
+              ON CONFLICT (module_name, block_name) DO NOTHING;
+
+              DELETE FROM ipy_block WHERE id = b_id;
+
+              UPDATE ipy_layout
+                 SET config = jsonb_set(config, '{blocks}', COALESCE((
+                       SELECT jsonb_agg(b) FROM jsonb_array_elements(config -> 'blocks') AS b
+                        WHERE b ->> 'key' <> :'blk'
+                     ), '[]'::jsonb))
+               WHERE module_id = m_id AND jsonb_typeof(config -> 'blocks') = 'array';
+
+              RAISE NOTICE 'removed % (%)', :'blk', b_lbl;
+            END $$;
+SQL
+          done
+
+          echo "--- sections now"
+          psql "$DATABASE_URL" -P pager=off -c "
+            SELECT b.name, b.label, (SELECT count(*) FROM ipy_field f WHERE f.block_id = b.id) AS fields
+              FROM ipy_block b JOIN ipy_module m ON m.id = b.module_id
+             WHERE m.name = '$MODULE' ORDER BY b.sequence;"
