@@ -12,8 +12,11 @@ ROOT="$1"
 # Supplied by the CRM, which is the only thing that knows what this property is
 # called. Empty is fine: the camera's own name is used and nothing breaks.
 PREFIX="${2:-}"
+# The unit, which every folder inside this property is named after.
+UNIT="${3:-$(basename "$ROOT" | cut -d- -f1 | tr "[:lower:]" "[:upper:]")}"
+SRC="$ROOT/$UNIT-RAW-UPLOADS/PHOTOS"
+SHAPES="$ROOT/$UNIT-SHAPES"
 SEQ=0
-SRC="$ROOT/01_RAW_UPLOADS/PHOTOS"
 KEEP_MIN=60          # below this % of the image surviving a crop, fit instead
 
 shape() {  # file out W H quality
@@ -44,24 +47,21 @@ for f in "$SRC"/*.jpg "$SRC"/*.JPG "$SRC"/*.jpeg "$SRC"/*.JPEG "$SRC"/*.heic "$S
   # Skip a photo whose work is already done. The outputs are the record: if the
   # 4x3 exists and is not older than the original, nothing has changed. Deleting
   # an output folder is how you force a rebuild.
-  done_marker="$ROOT/02_SHAPES/4x3/$n.jpg"
+  done_marker="$SHAPES/4x3/$n.jpg"
   if [ -f "$done_marker" ] && [ ! "$f" -nt "$done_marker" ]; then
     echo "$n (already done, skipped)"
     continue
   fi
   echo "$n"
 
-  mkdir -p "$ROOT/02_SHAPES/4x5" "$ROOT/02_SHAPES/9x16" "$ROOT/02_SHAPES/1x1" \
-           "$ROOT/02_SHAPES/4x3" "$ROOT/02_SHAPES/16x9" "$ROOT/02_SHAPES/2x3" \
-           "$ROOT/02_SHAPES/1.91x1" "$ROOT/03_EDITED_MEDIA/THUMBNAILS"
+  mkdir -p "$SHAPES/4x5" "$SHAPES/9x16" "$SHAPES/1x1" "$SHAPES/4x3" "$SHAPES/16x9" \
+           "$ROOT/$UNIT-EDITED/THUMBNAILS"
 
-  # One file per shape. Five platforms want 4:5 and they all read the same one.
-  shape "$f" "$ROOT/02_SHAPES/4x3/$n.jpg"     1600 1200 88
-  shape "$f" "$ROOT/02_SHAPES/16x9/$n.jpg"    1920 1080 84
-  shape "$f" "$ROOT/02_SHAPES/4x5/$n.jpg"     1080 1350 86
-  shape "$f" "$ROOT/02_SHAPES/9x16/$n.jpg"    1080 1920 86
-  shape "$f" "$ROOT/02_SHAPES/1x1/$n.jpg"     1080 1080 86
-  shape "$f" "$ROOT/02_SHAPES/2x3/$n.jpg"     1000 1500 86
-  shape "$f" "$ROOT/02_SHAPES/1.91x1/$n.jpg"  1200  627 84
-  shape "$f" "$ROOT/03_EDITED_MEDIA/THUMBNAILS/$n.jpg" 480 480 78
+  # One file per shape. Five places want 4:5 and they all read the same one.
+  shape "$f" "$SHAPES/4x3/$n.jpg"   1600 1200 88
+  shape "$f" "$SHAPES/16x9/$n.jpg"  1920 1080 84
+  shape "$f" "$SHAPES/4x5/$n.jpg"   1080 1350 86
+  shape "$f" "$SHAPES/9x16/$n.jpg"  1080 1920 86
+  shape "$f" "$SHAPES/1x1/$n.jpg"   1080 1080 86
+  shape "$f" "$ROOT/$UNIT-EDITED/THUMBNAILS/$n.jpg" 480 480 78
 done

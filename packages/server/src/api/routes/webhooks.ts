@@ -457,6 +457,12 @@ function requireN8nSecret(req: Request): void {
  * uploaded file's storage key is built from. If the two ever disagreed, media
  * would land in a folder nothing reads.
  */
+/** `A1818-4bhk-250sqyd` -> `A1818`, which every folder inside is named after. */
+function unitOf(folderKey: string): string {
+  const last = folderKey.split('/').filter(Boolean).pop() ?? '';
+  return (last.split('-')[0] || 'PROPERTY').toUpperCase();
+}
+
 webhooksRouter.get('/n8n/pending-folders', asyncHandler(async (req, res) => {
   requireN8nSecret(req);
 
@@ -470,26 +476,27 @@ webhooksRouter.get('/n8n/pending-folders', asyncHandler(async (req, res) => {
       LIMIT 50`,
   );
 
-  const { recordStorageRoot, PROPERTY_MEDIA_FOLDER_TREE, PROPERTY_MEDIA_FOLDERS } = await import('../../core/storage/keys.js');
-  const { buildPropertyDetailsText, whereToPostText, DETAILS_FILE, WHERE_TO_POST_FILE } =
+  const { recordStorageRoot, propertyFolderTree } = await import('../../core/storage/keys.js');
+  const { buildPropertyDetailsText, buildDescriptions, DETAILS_FILE, DESCRIPTIONS_FILE } =
     await import('../../core/storage/propertyDetails.js');
-  // The same for every property, so it is built once rather than per row.
-  const guide = whereToPostText();
 
   res.json({
     folders: await Promise.all(rows.map(async (row) => ({
       propertyId: row.record_id,
       folder: row.folder_key
         ?? recordStorageRoot(row.module_name, row.record_number, row.label, row.record_id),
-      subfolders: PROPERTY_MEDIA_FOLDER_TREE,
+      subfolders: propertyFolderTree(unitOf(row.folder_key
+        ?? recordStorageRoot(row.module_name, row.record_number, row.label, row.record_id))),
       // The sheet travels with the folder request rather than being written by
       // the CRM, because only n8n can reach the drive these folders live on.
-      detailsPath: `${PROPERTY_MEDIA_FOLDERS.data}/${DETAILS_FILE}`,
+      detailsPath: `${unitOf(row.folder_key ?? '')}-${DETAILS_FILE}`,
       detailsText: (await buildPropertyDetailsText(row.record_id)) ?? '',
-      // At the property root, not tucked inside a subfolder: it answers the
-      // question somebody has the moment they open the folder.
-      wherePath: WHERE_TO_POST_FILE,
-      whereText: guide,
+      // At the property root, because it answers the question somebody has the
+      // moment they open the folder. Named after the unit so it is still
+      // obvious which property it belongs to once it has been dragged
+      // somewhere else.
+      wherePath: `${unitOf(row.folder_key ?? '')}-${DESCRIPTIONS_FILE}`,
+      whereText: await buildDescriptions(row.record_id),
     }))),
   });
 }));

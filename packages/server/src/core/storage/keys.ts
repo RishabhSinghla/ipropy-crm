@@ -41,38 +41,53 @@ import { db } from '../../db/pool.js';
  * promises, and an empty folder is indistinguishable from a step that failed.
  * They can be added as the work that fills them is built.
  */
+/**
+ * The folders inside a property, relative to it.
+ *
+ * `{p}` is replaced with the unit, so every folder says which property it
+ * belongs to even after somebody drags one out of the tree to share it.
+ *
+ * Only shapes that get posted are here. Pinterest's 2:3 and the 1.91:1 link
+ * preview were removed because those platforms are not somewhere this business
+ * sells, and a folder nobody opens is a folder somebody has to wonder about.
+ */
 export const PROPERTY_MEDIA_FOLDERS = {
-  data: '00_PROPERTY_DATA',
-  originals: '01_RAW_UPLOADS/PHOTOS',
-  originalVideos: '01_RAW_UPLOADS/VIDEOS',
+  originals: '{p}-RAW-UPLOADS/PHOTOS',
+  originalVideos: '{p}-RAW-UPLOADS/VIDEOS',
 
-  // Folders are named after the SHAPE, not the platform.
-  //
-  // Five platforms want 4:5, so platform folders meant five byte-identical
-  // copies of the same photo — about a quarter of all derivative storage, and
-  // no way to tell which copy was current. Shapes also outlive platforms: when
-  // Instagram next changes its preferred ratio nothing here has to move, and
-  // the tree stays at seven folders however many places you post to.
-  //
-  // Knowing which shape a platform wants is a documentation problem, and
-  // WHERE-TO-POST.txt at the property root solves it.
-  shape4x5: '02_SHAPES/4x5',
-  shape9x16: '02_SHAPES/9x16',
-  shape1x1: '02_SHAPES/1x1',
-  shape4x3: '02_SHAPES/4x3',
-  shape16x9: '02_SHAPES/16x9',
-  shape2x3: '02_SHAPES/2x3',
-  shape191x1: '02_SHAPES/1.91x1',
+  // Named after the SHAPE, not the platform: five places want 4:5, and one file
+  // is easier to keep straight than five identical copies. Which shape goes
+  // where is answered by the descriptions file at the property root.
+  shape4x5: '{p}-SHAPES/4x5',
+  shape9x16: '{p}-SHAPES/9x16',
+  shape1x1: '{p}-SHAPES/1x1',
+  shape4x3: '{p}-SHAPES/4x3',
+  shape16x9: '{p}-SHAPES/16x9',
 
-  watermarked: '03_EDITED_MEDIA/WATERMARKED',
-  thumbnails: '03_EDITED_MEDIA/THUMBNAILS',
-  video: '06_VIDEO',
-  // What gets pushed onto the property in the CRM and onto the public site.
-  // 4:3 rather than a portrait crop: a property page and a portal listing both
-  // show a room better in landscape, and it is the same shape the portals want.
-  crmWebsite: '02_SHAPES/4x3',
-  archive: '99_ARCHIVE',
+  watermarked: '{p}-EDITED/WATERMARKED',
+  thumbnails: '{p}-EDITED/THUMBNAILS',
+  video: '{p}-VIDEO',
+  // What the CRM and the public site take. 4:3 rather than a portrait crop: a
+  // property page shows a room better wide, and it is the shape portals want.
+  crmWebsite: '{p}-SHAPES/4x3',
+  archive: '{p}-ARCHIVE',
 } as const;
+
+/**
+ * The unit a folder key belongs to: `A1818-4bhk-250sqyd/...` -> `A1818`.
+ *
+ * Derived from the path rather than passed around, so every caller agrees
+ * without having to thread the unit through.
+ */
+export function unitFromFolder(key: string): string {
+  const first = key.split('/').filter(Boolean)[0] ?? '';
+  return (first.split('-')[0] || 'PROPERTY').toUpperCase();
+}
+
+/** Put the unit's name into a folder template. */
+export function propertyFolder(template: string, unit: string): string {
+  return template.replace('{p}', unit.toUpperCase());
+}
 
 /**
  * What `01 Originals` and friends were called before.
@@ -99,22 +114,22 @@ const LEGACY_ORIGINALS = ['01 Originals', '01_RAW_UPLOADS/PHOTOS'];
  * between the CRM and n8n, and a contract you have to create on first use is
  * one that breaks on first use.
  */
-export const PROPERTY_MEDIA_FOLDER_TREE = [
-  PROPERTY_MEDIA_FOLDERS.data,
-  PROPERTY_MEDIA_FOLDERS.originals,
-  PROPERTY_MEDIA_FOLDERS.originalVideos,
-  PROPERTY_MEDIA_FOLDERS.shape4x5,
-  PROPERTY_MEDIA_FOLDERS.shape9x16,
-  PROPERTY_MEDIA_FOLDERS.shape1x1,
-  PROPERTY_MEDIA_FOLDERS.shape4x3,
-  PROPERTY_MEDIA_FOLDERS.shape16x9,
-  PROPERTY_MEDIA_FOLDERS.shape2x3,
-  PROPERTY_MEDIA_FOLDERS.shape191x1,
-  PROPERTY_MEDIA_FOLDERS.watermarked,
-  PROPERTY_MEDIA_FOLDERS.thumbnails,
-  PROPERTY_MEDIA_FOLDERS.video,
-  PROPERTY_MEDIA_FOLDERS.archive,
-];
+/** Every folder a property gets, in the order somebody reads them. */
+export function propertyFolderTree(unit: string): string[] {
+  return [
+    PROPERTY_MEDIA_FOLDERS.originals,
+    PROPERTY_MEDIA_FOLDERS.originalVideos,
+    PROPERTY_MEDIA_FOLDERS.shape4x5,
+    PROPERTY_MEDIA_FOLDERS.shape9x16,
+    PROPERTY_MEDIA_FOLDERS.shape1x1,
+    PROPERTY_MEDIA_FOLDERS.shape4x3,
+    PROPERTY_MEDIA_FOLDERS.shape16x9,
+    PROPERTY_MEDIA_FOLDERS.watermarked,
+    PROPERTY_MEDIA_FOLDERS.thumbnails,
+    PROPERTY_MEDIA_FOLDERS.video,
+    PROPERTY_MEDIA_FOLDERS.archive,
+  ].map((t) => propertyFolder(t, unit));
+}
 
 /**
  * Lowercase, hyphen-joined, ASCII only.
@@ -162,14 +177,44 @@ export function recordFolder(recordNumber: string | null, label: string, recordI
   return name || recordId.slice(0, 8);
 }
 
-/** Stable root for everything belonging to one CRM record. */
+/**
+ * How a property folder is named: `A1818-4bhk-250sqyd`.
+ *
+ * The unit stays upper case because that is how it is said on the phone and
+ * written on the door; everything after it is lower case so the name is one
+ * readable string rather than shouting. Only facts that are actually filled in
+ * appear, so a thin record gets a short name rather than a row of hyphens.
+ */
+export function propertyFolderName(parts: {
+  unit: string;
+  configuration?: string | null;
+  plotArea?: number | null;
+  areaUnit?: string | null;
+}): string {
+  const unit = slug(parts.unit, 24).toUpperCase();
+  const tail = [
+    parts.configuration ? slug(parts.configuration, 16).replace(/-/g, '') : null,
+    parts.plotArea ? `${Math.round(parts.plotArea)}${slug(parts.areaUnit ?? 'sqyd', 8).replace(/-/g, '')}` : null,
+  ].filter(Boolean);
+  return [unit, ...tail].join('-') || unit || 'PROPERTY';
+}
+
+/**
+ * Stable root for everything belonging to one CRM record.
+ *
+ * Property folders live at the top of the drive rather than under a
+ * `properties/` folder. There is only one kind of thing in there, so the extra
+ * level was a directory somebody had to click through every single time to
+ * reach the folder they actually wanted.
+ */
 export function recordStorageRoot(
   moduleName: string,
   recordNumber: string | null,
   label: string,
   recordId: string,
 ): string {
-  return `${slug(moduleName, 32)}/${recordFolder(recordNumber, label, recordId)}`;
+  const folder = recordFolder(recordNumber, label, recordId);
+  return moduleName === 'properties' ? folder : `${slug(moduleName, 32)}/${folder}`;
 }
 
 /**
@@ -192,9 +237,12 @@ export function derivativeStorageKey(
   // inside `01_RAW_UPLOADS/` rather than beside the other sets. Strip whichever
   // known drop-box the key ends with, old name or new, longest first so a
   // multi-segment match is preferred over a single-segment one.
+  // Whatever unit this key belongs to, so the templated drop boxes resolve to
+  // the real folder names before they are compared.
+  const keyUnit = unitFromFolder(originalKey);
   const dropBoxes = [
-    PROPERTY_MEDIA_FOLDERS.originals,
-    PROPERTY_MEDIA_FOLDERS.originalVideos,
+    propertyFolder(PROPERTY_MEDIA_FOLDERS.originals, keyUnit),
+    propertyFolder(PROPERTY_MEDIA_FOLDERS.originalVideos, keyUnit),
     ...LEGACY_ORIGINALS,
   ].sort((a, b) => b.split('/').length - a.split('/').length);
 
@@ -263,7 +311,8 @@ export async function buildStorageKey({ recordId, originalName, ext }: KeyReques
              updated_at = now()`,
       [recordId, root],
     );
-    return `${root}/${PROPERTY_MEDIA_FOLDERS.originals}/${stem}-${unique}${ext}`;
+    const unit = unitFromFolder(root);
+    return `${root}/${propertyFolder(PROPERTY_MEDIA_FOLDERS.originals, unit)}/${stem}-${unique}${ext}`;
   }
 
   return `${root}/${stem}-${unique}${ext}`;

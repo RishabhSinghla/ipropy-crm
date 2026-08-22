@@ -3,8 +3,19 @@ import { db, transaction } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { getFolderDriver, getStorageSettings } from './index.js';
 import {
-  PROPERTY_MEDIA_FOLDER_TREE, recordStorageRoot,
+  propertyFolderTree, recordStorageRoot,
 } from './keys.js';
+
+/**
+ * The unit from a folder key, which is what every folder inside is named after.
+ *
+ * `A1818-4bhk-250sqyd` -> `A1818`. Derived rather than passed around, so there
+ * is one place the convention lives.
+ */
+function unitOf(folderKey: string): string {
+  const last = folderKey.split('/').filter(Boolean).pop() ?? '';
+  return (last.split('-')[0] || 'PROPERTY').toUpperCase();
+}
 
 const MAX_ATTEMPTS = 5;
 const BATCH = 5;
@@ -122,7 +133,7 @@ async function provisionClaimed(
       return false;
     }
     const root = await driver.ensureFolder?.(folder);
-    for (const child of PROPERTY_MEDIA_FOLDER_TREE) {
+    for (const child of propertyFolderTree(unitOf(folder))) {
       await driver.ensureFolder?.(`${folder}/${child}`);
     }
     // Its own try/catch: somebody standing in OneDrive wants the folder more

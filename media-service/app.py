@@ -54,22 +54,32 @@ JOBS = {
 # Doing it here instead means one call, one answer, and a reason in plain
 # words. Each part still runs even if an earlier one failed, because a bad
 # video should not cost you the photos.
+# Paths carry the unit, which is the first part of the property folder name.
 PROPERTY_STEPS = (
     ("photos", "shapes", "", []),
-    ("watermark", "watermark", "/01_RAW_UPLOADS/PHOTOS", ["{root}/03_EDITED_MEDIA/WATERMARKED"]),
-    ("video", "video", "/01_RAW_UPLOADS/VIDEOS", ["{root}/06_VIDEO"]),
+    ("watermark", "watermark", "/{u}-SHAPES/4x3", ["{root}/{u}-EDITED/WATERMARKED"]),
+    ("video", "video", "/{u}-RAW-UPLOADS/VIDEOS", ["{root}/{u}-VIDEO", "{prefix}"]),
 )
+
+
+def unit_of(folder: str) -> str:
+    """`A1818-4bhk-250sqyd` -> `A1818`, matching how the CRM names the folders."""
+    last = [p for p in folder.split("/") if p][-1] if folder.strip("/") else ""
+    return (last.split("-")[0] or "PROPERTY").upper()
 
 
 def run_property(folder: str, prefix: str = "") -> dict:
     root = str(safe_target(folder))
+    unit = unit_of(folder)
     done, failed, log = [], [], []
     for label, job, suffix, args in PROPERTY_STEPS:
         try:
-            extra = [a.format(root=root) for a in args]
-            if label == "photos" and prefix:
-                extra.append(prefix)
-            r = run_job(job, folder + suffix, extra)
+            extra = [a.format(root=root, u=unit, prefix=prefix or unit) for a in args]
+            if label == "photos":
+                # The shape maker takes the name to use, then the unit whose
+                # folders it writes into.
+                extra.extend([prefix, unit])
+            r = run_job(job, folder + suffix.format(u=unit), extra)
         except FileNotFoundError:
             # No video folder, or no photos yet. Ordinary, not broken.
             log.append(f"{label}: nothing to do")

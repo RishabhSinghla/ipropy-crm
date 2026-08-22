@@ -32,8 +32,6 @@ const PROPERTY_DERIVATIVES: Derivative[] = [
   { key: 'shape1x1', destination: PROPERTY_MEDIA_FOLDERS.shape1x1, suffix: '1x1', width: 1080, height: 1080, quality: 86 },
   { key: 'shape4x3', destination: PROPERTY_MEDIA_FOLDERS.shape4x3, suffix: '4x3', width: 1600, height: 1200, quality: 88 },
   { key: 'shape16x9', destination: PROPERTY_MEDIA_FOLDERS.shape16x9, suffix: '16x9', width: 1920, height: 1080, quality: 84 },
-  { key: 'shape2x3', destination: PROPERTY_MEDIA_FOLDERS.shape2x3, suffix: '2x3', width: 1000, height: 1500, quality: 86 },
-  { key: 'shape191x1', destination: PROPERTY_MEDIA_FOLDERS.shape191x1, suffix: '1.91x1', width: 1200, height: 627, quality: 84 },
 
   { key: 'thumb', destination: PROPERTY_MEDIA_FOLDERS.thumbnails, suffix: 'thumb', width: 480, quality: 76 },
 ];

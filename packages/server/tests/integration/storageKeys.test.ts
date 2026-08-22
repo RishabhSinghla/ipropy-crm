@@ -12,7 +12,7 @@ import { db } from '../../src/db/pool.js';
 import { recordService } from '../../src/core/entity/recordService.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import {
-  buildStorageKey, derivativeStorageKey, PROPERTY_MEDIA_FOLDERS, slug,
+  buildStorageKey, derivativeStorageKey, PROPERTY_MEDIA_FOLDERS, propertyFolder, slug, unitFromFolder,
 } from '../../src/core/storage/keys.js';
 import { localPath } from '../../src/core/storage/index.js';
 import { config } from '../../src/config.js';
@@ -31,12 +31,10 @@ describe('storage keys', () => {
     const created = await recordService.createRecord(ctx, 'properties', { name: 'Verdant Greens — Tower D, Unit 702' });
     const key = await buildStorageKey({ recordId: created.id, originalName: 'IMG_9001.HEIC', ext: '.heic' });
 
-    expect(key).toMatch(/^properties\//);
     expect(key).toContain('verdant-greens-tower-d-unit-702');
     // Still obviously the photo it came from, with a tail for uniqueness.
-    expect(key).toMatch(
-      new RegExp(`/${PROPERTY_MEDIA_FOLDERS.originals}/img-9001-[0-9a-f]{8}\\.heic$`),
-    );
+    const originals = propertyFolder(PROPERTY_MEDIA_FOLDERS.originals, unitFromFolder(key));
+    expect(key).toMatch(new RegExp(`/${originals}/img-9001-[0-9a-f]{8}\\.heic$`));
   });
 
   it('leads the folder with the record number, since that is what people quote', async () => {
@@ -47,9 +45,9 @@ describe('storage keys', () => {
     const key = await buildStorageKey({ recordId: created.id, originalName: 'a.jpg', ext: '.jpg' });
 
     if (row?.record_number) {
-      expect(key.split('/')[1].startsWith(slug(row.record_number))).toBe(true);
+      expect(key.split('/')[0].startsWith(slug(row.record_number))).toBe(true);
     }
-    expect(key.split('/')[1]).toContain('numbered-unit');
+    expect(key.split('/')[0]).toContain('numbered-unit');
   });
 
   it('never collides when the same phone filename is uploaded twice', async () => {
@@ -70,11 +68,11 @@ describe('storage keys', () => {
     // destructuring a fixed number of segments.
     const segments = key.split('/');
     const file = segments.pop()!;
-    const originals = segments.splice(-PROPERTY_MEDIA_FOLDERS.originals.split('/').length).join('/');
-    const [module, folder] = segments;
-    expect(module).toBe('properties');
+    const expected = propertyFolder(PROPERTY_MEDIA_FOLDERS.originals, unitFromFolder(key));
+    const originals = segments.splice(-expected.split('/').length).join('/');
+    const [folder] = segments;
     expect(folder).not.toBe('');
-    expect(originals).toBe(PROPERTY_MEDIA_FOLDERS.originals);
+    expect(originals).toBe(expected);
     expect(file).toMatch(/^[a-z0-9-]+\.jpg$/);
     // Whatever it fell back to, it is still ASCII and still a usable path.
     expect(key).toMatch(/^[A-Za-z0-9 /_.-]+$/);
