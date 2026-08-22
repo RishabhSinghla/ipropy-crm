@@ -564,12 +564,32 @@ webhooksRouter.post('/n8n/content-ready', asyncHandler(async (req, res) => {
     ok: z.boolean().default(true),
   }).parse(req.body);
 
-  // Stops n8n collecting the same property forever.
-  await db.query(
-    `UPDATE ipy_property_storage SET media_done_at = now(), updated_at = now()
-      WHERE record_id = $1`,
+  // Stops n8n collecting the same property forever, and decides whether this
+  // call is the one that gets to tell anybody.
+  //
+  // This used to set the timestamp unconditionally and then notify every time,
+  // so a phone buzzed once per pipeline run rather than once per Finish. A day
+  // of testing sent the owner eight "photos are ready" alerts for one property,
+  // and it would have done the same to his team: the poller and the webhook can
+  // both pick up the same property, and pressing Finish twice is normal.
+  //
+  // The WHERE clause is what makes it safe rather than a check-then-act. Two
+  // runs finishing together both try; exactly one updates a row, and only that
+  // one notifies.
+  const claimed = await db.query(
+    `UPDATE ipy_property_storage
+        SET media_done_at = now(), updated_at = now()
+      WHERE record_id = $1
+        AND (media_done_at IS NULL OR media_done_at < media_requested_at)
+      RETURNING record_id`,
     [input.propertyId],
   );
+
+  if (claimed.rowCount === 0) {
+    logger.info({ propertyId: input.propertyId }, 'n8n reported again on an already-reported run; not notifying');
+    res.json({ ok: true, notified: 0, duplicate: true });
+    return;
+  }
 
   const property = await db.queryOne<{ label: string; owner_id: string | null }>(
     `SELECT r.label, r.owner_id
