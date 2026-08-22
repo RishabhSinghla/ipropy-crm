@@ -196,9 +196,13 @@ def command_path(name: str) -> str | None:
 
 
 def run(command: list[str]) -> subprocess.CompletedProcess[str]:
+    # `errors="replace"`: ffprobe echoes the file's own metadata, and a phone
+    # writes tags in whatever encoding it likes. One stray byte otherwise raises
+    # UnicodeDecodeError out of subprocess and reads as a crash.
     return subprocess.run(
         command,
         text=True,
+        errors="replace",
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,

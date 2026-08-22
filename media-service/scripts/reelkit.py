@@ -58,7 +58,14 @@ LOGO = next(
 
 
 def run(args: list[str], timeout: int = 1800) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(args, capture_output=True, text=True, check=False, timeout=timeout)
+    # `errors="replace"` because ffprobe echoes the file's own metadata, and a
+    # video off a phone carries tags in whatever encoding the phone felt like.
+    # One stray byte in a title tag otherwise raises UnicodeDecodeError out of
+    # subprocess itself, which reads as "the editor crashed" rather than as
+    # "the camera wrote Latin-1".
+    return subprocess.run(
+        args, capture_output=True, text=True, errors="replace", check=False, timeout=timeout,
+    )
 
 
 def ffmpeg(args: list[str], timeout: int = 1800) -> bool:

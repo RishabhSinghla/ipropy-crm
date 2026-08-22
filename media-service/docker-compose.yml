@@ -60,6 +60,12 @@ services:
     environment:
       MEDIA_ROOT: /data/properties
       MEDIA_SERVICE_TOKEN: ${MEDIA_SERVICE_TOKEN:?set MEDIA_SERVICE_TOKEN}
+      # The worker holds no model key of its own. Naming rooms, writing the
+      # listing copy, the voiceover and the music all go back through the CRM,
+      # which is where an admin can rotate the key or switch provider without
+      # anybody touching a container. These two are the same values n8n uses.
+      CRM_URL: ${IPROPY_CRM_URL:?set IPROPY_CRM_URL}
+      CRM_N8N_SECRET: ${IPROPY_CALLBACK_SECRET:?set IPROPY_CALLBACK_SECRET}
 
 volumes:
   n8n_data:

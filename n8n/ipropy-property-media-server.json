@@ -66,6 +66,12 @@
               "name": "namePrefix",
               "value": "={{ $json.body ? $json.body.namePrefix : $json.namePrefix }}",
               "type": "string"
+            },
+            {
+              "id": "r6",
+              "name": "facts",
+              "value": "={{ $json.body ? ($json.body.facts || {}) : ($json.facts || {}) }}",
+              "type": "object"
             }
           ]
         },
@@ -246,7 +252,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ job: 'property', folder: $('Work out the folder').first().json.folder, prefix: $('Work out the folder').first().json.namePrefix || '' }) }}",
+        "jsonBody": "={{ JSON.stringify({ job: 'property', folder: $('Work out the folder').first().json.folder, prefix: $('Work out the folder').first().json.namePrefix || '', facts: $('Work out the folder').first().json.facts || {} }) }}",
         "options": {
           "timeout": 1800000,
           "response": {

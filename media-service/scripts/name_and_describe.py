@@ -80,7 +80,7 @@ def preview(source: Path) -> bytes | None:
         completed = subprocess.run(
             ["gm", "convert", str(source), "-auto-orient",
              "-resize", f"{PREVIEW_EDGE}x{PREVIEW_EDGE}>", "-quality", "82", str(target)],
-            capture_output=True, text=True, check=False, timeout=120,
+            capture_output=True, text=True, errors="replace", check=False, timeout=120,
         )
         if completed.returncode != 0 or not target.is_file() or target.stat().st_size == 0:
             print(f"  could not read {source.name}: {completed.stderr.strip()[:120]}", flush=True)
