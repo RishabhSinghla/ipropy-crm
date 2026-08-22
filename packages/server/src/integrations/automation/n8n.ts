@@ -49,6 +49,16 @@ export function isConfigured(): boolean {
  * Returns rather than throws, so the caller can log the outcome without
  * wrapping the call in a try/catch it would only ever swallow.
  */
+/**
+ * Words that mean "nothing" but are not empty.
+ *
+ * A field can be blank, or it can literally say "None" because somebody typed
+ * it or an import wrote it. The first is handled by any emptiness check and the
+ * second is not, which is how a real property ended up destined for filenames
+ * reading `a1818-none-4-bhk`.
+ */
+const PLACEHOLDERS = new Set(['none', 'n/a', 'na', 'nil', 'null', '-', '--', 'tbd', 'unknown']);
+
 /** `b12-greenfield-4-bhk-250-sqyd`, from whatever the record actually has. */
 export async function propertyNamePrefix(recordId: string): Promise<string> {
   const { slug } = await import('../../core/storage/keys.js');
@@ -66,6 +76,7 @@ export async function propertyNamePrefix(recordId: string): Promise<string> {
   const parts = [row.label, row.project_name, row.locality, row.configuration,
     row.plot_area ? `${row.plot_area} ${row.area_unit ?? ''}` : null]
     .filter((v): v is string => Boolean(v && String(v).trim()))
+    .filter((v) => !PLACEHOLDERS.has(String(v).trim().toLowerCase()))
     .map((v) => slug(String(v), 32))
     .filter(Boolean);
 
