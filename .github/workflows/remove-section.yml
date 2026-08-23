@@ -89,7 +89,7 @@ jobs:
 
               RAISE NOTICE 'removed % (%)', :'blk', b_lbl;
             END $$;
-SQL
+          SQL
           done
 
           echo "--- sections now"
