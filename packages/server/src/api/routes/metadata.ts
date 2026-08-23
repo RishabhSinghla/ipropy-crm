@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { invalidatePublicFields } from './public.js';
 import { z } from 'zod';
 import { UITYPE_LIST, UITYPES } from '@ipropy/shared';
 import { db, transaction } from '../../db/pool.js';
@@ -31,6 +32,10 @@ metadataRouter.use((req, res, next) => (req.method === 'GET' ? next() : blockApi
 function invalidateAll(): void {
   registry.invalidate();
   invalidatePermissions();
+  // The public website's field list is worked out from the columns that exist,
+  // so a field deleted here changes it. Without this the site keeps asking for
+  // a column that has just gone and answers 400 until the next restart.
+  invalidatePublicFields();
 }
 
 // ---------------------------------------------------------------------------
@@ -815,6 +820,27 @@ metadataRouter.delete('/fields/:id', asyncHandler(async (req, res) => {
     const blocker = await structuralBlocker(module.name, field.name);
     if (blocker) {
       throw new BadRequestError(`“${field.label}” cannot be deleted because ${blocker}.`);
+    }
+
+    /**
+     * The same list the rename above refuses on, applied to deleting.
+     *
+     * Renaming one of these was already blocked and deleting one was not, which
+     * is the wider hole of the two: a rename at least leaves a column behind.
+     * Two of these had been deleted on his own CRM before anyone noticed, and
+     * property matching had been answering 400 on every lead since.
+     *
+     * Hiding is offered rather than nothing, because it does what he actually
+     * wants — the field leaves every screen — while the column stays where the
+     * engine can still read it.
+     */
+    const usedInCode = FIELDS_USED_IN_CODE[`${module.name}.${field.name}`];
+    if (usedInCode) {
+      throw new BadRequestError(
+        `“${field.label}” cannot be deleted because the CRM reads it directly: ${usedInCode}. `
+        + `Hide it instead and it disappears from every screen while the CRM can still use it. `
+        + `Its Label can be changed to anything you like.`,
+      );
     }
   }
 

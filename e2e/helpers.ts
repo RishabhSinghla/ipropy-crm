@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Page, type Locator } from '@playwright/test';
 
 /**
  * Where auth.setup.ts stashes the signed-in session for the other specs.
@@ -77,4 +77,79 @@ export function editableCells(page: Page) {
   // of triggers and only one is displayed at any viewport. Without this the
   // first match is a display:none card button that can never be clicked.
   return page.locator('button[title="Click to edit"]:visible');
+}
+
+/**
+ * Fill every field the form says is required, whatever they turn out to be.
+ *
+ * The same reasoning as `columnIndex` above, applied to forms. Which fields are
+ * mandatory is metadata an administrator changes from the admin panel, and this
+ * one changes more often than most: it is the first thing anybody tightens once
+ * real leads start arriving. A test that fills the three fields that were
+ * required the day it was written starts failing the day somebody adds a
+ * fourth, and reports it as "creating a lead is broken" when creating a lead is
+ * working exactly as configured.
+ *
+ * Required controls are found by the asterisk the form puts on their label, and
+ * filled by what kind of control they are. Anything already holding a value is
+ * left alone, so a caller can set the fields it cares about first and hand the
+ * rest to this.
+ */
+export async function fillRequiredFields(scope: Locator | Page): Promise<void> {
+  // By accessible role and name, not by an `aria-label` attribute. The form
+  // labels its controls with real <label> elements, so the name a person (and
+  // Playwright) sees is computed from the label, and an attribute selector
+  // matches none of them.
+  for (const role of ['combobox', 'textbox'] as const) {
+    const controls = scope.getByRole(role, { name: /\*$/ });
+    const count = await controls.count();
+
+    for (let i = 0; i < count; i += 1) {
+      const control = controls.nth(i);
+      // eslint-disable-next-line no-await-in-loop
+      const [name, value] = await Promise.all([
+        control.getAttribute('aria-label').then((a) => a ?? ''),
+        control.inputValue().catch(() => ''),
+      ]);
+      if (value) continue;
+
+      // eslint-disable-next-line no-await-in-loop
+      const label = (name || (await control.evaluate((el) => {
+        const id = el.getAttribute('id');
+        const byFor = id ? document.querySelector(`label[for="${id}"]`) : null;
+        return (byFor ?? el.closest('label'))?.textContent ?? '';
+      }))).toLowerCase();
+
+      if (role === 'combobox') {
+        // Index 1: index 0 is the empty "choose one" option.
+        // eslint-disable-next-line no-await-in-loop
+        await control.selectOption({ index: 1 }).catch(() => undefined);
+        continue;
+      }
+
+      // Text inputs need something the field will accept. Mobile is the one
+      // that bites: ten digits, no country code, and a repeated value trips the
+      // duplicate check on the second run rather than the first.
+      let filler = unique('E2E');
+      if (/mobile|phone/.test(label)) filler = `9${String(Date.now()).slice(-9)}`;
+      else if (/email/.test(label)) filler = `${unique('e2e').toLowerCase()}@example.com`;
+      else if (/amount|budget|price|area|score/.test(label)) filler = '100';
+      // eslint-disable-next-line no-await-in-loop
+      await control.fill(filler).catch(() => undefined);
+    }
+  }
+}
+
+/**
+ * Open a tab on a record by name.
+ *
+ * Which tab a record opens on is a Layout Designer setting, so landing on the
+ * one a test wants is luck rather than behaviour. Asking for it by name is the
+ * same reasoning as `columnIndex` and `fillRequiredFields`: assert on what the
+ * app does, never on how this particular database happens to be configured.
+ */
+export async function openRecordTab(page: Page, name: string): Promise<void> {
+  const tab = page.getByRole('button', { name, exact: true }).first();
+  await expect(tab).toBeVisible({ timeout: 30_000 });
+  await tab.click();
 }

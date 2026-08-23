@@ -150,6 +150,89 @@ describe('seed preserves admin customisation', () => {
     registry.invalidate();
   });
 
+  it('does not resurrect a deleted section', async () => {
+    // The last part of the model the seed still owned outright. It upserts
+    // every section on every cold start, so one deleted in the admin panel came
+    // back within the hour and the panel had no way to say so. Migration 066
+    // gave sections the tombstone the rest of the model already had; migration
+    // 072 cleared the ones already stranded on his database.
+    const block = await db.queryOne<{ id: string; name: string; label: string; module_id: string }>(
+      `SELECT b.id, b.name, b.label, b.module_id
+         FROM ipy_block b JOIN ipy_module m ON m.id = b.module_id
+        WHERE m.name = 'leads'
+          AND NOT EXISTS (SELECT 1 FROM ipy_field f WHERE f.block_id = b.id)
+        LIMIT 1`,
+    );
+    // Every empty section is gone from a migrated database, which is the point
+    // of 072, so make one to delete rather than depending on one being left.
+    const target = block ?? await db.queryOne<{ id: string; name: string; label: string; module_id: string }>(
+      `INSERT INTO ipy_block (module_id, name, label)
+       SELECT id, 'temp_seed_probe', 'Temporary' FROM ipy_module WHERE name = 'leads'
+       RETURNING id, name, label, module_id`,
+    );
+    expect(target).toBeTruthy();
+
+    await db.query(
+      `INSERT INTO ipy_block_tombstone (module_name, block_name, label) VALUES ('leads', $1, $2)
+       ON CONFLICT (module_name, block_name) DO NOTHING`,
+      [target!.name, target!.label],
+    );
+    await db.query(`DELETE FROM ipy_block WHERE id = $1`, [target!.id]);
+
+    await reseed();
+
+    const back = await db.queryOne<{ id: string }>(
+      `SELECT b.id FROM ipy_block b JOIN ipy_module m ON m.id = b.module_id
+        WHERE m.name = 'leads' AND b.name = $1`,
+      [target!.name],
+    );
+    expect(back, `the seed rebuilt the deleted section "${target!.name}"`).toBeNull();
+
+    // And the layout must not still name it. This was the half that was
+    // missing: the section stayed deleted, and every re-seed wrote its key back
+    // into the layout config, so the Layout Designer went on showing a section
+    // that no longer existed anywhere else.
+    const naming = await db.query<{ name: string }>(
+      `SELECT l.name FROM ipy_layout l
+         JOIN ipy_module m ON m.id = l.module_id,
+         LATERAL jsonb_array_elements(l.config -> 'blocks') AS b
+        WHERE m.name = 'leads'
+          AND jsonb_typeof(l.config -> 'blocks') = 'array'
+          AND b ->> 'key' = $1`,
+      [target!.name],
+    );
+    expect(
+      naming.rows.map((r) => r.name),
+      'these layouts still name a section that has been deleted',
+    ).toEqual([]);
+
+    await db.query(`DELETE FROM ipy_block_tombstone WHERE module_name = 'leads' AND block_name = $1`, [target!.name]);
+  });
+
+  it('leaves no section standing with nothing in it', async () => {
+    // What he actually reported was not "KYC exists", it was a heading on the
+    // lead screen with nothing under it. That is what a section looks like once
+    // its last field has been deleted, and deleting the fields is a thing an
+    // admin does all the time.
+    //
+    // Asserting the empty *heading* rather than the two names he happened to
+    // mention is deliberate. The names are true of his database and not of a
+    // fresh one, where the seed creates both sections with their fields intact
+    // and they are perfectly legitimate. The rule that holds everywhere is that
+    // a section with no fields should not be on screen.
+    const empty = await db.query<{ module_name: string; name: string }>(
+      `SELECT m.name AS module_name, b.name
+         FROM ipy_block b
+         JOIN ipy_module m ON m.id = b.module_id
+        WHERE NOT EXISTS (SELECT 1 FROM ipy_field f WHERE f.block_id = b.id)
+        ORDER BY m.name, b.name`,
+    );
+    expect(
+      empty.rows.map((r) => `${r.module_name}.${r.name}`),
+      'these sections would render as a heading with nothing under it',
+    ).toEqual([]);
+  });
+
   it('keeps a renamed picklist value', async () => {
     const value = await db.queryOne<{ id: string; label: string }>(
       `SELECT pv.id, pv.label FROM ipy_picklist_value pv

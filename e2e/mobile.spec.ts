@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
-import { unique, waitForRecords } from './helpers';
+import { unique, waitForRecords, fillRequiredFields } from './helpers';
 
 /**
  * The critical path at phone size.
@@ -235,9 +235,9 @@ test.describe('phone', () => {
     // number only — ten digits, unique per run because it is duplicate-checked.
     await dialog.getByLabel(/full name/i).fill(`Mobile ${surname}`);
     await dialog.getByLabel(/^mobile/i).fill(`9${String(Date.now()).slice(-9)}`);
-    // Both are mandatory on the quick-create layout.
-    await dialog.getByLabel(/lifecycle stage/i).selectOption({ index: 1 });
-    await dialog.getByLabel(/pipeline status/i).selectOption({ index: 1 });
+    // And whatever else is mandatory today. That is an admin setting, so it is
+    // discovered rather than listed here.
+    await fillRequiredFields(dialog);
     await dialog.getByRole('button', { name: /create lead/i }).click();
 
     // Quick-create stays on the list by design — see ListView's onSaved.

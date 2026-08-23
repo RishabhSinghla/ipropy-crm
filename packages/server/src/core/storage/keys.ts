@@ -84,6 +84,27 @@ export function unitFromFolder(key: string): string {
   return (first.split('-')[0] || 'PROPERTY').toUpperCase();
 }
 
+/**
+ * The unit from a *folder key*, which is the folder itself rather than a file
+ * inside it.
+ *
+ * The difference from `unitFromFolder` above is which end of the path to read,
+ * and it matters: given `A1818-4bhk/A1818-RAW-UPLOADS/PHOTOS/img.jpg` the unit
+ * is in the first segment, and given `A1818-4bhk` it is in the only one. Read
+ * the wrong end of a file key and the unit comes out `IMG`.
+ *
+ * Both live here rather than one of them living privately in whatever file
+ * needed it, because that is how there came to be two of these that disagreed
+ * about a path with a slash in it and no way to notice.
+ *
+ * This one is the twin of `unit_of` in the media worker, which reads the same
+ * folder name to decide what to call every file it writes.
+ */
+export function unitFromFolderName(folderKey: string): string {
+  const last = folderKey.split('/').filter(Boolean).pop() ?? '';
+  return (last.split('-')[0] || 'PROPERTY').toUpperCase();
+}
+
 /** Put the unit's name into a folder template. */
 export function propertyFolder(template: string, unit: string): string {
   return template.replace('{p}', unit.toUpperCase());
@@ -316,4 +337,49 @@ export async function buildStorageKey({ recordId, originalName, ext }: KeyReques
   }
 
   return `${root}/${stem}-${unique}${ext}`;
+}
+
+/**
+ * The folder name for one property, read from the property itself.
+ *
+ * This is the half that was missing. `propertyFolderName` above has always
+ * described the intended shape — `A1818-4bhk-250sqyd` — and the media worker
+ * splits on the first hyphen to learn the unit, because every folder and every
+ * file inside is named after it. Nothing ever called it. Folder creation used
+ * the generic `recordStorageRoot`, which builds a name out of the record
+ * number, and property record numbers all start `UNIT-`.
+ *
+ * The result was that every property in the drive had identically named
+ * insides: `UNIT-RAW-UPLOADS`, `UNIT-SHAPES`, `UNIT-PROPERTY DETAILS.txt`, and
+ * every photo the worker wrote came out `UNIT-01.jpg`. Nothing broke, because
+ * both sides were wrong in the same way and still found each other. It just
+ * threw away the one thing the name was for: knowing whose folder you are
+ * looking at.
+ *
+ * The unit is the property's own unit number when it has one and its name
+ * otherwise, because "B1100" is what he types as the name and what is written
+ * on the door.
+ */
+export async function propertyFolderKey(recordId: string): Promise<string | null> {
+  const { db } = await import('../../db/pool.js');
+  const row = await db.queryOne<{
+    label: string; is_deleted: boolean; module_name: string;
+    unit_number: string | null; configuration: string | null;
+    plot_area: string | number | null; area_unit: string | null;
+  }>(
+    `SELECT r.label, r.is_deleted, r.module_name,
+            p.unit_number, p.configuration, p.plot_area, p.area_unit
+       FROM ipy_record r
+       LEFT JOIN ipy_e_properties p ON p.record_id = r.id
+      WHERE r.id = $1`,
+    [recordId],
+  );
+  if (!row || row.is_deleted || row.module_name !== 'properties') return null;
+
+  return propertyFolderName({
+    unit: row.unit_number?.trim() || row.label,
+    configuration: row.configuration,
+    plotArea: row.plot_area === null ? null : Number(row.plot_area),
+    areaUnit: row.area_unit,
+  });
 }

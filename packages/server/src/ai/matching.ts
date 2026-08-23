@@ -51,12 +51,23 @@ interface PropertyRow {
 
 /** Pull the requirement off a lead or contact record. */
 export async function loadRequirement(recordId: string): Promise<Requirement | null> {
-  const lead = await db.queryOne<Record<string, unknown>>(
-    `SELECT budget_min, budget_max, configuration, preferred_locations,
-            area, area_unit, possession_timeline, interested_project, purpose
-     FROM ipy_e_leads WHERE record_id = $1`,
+  // The whole row as JSON rather than a hand-written column list.
+  //
+  // Every name in that list was a field an administrator is free to delete, and
+  // deleting one turned this query into `column "interested_project" does not
+  // exist`. Postgres answers 42703, the API turns that into a 400, and property
+  // matching stops working on every lead in the CRM. Nothing says which field,
+  // and the admin panel gave no warning, because deleting a field it is allowed
+  // to delete is not an error.
+  //
+  // Reading the row as JSON means a missing field arrives as `undefined` and is
+  // handled by the same `?? null` that already handles an empty one. There is
+  // no list here left to go stale.
+  const row = await db.queryOne<{ row: Record<string, unknown> }>(
+    `SELECT to_jsonb(l) AS row FROM ipy_e_leads l WHERE l.record_id = $1`,
     [recordId],
   );
+  const lead = row?.row;
   if (lead) {
     return {
       budgetMin: lead.budget_min as number | null,

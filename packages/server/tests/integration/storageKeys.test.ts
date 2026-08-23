@@ -12,7 +12,8 @@ import { db } from '../../src/db/pool.js';
 import { recordService } from '../../src/core/entity/recordService.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import {
-  buildStorageKey, derivativeStorageKey, PROPERTY_MEDIA_FOLDERS, propertyFolder, slug, unitFromFolder,
+  buildStorageKey, derivativeStorageKey, PROPERTY_MEDIA_FOLDERS, propertyFolder,
+  propertyFolderKey, slug, unitFromFolder, unitFromFolderName,
 } from '../../src/core/storage/keys.js';
 import { localPath } from '../../src/core/storage/index.js';
 import { config } from '../../src/config.js';
@@ -48,6 +49,49 @@ describe('storage keys', () => {
       expect(key.split('/')[0].startsWith(slug(row.record_number))).toBe(true);
     }
     expect(key.split('/')[0]).toContain('numbered-unit');
+  });
+
+  it('names a property folder after the unit, which is what everything inside is named after', async () => {
+    // The media worker splits the folder name on its first hyphen to learn the
+    // unit, then calls every subfolder and every file it writes after it. This
+    // used to come from the record number, and every property record number
+    // starts UNIT-, so every property in the drive had identical insides:
+    // UNIT-RAW-UPLOADS, UNIT-SHAPES, UNIT-01.jpg. Nothing broke, because both
+    // sides were wrong the same way. It just made the name useless.
+    const created = await recordService.createRecord(ctx, 'properties', {
+      name: 'D404', configuration: '3 BHK',
+    });
+    const folder = await propertyFolderKey(created.id);
+    expect(folder).toBe('D404-3bhk');
+    expect(unitFromFolderName(folder!)).toBe('D404');
+    expect(propertyFolder(PROPERTY_MEDIA_FOLDERS.originals, unitFromFolderName(folder!)))
+      .toBe('D404-RAW-UPLOADS/PHOTOS');
+  });
+
+  it('reads the unit off a file key and a folder key from the right end of each', async () => {
+    // Two functions a slash apart. Given a file key the unit is in the first
+    // segment; given a folder key it is the only segment. Reading the wrong end
+    // of a file key returns IMG, and there is no error to notice.
+    const fileKey = 'A1818-4bhk/A1818-RAW-UPLOADS/PHOTOS/IMG_4370.jpg';
+    expect(unitFromFolder(fileKey)).toBe('A1818');
+    expect(unitFromFolderName('A1818-4bhk')).toBe('A1818');
+    // The shape that made the two disagree before they lived side by side.
+    expect(unitFromFolderName('properties/unit-00001-b1100')).toBe('UNIT');
+  });
+
+  it('never renames a folder that already exists', async () => {
+    // Renaming is not a tidy-up. The photographs are in there, the CRM cannot
+    // move them, and the folder belongs to whoever is working in it.
+    const created = await recordService.createRecord(ctx, 'properties', { name: 'K909' });
+    await db.query(
+      `INSERT INTO ipy_property_storage (record_id, folder_key) VALUES ($1, 'old-shape/whatever-it-was')
+       ON CONFLICT (record_id) DO UPDATE SET folder_key = EXCLUDED.folder_key`,
+      [created.id],
+    );
+    const stored = await db.queryOne<{ folder_key: string }>(
+      `SELECT folder_key FROM ipy_property_storage WHERE record_id = $1`, [created.id],
+    );
+    expect(stored?.folder_key).toBe('old-shape/whatever-it-was');
   });
 
   it('never collides when the same phone filename is uploaded twice', async () => {

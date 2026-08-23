@@ -80,14 +80,16 @@ export async function draftFirstReply(recordId: string): Promise<void> {
   try {
     if (!await featureOn('firstReply')) return;
 
-    const lead = await db.queryOne<Lead>(
-      `SELECT r.label, l.full_name, l.mobile, l.whatsapp_number, l.lead_source,
-              l.interested_project, l.configuration, l.preferred_locations,
-              l.budget_min, l.budget_max, l.possession_timeline, l.description, r.owner_id
+    // The row as JSON, not a column list: every name in it is a field an admin
+    // may delete, and one deletion made this throw rather than draft a reply.
+    // See the note in ai/matching.ts.
+    const found = await db.queryOne<{ row: Record<string, unknown> }>(
+      `SELECT to_jsonb(l) || jsonb_build_object('label', r.label, 'owner_id', r.owner_id) AS row
          FROM ipy_record r JOIN ipy_e_leads l ON l.record_id = r.id
         WHERE r.id = $1 AND r.is_deleted = false`,
       [recordId],
     );
+    const lead = found?.row as unknown as Lead | undefined;
     if (!lead?.mobile && !lead?.whatsapp_number) return;
 
     // Never twice. A capture that is retried, or two sources landing the same

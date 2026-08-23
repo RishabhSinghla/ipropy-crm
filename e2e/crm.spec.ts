@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { columnIndex, editableCells, unique, waitForRecords } from './helpers';
+import { columnIndex, editableCells, unique, waitForRecords, fillRequiredFields, openRecordTab } from './helpers';
 
 /**
  * The journeys a salesperson actually performs. Each one is a path where a
@@ -33,11 +33,10 @@ test('creates a lead and finds it again in the list', async ({ page }) => {
   // derived from it and were retired from every form.
   await dialog.getByLabel(/full name/i).fill(`Playwright ${surname}`);
   await dialog.getByLabel(/^mobile/i).fill(mobile);
-  // Lifecycle Stage and Pipeline Status are mandatory on the quick-create
-  // layout too — the form refuses to submit without them, which is exactly
-  // what this test discovered the first time it ran.
-  await dialog.getByLabel(/lifecycle stage/i).selectOption({ index: 1 });
-  await dialog.getByLabel(/pipeline status/i).selectOption({ index: 1 });
+  // Everything else the form insists on, whatever that is today. Which fields
+  // are mandatory is an admin setting, so naming them here would mean this test
+  // reports "creating a lead is broken" the next time he tightens one.
+  await fillRequiredFields(dialog);
   await dialog.getByRole('button', { name: /create lead/i }).click();
 
   // Quick-create deliberately stays on the list rather than opening the new
@@ -95,23 +94,50 @@ test('inline-edits a text field on the record detail page', async ({ page }) => 
   await page.locator('tbody tr').first().locator('td').nth(1).click();
   await page.waitForURL(/\/leads\/[0-9a-f-]{36}/, { timeout: 30_000 });
 
-  const company = unique('Co');
-  // Company sits in the Basic Information block and is a plain string field.
-  // The <dt> renders uppercase via CSS but its DOM text is "Company" —
-  // Playwright matches the text node, not the painted glyphs. Step from the
-  // label to its sibling <dd>, which is where the editable control lives.
-  const value = page.locator('dt', { hasText: /^Company$/ })
-    .locator('xpath=following-sibling::dd[1]');
-  await value.locator('button[title="Click to edit"]').first().click();
+  // Fields live on Overview, and which tab a record opens on is an admin
+  // setting — his own detail layout opens on Timeline. Ask for the tab.
+  await openRecordTab(page, 'Overview');
 
-  const input = page.locator('input:focus');
-  await input.fill(company);
-  await input.press('Enter');
+  const typed = unique('Co');
 
-  await expect(page.getByText(company)).toBeVisible({ timeout: 15_000 });
+  // Whichever text field the layout happens to show, rather than a named one.
+  //
+  // This used to click the field called Company, which is on the module and is
+  // not on his detail layout, because which fields appear there is a Layout
+  // Designer decision. The behaviour under test is that clicking a value opens
+  // an editor and what you type is still there after a reload. Any text field
+  // demonstrates that; naming one only asserts on how this database is set up
+  // today.
+  const triggers = page.locator('dd button[title="Click to edit"]:visible');
+  await expect(triggers.first()).toBeVisible({ timeout: 30_000 });
+
+  let edited = false;
+  const count = await triggers.count();
+  for (let i = 0; i < count && !edited; i += 1) {
+    await triggers.nth(i).click();
+    const input = page.locator('input:focus:not([type="checkbox"]):not([type="radio"])');
+    // Wait for it rather than counting straight away. The editor is rendered by
+    // React on the click, so an immediate count is a race that reads zero and
+    // moves on from a field that was about to work.
+    const opened = await input.waitFor({ state: 'attached', timeout: 2_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!opened) {
+      // A picker or a date, which opens something other than a text box.
+      await page.keyboard.press('Escape');
+      continue;
+    }
+    await input.fill(typed);
+    await input.press('Enter');
+    edited = true;
+  }
+  expect(edited, 'no inline-editable text field on the record').toBe(true);
+
+  await expect(page.getByText(typed).first()).toBeVisible({ timeout: 15_000 });
 
   await page.reload();
-  await expect(page.getByText(company)).toBeVisible({ timeout: 30_000 });
+  await openRecordTab(page, 'Overview');
+  await expect(page.getByText(typed).first()).toBeVisible({ timeout: 30_000 });
 });
 
 test('keeps the app usable when a page throws', async ({ page }) => {

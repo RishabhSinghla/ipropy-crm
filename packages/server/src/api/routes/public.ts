@@ -109,20 +109,64 @@ const PROJECT_BASE_CONDS = (): string[] =>
 
 const PROJECT_GROUP = `GROUP BY lower(regexp_replace(btrim(u.project_name), '[^a-zA-Z0-9]+', '-', 'g'))`;
 
-const PROPERTY_FIELDS = `
-  u.record_id AS id, u.name,
-  lower(regexp_replace(btrim(u.project_name), '[^a-zA-Z0-9]+', '-', 'g')) AS project_id,
-  u.project_name,
-  u.status, u.property_type, u.configuration,
-  u.tower, u.wing, u.floor, u.facing, u.view_description, u.corner_unit, u.vastu_compliant,
-  u.carpet_area, u.built_up_area, u.super_built_up_area, u.plot_area, u.balcony_area, u.terrace_area, u.area_unit,
-  u.bedrooms, u.bathrooms, u.balconies, u.parking_slots, u.furnishing,
-  u.base_price, u.rate_per_sqft, u.floor_rise_charge, u.plc_charge, u.parking_charge,
-  u.club_membership, u.maintenance_deposit, u.other_charges, u.gst_percent, u.total_price,
-  u.possession_status, u.possession_date, u.is_resale,
-  u.gallery, u.floor_plan_url, u.video_url, u.virtual_tour_url, u.amenities,
-  u.city, u.locality, u.latitude, u.longitude, u.description
-`;
+/**
+ * What a visitor to the website may see, one field per entry.
+ *
+ * Still a whitelist, and still the security control described at the top of
+ * this file: a field added to `properties` later cannot appear here just
+ * because it exists. What changed is that a field *removed* no longer takes the
+ * website down with it.
+ *
+ * Every name below is a field an administrator is free to delete in the admin
+ * panel, and deleting one used to turn this into `column "..." does not exist`.
+ * Postgres answers 42703, the API turns it into a 400, and the entire public
+ * property list stops loading. Nothing names the field, and the admin panel
+ * gives no warning, because removing a field it is allowed to remove is not an
+ * error. So the list is filtered against the columns the table actually has.
+ */
+const PROPERTY_FIELD_LIST: { sql: string; needs: string[] }[] = [
+  { sql: 'u.record_id AS id', needs: ['record_id'] },
+  { sql: 'u.name', needs: ['name'] },
+  {
+    sql: `lower(regexp_replace(btrim(u.project_name), '[^a-zA-Z0-9]+', '-', 'g')) AS project_id`,
+    needs: ['project_name'],
+  },
+  ...[
+    'project_name',
+    'status', 'property_type', 'configuration',
+    'tower', 'wing', 'floor', 'facing', 'view_description', 'corner_unit', 'vastu_compliant',
+    'carpet_area', 'built_up_area', 'super_built_up_area', 'plot_area', 'balcony_area',
+    'terrace_area', 'area_unit',
+    'bedrooms', 'bathrooms', 'balconies', 'parking_slots', 'furnishing',
+    'base_price', 'rate_per_sqft', 'floor_rise_charge', 'plc_charge', 'parking_charge',
+    'club_membership', 'maintenance_deposit', 'other_charges', 'gst_percent', 'total_price',
+    'possession_status', 'possession_date', 'is_resale',
+    'gallery', 'floor_plan_url', 'video_url', 'virtual_tour_url', 'amenities',
+    'city', 'locality', 'latitude', 'longitude', 'description',
+  ].map((c) => ({ sql: `u.${c}`, needs: [c] })),
+];
+
+let propertyFieldsCache: string | null = null;
+
+/** Forget which columns exist. Called whenever an admin changes the model. */
+export function invalidatePublicFields(): void {
+  propertyFieldsCache = null;
+}
+
+async function propertyFields(): Promise<string> {
+  if (propertyFieldsCache) return propertyFieldsCache;
+  const { rows } = await db.query<{ column_name: string }>(
+    `SELECT column_name FROM information_schema.columns WHERE table_name = 'ipy_e_properties'`,
+  );
+  const present = new Set(rows.map((r) => r.column_name));
+  const kept = PROPERTY_FIELD_LIST.filter((f) => f.needs.every((c) => present.has(c)));
+  const dropped = PROPERTY_FIELD_LIST.length - kept.length;
+  if (dropped > 0) {
+    logger.info({ dropped }, 'public property fields: some have been removed from the model');
+  }
+  propertyFieldsCache = kept.map((f) => f.sql).join(', ');
+  return propertyFieldsCache;
+}
 
 // ---------------------------------------------------------------------------
 // Projects
@@ -179,7 +223,7 @@ publicRouter.get('/projects/:id', asyncHandler(async (req, res) => {
   if (!project) throw new NotFoundError('Project not found');
 
   const units = await db.query(
-    `SELECT ${PROPERTY_FIELDS}
+    `SELECT ${await propertyFields()}
      FROM ipy_e_properties u
      WHERE ${[...PROJECT_BASE_CONDS(), slug].join(' AND ')}
      ORDER BY u.total_price ASC NULLS LAST`,
@@ -228,7 +272,7 @@ publicRouter.get('/properties', asyncHandler(async (req, res) => {
 
   const [rows, count] = await Promise.all([
     db.query(
-      `SELECT ${PROPERTY_FIELDS}
+      `SELECT ${await propertyFields()}
        FROM ipy_e_properties u
        WHERE ${conds.join(' AND ')}
        ORDER BY ${sort}
@@ -245,7 +289,7 @@ publicRouter.get('/properties', asyncHandler(async (req, res) => {
 
 publicRouter.get('/properties/:id', asyncHandler(async (req, res) => {
   const unit = await db.queryOne(
-    `SELECT ${PROPERTY_FIELDS}
+    `SELECT ${await propertyFields()}
      FROM ipy_e_properties u
      WHERE u.record_id = $1 AND u.status = ANY($2) AND ${publishClause('u')}`,
     [req.params.id, await publicPropertyStatuses()],

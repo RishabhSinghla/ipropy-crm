@@ -2,9 +2,7 @@
 import { db, transaction } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { getFolderDriver, getStorageSettings } from './index.js';
-import {
-  propertyFolderTree, recordStorageRoot,
-} from './keys.js';
+import { propertyFolderKey, propertyFolderTree, recordStorageRoot } from './keys.js';
 
 /**
  * The unit from a folder key, which is what every folder inside is named after.
@@ -121,7 +119,11 @@ export async function getPropertyStorageStatus(recordId: string): Promise<Proper
 }
 
 async function folderFor(row: ClaimedRow): Promise<string | null> {
+  // A folder that already has a key keeps it, always. Renaming a folder in
+  // somebody's drive is not a tidy-up, it is moving their photographs while
+  // they are working, and the CRM has no way to move the files that are in it.
   if (row.folder_key) return row.folder_key;
+
   const record = await db.queryOne<{
     module_name: string; label: string; record_number: string | null; is_deleted: boolean;
   }>(
@@ -129,7 +131,15 @@ async function folderFor(row: ClaimedRow): Promise<string | null> {
     [row.record_id],
   );
   if (!record || record.is_deleted || record.module_name !== 'properties') return null;
-  const folder = recordStorageRoot(record.module_name, record.record_number, record.label, row.record_id);
+
+  // Named after the unit, which is the whole point of the name: every folder
+  // and every file inside is prefixed with whatever the first hyphen-separated
+  // piece of this is. `recordStorageRoot` builds a name from the record number
+  // instead, and every property record number starts `UNIT-`, so it made every
+  // property in the drive look identical inside. It stays as the fallback for
+  // a property so thin it has neither a unit number nor a name.
+  const folder = (await propertyFolderKey(row.record_id))
+    ?? recordStorageRoot(record.module_name, record.record_number, record.label, row.record_id);
   await db.query(
     `UPDATE ipy_property_storage SET folder_key = $2, updated_at = now() WHERE record_id = $1`,
     [row.record_id, folder],

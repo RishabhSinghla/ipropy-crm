@@ -416,8 +416,19 @@ export async function seedDefaultLayouts(conn: Tx, def: ModuleDef): Promise<void
   const visible = (fields: FieldDef[]): FieldDef[] =>
     fields.filter((f) => f.displayType !== 'hidden' && !deleted.has(f.name));
 
+  // A section an admin deleted must not come back through the layout either.
+  //
+  // Half of this was already right: `seedBlocks` skips tombstoned sections, so
+  // the section itself stayed deleted. The layout was rebuilt from the template
+  // regardless, so its `blocks` list kept naming a section that no longer
+  // existed. Nothing threw, and the Layout Designer showed a section the admin
+  // had already removed, which is the same bug the tombstone was added to fix
+  // wearing a different hat.
+  const goneBlocks = await tombstonedBlocks(conn, def.name);
+  const liveBlocks = def.blocks.filter((b) => !goneBlocks.has(b.name));
+
   const layoutConfig = {
-    blocks: def.blocks.map((b) => ({
+    blocks: liveBlocks.map((b) => ({
       key: b.name,
       label: b.label,
       columns: (b.columns ?? 2) as 1 | 2 | 3,
@@ -429,7 +440,7 @@ export async function seedDefaultLayouts(conn: Tx, def: ModuleDef): Promise<void
     // thing a salesperson opening a lead could be told. It is still on the
     // record, still searchable, and an admin can put it back in the Layout
     // Designer.
-    headerFields: visible(def.blocks[0]?.fields ?? [])
+    headerFields: visible(liveBlocks[0]?.fields ?? [])
       .filter((f) => f.uitype !== 'autonumber')
       .slice(0, 4)
       .map((f) => f.name),
