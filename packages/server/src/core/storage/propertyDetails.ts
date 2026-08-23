@@ -121,6 +121,10 @@ const WHERE_TO_POST: { folder: string; size: string; uses: string[] }[] = [
  */
 export function descriptionsText(unit: string, facts: string[], text: {
   title: string; description: string; caption: string; hashtags: string;
+  /** One per portal, because the three of them want different things. */
+  portals?: { name: string; note: string; body: string }[];
+  /** The caption again, for the half of every forward that reads Hindi. */
+  hindi?: { caption: string; description: string };
 }): string {
   const lines: string[] = [
     `${unit} — WHAT TO POST, AND WHERE`,
@@ -150,6 +154,35 @@ export function descriptionsText(unit: string, facts: string[], text: {
     '',
     `  ${text.hashtags}`,
     '',
+  ];
+
+  // One version per portal, because they genuinely are different jobs. 99acres
+  // rewards density, Housing rewards locality and lifestyle, Magicbricks wants
+  // a short opener and bullets. Pasting one paragraph into all three is how a
+  // listing ends up middling everywhere.
+  for (const portal of text.portals ?? []) {
+    lines.push(
+      portal.name.toUpperCase(),
+      '-'.repeat(64),
+      portal.note,
+      '',
+      ...portal.body.split('\n').map((l) => `  ${l}`),
+      '',
+    );
+  }
+
+  if (text.hindi?.caption || text.hindi?.description) {
+    lines.push(
+      'HINDI',
+      '-'.repeat(64),
+      'The same thing in Hindi, for WhatsApp forwards. Pick whichever suits who you are sending to.',
+      '',
+      ...(text.hindi.caption ? [...text.hindi.caption.split('\n').map((l) => `  ${l}`), ''] : []),
+      ...(text.hindi.description ? [...text.hindi.description.split('\n').map((l) => `  ${l}`), ''] : []),
+    );
+  }
+
+  lines.push(
     'THE FACTS',
     '-'.repeat(64),
     ...facts.map((l) => `  ${l}`),
@@ -162,7 +195,7 @@ export function descriptionsText(unit: string, facts: string[], text: {
     'shape rather than the app, because the same shape is used in several',
     'places and one copy is easier to keep straight than five.',
     '',
-  ];
+  );
 
   for (const entry of WHERE_TO_POST) {
     lines.push('-'.repeat(64), entry.folder.replace('{p}', unit), `  ${entry.size}`, '');
@@ -278,6 +311,33 @@ export async function writePropertyDetails(
 
 
 /**
+ * The three portals this business actually lists on, and what each wants.
+ *
+ * Not a general list of every portal in India. Adding one here adds a section
+ * to every descriptions file and a paragraph a model has to write, and a
+ * section nobody reads is worse than no section.
+ */
+export const PORTALS: { name: string; note: string; brief: string }[] = [
+  {
+    name: '99acres',
+    note: 'Facts dense and specific. 800 to 1200 characters. No adjectives it cannot back up.',
+    brief: 'Dense and factual, 800-1200 characters, specification-led. Lead with configuration, area and '
+      + 'possession. No lifestyle language, no adjectives that cannot be verified from the photographs.',
+  },
+  {
+    name: 'Housing.com',
+    note: 'Locality and lifestyle. What living here is actually like.',
+    brief: 'Locality-led, 700-1000 characters, warmer. Open with the neighbourhood and what is around it, '
+      + 'then the flat. Only name landmarks given in the facts.',
+  },
+  {
+    name: 'Magicbricks',
+    note: 'Short punchy opener, then bullets. Scanned, not read.',
+    brief: 'A two-line opener, then six to eight short bullet points. Scanned on a phone, not read.',
+  },
+];
+
+/**
  * The property's facts as data rather than as a text file.
  *
  * The same list the details file prints, handed to whatever needs to *reason*
@@ -338,10 +398,20 @@ export async function buildDescriptions(recordId: string): Promise<string> {
   const price = typeof row.base_price === 'number' ? formatIndianPrice(row.base_price) : null;
 
   const headline = [bits.join(' '), price ? `at ${price}` : null].filter(Boolean).join(' ');
+  // Placeholders the media worker replaces once a model has looked at the
+  // photographs. Written now rather than left out, so a folder opened before
+  // processing still has the shape of the file and somebody can see what is
+  // coming rather than an empty page.
   return descriptionsText(unit, facts, {
     title: headline || String(row.label ?? 'Property'),
     description: facts.join('\n') || 'Add the property details in the CRM and this fills in.',
     caption: headline ? `${headline}. Message us for the floor plan and a visit.` : 'Message us for details.',
     hashtags: '#faridabad #realestate #property #builderfloor #greenfieldcolony',
+    portals: PORTALS.map((p) => ({
+      name: p.name,
+      note: p.note,
+      body: 'Written once the photographs have been looked at.',
+    })),
+    hindi: { caption: 'Written once the photographs have been looked at.', description: '' },
   });
 }

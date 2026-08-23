@@ -22,7 +22,8 @@
  * enforces that is the same path the record page uses.
  */
 import { createHash } from 'node:crypto';
-import { embed, isMediaAiAvailable, rerank, MEDIA_MODELS } from '../../ai/media.js';
+import { embed, isMediaAiAvailable, rerank } from '../../ai/media.js';
+import { modelFor } from '../settings/aiModels.js';
 import { db, type Tx } from '../../db/pool.js';
 import { getRecord, type ServiceContext } from '../entity/recordService.js';
 import { recordScopeSql } from '../permissions/index.js';
@@ -229,7 +230,9 @@ export async function indexPending(limit = BATCH): Promise<IndexSummary> {
     return { embedded: 0, skipped };
   }
 
-  const model = MEDIA_MODELS.embed;
+  // Stored with the row, so a change of model in Admin does not silently start
+  // comparing vectors from two different maths.
+  const model = await modelFor('embed');
   for (const [index, candidate] of fresh.entries()) {
     const vector = vectors[index];
     if (!vector?.length) continue;

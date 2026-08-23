@@ -63,28 +63,38 @@ JOBS = {
 # Doing it here instead means one call, one answer, and a reason in plain
 # words. Each part still runs even if an earlier one failed, because a bad
 # video should not cost you the photos.
-# Order is not arbitrary and each step depends on the one above it.
+# What each named step actually runs, and nothing about the order.
 #
-#   name      renames the originals. Everything downstream keys off the
-#             filename, so this cannot run later without five folders
-#             disagreeing about what a photograph is called.
-#   prepare   HEIC to JPEG and the professional finish.
-#   photos    the five shapes, cut from the finished copies.
-#   watermark the logo, on the 4x3 only. After the crop, or the crop eats it.
-#   reel      a vertical reel from the photographs.
-#   edit      the walkthrough he shot, cut down.
-#   video     the plain 9:16 conversion, as a floor under `edit`.
+# The order used to live here, as a tuple, which meant "skip the watermark for
+# this builder" was a code change and a deploy. It is n8n's job now: n8n sends
+# the list, this runs what it is told, in the order it is given. Reordering the
+# pipeline is editing one line on a canvas.
 #
-# Paths carry the unit, which is the first part of the property folder name.
-PROPERTY_STEPS = (
-    ("name", "name", "", ["{u}", "{facts}"]),
-    ("prepare", "prepare", "", ["{u}"]),
-    ("photos", "shapes", "", []),
-    ("watermark", "watermark", "/{u}-SHAPES/4x3", ["{root}/{u}-EDITED/WATERMARKED"]),
-    ("reel", "reel", "", ["{u}", "{facts}"]),
-    ("walkthrough", "edit", "", ["{u}", "{facts}"]),
-    ("video", "video", "/{u}-RAW-UPLOADS/VIDEOS", ["{root}/{u}-VIDEO", "{prefix}"]),
-)
+# What stays here is the *one call*, and that is deliberate. Split across seven
+# separate n8n nodes this could not report honestly — a step that fails hands on
+# an error object rather than a result, so a run with no photos told the CRM
+# everything was fine. A property with a green tick and an empty folder is worse
+# than a red one. So: n8n decides what runs, this decides what to say about it.
+PROPERTY_STEPS = {
+    # renames the originals; everything downstream keys off the filename
+    "name": ("name", "", ["{u}", "{facts}"]),
+    # HEIC to JPEG, then the professional finish
+    "prepare": ("prepare", "", ["{u}"]),
+    # the five shapes, cut from the finished copies
+    "photos": ("shapes", "", []),
+    # the logo, on the 4:3 only — after the crop, or the crop eats it
+    "watermark": ("watermark", "/{u}-SHAPES/4x3", ["{root}/{u}-EDITED/WATERMARKED"]),
+    # a vertical reel from the photographs
+    "reel": ("reel", "", ["{u}", "{facts}"]),
+    # the walkthrough he shot, cut down
+    "walkthrough": ("edit", "", ["{u}", "{facts}"]),
+    # the plain 9:16 conversion, as a floor under `walkthrough`
+    "video": ("video", "/{u}-RAW-UPLOADS/VIDEOS", ["{root}/{u}-VIDEO", "{prefix}"]),
+}
+
+# What runs when n8n does not say. Every deployment starts here and diverges by
+# editing a node rather than this file.
+DEFAULT_STEPS = ("name", "prepare", "photos", "watermark", "reel", "walkthrough", "video")
 
 
 def unit_of(folder: str) -> str:
@@ -93,13 +103,33 @@ def unit_of(folder: str) -> str:
     return (last.split("-")[0] or "PROPERTY").upper()
 
 
-def run_property(folder: str, prefix: str = "", facts: dict | None = None) -> dict:
+def run_property(
+    folder: str,
+    prefix: str = "",
+    facts: dict | None = None,
+    steps: list[str] | None = None,
+) -> dict:
+    """Everything one property needs, in one call, in the order n8n asked for.
+
+    Each part still runs even if an earlier one failed, because a bad video
+    should not cost you the photos. An unknown step name is reported rather than
+    ignored: a typo in an n8n node that silently skipped the watermark would be
+    invisible until somebody noticed the logo missing weeks later.
+    """
     root = str(safe_target(folder))
     unit = unit_of(folder)
     facts_json = json.dumps(facts or {})
     index_path = Path(root, f"{unit}-PHOTO-INDEX.json")
+    wanted = [s for s in (steps or DEFAULT_STEPS) if isinstance(s, str)] or list(DEFAULT_STEPS)
+
     done, failed, log = [], [], []
-    for label, job, suffix, args in PROPERTY_STEPS:
+    for label in wanted:
+        recipe = PROPERTY_STEPS.get(label)
+        if recipe is None:
+            failed.append(label)
+            log.append(f"{label}: not a step this worker knows. Known: {', '.join(PROPERTY_STEPS)}")
+            continue
+        job, suffix, args = recipe
         try:
             extra = [a.format(root=root, u=unit, prefix=prefix or unit, facts=facts_json) for a in args]
             if label == "photos":
@@ -108,9 +138,9 @@ def run_property(folder: str, prefix: str = "", facts: dict | None = None) -> di
                 # file already has".
                 #
                 # Checked here rather than at the top of the run, because the
-                # naming pass a few lines above is what creates the index. Read
-                # too early and every photo it just named is renamed back to
-                # A1818-01, A1818-02, and the room is thrown away.
+                # naming step is what creates the index. Read too early and
+                # every photo it just named is renamed back to A1818-01, and
+                # the room is thrown away.
                 extra.extend(["" if index_path.is_file() else prefix, unit])
             r = run_job(job, folder + suffix.format(u=unit), extra)
         except FileNotFoundError:
@@ -129,6 +159,7 @@ def run_property(folder: str, prefix: str = "", facts: dict | None = None) -> di
         "ok": not failed,
         "done": done,
         "failed": failed,
+        "steps": wanted,
         "summary": ("Photos are named and finished, every social size is cut, "
                     "and both videos are ready."
                     if not failed else
@@ -191,7 +222,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         if self.path == "/health":
-            self._reply(200, {"ok": True, "root": str(MEDIA_ROOT), "jobs": sorted([*JOBS, "property"])})
+            self._reply(200, {
+                "ok": True, "root": str(MEDIA_ROOT),
+                "jobs": sorted([*JOBS, "property"]),
+                # So n8n can be written against what this worker actually knows
+                # rather than against a list somebody remembered.
+                "steps": list(PROPERTY_STEPS),
+                "defaultSteps": list(DEFAULT_STEPS),
+            })
         else:
             self._reply(404, {"error": "not found"})
 
@@ -206,7 +244,9 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
             body = json.loads(self.rfile.read(length) or b"{}")
             if body["job"] == "property":
-                result = run_property(body["folder"], body.get("prefix", ""), body.get("facts"))
+                result = run_property(
+                    body["folder"], body.get("prefix", ""), body.get("facts"), body.get("steps"),
+                )
             else:
                 result = run_job(body["job"], body["folder"], body.get("args", []))
             self._reply(200 if result["ok"] else 500, result)

@@ -9,6 +9,7 @@ import type {
   AiAssistantAction, AiAssistantMessage, AiMemory, AiThreadSummary,
 } from '../lib/api';
 import { api } from '../lib/api';
+import { useVoiceCapture } from '../lib/useVoiceCapture';
 import { toast, useApp } from '../lib/store';
 import { cn, renderMarkdown } from '../lib/utils';
 import { Badge, Spinner } from './ui';
@@ -86,13 +87,8 @@ export default function AiAssistant({
   const [memories, setMemories] = useState<AiMemory[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyMode, setHistoryMode] = useState<'chats' | 'memory'>('chats');
-  const [recording, setRecording] = useState(false);
-  const [transcribing, setTranscribing] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
 
   const recordContext = useMemo(() => {
     const [module, id] = location.pathname.split('/').filter(Boolean);
@@ -131,10 +127,6 @@ export default function AiAssistant({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length, busy, actionBusy]);
-
-  useEffect(() => () => {
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-  }, []);
 
   const newConversation = (): void => {
     setActiveThreadId(null);
@@ -235,48 +227,23 @@ export default function AiAssistant({
     }
   };
 
-  const stopRecording = (): void => {
-    if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
-  };
-
-  const startRecording = async (): Promise<void> => {
-    if (recording) { stopRecording(); return; }
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      toast.error('Voice input is not supported by this browser');
-      return;
-    }
+  /**
+   * Speak the question instead of typing it.
+   *
+   * The recording itself is `useVoiceCapture`, shared with the notes panel on a
+   * lead. Two copies of MediaRecorder handling means two copies of the same
+   * three bugs: a stream left open on unmount, a mime type Safari refuses, and
+   * a stop that never fires.
+   */
+  const voice = useVoiceCapture(async (audio) => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-      chunksRef.current = [];
-      const preferred = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm']
-        .find((type) => MediaRecorder.isTypeSupported(type));
-      const recorder = new MediaRecorder(stream, preferred ? { mimeType: preferred } : undefined);
-      recorderRef.current = recorder;
-      recorder.ondataavailable = (event) => { if (event.data.size) chunksRef.current.push(event.data); };
-      recorder.onstop = () => {
-        const audio = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
-        stream.getTracks().forEach((track) => track.stop());
-        streamRef.current = null;
-        recorderRef.current = null;
-        setRecording(false);
-        setTranscribing(true);
-        void api.transcribeAiAudio(audio)
-          .then(({ transcript }) => {
-            setInput((current) => current ? `${current.trim()} ${transcript}` : transcript);
-            setTimeout(() => inputRef.current?.focus(), 20);
-          })
-          .catch((err: Error) => toast.error('Could not transcribe voice', err.message))
-          .finally(() => setTranscribing(false));
-      };
-      recorder.start();
-      setRecording(true);
+      const { transcript } = await api.transcribeAiAudio(audio);
+      setInput((current) => (current ? `${current.trim()} ${transcript}` : transcript));
+      setTimeout(() => inputRef.current?.focus(), 20);
     } catch (err) {
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-      toast.error('Microphone unavailable', (err as Error).message);
+      toast.error('Could not transcribe voice', (err as Error).message);
     }
-  };
+  });
 
   if (!open) return null;
 
@@ -412,19 +379,19 @@ export default function AiAssistant({
         </div>
 
         <form className="shrink-0 border-t border-slate-200 p-3 dark:border-slate-800" onSubmit={(event) => { event.preventDefault(); void send(input); }}>
-          {(recording || transcribing) && (
+          {(voice.recording || voice.busy) && (
             <p className="mb-2 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-1.5 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-300">
-              {recording ? <><span className="h-2 w-2 animate-pulse rounded-full bg-red-500" /> Listening — tap stop when finished</> : <><Spinner className="h-3 w-3" /> Turning your voice into text…</>}
+              {voice.recording ? <><span className="h-2 w-2 animate-pulse rounded-full bg-red-500" /> Listening — tap stop when finished</> : <><Spinner className="h-3 w-3" /> Turning your voice into text…</>}
             </p>
           )}
           <div className="flex items-end gap-2 rounded-xl border border-slate-300 bg-white p-1.5 focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-100 dark:border-slate-700 dark:bg-slate-950 dark:focus-within:ring-brand-950">
             <textarea ref={inputRef} className="min-h-[38px] max-h-28 flex-1 resize-none bg-transparent px-2 py-2 text-sm outline-none" rows={1} placeholder="Ask or tell iPropy what to do…" value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(input); }
-            }} disabled={busy || transcribing} />
-            <button type="button" onClick={() => void startRecording()} className={cn('btn-ghost mb-0.5 p-2', recording && 'bg-red-100 text-red-600 dark:bg-red-950')} disabled={busy || transcribing} title={recording ? 'Stop recording' : 'Speak your question'}>
-              {recording ? <Square className="h-4 w-4 fill-current" /> : <Mic className="h-4 w-4" />}
+            }} disabled={busy || voice.busy} />
+            <button type="button" onClick={voice.toggle} className={cn('btn-ghost mb-0.5 p-2', voice.recording && 'bg-red-100 text-red-600 dark:bg-red-950')} disabled={busy || voice.busy || !voice.supported} title={voice.recording ? 'Stop recording' : 'Speak your question'}>
+              {voice.recording ? <Square className="h-4 w-4 fill-current" /> : <Mic className="h-4 w-4" />}
             </button>
-            <button type="submit" className="btn-primary mb-0.5 p-2" disabled={busy || transcribing || !input.trim()} title="Send"><Send className="h-4 w-4" /></button>
+            <button type="submit" className="btn-primary mb-0.5 p-2" disabled={busy || voice.busy || !input.trim()} title="Send"><Send className="h-4 w-4" /></button>
           </div>
           <p className="mt-1.5 px-1 text-[10px] text-muted">CRM-only answers · changes require confirmation · say “Remember that…” to save a preference</p>
         </form>

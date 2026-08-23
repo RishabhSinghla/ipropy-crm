@@ -108,6 +108,68 @@ def music(brief: str, seconds: int = 30, record_id: str | None = None) -> bytes 
     return base64.b64decode(result["audio"])
 
 
+_style_cache: dict | None = None
+
+
+def style() -> dict:
+    """How this business sounds, and which features are switched on.
+
+    Fetched once per run rather than baked into the prompts. The scripts carry
+    the task — describe this room, write a caption — and the CRM carries the
+    voice, so changing "sound less like a brochure" is a text box in Admin
+    rather than an edit to five prompts across three files.
+
+    Falls back to a sane default when the CRM cannot be reached, because a
+    property being processed on a flaky connection should still get its copy.
+    """
+    global _style_cache
+    if _style_cache is not None:
+        return _style_cache
+
+    fallback = {
+        "style": {
+            "neverMention": (
+                "Furniture, fittings, appliances, views, greenery or finishes that are not visible "
+                "in the photograph. Never guess a floor number, a direction, an area or a price."
+            ),
+            "captionTone": "Sounds like a person, not a brochure. Indian English. One emoji at most.",
+            "voiceLanguage": "Hinglish, written in Latin script.",
+            "musicBrief": "Calm, elegant, understated instrumental. It should sit under a speaking voice.",
+            "signOff": "Message us for the floor plan and a site visit.",
+        },
+        "features": {},
+        "photoScoreFloor": 4,
+    }
+    if not configured():
+        _style_cache = fallback
+        return _style_cache
+
+    request = urllib.request.Request(
+        f"{CRM_URL}/api/webhooks/n8n/ai/style",
+        headers={"x-n8n-secret": CRM_SECRET},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            _style_cache = json.loads(response.read().decode())
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as err:
+        print(f"  crm: could not read house style ({err}); using defaults", flush=True)
+        _style_cache = fallback
+    return _style_cache
+
+
+def system_prompt(role: str) -> str:
+    """One system prompt, built from the house style rather than written twice."""
+    rules = style()["style"]
+    return (
+        f"{role} "
+        "You are working on photographs and footage of a real property that buyers will "
+        "physically visit. Describe only what is visible. "
+        f"NEVER MENTION: {rules['neverMention']} "
+        "Reply with JSON only, no prose and no code fences."
+    )
+
+
 def parse_json(text: str | None):
     """Pull the JSON out of a model's answer.
 

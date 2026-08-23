@@ -17,29 +17,20 @@
  * throw. A property still gets its photos when there is no voice to put on the
  * video, and the caller decides what a missing piece means.
  */
+import { modelFor, type AiJob } from '../core/settings/aiModels.js';
 import { getAiProviderSettings } from '../core/settings/integrations.js';
 import { db } from '../db/pool.js';
 import { logger } from '../utils/logger.js';
 
-/** What each job asks for by default, and what it costs at the time of writing. */
-export const MEDIA_MODELS = {
-  /** Text, image, audio and video in. Reads photos and watches walkthroughs. */
-  vision: 'xiaomi/mimo-v2.5',
-  /** Free tier. Handles Hinglish, which is what this business actually speaks. */
-  speech: 'fish-audio/s2.1-pro-free:free',
-  /** $0.012 an hour of audio. Call recordings cost almost nothing to read. */
-  transcribe: 'nvidia/nemotron-3.5-asr-streaming-multilingual-0.6b',
-  /** $0.04 for a 30 second clip. */
-  music: 'google/lyria-3-clip-preview',
-  /** Free. 1B parameters, which is plenty for a CRM's worth of text. */
-  embed: 'nvidia/nemotron-3-embed-1b:free',
-  /** Free. Reorders what the embedding search found, which is where the win is. */
-  rerank: 'nvidia/llama-nemotron-rerank-vl-1b-v2:free',
-  /** Priced per video token. Only ever used for one short clip per property. */
-  video: 'bytedance/seedance-2.0-mini',
-} as const;
-
-export type MediaJob = keyof typeof MEDIA_MODELS;
+/**
+ * Which model does a job is a setting, not a constant.
+ *
+ * `core/settings/aiModels.ts` owns the list and the defaults; this module just
+ * asks. That is the difference between swapping a model in a text box and
+ * swapping it in a release.
+ */
+export { AI_JOBS, aiModels } from '../core/settings/aiModels.js';
+export type MediaJob = AiJob;
 
 interface Endpoint { baseUrl: string; apiKey: string }
 
@@ -70,7 +61,8 @@ export function mediaAiStatus(): { available: boolean; reason?: string } {
     : {
       available: false,
       reason: 'Add an OpenRouter key in Admin → Integrations. Voice, transcription, '
-        + 'music and search all run through it, and most of them are free.',
+        + 'music and search all run through it, and most of them are free. '
+        + 'Which model does which job is then yours to change in Admin → Settings → AI models.',
     };
 }
 
@@ -165,7 +157,7 @@ export interface SpeechOptions {
  * Buffer and not an object.
  */
 export async function speak(opts: SpeechOptions): Promise<Buffer | null> {
-  const model = opts.model ?? MEDIA_MODELS.speech;
+  const model = opts.model ?? await modelFor('speech');
   const response = await request('/audio/speech', {
     model,
     input: opts.text,
@@ -201,7 +193,7 @@ export async function transcribe(
   format: string,
   opts: { model?: string; language?: string; recordId?: string | null } = {},
 ): Promise<TranscriptResult | null> {
-  const model = opts.model ?? MEDIA_MODELS.transcribe;
+  const model = opts.model ?? await modelFor('transcribe');
   const response = await request('/audio/transcriptions', {
     model,
     input_audio: { data: audio.toString('base64'), format: format.replace(/^\./, '').toLowerCase() },
@@ -230,7 +222,7 @@ export async function music(
   brief: string,
   opts: { model?: string; seconds?: number; recordId?: string | null } = {},
 ): Promise<Buffer | null> {
-  const model = opts.model ?? MEDIA_MODELS.music;
+  const model = opts.model ?? await modelFor('music');
   const response = await request('/chat/completions', {
     model,
     modalities: ['audio'],
@@ -269,7 +261,7 @@ export async function embed(
   opts: { model?: string } = {},
 ): Promise<number[][] | null> {
   if (!texts.length) return [];
-  const model = opts.model ?? MEDIA_MODELS.embed;
+  const model = opts.model ?? await modelFor('embed');
   const response = await request('/embeddings', { model, input: texts }, 'embed', model);
   if (!response) return null;
 
@@ -304,7 +296,7 @@ export async function rerank(
   opts: { model?: string; topN?: number } = {},
 ): Promise<RerankHit[] | null> {
   if (!documents.length) return [];
-  const model = opts.model ?? MEDIA_MODELS.rerank;
+  const model = opts.model ?? await modelFor('rerank');
   const response = await request('/rerank', {
     model,
     query,
@@ -350,7 +342,7 @@ export interface VideoRequest {
  * for a single opening shot and nothing longer.
  */
 export async function generateVideo(req: VideoRequest): Promise<Buffer | null> {
-  const model = req.model ?? MEDIA_MODELS.video;
+  const model = req.model ?? await modelFor('video');
   const response = await request('/videos', {
     model,
     prompt: req.prompt,

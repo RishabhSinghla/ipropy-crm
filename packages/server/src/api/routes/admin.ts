@@ -604,6 +604,28 @@ adminRouter.get('/settings', asyncHandler(async (req, res) => {
   })));
 }));
 
+/**
+ * Does this model actually answer?
+ *
+ * A real call, not a `/models` listing. A model id can be listed and still be
+ * retired, out of quota, wrong for the job, or unable to see a picture — and
+ * every one of those shows up here as the same failure the CRM would hit on a
+ * property. Which is the whole point of a test button.
+ *
+ * Kept deliberately tiny: one word of text, one 1x1 pixel for the vision jobs,
+ * eight characters of speech. A test that costs money is a test nobody presses.
+ */
+adminRouter.post('/ai-models/test', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.access');
+  const { job, model } = z.object({
+    job: z.string().min(1).max(40),
+    model: z.string().min(2).max(160),
+  }).parse(req.body);
+
+  const { testMediaModel } = await import('../../ai/mediaTest.js');
+  res.json(await testMediaModel(job, model.trim()));
+}));
+
 adminRouter.put('/settings', asyncHandler(async (req, res) => {
   const user = getUser(req);
   await assertCapability(user, 'admin.access');
@@ -624,6 +646,15 @@ adminRouter.put('/settings', asyncHandler(async (req, res) => {
   const { invalidateScoring, invalidatePublicStatuses } = await import('../../core/settings/scoring.js');
   invalidateScoring();
   invalidatePublicStatuses();
+  // Same contract for everything else that caches a setting. A model swapped in
+  // a text box has to be live on the next job, not after the next deploy —
+  // otherwise "it does not persist" is exactly what it looks like.
+  const { invalidateAiModels } = await import('../../core/settings/aiModels.js');
+  const { invalidateHouseStyle } = await import('../../core/settings/houseStyle.js');
+  const { invalidateAiFeatures } = await import('../../core/settings/aiFeatures.js');
+  invalidateAiModels();
+  invalidateHouseStyle();
+  invalidateAiFeatures();
   res.json({ ok: true });
 }));
 

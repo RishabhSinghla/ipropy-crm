@@ -39,11 +39,7 @@ DEFAULT_SECONDS = 32
 # on a phone is brutal. Twelve rooms at about two and a half seconds each.
 MIN_SHOTS, MAX_SHOTS = 4, 14
 
-MUSIC_BRIEF = (
-    "Calm, elegant, understated instrumental for a luxury property tour. "
-    "Warm piano or soft strings with a light steady pulse. No drums that dominate, "
-    "no build to a drop, nothing dramatic. It should sit under a speaking voice."
-)
+ROLE = "You are a senior real-estate listing writer in Faridabad, India."
 
 
 def unit_of(folder: Path) -> str:
@@ -107,7 +103,8 @@ def choose(entries: list[dict], wanted: int) -> list[dict]:
 
 
 def script_for(facts: dict, entries: list[dict]) -> str | None:
-    """A Hinglish voiceover, written from the facts and the rooms actually shown."""
+    """The voiceover, in whatever language the house style asks for."""
+    rules = crm.style()["style"]
     fact_lines = "\n".join(f"{k}: {v}" for k, v in facts.items()) or "None supplied."
     rooms = "\n".join(f"- {e['room']}: {e['note']}" for e in entries if e.get("note")) or "Not described."
     prompt = (
@@ -115,12 +112,12 @@ def script_for(facts: dict, entries: list[dict]) -> str | None:
         f"WHAT THE VIDEO SHOWS, in order:\n{rooms}\n\n"
         "Write the voiceover for a 30 second property reel for buyers in Faridabad.\n\n"
         "Rules:\n"
-        "- Hinglish. Natural spoken Hindi-English mixing, the way a Delhi NCR property "
-        "consultant actually talks to a client. Write it in Latin script, not Devanagari.\n"
+        f"- {rules['voiceLanguage']}\n"
         "- 60 to 75 words. It has to fit in 30 seconds at a calm pace.\n"
         "- Only the facts above. Do not invent an area, a floor, a direction, an amenity, "
         "a landmark or a price.\n"
-        "- Open with what the property is. Close by asking them to message for a visit.\n"
+        "- Open with what the property is.\n"
+        f"- Close with: {rules['signOff']}\n"
         "- No emoji, no hashtags, no stage directions, no speaker labels.\n\n"
         'Return JSON: {"script": "..."}'
     )
@@ -193,7 +190,7 @@ def main() -> int:
                     print(f"  voice runs {spoken.duration:.1f}s; reel extended to {target:.0f}s", flush=True)
 
         music_path = None
-        bed = crm.music(MUSIC_BRIEF, seconds=int(min(120, max(20, target))))
+        bed = crm.music(crm.style()["style"]["musicBrief"], seconds=int(min(120, max(20, target))))
         if bed:
             music_path = work / "music.mp3"
             music_path.write_bytes(bed)
@@ -219,11 +216,11 @@ def main() -> int:
                       f"{' · ' + entry['room'] if entry['room'] else ''}", flush=True)
 
         end = work / "99-end.mp4"
-        if kit.card(end, end_seconds, [
-            ("iPropy", 92),
-            ("Message us for the floor plan", 42),
-            ("and a site visit", 42),
-        ]):
+        # The closing line comes from the house style, so changing how the
+        # business signs off changes it on the videos too rather than only in
+        # the captions.
+        sign_off = crm.style()["style"]["signOff"]
+        if kit.card(end, end_seconds, [("iPropy", 92), (sign_off, 42)]):
             clips.append(end)
 
         if len(clips) < 2:

@@ -49,6 +49,23 @@ const GROUPS: { id: string; title: string; blurb: string }[] = [
   { id: 'whatsapp', title: 'WhatsApp', blurb: 'Messaging rules.' },
   { id: 'telephony', title: 'Calls', blurb: 'Recording and number masking.' },
   { id: 'ai', title: 'AI', blurb: 'Which parts of the CRM the AI is allowed to do on its own.' },
+  {
+    id: 'ai_features',
+    title: 'AI features',
+    blurb: 'One switch each. Every one of these can be off and the CRM still works, so nothing here is load-bearing.',
+  },
+  {
+    id: 'ai_models',
+    title: 'AI models',
+    blurb: 'Which model does which job. Paste any id from openrouter.ai/models, save, and the next job uses it. '
+      + 'A blank or mistyped box falls back to the one the CRM shipped with rather than switching the feature off.',
+  },
+  {
+    id: 'house_style',
+    title: 'How you sound',
+    blurb: 'The voice behind every caption, description and voiceover. Change a box here and every listing in the '
+      + 'business changes with it.',
+  },
 ];
 
 export default function SettingsAdmin(): JSX.Element {
@@ -171,7 +188,10 @@ function Row({ setting, value, changed, onChange, onReset }: {
   setting: Setting; value: unknown; changed: boolean;
   onChange: (v: unknown) => void; onReset: () => void;
 }): JSX.Element {
-  const wide = isBusinessHours(setting) || isAddress(setting);
+  // A paragraph of house style, or a model id long enough to run off the end of
+  // a 16rem box, both need the full width rather than a column on the right.
+  const wide = isBusinessHours(setting) || isAddress(setting)
+    || setting.category === 'house_style' || isModel(setting);
 
   return (
     <div className={cn('py-4', wide ? 'space-y-3' : 'flex items-start gap-6')}>
@@ -197,7 +217,67 @@ function Row({ setting, value, changed, onChange, onReset }: {
   );
 }
 
+/**
+ * A model id, and a button that finds out whether it answers.
+ *
+ * The test is a real call — the smallest version of the job the model is there
+ * to do. A `/models` listing would say yes to an id that is retired, out of
+ * quota, or simply cannot see a picture, and all three of those are how a
+ * feature is discovered broken by a customer rather than by a button.
+ *
+ * It tests what is in the box, not what is saved, so an id can be checked
+ * before committing to it.
+ */
+function ModelRow({ setting, value, onChange }: {
+  setting: Setting; value: unknown; onChange: (v: unknown) => void;
+}): JSX.Element {
+  const [result, setResult] = useState<{ ok: boolean; message: string; ms?: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const job = setting.key.replace(/^ai_models\./, '');
+  const model = typeof value === 'string' ? value : '';
+
+  const test = async (): Promise<void> => {
+    setBusy(true);
+    setResult(null);
+    try {
+      setResult(await api.testAiModel(job, model));
+    } catch (err) {
+      setResult({ ok: false, message: (err as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          className="input min-w-0 flex-1 font-mono text-xs"
+          value={model}
+          spellCheck={false}
+          onChange={(e) => { onChange(e.target.value); setResult(null); }}
+          placeholder="paste a model id from openrouter.ai/models"
+        />
+        <button className="btn-secondary btn-sm shrink-0" onClick={() => void test()} disabled={busy || !model.trim()}>
+          {busy ? <Spinner /> : null} Test
+        </button>
+      </div>
+      {result && (
+        <p className={cn(
+          'text-xs',
+          result.ok ? 'text-positive' : 'text-negative',
+        )}>
+          {result.ok ? '✓ ' : '✕ '}{result.message}
+          {result.ms ? ` (${(result.ms / 1000).toFixed(1)}s)` : ''}
+        </p>
+      )}
+    </div>
+  );
+}
+
 const isBusinessHours = (s: Setting): boolean => s.key === 'business_hours';
+const isModel = (s: Setting): boolean => s.category === 'ai_models';
 const isAddress = (s: Setting): boolean => s.key === 'org.address';
 const isStringList = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === 'string');
 
@@ -206,6 +286,17 @@ function Control({ setting, value, onChange }: {
 }): JSX.Element {
   if (isBusinessHours(setting)) return <BusinessHours value={value} onChange={onChange} />;
   if (isAddress(setting)) return <Address value={value} onChange={onChange} />;
+  if (isModel(setting)) return <ModelRow setting={setting} value={value} onChange={onChange} />;
+  if (setting.category === 'house_style') {
+    return (
+      <textarea
+        className="input w-full text-sm"
+        rows={3}
+        value={typeof value === 'string' ? value : ''}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    );
+  }
 
   if (typeof setting.value === 'boolean') {
     return <Toggle checked={Boolean(value)} onChange={onChange} />;

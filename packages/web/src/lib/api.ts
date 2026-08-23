@@ -600,6 +600,9 @@ export const api = {
     post<{ id: string }>(`/api/meta/modules/${module}/blocks`, data),
   updateBlock: (id: string, data: Record<string, unknown>) => patch(`/api/meta/blocks/${id}`, data),
   deleteBlock: (id: string) => del<{ ok: boolean; deleted?: string }>(`/api/meta/blocks/${id}`),
+  /** A real call against one model id, to find out whether it answers. */
+  testAiModel: (job: string, model: string) =>
+    post<{ ok: boolean; message: string; ms?: number }>('/api/admin/ai-models/test', { job, model }),
   validateFormula: (expression: string) => post<{ valid: boolean; error?: string }>('/api/meta/fields/validate-formula', { expression }),
 
   // --- records ------------------------------------------------------------
@@ -830,6 +833,17 @@ export const api = {
   cancelAiAction: (id: string) => del<{ action: AiAssistantAction; answer: string }>(`/api/ai/actions/${id}`),
   aiMemories: () => get<AiMemory[]>('/api/ai/memory'),
   deleteAiMemory: (id: string) => del<{ ok: boolean }>(`/api/ai/memory/${id}`),
+  /**
+   * Thirty seconds of Hinglish becomes a note. Comes back for somebody to read
+   * and post; nothing is saved by this call.
+   */
+  voiceNote: (audio: Blob) => {
+    const form = new FormData();
+    form.append('audio', audio, 'note.webm');
+    return request<{ transcript: string; note: string; tidied: boolean }>(
+      '/api/ai/voice-note', { method: 'POST', body: form },
+    );
+  },
   transcribeAiAudio: (audio: Blob) => {
     const form = new FormData();
     const extension = audio.type.includes('ogg') ? 'ogg' : audio.type.includes('mp4') ? 'm4a' : 'webm';

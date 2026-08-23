@@ -22,7 +22,7 @@ import {
 } from '../../integrations/leadsources/capture.js';
 import { recordOpen } from '../../integrations/email/service.js';
 import { complete } from '../../ai/client.js';
-import { MEDIA_MODELS, mediaAiStatus, music, speak } from '../../ai/media.js';
+import { aiModels, mediaAiStatus, music, speak } from '../../ai/media.js';
 import { notifyMany } from '../../core/notifications/index.js';
 
 export const webhooksRouter = Router();
@@ -581,8 +581,13 @@ webhooksRouter.post('/n8n/ai/vision', asyncHandler(async (req, res) => {
   requireN8nSecret(req);
   const input = visionSchema.parse(req.body);
 
+  // Photographs go to the vision model, plain questions to the copy model. Two
+  // settings rather than one, because reading a picture and writing a paragraph
+  // are different jobs with very different prices.
+  const { modelFor } = await import('../../core/settings/aiModels.js');
   const result = await complete({
     feature: 'property_vision',
+    model: await modelFor(input.images.length ? 'vision' : 'copy'),
     system: input.system ?? 'You are a property photographer and marketer. Answer only with the JSON asked for.',
     prompt: input.prompt,
     // No pictures is a normal call, not an empty one: the pass that writes the
@@ -657,7 +662,31 @@ webhooksRouter.post('/n8n/ai/music', asyncHandler(async (req, res) => {
 /** What the worker can expect to work before it starts a long job. */
 webhooksRouter.get('/n8n/ai/status', asyncHandler(async (req, res) => {
   requireN8nSecret(req);
-  res.json({ ...mediaAiStatus(), models: MEDIA_MODELS });
+  res.json({ ...mediaAiStatus(), models: await aiModels() });
+}));
+
+/**
+ * How this business sounds, fetched rather than hardcoded in the worker.
+ *
+ * The prompts in the media scripts carry the *task*: describe this room, write
+ * a caption, write a voiceover. What they must not carry is the *voice* — the
+ * tone, the language, the one rule about never describing furniture that is not
+ * there. That lives in Admin → Settings, and a worker that copied it would be a
+ * second version to go stale.
+ */
+webhooksRouter.get('/n8n/ai/style', asyncHandler(async (req, res) => {
+  requireN8nSecret(req);
+  const { houseStyle } = await import('../../core/settings/houseStyle.js');
+  const { aiFeatures } = await import('../../core/settings/aiFeatures.js');
+  const { db: conn } = await import('../../db/pool.js');
+  const floor = await conn.queryOne<{ value: unknown }>(
+    `SELECT value FROM ipy_setting WHERE key = 'media.photo_score_floor'`,
+  );
+  res.json({
+    style: await houseStyle(),
+    features: await aiFeatures(),
+    photoScoreFloor: Number(floor?.value ?? 4),
+  });
 }));
 
 /** n8n made the folders on disk; record that so the CRM stops asking. */

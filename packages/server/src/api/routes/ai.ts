@@ -7,7 +7,7 @@ import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, NotFoundError } from '../../utils/errors.js';
 import { assertCapability, assertModuleAccess, canAccessRecord, getFieldPermissions } from '../../core/permissions/index.js';
-import { aiStatus, isAiAvailable } from '../../ai/client.js';
+import { aiStatus, complete, isAiAvailable } from '../../ai/client.js';
 import {
   isSttConfigured, SttError, transcribeAudio, transcribeRecording,
 } from '../../core/stt/index.js';
@@ -424,6 +424,85 @@ aiRouter.post('/transcribe', modelLimiter, assistantAudioUpload.single('audio'),
     if (err instanceof SttError) throw new BadRequestError(err.message);
     throw err;
   }
+}));
+
+/**
+ * Thirty seconds of talking becomes a note somebody will actually read.
+ *
+ * Two steps, and the second is the one that matters. Transcription alone gives
+ * you what was said: "haan toh Sharma family aaye the woh A-1818 dekhne wale
+ * the kitchen bahut pasand aayi unko lekin master bedroom thoda chhota lag raha
+ * tha". That is a wall of text nobody scans three weeks later. Tidied, it is
+ * four lines with the objection on its own.
+ *
+ * Nothing is saved. The note comes back to the box for somebody to read, edit
+ * and post — which is the rule he set in August and the right one: a model that
+ * mishears a budget and writes it into a record on its own is worse than no
+ * feature at all.
+ */
+aiRouter.post('/voice-note', modelLimiter, assistantAudioUpload.single('audio'), asyncHandler(async (req, res) => {
+  const file = (req as unknown as { file?: Express.Multer.File }).file;
+  if (!file) throw new BadRequestError('Record something first');
+
+  const { featureOn } = await import('../../core/settings/aiFeatures.js');
+  if (!await featureOn('voiceNotes')) {
+    throw new BadRequestError('Voice notes are switched off in Admin → Settings → AI features.');
+  }
+
+  const { getSettings } = await import('../../core/settings/integrations.js');
+  const settings = getSettings().stt;
+  if (!isSttConfigured(settings)) {
+    throw new BadRequestError(
+      'Speech-to-text is not configured. Add an OpenRouter or Groq key under Admin → Integrations.',
+    );
+  }
+
+  let transcript: string;
+  try {
+    transcript = await transcribeAudio(file.buffer, file.originalname || 'note.webm', settings, {
+      // A spelling hint, which is what makes it write "BHK" and "crore" rather
+      // than "B-H-K" and "crow". Worth more here than anywhere else, because a
+      // site-visit note is mostly numbers and jargon.
+      prompt: 'iPropy CRM, Faridabad, Greenfield Colony, property, builder floor, BHK, square yards, '
+        + 'crore, lakh, carpet area, possession, token, registry, site visit, follow-up, RERA',
+    });
+  } catch (err) {
+    if (err instanceof SttError) throw new BadRequestError(err.message);
+    throw err;
+  }
+  if (!transcript.trim()) throw new BadRequestError('Nothing was said, or the recording was silent.');
+
+  const { modelFor } = await import('../../core/settings/aiModels.js');
+  const { houseStyle } = await import('../../core/settings/houseStyle.js');
+  const style = await houseStyle();
+
+  const tidied = await complete({
+    feature: 'voice_note',
+    model: await modelFor('copy'),
+    system: 'You tidy spoken notes into written ones for a property CRM. You never add a fact that '
+      + 'was not said, never guess a number, and never invent a next step. If something was said '
+      + 'ambiguously, write it ambiguously.',
+    prompt: `Somebody spoke this note after dealing with a customer. It is a raw transcript, so it `
+      + `rambles, repeats itself and has no punctuation.\n\n"${transcript.slice(0, 8_000)}"\n\n`
+      + `Rewrite it as a note a colleague can scan in five seconds.\n\n`
+      + `- Keep the language it was spoken in. ${style.voiceLanguage}\n`
+      + `- Short lines. Put an objection, a budget or a date on its own line.\n`
+      + `- Keep every number, name and date exactly as said.\n`
+      + `- Do not add a greeting, a heading, or anything about what to do next unless it was said.\n`
+      + `- If the transcript is one short sentence, leave it almost alone.\n\n`
+      + `Return only the note.`,
+    maxTokens: 900,
+    temperature: 0.1,
+    userId: getUser(req).id,
+  });
+
+  res.json({
+    transcript,
+    // The tidied version when a model answered, and the raw words when none
+    // did. A note in somebody's own rambling words still beats losing it.
+    note: tidied?.text.trim() || transcript.trim(),
+    tidied: Boolean(tidied?.text.trim()),
+  });
 }));
 
 /**

@@ -252,7 +252,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ job: 'property', folder: $('Work out the folder').first().json.folder, prefix: $('Work out the folder').first().json.namePrefix || '', facts: $('Work out the folder').first().json.facts || {} }) }}",
+        "jsonBody": "={{ JSON.stringify({ job: 'property', folder: $('Work out the folder').first().json.folder, prefix: $('Work out the folder').first().json.namePrefix || '', facts: $('Work out the folder').first().json.facts || {}, steps: ['name', 'prepare', 'photos', 'watermark', 'reel', 'walkthrough', 'video'] }) }}",
         "options": {
           "timeout": 1800000,
           "response": {

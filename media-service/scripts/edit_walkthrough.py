@@ -37,18 +37,7 @@ SAMPLE_EVERY = 3.0
 BATCH = 8
 MIN_SEGMENT, MAX_SEGMENT = 2.2, 6.0
 
-MUSIC_BRIEF = (
-    "Calm, elegant, understated instrumental for a luxury property walkthrough. "
-    "Warm piano or soft strings, light steady pulse, no drop and nothing dramatic. "
-    "It should sit under a speaking voice."
-)
-
-SYSTEM = (
-    "You are a senior real-estate video editor. You are watching frames from a "
-    "walkthrough of a real flat that buyers will physically visit. Judge only what is "
-    "visible. Never describe furniture, fittings, views or finishes that are not in the "
-    "frame. Reply with JSON only."
-)
+ROLE = "You are a senior real-estate video editor working in Faridabad, India."
 
 
 def unit_of(folder: Path) -> str:
@@ -114,7 +103,7 @@ def watch(frames: list[tuple[float, Path]], facts: dict) -> list[dict]:
             "Return a JSON array and nothing else."
         )
         answer = crm.parse_json(crm.vision(
-            prompt, [path.read_bytes() for _, path in chunk], system=SYSTEM, max_tokens=3000,
+            prompt, [path.read_bytes() for _, path in chunk], system=crm.system_prompt(ROLE), max_tokens=3000,
         ))
         if not isinstance(answer, list):
             continue
@@ -236,6 +225,7 @@ def cut_segment(video: Path, out: Path, start: float, seconds: float,
 
 
 def script_for(facts: dict, segments: list[dict], seconds: float) -> str | None:
+    rules = crm.style()["style"]
     fact_lines = "\n".join(f"{k}: {v}" for k, v in facts.items()) or "None supplied."
     rooms = "\n".join(f"- {s['room']}: {s['note']}" for s in segments if s.get("note")) or "Not described."
     words = int(seconds * 2.3)
@@ -244,17 +234,16 @@ def script_for(facts: dict, segments: list[dict], seconds: float) -> str | None:
         f"WHAT THE WALKTHROUGH SHOWS, in order:\n{rooms}\n\n"
         f"Write the voiceover for a {seconds:.0f} second property walkthrough for buyers in Faridabad.\n\n"
         "Rules:\n"
-        "- Hinglish. Natural spoken Hindi-English mixing, the way a Delhi NCR property "
-        "consultant actually talks to a client. Latin script, not Devanagari.\n"
+        f"- {rules['voiceLanguage']}\n"
         f"- About {words} words, so it fits in {seconds:.0f} seconds at a calm pace.\n"
         "- Walk the viewer through in the order above.\n"
         "- Only the facts given. Do not invent an area, a floor, a direction, an amenity, "
         "a landmark or a price.\n"
-        "- Close by asking them to message for a visit.\n"
+        f"- Close with: {rules['signOff']}\n"
         "- No emoji, no hashtags, no stage directions, no speaker labels.\n\n"
         'Return JSON: {"script": "..."}'
     )
-    answer = crm.parse_json(crm.text(prompt, system=SYSTEM, max_tokens=1200))
+    answer = crm.parse_json(crm.text(prompt, system=crm.system_prompt(ROLE), max_tokens=1200))
     if isinstance(answer, dict) and answer.get("script"):
         return str(answer["script"]).strip()
     return None
@@ -330,11 +319,11 @@ def main() -> int:
 
         body = sum(s["clip_seconds"] for s in segments)
         end = work / "end.mp4"
-        if kit.card(end, 2.0, [
-            ("iPropy", 92),
-            ("Message us for the floor plan", 42),
-            ("and a site visit", 42),
-        ]):
+        # The closing line comes from the house style, so changing how the
+        # business signs off changes it on the videos too rather than only in
+        # the captions.
+        sign_off = crm.style()["style"]["signOff"]
+        if kit.card(end, 2.0, [("iPropy", 92), (sign_off, 42)]):
             clips.append(end)
 
         voice_path = None
@@ -346,7 +335,7 @@ def main() -> int:
                 voice_path.write_bytes(audio)
 
         music_path = None
-        bed = crm.music(MUSIC_BRIEF, seconds=int(min(120, max(20, body + 4))))
+        bed = crm.music(crm.style()["style"]["musicBrief"], seconds=int(min(120, max(20, body + 4))))
         if bed:
             music_path = work / "music.mp3"
             music_path.write_bytes(bed)

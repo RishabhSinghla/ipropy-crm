@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FieldMeta, ModuleMeta, RecordEnvelope, TimelineEntry } from '@ipropy/shared';
 import { CALL_DISPOSITIONS, formatIndianPrice, relativeTime } from '@ipropy/shared';
 import {
-  Activity, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Edit3, ExternalLink, Eye, FileQuestion, FileText, FolderOpen, Images, LayoutDashboard, Link2, MessageCircle, MoreHorizontal, Paperclip, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Trash2, Upload, UserCheck, X,
+  Activity, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Edit3, ExternalLink, Eye, FileQuestion, FileText, FolderOpen, Images, LayoutDashboard, Link2, MessageCircle, Mic, MoreHorizontal, Paperclip, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Trash2, Upload, UserCheck, X,
 } from 'lucide-react';
 import type { PropertyStorageInfo } from '../lib/api';
 import { api, authedFileUrl } from '../lib/api';
@@ -13,6 +13,7 @@ import { compressImage, formatBytes } from '../lib/compressImage';
 import { toast, useApp } from '../lib/store';
 import { useWatchRecord } from '../lib/realtime';
 import { invalidateRecordQueries } from '../lib/invalidate';
+import { useVoiceCapture } from '../lib/useVoiceCapture';
 import { loadListNav } from '../lib/listNav';
 import { cn, renderMarkdown, restrictionForField } from '../lib/utils';
 import { resolveIcon } from '../lib/icons';
@@ -2189,6 +2190,23 @@ function CommentsPanel({
   const queryClient = useQueryClient();
   const [body, setBody] = useState('');
   const [posting, setPosting] = useState(false);
+
+  /**
+   * Speak the note instead of typing it.
+   *
+   * The moment a note is worth writing is the moment nobody wants to write one:
+   * in the car after a site visit, one hand on the wheel. Thirty seconds of
+   * Hinglish comes back as four readable lines, into the box rather than into
+   * the record, so it is still somebody's decision what gets saved.
+   */
+  const voice = useVoiceCapture(async (audio) => {
+    try {
+      const { note } = await api.voiceNote(audio);
+      setBody((current) => (current.trim() ? `${current.trim()}\n\n${note}` : note));
+    } catch (err) {
+      toast.error('Could not write that up', (err as Error).message);
+    }
+  });
   // Everyone picked from the @ menu while writing this note. Kept as a list
   // rather than a set of ids because resolving back to ids at post time needs
   // the exact name that was inserted.
@@ -2247,11 +2265,33 @@ function CommentsPanel({
           colleagues={colleagues}
           onSubmit={() => void post()}
         />
-        <div className="mt-2 flex items-center justify-between">
-          <span className="text-2xs text-muted">@ to notify someone · ⌘↵ to post</span>
-          <button onClick={() => void post()} disabled={!body.trim() || posting} className="btn-primary btn-sm">
-            {posting && <Spinner className="h-3 w-3" />} Post
-          </button>
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <span className="min-w-0 truncate text-2xs text-muted">
+            {voice.recording
+              ? 'Listening — tap the mic again when you have finished'
+              : voice.busy
+                ? 'Writing that up…'
+                : '@ to notify someone · ⌘↵ to post'}
+          </span>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {voice.supported && (
+              <button
+                onClick={voice.toggle}
+                disabled={voice.busy || posting}
+                title={voice.recording ? 'Stop and write it up' : 'Speak the note instead of typing it'}
+                aria-label={voice.recording ? 'Stop recording' : 'Record a voice note'}
+                className={cn(
+                  'btn-secondary btn-sm px-2',
+                  voice.recording && 'bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-400',
+                )}
+              >
+                {voice.busy ? <Spinner className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
+              </button>
+            )}
+            <button onClick={() => void post()} disabled={!body.trim() || posting} className="btn-primary btn-sm">
+              {posting && <Spinner className="h-3 w-3" />} Post
+            </button>
+          </div>
         </div>
       </div>
 

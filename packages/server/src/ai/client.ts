@@ -130,6 +130,15 @@ export interface CompleteOptions {
    * the next provider gets the call, and `complete` returns null if none can.
    */
   images?: VisionImage[];
+  /**
+   * Ask this exact model rather than the provider's configured one.
+   *
+   * Only two callers want this: the model-test button, which is testing a
+   * specific id somebody just typed, and the media pipeline, where "which model
+   * reads photographs" is its own setting. Everything else should take whatever
+   * the provider is pointed at, or there would be a second place deciding.
+   */
+  model?: string;
 }
 
 export interface CompleteResult {
@@ -211,7 +220,7 @@ export async function complete(opts: CompleteOptions): Promise<CompleteResult | 
   let lastError = 'No provider answered.';
 
   for (const [index, ai] of chain.entries()) {
-    const model = opts.fast ? ai.fastModel : ai.model;
+    const model = opts.model ?? (opts.fast ? ai.fastModel : ai.model);
     const maxTokens = outputTokenLimit(opts.maxTokens, ai.maxTokens);
     const temperature = opts.temperature ?? 0.2;
     const started = Date.now();
