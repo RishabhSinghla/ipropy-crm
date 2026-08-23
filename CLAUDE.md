@@ -203,10 +203,19 @@ And after pushing, ask the running site rather than assuming:
 scripts/verify-deploy.sh 'a string only the new code has'
 ```
 
-**CI is the deploy gate, not advice.** `render.yaml` sets `autoDeployTrigger: checksPass`,
-so a red run means Render never builds — while the container happily restarts for other
-reasons, which looks exactly like a slow deploy. Check `gh run list` before concluding one
-is stuck. Two traps the script exists to encode: `grep` on a fetched bundle needs `-a` (BSD
+**CI is the deploy gate, not advice** — except right now, and the exception has a
+date on it. `render.yaml` normally sets `autoDeployTrigger: checksPass`, so a red run
+means Render never builds while the container happily restarts for other reasons, which
+looks exactly like a slow deploy. Check `gh run list` before concluding one is stuck.
+
+> **Until 1 September 2026 it is `commit`.** GitHub's free Actions minutes ran out on
+> 23 August (a health check billed at a whole minute, 96 times a day — see
+> `.github/workflows/health.yml`), so no check could run and nothing could deploy. The
+> minute usage is fixed and the allowance resets on the 1st; put both `render.yaml` **and
+> the Render dashboard** back to `checksPass` then. While it is `commit`, **every push to
+> main goes straight to production**, so nothing half-finished may be pushed, and
+> `npm run typecheck`, `npm test`, `npm run test:integration` and a real
+> `docker build --platform linux/amd64` all have to pass locally first. Two traps the script exists to encode: `grep` on a fetched bundle needs `-a` (BSD
 grep calls it binary and silently prints nothing), and the lazy route chunks are **not**
 named in `index.html` — their filenames live inside the entry chunk, so checking only what
 the HTML references finds nothing and reads as a failed deploy.
