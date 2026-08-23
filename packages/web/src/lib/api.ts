@@ -617,6 +617,21 @@ export const api = {
   teamTrail: (userId: string, hours = 12) => get<{
     trail: { latitude: number; longitude: number; recordedAt: string; accuracyM: number | null; nearLabel: string | null }[];
   }>(`/api/admin/team/locations/${userId}?hours=${hours}`),
+  /**
+   * What Android build the CRM is handing out, if any.
+   *
+   * Unauthenticated on the server side so a phone can fetch the file itself,
+   * but asked for from behind a login here because the button lives in
+   * Settings.
+   */
+  companionBuild: () => get<{
+    available: boolean;
+    build: {
+      versionName: string; versionCode: number; minSdk: number;
+      sizeBytes: number; sha256: string; builtAt: string;
+    } | null;
+    url: string;
+  }>('/api/public/companion'),
   /** A real call against one model id, to find out whether it answers. */
   testAiModel: (job: string, model: string) =>
     post<{ ok: boolean; message: string; ms?: number }>('/api/admin/ai-models/test', { job, model }),

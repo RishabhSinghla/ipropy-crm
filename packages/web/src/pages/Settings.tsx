@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
 import {
-  Bell, BellOff, Camera, Check, Copy, Fingerprint, KeyRound, MessageCircle, Monitor, Moon, Plus,
-  Save, Smartphone, Sun, Trash2, User,
+  Bell, BellOff, Camera, Check, Copy, Download, Fingerprint, KeyRound, MessageCircle, Monitor,
+  Moon, Plus, Save, Smartphone, Sun, Trash2, User,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
@@ -875,6 +875,83 @@ function describeThisDevice(): string {
   return `${os} · ${browser}`;
 }
 
+/**
+ * Download the Android app.
+ *
+ * Sits above pairing because that is the order the work happens in: a rep
+ * cannot paste a pairing token into an app that is not on the phone yet. The
+ * commonest way to do this is to open the CRM on the handset itself and tap
+ * the button, which is why the link is a plain anchor to a public address
+ * rather than anything that needs a signed-in fetch.
+ */
+function GetTheApp(): JSX.Element | null {
+  const { data } = useQuery({
+    queryKey: ['companion-build'],
+    queryFn: () => api.companionBuild(),
+    staleTime: 5 * 60_000,
+  });
+
+  // Nothing at all rather than a broken button when no build has been
+  // published. A greyed-out control here would only raise a question that
+  // nobody reading this screen can answer.
+  if (!data?.available || !data.build) return null;
+
+  const megabytes = (data.build.sizeBytes / 1024 / 1024).toFixed(1);
+
+  return (
+    <div className="card space-y-4 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 max-w-xl">
+          <p className="text-sm font-medium">iPropy Companion for Android</p>
+          <p className="mt-1 text-sm text-muted">
+            Install this on a rep&apos;s phone and their calls, call recordings and, if you have
+            switched it on, their position reach the CRM on their own. Open this page on the
+            handset itself and tap the button; that is the quickest way.
+          </p>
+          <p className="mt-2 text-2xs text-muted">
+            Version {data.build.versionName} · {megabytes} MB · Android {androidNameFor(data.build.minSdk)} or newer
+          </p>
+        </div>
+        <a href={data.url} className="btn-primary btn-sm shrink-0" download>
+          <Download className="h-3.5 w-3.5" /> Download the app
+        </a>
+      </div>
+
+      <ol className="space-y-2 border-t border-slate-100 pt-4 text-sm text-muted dark:border-slate-800">
+        <li>
+          <span className="font-medium text-slate-700 dark:text-slate-200">1. Let the phone install it.</span>{' '}
+          Android will warn that the file came from outside the Play Store. Choose Settings on that
+          warning and allow your browser to install apps, then tap the downloaded file again.
+        </li>
+        <li>
+          <span className="font-medium text-slate-700 dark:text-slate-200">2. Pair it.</span>{' '}
+          Tap <em>Pair a phone</em> below, copy the token, and paste it into the app&apos;s
+          &quot;Pair this device&quot; screen along with this CRM&apos;s web address.
+        </li>
+        <li>
+          <span className="font-medium text-slate-700 dark:text-slate-200">3. Say yes to the permissions.</span>{' '}
+          Call log, notifications and location. Location needs a second step that Android will not
+          let the app ask for in a pop-up: open the app&apos;s own Settings page and change location
+          from &quot;While using the app&quot; to &quot;Allow all the time&quot;. The app offers to
+          take you there.
+        </li>
+        <li>
+          <span className="font-medium text-slate-700 dark:text-slate-200">4. On Xiaomi, Oppo, Vivo or Realme, turn on Autostart.</span>{' '}
+          In the phone&apos;s own app settings, switch Autostart on and set battery to No
+          restrictions. Skip this and the phone stops reporting a day or two later with nothing to
+          show why.
+        </li>
+      </ol>
+    </div>
+  );
+}
+
+/** The Android release a minimum SDK level corresponds to, for people rather than build tools. */
+function androidNameFor(minSdk: number): string {
+  const names: Record<number, string> = { 24: '7', 26: '8', 28: '9', 29: '10', 30: '11', 31: '12', 33: '13', 34: '14' };
+  return names[minSdk] ?? String(minSdk);
+}
+
 function PhonesTab(): JSX.Element {
   const { user } = useApp();
   const [pairOpen, setPairOpen] = useState(false);
@@ -894,7 +971,8 @@ function PhonesTab(): JSX.Element {
 
   return (
     <div className="space-y-4">
-    
+
+    <GetTheApp />
 
     <div className="card space-y-5 p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">

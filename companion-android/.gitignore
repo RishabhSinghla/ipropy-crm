@@ -1,4 +1,18 @@
-.gradle/
-build/
+# Where this machine's Android SDK lives. Every machine answers differently.
 local.properties
+
+# Build output. The APK the CRM serves is copied to packages/server/public
+# deliberately; nothing else here belongs in git.
+build/
+app/build/
+.gradle/
+.idea/
 *.iml
+
+# The release signing key and its password.
+#
+# Losing this is not a small thing: an APK signed with a different key will not
+# install over one signed with this key, so every rep would have to uninstall
+# first. Back up ~/.ipropy/companion/ somewhere that is not this laptop.
+keystore.properties
+keystore/

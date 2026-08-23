@@ -45,34 +45,88 @@ of two adjacent builder floors they walked into.
 
 ---
 
-## Install
+## Installing it on a phone
 
-### 1. Get a pairing token
+The CRM hands the app out itself, so there is nothing to email around.
 
-In the CRM: **Settings → Phones → Pair a phone**. Copy the token — it is shown
-once and only its hash is stored.
+1. On the handset, open the CRM and go to **Settings → Phones**. Tap
+   **Download the app**.
+2. Android warns that the file did not come from the Play Store. Tap the
+   Settings button on that warning, allow your browser to install apps, then
+   tap the downloaded file again.
+3. Back in **Settings → Phones**, tap **Pair a phone** and copy the token. It
+   is shown once; only its hash is kept.
+4. Open the app, enter the CRM address (`https://…`) and the token, and tap
+   **Pair**.
+5. Grant call log, notifications and location when asked.
+6. Location needs a second step. Android will not offer "Allow all the time" in
+   a pop-up, so the app opens the phone's own settings page for you. Change
+   location from "While using the app" to "Allow all the time" there.
+7. On Xiaomi, Oppo, Vivo and Realme, switch **Autostart** on and set the
+   battery policy to **No restrictions**. See [Battery](#battery).
 
-### 2. Build the APK
+Use a work phone or work SIM. Android's call log covers the whole handset, not
+just one app.
+
+---
+
+## Building it
+
+Only needed when the Android code changes. Everything below is a one-off except
+the last command.
+
+**Once, on the Mac that builds it:**
 
 ```bash
-cd companion-android && ./gradlew assembleRelease
+brew install openjdk@17
+brew install --cask android-commandlinetools
+yes | sdkmanager --licenses
+sdkmanager --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 ```
 
-The APK lands in `app/build/outputs/apk/release/`.
+Then a `local.properties` in this folder, pointing at whatever
+`brew --prefix` gave you:
 
-Needs Android Studio or the command-line SDK tools, JDK 17, and a `local.properties`
-containing `sdk.dir=/path/to/Android/sdk`.
+```
+sdk.dir=/opt/homebrew/share/android-commandlinetools
+```
 
-### 3. Sideload it
+**Once, ever:** make the signing key.
 
-Send the APK to each phone, tap it, and allow installation from unknown sources
-when prompted.
+```bash
+./scripts/make-release-key.sh
+```
 
-### 4. Pair
+This writes `~/.ipropy/companion/ipropy-release.jks` and a
+`keystore.properties` beside this README. Neither is committed. **Back up
+`~/.ipropy/companion` somewhere that is not this laptop.** Android decides
+whether one APK may replace another by comparing signatures, so an APK signed
+with a different key cannot install over the copy already on a rep's phone. The
+only way out of that is every rep uninstalling first, which throws away their
+pairing and their sync position.
 
-Open the app, enter your secure CRM address (`https://…`) and the token, tap
-**Pair**, and grant call log access. Use a work phone or work SIM: Android's call
-log covers the whole handset, not just one CRM app.
+**Every time the app changes:**
+
+```bash
+./scripts/publish-apk.sh
+```
+
+That builds, signs, copies the APK to `packages/server/public/companion/`, and
+writes a small JSON file next to it with the version, size and checksum read
+back out of the APK itself. Commit both files and push. Render carries them
+into the image, and **Settings → Phones** starts offering the new version.
+
+Bump `versionCode` and `versionName` in `app/build.gradle.kts` before you
+publish, together. `versionCode` is the number Android compares when deciding
+whether an APK is an upgrade; a build that does not raise it will not install
+over the one already on the phone.
+
+### If you move the file somewhere else
+
+`Admin → Settings → Where the Android app is downloaded from` takes a web
+address. Leave it empty and the CRM serves the file itself, which is what you
+want. Fill it in and every download follows it instead, with no rebuild of
+anything.
 
 To upload recordings, enable the option and choose the exact folder used by the
 phone's built-in recorder in Android's system folder picker. The app receives a

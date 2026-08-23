@@ -11,7 +11,8 @@
  * instead of relying on requireAuth.
  */
 import { Router } from 'express';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import { db } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
@@ -524,3 +525,114 @@ publicRouter.get('/share/:token/media/:attachmentId', asyncHandler(async (req, r
     res.send(data);
   }
 }));
+
+// ---------------------------------------------------------------------------
+// The Android companion app
+// ---------------------------------------------------------------------------
+
+/**
+ * Where the published APK and its details live inside the image.
+ *
+ * Written by `companion-android/scripts/publish-apk.sh` and committed, because
+ * the container has no Android SDK and Render has no artefact store. Three and
+ * a half megabytes in git is the price of the CRM being able to hand a rep the
+ * app without a second service, a login, or a monthly bill.
+ */
+//
+// Anchored to this file rather than to `process.cwd()`. The container starts
+// the server from the repository root and a developer starts it from
+// `packages/server`, so a working-directory path is right in one of those and
+// silently wrong in the other, which shows up as "no build published" with
+// nothing in the logs. This file sits three levels below the package root in
+// both `src` and `dist`.
+const COMPANION_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../../public/companion');
+const COMPANION_APK = resolve(COMPANION_DIR, 'ipropy-companion.apk');
+
+interface CompanionBuild {
+  versionName: string;
+  versionCode: number;
+  minSdk: number;
+  sizeBytes: number;
+  sha256: string;
+  builtAt: string;
+}
+
+/**
+ * What build is on offer, so the download page can say so.
+ *
+ * Read from disk each time rather than cached: the file changes once every few
+ * months, a read of two hundred bytes costs nothing, and a cache here would
+ * mean a freshly deployed APK advertised itself as the old one until somebody
+ * restarted the server.
+ */
+async function publishedBuild(): Promise<CompanionBuild | null> {
+  try {
+    const { readFile } = await import('node:fs/promises');
+    return JSON.parse(await readFile(resolve(COMPANION_DIR, 'companion.json'), 'utf8')) as CompanionBuild;
+  } catch {
+    return null;
+  }
+}
+
+publicRouter.get('/companion', asyncHandler(async (_req, res) => {
+  const build = await publishedBuild();
+  res.json({
+    available: build !== null,
+    build,
+    // Where to send the phone. A setting wins if one is set, so moving the file
+    // to object storage later is a settings change rather than a deploy.
+    url: (await companionOverrideUrl()) ?? '/api/public/companion/download',
+  });
+}));
+
+/**
+ * Hand over the APK.
+ *
+ * **Unauthenticated on purpose.** A rep installs this before the phone has ever
+ * signed into the CRM, often by opening a link someone sent them, and an APK
+ * that needs a bearer token cannot be fetched by a browser following a plain
+ * link. Nothing is given away by that: the app ships with no server address and
+ * no credentials, and does nothing at all until somebody pastes a pairing token
+ * into it. The button that leads here still sits behind a login.
+ */
+publicRouter.get('/companion/download', asyncHandler(async (req, res) => {
+  const override = await companionOverrideUrl();
+  if (override) {
+    res.redirect(302, override);
+    return;
+  }
+
+  const build = await publishedBuild();
+  if (!build) throw new NotFoundError('No companion build has been published yet');
+
+  // Version in the filename, so a rep with two downloads in their folder can
+  // tell which is which, and so a phone does not silently reuse a cached copy.
+  res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+  res.setHeader('Content-Disposition', `attachment; filename="ipropy-companion-${build.versionName}.apk"`);
+  // Long cache, but keyed to this exact build: the URL is stable, so the ETag
+  // is what tells a phone the file changed.
+  res.setHeader('ETag', `"${build.sha256}"`);
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  res.sendFile(COMPANION_APK, (err) => {
+    if (err) {
+      logger.warn({ err }, 'companion apk stream failed');
+      if (!res.headersSent) res.status(404).json({ error: 'not_found' });
+    }
+  });
+}));
+
+/**
+ * An address to send the phone to instead of this server.
+ *
+ * Empty by default. It exists so that the day the APK outgrows living in the
+ * image, or the day he wants it on a CDN, nothing in the app or the CRM has to
+ * change: he pastes a URL into Admin → Settings and every download follows it.
+ */
+async function companionOverrideUrl(): Promise<string | null> {
+  const row = await db.queryOne<{ value: unknown }>(
+    `SELECT value FROM ipy_setting WHERE key = 'companion.apk_url'`,
+  );
+  const raw = typeof row?.value === 'string' ? row.value : null;
+  const trimmed = raw?.trim();
+  return trimmed && /^https?:\/\//i.test(trimmed) ? trimmed : null;
+}

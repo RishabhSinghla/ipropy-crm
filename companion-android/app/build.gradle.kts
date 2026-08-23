@@ -1,6 +1,21 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+/**
+ * Where the release signing key is, and its password.
+ *
+ * Written by `scripts/make-release-key.sh` and never committed. Android decides
+ * whether one APK may replace another by comparing signatures, so this file
+ * being absent is not a detail to shrug at: a build signed with anything else
+ * cannot install over the copy already on a rep's phone.
+ */
+val keystoreProperties = Properties().apply {
+    val file = rootProject.file("keystore.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
 }
 
 android {
@@ -12,8 +27,28 @@ android {
         // 24 covers effectively every handset in use on an Indian sales desk.
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        // Bumped together, always. `versionCode` is the number Android
+        // compares when deciding whether an APK is an upgrade; `versionName`
+        // is the one a person reads. The app reports the name to the CRM, so
+        // Settings → Phones shows which build each handset is running.
+        versionCode = 2
+        versionName = "1.1.0"
+    }
+
+    buildFeatures {
+        // So the version has one definition rather than two that drift.
+        buildConfig = true
+    }
+
+    signingConfigs {
+        create("release") {
+            if (keystoreProperties.containsKey("storeFile")) {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
@@ -22,6 +57,16 @@ android {
             // team, and a readable stack trace from a rep's phone is worth more
             // than the few hundred KB R8 would save.
             isMinifyEnabled = false
+
+            // Deliberately not falling back to the debug key when the release
+            // key is missing. A debug-signed "release" installs perfectly well
+            // and then blocks every properly signed update after it, which is
+            // a problem that surfaces months later on somebody else's phone.
+            signingConfig = if (keystoreProperties.containsKey("storeFile")) {
+                signingConfigs.getByName("release")
+            } else {
+                null
+            }
         }
     }
 

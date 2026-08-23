@@ -26,3 +26,7 @@ wa-bridge
 *.log
 .DS_Store
 media-service
+# The Android app is built on a Mac with the Android SDK, not in this image.
+# The APK it produces is published to packages/server/public/companion, which
+# is what the container actually serves.
+companion-android

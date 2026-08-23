@@ -229,7 +229,14 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
     }
 }
 
-/** Kept separate so the worker does not depend on a generated BuildConfig class. */
+/**
+ * The app's version, read from the one place that defines it.
+ *
+ * This used to be a hand-typed copy of the number in `build.gradle.kts`, which
+ * is two places to change and one of them gets forgotten. The CRM shows this
+ * string in Settings → Phones, so a stale copy means a handset reports a
+ * version it is not running.
+ */
 object BuildConfigCompat {
-    const val versionName: String = "1.0.0"
+    val versionName: String = BuildConfig.VERSION_NAME
 }
