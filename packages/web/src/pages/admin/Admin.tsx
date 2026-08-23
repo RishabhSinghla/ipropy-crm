@@ -3,7 +3,7 @@ import type { JSX } from 'react';
 import { Suspense, lazy } from 'react';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {
-  Activity, Blocks, Database, GitBranch, Globe, KeyRound, Layers, LayoutTemplate,
+  Activity, Blocks, Database, GitBranch, Globe, KeyRound, Layers, LayoutTemplate, MapPin,
   Columns3, ListTree, Plug, Settings2, Shield, Sliders, Sparkles, ToggleLeft, Users, Workflow,
   SlidersHorizontal,
 } from 'lucide-react';
@@ -20,6 +20,7 @@ const SharingAdmin = lazy(() => import('./SharingAdmin'));
 const WorkflowAdmin = lazy(() => import('./WorkflowAdmin'));
 const IntegrationsAdmin = lazy(() => import('./IntegrationsAdmin'));
 const SystemAdmin = lazy(() => import('./SystemAdmin'));
+const TeamMap = lazy(() => import('./TeamMap'));
 const ImportAdmin = lazy(() => import('./ImportAdmin'));
 const BrandAdmin = lazy(() => import('./BrandAdmin'));
 const ViewsAdmin = lazy(() => import('./ViewsAdmin'));
@@ -41,6 +42,7 @@ const SECTIONS = [
       { path: 'users', label: 'Users', icon: Users, element: <UsersAdmin /> },
       { path: 'roles', label: 'Roles & Profiles', icon: Shield, element: <RolesProfiles /> },
       { path: 'sharing', label: 'Data Sharing', icon: KeyRound, element: <SharingAdmin /> },
+      { path: 'map', label: 'Team map', icon: MapPin, element: <TeamMap /> },
     ],
   },
   {

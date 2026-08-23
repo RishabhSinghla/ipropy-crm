@@ -9,6 +9,8 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 /**
@@ -62,6 +64,11 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 uploadRecordings(prefs, baseUrl, token)
             }
 
+            // Position last, so a slow or absent fix can never delay the calls
+            // reaching the CRM. Its own try/catch for the same reason.
+            runCatching { syncLocation(prefs, baseUrl, token) }
+                .onFailure { Log.w(TAG, "location step failed", it) }
+
             prefs.lastSyncAt = System.currentTimeMillis()
             prefs.lastSyncSummary = "Synced $totalCreated new call${if (totalCreated == 1) "" else "s"}"
             Log.i(TAG, "sync complete: $totalCreated new")
@@ -71,6 +78,86 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             prefs.lastSyncSummary = "Sync failed: ${e.message}"
             Result.retry()
         }
+    }
+
+    /**
+     * Take a position if the CRM wants one, and send whatever is queued.
+     *
+     * **Every decision here belongs to the CRM, not the app.** Whether to record
+     * at all, how often, and whether right now is inside working hours are all
+     * answered by `/api/device/policy`. The app is the hardest thing in this
+     * system to change — a rebuild, a re-install, and somebody holding the
+     * handset — so a rep on last month's version still has to be switchable
+     * from the admin panel.
+     *
+     * The cached answer is used when the policy cannot be fetched, and the
+     * cache defaults to off. Failing closed is the only safe direction for a
+     * setting about recording where people are.
+     */
+    private suspend fun syncLocation(prefs: Prefs, baseUrl: String, token: String) {
+        val policy = Api.fetchPolicy(baseUrl, token)
+        if (policy != null) {
+            prefs.locationEnabled = policy.enabled
+            prefs.locationEveryMinutes = policy.everyMinutes
+        }
+        if (!prefs.locationEnabled) {
+            // Nothing to send, and anything already queued is now unwanted.
+            if (prefs.pendingFixes != "[]") prefs.pendingFixes = "[]"
+            return
+        }
+        // A null policy means the question could not be asked. Keep queueing on
+        // the cached interval rather than guessing about the hours.
+        if (policy != null && !policy.withinHours) return
+
+        val due = System.currentTimeMillis() - prefs.lastFixAt >= prefs.locationEveryMinutes * 60_000L
+        if (due) {
+            LocationSampler.sample(applicationContext)?.let { fix ->
+                prefs.lastFixAt = System.currentTimeMillis()
+                queue(prefs, fix)
+            }
+        }
+
+        val pending = prefs.pendingFixes
+        if (pending == "[]") return
+        val result = Api.syncLocations(baseUrl, token, pending)
+        when {
+            // Sent, or refused because recording is off. Either way the queue
+            // has done its job and holding it would only grow it.
+            result != null -> {
+                prefs.pendingFixes = "[]"
+                if (result.reason != null) {
+                    prefs.locationEnabled = false
+                    Log.i(TAG, "location recording is off: ${result.reason}")
+                }
+            }
+            // No network. Keep them for the next wake.
+            else -> Log.i(TAG, "could not send positions; keeping them queued")
+        }
+    }
+
+    /** Add one fix to the queue, oldest dropped first if it has grown too long. */
+    private fun queue(prefs: Prefs, fix: LocationSampler.Fix) {
+        val array = runCatching { JSONArray(prefs.pendingFixes) }.getOrElse { JSONArray() }
+        array.put(
+            JSONObject().apply {
+                put("latitude", fix.latitude)
+                put("longitude", fix.longitude)
+                put("recordedAt", fix.recordedAt)
+                fix.accuracyM?.let { put("accuracyM", it.toDouble()) }
+                fix.speedMps?.let { put("speedMps", it.toDouble()) }
+                fix.batteryPct?.let { put("batteryPct", it) }
+            },
+        )
+        // A handset offline for a week would otherwise carry a preference file
+        // it re-reads on every wake. The oldest points are the least useful.
+        val trimmed = if (array.length() > MAX_QUEUED_FIXES) {
+            JSONArray().also { out ->
+                for (i in (array.length() - MAX_QUEUED_FIXES) until array.length()) out.put(array.get(i))
+            }
+        } else {
+            array
+        }
+        prefs.pendingFixes = trimmed.toString()
     }
 
     /**
@@ -108,6 +195,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         private const val MAX_PAGES = 25
         private const val RECENT_CALLS = 200
         private const val MAX_UPLOADS_PER_RUN = 10
+        private const val MAX_QUEUED_FIXES = 200
 
         /** Anything shorter is almost always a truncated or failed recording. */
         private const val MIN_RECORDING_BYTES = 8 * 1024L

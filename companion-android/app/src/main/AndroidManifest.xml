@@ -8,6 +8,24 @@
       team avoids that review entirely — see the README.
     -->
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
+
+    <!--
+      Location, and the two-step Android actually enforces.
+
+      FINE and COARSE can be asked for in a dialog. BACKGROUND cannot — from
+      Android 10 the person has to open Settings themselves and choose "Allow
+      all the time", and an app that asks for all three at once gets refused the
+      third silently. MainActivity does them in order and sends the user to
+      Settings for the last one, because a permission that was never granted and
+      never mentioned is how a feature is discovered broken weeks later.
+
+      `maxSdkVersion` is absent on purpose: this app is sideloaded to a known
+      team, so there is no Play review to satisfy, but every one of these still
+      has to be granted by hand on each handset.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />

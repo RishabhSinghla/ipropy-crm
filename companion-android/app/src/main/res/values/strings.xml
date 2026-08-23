@@ -38,4 +38,8 @@
     <string name="url_needs_scheme">Enter a valid secure address starting with https://</string>
     <string name="secure_storage_unavailable">This phone\'s secure key storage is unavailable, so the pairing token was not saved.</string>
     <string name="needs_call_log">Call log access was denied. Without it this app has nothing to sync — grant it in Settings → Apps → iPropy Call Sync → Permissions.</string>
+    <string name="background_location_title">One more tap, in Settings</string>
+    <string name="background_location_body">iPropy shows your manager that you reached a site, so nobody has to ring and ask. Android only lets you allow that from its own settings page.\n\nOpen Settings, tap Permissions, tap Location, and choose "Allow all the time".\n\nWithout it the app still works — it just reports your position only while the app is open.</string>
+    <string name="open_settings">Open Settings</string>
+    <string name="not_now">Not now</string>
 </resources>

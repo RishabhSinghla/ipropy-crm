@@ -90,6 +90,55 @@ deviceRouter.post('/calls', asyncHandler(async (req, res) => {
   res.json(await syncCalls(device, input.entries as DeviceCallEntry[]));
 }));
 
+/**
+ * What the phone should be doing right now.
+ *
+ * The app asks rather than decides, and every answer here is a setting the
+ * owner controls. That matters because the app is the hardest thing in this
+ * system to change: a rebuild, a re-install, and somebody holding the handset.
+ * A rep on last month's build still has to be switchable from the CRM.
+ */
+deviceRouter.get('/policy', asyncHandler(async (req, res) => {
+  await authenticateDevice(bearer(req.headers.authorization) ?? undefined);
+  const { currentPolicy } = await import('../../core/locations/index.js');
+  const policy = await currentPolicy();
+  res.json({
+    location: policy,
+    // Room to add the next thing the phone has to be told without shipping an
+    // app that knows about it in advance.
+  });
+}));
+
+const fixSchema = z.object({
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  /** Unix milliseconds when the phone took the fix, not when it sent it. */
+  recordedAt: z.number().int().positive(),
+  accuracyM: z.number().min(0).max(100_000).nullable().optional(),
+  speedMps: z.number().min(0).max(400).nullable().optional(),
+  batteryPct: z.number().int().min(0).max(100).nullable().optional(),
+});
+
+/**
+ * A batch of positions from one handset.
+ *
+ * Batched because a phone in a lift or a basement has no signal for twenty
+ * minutes and then has all of it at once, and because one request an hour costs
+ * far less battery than six.
+ */
+deviceRouter.post('/locations', asyncHandler(async (req, res) => {
+  const device = await authenticateDevice(bearer(req.headers.authorization) ?? undefined);
+  const input = z.object({
+    fixes: z.array(fixSchema).max(500),
+  }).parse(req.body);
+
+  const { recordFixes } = await import('../../core/locations/index.js');
+  const result = await recordFixes(device.userId, device.id, input.fixes);
+  // 200 with a reason rather than an error when the feature is off: the phone
+  // needs to stop sending, not to retry for ever.
+  res.json(result);
+}));
+
 deviceRouter.post('/recordings', upload.single('audio'), asyncHandler(async (req, res) => {
   const device = await authenticateDevice(bearer(req.headers.authorization) ?? undefined);
 

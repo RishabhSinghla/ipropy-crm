@@ -19,6 +19,8 @@ that actually happen, on the handsets people actually use, today.
 - Updates the lead's last-contacted date, contact attempts and status.
 - Optionally uploads call recordings your phone's own recorder made.
 - Notifies you when an unknown number calls — a lead you do not have yet.
+- Sends the phone's position on the same 15-minute wake, **if an admin has
+  switched that on** in the CRM. Off out of the box. See [Location](#location).
 
 ## What it cannot do
 
@@ -30,6 +32,16 @@ files.
 
 If your phone has no built-in recorder, the call log still syncs. Only the audio
 is missing.
+
+**It cannot follow somebody minute by minute.** A position arrives every 15
+minutes at best, because that is the shortest period Android will wake a
+background app for. Between two readings a rep can drive ten kilometres and
+come back, and the map will never know.
+
+**It cannot tell two neighbouring flats apart.** A phone fix is accurate to
+roughly 10 to 20 metres outdoors and worse indoors. That is enough to say
+somebody reached a project, and nowhere near enough to say which floor or which
+of two adjacent builder floors they walked into.
 
 ---
 
@@ -95,9 +107,71 @@ Two things worth being deliberate about:
 - **Recordings.** Recording and retention rules depend on the parties,
   jurisdiction and purpose. Obtain appropriate consent, publish a retention
   policy, restrict playback access, and get legal advice for your deployment.
+- **Location, if you switch it on.** Where an employee is during the day is
+  personal data under India's DPDP Act 2023. The Act expects the person to be
+  told what is collected and why, and to be able to ask what is held about them.
+  Tell the team before the switch goes on rather than after somebody notices a
+  pin with their name on it, keep the hours to working hours, and keep the
+  retention short. The feature ships off for this reason and not by oversight.
 
 The token can be revoked from the CRM at any time (**Settings → Phones →
 Revoke**), which stops the phone immediately without touching the handset.
+
+---
+
+## Location
+
+Off unless an admin turns it on, and the phone asks the CRM every wake rather
+than deciding for itself. That means the whole thing — on or off, how often,
+which hours of the day — is changed in **Admin → Settings → Team location** and
+takes effect on every handset at its next wake. Nobody re-installs anything.
+
+The admin map is **Admin → Team map**. Each pin is one rep's last known
+position, with how long ago it was taken, the phone's battery, and the property
+they are standing at if there is one within the radius you set.
+
+### Switching it on
+
+1. **Admin → Settings → Team location → Record team positions.** Nothing is
+   stored until this is on, and turning it off again stops storage the same
+   minute and empties what each phone had queued.
+2. Set the hours. The default is 9am to 8pm, so a phone in somebody's kitchen at
+   11pm reports nothing.
+3. Set how long to keep the history. The default is 30 days, after which points
+   delete themselves every hour without anybody remembering to do it.
+
+### The permission Android will not let the app ask for
+
+This is the part that surprises people, so it is worth reading before handing
+out handsets.
+
+Android lets an app show a dialog for *"While using the app"*. It does **not**
+let an app show a dialog for *"Allow all the time"* — since Android 10 that
+choice exists only in the phone's own Settings, and an app that asks for it in a
+dialog is refused silently.
+
+So on each handset, after pairing:
+
+1. Tap **Allow location** in the app and choose **While using the app**.
+2. The app then offers to open Settings. Tap through, find **Permissions →
+   Location**, and choose **Allow all the time**.
+
+Skip step 2 and positions arrive only while somebody has the app open on screen,
+which in practice means almost never.
+
+### Xiaomi, Oppo, Vivo, Realme
+
+The same **Autostart** and **No restrictions** battery settings that keep calls
+syncing are what keep positions arriving. A handset that has "stopped showing on
+the map" has almost always had its autostart switched off by a battery-saver
+sweep. Check that before assuming the app is broken.
+
+### What is actually stored
+
+One row per reading: who, when, where, how accurate, battery, and the property
+they were near. There is no audio, no screen contents, and nothing about which
+apps were used. The phone keeps unsent readings for as long as it is offline and
+throws away the oldest once it is holding 200 of them.
 
 ---
 

@@ -83,6 +83,39 @@ class Prefs(context: Context) {
             state.edit().putStringSet(KEY_UPLOADED, trimmed).apply()
         }
 
+    /**
+     * Positions taken but not yet sent, as one JSON array.
+     *
+     * Queued rather than sent immediately because a phone in a basement or a
+     * lift has no signal for twenty minutes and then has all of it at once, and
+     * because one request an hour costs far less battery than six. Bounded, so
+     * a handset that has been offline for a week does not carry a preference
+     * file it re-reads on every wake.
+     */
+    var pendingFixes: String
+        get() = state.getString(KEY_PENDING_FIXES, "[]") ?: "[]"
+        set(value) = state.edit().putString(KEY_PENDING_FIXES, value).apply()
+
+    /** When a position was last taken, so the interval is honoured across wakes. */
+    var lastFixAt: Long
+        get() = state.getLong(KEY_LAST_FIX_AT, 0L)
+        set(value) = state.edit().putLong(KEY_LAST_FIX_AT, value).apply()
+
+    /**
+     * What the CRM last said about recording positions.
+     *
+     * Cached so a wake with no network still behaves the way the owner last
+     * asked, rather than defaulting to on. Defaulting to off is the only safe
+     * direction for this particular setting.
+     */
+    var locationEnabled: Boolean
+        get() = state.getBoolean(KEY_LOCATION_ENABLED, false)
+        set(value) = state.edit().putBoolean(KEY_LOCATION_ENABLED, value).apply()
+
+    var locationEveryMinutes: Int
+        get() = state.getInt(KEY_LOCATION_EVERY, 15)
+        set(value) = state.edit().putInt(KEY_LOCATION_EVERY, value).apply()
+
     val isPaired: Boolean get() = !baseUrl.isNullOrBlank() && !token.isNullOrBlank()
 
     fun clear() {
@@ -101,6 +134,10 @@ class Prefs(context: Context) {
         const val KEY_UPLOAD_RECORDINGS = "upload_recordings"
         const val KEY_RECORDING_TREE = "recording_tree"
         const val KEY_UPLOADED = "uploaded_recordings"
+        const val KEY_PENDING_FIXES = "pending_fixes"
+        const val KEY_LAST_FIX_AT = "last_fix_at"
+        const val KEY_LOCATION_ENABLED = "location_enabled"
+        const val KEY_LOCATION_EVERY = "location_every_minutes"
         const val MAX_REMEMBERED = 500
     }
 }

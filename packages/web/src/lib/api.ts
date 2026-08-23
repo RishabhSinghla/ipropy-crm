@@ -600,6 +600,23 @@ export const api = {
     post<{ id: string }>(`/api/meta/modules/${module}/blocks`, data),
   updateBlock: (id: string, data: Record<string, unknown>) => patch(`/api/meta/blocks/${id}`, data),
   deleteBlock: (id: string) => del<{ ok: boolean; deleted?: string }>(`/api/meta/blocks/${id}`),
+  /** Where each person's phone last was, newest fix each. */
+  teamLocations: () => get<{
+    positions: {
+      userId: string; name: string; latitude: number; longitude: number;
+      recordedAt: string; accuracyM: number | null; batteryPct: number | null;
+      atProperty: { id: string; label: string; metres: number } | null;
+      atPropertyMinutes: number | null;
+    }[];
+    settings: {
+      enabled: boolean; everyMinutes: number; fromHour: number; toHour: number;
+      keepDays: number; siteRadiusM: number;
+    };
+  }>('/api/admin/team/locations'),
+  /** One person's path over a window, oldest first. */
+  teamTrail: (userId: string, hours = 12) => get<{
+    trail: { latitude: number; longitude: number; recordedAt: string; accuracyM: number | null; nearLabel: string | null }[];
+  }>(`/api/admin/team/locations/${userId}?hours=${hours}`),
   /** A real call against one model id, to find out whether it answers. */
   testAiModel: (job: string, model: string) =>
     post<{ ok: boolean; message: string; ms?: number }>('/api/admin/ai-models/test', { job, model }),

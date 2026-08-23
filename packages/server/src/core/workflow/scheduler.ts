@@ -438,6 +438,10 @@ async function housekeeping(): Promise<void> {
     // Everybody's day, on their phone, at nine. Does nothing for all but a few
     // minutes of the day, which is what makes it survive a restart at 08:59.
     morningBriefs(),
+    // Location history that has aged out. The part of that feature that makes
+    // the rest of it defensible: it answers nothing after a few weeks, and the
+    // cheapest way to keep it safe is not to keep it.
+    prunePastLocations(),
   ]);
 }
 
@@ -450,6 +454,17 @@ let lastIndexAt = 0;
  * that do this well are free ones with rate limits, and nothing in a CRM
  * becomes unsearchable for being four minutes old.
  */
+let lastLocationPruneAt = 0;
+
+async function prunePastLocations(): Promise<void> {
+  // Hourly. A day's worth of points is a few thousand rows, and deleting them
+  // sixty times an hour would be sixty empty statements an hour for ever.
+  if (Date.now() - lastLocationPruneAt < 60 * 60_000) return;
+  lastLocationPruneAt = Date.now();
+  const { pruneOldLocations } = await import('../locations/index.js');
+  await pruneOldLocations();
+}
+
 async function morningBriefs(): Promise<void> {
   const { sendMorningBriefs } = await import('../../ai/morningBrief.js');
   await sendMorningBriefs();

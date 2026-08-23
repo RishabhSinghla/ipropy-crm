@@ -44,6 +44,74 @@ object Api {
         false
     }
 
+    data class LocationPolicy(val enabled: Boolean, val everyMinutes: Int, val withinHours: Boolean)
+
+    /**
+     * What the CRM says the phone should be doing.
+     *
+     * Asked every wake rather than baked into the build. This app is the
+     * hardest thing in the system to change — a rebuild, a re-install and
+     * somebody holding the handset — so a rep on last month's version still has
+     * to be switchable from the admin panel, and that is only true if the phone
+     * asks rather than decides.
+     *
+     * Null means the question could not be asked. The caller keeps doing
+     * whatever it was last told, which is off until told otherwise.
+     */
+    fun fetchPolicy(baseUrl: String, token: String): LocationPolicy? = try {
+        val connection = open(baseUrl, "/api/device/policy", "GET", token)
+        val policy = if (connection.responseCode in 200..299) {
+            val body = JSONObject(connection.inputStream.bufferedReader().readText())
+            val location = body.optJSONObject("location")
+            if (location == null) null else LocationPolicy(
+                enabled = location.optBoolean("enabled", false),
+                everyMinutes = location.optInt("everyMinutes", 15),
+                withinHours = location.optBoolean("withinHours", false),
+            )
+        } else {
+            null
+        }
+        connection.disconnect()
+        policy
+    } catch (e: Exception) {
+        Log.w(TAG, "could not read the location policy", e)
+        null
+    }
+
+    data class LocationResult(val stored: Int, val skipped: Int, val reason: String?)
+
+    /**
+     * Send a batch of positions.
+     *
+     * Returns a result even when the server stored nothing, because "recording
+     * is switched off" is an answer the phone needs in order to stop, not an
+     * error it should retry for ever.
+     */
+    fun syncLocations(baseUrl: String, token: String, fixesJson: String): LocationResult? = try {
+        val body = JSONObject().apply { put("fixes", JSONArray(fixesJson)) }
+        val connection = open(baseUrl, "/api/device/locations", "POST", token)
+        connection.doOutput = true
+        connection.setRequestProperty("Content-Type", "application/json")
+        DataOutputStream(connection.outputStream).use { it.write(body.toString().toByteArray()) }
+
+        val result = if (connection.responseCode in 200..299) {
+            val answer = JSONObject(connection.inputStream.bufferedReader().readText())
+            LocationResult(
+                stored = answer.optInt("stored", 0),
+                skipped = answer.optInt("skipped", 0),
+                reason = answer.optString("reason").takeIf { it.isNotBlank() },
+            )
+        } else {
+            Log.w(TAG, "location sync refused: ${connection.responseCode}")
+            null
+        }
+        connection.disconnect()
+        result
+    } catch (e: Exception) {
+        Log.w(TAG, "location sync failed", e)
+        null
+    }
+
     fun syncCalls(
         baseUrl: String,
         token: String,

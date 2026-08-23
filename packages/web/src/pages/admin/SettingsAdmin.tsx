@@ -61,6 +61,13 @@ const GROUPS: { id: string; title: string; blurb: string }[] = [
       + 'A blank or mistyped box falls back to the one the CRM shipped with rather than switching the feature off.',
   },
   {
+    id: 'team_location',
+    title: 'Where the team is',
+    blurb: 'Off until you switch it on. When on, the companion app on each phone sends its position during '
+      + 'the hours below, and Admin → Team map shows it. Tell your team before you turn this on: it is their '
+      + 'personal data, and India\u2019s DPDP Act treats it that way.',
+  },
+  {
     id: 'house_style',
     title: 'How you sound',
     blurb: 'The voice behind every caption, description and voiceover. Change a box here and every listing in the '

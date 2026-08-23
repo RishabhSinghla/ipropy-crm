@@ -6,6 +6,10 @@ build/
 *.log
 logs/
 packages/server/storage/
+# STORAGE_LOCAL_PATH defaults to ./storage, which resolves against wherever
+# the process was started. Run the tests from the repo root and the uploads
+# land here instead.
+/storage/
 coverage/
 .DS_Store
 .vite/
