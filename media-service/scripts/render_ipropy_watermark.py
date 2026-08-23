@@ -86,6 +86,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Replace existing watermarked copies, never the original photos",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show which watermarked copies would be created without creating them",
+    )
     args = parser.parse_args()
 
     if args.size is not None and not 8 <= args.size <= 35:
@@ -330,6 +335,9 @@ def main() -> None:
             print(f"Skipped existing copy: {output_path}")
             skipped += 1
             continue
+        if args.dry_run:
+            print(f"Would create: {output_path}")
+            continue
         save_photo(
             source_path,
             output_path,
@@ -341,7 +349,10 @@ def main() -> None:
         print(f"Created: {output_path}")
         created += 1
 
-    print(f"Done. Created {created} watermarked photo(s); skipped {skipped}.")
+    if args.dry_run:
+        print(f"Dry run complete. Planned {len(jobs) - skipped} photo(s); created 0.")
+    else:
+        print(f"Done. Created {created} watermarked photo(s); skipped {skipped}.")
 
 
 if __name__ == "__main__":
