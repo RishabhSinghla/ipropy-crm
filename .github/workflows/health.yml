@@ -9,11 +9,24 @@
 # runs late under load, so it cannot be relied on to stop a free Render instance
 # sleeping. The fix for sleeping — and for the scheduler not running while it
 # sleeps — is the paid instance. See DEPLOYMENT.md.
+#
+# **Every two hours, not every fifteen minutes, and the reason is money.**
+# GitHub bills a whole minute for every job however short it is, so a ten-second
+# curl running 96 times a day cost 2,880 minutes a month — more than the entire
+# free allowance for a private repository, spent entirely on asking a question
+# whose answer was "yes" every time. In August 2026 that allowance ran out on
+# the 23rd and every deploy stopped with it, because Render only builds when the
+# checks pass.
+#
+# Twelve checks a day is the right amount of monitoring for a CRM a handful of
+# people use in one city. If minute-by-minute uptime is ever wanted, it belongs
+# with a free external monitor rather than here, where it competes with the
+# builds for the same budget.
 name: Health
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '0 */2 * * *'
   workflow_dispatch:
 
 permissions:

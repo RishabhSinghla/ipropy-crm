@@ -6,7 +6,22 @@ permissions:
 on:
   push:
     branches: [main]
+    # A change to a note, a readme or a memory file cannot break a build, and
+    # running three jobs to prove that costs about fifteen billed minutes.
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
   pull_request:
+
+# Three pushes in ten minutes used to mean nine jobs, of which only the last
+# three mattered. The earlier ones are cancelled now — the deploy gate only ever
+# looks at the newest commit anyway, so finishing the older runs proved nothing
+# and was billed the same.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   verify:
