@@ -833,6 +833,13 @@ export const api = {
   cancelAiAction: (id: string) => del<{ action: AiAssistantAction; answer: string }>(`/api/ai/actions/${id}`),
   aiMemories: () => get<AiMemory[]>('/api/ai/memory'),
   deleteAiMemory: (id: string) => del<{ ok: boolean }>(`/api/ai/memory/${id}`),
+  /** Records that look like the same person under a different spelling. */
+  duplicateSuggestions: (module: string, id: string) =>
+    get<{ duplicates: { recordId: string; label: string; confidence: number; why: string }[] }>(
+      `/api/ai/records/${module}/${id}/duplicates`,
+    ),
+  dismissDuplicate: (module: string, id: string, otherId: string) =>
+    post(`/api/ai/records/${module}/${id}/duplicates/dismiss`, { otherId }),
   /**
    * Thirty seconds of Hinglish becomes a note. Comes back for somebody to read
    * and post; nothing is saved by this call.

@@ -148,6 +148,13 @@ function wireEvents(): void {
     );
     const room = owner?.owner_id ? `user:${owner.owner_id}` : 'admins';
     emitTo(room, 'lead:new', { recordId: p.recordId, label: owner?.label, source: p.source });
+
+    // The reply is written while the alert is still on somebody's screen, so
+    // opening the lead and sending it is one action rather than two. Fired and
+    // not awaited: a slow model must never hold up the alert, and a failed
+    // draft must never fail the capture.
+    const { draftFirstReply } = await import('./ai/firstReply.js');
+    void draftFirstReply(p.recordId);
   });
 
   bus.on('notification.created', (p) => {

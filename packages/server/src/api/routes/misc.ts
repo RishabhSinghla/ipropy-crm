@@ -327,6 +327,15 @@ miscRouter.post('/files', mediaUpload.single('file'), asyncHandler(async (req, r
     await db.query(`INSERT INTO ipy_media_job (attachment_id) VALUES ($1)`, [row.id]);
   }
 
+  // A document is read once, on the way in, so it is searchable by what is
+  // inside it rather than by its filename. Fired and not awaited: the upload
+  // must not wait on a model, and a file that cannot be read is still a file.
+  if (row?.id) {
+    void import('../../ai/documents.js')
+      .then(({ readDocument }) => readDocument(row.id))
+      .catch(() => undefined);
+  }
+
   res.status(201).json({
     id: row?.id,
     fileName: file.originalname,

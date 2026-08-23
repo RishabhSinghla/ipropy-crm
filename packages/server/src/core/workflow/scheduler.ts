@@ -435,6 +435,9 @@ async function housekeeping(): Promise<void> {
     // Keep the meaning index behind the CRM current. Batched and hash-checked,
     // so a quiet minute costs one query and a busy one costs one API call.
     refreshSemanticIndex(),
+    // Everybody's day, on their phone, at nine. Does nothing for all but a few
+    // minutes of the day, which is what makes it survive a restart at 08:59.
+    morningBriefs(),
   ]);
 }
 
@@ -447,6 +450,11 @@ let lastIndexAt = 0;
  * that do this well are free ones with rate limits, and nothing in a CRM
  * becomes unsearchable for being four minutes old.
  */
+async function morningBriefs(): Promise<void> {
+  const { sendMorningBriefs } = await import('../../ai/morningBrief.js');
+  await sendMorningBriefs();
+}
+
 async function refreshSemanticIndex(): Promise<void> {
   if (Date.now() - lastIndexAt < 5 * 60_000) return;
   lastIndexAt = Date.now();

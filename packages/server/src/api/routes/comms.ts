@@ -184,6 +184,14 @@ commsRouter.patch('/conversations/:id', asyncHandler(async (req, res) => {
 
 /** AI-suggested quick replies for the composer. */
 commsRouter.get('/conversations/:id/suggestions', asyncHandler(async (req, res) => {
+  const { featureOn } = await import('../../core/settings/aiFeatures.js');
+  if (!await featureOn('replySuggestions')) {
+    // Empty rather than an error: the Inbox asks for these on its own now, and
+    // a switched-off feature should be silent rather than a red toast on every
+    // incoming message.
+    res.json({ suggestions: [] });
+    return;
+  }
   const user = getUser(req);
   res.json({ suggestions: await suggestReplies(req.params.id, user.id) });
 }));

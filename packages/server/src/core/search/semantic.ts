@@ -31,7 +31,7 @@ import { SqlParams } from '../query/builder.js';
 import { logger } from '../../utils/logger.js';
 
 /** What kind of thing a row of text came from. */
-export type EmbeddingKind = 'record' | 'note' | 'message' | 'call' | 'visit';
+export type EmbeddingKind = 'record' | 'note' | 'message' | 'call' | 'visit' | 'document';
 
 export interface Passage {
   kind: EmbeddingKind;

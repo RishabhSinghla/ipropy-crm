@@ -427,6 +427,38 @@ aiRouter.post('/transcribe', modelLimiter, assistantAudioUpload.single('audio'),
 }));
 
 /**
+ * Does this record already exist under a different spelling?
+ *
+ * Asked when somebody opens a record rather than while they type. A live probe
+ * per keystroke would be an embedding call per keystroke, and the answer does
+ * not change fast enough to be worth that.
+ */
+aiRouter.get('/records/:module/:id/duplicates', asyncHandler(async (req, res) => {
+  const ctx = getScope(req);
+  await assertModuleAccess(ctx.user, req.params.module, 'view');
+  if (!await canAccessRecord(ctx, req.params.module, req.params.id, 'view')) {
+    throw new NotFoundError('Record not found');
+  }
+
+  const { suggestDuplicates } = await import('../../core/search/duplicates.js');
+  res.json({ duplicates: await suggestDuplicates(ctx, req.params.module, req.params.id) });
+}));
+
+/** "Not the same person." Remembered, so the pair is never offered again. */
+aiRouter.post('/records/:module/:id/duplicates/dismiss', asyncHandler(async (req, res) => {
+  const ctx = getScope(req);
+  await assertModuleAccess(ctx.user, req.params.module, 'edit');
+  if (!await canAccessRecord(ctx, req.params.module, req.params.id, 'edit')) {
+    throw new NotFoundError('Record not found');
+  }
+  const { otherId } = z.object({ otherId: z.string().uuid() }).parse(req.body);
+
+  const { dismissDuplicate } = await import('../../core/search/duplicates.js');
+  await dismissDuplicate(req.params.id, otherId, ctx.user.id);
+  res.json({ ok: true });
+}));
+
+/**
  * Thirty seconds of talking becomes a note somebody will actually read.
  *
  * Two steps, and the second is the one that matters. Transcription alone gives

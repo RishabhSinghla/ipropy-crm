@@ -489,6 +489,7 @@ export default function RecordDetail(): JSX.Element {
               <PropertyPhotoCarousel recordId={id!} canEdit={Boolean(record.can?.edit)} />
             </>
           )}
+          <DuplicateSuggestions module={moduleName!} id={id!} label={record.label} />
           <ReplyReady recordId={id!} />
           <PendingProposals module={moduleName!} recordId={id!} />
           <CommentsPanel module={moduleName!} id={id!} currentUser={user?.fullName ?? ''} />
@@ -2169,6 +2170,79 @@ function AiPanel({
 }
 
 interface Colleague { id: string; fullName: string }
+
+/**
+ * "You may already have this person."
+ *
+ * Two records for one buyer is the quiet kind of mess: two reps chase the same
+ * man, he gets two different answers, and he concludes you are disorganised.
+ * Exact matching never finds it, because "Rajesh Kumar" and "R. Kumar" from a
+ * second number share almost nothing a database can compare.
+ *
+ * It only suggests. Merge opens the record so somebody can look before doing
+ * anything, and Not the same is remembered for that pair for ever — a father
+ * and a son do share a surname, a locality and often a budget, and a feature
+ * that keeps insisting otherwise is one people learn to ignore.
+ */
+function DuplicateSuggestions({ module, id, label }: {
+  module: string; id: string; label: string;
+}): JSX.Element | null {
+  const queryClient = useQueryClient();
+  const { data } = useQuery({
+    queryKey: ['duplicates', module, id],
+    queryFn: () => api.duplicateSuggestions(module, id),
+    // Nobody's answer changes in the next five minutes, and each ask is an
+    // embedding call.
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+
+  const dismiss = async (otherId: string): Promise<void> => {
+    try {
+      await api.dismissDuplicate(module, id, otherId);
+      void queryClient.invalidateQueries({ queryKey: ['duplicates', module, id] });
+    } catch (err) {
+      toast.error('Could not dismiss that', (err as Error).message);
+    }
+  };
+
+  const hits = data?.duplicates ?? [];
+  if (!hits.length) return null;
+
+  return (
+    <div className="card overflow-hidden border-amber-200 dark:border-amber-900">
+      <div className="border-b border-amber-100 bg-amber-50 px-4 py-2.5 dark:border-amber-950 dark:bg-amber-950/30">
+        <span className="text-sm font-medium text-amber-900 dark:text-amber-200">
+          You may already have {hits.length === 1 ? 'this person' : 'these people'}
+        </span>
+      </div>
+      <div className="divide-y divide-slate-100 dark:divide-slate-800">
+        {hits.map((hit) => (
+          <div key={hit.recordId} className="p-3">
+            <div className="flex flex-wrap items-baseline gap-x-2">
+              <Link
+                to={`/${module}/${hit.recordId}`}
+                className="text-sm font-medium text-brand-700 hover:underline dark:text-brand-300"
+              >
+                {hit.label}
+              </Link>
+              <span className="text-2xs text-muted">{Math.round(hit.confidence * 100)}% alike</span>
+            </div>
+            {hit.why && <p className="mt-0.5 line-clamp-2 text-xs text-muted">{hit.why}</p>}
+            <div className="mt-2 flex gap-1.5">
+              <Link to={`/${module}/${hit.recordId}`} className="btn-secondary btn-sm">
+                Open {hit.label.split(/\s+/)[0]}
+              </Link>
+              <button onClick={() => void dismiss(hit.recordId)} className="btn-ghost btn-sm">
+                Not the same as {label.split(/\s+/)[0]}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /**
  * Notes, with a working @mention.

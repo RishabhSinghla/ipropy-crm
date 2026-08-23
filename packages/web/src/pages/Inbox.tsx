@@ -188,6 +188,27 @@ export function Thread({ conversationId, onBack }: { conversationId: string; onB
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [conv?.messages?.length]);
 
+  /**
+   * Suggestions appear on their own when the customer has spoken last.
+   *
+   * They were behind a button, which meant nobody pressed it: the moment you
+   * have decided what to say, a button offering to help is too late. Under the
+   * message, before you start typing, is the only place they save anything.
+   *
+   * Once per message, not once per render. `asked` holds the id of the message
+   * they were fetched for, so scrolling, a socket update or a window refocus
+   * does not spend another call.
+   */
+  const lastMessage = conv?.messages?.[conv.messages.length - 1];
+  const askedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!aiAvailable || !conv?.windowOpen || !lastMessage) return;
+    if (lastMessage.direction !== 'inbound') return;
+    if (askedFor.current === lastMessage.id) return;
+    askedFor.current = lastMessage.id;
+    void loadSuggestions(true);
+  }, [aiAvailable, conv?.windowOpen, lastMessage?.id, lastMessage?.direction]);
+
   const send = async (): Promise<void> => {
     if (!text.trim() && !templateName) return;
     setSending(true);
@@ -205,13 +226,16 @@ export function Thread({ conversationId, onBack }: { conversationId: string; onB
     }
   };
 
-  const loadSuggestions = async (): Promise<void> => {
+  const loadSuggestions = async (quiet = false): Promise<void> => {
     setLoadingSuggestions(true);
     try {
       const result = await api.replySuggestions(conversationId);
       setSuggestions(result.suggestions);
-      if (!result.suggestions.length) toast.info('No suggestions available for this thread yet');
+      // Silent when it asked on its own. A toast for something nobody
+      // requested is an interruption, not information.
+      if (!result.suggestions.length && !quiet) toast.info('No suggestions available for this thread yet');
     } catch (err) {
+      if (quiet) return;
       toast.error('Could not generate suggestions', (err as Error).message);
     } finally {
       setLoadingSuggestions(false);
@@ -325,7 +349,10 @@ export function Thread({ conversationId, onBack }: { conversationId: string; onB
             {suggestions.map((s, i) => (
               <button
                 key={i}
-                onClick={() => { setText(s); setSuggestions([]); }}
+                // Fills the box rather than sending. Every one of these is a
+              // guess about a person's money, and a tap that sends it straight
+              // out is one misread question away from an embarrassment.
+              onClick={() => { setText(s); setSuggestions([]); }}
                 className="rounded-full border border-brand-200 bg-brand-50 px-2.5 py-1 text-xs text-brand-700 transition-colors hover:bg-brand-100 dark:border-brand-800 dark:bg-brand-950 dark:text-brand-300"
               >
                 {s}
