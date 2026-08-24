@@ -252,7 +252,12 @@ publicRouter.get('/projects/:id', asyncHandler(async (req, res) => {
 // ---------------------------------------------------------------------------
 
 publicRouter.get('/properties', asyncHandler(async (req, res) => {
-  const conds: string[] = [`u.status = $1`, publishClause('u')];
+  // `= ANY($1)`, not `= $1`. The setting is a *list* of statuses — an admin can
+  // publish Available and Held together — and comparing a text column to an
+  // array with `=` matches nothing at all. No error, no warning: the catalogue
+  // just answers zero every time, which reads exactly like having no stock.
+  // Every other query in this file already had the ANY; this one did not.
+  const conds: string[] = [`u.status = ANY($1)`, publishClause('u')];
   const params: unknown[] = [await publicPropertyStatuses()];
 
   const push = (sql: string, value: unknown) => { params.push(value); conds.push(sql.replace('?', `$${params.length}`)); };
