@@ -65,43 +65,83 @@ const PROPERTY_SORTS: Record<string, string> = {
  * construction progress) have nowhere to come from and are returned null so
  * the response shape does not change under the site's feet.
  */
-const PROJECT_FIELDS = `
-  lower(regexp_replace(btrim(u.project_name), '[^a-zA-Z0-9]+', '-', 'g')) AS id,
-  MIN(u.project_name) AS name,
-  MIN(u.possession_status) AS status,
-  MIN(u.property_type) AS project_type,
-  MIN(u.city) AS city, MIN(u.locality) AS locality,
-  NULL::text AS micro_market, NULL::text AS state, NULL::jsonb AS address,
-  AVG(u.latitude) AS latitude, AVG(u.longitude) AS longitude,
-  NULL::text AS rera_number, NULL::date AS rera_expiry,
-  NULL::numeric AS total_land_area, NULL::text AS land_area_unit,
-  COUNT(DISTINCT u.tower)::int AS total_towers,
-  MAX(u.floor)::int AS total_floors,
-  COUNT(*)::int AS total_units,
-  COUNT(*)::int AS available_units, 0 AS booked_units, NULL::numeric AS open_area_percent,
-  MIN(u.total_price) AS price_min, MAX(u.total_price) AS price_max,
-  AVG(u.rate_per_sqft) AS rate_per_sqft,
-  COALESCE(jsonb_agg(DISTINCT u.configuration) FILTER (WHERE u.configuration IS NOT NULL), '[]'::jsonb) AS configurations,
-  NULL::date AS launch_date, MIN(u.possession_date) AS possession_date,
-  NULL::numeric AS completion_percent,
-  COALESCE(jsonb_agg(DISTINCT a.amenity) FILTER (WHERE a.amenity IS NOT NULL), '[]'::jsonb) AS amenities,
-  '[]'::jsonb AS usps, NULL::text AS brochure_url,
-  MIN(u.video_url) AS video_url, MIN(u.virtual_tour_url) AS virtual_tour_url,
-  NULL::text AS master_plan_url,
-  COALESCE(jsonb_agg(DISTINCT g.image) FILTER (WHERE g.image IS NOT NULL), '[]'::jsonb) AS gallery,
-  '[]'::jsonb AS floor_plans, '[]'::jsonb AS connectivity,
-  MIN(u.description) AS description
-`;
+/**
+ * A "project" here is derived by grouping units, so every output alias has to
+ * exist whether or not the column behind it does. A missing column therefore
+ * becomes a typed NULL rather than a dropped key: the shape the website parses
+ * stays the same and one deleted field cannot empty the whole catalogue.
+ *
+ * The properties list learned this the hard way — see PROPERTY_FIELD_LIST.
+ */
+const PROJECT_FIELD_LIST: { sql: string; needs: string[]; missing: string }[] = [
+  { sql: `lower(regexp_replace(btrim(u.project_name), '[^a-zA-Z0-9]+', '-', 'g')) AS id`, needs: ['project_name'], missing: `NULL::text AS id` },
+  { sql: `MIN(u.project_name) AS name`, needs: ['project_name'], missing: `NULL::text AS name` },
+  { sql: `MIN(u.possession_status) AS status`, needs: ['possession_status'], missing: `NULL::text AS status` },
+  { sql: `MIN(u.property_type) AS project_type`, needs: ['property_type'], missing: `NULL::text AS project_type` },
+  { sql: `MIN(u.city) AS city`, needs: ['city'], missing: `NULL::text AS city` },
+  { sql: `MIN(u.locality) AS locality`, needs: ['locality'], missing: `NULL::text AS locality` },
+  { sql: `NULL::text AS micro_market`, needs: [], missing: `NULL::text AS micro_market` },
+  { sql: `NULL::text AS state`, needs: [], missing: `NULL::text AS state` },
+  { sql: `NULL::jsonb AS address`, needs: [], missing: `NULL::jsonb AS address` },
+  { sql: `AVG(u.latitude) AS latitude`, needs: ['latitude'], missing: `NULL::numeric AS latitude` },
+  { sql: `AVG(u.longitude) AS longitude`, needs: ['longitude'], missing: `NULL::numeric AS longitude` },
+  { sql: `NULL::text AS rera_number`, needs: [], missing: `NULL::text AS rera_number` },
+  { sql: `NULL::date AS rera_expiry`, needs: [], missing: `NULL::date AS rera_expiry` },
+  { sql: `NULL::numeric AS total_land_area`, needs: [], missing: `NULL::numeric AS total_land_area` },
+  { sql: `NULL::text AS land_area_unit`, needs: [], missing: `NULL::text AS land_area_unit` },
+  { sql: `COUNT(DISTINCT u.tower)::int AS total_towers`, needs: ['tower'], missing: `0 AS total_towers` },
+  { sql: `MAX(u.floor)::int AS total_floors`, needs: ['floor'], missing: `NULL::int AS total_floors` },
+  { sql: `COUNT(*)::int AS total_units`, needs: [], missing: `COUNT(*)::int AS total_units` },
+  { sql: `COUNT(*)::int AS available_units`, needs: [], missing: `COUNT(*)::int AS available_units` },
+  { sql: `0 AS booked_units`, needs: [], missing: `0 AS booked_units` },
+  { sql: `NULL::numeric AS open_area_percent`, needs: [], missing: `NULL::numeric AS open_area_percent` },
+  { sql: `MIN(u.total_price) AS price_min`, needs: ['total_price'], missing: `NULL::numeric AS price_min` },
+  { sql: `MAX(u.total_price) AS price_max`, needs: ['total_price'], missing: `NULL::numeric AS price_max` },
+  { sql: `AVG(u.rate_per_sqft) AS rate_per_sqft`, needs: ['rate_per_sqft'], missing: `NULL::numeric AS rate_per_sqft` },
+  {
+    sql: `COALESCE(jsonb_agg(DISTINCT u.configuration) FILTER (WHERE u.configuration IS NOT NULL), '[]'::jsonb) AS configurations`,
+    needs: ['configuration'],
+    missing: `'[]'::jsonb AS configurations`,
+  },
+  { sql: `NULL::date AS launch_date`, needs: [], missing: `NULL::date AS launch_date` },
+  { sql: `MIN(u.possession_date) AS possession_date`, needs: ['possession_date'], missing: `NULL::date AS possession_date` },
+  { sql: `NULL::numeric AS completion_percent`, needs: [], missing: `NULL::numeric AS completion_percent` },
+  {
+    sql: `COALESCE(jsonb_agg(DISTINCT a.amenity) FILTER (WHERE a.amenity IS NOT NULL), '[]'::jsonb) AS amenities`,
+    needs: ['amenities'],
+    missing: `'[]'::jsonb AS amenities`,
+  },
+  { sql: `'[]'::jsonb AS usps`, needs: [], missing: `'[]'::jsonb AS usps` },
+  { sql: `NULL::text AS brochure_url`, needs: [], missing: `NULL::text AS brochure_url` },
+  { sql: `MIN(u.video_url) AS video_url`, needs: ['video_url'], missing: `NULL::text AS video_url` },
+  { sql: `MIN(u.virtual_tour_url) AS virtual_tour_url`, needs: ['virtual_tour_url'], missing: `NULL::text AS virtual_tour_url` },
+  { sql: `NULL::text AS master_plan_url`, needs: [], missing: `NULL::text AS master_plan_url` },
+  {
+    sql: `COALESCE(jsonb_agg(DISTINCT g.image) FILTER (WHERE g.image IS NOT NULL), '[]'::jsonb) AS gallery`,
+    needs: ['gallery'],
+    missing: `'[]'::jsonb AS gallery`,
+  },
+  { sql: `'[]'::jsonb AS floor_plans`, needs: [], missing: `'[]'::jsonb AS floor_plans` },
+  { sql: `'[]'::jsonb AS connectivity`, needs: [], missing: `'[]'::jsonb AS connectivity` },
+  { sql: `MIN(u.description) AS description`, needs: ['description'], missing: `NULL::text AS description` },
+];
 
 /**
  * Units feeding a derived project. `amenities` and `gallery` are JSONB arrays,
  * so they are unnested to be aggregated distinctly across the development.
  */
-const PROJECT_FROM = `
+async function projectFrom(): Promise<string> {
+  const present = await propertyColumns();
+  const lateral = (col: string, alias: string, out: string) =>
+    present.has(col)
+      ? `LEFT JOIN LATERAL jsonb_array_elements_text(COALESCE(u.${col}, '[]'::jsonb)) AS ${alias}(${out}) ON true`
+      : `LEFT JOIN LATERAL (SELECT NULL::text AS ${out}) AS ${alias} ON true`;
+  return `
   FROM ipy_e_properties u
-  LEFT JOIN LATERAL jsonb_array_elements_text(COALESCE(u.amenities, '[]'::jsonb)) AS a(amenity) ON true
-  LEFT JOIN LATERAL jsonb_array_elements_text(COALESCE(u.gallery, '[]'::jsonb)) AS g(image) ON true
+  ${lateral('amenities', 'a', 'amenity')}
+  ${lateral('gallery', 'g', 'image')}
 `;
+}
 
 /** Every derived project query shares these: published, available, named. */
 const PROJECT_BASE_CONDS = (): string[] =>
@@ -147,18 +187,29 @@ const PROPERTY_FIELD_LIST: { sql: string; needs: string[] }[] = [
 ];
 
 let propertyFieldsCache: string | null = null;
+let projectFieldsCache: string | null = null;
+let columnsCache: Set<string> | null = null;
 
 /** Forget which columns exist. Called whenever an admin changes the model. */
 export function invalidatePublicFields(): void {
   propertyFieldsCache = null;
+  projectFieldsCache = null;
+  columnsCache = null;
+}
+
+/** Which columns `ipy_e_properties` actually has right now. */
+async function propertyColumns(): Promise<Set<string>> {
+  if (columnsCache) return columnsCache;
+  const { rows } = await db.query<{ column_name: string }>(
+    `SELECT column_name FROM information_schema.columns WHERE table_name = 'ipy_e_properties'`,
+  );
+  columnsCache = new Set(rows.map((r) => r.column_name));
+  return columnsCache;
 }
 
 async function propertyFields(): Promise<string> {
   if (propertyFieldsCache) return propertyFieldsCache;
-  const { rows } = await db.query<{ column_name: string }>(
-    `SELECT column_name FROM information_schema.columns WHERE table_name = 'ipy_e_properties'`,
-  );
-  const present = new Set(rows.map((r) => r.column_name));
+  const present = await propertyColumns();
   const kept = PROPERTY_FIELD_LIST.filter((f) => f.needs.every((c) => present.has(c)));
   const dropped = PROPERTY_FIELD_LIST.length - kept.length;
   if (dropped > 0) {
@@ -166,6 +217,19 @@ async function propertyFields(): Promise<string> {
   }
   propertyFieldsCache = kept.map((f) => f.sql).join(', ');
   return propertyFieldsCache;
+}
+
+async function projectFields(): Promise<string> {
+  if (projectFieldsCache) return projectFieldsCache;
+  const present = await propertyColumns();
+  const gone = PROJECT_FIELD_LIST.filter((f) => !f.needs.every((c) => present.has(c)));
+  if (gone.length > 0) {
+    logger.info({ count: gone.length }, 'public project fields: some columns have been removed from the model');
+  }
+  projectFieldsCache = PROJECT_FIELD_LIST
+    .map((f) => (f.needs.every((c) => present.has(c)) ? f.sql : f.missing))
+    .join(', ');
+  return projectFieldsCache;
 }
 
 // ---------------------------------------------------------------------------
@@ -193,8 +257,8 @@ publicRouter.get('/projects', asyncHandler(async (req, res) => {
 
   const [rows, count] = await Promise.all([
     db.query(
-      `SELECT ${PROJECT_FIELDS}
-       ${PROJECT_FROM}
+      `SELECT ${await projectFields()}
+       ${await projectFrom()}
        WHERE ${conds.join(' AND ')}
        ${PROJECT_GROUP}
        ORDER BY ${sort}
@@ -214,8 +278,8 @@ publicRouter.get('/projects/:id', asyncHandler(async (req, res) => {
   const slug = `lower(regexp_replace(btrim(u.project_name), '[^a-zA-Z0-9]+', '-', 'g')) = $2`;
 
   const project = await db.queryOne<{ name: string; city: string | null }>(
-    `SELECT ${PROJECT_FIELDS}
-     ${PROJECT_FROM}
+    `SELECT ${await projectFields()}
+     ${await projectFrom()}
      WHERE ${[...PROJECT_BASE_CONDS(), slug].join(' AND ')}
      ${PROJECT_GROUP}`,
     [await publicPropertyStatuses(), req.params.id],
@@ -231,8 +295,8 @@ publicRouter.get('/projects/:id', asyncHandler(async (req, res) => {
   );
 
   const similar = await db.query(
-    `SELECT ${PROJECT_FIELDS}
-     ${PROJECT_FROM}
+    `SELECT ${await projectFields()}
+     ${await projectFrom()}
      WHERE ${[...PROJECT_BASE_CONDS(), `u.city = $2`, `btrim(u.project_name) <> $3`].join(' AND ')}
      ${PROJECT_GROUP}
      ORDER BY MIN(u.possession_date) ASC NULLS LAST

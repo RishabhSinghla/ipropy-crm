@@ -132,6 +132,41 @@ describe('a property field somebody removed', () => {
     }
   });
 
+  it('does not take the derived project list down either', async () => {
+    // Projects are grouped from units, so every alias must survive whether or
+    // not the column behind it does. This is the endpoint that was still
+    // answering `unknown_field` on production after the properties list was
+    // fixed — same fault, different query.
+    const before = await request(app).get('/api/public/projects?limit=3');
+    expect(before.status).toBe(200);
+
+    await dropColumn('ipy_e_properties', 'virtual_tour_url', 'TEXT');
+
+    const after = await request(app).get('/api/public/projects?limit=3');
+    expect(after.status).toBe(200);
+    expect(Array.isArray(after.body.items)).toBe(true);
+
+    // The shape the website parses is unchanged: the key is still there, just
+    // empty. Dropping it would break the client instead of the query.
+    for (const item of after.body.items) {
+      expect(item).toHaveProperty('virtual_tour_url');
+      expect(item.virtual_tour_url).toBeNull();
+      expect(item).toHaveProperty('configurations');
+    }
+  });
+
+  it('survives losing a column its lateral joins read', async () => {
+    // `amenities` and `gallery` are unnested in the FROM clause, so a missing
+    // one breaks the join rather than the select list.
+    await dropColumn('ipy_e_properties', 'gallery', 'JSONB');
+
+    const res = await request(app).get('/api/public/projects?limit=3');
+    expect(res.status).toBe(200);
+    for (const item of res.body.items) {
+      expect(item.gallery).toEqual([]);
+    }
+  });
+
   it('still refuses to hand out a field that was never on the list', async () => {
     // The reason the list exists. Losing a field must not turn the whitelist
     // into "everything that happens to be on the table".
