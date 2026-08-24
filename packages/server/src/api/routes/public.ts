@@ -219,6 +219,21 @@ async function propertyFields(): Promise<string> {
   return propertyFieldsCache;
 }
 
+/**
+ * Whether the model still has the columns a route is built on.
+ *
+ * Some routes do not merely *read* a field, they are defined by it. "Projects"
+ * on the public site are not records at all: they are units grouped by
+ * `project_name`. Delete that field and there is no such thing as a project,
+ * which is a true and reportable state — an empty list. What it must not do is
+ * throw `unknown_field`, because a 400 reads as a broken site rather than as an
+ * empty shelf, and that is exactly what production was doing.
+ */
+async function modelHas(...columns: string[]): Promise<boolean> {
+  const present = await propertyColumns();
+  return columns.every((c) => present.has(c));
+}
+
 async function projectFields(): Promise<string> {
   if (projectFieldsCache) return projectFieldsCache;
   const present = await propertyColumns();
@@ -237,12 +252,17 @@ async function projectFields(): Promise<string> {
 // ---------------------------------------------------------------------------
 
 publicRouter.get('/projects', asyncHandler(async (req, res) => {
+  // No project_name field means there are no projects to derive. An empty
+  // catalogue, not an error.
+  if (!await modelHas('project_name')) { res.json({ items: [], total: 0 }); return; }
   const conds = PROJECT_BASE_CONDS();
   const params: unknown[] = [await publicPropertyStatuses()];
 
   const push = (sql: string, value: unknown) => { params.push(value); conds.push(sql.replace('?', `$${params.length}`)); };
 
-  if (req.query.city) push(`u.city = ?`, String(req.query.city));
+  // A filter on a field that no longer exists is skipped, not fatal. Narrowing
+  // by something the model has dropped should return everything, not nothing.
+  if (req.query.city && (await modelHas('city'))) push(`u.city = ?`, String(req.query.city));
   if (req.query.locality) push(`u.locality = ?`, String(req.query.locality));
   if (req.query.configuration) push(`u.configuration = ?`, String(req.query.configuration));
   if (req.query.minPrice) push(`u.total_price >= ?`, Number(req.query.minPrice));
@@ -275,6 +295,7 @@ publicRouter.get('/projects', asyncHandler(async (req, res) => {
 }));
 
 publicRouter.get('/projects/:id', asyncHandler(async (req, res) => {
+  if (!await modelHas('project_name')) throw new NotFoundError('Project not found');
   const slug = `lower(regexp_replace(btrim(u.project_name), '[^a-zA-Z0-9]+', '-', 'g')) = $2`;
 
   const project = await db.queryOne<{ name: string; city: string | null }>(
@@ -326,8 +347,10 @@ publicRouter.get('/properties', asyncHandler(async (req, res) => {
 
   const push = (sql: string, value: unknown) => { params.push(value); conds.push(sql.replace('?', `$${params.length}`)); };
 
-  if (req.query.project) push(`lower(regexp_replace(btrim(u.project_name), '[^a-zA-Z0-9]+', '-', 'g')) = ?`, String(req.query.project));
-  if (req.query.city) push(`u.city = ?`, String(req.query.city));
+  if (req.query.project && (await modelHas('project_name'))) push(`lower(regexp_replace(btrim(u.project_name), '[^a-zA-Z0-9]+', '-', 'g')) = ?`, String(req.query.project));
+  // A filter on a field that no longer exists is skipped, not fatal. Narrowing
+  // by something the model has dropped should return everything, not nothing.
+  if (req.query.city && (await modelHas('city'))) push(`u.city = ?`, String(req.query.city));
   if (req.query.configuration) push(`u.configuration = ?`, String(req.query.configuration));
   if (req.query.bedrooms) push(`u.bedrooms = ?`, Number(req.query.bedrooms));
   if (req.query.minPrice) push(`u.total_price >= ?`, Number(req.query.minPrice));
@@ -415,6 +438,7 @@ publicRouter.get('/filters', asyncHandler(async (_req, res) => {
 // City summaries for the website's /cities landing pages — one aggregate
 // query rather than the site looping a `city=` filter per picklist value.
 publicRouter.get('/cities', asyncHandler(async (_req, res) => {
+  if (!await modelHas('city', 'project_name')) { res.json({ items: [] }); return; }
   const rows = await db.query<{ city: string; project_count: number; unit_count: number; price_min: number | null; price_max: number | null }>(
     `SELECT u.city,
             COUNT(DISTINCT btrim(u.project_name))::int AS project_count,

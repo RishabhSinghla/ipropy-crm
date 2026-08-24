@@ -167,6 +167,38 @@ describe('a property field somebody removed', () => {
     }
   });
 
+  it('reports no projects rather than an error when the grouping field is gone', async () => {
+    // The exact production failure. "Projects" are units grouped by
+    // project_name; delete that field and there is no such thing as a project.
+    // An empty shelf is true and reportable. A 400 is not.
+    await dropColumn('ipy_e_properties', 'project_name', 'TEXT');
+
+    const projects = await request(app).get('/api/public/projects?limit=5');
+    expect(projects.status).toBe(200);
+    expect(projects.body.items).toEqual([]);
+    expect(projects.body.total).toBe(0);
+
+    // Cities are counted by project, so they go quiet the same way.
+    const cities = await request(app).get('/api/public/cities');
+    expect(cities.status).toBe(200);
+    expect(cities.body.items).toEqual([]);
+
+    // And the units themselves are still perfectly listable.
+    const props = await request(app).get('/api/public/properties?limit=5');
+    expect(props.status).toBe(200);
+    expect(Array.isArray(props.body.items)).toBe(true);
+  });
+
+  it('ignores a filter on a field that no longer exists', async () => {
+    // Narrowing by something the model has dropped should not empty the list,
+    // and must not 400.
+    await dropColumn('ipy_e_properties', 'city', 'TEXT');
+
+    const res = await request(app).get('/api/public/properties?city=Faridabad&limit=5');
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.items)).toBe(true);
+  });
+
   it('still refuses to hand out a field that was never on the list', async () => {
     // The reason the list exists. Losing a field must not turn the whitelist
     // into "everything that happens to be on the table".
