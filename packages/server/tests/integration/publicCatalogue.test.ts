@@ -88,6 +88,45 @@ describe('the public property list', () => {
     expect(names).not.toContain(name);
   });
 
+  it('shows the photographs that are on the record', async () => {
+    // The last broken link between a site visit and the website.
+    //
+    // n8n uploads the finished copies to the record as attachments. The CRM's
+    // own screens read attachments. But the public API read a separate `gallery`
+    // column that nothing in the codebase has ever written — so a property could
+    // be shot, processed, published, look perfect inside the CRM, and appear on
+    // the website with no pictures at all. Two lists of the same thing, one of
+    // them never filled.
+    const name = `Gallery ${Date.now()}`;
+    const id = await publish(name);
+
+    const before = await request(app).get('/api/public/properties?limit=50');
+    const beforeItem = (before.body.items as { name: string; gallery: string[] }[]).find((i) => i.name === name);
+    expect(beforeItem?.gallery).toEqual([]);
+
+    // Attach two images the way an upload does, in a deliberate order.
+    for (const [i, file] of ['second.jpg', 'first.jpg'].entries()) {
+      await db.query(
+        `INSERT INTO ipy_attachment (record_id, file_name, mime_type, size, storage_key, sort_order, uploaded_by)
+         VALUES ($1, $2, 'image/jpeg', 1234, $3, $4,
+                 (SELECT id FROM ipy_user WHERE is_admin = true ORDER BY created_at LIMIT 1))`,
+        [id, file, `test/${Date.now()}-${file}`, i === 0 ? 2 : 1],
+      );
+    }
+
+    const after = await request(app).get('/api/public/properties?limit=50');
+    const item = (after.body.items as { name: string; gallery: string[] }[]).find((i) => i.name === name);
+    expect(item?.gallery).toHaveLength(2);
+
+    // And in the order the team set, because the cover photo leads the listing.
+    expect(item!.gallery[0]).toContain('/api/public/media/');
+    const ordered = await db.query<{ file_name: string }>(
+      `SELECT file_name FROM ipy_attachment WHERE record_id = $1 ORDER BY sort_order NULLS LAST, created_at`,
+      [id],
+    );
+    expect(ordered.rows.map((r) => r.file_name)).toEqual(['first.jpg', 'second.jpg']);
+  });
+
   it('still filters by city without losing everything', async () => {
     // A filter that silently matched nothing would look the same as "no stock
     // in that city", which is the whole failure mode this file is about.

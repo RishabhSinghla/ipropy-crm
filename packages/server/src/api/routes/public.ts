@@ -171,6 +171,29 @@ const PROPERTY_FIELD_LIST: { sql: string; needs: string[] }[] = [
     sql: `lower(regexp_replace(btrim(u.project_name), '[^a-zA-Z0-9]+', '-', 'g')) AS project_id`,
     needs: ['project_name'],
   },
+  {
+    /*
+      The gallery is the photographs on the record, in the order somebody put
+      them in — not the `gallery` column beside them.
+      
+      Those were two lists of the same thing, and only one of them was ever
+      filled. n8n uploads the finished copies as attachments, the CRM's own
+      record page reads attachments (ordered by sort_order, migration 052), and
+      nothing in the codebase has ever written `u.gallery`. So a property could
+      be photographed, processed and published, show its photos perfectly inside
+      the CRM, and appear on the website with no pictures at all.
+
+      Reading the attachments makes the ordering the team sets in the CRM the
+      ordering a buyer sees, which is what the cover-photo drag was for.
+    */
+    sql: `COALESCE((
+            SELECT jsonb_agg('/api/files/' || a.id ORDER BY a.sort_order NULLS LAST, a.created_at)
+              FROM ipy_attachment a
+             WHERE a.record_id = u.record_id
+               AND a.mime_type LIKE 'image/%'
+          ), '[]'::jsonb) AS gallery`,
+    needs: ['record_id'],
+  },
   ...[
     'project_name',
     'status', 'property_type', 'configuration',
@@ -181,7 +204,7 @@ const PROPERTY_FIELD_LIST: { sql: string; needs: string[] }[] = [
     'base_price', 'rate_per_sqft', 'floor_rise_charge', 'plc_charge', 'parking_charge',
     'club_membership', 'maintenance_deposit', 'other_charges', 'gst_percent', 'total_price',
     'possession_status', 'possession_date', 'is_resale',
-    'gallery', 'floor_plan_url', 'video_url', 'virtual_tour_url', 'amenities',
+    'floor_plan_url', 'video_url', 'virtual_tour_url', 'amenities',
     'city', 'locality', 'latitude', 'longitude', 'description',
   ].map((c) => ({ sql: `u.${c}`, needs: [c] })),
 ];
