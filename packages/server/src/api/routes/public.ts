@@ -338,14 +338,28 @@ publicRouter.get('/projects/:id', asyncHandler(async (req, res) => {
     [await publicPropertyStatuses(), req.params.id],
   );
 
+  // "Nearby projects" means "in the same city", so without a city field there
+  // is no nearby — but there is still a project page. Narrowing is dropped
+  // rather than the query being allowed to name a column that is gone, which
+  // would answer 400 for the whole page over a sidebar.
+  const byCity = await modelHas('city');
+  const similarConds = [...PROJECT_BASE_CONDS()];
+  const similarParams: unknown[] = [await publicPropertyStatuses()];
+  if (byCity) {
+    similarParams.push(project.city);
+    similarConds.push(`u.city = $${similarParams.length}`);
+  }
+  similarParams.push(project.name);
+  similarConds.push(`btrim(u.project_name) <> $${similarParams.length}`);
+
   const similar = await db.query(
     `SELECT ${await projectFields()}
      ${await projectFrom()}
-     WHERE ${[...PROJECT_BASE_CONDS(), `u.city = $2`, `btrim(u.project_name) <> $3`].join(' AND ')}
+     WHERE ${similarConds.join(' AND ')}
      ${PROJECT_GROUP}
      ORDER BY MIN(u.possession_date) ASC NULLS LAST
      LIMIT 4`,
-    [await publicPropertyStatuses(), project.city, project.name],
+    similarParams,
   );
 
   res.json({
@@ -469,7 +483,13 @@ publicRouter.get('/cities', asyncHandler(async (_req, res) => {
             MIN(u.total_price) AS price_min,
             MAX(u.total_price) AS price_max
      FROM ipy_e_properties u
-     WHERE u.status = $1 AND ${publishClause('u')} AND u.city IS NOT NULL
+     -- ANY, not =. The parameter is the list of statuses an admin has made
+     -- public, and node-postgres sends a JS array as the literal '{Available}'.
+     -- Comparing status to that literal is a valid string comparison that
+     -- matches nothing, so this answered with an empty list and no error, and
+     -- "Where we work" has never appeared on the website. Third instance of
+     -- this exact slip in this file; the other two are fixed above.
+     WHERE u.status = ANY($1) AND ${publishClause('u')} AND u.city IS NOT NULL
      GROUP BY u.city
      ORDER BY project_count DESC`,
     [await publicPropertyStatuses()],

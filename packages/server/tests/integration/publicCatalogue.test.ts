@@ -139,3 +139,80 @@ describe('the public property list', () => {
     expect(names).toContain(name);
   });
 });
+
+/**
+ * Every other endpoint that reads the published-status list.
+ *
+ * The file above was written after `/properties` was found comparing the status
+ * column to the *array* of published statuses with `=`. Two endpoints were
+ * fixed then and `/cities` was missed, so the website's "Where we work" section
+ * had been empty since it was built and nothing said so.
+ *
+ * The lesson is that testing the endpoint that broke is not enough. Anything
+ * that takes `publicPropertyStatuses()` shares the mistake, so each one needs an
+ * assertion that it comes back holding the thing that was just published.
+ */
+describe('every public endpoint that reads the published statuses', () => {
+  it('lists the city a published property is in', async () => {
+    await publish(`City Roll-up ${Date.now()}`);
+
+    const res = await request(app).get('/api/public/cities');
+    expect(res.status).toBe(200);
+
+    const cities = res.body.items as { city: string; project_count: number; unit_count: number }[];
+    const faridabad = cities.find((c) => c.city === 'Faridabad');
+    expect(faridabad).toBeDefined();
+    expect(faridabad!.unit_count).toBeGreaterThan(0);
+    expect(faridabad!.project_count).toBeGreaterThan(0);
+  });
+
+  it('lists the project a published property belongs to', async () => {
+    await publish(`Project Roll-up ${Date.now()}`);
+
+    const res = await request(app).get('/api/public/projects');
+    expect(res.status).toBe(200);
+    const names = (res.body.items as { name: string }[]).map((i) => i.name);
+    expect(names).toContain('Catalogue Test Project');
+  });
+
+  it('opens a project page with its units on it', async () => {
+    const name = `Project Detail ${Date.now()}`;
+    await publish(name);
+
+    const list = await request(app).get('/api/public/projects');
+    // A project has no record of its own. Its `id` is its name slugified, which
+    // is what the detail route matches on.
+    const project = (list.body.items as { name: string; id: string }[])
+      .find((i) => i.name === 'Catalogue Test Project');
+    expect(project).toBeDefined();
+
+    // `similar` runs a second query with its own parameter numbering, which is
+    // the kind of thing that breaks quietly when a condition is made optional.
+    const res = await request(app).get(`/api/public/projects/${project!.id}`);
+    expect(res.status).toBe(200);
+    const units = (res.body.units as { name: string }[]).map((u) => u.name);
+    expect(units).toContain(name);
+    expect(Array.isArray(res.body.similar)).toBe(true);
+  });
+
+  it('does not count a property the admin has switched off for the website', async () => {
+    // The mirror of the tests above. An endpoint that returned everything
+    // regardless would also pass "it is not empty", so both directions matter.
+    const before = await request(app).get('/api/public/cities');
+    const countBefore = (before.body.items as { city: string; unit_count: number }[])
+      .find((c) => c.city === 'Faridabad')?.unit_count ?? 0;
+
+    const id = await publish(`Hidden From Cities ${Date.now()}`);
+    await db.query(
+      `UPDATE ipy_e_properties
+          SET custom_fields = COALESCE(custom_fields, '{}'::jsonb) || '{"publish_to_web":"false"}'::jsonb
+        WHERE record_id = $1`,
+      [id],
+    );
+
+    const after = await request(app).get('/api/public/cities');
+    const countAfter = (after.body.items as { city: string; unit_count: number }[])
+      .find((c) => c.city === 'Faridabad')?.unit_count ?? 0;
+    expect(countAfter).toBe(countBefore);
+  });
+});
