@@ -541,4 +541,26 @@ def add_sound(video: Path, out: Path, voice: Path | None, music: Path | None) ->
 
 
 def cover_frame(video: Path, out: Path, at: float = 0.8) -> bool:
+    """One frame, to stand in for the video wherever it cannot play.
+
+    Pass `at` late enough that the title card has finished animating. The lines
+    fade up one after another — see `card` — and the last of four does not reach
+    full opacity until about 1.14s. Grabbing at 0.8s produced a cover with the
+    price half faded out, which is the frame WhatsApp and Instagram show as the
+    thumbnail: the one place the price most needs to be readable.
+    """
     return ffmpeg(["-ss", f"{at:.2f}", "-i", str(video), "-frames:v", "1", "-q:v", "2", str(out)])
+
+
+def settled(seconds: float) -> float:
+    """When a title card of `seconds` is done moving, as a moment to grab a cover.
+
+    Late in the card rather than a fixed number of seconds in, because the card
+    is built so its animation finishes inside its own length. Anything that fits
+    the card is therefore settled by the time this lands, however many lines the
+    wrapping produced.
+
+    The 0.5 is the `crossfade` default of 0.3 plus a margin: land after that and
+    the "cover" is really the first photograph dissolving in over the words.
+    """
+    return max(0.1, seconds - 0.5)

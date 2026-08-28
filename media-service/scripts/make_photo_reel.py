@@ -233,7 +233,11 @@ def main() -> int:
         if not kit.add_sound(silent, final, voice_path, music_path):
             return 1
 
-        kit.cover_frame(final, out_dir / f"{unit}-reel-cover.jpg")
+        # Taken from the title card once it has stopped animating, not from the
+        # first second. This frame is the thumbnail WhatsApp and Instagram show
+        # before anyone presses play, and at 0.8s it caught the price still
+        # fading up — the one line that most needs to be readable there.
+        kit.cover_frame(final, out_dir / f"{unit}-reel-cover.jpg", at=kit.settled(title_seconds))
         info = kit.probe(final)
         print(f"created {final.name} — {info.duration:.1f}s" if info else f"created {final.name}", flush=True)
         return 0
