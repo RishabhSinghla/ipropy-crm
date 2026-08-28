@@ -113,6 +113,58 @@ describe('the fields the engine reads', () => {
     const survived = await db.queryOne(`SELECT 1 FROM ipy_field WHERE id = $1`, [field!.id]);
     expect(survived).toBeTruthy();
   });
+
+  /**
+   * The two that define whole sections of the website rather than one value.
+   *
+   * The rest of this file proves the site survives losing a field, which is the
+   * right behaviour and is not the same as the loss being harmless. Both of
+   * these were already gone from production before anything protected them, and
+   * the result was three sections quietly showing nothing: the projects
+   * catalogue, every project page, and the cities list. An empty catalogue
+   * reads as "no stock", so nobody had reason to look.
+   */
+  it.each([
+    ['project_name', /project/i],
+    ['city', /cities page|city filter/i],
+  ])('refuses to delete properties.%s, because the website is built on it', async (name, why) => {
+    const field = await db.queryOne<{ id: string }>(
+      `SELECT f.id FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+        WHERE m.name = 'properties' AND f.name = $1`,
+      [name],
+    );
+    expect(field, `properties.${name} should exist to be protected`).toBeTruthy();
+
+    const res = await request(app)
+      .delete(`/api/meta/fields/${field!.id}?permanent=true`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/reads it directly/i);
+    expect(res.body.message).toMatch(why);
+    expect(res.body.message).toMatch(/hide it instead/i);
+
+    expect(await db.queryOne(`SELECT 1 FROM ipy_field WHERE id = $1`, [field!.id])).toBeTruthy();
+  });
+
+  it.each(['project_name', 'city'])('refuses to rename properties.%s too', async (name) => {
+    const field = await db.queryOne<{ id: string }>(
+      `SELECT f.id FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+        WHERE m.name = 'properties' AND f.name = $1`,
+      [name],
+    );
+    expect(field).toBeTruthy();
+
+    const res = await request(app)
+      .patch(`/api/meta/fields/${field!.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: `${name}_renamed` });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/cannot be changed/i);
+    // The label stays editable, which is what somebody renaming usually wants.
+    expect(res.body.message).toMatch(/label/i);
+  });
 });
 
 describe('a property field somebody removed', () => {
