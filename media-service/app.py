@@ -19,6 +19,7 @@ knew it would be a second place for that knowledge to go stale.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -103,6 +104,62 @@ def unit_of(folder: str) -> str:
     return (last.split("-")[0] or "PROPERTY").upper()
 
 
+# The folders this pipeline fills and refills. Everything in them is a copy of
+# something in RAW-UPLOADS, which is why they are safe to sweep and RAW-UPLOADS
+# never is.
+DERIVATIVE_FOLDERS = (
+    "{u}-SHAPES/4x5", "{u}-SHAPES/9x16", "{u}-SHAPES/1x1",
+    "{u}-SHAPES/4x3", "{u}-SHAPES/16x9",
+    "{u}-EDITED/WATERMARKED", "{u}-EDITED/THUMBNAILS",
+)
+
+# What this pipeline's own output looks like: a name, then a two or three digit
+# number. Nothing else is touched, so a photograph somebody dropped in by hand
+# stays where they put it.
+OUR_OUTPUT = re.compile(r"^(?P<stem>.+)-\d{2,3}\.(jpe?g|png|webp)$", re.IGNORECASE)
+
+
+def sweep_stale(root: str, unit: str, prefix: str) -> int:
+    """Move copies made under an older name into the archive folder.
+
+    A property's filenames are built from its record — unit, project, locality,
+    configuration, area. Edit any of those and the next run writes a whole new
+    set beside the old one, because the names no longer collide. B12 went from
+    twelve photographs to twenty-four that way, after somebody added the
+    locality to the record: every shape folder held both
+    `b12-greenfield-colony-*` and `b12-greenfield-colony-sector-15-*`, and the
+    website would have shown every room twice.
+
+    Moved rather than deleted, into the archive folder that already exists for
+    this. These are the team's files in the team's OneDrive; being wrong about
+    which ones are stale should cost somebody a drag-and-drop, not a photograph.
+    """
+    if not prefix:
+        return 0
+    archive = Path(root, f"{unit}-ARCHIVE")
+    moved = 0
+    for template in DERIVATIVE_FOLDERS:
+        folder = Path(root, template.format(u=unit))
+        if not folder.is_dir():
+            continue
+        for item in folder.iterdir():
+            if not item.is_file():
+                continue
+            match = OUR_OUTPUT.match(item.name)
+            if not match or match.group("stem") == prefix:
+                continue
+            try:
+                target = archive / folder.name / item.name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                item.replace(target)
+                moved += 1
+            except OSError:
+                # A file the drive has locked is not a reason to stop; the worst
+                # case is the duplicate this was meant to prevent.
+                continue
+    return moved
+
+
 def run_property(
     folder: str,
     prefix: str = "",
@@ -154,6 +211,12 @@ def run_property(
             continue
         (done if r["ok"] else failed).append(label)
         log.append(f"{label}: {'ok' if r['ok'] else (r['error'] or '').strip()[-200:]}")
+
+    # After the steps, never before. Sweeping first would archive the only good
+    # copies the property has and then, if the run failed, leave it with none.
+    moved = sweep_stale(root, unit, prefix)
+    if moved:
+        log.append(f"archived {moved} file(s) named for an older version of this property")
 
     return {
         "ok": not failed,

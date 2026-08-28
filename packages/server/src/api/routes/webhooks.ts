@@ -539,6 +539,7 @@ webhooksRouter.get('/n8n/pending-media', asyncHandler(async (req, res) => {
 
   const { propertyNamePrefix } = await import('../../integrations/automation/n8n.js');
   const { propertyFacts } = await import('../../core/storage/propertyDetails.js');
+  const { propertyWebsitePath } = await import('../../core/storage/keys.js');
   res.json({
     // Facts travel with the job. The worker has the pixels and the CRM has the
     // price, the configuration and the locality; a caption needs both, and
@@ -548,6 +549,10 @@ webhooksRouter.get('/n8n/pending-media', asyncHandler(async (req, res) => {
       folder: r.folder_key,
       namePrefix: await propertyNamePrefix(r.record_id),
       facts: await propertyFacts(r.record_id),
+      // And so does the folder to publish from, for the same reason: the CRM
+      // named these folders, so n8n should never be holding its own idea of
+      // what they are called.
+      websitePath: await propertyWebsitePath(r.folder_key),
     }))),
   });
 }));

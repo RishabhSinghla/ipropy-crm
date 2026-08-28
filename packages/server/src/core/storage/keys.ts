@@ -111,6 +111,41 @@ export function propertyFolder(template: string, unit: string): string {
 }
 
 /**
+ * Where this property's website pictures live, as a path under the media root.
+ *
+ * n8n used to hold this as the literal string `07_WEBSITE`, left over from a
+ * workflow that has since been replaced. Nothing has created that folder since
+ * 22 August, so the last three steps of every media run — read the finished
+ * pictures, send them to the CRM, mark the property done — have not run at all.
+ * The pictures were made correctly every time and then sat in OneDrive.
+ *
+ * It lives here now for the reason it broke there: the CRM decides what a
+ * property's folders are called, so the CRM is the only thing that can say
+ * which one to publish from without the two drifting apart again.
+ *
+ * The choice is a switch rather than a path somebody types. Both sets are made
+ * on every run, so this only decides which one is published — and because the
+ * two paths are constants here, there is no way for a setting to point the
+ * worker's file glob at something it should not see.
+ */
+export async function propertyWebsitePath(folderKey: string): Promise<string> {
+  const { db } = await import('../../db/pool.js');
+  let watermarked = false;
+  try {
+    const row = await db.queryOne<{ value: unknown }>(
+      `SELECT value FROM ipy_setting WHERE key = 'media.watermark_website_photos'`,
+    );
+    watermarked = row?.value === true;
+  } catch {
+    // A database that will not answer is not a reason to publish nothing.
+  }
+  const template = watermarked
+    ? PROPERTY_MEDIA_FOLDERS.watermarked
+    : PROPERTY_MEDIA_FOLDERS.shape4x3;
+  return `${folderKey}/${propertyFolder(template, unitFromFolderName(folderKey))}`;
+}
+
+/**
  * What `01 Originals` and friends were called before.
  *
  * Keys already written to storage still contain these, and no read resolves a

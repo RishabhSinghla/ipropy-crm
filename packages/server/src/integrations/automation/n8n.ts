@@ -87,6 +87,9 @@ export async function notifyPropertyFinished(recordId: string): Promise<HandoffR
   const url = getSettings().automation.n8nWebhookUrl;
   if (!url) return { sent: false, reason: 'no n8n webhook URL configured' };
 
+  const { propertyFacts } = await import('../../core/storage/propertyDetails.js');
+  const { propertyWebsitePath } = await import('../../core/storage/keys.js');
+
   // Without a folder n8n has nothing to read. This is the ordinary state for a
   // property added seconds ago — the folder is made by a background pass — so
   // it is a reason to wait, not an error.
@@ -111,6 +114,18 @@ export async function notifyPropertyFinished(recordId: string): Promise<HandoffR
     // n8n calls back to us, so it should be told where "us" is rather than
     // guessing from a hardcoded default.
     crmBaseUrl: config.apiUrl,
+    // The price, the configuration and the locality, for the title card on the
+    // reel and the captions under the photographs.
+    //
+    // The polling path has sent these since it was written and this one never
+    // did, so the same property produced a different video depending on which
+    // way the job happened to arrive — a titled one when n8n asked, and one
+    // with the unit name printed twice and no price when Finish reached it
+    // directly. Two paths into one pipeline have to carry the same job.
+    facts: await propertyFacts(recordId),
+    // Which folder the finished pictures should be published from. See
+    // `propertyWebsitePath`.
+    websitePath: await propertyWebsitePath(storage.folderKey),
   };
 
   try {

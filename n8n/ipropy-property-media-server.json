@@ -1,5 +1,5 @@
 {
-  "name": "iPropy \u2014 property media (server)",
+  "name": "iPropy — property media (server)",
   "nodes": [
     {
       "parameters": {
@@ -72,6 +72,12 @@
               "name": "facts",
               "value": "={{ $json.body ? ($json.body.facts || {}) : ($json.facts || {}) }}",
               "type": "object"
+            },
+            {
+              "id": "r7",
+              "name": "websitePath",
+              "value": "={{ ($json.body ? $json.body.websitePath : $json.websitePath) || (($json.body ? $json.body.folder : $json.folder) + '/' + ((($json.body ? $json.body.folder : $json.folder) || 'PROPERTY').split('/').filter(Boolean).pop() || 'PROPERTY').split('-')[0].toUpperCase() + '-SHAPES/4x3') }}",
+              "type": "string"
             }
           ]
         },
@@ -224,7 +230,7 @@
     },
     {
       "parameters": {
-        "fileSelector": "=/data/properties/{{ $('Work out the folder').first().json.folder }}/07_WEBSITE/*",
+        "fileSelector": "=/data/properties/{{ $('Work out the folder').first().json.websitePath }}/*",
         "options": {}
       },
       "id": "b7000000-0000-4000-8000-000000000001",
