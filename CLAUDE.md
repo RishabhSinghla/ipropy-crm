@@ -203,6 +203,21 @@ And after pushing, ask the running site rather than assuming:
 scripts/verify-deploy.sh 'a string only the new code has'
 ```
 
+**The automation half is deployed separately and drifts silently.** n8n and the media
+worker run in containers on a machine, not from this repo, so nothing here fails when
+they fall behind. Twice they have: a media container months out of date that reported
+`ok: true` with four of its seven steps missing, and an n8n workflow pointing at a folder
+that no longer exists, which made every picture correctly and delivered none of them for
+six days. Both looked healthy from every angle a test can see.
+
+```bash
+python3 scripts/check-deployed.py   # live n8n + media container vs this repo
+```
+
+It compares node by node and file by file, and fails when a workflow is switched **off** —
+which `n8n import:workflow` does every time it runs, in a line that is easy to miss. Always
+follow an import with `n8n update:workflow --id=<id> --active=true` and `docker restart n8n`.
+
 **CI is the deploy gate, not advice** — except right now, and the exception has a
 date on it. `render.yaml` normally sets `autoDeployTrigger: checksPass`, so a red run
 means Render never builds while the container happily restarts for other reasons, which
