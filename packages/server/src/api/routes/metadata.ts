@@ -1177,6 +1177,68 @@ metadataRouter.delete('/picklists/:name/values', asyncHandler(async (req, res) =
 }));
 
 /**
+ * Empty a dropdown in one action.
+ *
+ * Deleting options one at a time is right when there are three of them and each
+ * needs its own answer to "what happens to the records holding it?". It is
+ * absurd at 126 — which is what Locality shipped with, and clearing it by hand
+ * meant a hundred and twenty-six confirmations.
+ *
+ * Same safety as the single delete, asked once instead of per option: if a
+ * required field uses this dropdown the whole thing is refused, because those
+ * records cannot be left empty and finding that out halfway through is the worst
+ * possible time. Otherwise every record holding any of these values has that
+ * field cleared, and every option is tombstoned so the next re-seed does not
+ * quietly put them all back.
+ */
+metadataRouter.post('/picklists/:name/clear', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'admin.picklists');
+  const name = req.params.name;
+
+  const picklist = await db.queryOne<{ id: string }>(`SELECT id FROM ipy_picklist WHERE name = $1`, [name]);
+  if (!picklist) throw new NotFoundError(`Unknown picklist '${name}'`);
+
+  const blocked = await fieldsThatCannotBeCleared(name);
+  if (blocked.length) {
+    throw new ConflictError(
+      `${blocked.map((b) => `${b.moduleLabel} → ${b.fieldLabel}`).join(', ')} cannot be left empty, `
+      + 'so this dropdown cannot be emptied while those fields are required. '
+      + 'Make the field optional first, or delete the options you do not want one at a time.',
+      { mustReplace: true },
+    );
+  }
+
+  const rows = await db.query<{ value: string }>(
+    `SELECT value FROM ipy_picklist_value WHERE picklist_id = $1 ORDER BY sequence`,
+    [picklist.id],
+  );
+
+  let movedRecords = 0;
+  await transaction(async (tx) => {
+    for (const { value } of rows.rows) {
+      const usage = await countRecordsWithValue(name, value);
+      if (usage.total > 0) {
+        await replaceValueInRecords(name, value, null, tx);
+        movedRecords += usage.total;
+      }
+      await tx.query(
+        `INSERT INTO ipy_picklist_tombstone (picklist_name, value, deleted_by, had_records, replaced_with)
+         VALUES ($1,$2,$3,$4,NULL)
+         ON CONFLICT (picklist_name, value) DO UPDATE SET
+           deleted_at = now(), deleted_by = EXCLUDED.deleted_by,
+           had_records = EXCLUDED.had_records, replaced_with = NULL`,
+        [name, value, user.id, usage.total],
+      );
+    }
+    await tx.query(`DELETE FROM ipy_picklist_value WHERE picklist_id = $1`, [picklist.id]);
+  });
+
+  invalidateAll();
+  res.json({ ok: true, removed: rows.rows.length, clearedRecords: movedRecords });
+}));
+
+/**
  * Save the option list — how the dropdown editor saves.
  *
  * Order, labels, colours, the active flag and which option is the default all

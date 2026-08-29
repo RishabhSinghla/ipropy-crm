@@ -8,7 +8,7 @@ import {
 import { api, ApiError } from '../../lib/api';
 import { toast } from '../../lib/store';
 import { cn } from '../../lib/utils';
-import { Badge, Modal, Skeleton, Spinner, Toggle } from '../../components/ui';
+import { Badge, ConfirmDialog, Modal, Skeleton, Spinner, Toggle } from '../../components/ui';
 
 /**
  * The dropdown editor.
@@ -59,6 +59,7 @@ export default function PicklistManager(): JSX.Element {
   const [selected, setSelected] = useState<string>(params.get('picklist') || 'lead_status');
   const [options, setOptions] = useState<Option[]>([]);
   const [dirty, setDirty] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -237,6 +238,18 @@ export default function PicklistManager(): JSX.Element {
               >
                 <Plus className="h-3.5 w-3.5" /> Add option
               </button>
+              {/* Deleting options one at a time is right for three of them and
+                  absurd for a hundred and twenty-six, which is what Locality
+                  shipped with. */}
+              {options.length > 2 && (
+                <button
+                  onClick={() => setClearing(true)}
+                  className="btn-secondary btn-sm"
+                  title="Remove every option in this dropdown"
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Remove all
+                </button>
+              )}
               <button onClick={() => void save()} disabled={!dirty || saving} className="btn-primary btn-sm">
                 {saving ? <Spinner className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />} Save
               </button>
@@ -460,6 +473,40 @@ export default function PicklistManager(): JSX.Element {
         others={options.filter((o) => o.value !== deleting?.value && o.previousValue)}
         onClose={() => setDeleting(null)}
         onDeleted={refresh}
+      />
+
+      <ConfirmDialog
+        open={clearing}
+        onClose={() => setClearing(false)}
+        onConfirm={async () => {
+          try {
+            const r = await api.clearPicklist(selected);
+            toast.success(
+              `Removed ${r.removed} option${r.removed === 1 ? '' : 's'}`,
+              r.clearedRecords
+                ? `${r.clearedRecords} record${r.clearedRecords === 1 ? '' : 's'} had this field cleared.`
+                : 'No record was using any of them.',
+            );
+            refresh();
+          } catch (err) {
+            toast.error('Could not empty this dropdown', (err as Error).message);
+          }
+        }}
+        title={`Remove all ${options.length} options from “${current?.label ?? selected}”?`}
+        body={(
+          <>
+            <p>
+              Every option goes, and any record using one has that field cleared. You can add your own
+              back straight afterwards.
+            </p>
+            <p>
+              This is refused if a field using this dropdown is required, because those records cannot
+              be left empty.
+            </p>
+          </>
+        )}
+        confirmLabel="Remove all"
+        danger
       />
     </div>
   );

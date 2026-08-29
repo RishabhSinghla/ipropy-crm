@@ -189,7 +189,10 @@ export function ConfirmDialog({
   open: boolean; onClose: () => void;
   /** The resolved value is ignored, so callers can pass a mutation directly. */
   onConfirm: () => unknown | Promise<unknown>;
-  title: string; body?: string; confirmLabel?: string; danger?: boolean;
+  title: string;
+  /** Text, or a node when the dialog needs to spell out a consequence. */
+  body?: ReactNode;
+  confirmLabel?: string; danger?: boolean;
 }): JSX.Element {
   const [busy, setBusy] = useState(false);
   return (
@@ -212,7 +215,7 @@ export function ConfirmDialog({
         </>
       }
     >
-      <p className="text-sm text-muted">{body}</p>
+      <div className="space-y-3 text-sm text-muted">{body}</div>
     </Modal>
   );
 }

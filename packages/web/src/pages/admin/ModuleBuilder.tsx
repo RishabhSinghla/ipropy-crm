@@ -431,6 +431,15 @@ const TYPE_HELP: Record<string, string> = {
   json: 'For structured data the CRM stores but does not draw a box for.',
 };
 
+/**
+ * Chosen in the option-set dropdown to mean "I will type them here".
+ *
+ * A sentinel rather than a separate button because the choice is genuinely one
+ * choice: reuse a set, or make one. Two controls would make it look like two
+ * decisions.
+ */
+const NEW_PICKLIST = '__new__';
+
 /** uitypes that can be bounded by another field of the same kind. */
 const COMPARABLE = ['integer', 'decimal', 'currency', 'percent', 'area', 'score', 'date', 'datetime'];
 
@@ -560,6 +569,7 @@ function FieldEditor({
   const [searchable, setSearchable] = useState(field?.searchable ?? false);
   const [helpText, setHelpText] = useState(field?.helpText ?? '');
   const [picklist, setPicklist] = useState((field?.config.picklist as string) ?? '');
+  const [newOptions, setNewOptions] = useState('');
   const [referenceModules, setReferenceModules] = useState<string[]>(
     (field?.config.referenceModules as string[]) ?? [],
   );
@@ -691,6 +701,30 @@ function FieldEditor({
         quickCreate, searchable, helpText: helpText || undefined, config,
       };
 
+      // The set has to exist before the field can name it, so it is made first
+      // and the field is created against it. Two requests, one button.
+      if (needsPicklist && picklist === NEW_PICKLIST) {
+        const values = newOptions
+          .split('\n')
+          .map((v) => v.trim())
+          .filter(Boolean);
+        if (!values.length) throw new Error('Type at least one option, one per line.');
+
+        // Named after the field so it is recognisable in Admin → Dropdowns, and
+        // suffixed when that name is taken rather than quietly overwriting
+        // somebody else's set.
+        const base = (name || 'options').replace(/[^a-z0-9_]/g, '_').slice(0, 40);
+        const taken = new Set(Object.keys(picklists ?? {}));
+        const setName = taken.has(base) ? `${base}_${Date.now().toString(36).slice(-4)}` : base;
+
+        await api.createPicklist({
+          name: setName,
+          label: label || setName.replace(/_/g, ' '),
+          values: values.map((v) => ({ value: v, label: v, isActive: true, isDefault: false })),
+        });
+        (payload.config as Record<string, unknown>).picklist = setName;
+      }
+
       if (isEdit) await api.updateField(field!.id, payload);
       else await api.createField(module.name, payload);
 
@@ -798,11 +832,47 @@ function FieldEditor({
               value={picklist}
               onChange={setPicklist}
               placeholder="— Choose an option set —"
-              options={Object.keys(picklists ?? {}).map((p) => ({ value: p, label: p.replace(/_/g, ' ') }))}
+              options={[
+                ...Object.keys(picklists ?? {}).map((p) => ({ value: p, label: p.replace(/_/g, ' ') })),
+                { value: NEW_PICKLIST, label: '+ Type the options here…' },
+              ]}
             />
-            <p className="mt-1 text-2xs text-muted">
-              Manage option sets under Admin → Dropdowns.
-            </p>
+
+            {/*
+              Writing the options here, rather than sending somebody to another
+              screen to make an option set and then back again to attach it.
+
+              That round trip was the single most-complained-about thing in this
+              admin: "I have to first create its dropdown then create field and
+              attach dropdown". Nothing about the data model required it — a
+              field's binding is one string in its config, and the set is created
+              by its own endpoint. It was two screens purely because nobody had
+              joined them up.
+            */}
+            {picklist === NEW_PICKLIST ? (
+              <div className="mt-2 space-y-2 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                <div>
+                  <label className="label" htmlFor="new-picklist-options">One option per line</label>
+                  <textarea
+                    id="new-picklist-options"
+                    className="input font-mono text-xs"
+                    rows={5}
+                    value={newOptions}
+                    onChange={(e) => setNewOptions(e.target.value)}
+                    placeholder={'Available\nHeld\nBooked'}
+                  />
+                </div>
+                <p className="text-2xs text-muted">
+                  Saved as a set named after this field, so it can be reused on another field later and
+                  edited any time under Admin → Dropdowns. Type what you want people to see; blank lines
+                  are ignored.
+                </p>
+              </div>
+            ) : (
+              <p className="mt-1 text-2xs text-muted">
+                Reuses an existing set. Editing it under Admin → Dropdowns changes every field using it.
+              </p>
+            )}
           </div>
         )}
 
