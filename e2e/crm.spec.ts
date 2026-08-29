@@ -86,16 +86,23 @@ test('inline-edits a picklist in the list and the change survives a reload', asy
   await expect(after).toContainText(chosen ?? '', { timeout: 30_000 });
 });
 
-test('inline-edits a text field on the record detail page', async ({ page }) => {
+test('inline-edits a text field on the record detail page', async ({ page, context }) => {
   await page.goto('/leads');
   await waitForRecords(page);
-  // Before navigating: with editing switched off there is nothing to test, and
-  // the record opens in a new tab so the navigation below would hang anyway.
-  test.skip(!(await inlineEditOn(page)), 'inline editing is switched off');
+  // No skip: a record page is always editable, whatever the list setting says.
   // Click the Record # cell, not the row generally: most cells now hold an
   // inline editor that stops propagation, so clicking one opens the editor
   // instead of navigating. Record # is an autonumber, so it stays plain text.
+  const popup = context.waitForEvent('page').catch(() => null);
   await page.locator('tbody tr').first().locator('td').nth(1).click();
+
+  // Records open in a new tab by default, so the page under test may be that
+  // one. Handle both, because a setting decides which.
+  const opened = await Promise.race([
+    popup,
+    page.waitForURL(/\/leads\/[0-9a-f-]{36}/).then(() => null).catch(() => null),
+  ]);
+  if (opened) page = opened;
   await page.waitForURL(/\/leads\/[0-9a-f-]{36}/, { timeout: 30_000 });
 
   // Fields live on Overview, and which tab a record opens on is an admin

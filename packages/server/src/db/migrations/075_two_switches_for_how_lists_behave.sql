@@ -9,8 +9,9 @@
 -- is one click.
 --
 -- Off rather than deleted, because the feature is good and somebody else running
--- this CRM may want it. One switch, and it applies to the list, the kanban card
--- and the record page alike.
+-- this CRM may want it. It applies to the list and the kanban card only: a
+-- record page is a screen you opened on purpose to change something, and taking
+-- editing off it makes the CRM read-only for the people using it.
 --
 -- **Opening a record in a new tab is now on by default.** Losing your place in a
 -- filtered list to look at one record, then having to navigate back and re-apply
@@ -19,9 +20,10 @@
 INSERT INTO ipy_setting (key, value, category, label, description) VALUES
   ('ui.inline_edit', 'false'::jsonb, 'general',
    'Let people edit straight from a list',
-   'On, and clicking a value in a list or on a record page turns it into a box you can type in, '
-   || 'saving as soon as you leave it. Quick, and easy to trigger by accident on a record you only '
-   || 'meant to read. Off, and values are read-only until you open the record and use Edit.'),
+   'On, and clicking a value on a list or kanban card turns it into a box you can type in. Quick, '
+   || 'and easy to trigger by accident on a row you only meant to open. Off, and a list is '
+   || 'read-only. Either way the record page itself is always editable — that is what you opened '
+   || 'it for.'),
 
   ('ui.open_in_new_tab', 'true'::jsonb, 'general',
    'Open a record in a new tab',

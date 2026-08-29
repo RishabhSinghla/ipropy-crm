@@ -67,8 +67,8 @@ const HAS_OWN_LINK: ReadonlySet<string> = new Set(['reference', 'email', 'phone'
  * exactly the hole this closes. Turn it back on in Admin → Settings → Your
  * business.
  */
-export function isInlineEditable(field: FieldMeta): boolean {
-  if (!useApp.getState().user?.ui?.inlineEdit) return false;
+export function isInlineEditable(field: FieldMeta, surface: 'list' | 'record' = 'record'): boolean {
+  if (surface === 'list' && !useApp.getState().user?.ui?.inlineEdit) return false;
   if (field.isReadonly || field.displayType === 'readonly' || field.displayType === 'hidden') return false;
   return !NOT_INLINE_EDITABLE.has(field.uitype);
 }
@@ -80,6 +80,20 @@ function isEmptyValue(v: unknown): boolean {
 type Status = 'idle' | 'saving' | 'success' | 'error';
 
 export interface EditableFieldProps {
+  /**
+   * Where this field is being drawn.
+   *
+   * A list and a record page want opposite things. On a list you click a row to
+   * open it, and turning a value into an edit box under your cursor is how a
+   * live mobile number gets changed by somebody who only meant to read it. On a
+   * record page you are already there on purpose, and editing in place is the
+   * point of the screen.
+   *
+   * So the "editing from a list" setting gates `list` only. `record` is always
+   * editable, which is why this defaults to it: a new call site should get the
+   * behaviour of the screen it is most likely on, not the restriction.
+   */
+  surface?: 'list' | 'record';
   module: string;
   recordId: string;
   field: FieldMeta;
@@ -105,6 +119,7 @@ export interface EditableFieldProps {
 export function EditableField(props: EditableFieldProps): JSX.Element {
   const {
     module, recordId, field, value, display, compact, restrictTo, siblings, linkTo, onSaved,
+    surface = 'record',
   } = props;
 
   const inlineEdit = useApp((st) => st.user?.ui?.inlineEdit ?? false);
@@ -238,7 +253,7 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
   // Subscribed, not read once: flipping the switch in Admin should take effect
   // without a reload. The exported isInlineEditable reads the same value for
   // callers that only need to decide whether to draw an edit affordance.
-  if (!inlineEdit || !isInlineEditable(field)) {
+  if ((surface === 'list' && !inlineEdit) || !isInlineEditable(field, surface)) {
     return <FieldValue field={field} value={localValue} display={localDisplay} compact={compact} />;
   }
 

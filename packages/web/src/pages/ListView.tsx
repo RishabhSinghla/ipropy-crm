@@ -750,8 +750,9 @@ export default function ListView(): JSX.Element {
                             title="New — you haven’t opened this yet"
                           />
                         )}
-                        {meta.permissions.edit && isInlineEditable(field) ? (
+                        {meta.permissions.edit && isInlineEditable(field, 'list') ? (
                           <EditableField
+                            surface="list"
                             module={moduleName}
                             recordId={row.id}
                             field={field}
@@ -1046,8 +1047,9 @@ function MobileRecordCard({
               <div key={col} className="flex items-start gap-2 text-xs">
                 <dt className="w-28 shrink-0 truncate text-muted">{field.label}</dt>
                 <dd className="min-w-0 flex-1">
-                  {module.permissions.edit && isInlineEditable(field) ? (
+                  {module.permissions.edit && isInlineEditable(field, 'list') ? (
                     <EditableField
+                            surface="list"
                       module={module.name}
                       recordId={row.id}
                       field={field}
@@ -1214,8 +1216,9 @@ function KanbanBoard({
                   <div className="mt-2 flex items-center justify-between gap-2">
                     {ownerField && (
                       <span className="truncate text-2xs text-muted" onClick={(e) => e.stopPropagation()}>
-                        {module.permissions.edit && isInlineEditable(ownerField) ? (
+                        {module.permissions.edit && isInlineEditable(ownerField, 'list') ? (
                           <EditableField
+                            surface="list"
                             module={module.name}
                             recordId={row.id}
                             field={ownerField}
