@@ -684,7 +684,9 @@ adminRouter.put('/settings', asyncHandler(async (req, res) => {
   const { invalidateUiSettings } = await import('../../core/settings/ui.js');
   const { invalidateStageMap } = await import('../../core/entity/lifecycleFromStatus.js');
   const { invalidatePhoneMasking } = await import('../../core/permissions/maskPhones.js');
+  const { invalidateGreeting } = await import('../../integrations/whatsapp/greetNewLead.js');
   invalidatePhoneMasking();
+  invalidateGreeting();
   invalidateLocationSettings();
   invalidateUiSettings();
   invalidateStageMap();

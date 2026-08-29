@@ -277,6 +277,26 @@ export async function syncTemplates(): Promise<{ synced: number }> {
 }
 
 /** Verify Meta's X-Hub-Signature-256 header before trusting a webhook body. */
+/**
+ * Is this really from Meta?
+ *
+ * `secret` is a parameter now rather than always the WhatsApp app secret,
+ * because the lead-ads webhook needs exactly the same check against a different
+ * app's secret and had none at all — anyone who learned that URL could post
+ * invented leads into the CRM, and they would be assigned, scored and greeted
+ * like any other.
+ */
+export function verifySignature(rawBody: Buffer, signature: string | undefined, secret: string): boolean {
+  // Without a configured secret we cannot verify; allow only outside production.
+  if (!secret) return !config.isProd;
+  if (!signature?.startsWith('sha256=')) return false;
+
+  const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+  const provided = signature.slice(7);
+  if (expected.length !== provided.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(provided));
+}
+
 export function verifyWebhookSignature(rawBody: Buffer, signature: string | undefined): boolean {
   const secret = getSettings().whatsapp.appSecret;
   // Without a configured secret we cannot verify; allow only outside production.

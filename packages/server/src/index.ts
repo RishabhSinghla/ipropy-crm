@@ -8,6 +8,7 @@ import { registry } from './core/metadata/registry.js';
 import { warmup as warmupIntegrationSettings } from './core/settings/integrations.js';
 import { registerWorkflowHandlers } from './core/workflow/engine.js';
 import { registerLifecycleSync } from './core/entity/lifecycleFromStatus.js';
+import { registerLeadGreeting } from './integrations/whatsapp/greetNewLead.js';
 import { startScheduler, stopScheduler } from './core/workflow/scheduler.js';
 import { initRealtime, closeRealtime } from './realtime.js';
 import { aiStatus } from './ai/client.js';
@@ -46,6 +47,8 @@ async function main(): Promise<void> {
   registerWorkflowHandlers();
   // After the workflows, so a workflow that sets the status gets the stage move too.
   registerLifecycleSync();
+  // A new enquiry gets its WhatsApp hello before anybody picks up the phone.
+  registerLeadGreeting();
 
   const app = createApp();
   const server = createServer(app);

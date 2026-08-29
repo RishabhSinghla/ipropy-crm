@@ -227,6 +227,24 @@ webhooksRouter.get('/leads/facebook', (req, res) => {
 });
 
 webhooksRouter.post('/leads/facebook', asyncHandler(async (req, res) => {
+  /*
+    Meta signs every delivery. Nothing checked it.
+    
+    This endpoint has to be public — Meta cannot hold a secret of ours — so the
+    signature is the only thing separating a real lead from an invented one.
+    Without it, anyone who learned this URL could post a leadgen id and have the
+    CRM fetch, create, assign, score and greet a lead that never existed. The
+    same check the WhatsApp webhook has had all along, against the Facebook app's
+    own secret.
+  */
+  const raw = (req as Request & { rawBody?: Buffer }).rawBody ?? Buffer.from(JSON.stringify(req.body));
+  const appSecret = getSettings().leadSources.facebook.appSecret;
+  if (!waProvider.verifySignature(raw, req.headers['x-hub-signature-256'] as string | undefined, appSecret)) {
+    logger.warn('rejected a facebook lead webhook with an invalid signature');
+    res.sendStatus(401);
+    return;
+  }
+
   res.sendStatus(200);
 
   const body = req.body as {
