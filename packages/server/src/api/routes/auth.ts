@@ -98,7 +98,12 @@ authRouter.post('/logout', requireAuth, asyncHandler(async (req, res) => {
 
 authRouter.get('/me', requireAuth, asyncHandler(async (req, res) => {
   const user = getUser(req);
-  res.json({ ...user, subordinateIds: await getSubordinateUserIds(user) });
+  // How lists behave rides along here rather than on a probe of its own: every
+  // client already fetches this at start-up, and the answer is the same for
+  // everybody. See core/settings/ui.ts.
+  const { uiSettings } = await import('../../core/settings/ui.js');
+  const [subordinateIds, ui] = await Promise.all([getSubordinateUserIds(user), uiSettings()]);
+  res.json({ ...user, subordinateIds, ui });
 }));
 
 const preferencesSchema = z.object({

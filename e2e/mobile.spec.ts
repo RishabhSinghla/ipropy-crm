@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
-import { unique, waitForRecords, fillRequiredFields } from './helpers';
+import { inlineEditOn, unique, waitForRecords, fillRequiredFields } from './helpers';
 
 /**
  * The critical path at phone size.
@@ -52,6 +52,7 @@ test.describe('phone', () => {
     // The table exists in the DOM at every width; at phone size it must not be
     // displayed, or the user gets a horizontally scrolling grid.
     await expect(page.locator('table')).toBeHidden();
+    test.skip(!(await inlineEditOn(page)), 'inline editing is switched off');
     await expect(page.locator('button[title="Click to edit"]:visible').first()).toBeVisible();
   });
 
@@ -211,6 +212,7 @@ test.describe('phone', () => {
     await page.goto('/leads');
     await waitForRecords(page);
 
+    test.skip(!(await inlineEditOn(page)), 'inline editing is switched off');
     const trigger = page.locator('button[title="Click to edit"]:visible').first();
     await trigger.click();
 

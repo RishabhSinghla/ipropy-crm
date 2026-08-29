@@ -46,7 +46,27 @@ export function unique(prefix: string): string {
  * shared "page is ready" signal.
  */
 export async function waitForRecords(page: Page): Promise<void> {
-  await expect(editableCells(page).first()).toBeVisible({ timeout: 30_000 });
+  // Waits for a record, not for an edit affordance. It used to wait for an
+  // inline-edit trigger, which meant every test using it started failing the day
+  // inline editing was switched off by default — reported as "the list view has
+  // accessibility violations", which it did not. Wait for the thing the name
+  // says.
+  const row = page.locator('tbody tr:visible, [data-record-card]:visible').first();
+  await expect(row).toBeVisible({ timeout: 30_000 });
+}
+
+/**
+ * Is editing straight from a list switched on?
+ *
+ * It ships off — too easy to change a live record with a stray click — so the
+ * tests that exercise it have to ask rather than assume. Read from the same
+ * place the app reads it.
+ */
+export async function inlineEditOn(page: Page): Promise<boolean> {
+  const res = await page.request.get('/api/auth/me');
+  if (!res.ok()) return false;
+  const me = await res.json() as { ui?: { inlineEdit?: boolean } };
+  return me.ui?.inlineEdit === true;
 }
 
 /**

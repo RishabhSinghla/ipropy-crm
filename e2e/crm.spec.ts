@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { columnIndex, editableCells, unique, waitForRecords, fillRequiredFields, openRecordTab } from './helpers';
+import { columnIndex, editableCells, unique, waitForRecords, fillRequiredFields, openRecordTab , inlineEditOn } from './helpers';
 
 /**
  * The journeys a salesperson actually performs. Each one is a path where a
@@ -62,6 +62,7 @@ test('inline-edits a picklist in the list and the change survives a reload', asy
   // hardcoded nth() turns any such change into a mystery test failure.
   const statusIndex = await columnIndex(page, 'Pipeline Status');
   const statusCell = page.locator('tbody tr').first().locator('td').nth(statusIndex);
+  test.skip(!(await inlineEditOn(page)), 'inline editing is switched off');
   const trigger = statusCell.locator('button[title="Click to edit"]');
   const before = (await trigger.textContent())?.trim();
 
@@ -88,6 +89,9 @@ test('inline-edits a picklist in the list and the change survives a reload', asy
 test('inline-edits a text field on the record detail page', async ({ page }) => {
   await page.goto('/leads');
   await waitForRecords(page);
+  // Before navigating: with editing switched off there is nothing to test, and
+  // the record opens in a new tab so the navigation below would hang anyway.
+  test.skip(!(await inlineEditOn(page)), 'inline editing is switched off');
   // Click the Record # cell, not the row generally: most cells now hold an
   // inline editor that stops propagation, so clicking one opens the editor
   // instead of navigating. Record # is an autonumber, so it stays plain text.

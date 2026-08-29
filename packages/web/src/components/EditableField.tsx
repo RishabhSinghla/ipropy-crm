@@ -31,7 +31,7 @@ import {
   Check, ChevronDown, Loader2, Pencil,
 } from 'lucide-react';
 import { api } from '../lib/api';
-import { toast } from '../lib/store';
+import { toast, useApp } from '../lib/store';
 import { cn, deepEqual } from '../lib/utils';
 import { Avatar } from './ui';
 import {
@@ -52,7 +52,23 @@ const NOT_INLINE_EDITABLE: ReadonlySet<string> = new Set([
 /** Uitypes whose read display (FieldValue) renders an <a>/Link of its own — see the render branch below for why that rules out wrapping the whole thing in a <button>. */
 const HAS_OWN_LINK: ReadonlySet<string> = new Set(['reference', 'email', 'phone', 'url']);
 
+/**
+ * Whether a field can be edited where it is shown.
+ *
+ * Now gated on an org setting as well as the field's own flags, and that setting
+ * ships **off**. Clicking a phone number on the leads list used to turn it into
+ * an edit box, which is a lovely feature when you meant it and a way to corrupt
+ * a live record when you did not — one stray click on a row you only opened to
+ * read. The risk is asymmetric: a mistyped mobile costs a customer, and the
+ * saving is one click.
+ *
+ * Read from the store rather than passed down, because every call site would
+ * otherwise have to thread it through, and a call site that forgot would be
+ * exactly the hole this closes. Turn it back on in Admin → Settings → Your
+ * business.
+ */
 export function isInlineEditable(field: FieldMeta): boolean {
+  if (!useApp.getState().user?.ui?.inlineEdit) return false;
   if (field.isReadonly || field.displayType === 'readonly' || field.displayType === 'hidden') return false;
   return !NOT_INLINE_EDITABLE.has(field.uitype);
 }
@@ -91,6 +107,7 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
     module, recordId, field, value, display, compact, restrictTo, siblings, linkTo, onSaved,
   } = props;
 
+  const inlineEdit = useApp((st) => st.user?.ui?.inlineEdit ?? false);
   const [localValue, setLocalValue] = useState(value);
   /** Pending edits to companion fields (country code, area unit), saved with the value. */
   const [otherDraft, setOtherDraft] = useState<Record<string, unknown>>({});
@@ -218,7 +235,10 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing, draft, localValue]);
 
-  if (!isInlineEditable(field)) {
+  // Subscribed, not read once: flipping the switch in Admin should take effect
+  // without a reload. The exported isInlineEditable reads the same value for
+  // callers that only need to decide whether to draw an edit affordance.
+  if (!inlineEdit || !isInlineEditable(field)) {
     return <FieldValue field={field} value={localValue} display={localDisplay} compact={compact} />;
   }
 

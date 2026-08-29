@@ -235,6 +235,14 @@ export interface Dashboard {
 // Users, roles, permissions
 // ---------------------------------------------------------------------------
 
+/** How lists behave. Org-wide, set in Admin → Settings, sent with the user. */
+export interface UiSettings {
+  /** Click a value in a list and type into it. Off by default: too easy to trigger by accident. */
+  inlineEdit: boolean;
+  /** Open a record from a list in a new browser tab, keeping the list and its filters. */
+  openInNewTab: boolean;
+}
+
 export interface AuthUser {
   id: string;
   email: string;
@@ -260,6 +268,8 @@ export interface AuthUser {
   /** telephony extension for click-to-call */
   extension: string | null;
   lastLoginAt: string | null;
+  /** Sent by GET /api/auth/me. Absent on a cached user from before this shipped. */
+  ui?: UiSettings;
 }
 
 export interface Role {

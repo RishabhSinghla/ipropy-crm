@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { waitForRecords } from './helpers';
+import { inlineEditOn, waitForRecords } from './helpers';
 
 /**
  * Automated accessibility checks on the screens people spend their day in.
@@ -101,13 +101,25 @@ test.describe('accessibility', () => {
     expect(violations, summarise(violations)).toEqual([]);
   });
 
-  test('record detail has no violations', async ({ page }) => {
+  test('record detail has no violations', async ({ page, context }) => {
     await page.goto('/leads');
     await waitForRecords(page);
+
+    // A record opens in a new tab by default now, so the page under test may be
+    // the popup rather than this one. Handle both, because the setting decides
+    // and this test is about the record page either way.
+    const popup = context.waitForEvent('page').catch(() => null);
     await page.locator('tbody tr').first().locator('td').nth(1).click();
-    await page.waitForURL(/\/leads\/[0-9a-f-]{36}/);
-    const { violations } = await scan(page);
+    const opened = await Promise.race([
+      popup,
+      page.waitForURL(/\/leads\/[0-9a-f-]{36}/).then(() => null).catch(() => null),
+    ]);
+
+    const target = opened ?? page;
+    await target.waitForURL(/\/leads\/[0-9a-f-]{36}/, { timeout: 30_000 });
+    const { violations } = await scan(target);
     expect(violations, summarise(violations)).toEqual([]);
+    if (opened) await opened.close();
   });
 
   test('the new-record dialog has no violations', async ({ page }) => {
@@ -214,6 +226,10 @@ test.describe('keyboard operation', () => {
   test('an inline edit can be opened and cancelled from the keyboard', async ({ page }) => {
     await page.goto('/leads');
     await waitForRecords(page);
+    // Editing from a list ships off, so this covers the keyboard path only when
+    // somebody has switched it on. Skipped rather than deleted: the feature is
+    // still there and still has to be operable without a mouse for whoever uses it.
+    test.skip(!(await inlineEditOn(page)), 'inline editing is switched off');
 
     const trigger = page.locator('button[title="Click to edit"]:visible').first();
     await trigger.focus();

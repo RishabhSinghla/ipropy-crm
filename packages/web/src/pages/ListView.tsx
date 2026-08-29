@@ -32,6 +32,19 @@ export default function ListView(): JSX.Element {
   const { module: moduleName } = useParams<{ module: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  /*
+    Opening a record loses your place in the list otherwise: the filters, the
+    scroll position and which tab you were on all have to be rebuilt by hand when
+    you come back. On by default; Admin → Settings → Your business turns it off.
+
+    `noopener` because a tab opened with window.open can otherwise reach back
+    through window.opener into the page that opened it.
+  */
+  const openInNewTab = useApp((st) => st.user?.ui?.openInNewTab ?? true);
+  const openRecord = (path: string): void => {
+    if (openInNewTab) window.open(path, '_blank', 'noopener,noreferrer');
+    else navigate(path);
+  };
   const queryClient = useQueryClient();
   const { moduleByName, user } = useApp();
   const summary = moduleByName(moduleName ?? '');
@@ -639,7 +652,7 @@ export default function ListView(): JSX.Element {
                   if (checked) next.add(row.id); else next.delete(row.id);
                   setSelected(next);
                 }}
-                onOpen={() => navigate(`/${moduleName}/${row.id}?return=${encodeURIComponent(returnTo)}`)}
+                onOpen={() => openRecord(`/${moduleName}/${row.id}?return=${encodeURIComponent(returnTo)}`)}
                 onPeek={() => setPeekId(row.id)}
                 onSaved={() => invalidateRecordQueries(queryClient, moduleName, row.id)}
               />
@@ -693,7 +706,7 @@ export default function ListView(): JSX.Element {
                         ? 'bg-brand-50/60 dark:bg-brand-950/25'
                         : 'bg-white dark:bg-slate-900',
                   )}
-                  onClick={() => navigate(`/${moduleName}/${row.id}?return=${encodeURIComponent(returnTo)}`)}
+                  onClick={() => openRecord(`/${moduleName}/${row.id}?return=${encodeURIComponent(returnTo)}`)}
                 >
                   <td className="table-cell" onClick={(e) => e.stopPropagation()}>
                     <input
@@ -903,7 +916,7 @@ export default function ListView(): JSX.Element {
         onOpen={() => {
           const id = peekId;
           setPeekId(null);
-          if (id) navigate(`/${moduleName}/${id}?return=${encodeURIComponent(returnTo)}`);
+          if (id) openRecord(`/${moduleName}/${id}?return=${encodeURIComponent(returnTo)}`);
         }}
         onClose={() => setPeekId(null)}
       />
@@ -1076,6 +1089,12 @@ function KanbanBoard({
   onMove: (id: string, value: string) => void;
 }): JSX.Element {
   const navigate = useNavigate();
+  // Same rule as the table: a kanban card opens where the list stays put.
+  const openInNewTab = useApp((st) => st.user?.ui?.openInNewTab ?? true);
+  const openRecord = (path: string): void => {
+    if (openInNewTab) window.open(path, '_blank', 'noopener,noreferrer');
+    else navigate(path);
+  };
   const queryClient = useQueryClient();
   const [dragging, setDragging] = useState<string | null>(null);
   const [overColumn, setOverColumn] = useState<string | null>(null);
@@ -1158,7 +1177,7 @@ function KanbanBoard({
                   draggable
                   onDragStart={() => setDragging(row.id)}
                   onDragEnd={() => setDragging(null)}
-                  onClick={() => navigate(`/${module.name}/${row.id}`)}
+                  onClick={() => openRecord(`/${module.name}/${row.id}`)}
                   className={cn(
                     'cursor-pointer rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm transition-all hover:shadow-md dark:border-slate-700 dark:bg-slate-800',
                     row.starred && 'border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30',

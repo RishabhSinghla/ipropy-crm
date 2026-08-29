@@ -677,7 +677,9 @@ adminRouter.put('/settings', asyncHandler(async (req, res) => {
   const { invalidateHouseStyle } = await import('../../core/settings/houseStyle.js');
   const { invalidateAiFeatures } = await import('../../core/settings/aiFeatures.js');
   const { invalidateLocationSettings } = await import('../../core/locations/index.js');
+  const { invalidateUiSettings } = await import('../../core/settings/ui.js');
   invalidateLocationSettings();
+  invalidateUiSettings();
   invalidateAiModels();
   invalidateHouseStyle();
   invalidateAiFeatures();
