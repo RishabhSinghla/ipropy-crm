@@ -321,12 +321,16 @@ back into TypeScript would reverse that.
   and the finished pictures come back onto the record. Run 4733 is the reference. What has *still*
   never happened is a real site visit: sunlight, one hand, no signal and EXIF offsets from a real
   camera are assumptions, not observations.
-* **Two fields the public website is built on are missing from production.** `properties.city` and
-  `properties.project_name` are gone from the model, so `/api/public/projects` and
-  `/api/public/cities` correctly answer with nothing, and the projects catalogue, every project page
-  and the cities list are empty on the live site. Both are on `FIELDS_USED_IN_CODE` now, so it
-  cannot happen again — that does not put production's back. Prices on the two published properties
-  are also `0`.
+* **`properties.city` and `properties.project_name` were removed on purpose. Do not restore them,
+  and do not protect them.** The owner's words: *"I deliberately removed those two fields."* He sells
+  builder floors in one area, so a project grouping and a city filter are both noise on his own site.
+  `/api/public/projects` and `/api/public/cities` correctly answer with nothing as a result, and the
+  website no longer offers those sections — its header and footer ask the CRM what exists. Both were
+  on `FIELDS_USED_IN_CODE` for one day, on the assumption the removal was an accident; that is
+  reverted, and `tests/fieldsUsedInCode.test.ts` pins their absence so it does not come back.
+* **Prices on the two published properties are `0`.** The public site reads that as "Price on
+  request" rather than "₹0", and `propertyFacts` drops it so no reel prints ₹0 on its title card.
+  Filling them in is still an admin job.
 * Branches `fix/watermark-retry-loop` and `feat/property-share-links` were squash-merged on
   12 August but still exist on the remote — an agent session's git credentials can't delete them.
 * **Social links in `social.links` were found by web search, not supplied by the business.** Two

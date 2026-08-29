@@ -23,10 +23,11 @@ public site.
 The application code is ready for a controlled team pilot. What stands between that and real client
 data is not code:
 
-* **Two fields are missing from the production model** — `city` and `project_name` on properties.
-  The projects catalogue, every project page and the cities list on the public website are
-  consequently empty. Both are protected from deletion now; restoring them and filling them in is
-  an admin job.
+* **Two fields were removed from the production model on purpose** — `city` and `project_name` on
+  properties. This business sells builder floors in one area, so neither grouping earns its place.
+  The projects catalogue and the cities list are consequently empty, which is the correct answer,
+  and the website no longer offers those sections rather than linking to empty pages. Nothing to
+  restore here.
 * **No model answers.** A provider key is saved, but the model ids in Admin → Settings → AI models
   are OpenRouter ones and override the provider's own. Photo naming, listing copy, voiceover and
   semantic search are all inert until that is settled — quietly, by design.
