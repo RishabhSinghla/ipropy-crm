@@ -13,7 +13,6 @@ interface User {
   phone: string | null; designation: string | null; isAdmin: boolean; isActive: boolean;
   roleId: string | null; roleName: string | null; profileId: string | null; profileName: string | null;
   extension: string | null; lastLoginAt: string | null; acceptsLeads: boolean; dailyLeadCap: number | null;
-  channelPartnerId: string | null;
 }
 
 export default function UsersAdmin(): JSX.Element {
@@ -69,7 +68,6 @@ export default function UsersAdmin(): JSX.Element {
                         <div className="flex items-center gap-1.5">
                           <span className="truncate font-medium">{u.fullName}</span>
                           {u.isAdmin && <Badge color="#6366f1">Admin</Badge>}
-                          {u.channelPartnerId && <Badge color="#a855f7">Portal</Badge>}
                           {!u.isActive && <Badge color="#94a3b8">Inactive</Badge>}
                         </div>
                         <p className="truncate text-2xs text-muted">{u.email}</p>
@@ -136,7 +134,6 @@ function UserEditor({
     isActive: user?.isActive ?? true,
     acceptsLeads: user?.acceptsLeads ?? true,
     dailyLeadCap: user?.dailyLeadCap ?? null as number | null,
-    channelPartnerId: user?.channelPartnerId ?? null,
   });
   const [saving, setSaving] = useState(false);
 
@@ -155,7 +152,6 @@ function UserEditor({
         roleId: form.roleId || null, profileId: form.profileId || null,
         isAdmin: form.isAdmin, acceptsLeads: form.acceptsLeads,
         dailyLeadCap: form.dailyLeadCap,
-        channelPartnerId: form.channelPartnerId || null,
         ...(isEdit ? { isActive: form.isActive } : { password: form.password }),
       };
       if (isEdit) await api.updateUser(user!.id, payload);
@@ -241,27 +237,6 @@ function UserEditor({
           </div>
         </div>
 
-        <div>
-          <label className="label">Channel partner (enables partner portal)</label>
-          <ReferencePicker
-            field={{
-              id: 'cp', moduleId: '', moduleName: '', blockId: null, name: 'channel_partner_id',
-              label: 'Channel Partner', uitype: 'reference' as const, storage: 'column' as const,
-              columnName: 'channel_partner_id', sequence: 0, isMandatory: false, isReadonly: false,
-              isUnique: false, isCustom: false, isActive: true, displayType: 'default' as const,
-              defaultValue: null, maxLength: null, helpText: null,
-              config: { referenceModules: ['channel_partners'] },
-              quickCreate: false, massEditable: true, searchable: false,
-            }}
-            value={form.channelPartnerId}
-            onChange={(v) => set({ channelPartnerId: v })}
-            placeholder="Link a channel partner record…"
-          />
-          <p className="mt-1 text-2xs text-muted">
-            Linking an account makes it a portal user — after signing in they land on the partner portal.
-          </p>
-        </div>
-
         <div className="grid gap-3 sm:grid-cols-3">
           <div>
             <label className="label">Designation</label>
@@ -277,7 +252,7 @@ function UserEditor({
           </div>
         </div>
 
-        <div className="space-y-2 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+        <div className="flex flex-col items-start gap-2 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
           <Toggle checked={form.isAdmin} onChange={(v) => set({ isAdmin: v })} label="Administrator (full access)" />
           <Toggle checked={form.acceptsLeads} onChange={(v) => set({ acceptsLeads: v })} label="Include in lead assignment rotation" />
           {isEdit && <Toggle checked={form.isActive} onChange={(v) => set({ isActive: v })} label="Active" />}

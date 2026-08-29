@@ -49,6 +49,7 @@ import {
   recordScopeSql,
   type ScopeContext,
 } from '../permissions/index.js';
+import { maskNumber, maskedPhoneFields } from '../permissions/maskPhones.js';
 
 export interface ServiceContext extends ScopeContext {
   source?: string;
@@ -95,7 +96,10 @@ export async function getRecord(
     conn,
     rollups: rollups.get(recordId),
   });
-  if (!ctx.system) stripHidden(envelope, await hiddenFieldsFor(ctx, moduleName));
+  if (!ctx.system) {
+    stripHidden(envelope, await hiddenFieldsFor(ctx, moduleName));
+    maskPhones(envelope, await maskedPhoneFields(ctx.user, moduleName));
+  }
   return envelope;
 }
 
@@ -144,6 +148,25 @@ function filterFieldNames(filter: FilterGroup | undefined): string[] {
   };
   walk(filter);
   return names;
+}
+
+/**
+ * Replace phone numbers with `98xxxxxx56` for somebody who may not see them.
+ *
+ * Applied here, beside `stripHidden`, because this is the one place every read
+ * of a record's values passes through. Doing it in React would leave the real
+ * number in the response, one devtools tab away from the person it is hidden
+ * from. See core/permissions/maskPhones.ts, and the reveal endpoint that keeps
+ * the phone usable.
+ */
+function maskPhones(envelope: RecordEnvelope, masked: Set<string>): void {
+  if (!masked.size) return;
+  for (const name of masked) {
+    if (name in envelope.values) envelope.values[name] = maskNumber(envelope.values[name]);
+    if (envelope.display && name in envelope.display) {
+      envelope.display[name] = maskNumber(envelope.display[name]) as string;
+    }
+  }
 }
 
 function stripHidden(envelope: RecordEnvelope, hidden: Set<string>): void {
@@ -285,10 +308,15 @@ export async function listRecords(
     for (const row of rows) row.starred = starredIds.has(row.id);
   }
 
-  // Resolved once for the whole page rather than per row.
+  // Resolved once for the whole page rather than per row. A list view is the
+  // easiest place to copy a thousand numbers from, so masking matters most here.
   if (!ctx.system) {
     const hidden = await hiddenFieldsFor(ctx, moduleName);
-    for (const row of rows) stripHidden(row, hidden);
+    const masked = await maskedPhoneFields(ctx.user, moduleName);
+    for (const row of rows) {
+      stripHidden(row, hidden);
+      maskPhones(row, masked);
+    }
   }
 
   const result: ListResult = {

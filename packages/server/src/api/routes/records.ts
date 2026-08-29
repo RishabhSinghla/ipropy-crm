@@ -641,6 +641,28 @@ recordsRouter.post('/properties/:id/finish', asyncHandler(async (req, res) => {
   res.status(202).json(result);
 }));
 
+/**
+ * The real phone number for one record, when the team only sees `98xxxxxx56`.
+ *
+ * One record, one field, one audit row. That is the whole design: ringing a
+ * customer is ordinary and leaves a trace nobody minds; building a list means
+ * hundreds of traces with a name on them.
+ *
+ * Permission-checked like any other read of the record, so this is not a way
+ * around who can see what — only around the masking.
+ */
+recordsRouter.get('/:module/:id/phone/:field', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const { module, id, field } = req.params;
+
+  if (!(await canAccessRecord(req.scope!, module, id, 'view'))) throw new ForbiddenError();
+
+  const { revealPhone } = await import('../../core/permissions/maskPhones.js');
+  const number = await revealPhone(user, module, id, field);
+  if (number === null) throw new NotFoundError('No number on that field');
+  res.json({ number });
+}));
+
 /** Where this property's originals live, so the CRM can link straight to it. */
 recordsRouter.get('/properties/:id/storage', asyncHandler(async (req, res) => {
   const { getPropertyStorageStatus } = await import('../../core/storage/propertyFolders.js');

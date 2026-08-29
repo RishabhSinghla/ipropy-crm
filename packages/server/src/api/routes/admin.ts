@@ -70,7 +70,6 @@ const userSchema = z.object({
   extension: z.string().optional(),
   acceptsLeads: z.boolean().default(true),
   dailyLeadCap: z.number().int().positive().nullable().optional(),
-  /** links the account to a channel_partners record — makes it a portal user */
 });
 
 adminRouter.post('/users', asyncHandler(async (req, res) => {
@@ -81,10 +80,15 @@ adminRouter.post('/users', asyncHandler(async (req, res) => {
   if (existing) throw new ConflictError('A user with that email already exists');
 
   const row = await db.queryOne<{ id: string }>(
+    // channel_partner_id was dropped from this list and its value was not, so
+    // this named fourteen columns and supplied thirteen — every attempt to
+    // create a user died on "bind message supplies 13 parameters, but prepared
+    // statement requires 14". The column belongs to the channel_partners module,
+    // removed in migration 030, and the portal it fed does not exist.
     `INSERT INTO ipy_user
       (email, password_hash, first_name, last_name, phone, designation, role_id,
-       profile_id, reports_to, is_admin, extension, accepts_leads, daily_lead_cap, channel_partner_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
+       profile_id, reports_to, is_admin, extension, accepts_leads, daily_lead_cap)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
     [
       input.email, await hashPassword(input.password), input.firstName, input.lastName,
       input.phone ?? null, input.designation ?? null, input.roleId ?? null,
@@ -679,6 +683,8 @@ adminRouter.put('/settings', asyncHandler(async (req, res) => {
   const { invalidateLocationSettings } = await import('../../core/locations/index.js');
   const { invalidateUiSettings } = await import('../../core/settings/ui.js');
   const { invalidateStageMap } = await import('../../core/entity/lifecycleFromStatus.js');
+  const { invalidatePhoneMasking } = await import('../../core/permissions/maskPhones.js');
+  invalidatePhoneMasking();
   invalidateLocationSettings();
   invalidateUiSettings();
   invalidateStageMap();
