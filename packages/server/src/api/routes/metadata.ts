@@ -12,7 +12,7 @@ import {
   PICKLISTS_USED_IN_CODE, replaceValueInRecords, valueUsedInCode,
 } from '../../core/metadata/picklists.js';
 import { interchangeableTypes } from '../../core/metadata/fieldTypes.js';
-import { FIELDS_USED_IN_CODE, renameFieldEverywhere } from '../../core/metadata/fieldRename.js';
+import { FIELDS_USED_IN_CODE, removeFieldEverywhere, renameFieldEverywhere } from '../../core/metadata/fieldRename.js';
 import { assertCapability, canAccessModule, getFieldPermissions, getModulePermission, hasCapability, invalidatePermissions } from '../../core/permissions/index.js';
 import { FORMULA_FUNCTIONS, validateFormula } from '../../core/entity/formula.js';
 import { quoteIdent } from '../../core/query/builder.js';
@@ -892,15 +892,18 @@ metadataRouter.delete('/fields/:id', asyncHandler(async (req, res) => {
       await tx.query(`ALTER TABLE ${module.tableName} DROP COLUMN IF EXISTS ${quoteIdent(field.column_name)}`);
     }
 
-    // Saved views, layouts and dashboard widgets naming it would render a
-    // blank column or an empty section from here on.
-    await tx.query(
-      `UPDATE ipy_view SET columns = COALESCE((
-         SELECT jsonb_agg(c) FROM jsonb_array_elements_text(columns) AS c WHERE c <> $2
-       ), '[]'::jsonb)
-       WHERE module_id = $1 AND columns ? $2`,
-      [field.module_id, field.name],
-    );
+    // Everything that named this field, cleaned out: view filters, workflow
+    // conditions, reports, assignment rules, dashboard tiles, workflow actions.
+    //
+    // This used to be the two statements below and nothing else — view columns
+    // and layout blocks. A view that *filtered* on the field kept pointing at
+    // it, and the query builder answers `Unknown field` for ever after, which
+    // reads as the CRM being broken rather than as a field somebody deleted
+    // last week.
+    if (module) {
+      await removeFieldEverywhere(field.module_id, module.name, field.name, tx);
+    }
+
     await tx.query(
       `UPDATE ipy_layout SET config = jsonb_set(config, '{blocks}', COALESCE((
          SELECT jsonb_agg(b || jsonb_build_object('fields', COALESCE((

@@ -104,6 +104,172 @@ const MODULE_SCOPED: { table: string; columns: string[]; key: string }[] = [
   { table: 'ipy_field', columns: ['config'], key: 'module_id' },
 ];
 
+/**
+ * Take every reference to a deleted field out of everything that named it.
+ *
+ * The twin of `renameFieldEverywhere`, and it existed only half-written. Delete
+ * removed the field from saved-view *columns* and layout blocks and stopped
+ * there, so a view that *filtered* on the field, a workflow whose condition
+ * named it, a report grouped by it or a dashboard tile aggregating it all kept
+ * pointing at something that no longer existed.
+ *
+ * The failure is not subtle once you hit it and is invisible until you do: the
+ * query builder throws `Unknown field 'x' on leads`, which the error handler
+ * turns into a flat 400. A saved view that answers 400 for ever looks like the
+ * CRM is broken, and the connection to a field somebody deleted last Tuesday is
+ * not one anybody makes.
+ *
+ * Renaming can be a string replace. Removing cannot: you cannot lift a name out
+ * of `{ field: 'x', operator: 'equals', value: 'New' }` and be left with valid
+ * JSON. The whole condition has to go, which means walking the document — so
+ * this reads, transforms in JS, and writes back, rather than doing it in SQL.
+ */
+
+interface FilterCondition { field?: string; conditions?: unknown[]; logic?: string }
+
+/** Drop every condition naming this field, at any depth. Groups stay, emptied. */
+function withoutField(node: unknown, name: string): unknown {
+  if (!node || typeof node !== 'object') return node;
+  const group = node as FilterCondition;
+  if (!Array.isArray(group.conditions)) return node;
+  return {
+    ...group,
+    conditions: group.conditions
+      .filter((c) => !(c && typeof c === 'object' && (c as FilterCondition).field === name))
+      .map((c) => withoutField(c, name)),
+  };
+}
+
+/** Drop a name from an array of field names. */
+function withoutName(node: unknown, name: string): unknown {
+  return Array.isArray(node) ? node.filter((v) => v !== name) : node;
+}
+
+export async function removeFieldEverywhere(
+  moduleId: string,
+  moduleName: string,
+  name: string,
+  conn: Tx = db,
+): Promise<{ references: number }> {
+  let references = 0;
+
+  const sweep = async (
+    table: string,
+    where: string,
+    params: unknown[],
+    columns: { column: string; clean: (v: unknown) => unknown }[],
+  ): Promise<void> => {
+    const cols = columns.map((c) => c.column);
+    const { rows } = await conn.query<Record<string, unknown>>(
+      `SELECT id, ${cols.join(', ')} FROM ${table} WHERE ${where}`, params,
+    );
+    for (const row of rows) {
+      const sets: string[] = [];
+      const values: unknown[] = [row.id];
+      for (const { column, clean } of columns) {
+        const before = JSON.stringify(row[column] ?? null);
+        const after = JSON.stringify(clean(row[column]) ?? null);
+        if (before === after) continue;
+        values.push(after === 'null' ? null : after);
+        sets.push(`${column} = $${values.length}::jsonb`);
+      }
+      if (!sets.length) continue;
+      // eslint-disable-next-line no-await-in-loop
+      await conn.query(`UPDATE ${table} SET ${sets.join(', ')} WHERE id = $1`, values);
+      references += 1;
+    }
+  };
+
+  const asFilter = { clean: (v: unknown) => withoutField(v, name) };
+  const asList = { clean: (v: unknown) => withoutName(v, name) };
+
+  await sweep('ipy_view', 'module_id = $1', [moduleId], [
+    { column: 'columns', ...asList },
+    { column: 'filter', ...asFilter },
+  ]);
+  await sweep('ipy_workflow', 'module_id = $1', [moduleId], [
+    { column: 'watch_fields', ...asList },
+    { column: 'conditions', ...asFilter },
+  ]);
+  await sweep('ipy_report', 'module_id = $1', [moduleId], [
+    { column: 'columns', ...asList },
+    { column: 'group_by', ...asList },
+    { column: 'aggregates', ...asList },
+    { column: 'filter', ...asFilter },
+  ]);
+  await sweep('ipy_assignment_rule', 'module_id = $1', [moduleId], [
+    { column: 'conditions', ...asFilter },
+  ]);
+
+  // `sort_by` and `group_by` on a view are plain columns holding one field name,
+  // not JSON. A view sorted by a field that is gone falls back to a default
+  // order on its own, but one *grouped* by it renders an empty board.
+  const cleared = await conn.query(
+    `UPDATE ipy_view SET sort_by = CASE WHEN sort_by = $2 THEN NULL ELSE sort_by END,
+                         group_by = CASE WHEN group_by = $2 THEN NULL ELSE group_by END
+      WHERE module_id = $1 AND ($2 IN (sort_by, group_by))`,
+    [moduleId, name],
+  );
+  references += cleared.rowCount ?? 0;
+
+  // Widgets belong to a dashboard, not a module, and name their module inside
+  // their own config — the same scoping problem the rename has, and the same
+  // answer, or deleting `status` on Leads would edit a Properties tile.
+  const widgets = await conn.query<{ id: string; config: Record<string, unknown> }>(
+    `SELECT id, config FROM ipy_dashboard_widget WHERE config->>'module' = $1`, [moduleName],
+  );
+  for (const w of widgets.rows) {
+    const next: Record<string, unknown> = { ...w.config };
+    if (next.filter) next.filter = withoutField(next.filter, name);
+    // A tile aggregating or grouping by a field that is gone is worse than a
+    // broken one: `aggregateExpr` falls back to COUNT(*), so an "average score"
+    // tile silently starts showing how many records there are.
+    for (const key of ['aggregateField', 'groupBy', 'dateField', 'sortBy']) {
+      if (next[key] === name) next[key] = null;
+    }
+    if (JSON.stringify(next) === JSON.stringify(w.config)) continue;
+    // eslint-disable-next-line no-await-in-loop
+    await conn.query(`UPDATE ipy_dashboard_widget SET config = $2::jsonb WHERE id = $1`,
+      [w.id, JSON.stringify(next)]);
+    references += 1;
+  }
+
+  // A workflow's actions belong to the workflow, one level below the module.
+  const tasks = await conn.query<{ id: string; config: Record<string, unknown> }>(
+    `SELECT t.id, t.config FROM ipy_workflow_task t
+       JOIN ipy_workflow w ON w.id = t.workflow_id
+      WHERE w.module_id = $1 AND t.config::text LIKE '%' || $2 || '%'`,
+    [moduleId, name],
+  );
+  for (const t of tasks.rows) {
+    const next: Record<string, unknown> = { ...t.config };
+    let touched = false;
+    // `values` and `writeTo` are keyed by field name, so the key goes.
+    for (const key of ['values', 'writeTo'] as const) {
+      const bag = next[key];
+      if (bag && typeof bag === 'object' && !Array.isArray(bag) && name in (bag as object)) {
+        const { [name]: _gone, ...rest } = bag as Record<string, unknown>;
+        next[key] = rest;
+        touched = true;
+      }
+    }
+    if (next.conditions) {
+      const cleaned = withoutField(next.conditions, name);
+      if (JSON.stringify(cleaned) !== JSON.stringify(next.conditions)) {
+        next.conditions = cleaned;
+        touched = true;
+      }
+    }
+    if (!touched) continue;
+    // eslint-disable-next-line no-await-in-loop
+    await conn.query(`UPDATE ipy_workflow_task SET config = $2::jsonb WHERE id = $1`,
+      [t.id, JSON.stringify(next)]);
+    references += 1;
+  }
+
+  return { references };
+}
+
 export async function renameFieldEverywhere(
   moduleId: string,
   moduleName: string,

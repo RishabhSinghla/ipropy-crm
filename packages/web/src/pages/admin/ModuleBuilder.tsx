@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { FieldMeta, FilterGroup, FilterOperator } from '@ipropy/shared';
 import { NULLARY_OPERATORS, UITYPE_LIST } from '@ipropy/shared';
-import { Blocks, ChevronDown, Edit3, Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
+import { Blocks, ChevronDown, ChevronUp, Edit3, Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
 import { cn } from '../../lib/utils';
@@ -101,6 +101,43 @@ export default function ModuleBuilder(): JSX.Element {
     onSuccess: () => { toast.success('Section added'); invalidateModule(); },
     onError: (err: Error) => toast.error('Could not add the section', err.message),
   });
+
+  /*
+    Moving a field: up, down, or into another section, from the row itself.
+
+    `POST /api/meta/fields/reorder` has existed since the layout designer was
+    written and has never been called by anything — the designer edits a layout,
+    which is a different object, and leaves ipy_field.sequence untouched. So the
+    order on this page could not be changed from this page at all.
+
+    Buttons rather than drag: this list runs to thirty-odd rows, dragging one to
+    the far end of a scrolling page is miserable, and a drag handle is unusable
+    by keyboard. The whole block is sent each time so the sequence numbers come
+    out contiguous rather than drifting apart with every move.
+  */
+  const reorderMutation = useMutation({
+    mutationFn: (fields: { id: string; blockId: string; sequence: number }[]) => api.reorderFields(fields),
+    onSuccess: () => invalidateModule(),
+    onError: (err: Error) => toast.error('Could not move the field', err.message),
+  });
+
+  const moveField = (blockId: string, fields: FieldMeta[], index: number, delta: number): void => {
+    const next = [...fields];
+    const target = index + delta;
+    if (target < 0 || target >= next.length) return;
+    [next[index], next[target]] = [next[target]!, next[index]!];
+    reorderMutation.mutate(next.map((f, i) => ({ id: f.id, blockId, sequence: i })));
+  };
+
+  const moveToSection = (field: FieldMeta, blockId: string): void => {
+    if (!blockId || blockId === field.blockId) return;
+    const destination = meta?.blocks.find((b) => b.id === blockId);
+    // Appended to the end of the destination, which is where somebody moving a
+    // field expects to find it.
+    reorderMutation.mutate([
+      { id: field.id, blockId, sequence: destination?.fields.length ?? 0 },
+    ]);
+  };
 
   const unhideMutation = useMutation({
     mutationFn: (id: string) => api.updateField(id, { isActive: true }),
@@ -205,11 +242,35 @@ export default function ModuleBuilder(): JSX.Element {
                         <Trash2 className="h-3 w-3" />
                       </button>
                     </div>
-                    {block.fields.map((field) => (
+                    {block.fields.map((field, fieldIndex) => (
                       <div
                         key={field.id}
                         className="flex items-center gap-3 px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/40"
                       >
+                        {/* Order, from the row. Disabled at the ends rather than
+                            hidden, so the column does not jump about as you move
+                            a field down a list. */}
+                        <div className="flex shrink-0 flex-col">
+                          <button
+                            onClick={() => moveField(block.id, block.fields, fieldIndex, -1)}
+                            disabled={fieldIndex === 0 || reorderMutation.isPending}
+                            className="text-slate-300 transition-colors hover:text-brand-600 disabled:opacity-30 disabled:hover:text-slate-300 dark:text-slate-600"
+                            title="Move up"
+                            aria-label={`Move ${field.label} up`}
+                          >
+                            <ChevronUp className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => moveField(block.id, block.fields, fieldIndex, 1)}
+                            disabled={fieldIndex === block.fields.length - 1 || reorderMutation.isPending}
+                            className="text-slate-300 transition-colors hover:text-brand-600 disabled:opacity-30 disabled:hover:text-slate-300 dark:text-slate-600"
+                            title="Move down"
+                            aria-label={`Move ${field.label} down`}
+                          >
+                            <ChevronDown className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-1.5">
                             <span className="text-sm font-medium">{field.label}</span>
@@ -226,6 +287,23 @@ export default function ModuleBuilder(): JSX.Element {
                         </div>
 
                         <div className="flex shrink-0 items-center gap-1">
+                          {/* Which section this field sits in, changed from here
+                              rather than by opening the editor. Only shown when
+                              there is somewhere else for it to go. */}
+                          {(meta?.blocks.length ?? 0) > 1 && (
+                            <select
+                              value={field.blockId ?? ''}
+                              onChange={(e) => moveToSection(field, e.target.value)}
+                              disabled={reorderMutation.isPending}
+                              aria-label={`Section for ${field.label}`}
+                              title="Move to another section"
+                              className="input h-7 max-w-[9rem] px-1.5 py-0 text-2xs"
+                            >
+                              {meta?.blocks.map((b) => (
+                                <option key={b.id} value={b.id}>{b.label}</option>
+                              ))}
+                            </select>
+                          )}
                           <button
                             onClick={() => setEditingField(field)}
                             className="btn-ghost btn-sm gap-1 px-2"
