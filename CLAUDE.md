@@ -280,7 +280,15 @@ packages/server/src/db/seed/templates/          starting data models, one file p
 packages/web/src/components/FieldRenderer.tsx      metadata → UI
 packages/server/src/core/capture/                  shoot sessions, EXIF matching, grouping, vision
 packages/server/src/ai/client.ts                   two transports; `images` is what carries photos
+AI-ARCHITECTURE.md                                 what the AI stack already has, and what it must not grow
 ```
+
+**Before adding any AI framework, read [`AI-ARCHITECTURE.md`](AI-ARCHITECTURE.md).** It maps every
+name in the current AI vocabulary — gateways, RAG, agentic memory, guardrails, observability,
+vector databases — onto the thing in this repo that already does that job, names the three genuine
+gaps, and says which additions would actively undo work already done. LangGraph is the clearest
+example: the pipeline order deliberately lives in n8n, on a canvas an admin can edit, and pulling it
+back into TypeScript would reverse that.
 
 ---
 
@@ -297,12 +305,28 @@ packages/server/src/ai/client.ts                   two transports; `images` is w
 * Speech-to-text, email IMAP inbound, rollup fields and the Channel Partner portal shipped as
   graceful-degradation features — they need real credentials/keys to be exercised end-to-end.
 * Dashboard drag-to-resize is wired (react-grid-layout on desktop, persisted via `saveDashboardLayout`).
-* **No LLM provider is configured.** Every AI feature runs on its fallback rule engine until a key
-  is added in Admin → Integrations. Gemini/Groq/OpenRouter have free tiers; see §"AI providers".
-  This now includes shoot descriptions — with no key a capture group shows thumbnails and times only.
-* **Capture has never been used on a real site visit.** Verified in a browser at 390px and against a
-  stand-in OpenAI-compatible server. Sunlight, one hand, no signal and EXIF offsets from a real
-  camera are the assumptions it rests on, and none have been tested where they apply.
+* **A provider key is saved, but no model answers.** Gemini and Groq are active in
+  Admin → Integrations, and the media worker still gets `No AI provider answered` from production.
+  The reason is not a missing key: `complete()` uses `opts.model ?? ai.model`, so the id in
+  Admin → Settings → AI models **overrides the provider's own model**, and the shipped ids are
+  OpenRouter ones. An OpenRouter id sent to Gemini is a 404. Two ways out, and only one costs
+  anything: add an OpenRouter key, **or** paste a Gemini id into those boxes and the existing key
+  does the work. Each box has a **Test** button that makes the real call.
+* **Semantic search is built and has never been switched on.** pgvector 0.8.6 is installed,
+  `ipy_embedding` exists, and it holds zero rows, because indexing needs the embedding model above.
+  Searching by meaning across leads, notes, messages and calls is inert until that is fixed — and it
+  fails quietly, as ordinary keyword search.
+* **Site capture now runs end to end and is proved.** A property finished in the CRM reaches n8n,
+  the worker names, finishes, cuts every shape, watermarks, builds the reel and the walkthrough,
+  and the finished pictures come back onto the record. Run 4733 is the reference. What has *still*
+  never happened is a real site visit: sunlight, one hand, no signal and EXIF offsets from a real
+  camera are assumptions, not observations.
+* **Two fields the public website is built on are missing from production.** `properties.city` and
+  `properties.project_name` are gone from the model, so `/api/public/projects` and
+  `/api/public/cities` correctly answer with nothing, and the projects catalogue, every project page
+  and the cities list are empty on the live site. Both are on `FIELDS_USED_IN_CODE` now, so it
+  cannot happen again — that does not put production's back. Prices on the two published properties
+  are also `0`.
 * Branches `fix/watermark-retry-loop` and `feat/property-share-links` were squash-merged on
   12 August but still exist on the remote — an agent session's git credentials can't delete them.
 * **Social links in `social.links` were found by web search, not supplied by the business.** Two

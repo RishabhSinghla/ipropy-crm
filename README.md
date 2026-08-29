@@ -15,11 +15,33 @@ Node 20 + TypeScript + Express + PostgreSQL 16   ·   React 18 + Vite + Tailwind
 
 ## Current release status
 
-The CRM and public website are deployed. Every change to `main` must pass typecheck, build, unit,
-database integration, browser, dependency-audit and production-Docker checks before Render deploys
-it. The application code is ready for a controlled team pilot; storage, backups, always-on hosting,
-real accounts and provider credentials are deployment checks owned outside this repository. See
-[`DEPLOYMENT.md`](DEPLOYMENT.md) and **Admin → System & Audit → Go live** before importing real data.
+The CRM and public website are deployed, and site capture runs end to end: a property finished in
+the CRM reaches n8n, the media worker names, finishes, cuts every social shape, watermarks, builds
+the reel and the walkthrough, and the finished pictures come back onto the record and onto the
+public site.
+
+The application code is ready for a controlled team pilot. What stands between that and real client
+data is not code:
+
+* **Two fields are missing from the production model** — `city` and `project_name` on properties.
+  The projects catalogue, every project page and the cities list on the public website are
+  consequently empty. Both are protected from deletion now; restoring them and filling them in is
+  an admin job.
+* **No model answers.** A provider key is saved, but the model ids in Admin → Settings → AI models
+  are OpenRouter ones and override the provider's own. Photo naming, listing copy, voiceover and
+  semantic search are all inert until that is settled — quietly, by design.
+* Storage, backups, always-on hosting and real accounts are deployment checks owned outside this
+  repository.
+
+**Every push to `main` deploys straight to production until 1 September 2026.** The CI gate is off
+because the free Actions minutes ran out; `render.yaml` goes back to `autoDeployTrigger: checksPass`
+on the 1st. Until then, `npm run typecheck`, `npm test`, `npm run test:integration` and a
+`linux/amd64` Docker build all have to pass locally before anything is pushed, and
+`python3 scripts/check-deployed.py` has to pass afterwards — n8n and the media worker deploy
+separately and have drifted silently twice.
+
+See [`DEPLOYMENT.md`](DEPLOYMENT.md) and **Admin → System & Audit → Go live** before importing real
+data.
 
 ---
 
@@ -233,6 +255,14 @@ rule engines still run** — scoring, matching and routing keep working, you jus
 The NL query path is worth calling out: the model produces a filter, the server **discards any field
 that doesn't exist in metadata**, then runs it through the normal permission-scoped query engine. The
 numbers in an AI answer are the same numbers a list view would show.
+
+**Nothing the AI proposes is ever applied on its own.** Every action lands in `ipy_ai_action` as
+`pending` and stays there until a person confirms it — enforced by a CHECK constraint, not by
+convention, so there is no code path that skips it.
+
+For how this maps onto the wider AI vocabulary — gateways, RAG, vector databases, agentic memory,
+guardrails, evals, observability — and for which frameworks would undo work already done here, see
+[`AI-ARCHITECTURE.md`](AI-ARCHITECTURE.md).
 
 ---
 
