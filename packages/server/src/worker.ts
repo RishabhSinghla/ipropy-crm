@@ -13,6 +13,7 @@ import { checkConnection, closePool } from './db/pool.js';
 import { registry } from './core/metadata/registry.js';
 import { warmup as warmupIntegrationSettings } from './core/settings/integrations.js';
 import { registerWorkflowHandlers } from './core/workflow/engine.js';
+import { registerLifecycleSync } from './core/entity/lifecycleFromStatus.js';
 import { startScheduler, stopScheduler } from './core/workflow/scheduler.js';
 
 async function main(): Promise<void> {
@@ -46,6 +47,8 @@ async function main(): Promise<void> {
   }
 
   registerWorkflowHandlers();
+  // After the workflows, so a workflow that sets the status gets the stage move too.
+  registerLifecycleSync();
   startScheduler();
 
   // The scheduler's timer is unref'd so tests/CLI exit cleanly; a real worker

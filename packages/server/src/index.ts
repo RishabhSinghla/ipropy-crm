@@ -7,6 +7,7 @@ import { checkConnection, closePool } from './db/pool.js';
 import { registry } from './core/metadata/registry.js';
 import { warmup as warmupIntegrationSettings } from './core/settings/integrations.js';
 import { registerWorkflowHandlers } from './core/workflow/engine.js';
+import { registerLifecycleSync } from './core/entity/lifecycleFromStatus.js';
 import { startScheduler, stopScheduler } from './core/workflow/scheduler.js';
 import { initRealtime, closeRealtime } from './realtime.js';
 import { aiStatus } from './ai/client.js';
@@ -43,6 +44,8 @@ async function main(): Promise<void> {
   }
 
   registerWorkflowHandlers();
+  // After the workflows, so a workflow that sets the status gets the stage move too.
+  registerLifecycleSync();
 
   const app = createApp();
   const server = createServer(app);

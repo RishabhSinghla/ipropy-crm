@@ -678,8 +678,10 @@ adminRouter.put('/settings', asyncHandler(async (req, res) => {
   const { invalidateAiFeatures } = await import('../../core/settings/aiFeatures.js');
   const { invalidateLocationSettings } = await import('../../core/locations/index.js');
   const { invalidateUiSettings } = await import('../../core/settings/ui.js');
+  const { invalidateStageMap } = await import('../../core/entity/lifecycleFromStatus.js');
   invalidateLocationSettings();
   invalidateUiSettings();
+  invalidateStageMap();
   invalidateAiModels();
   invalidateHouseStyle();
   invalidateAiFeatures();
