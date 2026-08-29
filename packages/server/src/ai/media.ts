@@ -89,11 +89,24 @@ async function request(
   body: unknown,
   feature: string,
   model: string,
-  opts: { raw?: boolean; recordId?: string | null; timeoutMs?: number } = {},
+  opts: {
+    raw?: boolean; recordId?: string | null; timeoutMs?: number;
+    /**
+     * Hands the provider's own words back to the caller.
+     *
+     * Everything here returns null on failure, so a caller could only ever say
+     * "nothing came back" and then guess at why — which is how four settings
+     * boxes ended up telling an admin to "check the id is an embedding model"
+     * when what OpenRouter actually said was that the model does not exist. The
+     * reason is right here in `lastError`; it was only ever being logged.
+     */
+    onError?: (message: string) => void;
+  } = {},
 ): Promise<Response | null> {
   const target = endpoint();
   if (!target) {
     logger.debug({ feature }, 'no OpenRouter key; media AI unavailable');
+    opts.onError?.('No OpenRouter key is saved. Add one in Admin → Integrations.');
     return null;
   }
   const started = Date.now();
@@ -132,6 +145,7 @@ async function request(
 
   await logCall(feature, model, Date.now() - started, false, lastError.slice(0, 500), opts.recordId);
   logger.warn({ feature, model, error: lastError }, 'media AI call failed');
+  opts.onError?.(lastError);
   return null;
 }
 
@@ -140,6 +154,8 @@ async function request(
 // ---------------------------------------------------------------------------
 
 export interface SpeechOptions {
+  /** Called with the provider's own words when the call fails. */
+  onError?: (message: string) => void;
   text: string;
   /** The provider's own voice name. Left to the caller; models disagree on these. */
   voice?: string;
@@ -164,7 +180,7 @@ export async function speak(opts: SpeechOptions): Promise<Buffer | null> {
     voice: opts.voice ?? 'alloy',
     response_format: opts.format ?? 'mp3',
     ...(opts.speed ? { speed: opts.speed } : {}),
-  }, 'tts', model, { raw: true, recordId: opts.recordId });
+  }, 'tts', model, { raw: true, recordId: opts.recordId, onError: opts.onError });
   if (!response) return null;
   return Buffer.from(await response.arrayBuffer());
 }
@@ -191,14 +207,15 @@ export interface TranscriptResult {
 export async function transcribe(
   audio: Buffer,
   format: string,
-  opts: { model?: string; language?: string; recordId?: string | null } = {},
+  opts: { model?: string; language?: string; recordId?: string | null;
+    onError?: (message: string) => void } = {},
 ): Promise<TranscriptResult | null> {
   const model = opts.model ?? await modelFor('transcribe');
   const response = await request('/audio/transcriptions', {
     model,
     input_audio: { data: audio.toString('base64'), format: format.replace(/^\./, '').toLowerCase() },
     ...(opts.language ? { language: opts.language } : {}),
-  }, 'stt', model, { recordId: opts.recordId, timeoutMs: 300_000 });
+  }, 'stt', model, { recordId: opts.recordId, timeoutMs: 300_000, onError: opts.onError });
   if (!response) return null;
 
   const body = await response.json() as { text?: string; segments?: TranscriptResult['segments'] };
@@ -220,7 +237,8 @@ export async function transcribe(
  */
 export async function music(
   brief: string,
-  opts: { model?: string; seconds?: number; recordId?: string | null } = {},
+  opts: { model?: string; seconds?: number; recordId?: string | null;
+    onError?: (message: string) => void } = {},
 ): Promise<Buffer | null> {
   const model = opts.model ?? await modelFor('music');
   const response = await request('/chat/completions', {
@@ -232,7 +250,7 @@ export async function music(
       content: `Instrumental only, no vocals and no lyrics. ${brief} `
         + `About ${opts.seconds ?? 30} seconds.`,
     }],
-  }, 'music', model, { recordId: opts.recordId, timeoutMs: 300_000 });
+  }, 'music', model, { recordId: opts.recordId, timeoutMs: 300_000, onError: opts.onError });
   if (!response) return null;
 
   const body = await response.json() as {
@@ -258,11 +276,11 @@ export async function music(
  */
 export async function embed(
   texts: string[],
-  opts: { model?: string } = {},
+  opts: { model?: string; onError?: (message: string) => void } = {},
 ): Promise<number[][] | null> {
   if (!texts.length) return [];
   const model = opts.model ?? await modelFor('embed');
-  const response = await request('/embeddings', { model, input: texts }, 'embed', model);
+  const response = await request('/embeddings', { model, input: texts }, 'embed', model, { onError: opts.onError });
   if (!response) return null;
 
   const body = await response.json() as { data?: { embedding?: number[]; index?: number }[] };
@@ -293,7 +311,7 @@ export interface RerankHit { index: number; score: number }
 export async function rerank(
   query: string,
   documents: string[],
-  opts: { model?: string; topN?: number } = {},
+  opts: { model?: string; topN?: number; onError?: (message: string) => void } = {},
 ): Promise<RerankHit[] | null> {
   if (!documents.length) return [];
   const model = opts.model ?? await modelFor('rerank');
@@ -302,7 +320,7 @@ export async function rerank(
     query,
     documents,
     top_n: Math.min(opts.topN ?? documents.length, documents.length),
-  }, 'rerank', model);
+  }, 'rerank', model, { onError: opts.onError });
   if (!response) return null;
 
   const body = await response.json() as {

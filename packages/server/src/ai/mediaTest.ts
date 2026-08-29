@@ -41,6 +41,23 @@ export async function testMediaModel(job: string, model: string): Promise<ModelT
   const started = Date.now();
   const ms = (): number => Date.now() - started;
 
+  /*
+    What the provider actually said.
+
+    Every media call returns null on failure, so this file could only ever say
+    "nothing came back" and then guess at why — telling an admin to "check the id
+    is an embedding model" when what OpenRouter said was that the model does not
+    exist, or that their key has no access to it. Four settings boxes read as
+    broken features for want of a sentence that was already being logged.
+  */
+  let providerSaid = '';
+  const onError = (message: string): void => { providerSaid = message; };
+
+  /** The guess, unless the provider gave us something better. */
+  const why = (fallback: string): string => (providerSaid
+    ? `${fallback.split('.')[0]}. The provider said: ${providerSaid.slice(0, 240)}`
+    : fallback);
+
   try {
     switch (job) {
       case 'vision': {
@@ -66,17 +83,17 @@ export async function testMediaModel(job: string, model: string): Promise<ModelT
       }
 
       case 'speech': {
-        const audio = await speak({ text: 'Testing.', model });
+        const audio = await speak({ text: 'Testing.', model, onError });
         return audio?.length
           ? { ok: true, message: `Spoke ${(audio.length / 1024).toFixed(0)} KB of audio.`, ms: ms() }
-          : { ok: false, message: 'No audio came back. Check the id is a text-to-speech model.', ms: ms() };
+          : { ok: false, message: why('No audio came back. Check the id is a text-to-speech model.'), ms: ms() };
       }
 
       case 'music': {
-        const audio = await music('One short calm piano phrase.', { seconds: 5, model });
+        const audio = await music('One short calm piano phrase.', { seconds: 5, model, onError });
         return audio?.length
           ? { ok: true, message: `Wrote ${(audio.length / 1024).toFixed(0)} KB of music.`, ms: ms() }
-          : { ok: false, message: 'No audio came back. Check the id is a music model.', ms: ms() };
+          : { ok: false, message: why('No audio came back. Check the id is a music model.'), ms: ms() };
       }
 
       case 'transcribe': {
@@ -88,24 +105,24 @@ export async function testMediaModel(job: string, model: string): Promise<ModelT
           Buffer.from([16, 0, 0, 0, 1, 0, 1, 0, 0x40, 0x1f, 0, 0, 0x80, 0x3e, 0, 0, 2, 0, 16, 0]),
           Buffer.from('data'), Buffer.alloc(4), Buffer.alloc(16_000),
         ]);
-        const result = await transcribe(silence, 'wav', { model });
+        const result = await transcribe(silence, 'wav', { model, onError });
         return result
           ? { ok: true, message: 'It read the audio.', ms: ms() }
-          : { ok: false, message: 'It could not read the audio. Check the id is a transcription model.', ms: ms() };
+          : { ok: false, message: why('It could not read the audio. Check the id is a transcription model.'), ms: ms() };
       }
 
       case 'embed': {
-        const vectors = await embed(['a four bedroom builder floor in Faridabad'], { model });
+        const vectors = await embed(['a four bedroom builder floor in Faridabad'], { model, onError });
         return vectors?.[0]?.length
           ? { ok: true, message: `Returned a ${vectors[0].length}-number vector.`, ms: ms() }
-          : { ok: false, message: 'No vector came back. Check the id is an embedding model.', ms: ms() };
+          : { ok: false, message: why('No vector came back. Check the id is an embedding model.'), ms: ms() };
       }
 
       case 'rerank': {
-        const hits = await rerank('parking', ['covered parking included', 'north facing terrace'], { model });
+        const hits = await rerank('parking', ['covered parking included', 'north facing terrace'], { model, onError });
         return hits?.length
           ? { ok: true, message: `Reordered ${hits.length} results.`, ms: ms() }
-          : { ok: false, message: 'Nothing came back. Check the id is a reranking model.', ms: ms() };
+          : { ok: false, message: why('Nothing came back. Check the id is a reranking model.'), ms: ms() };
       }
 
       case 'video': {
