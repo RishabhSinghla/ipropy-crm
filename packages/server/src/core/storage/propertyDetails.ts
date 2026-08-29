@@ -358,6 +358,13 @@ export async function propertyFacts(recordId: string): Promise<Record<string, st
   for (const f of FIELDS) {
     const raw = row[f.key];
     if (raw === null || raw === undefined || raw === '') continue;
+    // A price of zero means nobody has filled it in, not that the floor is
+    // free. These facts are printed onto the title card of the reel and the
+    // walkthrough, so letting a 0 through puts "₹0" on a marketing video — and
+    // both properties on the live site are priced 0 right now. Leaving the fact
+    // out entirely makes the card fall back to the layout without a price,
+    // which is the honest version of not knowing.
+    if (f.money && typeof raw === 'number' && raw <= 0) continue;
     const value = f.money && typeof raw === 'number'
       ? formatIndianPrice(raw)
       : Array.isArray(raw) ? raw.join(', ') : String(raw);

@@ -70,19 +70,29 @@ export const FIELDS_USED_IN_CODE: Record<string, string> = {
   'properties.latitude': 'the map, and distance in comparables',
   'properties.longitude': 'the map, and distance in comparables',
   'properties.unit_no': 'the property folder name in OneDrive and every processed file inside it',
-  // These two do not merely feed a value into a page, they define whole
-  // sections of the public website. A "project" is not a record: it is units
-  // grouped by project_name, so without that field there is no such thing as a
-  // project and the entire catalogue is correctly empty. Same for city and the
-  // cities page.
-  //
-  // Both were gone from production before this entry existed, and the website
-  // said nothing: the projects list, every project page, the cities page and
-  // the city dropdown in search all answered 200 with nothing in them, which
-  // reads as "no stock" rather than "that field is gone".
-  'properties.project_name': 'every project page on the public website, and the projects catalogue itself — without it the site has no projects at all',
-  'properties.city': 'the cities page on the public website, the city filter in search, and the nearby-projects list',
 };
+
+/**
+ * `properties.project_name` and `properties.city` are deliberately NOT on that
+ * list, and should not be added back.
+ *
+ * They were on it for one day. Both had been deleted from production, which had
+ * quietly emptied the projects catalogue, every project page and the cities list
+ * on the public website, and the obvious reading was that somebody had removed
+ * them without knowing what they carried.
+ *
+ * That reading was wrong. The removal was deliberate: this business sells
+ * builder floors in one area, so a "project" grouping and a city filter are
+ * both noise on its own site. A CRM whose whole promise is that an admin never
+ * needs a developer cannot then refuse a field an admin has decided they do not
+ * want. The correct response to their absence is for the website to stop
+ * offering those sections, which is what it now does, rather than for the CRM to
+ * argue.
+ *
+ * What belongs on the list above is a field the *engine* reads by name and
+ * cannot work without. These two are read by one optional surface, and that
+ * surface handles their absence.
+ */
 
 /** Tables holding module-scoped JSON that can name a field, and their columns. */
 const MODULE_SCOPED: { table: string; columns: string[]; key: string }[] = [
