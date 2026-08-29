@@ -15,7 +15,6 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { Avatar, Badge, Dropdown, DropdownItem, Spinner } from './ui';
 import AiAssistant from './AiAssistant';
 import { PeekLink, PeekProvider } from './PeekLink';
-import AlertsPrompt from './AlertsPrompt';
 
 /** Resolve a lucide icon by its kebab-case metadata name (see lib/icons.ts for why this is a registry, not a namespace lookup). */
 export function ModuleIcon({ name, className }: { name: string; className?: string }): JSX.Element {
@@ -241,8 +240,6 @@ export default function Layout(): JSX.Element {
             </Dropdown>
           </div>
         </header>
-
-        <AlertsPrompt />
 
         <main id="main" tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto">
           {/* Per-page net. Keyed on the path so a crashed page clears itself

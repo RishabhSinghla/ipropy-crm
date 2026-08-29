@@ -465,8 +465,6 @@ export const api = {
     post<{ sent: boolean; reason?: string }>(`/api/records/properties/${id}/finish`, {}),
   propertyStorage: (id: string) =>
     get<PropertyStorageInfo | null>(`/api/records/properties/${id}/storage`),
-  gettingStarted: () =>
-    get<{ steps: { id: string; title: string; why: string; done: boolean; href: string; action: string; adminOnly: boolean }[]; doneCount: number }>('/api/getting-started'),
   forgotPassword: (email: string) =>
     request<{ ok: true }>('/api/auth/forgot-password', {
       method: 'POST', body: { email }, skipRefresh: true,
@@ -565,9 +563,6 @@ export const api = {
     /** What in the application matches this option by name, if anything. */
     usedInCode: string | null;
   }>(`/api/meta/picklists/${name}/value-usage?value=${encodeURIComponent(value)}`),
-  /** Empty a whole dropdown at once. Refused while a required field uses it. */
-  clearPicklist: (name: string) =>
-    post<{ ok: true; removed: number; clearedRecords: number }>(`/api/meta/picklists/${name}/clear`, {}),
   deletePicklistValue: (name: string, value: string, opts: { replaceWith?: string; clear?: boolean } = {}) =>
     del<{ ok: boolean; movedRecords: number }>(
       `/api/meta/picklists/${name}/values?value=${encodeURIComponent(value)}`

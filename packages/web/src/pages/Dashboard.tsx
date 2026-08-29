@@ -18,7 +18,6 @@ import {
   ArrowDownRight, ArrowUpRight, Check, ChevronDown, Copy, LayoutDashboard, MoreHorizontal,
   Pencil, Plus, Sparkles, Star, TrendingUp, Trash2,
 } from 'lucide-react';
-import GettingStarted from '../components/GettingStarted';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { tintedTextVars } from '../lib/color';
@@ -112,7 +111,6 @@ export default function DashboardPage(): JSX.Element {
           yet somebody's working day, and under the charts is where a new
           person never scrolls. */}
       <div className="mb-4">
-        <GettingStarted />
       </div>
 
       {/* Title and controls stack on a phone. Sharing one flex row meant a

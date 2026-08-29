@@ -59,6 +59,21 @@ export default function PicklistManager(): JSX.Element {
   const [selected, setSelected] = useState<string>(params.get('picklist') || 'lead_status');
   const [options, setOptions] = useState<Option[]>([]);
   const [dirty, setDirty] = useState(false);
+  /*
+    Ticked options, by their stored value.
+
+    This started as a single "Remove all" button, which was the wrong shape: on
+    Locality he wanted to keep a handful of the 126 and lose the rest, and
+    "remove everything then type the keepers back in" is not a saving. It was
+    also refused outright whenever a required field used the dropdown, since
+    those records cannot be left with nothing — so the one case it was built for
+    was the one case it could not do.
+
+    Ticking is better on both counts. Keep what you want, and each removal still
+    answers the question the single delete asks: what happens to the records
+    holding this value?
+  */
+  const [picked, setPicked] = useState<Set<string>>(new Set());
   const [clearing, setClearing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
@@ -98,6 +113,10 @@ export default function PicklistManager(): JSX.Element {
       setSelected(catalogue[0].name);
     }
   }, [catalogue, selected]);
+
+  // A tick means "remove this one"; carrying it to another dropdown would be a
+  // very bad surprise.
+  useEffect(() => { setPicked(new Set()); }, [selected]);
 
   const needle = search.toLowerCase().trim();
   const names = (catalogue ?? []).filter(
@@ -238,16 +257,13 @@ export default function PicklistManager(): JSX.Element {
               >
                 <Plus className="h-3.5 w-3.5" /> Add option
               </button>
-              {/* Deleting options one at a time is right for three of them and
-                  absurd for a hundred and twenty-six, which is what Locality
-                  shipped with. */}
-              {options.length > 2 && (
+              {picked.size > 0 && (
                 <button
                   onClick={() => setClearing(true)}
-                  className="btn-secondary btn-sm"
-                  title="Remove every option in this dropdown"
+                  className="btn-secondary btn-sm text-red-600"
+                  title="Remove the ticked options"
                 >
-                  <Trash2 className="h-3.5 w-3.5" /> Remove all
+                  <Trash2 className="h-3.5 w-3.5" /> Remove {picked.size}
                 </button>
               )}
               <button onClick={() => void save()} disabled={!dirty || saving} className="btn-primary btn-sm">
@@ -272,6 +288,29 @@ export default function PicklistManager(): JSX.Element {
             </div>
           )}
 
+          {/* Only for a list long enough that ticking one at a time is a chore,
+              and only over options that already exist — a row you have just
+              added has nothing to remove. */}
+          {options.filter((o) => o.previousValue).length > 3 && (
+            <label className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-3 py-1.5 text-xs text-muted dark:border-slate-800 dark:bg-slate-800/40">
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5"
+                checked={picked.size > 0 && picked.size === options.filter((o) => o.previousValue).length}
+                ref={(el) => {
+                  // Some ticked, not all: the box says "partly" rather than
+                  // claiming either.
+                  if (el) el.indeterminate = picked.size > 0
+                    && picked.size < options.filter((o) => o.previousValue).length;
+                }}
+                onChange={(e) => setPicked(e.target.checked
+                  ? new Set(options.filter((o) => o.previousValue).map((o) => o.previousValue!))
+                  : new Set())}
+              />
+              {picked.size > 0 ? `${picked.size} selected` : 'Select all'}
+            </label>
+          )}
+
           <div className="divide-y divide-slate-100 dark:divide-slate-800">
             {options.map((option, index) => (
               <div
@@ -284,6 +323,23 @@ export default function PicklistManager(): JSX.Element {
                 onDragOver={(e) => { e.preventDefault(); }}
                 onDrop={(e) => { e.preventDefault(); if (dragIndex !== null) moveTo(dragIndex, index); setDragIndex(null); }}
               >
+                {/* Only a saved option can be removed; an unsaved new row is
+                    removed by clearing what you typed. */}
+                {option.previousValue ? (
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 shrink-0"
+                    checked={picked.has(option.previousValue)}
+                    onChange={(e) => setPicked((prev) => {
+                      const next = new Set(prev);
+                      if (e.target.checked) next.add(option.previousValue!);
+                      else next.delete(option.previousValue!);
+                      return next;
+                    })}
+                    aria-label={`Select ${option.label || option.value}`}
+                  />
+                ) : <span className="w-3.5 shrink-0" />}
+
                 <div
                   draggable
                   onDragStart={() => setDragIndex(index)}
@@ -479,33 +535,51 @@ export default function PicklistManager(): JSX.Element {
         open={clearing}
         onClose={() => setClearing(false)}
         onConfirm={async () => {
-          try {
-            const r = await api.clearPicklist(selected);
-            toast.success(
-              `Removed ${r.removed} option${r.removed === 1 ? '' : 's'}`,
-              r.clearedRecords
-                ? `${r.clearedRecords} record${r.clearedRecords === 1 ? '' : 's'} had this field cleared.`
-                : 'No record was using any of them.',
-            );
-            refresh();
-          } catch (err) {
-            toast.error('Could not empty this dropdown', (err as Error).message);
+          const values = [...picked];
+          let removed = 0;
+          const refused: string[] = [];
+          // One at a time, because each still has to answer "what happens to the
+          // records holding this value?" — and one refusal must not abandon the
+          // rest of the batch.
+          for (const value of values) {
+            try {
+              // eslint-disable-next-line no-await-in-loop
+              await api.deletePicklistValue(selected, value, { clear: true });
+              removed += 1;
+            } catch {
+              refused.push(value);
+            }
           }
+          setPicked(new Set());
+          if (removed) {
+            toast.success(
+              `Removed ${removed} option${removed === 1 ? '' : 's'}`,
+              refused.length ? `${refused.length} could not be removed.` : undefined,
+            );
+          }
+          if (refused.length) {
+            toast.error(
+              `Could not remove ${refused.length} option${refused.length === 1 ? '' : 's'}`,
+              `${refused.slice(0, 3).join(', ')}${refused.length > 3 ? '…' : ''} — records still use `
+              + 'them and the field they are on cannot be left empty.',
+            );
+          }
+          refresh();
         }}
-        title={`Remove all ${options.length} options from “${current?.label ?? selected}”?`}
+        title={`Remove ${picked.size} option${picked.size === 1 ? '' : 's'} from “${current?.label ?? selected}”?`}
         body={(
           <>
             <p>
-              Every option goes, and any record using one has that field cleared. You can add your own
-              back straight afterwards.
+              Any record still holding one of these has that field cleared. The options you have not
+              ticked are untouched.
             </p>
             <p>
-              This is refused if a field using this dropdown is required, because those records cannot
-              be left empty.
+              An option is refused if the field using it is required, because those records cannot be
+              left empty. The rest still go.
             </p>
           </>
         )}
-        confirmLabel="Remove all"
+        confirmLabel={`Remove ${picked.size}`}
         danger
       />
     </div>
