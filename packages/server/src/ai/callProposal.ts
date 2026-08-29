@@ -73,7 +73,9 @@ export async function proposeFromCall(input: CallProposalInput): Promise<string 
   const updates: Record<string, unknown> = {};
   const changes: { field: string; label: string; from: unknown; to: unknown }[] = [];
 
-  const statusField = meta.fields.find((f) => f.name === 'status');
+  // Found by its storage column, not its API name, so an admin who renames
+  // "Lead Status" to anything they like keeps this working. See fieldPlaying.
+  const statusField = registry.fieldPlaying(meta, 'status');
   const proposedStatus = analysis.suggestedStatus?.trim();
   if (
     statusField && proposedStatus
@@ -83,15 +85,15 @@ export async function proposeFromCall(input: CallProposalInput): Promise<string 
     // broken. Checked here, against the picklist the admin actually has.
     && statusField.options?.some((o) => o.value === proposedStatus)
   ) {
-    updates.status = proposedStatus;
-    changes.push({ field: 'status', label: statusField.label, from: current.status, to: proposedStatus });
+    updates[statusField.name] = proposedStatus;
+    changes.push({ field: statusField.name, label: statusField.label, from: current.status, to: proposedStatus });
   }
 
   const followUp = normaliseFollowUp(analysis.followUpDate);
   if (followUp && followUp !== (current.next_followup_at ?? '').slice(0, 10)) {
-    const field = meta.fields.find((f) => f.name === 'next_followup_at');
+    const field = registry.fieldPlaying(meta, 'next_followup_at');
     if (field) {
-      updates.next_followup_at = followUp;
+      updates[field.name] = followUp;
       changes.push({
         field: 'next_followup_at', label: field.label,
         from: current.next_followup_at, to: followUp,

@@ -679,14 +679,21 @@ metadataRouter.patch('/fields/:id', asyncHandler(async (req, res) => {
   if (input.name && input.name !== current.name) {
     const taken = module.fields.some((f) => f.name === input.name);
     if (taken) throw new ConflictError(`${module.label} already has a field named '${input.name}'`);
-    const usedInCode = FIELDS_USED_IN_CODE[`${module.name}.${current.name}`];
-    if (usedInCode) {
-      throw new BadRequestError(
-        `The API name “${current.name}” cannot be changed because the CRM reads it directly: ${usedInCode}. `
-        + `Renaming it would leave that working on a field that no longer exists. `
-        + `The Label above it is what everyone actually sees, and that you can change to anything.`,
-      );
-    }
+    /*
+     * Renaming one of these used to be refused, and no longer is.
+     *
+     * The refusal was based on a real risk that had already been designed out:
+     * a rename never touches `column_name`, so the data does not move, and
+     * `renameFieldEverywhere` below rewrites every view, filter, layout,
+     * workflow and widget that names it. What actually broke was a handful of
+     * features holding a literal field name in the source. Those now find their
+     * field by its storage column instead — see `fieldPlaying` in the registry —
+     * so they follow a rename by themselves.
+     *
+     * Deleting one is still refused, and that distinction is the whole point:
+     * a rename changes what a field is called, a delete removes the thing the
+     * engine runs on. An admin can call Lead Status anything they like.
+     */
     // `record_id` is the join between a record and its payload row, not a
     // field anybody filled in. Everything else the module reads by name —
     // the naming fields, the pipeline field — is rewritten by the pass below.

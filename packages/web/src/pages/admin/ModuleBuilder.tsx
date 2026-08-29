@@ -402,6 +402,35 @@ function SectionRenamer({
 // admin created was always a plain box. This is the missing half.
 // ---------------------------------------------------------------------------
 
+/**
+ * What each field type actually does, in the words somebody picking one would use.
+ *
+ * The dropdown shows thirty-odd names and nothing else, and two of them are a
+ * genuine trap. "Multi Select" and "Multi Lookup" sound like the same thing and
+ * are not: one is a fixed list of words you type once, the other points at real
+ * records in another module and stays in step with them. Choosing the wrong one
+ * gets you as far as "— Choose an option set —" and then a dead end, with
+ * nothing on screen explaining why.
+ *
+ * Only the types where the name is not enough are listed. A "Date" needs no help.
+ */
+const TYPE_HELP: Record<string, string> = {
+  picklist: 'A fixed list of choices you write yourself, like New / Contacted / Lost. Pick one.',
+  multipicklist:
+    'A fixed list of choices you write yourself. Pick several. '
+    + 'If you want to choose real records from another module instead — actual units, actual projects — use Multi Lookup under Relationship.',
+  reference:
+    'Points at one real record in another module, and follows it. Choose a unit and you get that unit, live, with its price and status.',
+  multireference:
+    'Points at several real records in another module, and follows them. '
+    + 'This is the one for “which units is this buyer interested in” — the list comes from Properties itself, so it is never out of date.',
+  owner: 'A person or team in your CRM. Used for who owns the record.',
+  formula: 'Worked out from other fields. Nobody types into it.',
+  rollup: 'Counts or totals related records, like how many site visits this lead has had.',
+  autonumber: 'The CRM fills it in, counting up. Nobody types into it.',
+  json: 'For structured data the CRM stores but does not draw a box for.',
+};
+
 /** uitypes that can be bounded by another field of the same kind. */
 const COMPARABLE = ['integer', 'decimal', 'currency', 'percent', 'area', 'score', 'date', 'datetime'];
 
@@ -731,6 +760,9 @@ function FieldEditor({
                 </optgroup>
               ))}
             </select>
+            {TYPE_HELP[uitype] && (
+              <p className="mt-1.5 text-2xs leading-relaxed text-muted">{TYPE_HELP[uitype]}</p>
+            )}
           </div>
           <div>
             <label className="label">Section</label>

@@ -424,6 +424,30 @@ export async function requireField(moduleName: string, fieldName: string): Promi
   return f;
 }
 
+/**
+ * The field playing a known role, found by where its data lives rather than by
+ * what it is currently called.
+ *
+ * An admin can rename any field's API name. That rewrites every view, filter,
+ * layout and workflow that mentions it, and it deliberately leaves
+ * `column_name` alone — the data does not move. So the column is the stable
+ * identity and the name is not, and any code holding a literal field name is
+ * holding the half that changes.
+ *
+ * That is what made "Lead Status" un-renameable: a handful of features looked
+ * for a field *named* `status`, so renaming it to `lead_status` would have left
+ * them looking for something that no longer existed. Anchored here instead,
+ * they follow the rename by themselves and the admin can call it whatever they
+ * like.
+ *
+ * Use this wherever the field is decided by the code. Keep `getField` for a
+ * name that came from a saved view, a filter or a request — there the name is
+ * genuinely what was asked for.
+ */
+export function fieldPlaying(module: ModuleMeta, column: string): FieldMeta | null {
+  return module.fields.find((f) => f.columnName === column) ?? null;
+}
+
 /** Fields that actually hold data — excludes inactive and pure-UI entries. */
 export async function getWritableFields(moduleName: string): Promise<FieldMeta[]> {
   const m = await requireModule(moduleName);
@@ -485,6 +509,7 @@ export const registry = {
   getModuleById,
   getField,
   requireField,
+  fieldPlaying,
   getWritableFields,
   getFieldMap,
   getPicklist,

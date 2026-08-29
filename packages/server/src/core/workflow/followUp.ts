@@ -49,7 +49,8 @@ export async function scheduleFollowUp(input: FollowUpInput, conn: Tx = db): Pro
 
   try {
     const module = await registry.getModule(input.module);
-    const field = module?.fields.find((f) => f.name === 'next_followup_at');
+    // By column, so renaming the field does not silently stop follow-ups.
+    const field = module ? registry.fieldPlaying(module, 'next_followup_at') : null;
 
     // Only modules that actually track a follow-up date get one written; the
     // note and the notification are worth doing either way.

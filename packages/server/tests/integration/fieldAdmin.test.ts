@@ -110,17 +110,40 @@ describe('renaming a field', () => {
     }
   });
 
-  it('refuses a name the CRM reads directly, and says what depends on it', async () => {
-    const meta = await describeLeads();
-    const mobile = meta.fields.find((f) => f.name === 'mobile');
-    const res = await request(app)
+  /**
+   * Even the fields the engine reads can be renamed now.
+   *
+   * This used to be refused, and the refusal was the single most-hit wall in the
+   * admin screen: "we are fully customisable, right?" Renaming was always safe
+   * for the data — `column_name` does not move — and the references living in
+   * views, filters, layouts and workflows are rewritten by the pass above. The
+   * one real risk was a handful of features holding a literal field name in the
+   * source, and those find their field by its storage column now.
+   *
+   * Deleting one is still refused, which is the line that matters: an admin can
+   * call a field anything, but not remove what the engine runs on.
+   */
+  it('allows renaming a field the CRM reads, and keeps it working', async () => {
+    const mobile = (await describeLeads()).fields.find((f) => f.name === 'mobile');
+    expect(mobile).toBeTruthy();
+
+    await request(app)
       .patch(`/api/meta/fields/${mobile!.id}`)
       .set('Authorization', `Bearer ${token}`)
       .send({ name: 'mobile_number' })
-      .expect(400);
-    expect(res.body.message).toMatch(/WhatsApp|duplicate|call/i);
+      .expect(200);
 
-    // And the field is untouched, not half-renamed.
+    const renamed = (await describeLeads()).fields.find((f) => f.id === mobile!.id);
+    expect(renamed?.name).toBe('mobile_number');
+    // The data did not move, which is why the rename is safe at all.
+    expect(renamed?.columnName).toBe(mobile!.columnName);
+
+    // Put it back: every other suite shares this database and looks for `mobile`.
+    await request(app)
+      .patch(`/api/meta/fields/${mobile!.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'mobile' })
+      .expect(200);
     expect((await describeLeads()).fields.some((f) => f.name === 'mobile')).toBe(true);
   });
 

@@ -20,7 +20,7 @@
 import type { JSX } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { RotateCcw, Save, Search, SlidersHorizontal } from 'lucide-react';
+import { ChevronRight, RotateCcw, Save, Search, SlidersHorizontal } from 'lucide-react';
 import { api } from '../../lib/api';
 import { toast } from '../../lib/store';
 import { cn } from '../../lib/utils';
@@ -80,6 +80,17 @@ export default function SettingsAdmin(): JSX.Element {
   const { data, isLoading } = useQuery({ queryKey: ['admin-settings'], queryFn: () => api.settings() });
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [query, setQuery] = useState('');
+  /*
+    Fourteen groups drawn open at once is a page you land on and scroll, and
+    the feedback on it was that it felt heavy before you had read a word. Shut
+    by default, it is a list of fourteen headings you can take in at a glance,
+    and you open the one you came for.
+
+    Undefined here means "nobody has clicked yet", which is not the same as
+    closed — a search opens everything it matched, and a group the admin has
+    explicitly shut stays shut.
+  */
+  const [opened, setOpened] = useState<Record<string, boolean>>({});
 
   const settings = useMemo(
     () => ((data ?? []) as unknown as Setting[])
@@ -125,7 +136,7 @@ export default function SettingsAdmin(): JSX.Element {
   return (
     <div className="mx-auto max-w-3xl space-y-5 p-4 pb-24">
       <div>
-        <h2 className="text-lg font-semibold">Settings</h2>
+        <h2 className="text-xl font-semibold tracking-tight">Settings</h2>
         <p className="mt-1 text-sm text-muted">
           The numbers and switches the CRM makes decisions with. Change one and it applies straight away.
         </p>
@@ -149,27 +160,64 @@ export default function SettingsAdmin(): JSX.Element {
         />
       )}
 
-      {grouped.map((g) => (
-        <section key={g.id} className="card p-5">
-          <h3 className="text-sm font-semibold">{g.title}</h3>
-          {g.blurb && <p className="mt-0.5 text-xs text-muted">{g.blurb}</p>}
-          <div className="mt-4 divide-y divide-slate-100 dark:divide-slate-800">
-            {g.rows.map((s) => (
-              <Row
-                key={s.key}
-                setting={s}
-                changed={s.key in draft}
-                value={s.key in draft ? draft[s.key] : s.value}
-                onChange={(v) => setDraft((d) => ({ ...d, [s.key]: v }))}
-                onReset={() => setDraft((d) => {
-                  const { [s.key]: _drop, ...rest } = d;
-                  return rest;
-                })}
+      {grouped.map((g) => {
+        // A search opens what it found; otherwise the admin's own choice wins,
+        // and failing that everything starts shut.
+        const isOpen = q ? true : (opened[g.id] ?? false);
+        const changedHere = g.rows.filter((s) => s.key in draft).length;
+
+        return (
+          <section key={g.id} className="card overflow-hidden">
+            <button
+              type="button"
+              aria-expanded={isOpen}
+              onClick={() => setOpened((o) => ({ ...o, [g.id]: !isOpen }))}
+              className="flex w-full items-start gap-3 p-4 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
+            >
+              <ChevronRight
+                aria-hidden
+                className={cn(
+                  'mt-0.5 h-4 w-4 shrink-0 text-slate-400 transition-transform',
+                  isOpen && 'rotate-90',
+                )}
               />
-            ))}
-          </div>
-        </section>
-      ))}
+              <span className="min-w-0 flex-1">
+                <span className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+                  {g.title}
+                  {/* Unsaved work inside a shut group would otherwise be invisible. */}
+                  {changedHere > 0 && (
+                    <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-2xs font-normal text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                      {changedHere} changed
+                    </span>
+                  )}
+                </span>
+                {g.blurb && <span className="mt-0.5 block text-xs font-normal text-muted">{g.blurb}</span>}
+              </span>
+              <span className="shrink-0 text-2xs text-muted tnum">{g.rows.length}</span>
+            </button>
+
+            {isOpen && (
+              <div className="border-t border-slate-100 px-4 pb-1 dark:border-slate-800">
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {g.rows.map((s) => (
+                    <Row
+                      key={s.key}
+                      setting={s}
+                      changed={s.key in draft}
+                      value={s.key in draft ? draft[s.key] : s.value}
+                      onChange={(v) => setDraft((d) => ({ ...d, [s.key]: v }))}
+                      onReset={() => setDraft((d) => {
+                        const { [s.key]: _drop, ...rest } = d;
+                        return rest;
+                      })}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+        );
+      })}
 
       {/* Follows the page rather than sitting at the top, because on a long
           screen the button belongs where the eyes are. Only appears when there
@@ -200,10 +248,31 @@ function Row({ setting, value, changed, onChange, onReset }: {
   const wide = isBusinessHours(setting) || isAddress(setting)
     || setting.category === 'house_style' || isModel(setting);
 
+  /*
+    A real <label for>, not a paragraph beside a box.
+
+    Every one of these rows drew its name as a <p>, so the control next to it had
+    no accessible name at all: a screen reader announced "edit text, blank", and
+    clicking the words did not put the cursor in the box. It looked right and was
+    not, which is most of why the page felt unfinished.
+
+    The purpose-built controls below (business hours, the address grid) label
+    their own inputs, so those get a plain heading instead of a label pointing at
+    nothing.
+  */
+  // A Toggle already wraps itself in a <label> with its own aria-label, and a
+  // label inside a label is invalid HTML, so those keep the plain heading too.
+  const ownsItsLabel = wide || typeof setting.value === 'boolean';
+  const controlId = `setting-${setting.key.replace(/[^a-zA-Z0-9]/g, '-')}`;
+  const Name = ownsItsLabel ? 'p' : 'label';
+
   return (
     <div className={cn('py-4', wide ? 'space-y-3' : 'flex items-start gap-6')}>
       <div className="min-w-0 flex-1">
-        <p className="flex items-center gap-2 text-sm font-medium">
+        <Name
+          {...(ownsItsLabel ? {} : { htmlFor: controlId })}
+          className={cn('flex items-center gap-2 text-sm font-medium', !ownsItsLabel && 'cursor-pointer')}
+        >
           {setting.label ?? setting.key}
           {changed && (
             <button
@@ -214,11 +283,11 @@ function Row({ setting, value, changed, onChange, onReset }: {
               <RotateCcw className="h-2.5 w-2.5" /> changed
             </button>
           )}
-        </p>
+        </Name>
         {setting.description && <p className="mt-0.5 text-xs text-muted">{setting.description}</p>}
       </div>
       <div className={cn(wide ? '' : 'shrink-0')}>
-        <Control setting={setting} value={value} onChange={onChange} />
+        <Control setting={setting} value={value} onChange={onChange} id={ownsItsLabel ? undefined : controlId} />
       </div>
     </div>
   );
@@ -288,8 +357,8 @@ const isModel = (s: Setting): boolean => s.category === 'ai_models';
 const isAddress = (s: Setting): boolean => s.key === 'org.address';
 const isStringList = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === 'string');
 
-function Control({ setting, value, onChange }: {
-  setting: Setting; value: unknown; onChange: (v: unknown) => void;
+function Control({ setting, value, onChange, id }: {
+  setting: Setting; value: unknown; onChange: (v: unknown) => void; id?: string;
 }): JSX.Element {
   if (isBusinessHours(setting)) return <BusinessHours value={value} onChange={onChange} />;
   if (isAddress(setting)) return <Address value={value} onChange={onChange} />;
@@ -306,11 +375,12 @@ function Control({ setting, value, onChange }: {
   }
 
   if (typeof setting.value === 'boolean') {
-    return <Toggle checked={Boolean(value)} onChange={onChange} />;
+    return <Toggle checked={Boolean(value)} onChange={onChange} ariaLabel={setting.label ?? setting.key} />;
   }
   if (typeof setting.value === 'number') {
     return (
       <input
+        id={id}
         type="number"
         className="input w-24 text-right tnum"
         value={value === null || value === undefined ? '' : String(value)}
@@ -323,6 +393,7 @@ function Control({ setting, value, onChange }: {
   if (typeof setting.value === 'string') {
     return (
       <input
+        id={id}
         type="text"
         className="input w-64"
         value={typeof value === 'string' ? value : ''}
@@ -333,6 +404,7 @@ function Control({ setting, value, onChange }: {
   if (isStringList(setting.value)) {
     return (
       <input
+        id={id}
         type="text"
         className="input w-72"
         placeholder="Available, Booked"
