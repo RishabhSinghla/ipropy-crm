@@ -46,8 +46,11 @@ export const AI_JOBS = {
   transcribe: {
     key: 'ai_models.transcribe',
     label: 'Transcribe recordings',
-    fallback: 'nvidia/nemotron-3.5-asr-streaming-multilingual-0.6b',
-    description: 'Turns call recordings and voice notes into words. Handles Hindi and English mixed together.',
+    // Sent to the speech-to-text integration, not to OpenRouter: transcription
+    // is not a chat completion and OpenRouter does not serve it.
+    fallback: 'whisper-large-v3-turbo',
+    description: 'Turns call recordings and voice notes into words. Handles Hindi and English mixed together. '
+      + 'Goes to the speech-to-text service set up under Admin → Integrations.',
   },
   embed: {
     key: 'ai_models.embed',

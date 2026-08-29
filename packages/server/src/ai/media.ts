@@ -18,7 +18,7 @@
  * video, and the caller decides what a missing piece means.
  */
 import { modelFor, type AiJob } from '../core/settings/aiModels.js';
-import { getAiProviderSettings } from '../core/settings/integrations.js';
+import { getAiProviderSettings, getSttProviderSettings } from '../core/settings/integrations.js';
 import { db } from '../db/pool.js';
 import { logger } from '../utils/logger.js';
 
@@ -199,10 +199,22 @@ export interface TranscriptResult {
 /**
  * A call recording becomes text.
  *
- * The audio goes up base64 inside JSON rather than as multipart, which is what
- * this endpoint accepts. A ten minute call is a few megabytes, well inside a
- * normal request, so there is no chunking here on purpose: chunking splits
- * sentences across boundaries and the join is always visible.
+ * This went to OpenRouter with every other media call, and was wrong twice over.
+ *
+ * OpenRouter is a chat gateway; transcription is not a chat completion, and the
+ * ids shipped in the settings box were never valid there. Meanwhile
+ * `getSttProviderSettings()` had existed all along — with its own address, key
+ * and model, already pointed at Groq's Whisper — and nothing that transcribes
+ * ever read it.
+ *
+ * The shape was wrong too. It posted JSON with the audio base64-encoded under
+ * `input_audio`, and the OpenAI-compatible transcription endpoint every provider
+ * implements takes **multipart/form-data with a file part**. So even against the
+ * right host it would have been refused. That is why the settings box said "it
+ * could not read the audio" no matter which id was in it.
+ *
+ * Sent whole rather than chunked, deliberately: chunking splits sentences at the
+ * boundary and the join is always audible in the text.
  */
 export async function transcribe(
   audio: Buffer,
@@ -210,18 +222,60 @@ export async function transcribe(
   opts: { model?: string; language?: string; recordId?: string | null;
     onError?: (message: string) => void } = {},
 ): Promise<TranscriptResult | null> {
+  const stt = getSttProviderSettings();
+  // The model is named in Admin → Settings → AI models like every other job;
+  // the integration supplies only where to send it and what to sign it with.
+  // Two boxes holding one model id is the pattern this CRM keeps getting wrong.
   const model = opts.model ?? await modelFor('transcribe');
-  const response = await request('/audio/transcriptions', {
-    model,
-    input_audio: { data: audio.toString('base64'), format: format.replace(/^\./, '').toLowerCase() },
-    ...(opts.language ? { language: opts.language } : {}),
-  }, 'stt', model, { recordId: opts.recordId, timeoutMs: 300_000, onError: opts.onError });
-  if (!response) return null;
 
-  const body = await response.json() as { text?: string; segments?: TranscriptResult['segments'] };
-  const text = (body.text ?? '').trim();
-  if (!text) return null;
-  return { text, model, segments: body.segments };
+  if (!stt.apiKey) {
+    const why = 'No speech-to-text key is saved. Add one in Admin → Integrations → Speech to text.';
+    logger.debug('transcription attempted with no STT key');
+    opts.onError?.(why);
+    return null;
+  }
+
+  const base = (stt.baseUrl || 'https://api.groq.com/openai/v1').replace(/\/+$/, '');
+  const started = Date.now();
+
+  const form = new FormData();
+  form.append('file', new Blob([new Uint8Array(audio)]), `audio.${format.replace(/^\./, '').toLowerCase()}`);
+  form.append('model', model);
+  form.append('response_format', 'verbose_json');
+  if (opts.language) form.append('language', opts.language);
+
+  try {
+    const response = await fetch(`${base}/audio/transcriptions`, {
+      method: 'POST',
+      // No Content-Type: fetch sets it with the multipart boundary, and setting
+      // it by hand omits the boundary and the request is rejected as malformed.
+      headers: { Authorization: `Bearer ${stt.apiKey}` },
+      body: form,
+      signal: AbortSignal.timeout(300_000),
+    });
+
+    if (!response.ok) {
+      const detail = `${response.status} ${(await response.text()).slice(0, 300)}`;
+      await logCall('stt', model, Date.now() - started, false, detail.slice(0, 500), opts.recordId);
+      logger.warn({ model, error: detail }, 'transcription failed');
+      opts.onError?.(detail);
+      return null;
+    }
+
+    const body = await response.json() as { text?: string; segments?: TranscriptResult['segments'] };
+    await logCall('stt', model, Date.now() - started, true, null, opts.recordId);
+    const text = (body.text ?? '').trim();
+    // An empty string is a real answer for silence, and the caller decides what
+    // to do with it. Returning null here made a silent recording look like a
+    // failed one.
+    return { text, model, segments: body.segments };
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    await logCall('stt', model, Date.now() - started, false, detail.slice(0, 500), opts.recordId);
+    logger.warn({ err, model }, 'transcription failed');
+    opts.onError?.(detail);
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------

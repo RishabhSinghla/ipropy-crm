@@ -110,10 +110,12 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
     { key: 'model', label: 'Model', source: 'config', placeholder: 'llama3.1', model: true },
     { key: 'fastModel', label: 'Fast model', source: 'config', placeholder: 'llama3.1', model: true },
   ],
+  // No Model field here on purpose. Every AI job names its model in
+  // Admin → Settings → AI models, and this card used to hold a second copy that
+  // nothing read — two boxes for one setting, quietly disagreeing.
   stt: [
     { key: 'apiKey', label: 'API Key (OpenAI-compatible Whisper)', source: 'credentials', secret: true },
-    { key: 'baseUrl', label: 'Base URL', source: 'config', placeholder: 'https://api.openai.com/v1' },
-    { key: 'model', label: 'Model', source: 'config', placeholder: 'whisper-large-v3-turbo', model: true },
+    { key: 'baseUrl', label: 'Base URL', source: 'config', placeholder: 'https://api.groq.com/openai/v1' },
   ],
   facebook_leads: [
     { key: 'appId', label: 'App ID', source: 'config' },
@@ -364,7 +366,7 @@ const GUIDES: Record<string, Guide> = {
       { title: 'Choose a Whisper provider', help: 'Groq is the low-cost, fast recommendation. The same Groq key can be used here and on the Groq AI card.', href: 'https://console.groq.com/keys', linkLabel: 'Open Groq keys' },
       { title: 'Paste the API key', help: 'Use your Groq or OpenAI-compatible speech key.', field: 'apiKey' },
       { title: 'Set the speech API address', help: 'For Groq use https://api.groq.com/openai/v1. For OpenAI use https://api.openai.com/v1.', field: 'baseUrl' },
-      { title: 'Choose the transcription model', help: 'For Groq, whisper-large-v3-turbo is the fast recommended choice.', field: 'model' },
+      { title: 'Pick the model', help: 'Under Settings → AI models → Transcribe recordings, with every other model. whisper-large-v3-turbo is the free Groq one.', href: '/admin/settings', linkLabel: 'Open AI models' },
     ],
   },
   facebook_leads: {
