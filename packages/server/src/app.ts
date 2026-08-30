@@ -1,4 +1,4 @@
-import express, { type Express, type Request } from 'express';
+import express, { type Express, type Request, type Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
@@ -31,13 +31,72 @@ import { miscRouter } from './api/routes/misc.js';
 import { mcpRouter } from './api/routes/mcp.js';
 import { publicRouter } from './api/routes/public.js';
 
+/**
+ * The policy on the app's own HTML.
+ *
+ * Deliberately narrow, and every relaxation below is here because something
+ * real needs it rather than to make a warning go away:
+ *
+ *  * `script-src 'self'` with no `unsafe-inline` and no `unsafe-eval`. The
+ *    build emits no inline script — `index.html` is a single external module
+ *    plus preloads — so this is the strict version, which is the whole point.
+ *    An injected `<script>` does not run, and neither does an injected
+ *    `onclick`.
+ *  * `style-src` needs `unsafe-inline`. React writes inline styles for
+ *    transitions, positioning and the chart library, and there is no nonce path
+ *    through those. Inline CSS cannot read a token; inline script can, and that
+ *    is the one being kept out.
+ *  * `img-src` takes `data:` for the inline SVG favicon in `index.html` and
+ *    `blob:` for previews of a file before it is uploaded.
+ *  * `connect-src 'self'` plus websockets, for Socket.IO. Checked against the
+ *    running app: it fetches nothing off-origin. Every external URL in the web
+ *    source is a link somebody clicks, which CSP does not govern.
+ *  * `frame-ancestors 'none'` — nothing should ever frame a CRM.
+ *  * `object-src 'none'` and `base-uri 'self'` close the two classic ways an
+ *    injection re-points a page that otherwise obeys the rules.
+ *
+ * `upgrade-insecure-requests` only in production: locally the app is http and
+ * the directive would break every asset.
+ */
+export function applyAppSecurityPolicy(res: Response): void {
+  const directives = [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self' data:",
+    "media-src 'self' blob:",
+    "connect-src 'self' ws: wss:",
+    "worker-src 'self' blob:",
+    "manifest-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    ...(config.isProd ? ['upgrade-insecure-requests'] : []),
+  ];
+  res.setHeader('Content-Security-Policy', directives.join('; '));
+}
+
 export function createApp(): Express {
   const app = express();
 
   app.set('trust proxy', 1);
 
   app.use(helmet({
-    // The API serves uploaded files inline; CSP is enforced by the web app.
+    /*
+      Helmet's default policy is off here and applied by hand below, to the HTML
+      document only.
+
+      This used to be off with a comment saying the web app enforced it. Nothing
+      did — the live HTML carried no policy at all — so the one defence that
+      would have contained the public-file hole had none of it in place.
+
+      It cannot simply be turned on globally either. `/api/files/:id` and the
+      public media routes serve uploads inline and already carry a much stricter
+      per-response policy from `core/media/serving.ts`, including `sandbox`.
+      Helmet's default would overwrite that with something looser.
+    */
     contentSecurityPolicy: false,
     crossOriginResourcePolicy: { policy: 'cross-origin' },
   }));
@@ -216,6 +275,7 @@ export function createApp(): Express {
     app.use(express.static(webDist));
     app.get('*', (req, res, next) => {
       if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) return next();
+      applyAppSecurityPolicy(res);
       res.sendFile(resolve(webDist, 'index.html'));
     });
   }

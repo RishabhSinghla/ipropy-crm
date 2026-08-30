@@ -366,8 +366,13 @@ the record of what was wrong and why the fixes are shaped as they are.
   `X-Twilio-Signature` HMAC over the **forwarded** URL — Render terminates TLS,
   so signing over `req.protocol`/`req.get('host')` refuses every genuine request
   and looks exactly like a wrong auth token. Others carry a per-provider shared
-  secret. The SSRF chain through `analyseCallRecording` is closed at the door;
-  the download itself still has no host or size limit, which is worth adding.
+  secret. **The SSRF chain the review described does not exist** and was repeated
+  here once before being checked: `analyseCallRecording` reads the `transcript`
+  column and nothing else, and the only server-side fetches in
+  `telephony/service.ts` go to the provider's own API on configured settings.
+  Nothing anywhere downloads `recording_url`. What was real: anyone could rewrite
+  call records, invent calls, and get an agent's phone number from `/incoming` —
+  and a hostile URL stored on a call is a link a rep might click. All closed.
 * **Lead webhooks failed open.** `if (key && provided !== key)` meant a blank key
   skipped the check entirely. Google and the portals both refuse when
   unconfigured now.
@@ -389,10 +394,10 @@ the record of what was wrong and why the fixes are shaped as they are.
   theft.
 
 **Still open and worth doing:** the app serves no CSP (`contentSecurityPolicy:
-false` in `app.ts`) and both tokens live in `localStorage`; the recording
-download has no size or host restriction; there is no prompt-injection or
-AI-quality eval suite; the largest files (`RecordDetail.tsx` at 2,727 lines)
-want splitting before a second developer arrives.
+false` in `app.ts`) and both tokens live in `localStorage`; there is no
+prompt-injection or AI-quality eval suite; tokens are counted in `ipy_ai_log` and
+never become rupees; the largest files (`RecordDetail.tsx` at 2,727 lines) want
+splitting before a second developer arrives.
 
 ---
 
