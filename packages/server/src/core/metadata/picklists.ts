@@ -77,6 +77,10 @@ export const VALUES_USED_IN_CODE: Record<string, string> = {
   'lead_status.Lost': 'the −50 lead-score penalty, and the lost-lead revival that watches for a price drop',
   'lead_status.Won': 'excluded from open-lead counts in Ask iPropy and the dashboard',
   'lead_status.Converted': 'excluded from the nurture sequence and open-lead counts',
+  'lead_status.Qualified': 'the +6 lead-score bonus for a lead somebody has actually qualified',
+  'possession_status.New Launch': 'the buyer-match bonus for a unit that has only just been released',
+  'lead_status.Negotiation': 'the +12 lead-score bonus for a lead already in negotiation',
+  'possession_status.Ready To Move': 'the buyer-match bonus for a buyer in a hurry, and the reason given when a lost lead is revived because a ready unit appeared',
 };
 
 /** What breaks if this option is renamed or deleted — null when nothing does. */

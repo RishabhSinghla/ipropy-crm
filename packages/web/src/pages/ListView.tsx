@@ -1101,6 +1101,9 @@ function KanbanBoard({
   const [dragging, setDragging] = useState<string | null>(null);
   const [overColumn, setOverColumn] = useState<string | null>(null);
   const ownerField = module.fields.find((f) => f.name === 'owner_id');
+  // The score badge takes its colour from whatever the admin set on the rating
+  // dropdown, rather than from three literals that had already drifted.
+  const ratingField = module.fields.find((f) => f.name === 'rating');
 
   const field = module.fields.find((f) => f.name === groupBy);
   const columns = groups.length
@@ -1236,13 +1239,16 @@ function KanbanBoard({
                         not by re-deciding here what Hot means. The two numbers
                         that used to live in this line are also in the scoring
                         engine, so an admin raising the Hot threshold moved the
-                        word and left this badge on the old boundary. */}
+                        word and left this badge on the old boundary.
+
+                        The colour comes from the dropdown too. It used to be
+                        three literals here, and they did not match the ones the
+                        admin had actually chosen: Hot was red everywhere in the
+                        CRM and green in this one badge. Worse, changing it in
+                        Admin → Dropdowns had no effect here at all. */}
                     {typeof row.values.ai_score === 'number' && (
                       <Badge color={
-                        row.values.rating === 'Hot' ? '#22c55e'
-                          : row.values.rating === 'Warm' ? '#f59e0b'
-                          : row.values.rating === 'Cold' ? '#94a3b8'
-                          : '#94a3b8'
+                        ratingField?.options?.find((o) => o.value === row.values.rating)?.color ?? undefined
                       }>
                         {row.values.ai_score}
                       </Badge>
