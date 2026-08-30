@@ -83,3 +83,37 @@ describe('the policy on the app HTML', () => {
     expect(await directivesFor(false)).not.toContain('upgrade-insecure-requests');
   });
 });
+
+describe('where the policy actually lands', () => {
+  it('goes on the HTML file express.static serves, not only the catch-all', async () => {
+    /*
+      The bug this pins, which shipped once. `express.static` answers `/` with
+      `index.html` itself, before the `app.get('*')` below it ever runs. Setting
+      the header only in the catch-all put it on a route that never fires for the
+      one request that matters, so the deployed site came back with no policy at
+      all — indistinguishable from a failed deploy.
+
+      Read from the source, because the alternative is booting an Express app
+      with a built frontend on disk, and a test that needs `npm run build` first
+      is a test that gets skipped.
+    */
+    const { readFile } = await import('node:fs/promises');
+    const source = await readFile(new URL('../src/app.ts', import.meta.url), 'utf8');
+
+    const staticBlock = source.slice(source.indexOf('express.static('), source.indexOf("app.get('*'"));
+    expect(staticBlock, 'the static handler must set the policy on .html itself')
+      .toContain('applyAppSecurityPolicy');
+    expect(staticBlock, 'and only on html, so a service worker does not inherit it')
+      .toContain(".endsWith('.html')");
+  });
+
+  it('is not applied as blanket middleware', async () => {
+    // A CSP on a .js response is ignored for the script, but a service worker
+    // takes its policy from its own response headers, and default-src 'self'
+    // there is a different and much easier thing to get wrong.
+    const { readFile } = await import('node:fs/promises');
+    const source = await readFile(new URL('../src/app.ts', import.meta.url), 'utf8');
+
+    expect(source).not.toMatch(/app\.use\(\s*\(req, res, next\) => \{\s*applyAppSecurityPolicy/);
+  });
+});

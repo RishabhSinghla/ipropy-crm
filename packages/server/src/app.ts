@@ -272,7 +272,24 @@ export function createApp(): Express {
   // notFound so a bad /api route never returns index.html.
   if (config.serveWeb) {
     const webDist = resolve(process.cwd(), 'packages/web/dist');
-    app.use(express.static(webDist));
+    /*
+      The policy goes on both paths, and both are needed.
+
+      `express.static` answers `/` with `index.html` itself, before anything
+      below it runs — so setting the header only in the catch-all put it on a
+      route that never fires for the one request that matters. The deployed site
+      came back with no policy at all and looked exactly like a failed deploy.
+
+      Applied per file rather than as blanket middleware, so it lands on the
+      document and not on every script and stylesheet. A CSP on a `.js` response
+      is ignored for the script, but it is *not* ignored for a service worker,
+      which takes its policy from its own response headers.
+    */
+    app.use(express.static(webDist, {
+      setHeaders: (res, path) => {
+        if (path.endsWith('.html')) applyAppSecurityPolicy(res);
+      },
+    }));
     app.get('*', (req, res, next) => {
       if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) return next();
       applyAppSecurityPolicy(res);
