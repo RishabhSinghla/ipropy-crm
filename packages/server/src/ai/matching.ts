@@ -27,6 +27,20 @@ export interface Requirement {
   vastuRequired?: boolean;
 }
 
+/*
+  `city` and `project_name` are read as JSON rather than named as columns.
+
+  Both were deliberately deleted from this CRM — one area, one kind of stock, so
+  a city filter and a project grouping were both noise. Naming a dropped column
+  in a SELECT is a Postgres 42703, which throws, so every one of these queries
+  raised and buyer matching stopped working entirely: no buyers for a new unit,
+  no units for a buyer. The failure was total and silent, because the callers
+  treat "no matches" and "it threw" the same way.
+
+  `to_jsonb(p)->>'…'` turns a missing column into a null, which is what a missing
+  value is. Only the two optional, deletable ones go through it; the rest are
+  structural and their absence should be loud.
+*/
 interface PropertyRow {
   record_id: string;
   label: string;
@@ -112,15 +126,17 @@ async function queryInventory(req: Requirement, limit: number): Promise<Property
   const res = await db.query<PropertyRow>(
     `SELECT p.record_id, r.label, p.name, p.configuration, p.carpet_area, p.total_price,
             p.base_price, p.floor, p.facing, p.vastu_compliant, p.status,
-            p.possession_date, p.possession_status, p.city, p.locality,
-            p.amenities, p.corner_unit, p.bedrooms, p.project_name
+            p.possession_date, p.possession_status, p.locality,
+            p.amenities, p.corner_unit, p.bedrooms,
+            to_jsonb(p)->>'city'         AS city,
+            to_jsonb(p)->>'project_name' AS project_name
      FROM ipy_e_properties p
      JOIN ipy_record r ON r.id = p.record_id
      WHERE r.is_deleted = false
        AND p.status = 'Available'
        AND ($1::numeric IS NULL OR COALESCE(p.total_price, p.base_price) <= $1)
        AND ($2::numeric IS NULL OR COALESCE(p.total_price, p.base_price) >= $2)
-       AND ($3::text IS NULL OR p.project_name ILIKE $3)
+       AND ($3::text IS NULL OR to_jsonb(p)->>'project_name' ILIKE $3)
      -- Relevance before price, for the same reason the reverse match orders by
      -- it: this takes a bounded slice and scores it in memory, so the slice has
      -- to be the units most likely to suit *this* buyer. Ordering by price
@@ -494,7 +510,9 @@ export async function matchBuyersForProperty(propertyId: string, limit = 10): Pr
   const property = await db.queryOne<PropertyRow>(
     `SELECT p.record_id, r.label, p.name, p.configuration, p.carpet_area, p.total_price, p.base_price,
             p.floor, p.facing, p.vastu_compliant, p.status, p.possession_date, p.possession_status,
-            p.city, p.locality, p.amenities, p.corner_unit, p.bedrooms, p.project_name
+            p.locality, p.amenities, p.corner_unit, p.bedrooms,
+            to_jsonb(p)->>'city'         AS city,
+            to_jsonb(p)->>'project_name' AS project_name
      FROM ipy_e_properties p JOIN ipy_record r ON r.id = p.record_id
      WHERE p.record_id = $1`,
     [propertyId],

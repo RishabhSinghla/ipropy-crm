@@ -59,14 +59,33 @@ export function isConfigured(): boolean {
  */
 const PLACEHOLDERS = new Set(['none', 'n/a', 'na', 'nil', 'null', '-', '--', 'tbd', 'unknown']);
 
-/** `b12-greenfield-4-bhk-250-sqyd`, from whatever the record actually has. */
+/**
+ * `b12-greenfield-4-bhk-250-sqyd`, from whatever the record actually has.
+ *
+ * Every property field here is read through `to_jsonb(p)->>'…'` rather than by
+ * name, and that is not stylistic. `project_name` and `city` were deliberately
+ * deleted from this CRM — one area, one kind of stock, so a project grouping was
+ * noise. Naming a dropped column in a SELECT is a Postgres 42703, which throws,
+ * which meant this function raised every time it ran and took the whole n8n
+ * media handoff down with it. Reading the row as JSON turns a missing column
+ * into a null, which is what a missing value should be.
+ *
+ * Anything optional goes through the JSON form. `label` does not: `ipy_record`
+ * always has one, and if it ever does not, that is worth an error rather than a
+ * folder full of files called `property`.
+ */
 export async function propertyNamePrefix(recordId: string): Promise<string> {
   const { slug } = await import('../../core/storage/keys.js');
   const row = await db.queryOne<{
     label: string; project_name: string | null; configuration: string | null;
-    locality: string | null; plot_area: number | null; area_unit: string | null;
+    locality: string | null; plot_area: string | null; area_unit: string | null;
   }>(
-    `SELECT r.label, p.project_name, p.configuration, p.locality, p.plot_area, p.area_unit
+    `SELECT r.label,
+            to_jsonb(p)->>'project_name'  AS project_name,
+            to_jsonb(p)->>'configuration' AS configuration,
+            to_jsonb(p)->>'locality'      AS locality,
+            to_jsonb(p)->>'plot_area'     AS plot_area,
+            to_jsonb(p)->>'area_unit'     AS area_unit
        FROM ipy_record r JOIN ipy_e_properties p ON p.record_id = r.id
       WHERE r.id = $1`,
     [recordId],
