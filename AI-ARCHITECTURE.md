@@ -14,11 +14,28 @@ re-opens the question in six months and starts bolting on frameworks.
 
 **Eleven of fourteen are already built.** Two are real gaps worth closing. One would be a mistake.
 
-Nothing on that list is what stands between this CRM and a working AI feature today. What stands
-in the way is a model id: the boxes in Admin → Settings → AI models hold OpenRouter ids, and
-`complete()` uses `opts.model ?? ai.model`, so that id **overrides** whichever provider is active.
-An OpenRouter id sent to Gemini is a 404, and the failure is graceful, so every AI feature is quietly
-running on its fallback rules. No amount of architecture fixes that. A model id does.
+Nothing on that list was what stood between this CRM and a working AI feature. A model id was — the
+boxes in Admin → Settings → AI models hold OpenRouter ids, and `complete()` uses
+`opts.model ?? ai.model`, so that id **overrides** whichever provider is active. Every failure was
+graceful, so every AI feature ran quietly on its fallback rules and nothing looked broken.
+
+**That is now largely fixed.** A key is saved and six of the eight jobs pass. Three separate causes
+turned up behind what looked like one problem, which is worth recording because none of them was
+the thing it appeared to be:
+
+* **Transcribe** was pointed at the wrong service entirely. OpenRouter is a chat gateway; it does
+  not transcribe. It also sent JSON with base64 audio where every OpenAI-compatible transcription
+  endpoint wants multipart with a `file` part. No id would ever have fixed it.
+* **Music** sent `modalities` and `audio`, which appear on no music model's `supported_parameters`.
+  An unsupported parameter is refused outright, in 0.0 seconds.
+* **Search and Reorder** had nothing wrong with them that could be found from outside. The
+  endpoints exist, the ids are ones OpenRouter lists under those exact modalities, and the request
+  bodies match its own documentation. What remains is account-side.
+
+The lesson generalises: *"the model id is wrong"* was the diagnosis for all four, and it was right
+about none of them. The fix that mattered was making the Test button repeat the provider's own
+words instead of guessing, and then making each box offer the ids that can do its job
+(`ai/modelCatalogue.ts`) so an id never has to be typed from memory again.
 
 ---
 
@@ -31,7 +48,7 @@ running on its fallback rules. No amount of architecture fixes that. A model id 
 | **LLM Observability** | `ipy_ai_log` | Done at the level that matters: feature, model, user, record, tokens in and out, latency, success, error, cached. That is what Langfuse's dashboard shows. Missing: cost in rupees, and a trace that links the steps of one run together. |
 | **Agentic Memory** | `ipy_ai_memory`, `ai/assistantMemory.ts` | Done, and done the careful way. Memory is **opt-in and visible** — it only records when somebody says "remember that…", and they can see and delete it. Mem0's own advice is not to save everything; this refuses to by construction. |
 | **Vector database** | pgvector 0.8.6, `ipy_embedding` | Installed. Postgres rather than a second database to run, which is the right call while the CRM already lives in Postgres. **Zero rows** — see the gaps below. |
-| **Vector embeddings** | `ai_models.embed` setting | Built, inert. Needs the model id fixed. |
+| **Vector embeddings** | `ai_models.embed` setting | Built, inert. Id and request shape both verified correct; the refusal is account-side. |
 | **RAG** | migration `067_semantic_search.sql` | Built, inert, same reason. Search by meaning across leads, notes, messages and calls. |
 | **Rerank** | `ai_models.rerank` setting | Built, inert, same reason. |
 | **MCP** | `packages/mcp` | Done — server and client. The CRM is connectable from Claude and ChatGPT. |
@@ -111,11 +128,14 @@ to tell whether it improved.
 
 ## The order to do things in
 
-1. **Fix the model id.** One box, one Test button. Every AI feature in the CRM turns on.
+1. ~~**Fix the model id.**~~ Done for six of eight. Search and Reorder need one press of Test on
+   production to say what OpenRouter is actually refusing, and transcription needs a Groq key
+   pasted into Admin → Integrations.
 2. **Write thirty cases.** Plain sentences in a file, before tuning anything.
 3. **Fence untrusted text.** Lead descriptions and photo captions are data, not instructions.
-4. **Switch on semantic search.** It only needs step 1, then an indexing pass.
-5. **Put a price on a token.** One column, one screen.
+4. **Switch on semantic search.** Needs step 1 finished for embed, then an indexing pass.
+5. **Put a price on a token.** One column, one screen. The model picker now prints rupees at the
+   point of choosing; the log still counts tokens and never converts them.
 
-Steps 1 and 4 are an afternoon. Steps 2 and 3 are the ones that make the difference between a demo
-and something a team can rely on, and neither needs a single new dependency.
+Steps 2 and 3 are the ones that make the difference between a demo and something a team can rely
+on, and neither needs a single new dependency.

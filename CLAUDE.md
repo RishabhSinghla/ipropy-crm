@@ -305,15 +305,30 @@ back into TypeScript would reverse that.
 * Speech-to-text, email IMAP inbound, rollup fields and the Channel Partner portal shipped as
   graceful-degradation features — they need real credentials/keys to be exercised end-to-end.
 * Dashboard drag-to-resize is wired (react-grid-layout on desktop, persisted via `saveDashboardLayout`).
-* **A provider key is saved, but no model answers.** Gemini and Groq are active in
-  Admin → Integrations, and the media worker still gets `No AI provider answered` from production.
-  The reason is not a missing key: `complete()` uses `opts.model ?? ai.model`, so the id in
-  Admin → Settings → AI models **overrides the provider's own model**, and the shipped ids are
-  OpenRouter ones. An OpenRouter id sent to Gemini is a 404. Two ways out, and only one costs
-  anything: add an OpenRouter key, **or** paste a Gemini id into those boxes and the existing key
-  does the work. Each box has a **Test** button that makes the real call.
+* **AI answers now.** An OpenRouter key is saved and listing copy, reading photos and voiceover all
+  work on production. Six of the eight model jobs pass their Test button.
+* **Two jobs still fail, and it is not the id and not the request.** Search (embed) and
+  Reorder (rerank) both go to endpoints that exist (`/embeddings` and `/rerank` answer 401
+  unauthenticated, where a made-up path answers 404), with ids OpenRouter itself lists under those
+  exact modalities, in the request shape its own documentation prints. All three were checked. So
+  what is left is account-side — most likely the free NVIDIA endpoints needing the data-policy
+  setting under OpenRouter's privacy page, or a key without access to them. **The Test button
+  repeats the provider's own words**, so one click names it. Do not guess replacement ids; that is
+  how the four wrong defaults shipped.
+* **The model boxes offer real ids now** (`ai/modelCatalogue.ts`). Each one lists what OpenRouter
+  serves for that job, free first, priced in rupees. Three rules encoded there: it stays free text
+  so a retired list cannot lock somebody out; "Free" is claimed only for a `:free` id, because an
+  empty pricing block means *billed elsewhere* — every video and rerank model has one; and any
+  failure returns `[]` so the settings page never depends on a third party being up. Transcribe is
+  deliberately absent — it does not go to OpenRouter.
+* **Transcription goes to the speech-to-text integration, not OpenRouter** (migration `079`). It was
+  wrong twice: wrong service, and JSON with base64 audio where every OpenAI-compatible endpoint
+  wants multipart with a `file` part. **The `stt` row still has no API key**, so it fails with "Add
+  one in Admin → Integrations" until a Groq key is pasted in. Base URL and model are already right.
+* **Music sends only parameters its model accepts.** `modalities` and `audio` were on the request
+  and are on no music model's `supported_parameters`, so the whole call was refused in 0.0s.
 * **Semantic search is built and has never been switched on.** pgvector 0.8.6 is installed,
-  `ipy_embedding` exists, and it holds zero rows, because indexing needs the embedding model above.
+  `ipy_embedding` exists, and it holds zero rows, because indexing needs the embed model above.
   Searching by meaning across leads, notes, messages and calls is inert until that is fixed — and it
   fails quietly, as ordinary keyword search.
 * **Site capture now runs end to end and is proved.** A property finished in the CRM reaches n8n,
