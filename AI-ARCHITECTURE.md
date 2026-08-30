@@ -12,7 +12,7 @@ re-opens the question in six months and starts bolting on frameworks.
 
 ## The short version
 
-**Eleven of fourteen are already built.** One real gap is left. One would be a mistake.
+**Eleven of fourteen are already built.** One real gap is left — an eval suite. One would be a mistake.
 
 Nothing on that list was what stood between this CRM and a working AI feature. A model id was — the
 boxes in Admin → Settings → AI models hold OpenRouter ids, and `complete()` uses
@@ -98,11 +98,31 @@ is not a tool at all. It is **thirty real cases written down**: ordinary request
 a lead with no budget, a property with no photographs, a tool that fails, and the injection attempt
 above. Without those, changing a model id is a guess about whether anything got better.
 
-### 3. Cost is not visible in rupees
+### 3. Cost in rupees — **closed 2026-08-30**
 
-`ipy_ai_log` counts tokens and nothing turns them into money. On free models that is fine. The day
-an OpenRouter key goes in, "which feature is costing what" becomes a question somebody asks weekly,
-and the data to answer it is already being collected — it needs a price per model and a screen.
+`ipy_ai_log` counted tokens from the day it was built and never turned them into money. For a
+business running on a near-zero AI budget that is the one number that matters, and "1.2 million
+tokens" is not it.
+
+`cost_paise` now carries it, priced from the same catalogue the model picker uses and merged across
+every modality — the plain `/models` list is chat-only, so pricing from it alone would value every
+voiceover, embedding and reranking call at zero and quietly report a free month. Shown per feature
+and as a monthly total in Admin → System → AI usage, with the table ordered by cost so the expensive
+feature is the one at the top.
+
+Two decisions worth keeping. **Paise as an integer**, because money in a float is how a total comes
+out as ₹0.30000000000000004 and summing thousands of fractions of a rupee is exactly where that
+shows. And **an unknown model is priced at zero rather than estimated** — showing nothing for
+something uncounted is a smaller lie than inventing a number, and the call count beside it makes the
+gap visible. For the same reason the screen says "No spend recorded" rather than "Free" when the
+total is zero: calls made before pricing existed carry no cost, and "Free" would be a claim about a
+bill that nobody checked.
+
+The same migration turned off prompt storage. `prompt_summary` kept the first 500 characters of
+every prompt, and a prompt is built out of the customer's own notes, messages and call transcripts —
+so the log had quietly become a second copy of customer data, in a table nobody thinks of as holding
+any, with no retention rule and no way to honour a deletion request. It is a switch now, off by
+default, and what had already been collected was cleared.
 
 ---
 
@@ -183,8 +203,10 @@ off blind would take every AI feature down with it.
    lead scoring, call analysis and all three drafting prompts. The transcript
    mattered most: call analysis is the one thing that writes back into fields.
 4. **Switch on semantic search.** Needs step 1 finished for embed, then an indexing pass.
-5. **Put a price on a token.** One column, one screen. The model picker now prints rupees at the
-   point of choosing; the log still counts tokens and never converts them.
+5. ~~**Put a price on a token.**~~ Done. `cost_paise` on `ipy_ai_log`, priced from the catalogue
+   across every modality, shown per feature and as a monthly total in Admin → System → AI usage.
+   Prompt text is no longer kept by default — it was a second copy of customer words in a table
+   nobody thinks of as holding any.
 
 Steps 2 and 3 are the ones that make the difference between a demo and something a team can rely
 on, and neither needs a single new dependency.
