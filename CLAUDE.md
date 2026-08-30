@@ -352,46 +352,47 @@ back into TypeScript would reverse that.
   iPropy Instagram accounts exist. Treat them as unverified until someone confirms each one.
 * Browser push works but **nobody has subscribed a device yet** — Settings → Alerts, per device.
 
-### Verified security findings, 2026-08-30
+### Verified security findings, 2026-08-30 — all closed
 
-An external review raised eight; each was checked against the code rather than
-taken on trust. **Five are real and open.** One was fixed the same day
-(`applyFileSecurityHeaders` now runs on all four public byte-serving routes —
-it had only ever run on the signed-in one). Do not re-litigate these from
-memory; the verification commands are in the commit messages.
+An external review raised eight. Each was checked against the code rather than
+taken on trust, and **every one was true**. All are now fixed; this is kept as
+the record of what was wrong and why the fixes are shaped as they are.
 
-* **Telephony webhooks have no authentication at all.** `/webhooks/telephony/
-  :provider/{status,recording,incoming}` accept anything. WhatsApp, Facebook and
-  n8n all verify signatures in the same file, so the pattern is understood and
-  these three were simply missed. The exploit chain is real: POST a
-  `providerCallId` with an attacker-controlled `RecordingUrl`, and
-  `analyseCallRecording` fetches it with no host, private-network or size check.
-  That is SSRF. `/incoming` also hands back the agent's phone number.
-  **Failing closed is safe right now** — twilio, exotel and knowlarity are all
-  inactive, so nothing is using these.
-* **Lead webhooks fail open.** `/webhooks/leads/google` only checks its key
-  `if (googleAdsWebhookKey && ...)`, so an unset key skips the check entirely.
-  The portal endpoints have no secret at all. Anyone with the URL can inject
-  leads, which triggers assignment, scoring, notifications and possibly a paid
-  WhatsApp greeting.
-* **A disabled AI provider is still used.** `getAiFallbackChain()` deliberately
-  falls back to providers whose card is switched off, on the reasoning that
-  holding a working key and refusing to answer is worse. That is a defensible
-  availability call and an indefensible privacy one: "off" should mean no lead
-  notes or call audio reach that company. **Do not change this without checking
-  first** — `ai_openrouter` is `is_active = false` locally while holding the
-  model config, so this fallback may be the only reason AI answers at all.
-  Check before touching it.
-* **Both tokens live in `localStorage`, and the app serves no CSP.**
-  `helmet({ contentSecurityPolicy: false })` in `app.ts`, confirmed absent on the
-  live HTML response (nosniff and X-Frame-Options are present). Refresh tokens
-  are stored as plaintext rows and are not rotated on use, so a database leak
-  is a set of usable 30-day sessions.
-* **The documented AI approval rule is not universally true.** `AI-ARCHITECTURE.md`
-  says nothing writes to a field without confirmation. `callAnalysis.ts` fills
-  empty fields and creates a follow-up on its own, and lead scoring writes
-  `rating` and the AI score. Either route these through `ipy_ai_action` or
-  change the document and give the admin a switch.
+* **Public file routes served an uploaded mime type raw.** `applyFileSecurityHeaders`
+  existed and ran only on the signed-in route. Four public byte-serving sites
+  never called it, so a published SVG ran scripts on the CRM's own origin. Fixed;
+  `tests/publicFileHeaders.test.ts` fails if a fifth route appears without it.
+* **Telephony webhooks authenticated nobody.** Twilio now verifies a real
+  `X-Twilio-Signature` HMAC over the **forwarded** URL — Render terminates TLS,
+  so signing over `req.protocol`/`req.get('host')` refuses every genuine request
+  and looks exactly like a wrong auth token. Others carry a per-provider shared
+  secret. The SSRF chain through `analyseCallRecording` is closed at the door;
+  the download itself still has no host or size limit, which is worth adding.
+* **Lead webhooks failed open.** `if (key && provided !== key)` meant a blank key
+  skipped the check entirely. Google and the portals both refuse when
+  unconfigured now.
+* **Three AI writes had no switch.** `ai_features.fill_fields_from_calls` and
+  `ai_features.follow_up_from_calls`, both defaulting on. Lead scoring is left
+  alone deliberately: a score that needs confirming is a task, not a score.
+  `AI-ARCHITECTURE.md` used to claim nothing writes on its own and now lists
+  what does.
+* **A switched-off AI provider was still used.** Now `ai.use_disabled_providers`.
+  **It defaults to ON on purpose** — `ai_openrouter` is `is_active = false` while
+  holding the key, so defaulting it off would take every AI feature down to close
+  a hole nobody is standing in. Switch it off after enabling the cards you want.
+* **Refresh tokens were plaintext and never rotated.** Migration `083` hashes in
+  place (nobody is signed out), rotation mints a replacement on each exchange,
+  and a replay past the grace window revokes that user's whole session family.
+  **The 60-second grace window is load-bearing**: two tabs hitting a 401 together
+  present the same token, and without it rotation is a random logout generator.
+  The client must store the returned `refreshToken` or the next refresh reads as
+  theft.
+
+**Still open and worth doing:** the app serves no CSP (`contentSecurityPolicy:
+false` in `app.ts`) and both tokens live in `localStorage`; the recording
+download has no size or host restriction; there is no prompt-injection or
+AI-quality eval suite; the largest files (`RecordDetail.tsx` at 2,727 lines)
+want splitting before a second developer arrives.
 
 ---
 
