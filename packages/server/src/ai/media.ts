@@ -295,10 +295,20 @@ export async function music(
     onError?: (message: string) => void } = {},
 ): Promise<Buffer | null> {
   const model = opts.model ?? await modelFor('music');
+  /*
+    `modalities: ['audio']` and `audio: { format }` used to go with this, and
+    they are not parameters the music models accept. OpenRouter lists exactly
+    what each model takes, and Lyria's are `max_tokens, response_format, seed,
+    temperature, top_p` — no `modalities`, no `audio`. An unsupported parameter
+    is rejected outright, which matches what this looked like from outside: the
+    settings test failed in 0.0 seconds, far too fast for anything to have tried
+    to generate five seconds of music.
+
+    These models already answer with audio because that is what they are; asking
+    for it in a parameter they do not have is what stopped them.
+  */
   const response = await request('/chat/completions', {
     model,
-    modalities: ['audio'],
-    audio: { format: 'mp3' },
     messages: [{
       role: 'user',
       content: `Instrumental only, no vocals and no lyrics. ${brief} `
@@ -307,12 +317,35 @@ export async function music(
   }, 'music', model, { recordId: opts.recordId, timeoutMs: 300_000, onError: opts.onError });
   if (!response) return null;
 
+  /*
+    Where the bytes arrive differs by provider, so all three known shapes are
+    read rather than one: OpenAI puts base64 under `message.audio.data`, and
+    OpenRouter hands attachments back as data URLs — under `audio` for some
+    models and alongside `images` for others.
+  */
   const body = await response.json() as {
-    choices?: { message?: { audio?: { data?: string } } }[];
+    choices?: {
+      message?: {
+        audio?: { data?: string; url?: string };
+        content?: string;
+        images?: { image_url?: { url?: string } }[];
+      };
+    }[];
   };
-  const data = body.choices?.[0]?.message?.audio?.data;
+  const message = body.choices?.[0]?.message;
+  const fromDataUrl = (value?: string): string | null => {
+    const match = /^data:audio\/[\w.+-]+;base64,(.+)$/.exec(value ?? '');
+    return match?.[1] ?? null;
+  };
+
+  const data = message?.audio?.data
+    ?? fromDataUrl(message?.audio?.url)
+    ?? fromDataUrl(message?.content)
+    ?? fromDataUrl(message?.images?.[0]?.image_url?.url);
+
   if (!data) {
-    logger.warn({ model }, 'music model returned no audio');
+    logger.warn({ model }, 'music model answered without audio');
+    opts.onError?.('The model answered, but with no audio attached. It may not be a music model.');
     return null;
   }
   return Buffer.from(data, 'base64');
