@@ -7,6 +7,7 @@ import { formatIndianPrice } from '@ipropy/shared';
 import { db } from '../db/pool.js';
 import { complete, isAiAvailable, REAL_ESTATE_SYSTEM } from './client.js';
 import { matchForRecord } from './matching.js';
+import { fenceId, fenced, untrustedRule } from './untrusted.js';
 
 export interface DraftInput {
   channel: 'whatsapp' | 'email' | 'sms' | 'call_script';
@@ -177,17 +178,19 @@ export async function draftMessage(input: DraftInput): Promise<DraftResult | nul
     }
   }
 
+  // Everything here came from the customer: their name, their history, and the
+  // message they just sent, which is the most obvious place to try this.
+  const fence = fenceId();
+
   const prompt = `Draft a ${input.channel === 'call_script' ? 'call script' : `${input.channel} message`} for this contact.
 
 ## Who they are
-${ctx.label}
-${ctx.summary}
+${fenced(fence, 'Contact', `${ctx.label}\n${ctx.summary}`)}
 
-## Interaction history
-${ctx.history}
+${fenced(fence, '## Interaction history', ctx.history)}
 ${propertyBlock}
 
-${input.replyingTo ? `## They just said\n"${input.replyingTo}"\n` : ''}
+${input.replyingTo ? `${fenced(fence, '## They just said', input.replyingTo)}\n` : ''}
 ## Goal
 ${input.goal ?? 'Move the conversation to the next step of the sales process.'}
 
@@ -205,7 +208,7 @@ ${input.channel === 'email'
 
   const result = await complete({
     feature: `draft_${input.channel}`,
-    system: REAL_ESTATE_SYSTEM,
+    system: `${REAL_ESTATE_SYSTEM}\n\n${untrustedRule(fence)}`,
     prompt,
     temperature: 0.6,
     maxTokens: 900,
@@ -244,11 +247,12 @@ export async function suggestReplies(conversationId: string, userId?: string): P
     ? await buildRecordSummary(conv.record_id, conv.record_module)
     : '';
 
+  const replyFence = fenceId();
+
   const prompt = `A sales rep is replying on WhatsApp. Suggest three distinct short replies.
 
-${summary ? `## Contact\n${summary}\n` : ''}
-## Conversation (newest first)
-${messages.rows.map((m) => `${m.direction === 'inbound' ? 'Customer' : 'Rep'}: ${m.body}`).join('\n')}
+${summary ? `${fenced(replyFence, '## Contact', summary)}\n` : ''}
+${fenced(replyFence, '## Conversation (newest first)', messages.rows.map((m) => `${m.direction === 'inbound' ? 'Customer' : 'Rep'}: ${m.body}`).join('\n'))}
 
 Each reply must:
 - be under 40 words
@@ -259,7 +263,7 @@ Return exactly three lines, each starting with "- ". No other text.`;
 
   const result = await complete({
     feature: 'suggest_replies',
-    system: REAL_ESTATE_SYSTEM,
+    system: `${REAL_ESTATE_SYSTEM}\n\n${untrustedRule(replyFence)}`,
     prompt,
     fast: true,
     temperature: 0.7,
@@ -307,19 +311,19 @@ export async function summariseRecord(
   // connected it is replaced by the richer, context-aware version below.
   if (!isAiAvailable()) return fallback;
 
+  const summaryFence = fenceId();
+
   const prompt = `Summarise where this ${kind} stands in iPropy CRM.
 
-## Record
-${summary}
+${fenced(summaryFence, '## Record', summary)}
 
-## Activity (newest first)
-${timeline.map((t) => `- [${new Date(t.at).toLocaleDateString('en-IN')}] ${t.title}${t.body ? `: ${t.body.slice(0, 200)}` : ''}`).join('\n')}
+${fenced(summaryFence, '## Activity (newest first)', timeline.map((t) => `- [${new Date(t.at).toLocaleDateString('en-IN')}] ${t.title}${t.body ? `: ${t.body.slice(0, 200)}` : ''}`).join('\n'))}
 
 Write 3-5 sentences using only the facts above. For a lead, cover their buying journey, priorities, blockers and next action. For a property, cover availability, important facts, media/activity state and next action. For any other record, describe its current state and the single most useful next action. Be specific. If a fact is missing, say it is missing rather than inventing it. No preamble.`;
 
   const result = await complete({
     feature: 'summarise_record',
-    system: REAL_ESTATE_SYSTEM,
+    system: `${REAL_ESTATE_SYSTEM}\n\n${untrustedRule(summaryFence)}`,
     prompt,
     maxTokens: 600,
     recordId,
