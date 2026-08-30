@@ -17,6 +17,7 @@ import { BadRequestError, NotFoundError, UnauthorizedError } from '../../utils/e
 import * as waProvider from '../../integrations/whatsapp/provider.js';
 import * as waService from '../../integrations/whatsapp/service.js';
 import { routeInboundCall, updateCallStatus } from '../../integrations/telephony/service.js';
+import { verifyTelephonyWebhook } from '../../integrations/telephony/verifyWebhook.js';
 import {
   captureLead, normalizeFacebook, normalizeGoogleAds, normalizePortal, type NormalizedLead,
 } from '../../integrations/leadsources/capture.js';
@@ -127,11 +128,31 @@ webhooksRouter.post('/whatsapp', asyncHandler(async (req, res) => {
 // Telephony
 // ---------------------------------------------------------------------------
 
+/*
+  Every telephony route below authenticates before it acts.
+
+  They accepted anything at all, in a file where WhatsApp and Facebook check an
+  HMAC and n8n checks a shared secret. The worst of it was `/recording`: it takes
+  a recording URL from the request and hands it to `analyseCallRecording`, which
+  downloads it with no host, private-network or size check. Anyone could make the
+  server fetch a URL of their choosing.
+
+  These answer 200 first and work afterwards, because a telephone company that
+  gets an error retries for hours. So a refusal is logged and the work is skipped
+  — the caller cannot tell a rejected request from an accepted one, which is also
+  what stops this being an oracle for guessing the secret.
+*/
 webhooksRouter.post('/telephony/:provider/status', asyncHandler(async (req, res) => {
   res.sendStatus(200);
 
-  const body = req.body as Record<string, string>;
   const provider = req.params.provider;
+  const verdict = verifyTelephonyWebhook(req, provider);
+  if (!verdict.ok) {
+    logger.warn({ provider, reason: verdict.reason }, 'rejected an unauthenticated telephony status callback');
+    return;
+  }
+
+  const body = req.body as Record<string, string>;
 
   // Providers disagree on casing and field names; normalise here.
   const providerCallId = body.CallSid ?? body.CallUuid ?? body.Sid ?? body.call_sid ?? body.CallId;
@@ -152,6 +173,16 @@ webhooksRouter.post('/telephony/:provider/status', asyncHandler(async (req, res)
 
 webhooksRouter.post('/telephony/:provider/recording', asyncHandler(async (req, res) => {
   res.sendStatus(200);
+
+  const verdict = verifyTelephonyWebhook(req, req.params.provider);
+  if (!verdict.ok) {
+    logger.warn(
+      { provider: req.params.provider, reason: verdict.reason },
+      'rejected an unauthenticated telephony recording callback',
+    );
+    return;
+  }
+
   const body = req.body as Record<string, string>;
   const providerCallId = body.CallSid ?? body.CallUuid ?? body.Sid;
   const recordingUrl = body.RecordingUrl ?? body.recording_url;
@@ -171,6 +202,17 @@ webhooksRouter.post('/telephony/:provider/recording', asyncHandler(async (req, r
  * so the provider knows which agent to bridge to.
  */
 webhooksRouter.post('/telephony/:provider/incoming', asyncHandler(async (req, res) => {
+  // This one answers with the agent's own phone number, so an unauthenticated
+  // caller was being handed staff contact details for the asking.
+  const verdict = verifyTelephonyWebhook(req, req.params.provider);
+  if (!verdict.ok) {
+    logger.warn(
+      { provider: req.params.provider, reason: verdict.reason },
+      'rejected an unauthenticated inbound-call callback',
+    );
+    throw new UnauthorizedError('Invalid telephony webhook signature');
+  }
+
   const body = req.body as Record<string, string>;
   const from = body.From ?? body.CallFrom ?? body.from ?? '';
   const to = body.To ?? body.CallTo ?? body.To ?? '';
@@ -277,10 +319,31 @@ webhooksRouter.post('/leads/facebook', asyncHandler(async (req, res) => {
   }
 }));
 
+/*
+  Lead sources authenticate, and an unconfigured one is refused rather than
+  waved through.
+
+  Google's check used to read `if (googleAdsWebhookKey && ...)`, so leaving the
+  key blank skipped it entirely — a guard that only guards once somebody
+  remembers to arm it. The portal endpoints had nothing at all. Either way,
+  anyone who knew the URL could invent leads, and an invented lead is not
+  harmless: it assigns an owner, scores, notifies, and can fire a WhatsApp
+  greeting that costs money.
+
+  The secret goes in the URL because that is the strongest thing these sources
+  offer — none of them signs a request. It is weaker than an HMAC and infinitely
+  stronger than nothing, and it is per source, so one portal leaking its URL
+  cannot post as another.
+*/
 webhooksRouter.post('/leads/google', asyncHandler(async (req, res) => {
   const body = req.body as { google_key?: string; lead_id?: string };
   const { googleAdsWebhookKey } = getSettings().leadSources;
-  if (googleAdsWebhookKey && body.google_key !== googleAdsWebhookKey) {
+
+  if (!googleAdsWebhookKey || !safeEqual(googleAdsWebhookKey, body.google_key ?? '')) {
+    logger.warn(
+      { configured: Boolean(googleAdsWebhookKey) },
+      'rejected a google lead webhook',
+    );
     throw new UnauthorizedError('Invalid webhook key');
   }
   res.sendStatus(200);
@@ -296,6 +359,15 @@ webhooksRouter.post('/leads/portal/:portal', asyncHandler(async (req, res) => {
     nobroker: 'NoBroker', commonfloor: 'CommonFloor', proptiger: 'PropTiger',
   };
   const source = portalMap[req.params.portal.toLowerCase()] ?? req.params.portal;
+
+  const expected = getSettings().leadSources.portalWebhookKey;
+  const provided = (req.headers['x-portal-secret'] as string | undefined)
+    ?? (typeof req.query.secret === 'string' ? req.query.secret : '');
+
+  if (!expected || !safeEqual(expected, provided)) {
+    logger.warn({ source, configured: Boolean(expected) }, 'rejected a portal lead webhook');
+    throw new UnauthorizedError('Invalid webhook key');
+  }
 
   res.status(200).json({ received: true });
 

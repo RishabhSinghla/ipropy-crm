@@ -239,6 +239,7 @@ export const config = {
       apiToken: str('EXOTEL_API_TOKEN'),
       subdomain: str('EXOTEL_SUBDOMAIN', 'api.exotel.com'),
       callerId: str('EXOTEL_CALLER_ID'),
+      webhookSecret: str('EXOTEL_WEBHOOK_SECRET'),
     },
   },
 
@@ -274,6 +275,7 @@ export const config = {
       verifyToken: str('FACEBOOK_VERIFY_TOKEN', 'ipropy-fb-verify'),
     },
     googleAdsWebhookKey: str('GOOGLE_ADS_WEBHOOK_KEY'),
+    portalWebhookKey: str('PORTAL_WEBHOOK_KEY'),
     webformPublicKey: str('WEBFORM_PUBLIC_KEY', 'ipropy-public-webform'),
   },
 

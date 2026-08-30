@@ -10,6 +10,7 @@ import { db } from '../db/pool.js';
 import { logger } from '../utils/logger.js';
 import { completeJson, isAiAvailable, saveInsight, REAL_ESTATE_SYSTEM } from './client.js';
 import { buildRecordSummary } from './drafting.js';
+import { featureOn } from '../core/settings/aiFeatures.js';
 
 export interface CallAnalysis {
   summary: string;
@@ -203,7 +204,12 @@ in the past.`;
       score: parsed.score ?? null,
     });
 
-    await applyExtractedFields(meta.recordId, meta.module, parsed.extractedFields ?? {});
+    // Both writes below are switchable in Admin → Settings → AI features. They
+    // are the only two places the AI reaches a field without somebody pressing
+    // something, so they are the two that need a switch.
+    if (await featureOn('fillFieldsFromCalls')) {
+      await applyExtractedFields(meta.recordId, meta.module, parsed.extractedFields ?? {});
+    }
 
     // Where the call leaves the lead is *proposed*, not applied. Everything
     // above transcribes what the buyer said; a pipeline status is a judgement,
@@ -216,7 +222,9 @@ in the past.`;
       }).catch((err) => logger.warn({ err, callId }, 'could not propose an update from the call'));
     }
 
-    await createFollowUpTasks(meta.recordId, meta.module, parsed.nextActions ?? [], meta.userId);
+    if (await featureOn('followUpFromCalls')) {
+      await createFollowUpTasks(meta.recordId, meta.module, parsed.nextActions ?? [], meta.userId);
+    }
 
     // A fresh call materially changes the picture — re-score.
     if (meta.module === 'leads') {

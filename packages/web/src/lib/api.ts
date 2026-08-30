@@ -52,8 +52,20 @@ async function refreshToken(): Promise<boolean> {
   })
     .then(async (res) => {
       if (!res.ok) return false;
-      const data = await res.json() as { token: string };
+      const data = await res.json() as { token: string; refreshToken?: string };
       tokenStore.set(data.token);
+      /*
+        Refresh tokens rotate now: each exchange retires the one that was used.
+        Failing to store the replacement means the next refresh presents a
+        retired token, which the server reads as a stolen one and answers by
+        signing every session out. So this line is what stands between rotation
+        and being logged out every hour.
+
+        It is absent when a second tab refreshed a moment earlier — that reply
+        deliberately carries no new refresh token, and the one already held is
+        still the live one.
+      */
+      if (data.refreshToken) tokenStore.setRefresh(data.refreshToken);
       return true;
     })
     .catch(() => false)

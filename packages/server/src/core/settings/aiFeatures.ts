@@ -13,6 +13,30 @@ import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 
 export const AI_FEATURES = {
+  /*
+    The two below are the only entries here that let the AI *write*. Everything
+    else on this list suggests, drafts or scores, and a person acts on it.
+
+    They exist because an outside review pointed out that AI-ARCHITECTURE.md
+    promises nothing reaches a field without confirmation, while call analysis
+    quietly filled empty fields and made a follow-up. Both defaults keep that
+    behaviour, because it only ever fills a field that was *blank*, never
+    overwrites one, refuses an implausible amount, and lands in the audit trail
+    as `ai_call_analysis`. What was missing was not care, it was a switch and an
+    honest sentence in the document.
+  */
+  fillFieldsFromCalls: {
+    key: 'ai_features.fill_fields_from_calls',
+    label: 'Fill blank fields from a call',
+    fallback: true,
+    description: 'After a call is transcribed, a budget or a locality the buyer said out loud goes into the field if that field is empty. It never changes something already filled in, and every write is in the record history.',
+  },
+  followUpFromCalls: {
+    key: 'ai_features.follow_up_from_calls',
+    label: 'Set the follow-up date from a call',
+    fallback: true,
+    description: '"Call me Tuesday" becomes a follow-up on Tuesday, without anybody typing it.',
+  },
   photoCulling: {
     key: 'ai_features.photo_culling',
     label: 'Hold back weak photos',

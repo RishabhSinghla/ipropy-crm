@@ -697,6 +697,10 @@ adminRouter.put('/settings', asyncHandler(async (req, res) => {
   // Same contract for everything else that caches a setting. A model swapped in
   // a text box has to be live on the next job, not after the next deploy —
   // otherwise "it does not persist" is exactly what it looks like.
+  // The disabled-provider fallback is cached in the integration snapshot, so a
+  // change to it has to reload that snapshot, not just this route's caches.
+  const { invalidate: reloadIntegrations } = await import('../../core/settings/integrations.js');
+  await reloadIntegrations();
   const { invalidateAiModels } = await import('../../core/settings/aiModels.js');
   const { invalidateHouseStyle } = await import('../../core/settings/houseStyle.js');
   const { invalidateAiFeatures } = await import('../../core/settings/aiFeatures.js');

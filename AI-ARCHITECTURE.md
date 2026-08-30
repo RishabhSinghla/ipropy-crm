@@ -52,7 +52,7 @@ words instead of guessing, and then making each box offer the ids that can do it
 | **RAG** | migration `067_semantic_search.sql` | Built, inert, same reason. Search by meaning across leads, notes, messages and calls. |
 | **Rerank** | `ai_models.rerank` setting | Built, inert, same reason. |
 | **MCP** | `packages/mcp` | Done — server and client. The CRM is connectable from Claude and ChatGPT. |
-| **Guardrails** | `ipy_ai_action` | Done, as a database constraint rather than a library. Every action the AI proposes lands as `pending` and does nothing until a human confirms it. `status` is a CHECK constraint, so there is no code path that skips it. **Nothing writes into a CRM field on its own** — the owner's rule, enforced in the schema. |
+| **Guardrails** | `ipy_ai_action` | Done, as a database constraint rather than a library. Every action the AI *proposes* lands as `pending` and does nothing until a human confirms it. `status` is a CHECK constraint, so there is no code path that skips it. **Three exceptions, and this table used to claim there were none** — see below. |
 | **Tool contracts** | `packages/mcp/src/tools.ts` | Done. Named tools, typed inputs, no free-text command surface. |
 
 ## What is genuinely missing
@@ -123,6 +123,37 @@ is how a project acquires two half-finished retrieval systems.
 iPropy's properties, that is retrieval, not training. Reach for things in this order — prompt, then
 context and retrieval, then fine-tuning — and build the evals before any of them, or there is no way
 to tell whether it improved.
+
+---
+
+## What the AI does without being asked
+
+This section exists because the table above used to say "nothing writes into a
+CRM field on its own", and an outside review checked and found that it did.
+Three places, all now switchable, none of them removed:
+
+| What | Where | Default | Switch |
+|---|---|---|---|
+| Fills a **blank** field from what a buyer said on a call | `ai/callAnalysis.ts` | On | Admin → Settings → AI features |
+| Sets a follow-up date from "call me Tuesday" | `ai/callAnalysis.ts` | On | Admin → Settings → AI features |
+| Writes `rating`, the AI score and the grade | `ai/leadScoring.ts` | On | — a score is the feature |
+
+The field fill is narrower than it sounds and the narrowness is deliberate: it
+writes only where the field is **empty**, never overwrites, refuses an
+implausible amount, and every write is in the record history tagged
+`ai_call_analysis`. Where the call leaves the lead in the pipeline is still only
+*proposed* — see `callProposal.ts` — because a stage is a judgement and a wrong
+one drops a live lead somewhere nobody is working.
+
+Lead scoring is left alone on purpose. A score that needs confirming is not a
+score, it is a task; and it writes nothing a person typed.
+
+**A fourth thing worth knowing, on the same theme:** `getAiFallbackChain()` will
+use a provider whose card is switched **off**, if every switched-on one is
+failing. That was reasoned as availability and is better understood as privacy,
+so it is now `ai.use_disabled_providers`. It defaults to **on**, because an
+inactive card holding a working key is the live configuration here and turning it
+off blind would take every AI feature down with it.
 
 ---
 

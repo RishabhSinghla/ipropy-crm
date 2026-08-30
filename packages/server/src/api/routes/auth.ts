@@ -11,7 +11,7 @@ import {
 } from '../../middleware/auth.js';
 import { BadRequestError, UnauthorizedError, ValidationError } from '../../utils/errors.js';
 import { getSubordinateUserIds } from '../../core/permissions/index.js';
-import { issueSession } from '../../core/auth/session.js';
+import { issueSession, hashRefreshToken, rotateRefreshToken, RetryableRefresh } from '../../core/auth/session.js';
 import { clearPinDeviceCookie } from '../../core/auth/devicePin.js';
 
 export const authRouter = Router();
@@ -72,24 +72,48 @@ authRouter.post('/login', loginLimiter, asyncHandler(async (req, res) => {
   res.json(await issueSession(row.id, req));
 }));
 
+/*
+  Refreshing rotates. A refresh token used to be good for its full thirty days
+  however many times it was presented, so one that leaked stayed useful for a
+  month with nothing to notice. Now each exchange mints a new one and retires the
+  old, which turns a stolen token into a short problem and, better, a visible
+  one: the moment a retired token is presented again, two parties are holding it.
+*/
 authRouter.post('/refresh', asyncHandler(async (req, res) => {
   const token = z.object({ refreshToken: z.string().min(10) }).parse(req.body).refreshToken;
-  const session = await queryOne<{ user_id: string; expires_at: string; revoked_at: string | null }>(
-    `SELECT user_id, expires_at, revoked_at FROM ipy_session WHERE refresh_token = $1`,
-    [token],
-  );
-  if (!session || session.revoked_at || new Date(session.expires_at) < new Date()) {
-    throw new UnauthorizedError('Session expired — please sign in again');
+
+  let rotated: { userId: string; refreshToken: string } | null = null;
+  let userId: string;
+  try {
+    rotated = await rotateRefreshToken(token, req);
+    userId = rotated.userId;
+  } catch (err) {
+    if (!(err instanceof RetryableRefresh)) throw err;
+    // A second tab refreshed a moment ago. Give it a fresh access token and
+    // leave its refresh token alone rather than starting a rotation war.
+    const session = await queryOne<{ user_id: string }>(
+      `SELECT user_id FROM ipy_session WHERE token_hash = $1`,
+      [hashRefreshToken(token)],
+    );
+    if (!session) throw new UnauthorizedError('Session expired — please sign in again');
+    userId = session.user_id;
   }
-  const user = await loadUser(session.user_id);
+
+  const user = await loadUser(userId);
   if (!user?.isActive) throw new UnauthorizedError('Account is unavailable');
-  res.json({ token: signAccessToken(user), user });
+
+  res.json({
+    token: signAccessToken(user),
+    user,
+    // Absent on the concurrent-refresh path, where the caller keeps the one it has.
+    ...(rotated ? { refreshToken: rotated.refreshToken } : {}),
+  });
 }));
 
 authRouter.post('/logout', requireAuth, asyncHandler(async (req, res) => {
   const token = (req.body as { refreshToken?: string })?.refreshToken;
   if (token) {
-    await db.query(`UPDATE ipy_session SET revoked_at = now() WHERE refresh_token = $1`, [token]);
+    await db.query(`UPDATE ipy_session SET revoked_at = now() WHERE token_hash = $1`, [hashRefreshToken(token)]);
   } else {
     await db.query(`UPDATE ipy_session SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, [getUser(req).id]);
   }

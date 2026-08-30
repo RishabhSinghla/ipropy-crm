@@ -63,7 +63,9 @@ export interface ResolvedSettings {
   telephony: {
     provider: 'none' | 'twilio' | 'exotel';
     twilio: { accountSid: string; authToken: string; callerId: string; appSid: string };
-    exotel: { sid: string; apiKey: string; apiToken: string; subdomain: string; callerId: string };
+    exotel: { sid: string; apiKey: string; apiToken: string; subdomain: string; callerId: string;
+      /** Shared secret on the callback URL. Exotel does not sign, so this is the only proof. */
+      webhookSecret: string };
   };
   email: {
     host: string; port: number; secure: boolean; user: string; password: string; from: string;
@@ -92,6 +94,8 @@ export interface ResolvedSettings {
   leadSources: {
     facebook: { appId: string; appSecret: string; pageAccessToken: string; verifyToken: string };
     googleAdsWebhookKey: string;
+    /** One secret for every property portal. None of them signs a request. */
+    portalWebhookKey: string;
     webformPublicKey: string;
   };
   storage: {
@@ -298,13 +302,41 @@ export function getAiFallbackChain(): ResolvedSettings['ai'][] {
   if (chosen.provider !== 'none') add(chosen);
   for (const provider of AI_PROVIDER_ORDER) add(aiCandidate(rows, provider));
 
-  // Last resort: providers that hold a usable key but are switched off. Being
-  // unable to answer while holding a working key is worse than quietly using
-  // it, and the toggle is still honoured as a preference — a disabled provider
-  // is only reached once every enabled one has failed.
-  for (const provider of AI_PROVIDER_ORDER) add(aiCandidate(rows, provider, true));
+  /*
+    Last resort: providers that hold a usable key but are switched off.
+
+    The reasoning was that being unable to answer while holding a working key is
+    worse than quietly using it. An outside review pointed out the other half of
+    that, and it is the more important half: an admin who switches a provider off
+    is drawing a line about who may see lead notes and call recordings, not
+    expressing a preference. A switch that means "off, unless" is not a switch.
+
+    So it is now a decision somebody makes rather than one baked in.
+    `useDisabledProviders` **defaults to on**, deliberately, because turning it
+    off blind would be its own outage — an OpenRouter card sitting inactive while
+    holding the key is exactly the shape this fallback was written for, and that
+    is the live configuration here. Switch it off once every provider you want
+    used is switched on.
+  */
+  if (allowDisabledProviders) {
+    for (const provider of AI_PROVIDER_ORDER) add(aiCandidate(rows, provider, true));
+  }
 
   return chain;
+}
+
+/*
+  Read once at load and cached with the rest of the snapshot, because the
+  fallback chain is built on nearly every AI call and must not become a query.
+*/
+let allowDisabledProviders = true;
+
+export function setAllowDisabledProviders(allow: boolean): void {
+  allowDisabledProviders = allow;
+}
+
+export function disabledProvidersAllowed(): boolean {
+  return allowDisabledProviders;
 }
 
 /**
@@ -504,6 +536,7 @@ function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
         apiToken: pick(exotel, 'credentials', 'apiToken', config.telephony.exotel.apiToken),
         subdomain: pick(exotel, 'config', 'subdomain', config.telephony.exotel.subdomain) || config.telephony.exotel.subdomain,
         callerId: pick(exotel, 'config', 'callerId', config.telephony.exotel.callerId),
+        webhookSecret: pick(exotel, 'credentials', 'webhookSecret', config.telephony.exotel.webhookSecret),
       },
     },
     email: {
@@ -536,6 +569,7 @@ function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
         verifyToken: pick(fb, 'config', 'verifyToken', config.leadSources.facebook.verifyToken) || config.leadSources.facebook.verifyToken,
       },
       googleAdsWebhookKey: pick(google, 'credentials', 'webhookKey', config.leadSources.googleAdsWebhookKey),
+      portalWebhookKey: pick(map.get('webform'), 'credentials', 'portalWebhookKey', config.leadSources.portalWebhookKey),
       webformPublicKey: pick(webform, 'config', 'key', config.leadSources.webformPublicKey) || config.leadSources.webformPublicKey,
     },
     storage: {
@@ -568,7 +602,22 @@ export function getSettings(): ResolvedSettings {
 export async function warmup(): Promise<void> {
   rows = await load();
   snapshot = resolve(rows);
-  logger.debug({ providers: rows.size }, 'integration settings loaded');
+
+  /*
+    Whether a switched-off provider may still be used as a last resort. Read
+    here rather than per call, because the fallback chain is rebuilt on nearly
+    every AI request and must not become a query.
+  */
+  const row = await db.queryOne<{ value: unknown }>(
+    `SELECT value FROM ipy_setting WHERE key = 'ai.use_disabled_providers'`,
+  ).catch(() => null);
+  // Absent means on, which is the behaviour that existed before it was a choice.
+  allowDisabledProviders = row ? row.value !== false : true;
+
+  logger.debug(
+    { providers: rows.size, allowDisabledProviders },
+    'integration settings loaded',
+  );
 }
 
 /** Reload immediately (not lazily) — callers need the new value before their response returns. */
