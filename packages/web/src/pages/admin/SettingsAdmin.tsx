@@ -57,8 +57,9 @@ const GROUPS: { id: string; title: string; blurb: string }[] = [
   {
     id: 'ai_models',
     title: 'AI models',
-    blurb: 'Which model does which job. Paste any id from openrouter.ai/models, save, and the next job uses it. '
-      + 'A blank or mistyped box falls back to the one the CRM shipped with rather than switching the feature off.',
+    blurb: 'Which model does which job. Each box offers the models that can actually do that job, free ones first, '
+      + 'with what the rest cost. Press Test to make a real call before you save. A blank or mistyped box falls '
+      + 'back to the one the CRM shipped with rather than switching the feature off.',
   },
   {
     id: 'team_location',
@@ -312,6 +313,29 @@ function ModelRow({ setting, value, onChange }: {
   const job = setting.key.replace(/^ai_models\./, '');
   const model = typeof value === 'string' ? value : '';
 
+  /*
+    What can actually do this job.
+
+    This box used to say "paste a model id from openrouter.ai/models", so every
+    id was typed in by hand — and four of the eight shipped defaults were wrong,
+    in four different ways. A box that sends somebody somewhere else to find its
+    value is how that happens.
+
+    A datalist rather than a dropdown on purpose: the box stays free text. A
+    suggestion list goes stale the day a model is retired, and being unable to
+    type the id that works would be worse than being offered one that does not.
+    Empty when the catalogue is unreachable, and then this is the plain text box
+    it has always been.
+  */
+  const { data: catalogue } = useQuery({
+    queryKey: ['ai-model-catalogue', job],
+    queryFn: () => api.aiModelCatalogue(job),
+    staleTime: 60 * 60 * 1000,
+    retry: false,
+  });
+  const options = catalogue?.models ?? [];
+  const listId = `models-${job}`;
+
   const test = async (): Promise<void> => {
     setBusy(true);
     setResult(null);
@@ -332,13 +356,30 @@ function ModelRow({ setting, value, onChange }: {
           className="input min-w-0 flex-1 font-mono text-xs"
           value={model}
           spellCheck={false}
+          list={options.length ? listId : undefined}
           onChange={(e) => { onChange(e.target.value); setResult(null); }}
-          placeholder="paste a model id from openrouter.ai/models"
+          placeholder={options.length ? 'Start typing, or pick one' : 'paste a model id from openrouter.ai/models'}
         />
+        {options.length > 0 && (
+          <datalist id={listId}>
+            {options.map((m) => (
+              // Free ones sort first, and the price rides along in the label so
+              // the choice between ₹0 and ₹900 a million is visible at the point
+              // of choosing rather than on a bill later.
+              <option key={m.id} value={m.id} label={`${m.name} · ${m.price}`} />
+            ))}
+          </datalist>
+        )}
         <button className="btn-secondary btn-sm shrink-0" onClick={() => void test()} disabled={busy || !model.trim()}>
           {busy ? <Spinner /> : null} Test
         </button>
       </div>
+      {!result && options.length > 0 && (
+        <p className="text-2xs text-muted">
+          {options.length} models can do this job
+          {options.some((m) => m.free) ? `, ${options.filter((m) => m.free).length} of them free` : ''}.
+        </p>
+      )}
       {result && (
         <p className={cn(
           'text-xs',

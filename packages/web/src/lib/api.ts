@@ -633,6 +633,11 @@ export const api = {
   /** A real call against one model id, to find out whether it answers. */
   testAiModel: (job: string, model: string) =>
     post<{ ok: boolean; message: string; ms?: number }>('/api/admin/ai-models/test', { job, model }),
+  /** The models that can do one job. Empty when the catalogue is unreachable. */
+  aiModelCatalogue: (job: string) =>
+    get<{ models: { id: string; name: string; free: boolean; price: string }[] }>(
+      `/api/admin/ai-models/catalogue?job=${encodeURIComponent(job)}`,
+    ),
   validateFormula: (expression: string) => post<{ valid: boolean; error?: string }>('/api/meta/fields/validate-formula', { expression }),
 
   // --- records ------------------------------------------------------------

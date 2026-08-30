@@ -631,6 +631,26 @@ adminRouter.post('/ai-models/test', asyncHandler(async (req, res) => {
 }));
 
 /**
+ * The models that can actually do one job.
+ *
+ * The box beside this used to say "paste a model id from openrouter.ai/models",
+ * so ids were typed in by hand and four of the eight shipped defaults were wrong
+ * in four different ways. Asking somebody to go and find a value somewhere else
+ * is how that happens.
+ *
+ * Answers `[]` rather than an error when the catalogue cannot be reached: the
+ * page then behaves exactly as it did before, as a plain text box. Saving a
+ * model must never depend on a third party being up.
+ */
+adminRouter.get('/ai-models/catalogue', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.access');
+  const job = z.string().min(1).max(40).parse(req.query.job);
+
+  const { modelsForJob } = await import('../../ai/modelCatalogue.js');
+  res.json({ models: await modelsForJob(job) });
+}));
+
+/**
  * Where everybody is, newest fix each.
  *
  * Deliberately not behind `admin.access`. Visibility follows the role hierarchy
