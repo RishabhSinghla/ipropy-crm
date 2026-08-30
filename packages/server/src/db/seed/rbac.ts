@@ -235,7 +235,7 @@ const PROFILES: ProfileDef[] = [
     },
     fieldOverrides: {
       properties: { base_price: 'readonly', total_price: 'readonly', rate_per_sqft: 'hidden' },
-      leads: { ai_score: 'hidden', ai_grade: 'hidden', ai_score_reasons: 'hidden' },
+      leads: { ai_score: 'hidden', ai_score_reasons: 'hidden' },
     },
   },
 ];

@@ -49,7 +49,6 @@ export const FIELDS_USED_IN_CODE: Record<string, string> = {
   'leads.lifecycle_stage': 'conversion — Lead to Prospect on a site visit, Customer on a booking',
   'leads.lead_source': 'source attribution on every captured lead and every source report',
   'leads.ai_score': 'lead scoring, buyer matching and the priority order on lists',
-  'leads.ai_grade': 'the A-to-D grade lead scoring writes',
   'leads.next_followup_at': 'follow-ups — the one definition of “chase them on this date”',
   'leads.last_contacted_at': 'the neglected-lead rules and first-response timing',
   'leads.budget_min': 'buyer matching against inventory',

@@ -263,7 +263,6 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
     if (['Qualified', 'Site Visit Scheduled', 'Site Visit Done', 'Negotiation'].includes(status)) score += 18;
     if (['Junk', 'Lost'].includes(status)) score -= 30;
     score = Math.max(3, Math.min(97, score + randInt(s * 2, -8, 8)));
-    const grade = score >= 80 ? 'A' : score >= 60 ? 'B' : score >= 40 ? 'C' : 'D';
 
     const reasons: string[] = [];
     if (['Immediate', 'Within 1 Month'].includes(timeline)) reasons.push(`Purchase timeline is "${timeline}" — high urgency`);
@@ -299,7 +298,7 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
         funding_type: i % 3 === 0 ? 'Self Funded' : i % 3 === 1 ? 'Home Loan' : 'Loan Pre-Approved',
         loan_required: i % 3 !== 0,
         rating: score >= 70 ? 'Hot' : score >= 45 ? 'Warm' : 'Cold',
-        ai_score: score, ai_grade: grade, ai_score_reasons: reasons,
+        ai_score: score, ai_score_reasons: reasons,
         ai_scored_at: daysAgo(createdDaysAgo),
         next_followup_at: ['Junk', 'Lost'].includes(status) ? null : daysAhead(randInt(s * 3, -3, 10)),
         last_contacted_at: status === 'New' ? null : daysAgo(randInt(s * 4, 0, createdDaysAgo)),

@@ -18,23 +18,17 @@ import { logger } from '../../utils/logger.js';
 export interface ScoringThresholds {
   hotAt: number;
   warmAt: number;
-  gradeAAt: number;
-  gradeBAt: number;
-  gradeCAt: number;
   matchFloor: number;
 }
 
 /** What the code did before any of this was editable. */
 const FALLBACK: ScoringThresholds = {
-  hotAt: 70, warmAt: 45, gradeAAt: 80, gradeBAt: 60, gradeCAt: 40, matchFloor: 55,
+  hotAt: 70, warmAt: 45, matchFloor: 55,
 };
 
 const KEYS: Record<keyof ScoringThresholds, string> = {
   hotAt: 'scoring.hot_at',
   warmAt: 'scoring.warm_at',
-  gradeAAt: 'scoring.grade_a_at',
-  gradeBAt: 'scoring.grade_b_at',
-  gradeCAt: 'scoring.grade_c_at',
   matchFloor: 'scoring.match_floor',
 };
 
@@ -70,20 +64,15 @@ export async function scoringThresholds(): Promise<ScoringThresholds> {
     const next: ScoringThresholds = {
       hotAt: read('hotAt'),
       warmAt: read('warmAt'),
-      gradeAAt: read('gradeAAt'),
-      gradeBAt: read('gradeBAt'),
-      gradeCAt: read('gradeCAt'),
       matchFloor: read('matchFloor'),
     };
 
     // Warm above Hot would make every warm lead hot and nothing warm, which
     // looks like scoring being broken rather than a setting being wrong. The
-    // same for grades. Order is enforced here so one careless edit cannot make
+    // Order is enforced here so one careless edit cannot make
     // the pipeline nonsense; the admin screen also refuses it, but this is the
     // side that has to hold.
     if (next.warmAt > next.hotAt) next.warmAt = next.hotAt;
-    if (next.gradeBAt > next.gradeAAt) next.gradeBAt = next.gradeAAt;
-    if (next.gradeCAt > next.gradeBAt) next.gradeCAt = next.gradeBAt;
 
     cached = next;
     return next;
@@ -97,14 +86,6 @@ export async function scoringThresholds(): Promise<ScoringThresholds> {
 /** The one place a score becomes a word. */
 export function temperatureFor(score: number, t: ScoringThresholds): 'Hot' | 'Warm' | 'Cold' {
   return score >= t.hotAt ? 'Hot' : score >= t.warmAt ? 'Warm' : 'Cold';
-}
-
-/** The one place a score becomes a letter. */
-export function gradeFor(score: number, t: ScoringThresholds): 'A' | 'B' | 'C' | 'D' {
-  if (score >= t.gradeAAt) return 'A';
-  if (score >= t.gradeBAt) return 'B';
-  if (score >= t.gradeCAt) return 'C';
-  return 'D';
 }
 
 // ---------------------------------------------------------------------------

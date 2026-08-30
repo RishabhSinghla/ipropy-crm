@@ -134,7 +134,6 @@ const MODULES: ModuleDef[] = [
         label: 'AI Qualification',
         fields: [
           F.score('ai_score', 'AI Score', { help: 'Predicted likelihood to convert, 0-100' }),
-          F.pick('ai_grade', 'AI Grade', 'ai_grade', { readonly: true }),
           F.json('ai_score_reasons', 'Score Drivers', { readonly: true, displayType: 'detail_only' }),
           F.date('ai_scored_at', 'Last Scored', { readonly: true }),
           F.textarea('qualification_notes', 'Qualification Notes'),

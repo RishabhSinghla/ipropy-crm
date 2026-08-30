@@ -8,7 +8,7 @@
  * stands on its own, so scoring never silently stops working.
  */
 import type { LeadScoreResult } from '@ipropy/shared';
-import { scoringThresholds, temperatureFor, gradeFor } from '../core/settings/scoring.js';
+import { scoringThresholds, temperatureFor } from '../core/settings/scoring.js';
 import { formatIndianPrice } from '@ipropy/shared';
 import { db } from '../db/pool.js';
 import { logger } from '../utils/logger.js';
@@ -157,7 +157,7 @@ function applyRules(ctx: LeadContext): RuleOutcome {
   // Site visits used to carry up to 28 points here and were the clearest
   // signal of all. With that module gone the weight moves onto two-way contact
   // rather than simply disappearing, which would have deflated every score by
-  // a quarter and made Grade A unreachable.
+  // a quarter and put the top of the range out of reach.
   let engagement = 0;
   if (ctx.answeredCalls > 0) { engagement += 14; reasons.push(`${ctx.answeredCalls} answered call(s)`); }
   if (ctx.answeredCalls >= 2) engagement += 8;
@@ -231,7 +231,6 @@ export async function scoreLead(recordId: string, opts: { persist?: boolean } = 
   const thresholds = await scoringThresholds();
   let result: LeadScoreResult = {
     score: rules.score,
-    grade: gradeFor(rules.score, thresholds),
     temperature: temperatureFor(rules.score, thresholds),
     reasons: rules.reasons.slice(0, 6),
     risks: rules.risks.slice(0, 4),
@@ -248,17 +247,17 @@ export async function scoreLead(recordId: string, opts: { persist?: boolean } = 
   if (opts.persist !== false) {
     await db.query(
       `UPDATE ipy_e_leads
-       SET ai_score = $2, ai_grade = $3, ai_score_reasons = $4, ai_scored_at = now(),
+       SET ai_score = $2, ai_score_reasons = $3, ai_scored_at = now(),
            rating = $5
        WHERE record_id = $1`,
-      [recordId, result.score, result.grade, JSON.stringify(result.reasons), result.temperature],
+      [recordId, result.score, JSON.stringify(result.reasons), result.temperature],
     );
 
     await saveInsight({
       recordId,
       module: 'leads',
       kind: 'lead_score',
-      title: `Lead score ${result.score}/100 — Grade ${result.grade} (${result.temperature})`,
+      title: `Lead score ${result.score}/100 (${result.temperature})`,
       body: [
         result.reasons.length ? `**Why:** ${result.reasons.join('; ')}` : '',
         result.risks.length ? `**Risks:** ${result.risks.join('; ')}` : '',
@@ -322,7 +321,6 @@ Adjust the score only if the qualitative signals justify it — stay within ±20
 Return JSON:
 {
   "score": <integer 1-99>,
-  "grade": "A" | "B" | "C" | "D",
   "temperature": "Hot" | "Warm" | "Cold",
   "reasons": [<up to 5 short, specific, evidence-based strings>],
   "risks": [<up to 4 short strings>],
@@ -331,7 +329,7 @@ Return JSON:
 }`;
 
   const parsed = await completeJson<{
-    score: number; grade: string; temperature: string;
+    score: number; temperature: string;
     reasons: string[]; risks: string[]; recommendedActions: string[]; confidence: number;
   }>({
     feature: 'lead_scoring',
@@ -353,8 +351,6 @@ Return JSON:
 
   return {
     score,
-    grade: (['A', 'B', 'C', 'D'].includes(parsed.grade)
-      ? parsed.grade : gradeFor(score, thresholds)) as LeadScoreResult['grade'],
     temperature: (['Hot', 'Warm', 'Cold'].includes(parsed.temperature)
       ? parsed.temperature : temperatureFor(score, thresholds)) as LeadScoreResult['temperature'],
     reasons: (parsed.reasons ?? rules.reasons).slice(0, 6),

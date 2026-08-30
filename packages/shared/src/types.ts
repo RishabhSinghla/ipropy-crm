@@ -555,7 +555,6 @@ export interface PropertyMatch {
 
 export interface LeadScoreResult {
   score: number;
-  grade: 'A' | 'B' | 'C' | 'D';
   temperature: 'Hot' | 'Warm' | 'Cold';
   reasons: string[];
   risks: string[];

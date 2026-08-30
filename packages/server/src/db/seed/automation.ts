@@ -37,8 +37,8 @@ const WORKFLOWS: WorkflowSeed[] = [
     executionMode: 'once',
     tasks: [
       {
-        type: 'ai_action', name: 'Score and grade the lead',
-        config: { action: 'score_lead', writeTo: { score: 'ai_score', grade: 'ai_grade', reasons: 'ai_score_reasons' } },
+        type: 'ai_action', name: 'Score the lead',
+        config: { action: 'score_lead', writeTo: { score: 'ai_score', reasons: 'ai_score_reasons' } },
       },
       {
         type: 'send_whatsapp', name: 'Send welcome message',
@@ -120,7 +120,7 @@ const WORKFLOWS: WorkflowSeed[] = [
     description: 'Recomputes the AI score whenever the lead\'s status or requirement changes.',
     trigger: 'on_field_change',
     watchFields: ['status', 'budget_max', 'possession_timeline', 'interested_project', 'funding_type'],
-    tasks: [{ type: 'ai_action', name: 'Re-score', config: { action: 'score_lead', writeTo: { score: 'ai_score', grade: 'ai_grade', reasons: 'ai_score_reasons' } } }],
+    tasks: [{ type: 'ai_action', name: 'Re-score', config: { action: 'score_lead', writeTo: { score: 'ai_score', reasons: 'ai_score_reasons' } } }],
   },
 
   // --- Site visits -----------------------------------------------------------

@@ -417,7 +417,7 @@ const TASK_TYPE_LABELS: Record<string, string> = {
  * default case, which logs and does nothing.
  */
 const AI_ACTIONS: { value: string; label: string; hint: string }[] = [
-  { value: 'score_lead', label: 'Score and grade the lead', hint: 'Writes an AI score, a grade and the reasons behind them.' },
+  { value: 'score_lead', label: 'Score the lead', hint: 'Writes an AI score and the reasons behind it.' },
   { value: 'match_properties', label: 'Match properties to this buyer', hint: 'Ranks available inventory against the requirement and tells the owner.' },
   { value: 'match_buyers', label: 'Match buyers to this unit', hint: 'Tells each rep which of their buyers were waiting for this unit. Only alerts a buyer once per unit.' },
   { value: 'draft_message', label: 'Draft a message', hint: 'Writes a WhatsApp, email or SMS draft a following send step can use.' },

@@ -78,12 +78,6 @@ export const PICKLISTS: PicklistDef[] = [
     { value: 'Warm', label: 'Warm', color: '#f59e0b' },
     { value: 'Cold', label: 'Cold', color: '#3b82f6' },
   ] },
-  { name: 'ai_grade', label: 'AI Grade', values: [
-    { value: 'A', label: 'A — Prioritise', color: '#22c55e' },
-    { value: 'B', label: 'B — Nurture', color: '#84cc16' },
-    { value: 'C', label: 'C — Low intent', color: '#f59e0b' },
-    { value: 'D', label: 'D — Deprioritise', color: '#94a3b8' },
-  ] },
   { name: 'lost_reason', label: 'Lost Reason', values: [
     'Budget Mismatch', 'Location Not Suitable', 'Bought Elsewhere', 'Loan Rejected',
     'Postponed Purchase', 'Possession Timeline', 'Unit Not Available', 'Price Too High',
