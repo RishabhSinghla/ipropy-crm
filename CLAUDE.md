@@ -292,6 +292,35 @@ back into TypeScript would reverse that.
 
 ---
 
+## Going live — the state of it, 2026-08-30
+
+The app is ready; the things around it are not. Verified against the live
+service and the actual run history, not assumed.
+
+* **Render is on `plan: free`.** It sleeps after 15 minutes idle and takes about
+  a minute to wake. This is the single biggest blocker to a team using it daily —
+  they will hit it several times a day and conclude the CRM is broken. Starter is
+  $7/month.
+* **Backups have never once run.** `.github/workflows/backup.yml` is correct and
+  every attempt fails in 3 seconds without starting, because GitHub Actions
+  minutes ran out on 23 August. `gh run list --workflow=backup.yml` shows the
+  history. **There is no backup of production.** The minute usage itself is fixed
+  (health is `0 */2 * * *`, ~390 scheduled runs/month against a 2,000 allowance),
+  so this recovers on 1 September — but the durable answer is Neon's own Launch
+  plan, which is continuous rather than nightly.
+* **Every CI run is also failing**, same cause, which is why `autoDeployTrigger`
+  is `commit`. Both recover together on 1 September.
+* **Demo logins are still on production.** `npm run go-live:users` creates the
+  real admin, reassigns everything the demo accounts own, and removes them.
+  Tested against a copy of the demo database: 150 records moved, zero orphans.
+  It deliberately leaves `system@ipropy` alone.
+* **No domain, no error tracking, no uptime check.** All cheap or free.
+* **No staging environment.** The dev → live pipeline is laptop → production
+  today. The simple fix is a second Render service on a `staging` branch with its
+  own free Neon database; it is allowed to sleep, so it costs nothing.
+
+Written up for the owner at the artifact "iPropy Go-Live", with costs in rupees.
+
 ## Known open issues (details in PROJECT_HANDOVER.md §8)
 
 * Deployed on Render from `render.yaml` (see `DEPLOYMENT.md`); every push to `main` redeploys.
