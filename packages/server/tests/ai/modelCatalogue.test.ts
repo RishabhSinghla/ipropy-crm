@@ -68,10 +68,23 @@ describe('the model catalogue', () => {
     expect(seen[0]).toContain(`output_modalities=${modality}`);
   });
 
-  it('offers nothing for transcription, which does not go to OpenRouter', async () => {
-    // It goes to the speech-to-text service in Admin → Integrations. Listing
-    // OpenRouter models here would point at the wrong provider entirely.
-    const { models, seen } = await catalogue('transcribe', ok([CHAT]));
+  it('offers transcription models, because OpenRouter does serve them', async () => {
+    /*
+      This test used to assert the opposite, on the belief that OpenRouter is a
+      chat gateway that cannot transcribe. It can: POST /audio/transcriptions,
+      nineteen models. The belief came from checking an ASR id against the plain
+      /models list, which is chat-only, finding nothing, and concluding the id
+      was invented. `?output_modalities=transcription` is the list that has them.
+
+      Note the modality name. It is `transcription`, not `stt` or `asr`, and it
+      is not `speech` — that one is text-to-speech, the opposite direction.
+    */
+    const { seen } = await catalogue('transcribe', ok([]));
+    expect(seen[0]).toContain('output_modalities=transcription');
+  });
+
+  it('asks for an unknown job nothing at all', async () => {
+    const { models, seen } = await catalogue('not-a-job', ok([CHAT]));
     expect(models).toEqual([]);
     expect(seen).toHaveLength(0);
   });

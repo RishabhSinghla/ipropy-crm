@@ -1,16 +1,19 @@
 /**
- * Transcription goes to the speech-to-text provider, as multipart.
+ * Transcription, as multipart, to whichever provider has a key.
  *
- * It used to go to OpenRouter with every other media call, and was wrong twice
- * over: OpenRouter is a chat gateway and does not transcribe, and the body was
- * JSON with the audio base64-encoded when every OpenAI-compatible transcription
- * endpoint takes multipart form data with a file part. So the settings box said
- * "it could not read the audio" whatever id was in it, and no id would ever have
- * fixed it.
+ * One thing was wrong with the original, not two. The body was JSON with the
+ * audio base64-encoded, where every OpenAI-compatible transcription endpoint
+ * takes multipart form data with a file part. That alone is why the settings box
+ * said "it could not read the audio" whatever id was in it.
  *
- * These assert the two things that were wrong — where it goes, and what shape it
- * is in — because a mock that only checks the return value would have passed
- * against the broken version too.
+ * The host was **not** wrong, though it was written off as one here. OpenRouter
+ * does transcribe: nineteen models at `/audio/transcriptions`, taking this exact
+ * shape. The mistake was checking the shipped ASR id against `/api/v1/models`,
+ * which is chat-only, finding nothing, and concluding it was invented.
+ *
+ * So both providers work and the key decides. These pin the shape, which was the
+ * real defect, and the choice between providers — a mock that only checked the
+ * return value would have passed against the broken version too.
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
@@ -21,6 +24,7 @@ interface Caught { url: string; init: RequestInit }
 async function transcribeWith(
   settings: { apiKey: string; baseUrl: string; model: string },
   respond: () => Response,
+  openRouter: { apiKey: string; baseUrl: string } = { apiKey: '', baseUrl: '' },
 ): Promise<{ result: unknown; calls: Caught[] }> {
   const calls: Caught[] = [];
   vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
@@ -29,7 +33,7 @@ async function transcribeWith(
   }));
   vi.doMock('../../src/core/settings/integrations.js', () => ({
     getSttProviderSettings: () => settings,
-    getAiProviderSettings: () => ({ apiKey: '', baseUrl: '' }),
+    getAiProviderSettings: () => openRouter,
   }));
   vi.doMock('../../src/core/settings/aiModels.js', () => ({
     modelFor: async () => settings.model,
@@ -52,12 +56,37 @@ describe('transcribing a recording', () => {
   beforeEach(() => { vi.resetModules(); });
   afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-  it('sends it to the speech-to-text provider, not to OpenRouter', async () => {
-    const { calls } = await transcribeWith(GROQ, () => new Response('{"text":"hello"}', { status: 200 }));
+  it('prefers the speech-to-text card when it has a key', async () => {
+    // Somebody who filled that card in meant it, so it outranks the fallback.
+    const { calls } = await transcribeWith(
+      GROQ,
+      () => new Response('{"text":"hello"}', { status: 200 }),
+      { apiKey: 'or-key', baseUrl: 'https://openrouter.ai/api/v1' },
+    );
 
     expect(calls).toHaveLength(1);
     expect(calls[0]!.url).toBe('https://api.groq.com/openai/v1/audio/transcriptions');
-    expect(calls[0]!.url).not.toContain('openrouter');
+  });
+
+  it('falls back to OpenRouter when no speech-to-text key is saved', async () => {
+    /*
+      OpenRouter serves nineteen transcription models at this path, so a CRM
+      with an OpenRouter key already has working transcription and needs no
+      second signup. This whole path was removed once on the false belief that
+      OpenRouter cannot transcribe.
+    */
+    const { calls, result } = await transcribeWith(
+      { apiKey: '', baseUrl: '', model: '' },
+      () => new Response('{"text":"do bedroom chahiye"}', { status: 200 }),
+      { apiKey: 'or-key', baseUrl: 'https://openrouter.ai/api/v1' },
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe('https://openrouter.ai/api/v1/audio/transcriptions');
+    expect((calls[0]!.init.headers as Record<string, string>).Authorization).toBe('Bearer or-key');
+    // Same multipart shape either way, which is why one code path serves both.
+    expect(calls[0]!.init.body).toBeInstanceOf(FormData);
+    expect(result).toMatchObject({ text: 'do bedroom chahiye' });
   });
 
   it('sends multipart with a file, which is what the endpoint accepts', async () => {
@@ -112,7 +141,7 @@ describe('transcribing a recording', () => {
     expect(said.join(' ')).toContain('model_not_found');
   });
 
-  it('says which screen to go to when no key is saved', async () => {
+  it('says which screen to go to when neither provider has a key', async () => {
     const said: string[] = [];
     const { result } = await (async () => {
       vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })));

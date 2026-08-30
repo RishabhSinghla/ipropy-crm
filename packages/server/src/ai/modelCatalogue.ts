@@ -36,15 +36,22 @@ export interface CatalogueModel {
 /**
  * Which models suit which job.
  *
- * `modality` is what OpenRouter calls the thing a model puts out. `transcribe`
- * has no entry on purpose: it does not go to OpenRouter at all, it goes to the
- * speech-to-text service in Admin → Integrations, so there is nothing here to
- * list and offering a list would point at the wrong provider.
+ * `modality` is what OpenRouter calls the thing a model puts out, and the names
+ * are not guessable — `speech` is text-to-speech while `transcription` is the
+ * other direction, and neither appears in the plain `/models` list, which is
+ * chat-only. Checking a speech or embedding or ASR id against that list finds
+ * nothing and reads as "this model does not exist". That is exactly the mistake
+ * that got four working ids written off as invented.
+ *
+ * `transcribe` is here despite going through the speech-to-text card when one is
+ * set up, because when one is not it goes to OpenRouter, which does serve
+ * nineteen transcription models.
  */
 const JOB_MODALITY: Record<string, { modality: string; needsImageInput?: boolean }> = {
   copy: { modality: 'text' },
   vision: { modality: 'text', needsImageInput: true },
   speech: { modality: 'speech' },
+  transcribe: { modality: 'transcription' },
   music: { modality: 'audio' },
   embed: { modality: 'embeddings' },
   rerank: { modality: 'rerank' },

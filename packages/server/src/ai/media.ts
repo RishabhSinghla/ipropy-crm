@@ -199,19 +199,26 @@ export interface TranscriptResult {
 /**
  * A call recording becomes text.
  *
- * This went to OpenRouter with every other media call, and was wrong twice over.
+ * One thing was wrong with this, not two, and the difference matters.
  *
- * OpenRouter is a chat gateway; transcription is not a chat completion, and the
- * ids shipped in the settings box were never valid there. Meanwhile
- * `getSttProviderSettings()` had existed all along — with its own address, key
- * and model, already pointed at Groq's Whisper — and nothing that transcribes
- * ever read it.
- *
- * The shape was wrong too. It posted JSON with the audio base64-encoded under
+ * The shape was wrong. It posted JSON with the audio base64-encoded under
  * `input_audio`, and the OpenAI-compatible transcription endpoint every provider
- * implements takes **multipart/form-data with a file part**. So even against the
- * right host it would have been refused. That is why the settings box said "it
- * could not read the audio" no matter which id was in it.
+ * implements takes **multipart/form-data with a file part**. That alone is why
+ * the settings box said "it could not read the audio" no matter which id was in
+ * it, and no id would have fixed it.
+ *
+ * The host was **not** wrong, though it was written off here as one. OpenRouter
+ * does transcribe: `POST /audio/transcriptions`, nineteen models, this exact
+ * multipart shape. The mistake was checking the shipped id against
+ * `/api/v1/models`, which is chat-only, finding nothing, and concluding the id
+ * was invented. `?output_modalities=transcription` is the list that has them,
+ * and the original default — `nvidia/nemotron-3.5-asr-streaming-multilingual-0.6b`
+ * — is the first entry in it.
+ *
+ * So both providers work, and which one is used comes down to which has a key.
+ * A dedicated speech-to-text card wins when it is filled in, because filling it
+ * in is a decision. Otherwise this goes to OpenRouter on the key that is already
+ * there, which means transcription needs no new setup at all.
  *
  * Sent whole rather than chunked, deliberately: chunking splits sentences at the
  * boundary and the join is always audible in the text.
@@ -222,20 +229,45 @@ export async function transcribe(
   opts: { model?: string; language?: string; recordId?: string | null;
     onError?: (message: string) => void } = {},
 ): Promise<TranscriptResult | null> {
-  const stt = getSttProviderSettings();
   // The model is named in Admin → Settings → AI models like every other job;
-  // the integration supplies only where to send it and what to sign it with.
+  // the provider supplies only where to send it and what to sign it with.
   // Two boxes holding one model id is the pattern this CRM keeps getting wrong.
   const model = opts.model ?? await modelFor('transcribe');
 
-  if (!stt.apiKey) {
-    const why = 'No speech-to-text key is saved. Add one in Admin → Integrations → Speech to text.';
-    logger.debug('transcription attempted with no STT key');
+  /*
+    Two providers can do this, and which one is right depends on what has a key.
+
+    A dedicated speech-to-text service — Groq's Whisper is the free one — wins
+    when it is set up, because somebody who filled that card in meant it.
+
+    Otherwise this goes to OpenRouter, which does transcribe: `/audio/
+    transcriptions` with nineteen models behind it, taking exactly this multipart
+    shape. That was written off here as "OpenRouter is a chat gateway and does
+    not transcribe", which was wrong, and wrong in a way worth remembering: the
+    plain `/models` list is chat-only, so an ASR id checked against it looks
+    invented. It is `?output_modalities=transcription` that lists them. The
+    original default, `nvidia/nemotron-3.5-asr-streaming-multilingual-0.6b`, was
+    real the whole time.
+
+    Only the request shape was ever actually broken: JSON with the audio
+    base64-encoded, where the endpoint wants a file part. That fix stands, and it
+    is the same shape for both providers, which is why one code path serves both.
+  */
+  const stt = getSttProviderSettings();
+  const openRouter = endpoint();
+  const via = stt.apiKey
+    ? { apiKey: stt.apiKey, baseUrl: stt.baseUrl || 'https://api.groq.com/openai/v1' }
+    : openRouter;
+
+  if (!via?.apiKey) {
+    const why = 'No key is saved for transcription. Add one in Admin → Integrations, '
+      + 'either on the Speech to text card or on OpenRouter.';
+    logger.debug('transcription attempted with no key on either provider');
     opts.onError?.(why);
     return null;
   }
 
-  const base = (stt.baseUrl || 'https://api.groq.com/openai/v1').replace(/\/+$/, '');
+  const base = via.baseUrl.replace(/\/+$/, '');
   const started = Date.now();
 
   const form = new FormData();
@@ -249,7 +281,7 @@ export async function transcribe(
       method: 'POST',
       // No Content-Type: fetch sets it with the multipart boundary, and setting
       // it by hand omits the boundary and the request is rejected as malformed.
-      headers: { Authorization: `Bearer ${stt.apiKey}` },
+      headers: { Authorization: `Bearer ${via.apiKey}` },
       body: form,
       signal: AbortSignal.timeout(300_000),
     });

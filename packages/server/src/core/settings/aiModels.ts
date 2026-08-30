@@ -46,11 +46,14 @@ export const AI_JOBS = {
   transcribe: {
     key: 'ai_models.transcribe',
     label: 'Transcribe recordings',
-    // Sent to the speech-to-text integration, not to OpenRouter: transcription
-    // is not a chat completion and OpenRouter does not serve it.
-    fallback: 'whisper-large-v3-turbo',
+    // Goes to the speech-to-text card when one has a key, and to OpenRouter
+    // otherwise — which does serve transcription, at /audio/transcriptions.
+    // The id has to match whichever it reaches: OpenRouter prefixes this model
+    // `openai/`, Groq does not.
+    fallback: 'openai/whisper-large-v3-turbo',
     description: 'Turns call recordings and voice notes into words. Handles Hindi and English mixed together. '
-      + 'Goes to the speech-to-text service set up under Admin → Integrations.',
+      + 'Goes to the Speech to text service under Admin → Integrations when one has a key, and to '
+      + 'OpenRouter otherwise.',
   },
   embed: {
     key: 'ai_models.embed',

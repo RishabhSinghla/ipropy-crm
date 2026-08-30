@@ -57,6 +57,7 @@ describe('the model test', () => {
   it('says so plainly when no key is saved at all', async () => {
     vi.doMock('../../src/core/settings/integrations.js', () => ({
       getAiProviderSettings: () => ({ apiKey: '', baseUrl: '' }),
+      getSttProviderSettings: () => ({ apiKey: '', baseUrl: '', model: '' }),
     }));
     vi.doMock('../../src/db/pool.js', () => ({
       db: { query: async () => ({ rows: [], rowCount: 0 }), queryOne: async () => null },
@@ -66,6 +67,30 @@ describe('the model test', () => {
 
     expect(result.ok).toBe(false);
     expect(result.message).toContain('OpenRouter key');
+  });
+
+  it('tests transcription on a speech-to-text key alone, with no OpenRouter key', async () => {
+    /*
+      Transcription is the one job with two homes: the Speech to text card when
+      it has a key, OpenRouter otherwise. Gating it on OpenRouter refused the
+      test outright on a CRM whose speech card was filled in and working, and
+      blamed a missing key that was not the one being used.
+    */
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{"text":""}', { status: 200 })));
+    vi.doMock('../../src/core/settings/integrations.js', () => ({
+      getAiProviderSettings: () => ({ apiKey: '', baseUrl: '' }),
+      getSttProviderSettings: () => ({
+        apiKey: 'gsk-test', baseUrl: 'https://api.groq.com/openai/v1', model: 'whisper-large-v3-turbo',
+      }),
+    }));
+    vi.doMock('../../src/db/pool.js', () => ({
+      db: { query: async () => ({ rows: [], rowCount: 0 }), queryOne: async () => null },
+    }));
+    const { testMediaModel } = await import('../../src/ai/mediaTest.js');
+    const result = await testMediaModel('transcribe', 'whisper-large-v3-turbo');
+
+    expect(result.message).not.toContain('No OpenRouter key');
+    expect(result.ok).toBe(true);
   });
 });
 

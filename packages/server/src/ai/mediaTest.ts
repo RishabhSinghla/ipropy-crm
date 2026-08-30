@@ -13,6 +13,7 @@
  */
 import { complete } from './client.js';
 import { embed, generateVideo, isMediaAiAvailable, music, rerank, speak, transcribe } from './media.js';
+import { getSttProviderSettings } from '../core/settings/integrations.js';
 import { logger } from '../utils/logger.js';
 
 export interface ModelTest {
@@ -31,7 +32,14 @@ const PIXEL = Buffer.from(
 );
 
 export async function testMediaModel(job: string, model: string): Promise<ModelTest> {
-  if (!isMediaAiAvailable() && job !== 'vision' && job !== 'copy') {
+  /*
+    Transcription is the one job with two possible homes: the Speech to text card
+    when it has a key, and OpenRouter otherwise. Gating it on OpenRouter refused
+    the test outright on a CRM whose speech card was filled in and working, and
+    then blamed a missing key that was not the one being used.
+  */
+  const sttKeyed = job === 'transcribe' && Boolean(getSttProviderSettings().apiKey);
+  if (!isMediaAiAvailable() && !sttKeyed && job !== 'vision' && job !== 'copy') {
     return {
       ok: false,
       message: 'No OpenRouter key. Add one in Admin → Integrations; voice, music, transcription and search all go through it.',
