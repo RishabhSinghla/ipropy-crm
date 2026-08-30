@@ -749,16 +749,22 @@ aiRouter.get('/usage', asyncHandler(async (req, res) => {
       `SELECT feature, COUNT(*)::int AS calls,
               SUM(input_tokens)::int AS input_tokens, SUM(output_tokens)::int AS output_tokens,
               ROUND(AVG(latency_ms))::int AS avg_latency_ms,
-              COUNT(*) FILTER (WHERE success = false)::int AS failures
+              COUNT(*) FILTER (WHERE success = false)::int AS failures,
+              SUM(cost_paise)::bigint AS cost_paise
        FROM ipy_ai_log WHERE created_at > now() - interval '30 days'
-       GROUP BY feature ORDER BY calls DESC`,
+       GROUP BY feature ORDER BY cost_paise DESC, calls DESC`,
     ),
     db.query(
       `SELECT date_trunc('day', created_at)::date::text AS day,
-              COUNT(*)::int AS calls, SUM(input_tokens + output_tokens)::int AS tokens
+              COUNT(*)::int AS calls, SUM(input_tokens + output_tokens)::int AS tokens,
+              SUM(cost_paise)::bigint AS cost_paise
        FROM ipy_ai_log WHERE created_at > now() - interval '30 days'
        GROUP BY 1 ORDER BY 1`,
     ),
   ]);
-  res.json({ byFeature: byFeature.rows, daily: daily.rows });
+  // The headline number: what the whole month cost. Ordering the table by cost
+  // rather than call count puts the expensive feature at the top, which is the
+  // one somebody would actually want to switch off.
+  const totalPaise = byFeature.rows.reduce((sum, r) => sum + Number(r.cost_paise ?? 0), 0);
+  res.json({ byFeature: byFeature.rows, daily: daily.rows, totalPaise });
 }));

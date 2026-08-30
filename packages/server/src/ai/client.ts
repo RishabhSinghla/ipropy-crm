@@ -469,21 +469,34 @@ async function logCall(
   success: boolean,
   error: string | null,
 ): Promise<void> {
+  const model = result?.model ?? (opts.fast ? getSettings().ai.fastModel : getSettings().ai.model);
+  const inputTokens = result?.inputTokens ?? 0;
+  const outputTokens = result?.outputTokens ?? 0;
+
+  const [{ costInPaise }, keepPrompt] = await Promise.all([
+    import('./modelCatalogue.js'),
+    promptLoggingOn(),
+  ]);
+
   await db.query(
     `INSERT INTO ipy_ai_log
-      (feature, model, user_id, record_id, prompt_summary, input_tokens, output_tokens, latency_ms, success, error)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      (feature, model, user_id, record_id, prompt_summary, input_tokens, output_tokens, latency_ms, success, error, cost_paise)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
     [
       opts.feature,
-      result?.model ?? (opts.fast ? getSettings().ai.fastModel : getSettings().ai.model),
+      model,
       opts.userId ?? null,
       opts.recordId ?? null,
-      opts.prompt.slice(0, 500),
-      result?.inputTokens ?? 0,
-      result?.outputTokens ?? 0,
+      // A prompt is built from the customer's own notes, messages and call
+      // transcripts, so keeping one puts a second copy of their words in a table
+      // nobody thinks of as holding any. Off unless switched on.
+      keepPrompt ? opts.prompt.slice(0, 500) : null,
+      inputTokens,
+      outputTokens,
       latencyMs,
       success,
       error,
+      await costInPaise(model, inputTokens, outputTokens).catch(() => 0),
     ],
   ).catch((err) => logger.debug({ err }, 'failed to write AI log'));
 }
@@ -531,3 +544,22 @@ Domain context you should assume:
 - Channel partners (brokers) are a major lead source and are commission-sensitive.
 
 Be concrete and quantitative. Reference actual values from the data you are given. Never invent inventory, prices, or facts that are not in the provided context. If information is missing, say so rather than guessing.`;
+
+/**
+ * Whether to keep a copy of the prompt.
+ *
+ * Cached, because this is read on every AI call and the answer changes about
+ * once a year. Defaults to off, including when the setting row is missing.
+ */
+let keepPrompts: boolean | null = null;
+
+export function invalidatePromptLogging(): void { keepPrompts = null; }
+
+async function promptLoggingOn(): Promise<boolean> {
+  if (keepPrompts !== null) return keepPrompts;
+  const row = await db.queryOne<{ value: unknown }>(
+    `SELECT value FROM ipy_setting WHERE key = 'ai.log_prompt_text'`,
+  ).catch(() => null);
+  keepPrompts = row?.value === true;
+  return keepPrompts;
+}

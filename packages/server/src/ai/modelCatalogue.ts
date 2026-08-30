@@ -145,3 +145,81 @@ export async function modelsForJob(job: string): Promise<CatalogueModel[]> {
     return [];
   }
 }
+
+// ---------------------------------------------------------------------------
+// What a call actually cost
+// ---------------------------------------------------------------------------
+
+interface TokenPrice { prompt: number; completion: number }
+
+let priceMap: Map<string, TokenPrice> | null = null;
+let pricesFetchedAt = 0;
+
+export function invalidateModelPrices(): void {
+  priceMap = null;
+  pricesFetchedAt = 0;
+}
+
+/**
+ * Dollars per token, per model, across every modality.
+ *
+ * Built from the same catalogue the picker uses, merged across modalities
+ * because the plain `/models` list is chat-only and would price a voiceover at
+ * zero. Cached for an hour: this is consulted on every single AI call, and a
+ * price lookup that makes an HTTP request is a price lookup that gets removed.
+ *
+ * A model missing from the map is priced at zero rather than guessed. Showing
+ * ₹0 for something uncounted is a smaller lie than inventing a number, and the
+ * call count beside it makes the gap visible.
+ */
+async function prices(): Promise<Map<string, TokenPrice>> {
+  if (priceMap && Date.now() - pricesFetchedAt < TTL_MS) return priceMap;
+
+  const modalities = ['text', 'embeddings', 'rerank', 'speech', 'audio', 'video', 'transcription'];
+  const map = new Map<string, TokenPrice>();
+
+  await Promise.all(modalities.map(async (modality) => {
+    try {
+      const response = await fetch(
+        `https://openrouter.ai/api/v1/models?output_modalities=${modality}`,
+        { signal: AbortSignal.timeout(8_000), headers: { 'X-Title': 'iPropy CRM' } },
+      );
+      if (!response.ok) return;
+      const body = await response.json() as { data?: RawModel[] };
+      for (const m of body.data ?? []) {
+        if (!m.id || map.has(m.id)) continue;
+        map.set(m.id, {
+          prompt: Number(m.pricing?.prompt ?? 0) || 0,
+          completion: Number(m.pricing?.completion ?? 0) || 0,
+        });
+      }
+    } catch {
+      // A missing modality prices its models at zero. Better than no log line.
+    }
+  }));
+
+  if (map.size) { priceMap = map; pricesFetchedAt = Date.now(); }
+  return map;
+}
+
+/**
+ * What one call cost, in paise.
+ *
+ * Paise rather than rupees so it stays an integer all the way to the database —
+ * money in a float is how a total ends up ₹0.30000000000000004, and summing
+ * thousands of tiny amounts is exactly where that shows.
+ *
+ * The exchange rate is fixed at ₹88 deliberately. A live rate would make two
+ * identical calls a week apart cost different amounts in the log, and this
+ * number exists to answer "roughly what am I spending", not to reconcile a
+ * bank statement.
+ */
+export async function costInPaise(model: string, inputTokens: number, outputTokens: number): Promise<number> {
+  if (!model || (!inputTokens && !outputTokens)) return 0;
+
+  const price = (await prices()).get(model);
+  if (!price) return 0;
+
+  const dollars = price.prompt * inputTokens + price.completion * outputTokens;
+  return Math.round(dollars * 88 * 100);
+}

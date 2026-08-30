@@ -701,6 +701,11 @@ adminRouter.put('/settings', asyncHandler(async (req, res) => {
   // change to it has to reload that snapshot, not just this route's caches.
   const { invalidate: reloadIntegrations } = await import('../../core/settings/integrations.js');
   await reloadIntegrations();
+  // The prompt-logging switch is cached per process because it is read on every
+  // AI call; without this it takes a restart to take effect, which is the "it
+  // does not persist" complaint again.
+  const { invalidatePromptLogging } = await import('../../ai/client.js');
+  invalidatePromptLogging();
   const { invalidateAiModels } = await import('../../core/settings/aiModels.js');
   const { invalidateHouseStyle } = await import('../../core/settings/houseStyle.js');
   const { invalidateAiFeatures } = await import('../../core/settings/aiFeatures.js');

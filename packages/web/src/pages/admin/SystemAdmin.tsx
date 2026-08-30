@@ -74,6 +74,23 @@ function ReadinessPanel(): JSX.Element {
   );
 }
 
+/**
+ * Paise to something readable.
+ *
+ * Free is the common case here and the one worth stating plainly rather than as
+ * "₹0.00", which reads like a rounding error. Below a rupee it shows paise,
+ * because the difference between 4 paise and 40 paise a call is the difference
+ * between a free month and a noticeable bill at volume.
+ */
+function formatRupees(paise: number | null | undefined): string {
+  const value = Number(paise ?? 0);
+  // Per row, a dash rather than "Free": a call made before pricing existed and
+  // a call on a free model both land here, and only one of them is free.
+  if (!value) return '—';
+  if (value < 100) return `${value}p`;
+  return `₹${(value / 100).toLocaleString('en-IN', { maximumFractionDigits: value < 10_000 ? 2 : 0 })}`;
+}
+
 export default function SystemAdmin(): JSX.Element {
   const [tab, setTab] = useState('overview');
   const [auditModule, setAuditModule] = useState('');
@@ -240,30 +257,51 @@ export default function SystemAdmin(): JSX.Element {
       {tab === 'ai' && (
         <div className="space-y-4">
           <div className="card overflow-hidden">
-            <div className="border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
               <p className="text-sm font-medium">AI usage — last 30 days</p>
+              {/*
+                The number somebody actually wants. Tokens answer "how much did
+                it think"; this answers "what did it cost", which is the question
+                being asked. Free models total ₹0, and that is worth seeing.
+              */}
+              {aiUsage ? (
+                <p className="text-sm tnum font-medium">
+                  {/*
+                    "Free" would be a claim about a bill, and calls made before
+                    pricing existed carry no cost — so a zero total means "none
+                    recorded", not "none charged". Saying the first when the
+                    second is true is the one mistake worth avoiding on a screen
+                    somebody checks to see what they are spending.
+                  */}
+                  {aiUsage.totalPaise > 0 ? formatRupees(aiUsage.totalPaise) : 'No spend recorded'}
+                  {aiUsage.totalPaise > 0
+                    ? <span className="ml-1.5 text-2xs font-normal text-muted">this month</span>
+                    : null}
+                </p>
+              ) : null}
             </div>
             {!aiUsage?.byFeature.length ? (
               <EmptyState
                 icon={<Sparkles className="h-8 w-8" />}
                 title="No AI calls recorded"
-                body="Set ANTHROPIC_API_KEY to enable the AI features."
+                body="Add a provider key under Admin → Integrations, then pick a model for each job under Settings → AI models."
               />
             ) : (
               <table className="w-full">
                 <thead>
                   <tr>
-                    {['Feature', 'Calls', 'Input tokens', 'Output tokens', 'Avg latency', 'Failures'].map((h) => (
+                    {['Feature', 'Calls', 'Cost', 'Input tokens', 'Output tokens', 'Avg latency', 'Failures'].map((h) => (
                       <th key={h} className="table-head">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {(aiUsage.byFeature as { feature: string; calls: number; input_tokens: number; output_tokens: number; avg_latency_ms: number; failures: number }[])
+                  {(aiUsage.byFeature as { feature: string; calls: number; cost_paise: number; input_tokens: number; output_tokens: number; avg_latency_ms: number; failures: number }[])
                     .map((row) => (
                       <tr key={row.feature}>
                         <td className="table-cell font-medium capitalize">{row.feature.replace(/_/g, ' ')}</td>
                         <td className="table-cell tnum">{row.calls}</td>
+                        <td className="table-cell tnum font-medium">{formatRupees(row.cost_paise)}</td>
                         <td className="table-cell tnum text-slate-500">{row.input_tokens?.toLocaleString('en-IN')}</td>
                         <td className="table-cell tnum text-slate-500">{row.output_tokens?.toLocaleString('en-IN')}</td>
                         <td className="table-cell tnum text-slate-500">{row.avg_latency_ms}ms</td>

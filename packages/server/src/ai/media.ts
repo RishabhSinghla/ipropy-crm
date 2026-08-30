@@ -21,6 +21,7 @@ import { modelFor, type AiJob } from '../core/settings/aiModels.js';
 import { getAiProviderSettings, getSttProviderSettings } from '../core/settings/integrations.js';
 import { db } from '../db/pool.js';
 import { logger } from '../utils/logger.js';
+import { costInPaise } from './modelCatalogue.js';
 
 /**
  * Which model does a job is a setting, not a constant.
@@ -70,11 +71,14 @@ async function logCall(
   feature: string, model: string, latencyMs: number,
   success: boolean, error: string | null, recordId?: string | null,
 ): Promise<void> {
+  // Media calls report no token counts, so the cost is whatever the model's
+  // per-call price is — zero for everything free, which is most of this.
   await db.query(
     `INSERT INTO ipy_ai_log
-      (feature, model, user_id, record_id, prompt_summary, input_tokens, output_tokens, latency_ms, success, error)
-     VALUES ($1,$2,NULL,$3,$4,0,0,$5,$6,$7)`,
-    [feature, model, recordId ?? null, feature, latencyMs, success, error],
+      (feature, model, user_id, record_id, prompt_summary, input_tokens, output_tokens, latency_ms, success, error, cost_paise)
+     VALUES ($1,$2,NULL,$3,NULL,0,0,$4,$5,$6,$7)`,
+    [feature, model, recordId ?? null, latencyMs, success, error,
+      await costInPaise(model, 0, 0).catch(() => 0)],
   ).catch((err) => logger.debug({ err }, 'failed to write AI media log'));
 }
 

@@ -909,7 +909,12 @@ export const api = {
   analyseCall: (id: string, transcript?: string) => post<Record<string, unknown>>(`/api/ai/calls/${id}/analyse`, { transcript }),
   transcribeCall: (id: string) => post<{ transcript: string }>(`/api/ai/calls/${id}/transcribe`, {}),
   coaching: (userId: string) => get<Record<string, unknown>>(`/api/ai/coaching/${userId}`),
-  aiUsage: () => get<{ byFeature: Record<string, unknown>[]; daily: Record<string, unknown>[] }>('/api/ai/usage'),
+  aiUsage: () => get<{
+    byFeature: Record<string, unknown>[];
+    daily: Record<string, unknown>[];
+    /** The month's spend, in paise, so it stays an integer over the wire. */
+    totalPaise: number;
+  }>('/api/ai/usage'),
 
   // --- misc ---------------------------------------------------------------
   search: (q: string) => get<{ id: string; module: string; moduleLabel: string; label: string }[]>(`/api/search${qs({ q })}`),
