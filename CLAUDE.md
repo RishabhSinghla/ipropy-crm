@@ -352,6 +352,47 @@ back into TypeScript would reverse that.
   iPropy Instagram accounts exist. Treat them as unverified until someone confirms each one.
 * Browser push works but **nobody has subscribed a device yet** — Settings → Alerts, per device.
 
+### Verified security findings, 2026-08-30
+
+An external review raised eight; each was checked against the code rather than
+taken on trust. **Five are real and open.** One was fixed the same day
+(`applyFileSecurityHeaders` now runs on all four public byte-serving routes —
+it had only ever run on the signed-in one). Do not re-litigate these from
+memory; the verification commands are in the commit messages.
+
+* **Telephony webhooks have no authentication at all.** `/webhooks/telephony/
+  :provider/{status,recording,incoming}` accept anything. WhatsApp, Facebook and
+  n8n all verify signatures in the same file, so the pattern is understood and
+  these three were simply missed. The exploit chain is real: POST a
+  `providerCallId` with an attacker-controlled `RecordingUrl`, and
+  `analyseCallRecording` fetches it with no host, private-network or size check.
+  That is SSRF. `/incoming` also hands back the agent's phone number.
+  **Failing closed is safe right now** — twilio, exotel and knowlarity are all
+  inactive, so nothing is using these.
+* **Lead webhooks fail open.** `/webhooks/leads/google` only checks its key
+  `if (googleAdsWebhookKey && ...)`, so an unset key skips the check entirely.
+  The portal endpoints have no secret at all. Anyone with the URL can inject
+  leads, which triggers assignment, scoring, notifications and possibly a paid
+  WhatsApp greeting.
+* **A disabled AI provider is still used.** `getAiFallbackChain()` deliberately
+  falls back to providers whose card is switched off, on the reasoning that
+  holding a working key and refusing to answer is worse. That is a defensible
+  availability call and an indefensible privacy one: "off" should mean no lead
+  notes or call audio reach that company. **Do not change this without checking
+  first** — `ai_openrouter` is `is_active = false` locally while holding the
+  model config, so this fallback may be the only reason AI answers at all.
+  Check before touching it.
+* **Both tokens live in `localStorage`, and the app serves no CSP.**
+  `helmet({ contentSecurityPolicy: false })` in `app.ts`, confirmed absent on the
+  live HTML response (nosniff and X-Frame-Options are present). Refresh tokens
+  are stored as plaintext rows and are not rotated on use, so a database leak
+  is a set of usable 30-day sessions.
+* **The documented AI approval rule is not universally true.** `AI-ARCHITECTURE.md`
+  says nothing writes to a field without confirmation. `callAnalysis.ts` fills
+  empty fields and creates a follow-up on its own, and lead scoring writes
+  `rating` and the AI score. Either route these through `ipy_ai_action` or
+  change the document and give the admin a switch.
+
 ---
 
 ## AI providers
