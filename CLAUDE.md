@@ -11,7 +11,7 @@ iPropy is an AI-native, **metadata-driven** CRM for Indian real estate. Modules,
 picklists, views, roles, sharing rules, workflows and dashboards are **data, not code** — admins
 reshape the product at runtime with no deploy and no DDL.
 
-Stack: Node 20 + TypeScript + Express + PostgreSQL 16 · React 18 + Vite + Tailwind + TanStack Query ·
+Stack: Node 20 + TypeScript + Express + PostgreSQL 16 · React 19 + Vite + Tailwind + TanStack Query ·
 Socket.IO · Claude. npm workspaces: `packages/{shared,server,web,mcp}`.
 
 Vtiger (at `../vtigercrm`) is an **architecture reference only**. No Vtiger code is used.

@@ -46,7 +46,7 @@ adds WhatsApp, telephony, portal lead capture and an AI layer.
 | Inline quick-edit | Click any picklist or owner field (status, pipeline stage, rating, assigned-to) on a list, kanban card or record header to change it without opening the edit form |
 | Dashboard drill-through | Every widget type (metric, gauge, bar, line, area, pie, donut, funnel, stacked, table) clicks through to a correctly pre-filtered record list; funnel uses cumulative stage semantics, filter panel stays closed on arrival |
 
-**Seeded product shape:** 2 modules · about 136 fields · 50 forward-only migrations. User, record,
+**Seeded product shape:** 2 modules · about 136 fields · 81 forward-only migrations. User, record,
 view, workflow and dashboard counts vary by deployment. The application cannot see Neon backup
 schedules, so verify them in the provider dashboard rather than copying an old count from here.
 

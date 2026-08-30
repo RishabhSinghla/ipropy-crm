@@ -31,3 +31,6 @@ __pycache__/
 # pointed inside it.
 wa-bridge/sessions/
 .ipropy-wa-sessions/
+
+# Editor temp files from network volumes (OneDrive/SMB leave these behind)
+.!*

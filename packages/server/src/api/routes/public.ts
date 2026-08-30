@@ -11,7 +11,7 @@
  * instead of relying on requireAuth.
  */
 import { Router } from 'express';
-import { dirname, resolve } from 'node:path';
+import { dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import { db } from '../../db/pool.js';
@@ -22,6 +22,7 @@ import { logger } from '../../utils/logger.js';
 import { recordShareView, resolveShareToken } from '../../core/sharing/shareLinks.js';
 import { getPropertyShareConfig, loadSharedProperty } from '../../core/sharing/propertyShare.js';
 import { photoOrderBy } from '../../core/media/ordering.js';
+import { applyFileSecurityHeaders } from '../../core/media/serving.js';
 import { publicPropertyStatuses } from '../../core/settings/scoring.js';
 
 export const publicRouter = Router();
@@ -534,11 +535,31 @@ publicRouter.get('/media/:attachmentId', asyncHandler(async (req, res) => {
   const storageKey = variantKey ?? file.storage_key;
   const mimeType = variantKey ? 'image/webp' : file.mime_type;
 
+  /*
+    The same headers the signed-in file route has carried all along, which this
+    one did not.
+
+    A stored mime type is whatever the uploading client declared — never
+    derived, never sniffed. So anyone who can attach a file to a property that
+    later gets published could serve `image/svg+xml` from the CRM's own origin,
+    and an SVG opened as a top-level document runs its scripts. The session
+    token lives in localStorage and the API deliberately runs without a CSP of
+    its own, so that is the whole session.
+
+    `applyFileSecurityHeaders` is the existing answer: `sandbox` drops the
+    response into an opaque origin with scripts off, `nosniff` stops a browser
+    second-guessing the type, and the disposition allow-list downloads anything
+    that is not genuinely embeddable. None of it costs a real photograph
+    anything — a CSP on an image subresource does not affect `<img>`.
+  */
   const storage = getStorageSettings();
   if (storage.driver === 'local') {
     const path = resolve(storage.localPath, storageKey);
-    if (!path.startsWith(resolve(storage.localPath))) throw new NotFoundError('File not found');
-    res.setHeader('Content-Type', mimeType);
+    // A prefix test alone treats `/uploads-evil` as inside `/uploads`, so the
+    // boundary has to be the separator, not the string.
+    const root = resolve(storage.localPath);
+    if (path !== root && !path.startsWith(root + sep)) throw new NotFoundError('File not found');
+    applyFileSecurityHeaders(res, mimeType, file.file_name, false);
     res.setHeader('Cache-Control', 'public, max-age=3600');
     res.sendFile(path, (err) => {
       if (err) {
@@ -551,7 +572,7 @@ publicRouter.get('/media/:attachmentId', asyncHandler(async (req, res) => {
 
   const data = await getDriver().then((driver) => driver.read(storageKey));
   if (!data) throw new NotFoundError('File is missing from storage');
-  res.setHeader('Content-Type', mimeType);
+  applyFileSecurityHeaders(res, mimeType, file.file_name, false);
   res.setHeader('Cache-Control', 'public, max-age=3600');
   res.send(data);
 }));
@@ -676,7 +697,8 @@ publicRouter.get('/share/:token/media/:attachmentId', asyncHandler(async (req, r
   res.setHeader('Cache-Control', 'private, no-store');
 
   if (variantKey) {
-    res.setHeader('Content-Type', 'image/webp');
+    applyFileSecurityHeaders(res, 'image/webp', 'photo.webp', false);
+    res.setHeader('Cache-Control', 'private, no-store');
     res.send(data);
     return;
   }
@@ -692,16 +714,24 @@ publicRouter.get('/share/:token/media/:attachmentId', asyncHandler(async (req, r
   // route is rate-limited, so the trade is worth making. The originals on disk
   // are untouched — this is a resize on the way out, not a derivative.
   try {
-    res.setHeader('Content-Type', 'image/webp');
+    applyFileSecurityHeaders(res, 'image/webp', 'photo.webp', false);
+    res.setHeader('Cache-Control', 'private, no-store');
     res.send(await sharp(data, { failOn: 'none' })
       .rotate()
       .resize({ width: FALLBACK_WIDTHS[requestedSize ?? 'large'] ?? 1600, withoutEnlargement: true })
       .webp({ quality: 80 })
       .toBuffer());
   } catch (err) {
-    // A format sharp cannot decode still deserves to be shown.
+    /*
+      A format sharp cannot decode still deserves to be shown — but this branch
+      is exactly where a hostile file lands. The happy path above rasterises
+      everything to webp, which quietly defuses an SVG; a deliberately malformed
+      one fails to decode and arrives here, where it used to be echoed back with
+      its own declared mime type. So the guard matters more here than anywhere.
+    */
     logger.debug({ err, id: req.params.attachmentId }, 'shared media: could not shrink, sending the original');
-    res.setHeader('Content-Type', file.mime_type);
+    applyFileSecurityHeaders(res, file.mime_type, 'photo', false);
+    res.setHeader('Cache-Control', 'private, no-store');
     res.send(data);
   }
 }));

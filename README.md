@@ -8,7 +8,7 @@ role hierarchy, sharing rules, workflows, dashboards) is editable at runtime her
 telephony, portal lead capture, and an AI layer that scores, matches, drafts and analyses.
 
 ```
-Node 20 + TypeScript + Express + PostgreSQL 16   ·   React 18 + Vite + Tailwind   ·   pluggable AI providers
+Node 20 + TypeScript + Express + PostgreSQL 16   ·   React 19 + Vite + Tailwind   ·   pluggable AI providers
 ```
 
 ---
