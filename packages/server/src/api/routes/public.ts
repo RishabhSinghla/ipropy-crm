@@ -33,11 +33,21 @@ export const publicRouter = Router();
 // sells the other half" is a sales decision rather than a code change.
 // Read per request; the reader caches and is invalidated when settings save.
 
-// publish_to_web (db/seed/templates/realEstate.ts) is a JSON-storage custom field,
-// default true — an admin can hide a specific record from the website
-// without changing its status. Absent key (pre-existing records, never
-// re-saved since the field was added) is treated as the default: visible.
-const publishClause = (alias: string) => `(${alias}.custom_fields->>'publish_to_web' IS NULL OR ${alias}.custom_fields->>'publish_to_web' = 'true')`;
+/*
+  A property reaches the website only when somebody says so.
+
+  This used to read `IS NULL OR = 'true'`, so a property with the flag unset was
+  published — and the flag is unset on every newly created record until somebody
+  saves that field. The practical effect: a half-entered unit went live the
+  moment it was created, before it had photos, a price or a verified address.
+  Both properties on the public site today have no price for exactly this
+  reason.
+
+  Absent now means hidden. Migration `087` writes an explicit `true` onto
+  everything that was relying on the old default first, so nothing that is
+  live today disappears when this ships.
+*/
+const publishClause = (alias: string) => `(${alias}.custom_fields->>'publish_to_web' = 'true')`;
 
 // Never build ORDER BY from raw query input — a fixed whitelist keeps it injection-safe.
 const PROJECT_SORTS: Record<string, string> = {

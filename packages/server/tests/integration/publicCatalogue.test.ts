@@ -24,12 +24,21 @@ let app: Express;
 let ctx: ServiceContext;
 const made: string[] = [];
 
+/**
+ * A property that somebody actually chose to publish.
+ *
+ * `publish_to_web` is explicit here because publishing is now a decision rather
+ * than a default — an unset flag means hidden. That change broke four of the
+ * tests below, which is exactly what should have happened: they were all
+ * relying on a property reaching the public website without anybody saying so.
+ */
 async function publish(name: string, extra: Record<string, unknown> = {}): Promise<string> {
   const rec = await recordService.createRecord(ctx, 'properties', {
     name,
     status: 'Available',
     project_name: 'Catalogue Test Project',
     city: 'Faridabad',
+    publish_to_web: true,
     ...extra,
   });
   made.push(rec.id);
@@ -214,5 +223,53 @@ describe('every public endpoint that reads the published statuses', () => {
     const countAfter = (after.body.items as { city: string; unit_count: number }[])
       .find((c) => c.city === 'Faridabad')?.unit_count ?? 0;
     expect(countAfter).toBe(countBefore);
+  });
+
+  it('does not publish a property nobody chose to publish', async () => {
+    /*
+      The rule that changed, and the one worth guarding hardest.
+
+      `publishClause` used to read `IS NULL OR = 'true'`, and the key is unset on
+      every newly created record until somebody explicitly saves that field. So a
+      property went to the public website the moment it was created — before it
+      had photographs, a price or a verified address. Both properties on the live
+      site show "Price on request" for exactly this reason.
+
+      Reaching the website is a decision now. An unset flag means hidden.
+    */
+    const id = await publish(`Never Chosen ${Date.now()}`);
+    await db.query(
+      `UPDATE ipy_e_properties
+          SET custom_fields = COALESCE(custom_fields, '{}'::jsonb) - 'publish_to_web'
+        WHERE record_id = $1`,
+      [id],
+    );
+
+    const listed = await request(app).get('/api/public/properties');
+    const ids = (listed.body.items as { id: string }[]).map((u) => u.id);
+    expect(ids, 'an unset flag must not publish').not.toContain(id);
+
+    // And it is genuinely reachable once somebody says yes, so this is a
+    // default and not a wall.
+    await db.query(
+      `UPDATE ipy_e_properties
+          SET custom_fields = COALESCE(custom_fields, '{}'::jsonb) || '{"publish_to_web":"true"}'::jsonb
+        WHERE record_id = $1`,
+      [id],
+    );
+    const after = await request(app).get('/api/public/properties');
+    expect((after.body.items as { id: string }[]).map((u) => u.id)).toContain(id);
+  });
+
+  it('starts a new property with publishing switched off', async () => {
+    // The other half: the field's own default, which is what the create form
+    // seeds. A default of true here would put the record back on the website
+    // whatever the clause says.
+    const field = await db.queryOne<{ default_value: unknown }>(
+      `SELECT default_value FROM ipy_field
+        WHERE name = 'publish_to_web'
+          AND module_id IN (SELECT id FROM ipy_module WHERE name = 'properties')`,
+    );
+    expect(String(field?.default_value)).toBe('false');
   });
 });

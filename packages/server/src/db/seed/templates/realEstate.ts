@@ -425,8 +425,12 @@ const MODULES: ModuleDef[] = [
           F.url('virtual_tour_url', 'Virtual Tour'),
           F.textarea('description', 'Description', { searchable: true }),
           F.bool('publish_to_web', 'Show on Website', {
-            storage: 'json', default: true, quickCreate: true,
-            help: 'Whether this unit appears on the public property website, in addition to the usual status-based visibility.',
+            // Off by default, deliberately. A property is created before it has
+            // photos, a price or a verified address, and the old default sent
+            // it to the public website at that moment.
+            storage: 'json', default: false, quickCreate: true,
+            help: 'Off until you turn it on. A property only appears on the public website once this is on '
+              + 'and its status is one of the public ones.',
           }),
         ],
       },
