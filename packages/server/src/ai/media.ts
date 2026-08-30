@@ -328,59 +328,120 @@ export async function music(
 ): Promise<Buffer | null> {
   const model = opts.model ?? await modelFor('music');
   /*
-    `modalities: ['audio']` and `audio: { format }` used to go with this, and
-    they are not parameters the music models accept. OpenRouter lists exactly
-    what each model takes, and Lyria's are `max_tokens, response_format, seed,
-    temperature, top_p` — no `modalities`, no `audio`. An unsupported parameter
-    is rejected outright, which matches what this looked like from outside: the
-    settings test failed in 0.0 seconds, far too fast for anything to have tried
-    to generate five seconds of music.
+    `stream: true` is not an optimisation here, it is the only way to get the
+    audio out. OpenRouter's own words: "Audio output requires streaming — the
+    response is delivered as SSE chunks." A non-streaming request to a music
+    model returns a perfectly ordinary chat completion with no audio anywhere
+    in it, which is exactly what this used to read and report as "may not be a
+    music model" about a model that certainly is.
 
-    These models already answer with audio because that is what they are; asking
-    for it in a parameter they do not have is what stopped them.
+    `modalities` and `audio` are deliberately absent. They are real parameters
+    for the OpenAI audio-chat models, and they are not on Lyria's
+    `supported_parameters`, which is `max_tokens, response_format, seed,
+    temperature, top_p`. Sending an unsupported parameter had the whole request
+    refused in 0.0 seconds.
   */
   const response = await request('/chat/completions', {
     model,
+    stream: true,
     messages: [{
       role: 'user',
       content: `Instrumental only, no vocals and no lyrics. ${brief} `
         + `About ${opts.seconds ?? 30} seconds.`,
     }],
   }, 'music', model, { recordId: opts.recordId, timeoutMs: 300_000, onError: opts.onError });
-  if (!response) return null;
+  if (!response?.body) return null;
 
-  /*
-    Where the bytes arrive differs by provider, so all three known shapes are
-    read rather than one: OpenAI puts base64 under `message.audio.data`, and
-    OpenRouter hands attachments back as data URLs — under `audio` for some
-    models and alongside `images` for others.
-  */
-  const body = await response.json() as {
-    choices?: {
-      message?: {
-        audio?: { data?: string; url?: string };
-        content?: string;
-        images?: { image_url?: { url?: string } }[];
-      };
-    }[];
-  };
-  const message = body.choices?.[0]?.message;
-  const fromDataUrl = (value?: string): string | null => {
-    const match = /^data:audio\/[\w.+-]+;base64,(.+)$/.exec(value ?? '');
-    return match?.[1] ?? null;
-  };
+  const { audio, sawChunk, otherKeys } = await readAudioStream(response.body);
 
-  const data = message?.audio?.data
-    ?? fromDataUrl(message?.audio?.url)
-    ?? fromDataUrl(message?.content)
-    ?? fromDataUrl(message?.images?.[0]?.image_url?.url);
-
-  if (!data) {
-    logger.warn({ model }, 'music model answered without audio');
-    opts.onError?.('The model answered, but with no audio attached. It may not be a music model.');
+  if (!audio.length) {
+    /*
+      Say which of the two failures this was. "It streamed and none of the
+      chunks carried audio" and "it never streamed at all" want different
+      fixes, and reporting one sentence for both is what kept this looking like
+      a wrong model id for weeks.
+    */
+    const why = sawChunk
+      ? `The model streamed a reply but no audio in it${otherKeys.length ? ` (it sent: ${otherKeys.join(', ')})` : ''}. It may not be a music model.`
+      : 'The model sent nothing back at all.';
+    logger.warn({ model, sawChunk, otherKeys }, 'music model answered without audio');
+    opts.onError?.(why);
     return null;
   }
-  return Buffer.from(data, 'base64');
+  return audio;
+}
+
+/**
+ * Pull base64 audio out of an SSE stream.
+ *
+ * Chunks arrive as `data: {json}` lines and the payload sits at
+ * `choices[0].delta.audio.data`. The base64 is accumulated as text and decoded
+ * once at the end rather than per chunk: a chunk is a slice of one encoded
+ * stream, not an independently padded string, so decoding each on its own
+ * corrupts the join.
+ *
+ * Also reads the non-streaming shapes, because the OpenAI audio-chat models
+ * answer with `message.audio.data` in a single object even when streamed, and
+ * a reader that knows one shape reports silence about a reply that had sound
+ * in it.
+ */
+async function readAudioStream(body: ReadableStream<Uint8Array>): Promise<{
+  audio: Buffer; sawChunk: boolean; otherKeys: string[];
+}> {
+  const decoder = new TextDecoder();
+  const reader = body.getReader();
+  const seenKeys = new Set<string>();
+  let pending = '';
+  let base64 = '';
+  let sawChunk = false;
+
+  const fromDataUrl = (value?: string): string | null =>
+    /^data:audio\/[\w.+-]+;base64,(.+)$/.exec(value ?? '')?.[1] ?? null;
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      pending += decoder.decode(value, { stream: true });
+
+      // SSE events are separated by a blank line; keep the tail for next time.
+      const lines = pending.split('\n');
+      pending = lines.pop() ?? '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data:')) continue;
+        const payload = trimmed.slice(5).trim();
+        if (!payload || payload === '[DONE]') continue;
+
+        let parsed: {
+          choices?: {
+            delta?: { audio?: { data?: string; url?: string }; content?: string };
+            message?: { audio?: { data?: string; url?: string }; content?: string };
+          }[];
+        };
+        try { parsed = JSON.parse(payload); } catch { continue; }
+
+        sawChunk = true;
+        const choice = parsed.choices?.[0];
+        const part = choice?.delta ?? choice?.message;
+        if (part) for (const k of Object.keys(part)) seenKeys.add(k);
+
+        const piece = part?.audio?.data
+          ?? fromDataUrl(part?.audio?.url)
+          ?? fromDataUrl(part?.content);
+        if (piece) base64 += piece;
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return {
+    audio: base64 ? Buffer.from(base64, 'base64') : Buffer.alloc(0),
+    sawChunk,
+    otherKeys: [...seenKeys].filter((k) => k !== 'audio'),
+  };
 }
 
 // ---------------------------------------------------------------------------
