@@ -158,10 +158,23 @@ export async function placeCall(input: PlaceCallInput): Promise<{ callId: string
   const customerNumber = toE164(input.toNumber);
   if (!customerNumber) throw new BadRequestError('The destination number is not valid');
 
-  // Respect Do Not Call before dialling anything.
+  /*
+    Respect Do Not Call before dialling anything.
+
+    Read as JSON rather than as a column, because `do_not_call` was deleted from
+    this CRM on 11 August and naming a dropped column is a Postgres 42703. This
+    query sits before the try block below, so it threw uncaught and every
+    click-to-call returned a 500 — including calls to people who had never asked
+    not to be called.
+
+    It fails safe now in the honest direction: no field means nothing has been
+    recorded, so nothing is blocked, and the call goes through. If the field
+    comes back the check starts working again with no further change.
+  */
   if (input.recordId) {
     const dnc = await db.queryOne<{ blocked: boolean }>(
-      `SELECT COALESCE(l.do_not_call, false) AS blocked FROM ipy_e_leads l WHERE l.record_id = $1`,
+      `SELECT COALESCE((to_jsonb(l)->>'do_not_call')::boolean, false) AS blocked
+         FROM ipy_e_leads l WHERE l.record_id = $1`,
       [input.recordId],
     );
     if (dnc?.blocked) throw new BadRequestError('This contact is marked Do Not Call');

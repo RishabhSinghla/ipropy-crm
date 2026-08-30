@@ -97,15 +97,28 @@ export async function recordConsent(input: {
     await conn.query(`DELETE FROM ipy_channel_optout WHERE handle = $1 AND channel = 'whatsapp'`, [handle]);
   }
 
-  // Mirror onto the record so it is visible and filterable where people work.
-  // Matched on the last ten digits for the same reason sign-in is: the same
-  // number exists in several formats across imported data.
-  await conn.query(
-    `UPDATE ipy_e_leads SET do_not_whatsapp = $2
-     WHERE right(regexp_replace(coalesce(mobile,''), '\\D', '', 'g'), 10) = right($1, 10)
-        OR right(regexp_replace(coalesce(whatsapp_number,''), '\\D', '', 'g'), 10) = right($1, 10)`,
-    [handle.replace(/\D/g, ''), input.action === 'opt_out'],
-  ).catch((err) => logger.warn({ err }, 'could not mirror consent onto lead records'));
+  /*
+    Mirror onto the record so it is visible and filterable where people work.
+
+    The opt-out itself does not depend on this. `ipy_channel_optout` is the
+    record of consent and `maySend` reads that, so somebody who replies STOP is
+    genuinely blocked whether or not this line succeeds. This is the copy that
+    makes it *visible* in the CRM.
+
+    Which matters, because it has been failing since 11 August, when
+    `do_not_whatsapp` was deleted from the leads module. The catch below turned a
+    42703 into a log line nobody reads, so the enforcement kept working and the
+    flag quietly stopped appearing on any record. Skipped entirely when the field
+    is absent now, rather than attempted and swallowed.
+  */
+  if (await leadsHaveField(conn, 'do_not_whatsapp')) {
+    await conn.query(
+      `UPDATE ipy_e_leads SET do_not_whatsapp = $2
+       WHERE right(regexp_replace(coalesce(mobile,''), '\\D', '', 'g'), 10) = right($1, 10)
+          OR right(regexp_replace(coalesce(whatsapp_number,''), '\\D', '', 'g'), 10) = right($1, 10)`,
+      [handle.replace(/\D/g, ''), input.action === 'opt_out'],
+    ).catch((err) => logger.warn({ err }, 'could not mirror consent onto lead records'));
+  }
 
   await conn.query(
     `INSERT INTO ipy_consent_event (record_id, handle, channel, action, source, message_text)
@@ -130,4 +143,31 @@ export async function maySend(handle: string, opts: { sessionReply?: boolean } =
     return { allowed: false, reason: 'This number has opted out of WhatsApp messages.' };
   }
   return { allowed: true };
+}
+
+/**
+ * Whether the leads table still has a given column.
+ *
+ * Cached per process: this is asked on every consent change and the answer
+ * changes only when an admin adds or removes the field. Checked rather than
+ * caught, because a failed statement inside a transaction poisons every
+ * statement after it — the catch would hide which one died, not rescue it.
+ */
+const leadColumns = new Map<string, boolean>();
+
+export function invalidateLeadColumnCache(): void { leadColumns.clear(); }
+
+async function leadsHaveField(conn: Tx, column: string): Promise<boolean> {
+  const cached = leadColumns.get(column);
+  if (cached !== undefined) return cached;
+
+  const row = await conn.queryOne(
+    `SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'ipy_e_leads' AND column_name = $1`,
+    [column],
+  ).catch(() => null);
+
+  const present = Boolean(row);
+  leadColumns.set(column, present);
+  return present;
 }
