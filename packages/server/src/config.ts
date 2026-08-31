@@ -39,8 +39,18 @@ export const config = {
   logLevel: str('LOG_LEVEL', 'info'),
   serveWeb: bool('SERVE_WEB', false),
 
+  /*
+    Error reporting. Declared here since the first commit and never once read —
+    nothing called Sentry.init, so a DSN in the environment did nothing at all.
+
+    The DSN normally lives on the integrations page now, so switching reporting
+    on is a paste and a save with no redeploy. This env var still wins when set,
+    because it is read before the database and so catches a boot failure the
+    stored one cannot.
+  */
   sentry: {
     dsn: str('SENTRY_DSN'),
+    environment: str('SENTRY_ENVIRONMENT'),
   },
 
   db: {

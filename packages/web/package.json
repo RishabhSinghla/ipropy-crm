@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@ipropy/shared": "*",
+    "@sentry/react": "^10.72.0",
     "@simplewebauthn/browser": "^13.3.0",
     "@tanstack/react-query": "^5.62.7",
     "clsx": "^2.1.1",

@@ -16,18 +16,18 @@
  * properties, reports, admin settings and inbox. Zero
  * `securitypolicyviolation` events.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import { securityPolicy } from '../src/app.js';
 
+/*
+  Called directly rather than through a mocked config module. That mock made
+  this file flaky once `app.ts` began importing the error reporter, which reads
+  config as well — two test files re-mocking the same module while sharing a
+  graph is a race, and a test that fails one run in ten is one people learn to
+  ignore.
+*/
 async function directivesFor(isProd: boolean): Promise<string> {
-  vi.resetModules();
-  vi.doMock('../src/config.js', async () => {
-    const actual = await vi.importActual<{ config: Record<string, unknown> }>('../src/config.js');
-    return { config: { ...actual.config, isProd } };
-  });
-  const { applyAppSecurityPolicy } = await import('../src/app.js');
-  const headers: Record<string, string> = {};
-  applyAppSecurityPolicy({ setHeader: (k: string, v: string) => { headers[k.toLowerCase()] = v; } } as never);
-  return headers['content-security-policy'] ?? '';
+  return securityPolicy(isProd);
 }
 
 describe('the policy on the app HTML', () => {

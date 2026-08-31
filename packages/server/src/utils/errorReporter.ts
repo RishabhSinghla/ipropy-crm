@@ -1,45 +1,20 @@
-import { randomUUID } from 'node:crypto';
-import { config } from '../config.js';
-
-// Throttle so a crash loop can't hammer the endpoint with thousands of posts.
-let lastReportAt = 0;
-const MIN_INTERVAL_MS = 10_000;
-
 /**
- * Best-effort error reporting. Posts a JSON payload to the configured Sentry
- * DSN (legacy Store API) when SENTRY_DSN is set; otherwise this is a no-op.
- * Fire-and-forget — reporting must never take the request path down.
+ * Where an unhandled error goes.
+ *
+ * This file used to hand-roll the reporting: it POSTed a JSON body straight at
+ * `config.sentry.dsn`. That was never going to work — a DSN is an address with
+ * a key in it, not an endpoint, and Sentry ingests at `/api/<project>/envelope/`
+ * with the key in a header. So every report since this was written went to a
+ * URL that could not accept it.
+ *
+ * Two further things it got wrong, worth recording because they are easy to
+ * reintroduce. It sent the error's *message* and no stack, which is the half
+ * that does not tell you where the problem is. And it throttled to one report
+ * every ten seconds globally, so a crash loop reported once and any unrelated
+ * error in the same ten seconds was dropped silently.
+ *
+ * The real SDK handles all of that — batching, retries, stack traces, grouping.
+ * This file stays as the single import the rest of the code uses, so no call
+ * site needs to know which library is behind it.
  */
-export function reportError(err: unknown, context: { path?: string; userId?: string; requestId?: string }): void {
-  if (!config.sentry.dsn) return;
-
-  const now = Date.now();
-  if (now - lastReportAt < MIN_INTERVAL_MS) return;
-  lastReportAt = now;
-
-  const message = err instanceof Error ? err.message : String(err);
-  const body = {
-    event_id: randomUUID().replace(/-/g, ''),
-    platform: 'node',
-    message,
-    level: 'error',
-    timestamp: new Date().toISOString(),
-    server_name: process.env.HOSTNAME ?? 'ipropy-server',
-    environment: config.env,
-    exception: {
-      values: [
-        {
-          type: err instanceof Error ? err.constructor.name : 'UnknownError',
-          value: message,
-        },
-      ],
-    },
-    extra: { path: context.path, userId: context.userId, requestId: context.requestId },
-  };
-
-  void fetch(config.sentry.dsn, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  }).catch(() => undefined);
-}
+export { reportError } from '../core/observability/sentry.js';

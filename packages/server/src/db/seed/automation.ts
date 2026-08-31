@@ -512,6 +512,7 @@ export async function seedIntegrations(conn: Tx): Promise<void> {
     { provider: 'ai_openai', kind: 'ai', label: 'OpenAI-compatible' },
     { provider: 'ai_ollama', kind: 'ai', label: 'Ollama (local)' },
     { provider: 'stt', kind: 'ai', label: 'Speech-to-text (Whisper)' },
+    { provider: 'sentry', kind: 'ops', label: 'Error reporting (Sentry)' },
     { provider: 's3', kind: 'storage', label: 'S3 Object Storage' },
     { provider: 'onedrive', kind: 'storage', label: 'Microsoft OneDrive' },
   ];

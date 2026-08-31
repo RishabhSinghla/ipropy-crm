@@ -28,6 +28,7 @@
     "@aws-sdk/client-s3": "^3.1108.0",
     "@ipropy/mcp": "*",
     "@ipropy/shared": "*",
+    "@sentry/node": "^10.72.0",
     "@simplewebauthn/server": "^13.3.2",
     "archiver": "^8.0.0",
     "bcryptjs": "^2.4.3",

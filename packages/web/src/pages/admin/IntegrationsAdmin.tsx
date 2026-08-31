@@ -117,6 +117,13 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
     { key: 'apiKey', label: 'API Key (OpenAI-compatible Whisper)', source: 'credentials', secret: true },
     { key: 'baseUrl', label: 'Base URL', source: 'config', placeholder: 'https://api.groq.com/openai/v1' },
   ],
+  // Not marked secret, and that is correct rather than an oversight: a DSN sits
+  // in the JavaScript of every site that uses one and can only write events.
+  // Hiding it behind a password field would imply a risk that is not there.
+  sentry: [
+    { key: 'dsn', label: 'DSN', source: 'config', placeholder: 'https://…@o0.ingest.sentry.io/0' },
+    { key: 'environment', label: 'Environment name', source: 'config', placeholder: 'production' },
+  ],
   facebook_leads: [
     { key: 'appId', label: 'App ID', source: 'config' },
     { key: 'appSecret', label: 'App Secret', source: 'credentials', secret: true },
@@ -150,7 +157,7 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
 const TESTABLE = new Set([
   'meta_whatsapp', 'twilio', 'exotel', 'smtp', 'imap', 'facebook_leads',
   'anthropic', 'ai_gemini', 'ai_groq', 'ai_openrouter', 'ai_openai', 'ai_ollama',
-  'ai_opencode', 'stt', 'onedrive',
+  'ai_opencode', 'stt', 'onedrive', 'sentry',
 ]);
 
 /**
@@ -357,6 +364,15 @@ const GUIDES: Record<string, Guide> = {
       { title: 'Install Ollama', help: 'Download it, then run "ollama serve" and "ollama pull llama3.1" in a terminal.', href: 'https://ollama.com/download', linkLabel: 'Install Ollama' },
       { title: 'Where is it running?', help: 'Leave the default unless you moved it.', field: 'baseUrl' },
       { title: 'Which model did you pull?', help: 'The name you used with "ollama pull", e.g. llama3.1.', field: 'model' },
+    ],
+  },
+  sentry: {
+    outcome: 'Hear about a crash the moment it happens, instead of when somebody remembers to mention it.',
+    minutes: 3,
+    steps: [
+      { title: 'Create a Sentry project', help: 'Pick Node.js. The free plan covers far more than a team of five will ever produce.', href: 'https://sentry.io/organizations/new/', linkLabel: 'Open Sentry' },
+      { title: 'Copy the DSN it shows you', help: 'It looks like an address with a long code in it. It is not a password — it can only send errors in, never read anything out.', field: 'dsn' },
+      { title: 'Name this environment', help: 'Use "production" for the live CRM. It keeps real crashes separate from anything tested locally.', field: 'environment' },
     ],
   },
   stt: {

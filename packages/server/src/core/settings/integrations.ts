@@ -85,6 +85,8 @@ export interface ResolvedSettings {
   stt: {
     provider: 'none' | 'openai'; apiKey: string; baseUrl: string; model: string;
   };
+  /** Where crashes get reported. A DSN is not a secret — it can only write. */
+  sentry: { dsn: string; environment: string };
   automation: {
     /** Where to tell n8n a shoot has finished. Blank switches the call off. */
     n8nWebhookUrl: string;
@@ -555,6 +557,10 @@ function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
     },
     ai: resolveAi(map),
     stt: resolveStt(map, sttRow),
+    sentry: {
+      dsn: pick(map.get('sentry'), 'config', 'dsn', config.sentry.dsn),
+      environment: pick(map.get('sentry'), 'config', 'environment', config.sentry.environment),
+    },
     automation: {
       n8nWebhookUrl: pick(n8n, 'config', 'webhookUrl', config.automation.n8nWebhookUrl),
       // In credentials, not config: it is the only thing standing between the
@@ -613,6 +619,17 @@ export async function warmup(): Promise<void> {
   ).catch(() => null);
   // Absent means on, which is the behaviour that existed before it was a choice.
   allowDisabledProviders = row ? row.value !== false : true;
+
+  /*
+    Error reporting follows the stored DSN, so pasting one on the integrations
+    page turns it on without a redeploy. The environment variable still wins:
+    it is read before the database and catches boot failures this cannot.
+  */
+  const { configureSentry } = await import('../observability/sentry.js');
+  configureSentry(
+    config.sentry.dsn || snapshot.sentry.dsn,
+    config.sentry.environment || snapshot.sentry.environment,
+  );
 
   logger.debug(
     { providers: rows.size, allowDisabledProviders },

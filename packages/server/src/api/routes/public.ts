@@ -449,6 +449,32 @@ publicRouter.get('/properties/:id', asyncHandler(async (req, res) => {
  * here (name, brand line, the accounts already published on the company's own
  * website); the office phone and inbox stay behind auth on `/api/brand`.
  */
+/**
+ * What the browser needs to know before anybody signs in.
+ *
+ * Only the Sentry DSN today, and it is deliberately unauthenticated: the app
+ * has to start reporting errors *before* a login succeeds, since a broken login
+ * is exactly the failure worth hearing about and the one nobody can report from
+ * inside.
+ *
+ * Public is also correct rather than merely convenient. A DSN can only write
+ * events; it reads nothing and administers nothing, and every website using
+ * Sentry ships one in its JavaScript for the same reason. Nothing else is added
+ * to this response without checking it belongs in a stranger's hands.
+ */
+publicRouter.get('/client-config', asyncHandler(async (_req, res) => {
+  const { getSettings } = await import('../../core/settings/integrations.js');
+  const { config } = await import('../../config.js');
+  const sentry = getSettings().sentry;
+
+  // Cached briefly: every page load asks, and the answer changes twice a year.
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  res.json({
+    sentryDsn: sentry.dsn || null,
+    environment: sentry.environment || (config.isProd ? 'production' : 'development'),
+  });
+}));
+
 publicRouter.get('/brand', asyncHandler(async (_req, res) => {
   const rows = await db.query<{ key: string; value: unknown }>(
     `SELECT key, value FROM ipy_setting WHERE key IN ('brand.tagline', 'social.links', 'org.name')`,

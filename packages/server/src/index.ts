@@ -5,7 +5,8 @@ import { logger } from './utils/logger.js';
 import { createApp } from './app.js';
 import { checkConnection, closePool } from './db/pool.js';
 import { registry } from './core/metadata/registry.js';
-import { warmup as warmupIntegrationSettings } from './core/settings/integrations.js';
+import { warmup as warmupIntegrationSettings, getSettings } from './core/settings/integrations.js';
+import { configureSentry } from './core/observability/sentry.js';
 import { registerWorkflowHandlers } from './core/workflow/engine.js';
 import { registerLifecycleSync } from './core/entity/lifecycleFromStatus.js';
 import { registerLeadGreeting } from './integrations/whatsapp/greetNewLead.js';
@@ -36,9 +37,19 @@ async function main(): Promise<void> {
 
   await mkdir(config.storage.localPath, { recursive: true }).catch(() => undefined);
 
+  /*
+    Twice, and both matter. The environment variable is available before the
+    database, so this catch a failure during boot — the one class of error the
+    stored DSN can never see, because reading it is itself part of booting.
+  */
+  configureSentry(config.sentry.dsn, config.sentry.environment);
+
   try {
     await registry.warmup();
     await warmupIntegrationSettings();
+    // Now the stored one, which is what an admin can change without a redeploy.
+    const stored = getSettings().sentry;
+    configureSentry(config.sentry.dsn || stored.dsn, config.sentry.environment || stored.environment);
   } catch (err) {
     logger.error({ err }, 'failed to load metadata — have you run `npm run db:migrate && npm run db:seed`?');
     process.exit(1);

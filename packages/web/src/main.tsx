@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App';
 import './styles.css';
+import { startErrorReporting } from './lib/errorReporting';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -19,6 +20,14 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+/*
+  Started before React renders, so a crash during the first paint is caught too.
+  It fetches its own configuration and does nothing when none is set, so this
+  line costs a CRM with reporting switched off exactly one request and no
+  download.
+*/
+void startErrorReporting();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

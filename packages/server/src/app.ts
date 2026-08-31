@@ -59,6 +59,19 @@ import { publicRouter } from './api/routes/public.js';
  * the directive would break every asset.
  */
 export function applyAppSecurityPolicy(res: Response): void {
+  res.setHeader('Content-Security-Policy', securityPolicy(config.isProd));
+}
+
+/**
+ * The policy itself, as a pure function of one flag.
+ *
+ * Separate from the header-setting so it can be tested without mocking the
+ * config module. That mock made the test flaky: `app.ts` now transitively
+ * imports the error reporter, which reads config too, and two test files
+ * re-mocking the same module while sharing a graph is a race. A test that fails
+ * one run in ten is a test people learn to ignore.
+ */
+export function securityPolicy(isProd: boolean): string {
   const directives = [
     "default-src 'self'",
     "script-src 'self'",
@@ -73,9 +86,9 @@ export function applyAppSecurityPolicy(res: Response): void {
     "base-uri 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",
-    ...(config.isProd ? ['upgrade-insecure-requests'] : []),
+    ...(isProd ? ['upgrade-insecure-requests'] : []),
   ];
-  res.setHeader('Content-Security-Policy', directives.join('; '));
+  return directives.join('; ');
 }
 
 export function createApp(): Express {
