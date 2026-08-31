@@ -48,7 +48,9 @@ import { publicRouter } from './api/routes/public.js';
  *    is the one being kept out.
  *  * `img-src` takes `data:` for the inline SVG favicon in `index.html` and
  *    `blob:` for previews of a file before it is uploaded.
- *  * `connect-src 'self'` plus websockets, for Socket.IO. Checked against the
+ *  * `connect-src` takes `'self'`, websockets for Socket.IO, and Sentry's
+ *    ingest hosts — without the last, the browser's crash reports are blocked
+ *    by this very policy and the feature sends nothing. Checked against the
  *    running app: it fetches nothing off-origin. Every external URL in the web
  *    source is a link somebody clicks, which CSP does not govern.
  *  * `frame-ancestors 'none'` — nothing should ever frame a CRM.
@@ -79,7 +81,17 @@ export function securityPolicy(isProd: boolean): string {
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
     "media-src 'self' blob:",
-    "connect-src 'self' ws: wss:",
+    /*
+      Sentry is named here or the browser half cannot report anything at all.
+      The policy added earlier today blocks every cross-origin request, which
+      silently included the POST that carries a crash report — the feature would
+      have looked installed and sent nothing, forever.
+
+      Only ingest hosts, and only when reporting is on. `*.ingest.sentry.io`
+      covers the regional hosts a DSN can point at (`.de.`, `.us.`); the bare
+      domain covers the older single-region form.
+    */
+    "connect-src 'self' ws: wss: https://*.ingest.sentry.io https://*.ingest.us.sentry.io https://*.ingest.de.sentry.io",
     "worker-src 'self' blob:",
     "manifest-src 'self'",
     "object-src 'none'",

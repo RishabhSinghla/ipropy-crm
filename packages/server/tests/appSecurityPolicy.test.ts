@@ -69,6 +69,19 @@ describe('the policy on the app HTML', () => {
     expect(csp).toMatch(/connect-src [^;]*wss:/);
   });
 
+  it('lets crash reports out, or error reporting is installed and mute', async () => {
+    /*
+      This policy blocked the browser's reports the day it shipped — every
+      cross-origin request, which silently included the POST carrying a crash.
+      The feature would have looked installed and sent nothing, and nothing
+      anywhere would have said so.
+    */
+    const csp = await directivesFor(true);
+    expect(csp).toMatch(/connect-src [^;]*ingest\.sentry\.io/);
+    // Only ingest hosts. This is not an invitation to widen it further.
+    expect(csp).not.toMatch(/connect-src [^;]*\*\s/);
+  });
+
   it('allows the data: favicon and blob: previews', async () => {
     // index.html carries an inline SVG favicon as a data URL, and the uploader
     // previews a chosen file from a blob before it has been sent anywhere.

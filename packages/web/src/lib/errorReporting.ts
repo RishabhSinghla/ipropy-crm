@@ -15,18 +15,17 @@
  * carry them to a third party — which is a privacy incident wearing the clothes
  * of a debugging tool.
  */
+import { redactContactDetails } from '@ipropy/shared';
 
-/** Anything shaped like a way to contact a real person. */
-const CONTACT_SHAPED = [
-  /[\w.+-]+@[\w-]+\.[\w.-]+/g,
-  /(?:\+?91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}/g,
-];
+/*
+  The same redaction the server uses, from the same file.
 
-function redact(text: string): string {
-  let out = text;
-  for (const pattern of CONTACT_SHAPED) out = out.replace(pattern, '[redacted]');
-  return out;
-}
+  These were two implementations, and they drifted immediately: twelve phone
+  formats were fixed on the server and stayed broken here — which is the worse
+  half, because a crash in the browser carries whatever was on the screen, and
+  what is on the screen in a CRM is a person.
+*/
+const redact = redactContactDetails;
 
 /**
  * A record's id is a UUID and tells you which record broke; a record's *name*
@@ -88,6 +87,13 @@ export async function startErrorReporting(): Promise<void> {
               ]))
               : crumb.data,
           }));
+          // `extra` was never touched on this side, and it is where anything
+          // attached by hand ends up.
+          if (event.extra) {
+            event.extra = Object.fromEntries(Object.entries(event.extra).map(([k, v]) => [
+              k, typeof v === 'string' ? redact(v) : v,
+            ]));
+          }
           if (event.user) event.user = { id: event.user.id };
           return event;
         } catch {
