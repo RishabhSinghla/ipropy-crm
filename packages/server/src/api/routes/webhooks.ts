@@ -409,9 +409,33 @@ webhooksRouter.post('/forms/:publicKey', asyncHandler(async (req, res) => {
   }
 
   const payload = req.body as Record<string, unknown>;
+
+  /*
+    The name, from whatever the form actually calls it.
+
+    `full_name` was missing from this list, and it is the name of the CRM's own
+    field — so a form built to match the CRM sent `full_name`, the normaliser
+    looked for `first_name`, `firstName` and `name`, found none, and produced an
+    empty name. The `?? 'Website'` fallback did not save it either: an empty
+    string is not nullish, so `??` steps straight over it.
+
+    Result: a real enquiry answered "Thanks — our team will call you shortly"
+    and was thrown away. The only trace was a row in `ipy_lead_inbox` marked
+    failed, which nobody reads.
+  */
+  const wholeName = String(
+    payload.full_name ?? payload.fullName ?? payload.name ?? '',
+  ).trim();
+  const [firstFromWhole, ...restOfWhole] = wholeName.split(/\s+/);
+
+  const first = String(payload.first_name ?? payload.firstName ?? '').trim() || firstFromWhole || '';
+  const last = String(payload.last_name ?? payload.lastName ?? '').trim() || restOfWhole.join(' ');
+
   const normalized: NormalizedLead = {
-    firstName: String(payload.first_name ?? payload.firstName ?? String(payload.name ?? '').split(' ')[0] ?? 'Website'),
-    lastName: String(payload.last_name ?? payload.lastName ?? String(payload.name ?? '').split(' ').slice(1).join(' ') ?? ''),
+    // Never empty: a nameless enquiry with a real phone number is still a lead
+    // worth calling, and rejecting it loses the number too.
+    firstName: first || 'Website',
+    lastName: last,
     email: payload.email ? String(payload.email) : undefined,
     mobile: String(payload.mobile ?? payload.phone ?? ''),
     source: String(form.defaults?.lead_source ?? 'Website'),

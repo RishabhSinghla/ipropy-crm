@@ -77,7 +77,10 @@ const MODULES: ModuleDef[] = [
             help: 'Advances automatically: Lead → Prospect on first site visit, Customer on booking',
           }),
           F.pick('status', 'Pipeline Status', 'lead_status', { mandatory: true, quickCreate: true }),
-          F.pick('contact_type', 'Type', 'contact_type'),
+          // Defaulted, because it is mandatory: every lead that arrives without
+          // somebody choosing one — which is every automated source — is
+          // otherwise rejected by validation.
+          F.pick('contact_type', 'Type', 'contact_type', { default: 'Buyer' }),
           F.pick('rating', 'Rating', 'rating'),
           F.owner(),
           F.text('company', 'Company', { searchable: true }),

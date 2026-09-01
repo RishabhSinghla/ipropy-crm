@@ -90,7 +90,20 @@ export const PICKLISTS: PicklistDef[] = [
     { value: 'Customer', label: 'Customer', color: '#22c55e' },
     { value: 'Past Customer', label: 'Past Customer', color: '#8b5cf6' },
   ] },
-  { name: 'contact_type', label: 'Contact Type', values: ['Buyer', 'Seller', 'Tenant', 'Landlord', 'Investor', 'Broker', 'Consultant', 'Vendor', 'Other'] },
+  /*
+    Buyer is the default, and it has to be one. `contact_type` is mandatory, and
+    with no default not one automated source could create a lead — the website
+    form, Facebook, Google, the portals and inbound email all failed validation
+    on it. The website form answered "Thanks — our team will call you shortly"
+    and threw every enquiry away, leaving only a failed row in a table nobody
+    opens.
+
+    It belongs here rather than only in a migration: migrations run before the
+    seed exists, so a migration updating this picklist matches nothing on a
+    fresh database — which is exactly how the first attempt at this fix passed
+    on a developer's machine and failed on a clean one.
+  */
+  { name: 'contact_type', label: 'Contact Type', values: ['Buyer', 'Seller', 'Tenant', 'Landlord', 'Investor', 'Broker', 'Consultant', 'Vendor', 'Other'].map((value) => ({ value, isDefault: value === 'Buyer' })) },
   { name: 'org_type', label: 'Organisation Type', values: ['Developer', 'Builder', 'Corporate Client', 'Investor Group', 'Financial Institution', 'Vendor', 'Contractor', 'Law Firm', 'Marketing Agency'] },
   { name: 'channel_partner_type', label: 'Channel Partner Type', values: [...CHANNEL_PARTNER_TYPES] },
   { name: 'partner_status', label: 'Partner Status', values: [
