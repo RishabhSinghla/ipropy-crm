@@ -292,34 +292,47 @@ back into TypeScript would reverse that.
 
 ---
 
-## Going live — the state of it, 2026-08-30
+## Going live — the state of it, 2026-09-01
 
-The app is ready; the things around it are not. Verified against the live
-service and the actual run history, not assumed.
+* **The deploy gate is back on.** `autoDeployTrigger: checksPass` in both
+  `render.yaml` and the Render dashboard, and **they must agree** — they
+  disagreed for nine days and a blueprint sync would have silently reverted the
+  dashboard. GitHub Actions minutes reset on the 1st; the first green CI run
+  since 23 August was `9c4dbd5`.
+* **Backups exist.** The nightly job had never once succeeded — every attempt
+  failed in three seconds for want of minutes. Triggered by hand on 1 September
+  and it completed every step, including **"Prove it restores"**, which restores
+  the dump into a scratch database before uploading. All five R2 secrets were
+  already present; it was only ever the minutes.
+* **A deploy can now fail where CI passes.** `9c4dbd5` passed all three checks,
+  Render built it for 16 minutes and failed. A clean
+  `docker build --no-cache --platform linux/amd64` succeeds locally, so it is
+  not the code. Most likely the free tier's build resources — `node_modules` is
+  456 MB and the Sentry SDKs were added the day before. **Render's own build log
+  is the only place the reason is visible**; check Events on the service.
+* **Render is still on `plan: free`.** It sleeps after 15 minutes idle, and it
+  may now also be too small to build reliably. Starter is $7/month.
+* **Demo logins are still on production.** `npm run go-live:users`.
+* No domain, no error-reporting DSN pasted in, no staging environment.
 
-* **Render is on `plan: free`.** It sleeps after 15 minutes idle and takes about
-  a minute to wake. This is the single biggest blocker to a team using it daily —
-  they will hit it several times a day and conclude the CRM is broken. Starter is
-  $7/month.
-* **Backups have never once run.** `.github/workflows/backup.yml` is correct and
-  every attempt fails in 3 seconds without starting, because GitHub Actions
-  minutes ran out on 23 August. `gh run list --workflow=backup.yml` shows the
-  history. **There is no backup of production.** The minute usage itself is fixed
-  (health is `0 */2 * * *`, ~390 scheduled runs/month against a 2,000 allowance),
-  so this recovers on 1 September — but the durable answer is Neon's own Launch
-  plan, which is continuous rather than nightly.
-* **Every CI run is also failing**, same cause, which is why `autoDeployTrigger`
-  is `commit`. Both recover together on 1 September.
-* **Demo logins are still on production.** `npm run go-live:users` creates the
-  real admin, reassigns everything the demo accounts own, and removes them.
-  Tested against a copy of the demo database: 150 records moved, zero orphans.
-  It deliberately leaves `system@ipropy` alone.
-* **No domain, no error tracking, no uptime check.** All cheap or free.
-* **No staging environment.** The dev → live pipeline is laptop → production
-  today. The simple fix is a second Render service on a `staging` branch with its
-  own free Neon database; it is allowed to sleep, so it costs nothing.
+### Two bugs the restored gate caught immediately
 
-Written up for the owner at the artifact "iPropy Go-Live", with costs in rupees.
+Both were mine, both invisible, and both had been live for a day or more.
+
+* **The mobile browser suite had been failing since 29 August.** A test helper
+  was pointed at a `data-record-card` marker for phone-sized screens and the
+  marker was never added to the app. Seven tests, every run, 30-second timeouts
+  each. Not noticed because the suite was never run whole — only two spec files
+  at a time. **`npx playwright test` with no arguments, or it does not count.**
+* **Lead scoring failed on every lead for a day.** Removing the AI grade took
+  `ai_grade = $3` out of an UPDATE and renumbered what followed, except `rating`,
+  which stayed `$5` with four values bound. Postgres refuses the whole statement
+  (42P18) and the caller is a workflow task that logs and carries on, so scores
+  simply stopped moving. **This is rule 8, and it is now the fourth occurrence.**
+  `tests/integration/leadScoringPersists.test.ts` runs it against a real
+  database and asserts the row changed — a mocked `db.query` accepts any
+  parameter list, and the SQL is a string, so neither typecheck nor a unit test
+  can see it.
 
 ## Known open issues (details in PROJECT_HANDOVER.md §8)
 
