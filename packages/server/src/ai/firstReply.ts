@@ -53,16 +53,34 @@ async function matchingUnits(lead: Lead): Promise<string[]> {
   const configurations = Array.isArray(lead.configuration) ? lead.configuration.map(String) : [];
   const localities = Array.isArray(lead.preferred_locations) ? lead.preferred_locations.map(String) : [];
 
+  /*
+    Every property field here is read as JSON, and `updated_at` comes off the
+    record rather than the payload.
+
+    Two separate faults, and the second had broken this feature outright.
+    `updated_at` lives on `ipy_record`, not on `ipy_e_properties`, so
+    `ORDER BY p.updated_at` was a 42703 — and because the whole of
+    `draftFirstReply` sits in one try/catch, **every new enquiry got no drafted
+    WhatsApp at all**, silently, rather than one without a unit list.
+
+    The rest go through `to_jsonb` for the reason written five lines above this
+    one: configuration, locality and base_price are all fields an admin may
+    delete, and the lead query was hardened against exactly that while this one
+    was left naming columns.
+  */
   const { rows } = await db.query<{ label: string; configuration: string | null; locality: string | null; base_price: number | null }>(
-    `SELECT r.label, p.configuration, p.locality, p.base_price
+    `SELECT r.label,
+            to_jsonb(p)->>'configuration' AS configuration,
+            to_jsonb(p)->>'locality'      AS locality,
+            (to_jsonb(p)->>'base_price')::numeric AS base_price
        FROM ipy_e_properties p
        JOIN ipy_record r ON r.id = p.record_id
       WHERE r.is_deleted = false
-        AND p.status = 'Available'
-        AND ($1::text[] = '{}' OR p.configuration = ANY($1::text[]))
-        AND ($2::text[] = '{}' OR p.locality = ANY($2::text[]))
-        AND ($3::numeric IS NULL OR p.base_price <= $3 * 1.15)
-      ORDER BY p.updated_at DESC
+        AND to_jsonb(p)->>'status' = 'Available'
+        AND ($1::text[] = '{}' OR to_jsonb(p)->>'configuration' = ANY($1::text[]))
+        AND ($2::text[] = '{}' OR to_jsonb(p)->>'locality' = ANY($2::text[]))
+        AND ($3::numeric IS NULL OR (to_jsonb(p)->>'base_price')::numeric <= $3 * 1.15)
+      ORDER BY r.updated_at DESC
       LIMIT 2`,
     [configurations, localities, lead.budget_max],
   );
