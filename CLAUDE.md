@@ -304,12 +304,18 @@ back into TypeScript would reverse that.
   and it completed every step, including **"Prove it restores"**, which restores
   the dump into a scratch database before uploading. All five R2 secrets were
   already present; it was only ever the minutes.
-* **A deploy can now fail where CI passes.** `9c4dbd5` passed all three checks,
-  Render built it for 16 minutes and failed. A clean
-  `docker build --no-cache --platform linux/amd64` succeeds locally, so it is
-  not the code. Most likely the free tier's build resources — `node_modules` is
-  456 MB and the Sentry SDKs were added the day before. **Render's own build log
-  is the only place the reason is visible**; check Events on the service.
+* **A deploy can fail where CI passes, and it is intermittent.** `9c4dbd5`
+  passed all three checks and Render's build failed after 16 minutes; `d941460`,
+  with the same setup and more code, succeeded. A clean
+  `docker build --no-cache --platform linux/amd64` passes locally either way, so
+  it is not the code — it is the free tier's build resources, and it will happen
+  again. `node_modules` is 456 MB. **The symptom is a fix that never reaches
+  production while everything looks green**, so check
+  `gh api repos/OWNER/REPO/deployments` and its `/statuses` before assuming a
+  deploy is merely slow. A retry usually works; Starter would stop it happening.
+* **A markdown-only commit never deploys, and that is correct.** CI has
+  `paths-ignore: '**/*.md'` to save billed minutes, so no checks run, so
+  `checksPass` has nothing to wait for. Surprising once, then obvious.
 * **Render is still on `plan: free`.** It sleeps after 15 minutes idle, and it
   may now also be too small to build reliably. Starter is $7/month.
 * **Demo logins are still on production.** `npm run go-live:users`.
