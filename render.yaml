@@ -30,30 +30,27 @@ services:
     plan: free
     region: singapore # closest Render region to India — lowest latency for the team
     branch: main
-    # TEMPORARY, and the date matters: put this back to `checksPass` on or after
-    # 1 September 2026.
+    # Render waits for every GitHub check and deploys only when all of them
+    # pass. This is what stops a broken commit reaching the team, and it has
+    # caught real breakage.
     #
-    # `checksPass` is the right setting and it is what this was. Render waits for
-    # every GitHub check and deploys only when all of them pass, which is what
-    # stops a broken commit reaching the team. It has caught real breakage.
+    # It was `commit` from 23 August to 1 September 2026, because GitHub's free
+    # Actions minutes for this private repository ran out — no check could run,
+    # so nothing could deploy at all. The cause was a health check set to run
+    # every fifteen minutes, billed at a whole minute each time: 96 minutes a
+    # day against a 2,000 a month allowance. That is fixed (health.yml is every
+    # two hours now, about 390 scheduled runs a month) and the allowance reset
+    # on the 1st.
     #
-    # It was changed on 23 August 2026 because GitHub's free Actions minutes for
-    # this private repository ran out, so no check could run, so nothing could
-    # deploy at all — and the owner reasonably did not want to put a card down
-    # to fix a problem caused by a health check I set to run every fifteen
-    # minutes. The minute usage is fixed (see .github/workflows/health.yml) and
-    # the allowance resets on the 1st.
+    # **This line and the Render dashboard must agree.** They disagreed for
+    # nine days in the other direction, and a disagreement here reads as Render
+    # being broken rather than as two places holding different settings.
     #
-    # **This line and the Render dashboard must agree.** The setting was changed
-    # in the dashboard first; leaving `checksPass` here would mean the next
-    # blueprint sync silently re-blocks every deploy, and that reads as Render
-    # being broken rather than as two places disagreeing.
-    #
-    # Until it goes back: nothing reaches main without `npm run typecheck`,
-    # `npm test`, `npm run test:integration` and a real `docker build
-    # --platform linux/amd64` passing locally first. That is what CI runs, minus
-    # the browser suite.
-    autoDeployTrigger: commit
+    # The trade this makes: a red CI run now blocks every deploy. That is the
+    # point, but it means a failing check is urgent rather than cosmetic — the
+    # symptom is a deploy that never starts, which looks exactly like Render
+    # being slow. Check `gh run list` before concluding one is stuck.
+    autoDeployTrigger: checksPass
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV

@@ -1006,6 +1006,16 @@ function MobileRecordCard({
   return (
     <div
       {...press}
+      /*
+        What the browser tests wait for on a phone.
+
+        The desktop list is a table and the tests wait for `tbody tr`. On a phone
+        those rows exist but are hidden, so the shared wait falls through to this
+        attribute — and it was referenced by the test helper for three days
+        before anybody added it here. Every mobile test failed the whole time,
+        which nobody saw because the full suite was never run.
+      */
+      data-record-card={row.id}
       className={cn(
         'px-4 py-3 [-webkit-touch-callout:none]',
         isStarred
