@@ -514,7 +514,22 @@ recordsRouter.post('/:module/:id/share', asyncHandler(async (req, res) => {
   res.json({ ok: true });
 }));
 
+/**
+ * Who a record has been shared with.
+ *
+ * The access check was simply missing. Every neighbouring route has one — the
+ * record itself, its timeline, its comments, its audit trail and its share
+ * links all answer 403 to somebody outside the record's scope — and this one
+ * answered 200 to anybody signed in.
+ *
+ * What that gave away is narrow but real: that a record with this id exists,
+ * and the names of the people and teams it has been shared with. On a CRM where
+ * leads are private by default, that is the sharing graph of somebody else's
+ * pipeline.
+ */
 recordsRouter.get('/:module/:id/shares', asyncHandler(async (req, res) => {
+  const scope = getScope(req);
+  if (!(await canAccessRecord(scope, req.params.module, req.params.id, 'view'))) throw new ForbiddenError();
   const rows = await db.query(
     `SELECT subject_type, subject_id, access, created_at FROM ipy_record_share WHERE record_id = $1`,
     [req.params.id],
