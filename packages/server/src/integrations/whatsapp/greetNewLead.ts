@@ -29,6 +29,7 @@ import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { bus } from '../../core/events/bus.js';
 import { maySend } from './consent.js';
+import { toInternational } from '@ipropy/shared';
 
 const ON_KEY = 'whatsapp.greet_new_leads';
 const TEMPLATE_KEY = 'whatsapp.greeting_template';
@@ -71,14 +72,36 @@ export async function greetLead(recordId: string, source: string): Promise<void>
     return;
   }
 
-  const lead = await db.queryOne<{ whatsapp_number: string | null; mobile: string | null; owner_id: string | null }>(
-    `SELECT whatsapp_number, mobile, owner_id FROM ipy_e_leads WHERE record_id = $1`, [recordId],
+  /*
+    Read as JSON, and fall back to the mobile.
+
+    This named `whatsapp_number` as a column, and that field was deleted from
+    this CRM on 11 August — so the query was a Postgres 42703 and **the greeting
+    threw on every captured lead** rather than sending one. Sixth time a
+    hand-listed column has done this here.
+
+    It also had nowhere else to look. A separate WhatsApp number is a rarity:
+    almost every Indian buyer uses WhatsApp on the number they gave you, so the
+    mobile is the right answer when there is no override, and refusing to greet
+    without one meant refusing to greet at all.
+  */
+  const lead = await db.queryOne<{ whatsapp_number: string | null; mobile: string | null; country_code: string | null }>(
+    `SELECT to_jsonb(l)->>'whatsapp_number' AS whatsapp_number,
+            to_jsonb(l)->>'mobile'          AS mobile,
+            to_jsonb(l)->>'country_code'    AS country_code
+       FROM ipy_e_leads l WHERE l.record_id = $1`,
+    [recordId],
   );
-  // `whatsapp_number` keeps its full dialable form; `mobile` is national digits
-  // only, which the Cloud API will not accept on its own.
-  const to = lead?.whatsapp_number ?? null;
+
+  // `mobile` holds national digits, which the Cloud API will not accept on its
+  // own — it needs the country code in front.
+  const to = lead?.whatsapp_number?.trim()
+    // '91' when the record does not say. Migration 064 settled on one country
+    // code for this business; a lead captured without one is Indian.
+    || toInternational(lead?.country_code || '91', lead?.mobile);
+
   if (!to) {
-    logger.debug({ recordId, source }, 'no WhatsApp number on the captured lead — not greeting');
+    logger.debug({ recordId, source }, 'no reachable number on the captured lead — not greeting');
     return;
   }
 
