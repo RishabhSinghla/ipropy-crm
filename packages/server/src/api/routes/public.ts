@@ -46,8 +46,23 @@ export const publicRouter = Router();
   Absent now means hidden. Migration `087` writes an explicit `true` onto
   everything that was relying on the old default first, so nothing that is
   live today disappears when this ships.
+
+  **A deleted property is hidden too, and that check was missing entirely.** Not
+  one of the ten public queries excluded deleted records, so a rep deleting a
+  sold unit removed it from the CRM and left it advertised to buyers — the
+  catalogue, the detail page, the project pages and the city counts all kept
+  serving it. There is no purge, so it stayed there forever.
+
+  The check lives here rather than in each query because this clause is the one
+  thing every public property read already goes through. `is_deleted` is on
+  `ipy_record` and none of these queries join it, so an EXISTS on the primary
+  key is what keeps the fix to a single line instead of restructuring ten
+  statements.
 */
-const publishClause = (alias: string) => `(${alias}.custom_fields->>'publish_to_web' = 'true')`;
+const publishClause = (alias: string) => `(
+  ${alias}.custom_fields->>'publish_to_web' = 'true'
+  AND EXISTS (SELECT 1 FROM ipy_record dr WHERE dr.id = ${alias}.record_id AND dr.is_deleted = false)
+)`;
 
 // Never build ORDER BY from raw query input — a fixed whitelist keeps it injection-safe.
 const PROJECT_SORTS: Record<string, string> = {
