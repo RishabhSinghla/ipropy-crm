@@ -72,16 +72,39 @@ const MODULES: ModuleDef[] = [
           // code painted in front of a value that already carries one reads as
           // +91 +91.
           F.phone('whatsapp_number', 'WhatsApp Number', { help: 'Defaults to mobile if left blank' }),
+          /*
+            Read-only, and it has to be declared here rather than only in a
+            migration. Migration 076 set this flag and the seed put it straight
+            back on the next cold start, because field structure is the one thing
+            the seed re-upserts. So the guard existed and was undone several
+            times a day.
+
+            Without it a rep can PATCH a Customer back to Lead, which is exactly
+            the outcome the forward-only rule in lifecycleFromStatus.ts says can
+            no longer happen. It cannot, through the status path — and the field
+            itself was still writable straight through it.
+          */
           F.pick('lifecycle_stage', 'Lifecycle Stage', 'lifecycle_stage', {
-            mandatory: true, quickCreate: true,
-            help: 'Advances automatically: Lead → Prospect on first site visit, Customer on booking',
+            mandatory: true, quickCreate: true, readonly: true,
+            help: 'Advances on its own as the pipeline status moves. Lead → Prospect → Customer, '
+              + 'and never backwards.',
           }),
           F.pick('status', 'Pipeline Status', 'lead_status', { mandatory: true, quickCreate: true }),
           // Defaulted, because it is mandatory: every lead that arrives without
           // somebody choosing one — which is every automated source — is
           // otherwise rejected by validation.
           F.pick('contact_type', 'Type', 'contact_type', { default: 'Buyer' }),
-          F.pick('rating', 'Rating', 'rating'),
+          /*
+            Read-only for the same reason `ai_score` is: it is derived from that
+            score, not typed. It was editable, and an edit to it was accepted,
+            answered 200, written into the audit trail as a change that
+            happened — and then overwritten by the scorer moments later. The rep
+            saw Hot, the database kept Warm, and nothing said so.
+
+            A rating somebody can set by hand is a reasonable thing to want. It
+            is a different field from this one.
+          */
+          F.pick('rating', 'Rating', 'rating', { readonly: true }),
           F.owner(),
           F.text('company', 'Company', { searchable: true }),
           F.text('designation', 'Designation'),

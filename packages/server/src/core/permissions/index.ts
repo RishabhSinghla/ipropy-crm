@@ -223,11 +223,35 @@ export async function filterWritableFields(
   moduleName: string,
   values: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  if (user.isAdmin) return values;
-  const perms = await getFieldPermissions(user, moduleName);
+  /*
+    Two different ideas used to share one gate, and the admin bypass swallowed
+    both.
+
+    A **profile permission** is about privilege: this rep may not edit the
+    budget. An admin overriding that is the whole point of being an admin.
+
+    `isReadonly` is not about privilege. It says the value is computed —
+    `rating` is the band of `ai_score`, `lifecycle_stage` follows the pipeline
+    status — and typing into a computed field does not become allowed because
+    you are an admin. It becomes silently discarded, which is what happened:
+    the API answered 200, the audit trail recorded the change as successful, and
+    the scorer overwrote it moments later.
+
+    So the readonly check runs for everybody and the profile check does not.
+    System writes never reach here at all: `updateRecord` skips this entirely
+    when `ctx.system` is set, which is how scoring writes `rating` in the first
+    place.
+  */
+  const module = await registry.requireModule(moduleName);
+  const computed = new Set(module.fields.filter((f) => f.isReadonly).map((f) => f.name));
+
+  const perms = user.isAdmin ? null : await getFieldPermissions(user, moduleName);
+
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(values)) {
-    if (perms.get(key) === 'editable') out[key] = value;
+    if (computed.has(key)) continue;
+    if (perms && perms.get(key) !== 'editable') continue;
+    out[key] = value;
   }
   return out;
 }
