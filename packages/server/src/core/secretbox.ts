@@ -48,8 +48,28 @@ export function makeSecretBox(salt: string): SecretBox {
         const decipher = crypto.createDecipheriv('aes-256-gcm', deriveKey(), iv);
         decipher.setAuthTag(tag);
         return Buffer.concat([decipher.update(enc), decipher.final()]).toString('utf8');
-      } catch (err) {
-        logger.error({ err, salt }, 'failed to decrypt a stored secret');
+      } catch {
+        /*
+          There is one cause worth naming, and the raw error does not name it.
+
+          The key derives from JWT_SECRET, so a secret saved under a different
+          one cannot be read back — which happens whenever a database is copied
+          between environments, and `db:pull-prod` exists precisely to do that.
+          The secret is intact and simply unreadable here; it has not been lost
+          on the machine that wrote it.
+
+          "Unsupported state or unable to authenticate data" with a stack trace
+          says none of that, and it is printed once per secret, so a copied
+          database opens with a wall of identical failures and no instruction.
+          Whoever reads this needs one sentence and a place to go.
+        */
+        logger.error(
+          { salt },
+          'a stored secret could not be read — it was encrypted under a different '
+          + 'JWT_SECRET, which is what happens when a database is copied between '
+          + 'environments. The value is unreadable here, not lost. Re-enter it in '
+          + 'Admin → Integrations, or restore the JWT_SECRET it was saved under.',
+        );
         return '';
       }
     },
