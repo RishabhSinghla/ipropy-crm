@@ -316,8 +316,9 @@ back into TypeScript would reverse that.
 * **A markdown-only commit never deploys, and that is correct.** CI has
   `paths-ignore: '**/*.md'` to save billed minutes, so no checks run, so
   `checksPass` has nothing to wait for. Surprising once, then obvious.
-* **Render is still on `plan: free`.** It sleeps after 15 minutes idle, and it
-  may now also be too small to build reliably. Starter is $7/month.
+* **Render is on the paid instance.** `render.yaml` declares `plan: 0.5c-512mb`
+  ($7/month, always on); deployed 4 September 2026. The scheduler no longer
+  sleeps with the site.
 * **Demo logins are still on production.** `npm run go-live:users`.
 * No domain, no error-reporting DSN pasted in, no staging environment.
 
@@ -441,11 +442,13 @@ the record of what was wrong and why the fixes are shaped as they are.
   The client must store the returned `refreshToken` or the next refresh reads as
   theft.
 
-**Still open and worth doing:** the app serves no CSP (`contentSecurityPolicy:
-false` in `app.ts`) and both tokens live in `localStorage`; there is no
+**Still open and worth doing:** both tokens live in `localStorage`; there is no
 prompt-injection or AI-quality eval suite; tokens are counted in `ipy_ai_log` and
 never become rupees; the largest files (`RecordDetail.tsx` at 2,727 lines) want
-splitting before a second developer arrives.
+splitting before a second developer arrives. (The CSP gap is closed: helmet's
+global policy stays off because the media routes carry their own stricter one,
+and the HTML document gets a strict hand-applied policy — `applyAppSecurityPolicy`
+in `app.ts`, live in production, no inline script, no framing.)
 
 ---
 
