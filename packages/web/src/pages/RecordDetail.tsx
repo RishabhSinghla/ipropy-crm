@@ -100,8 +100,37 @@ export default function RecordDetail(): JSX.Element {
   // carry that list through router state.
   const navIds = useMemo(() => (moduleName ? loadListNav(moduleName) : []), [moduleName]);
   const navIndex = id ? navIds.indexOf(id) : -1;
-  const prevId = navIndex > 0 ? navIds[navIndex - 1] : null;
-  const nextId = navIndex >= 0 && navIndex < navIds.length - 1 ? navIds[navIndex + 1] : null;
+  const sessionPrev = navIndex > 0 ? navIds[navIndex - 1] : null;
+  const sessionNext = navIndex >= 0 && navIndex < navIds.length - 1 ? navIds[navIndex + 1] : null;
+
+  // The stashed list only knows the page of rows the list last rendered. A
+  // record opened from search, a notification or a pasted URL — or after the
+  // tab's session ended — is in no list at all, and both arrows used to go
+  // dead. The back button's own address names the view and sort the user was
+  // in, so the server can answer "which records sit either side" through the
+  // same engine that ordered the list.
+  const listQuery = useMemo(() => {
+    if (!detailParams.get('return')) return null;
+    try {
+      return new URL(detailParams.get('return')!, 'http://localhost').searchParams;
+    } catch {
+      return null;
+    }
+  }, [detailParams]);
+
+  const { data: remote } = useQuery({
+    queryKey: ['neighbours', moduleName, id, listQuery?.get('view'), listQuery?.get('sort'), listQuery?.get('dir')],
+    queryFn: () => api.neighbours(moduleName!, id!, {
+      view: listQuery?.get('view') ?? undefined,
+      sort: listQuery?.get('sort') ?? undefined,
+      dir: listQuery?.get('dir') ?? undefined,
+    }),
+    enabled: Boolean(moduleName && id) && navIndex === -1,
+    staleTime: 30_000,
+  });
+
+  const prevId = sessionPrev ?? (navIndex === -1 ? remote?.prevId ?? null : null);
+  const nextId = sessionNext ?? (navIndex === -1 ? remote?.nextId ?? null : null);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
@@ -242,7 +271,7 @@ export default function RecordDetail(): JSX.Element {
               <ChevronLeft className="h-4 w-4" />
             </button>
 
-            {navIds.length > 0 && (
+            {(navIds.length > 0 || prevId || nextId) && (
               <div className="flex shrink-0 items-center gap-0.5 rounded-lg border border-slate-200 p-0.5 dark:border-slate-700">
                 <button
                   onClick={() => prevId && navigate(`/${moduleName}/${prevId}${returnQuery}`)}

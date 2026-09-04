@@ -442,6 +442,87 @@ recordsRouter.delete('/:module/:id/related/:relation/:targetId', asyncHandler(as
 }));
 
 // ---------------------------------------------------------------------------
+/**
+ * Neighbours: the records immediately before and after this one in the list
+ * the user came from.
+ *
+ * The arrows on the record header used to read a list of ids the list page
+ * had stashed in sessionStorage — which goes stale the moment the record was
+ * opened from anywhere else (search, a notification, a pasted URL, a page
+ * refresh): no entry, both arrows dead. This answers the question properly,
+ * from the same saved view and sort the back button restores.
+ *
+ * The cursor is the sort value of this record, with the record id breaking
+ * ties, reusing the list engine's own filter/sort so permissions and hidden
+ * fields apply identically.
+ */
+recordsRouter.get('/:module/:id/neighbours', asyncHandler(async (req, res) => {
+  const scope = getScope(req);
+  const { module: moduleName, id } = req.params;
+  const viewId = typeof req.query.view === 'string' && req.query.view ? req.query.view : undefined;
+  const sortParam = typeof req.query.sort === 'string' && req.query.sort ? req.query.sort : undefined;
+  const dirParam = req.query.dir === 'asc' ? 'asc' as const : req.query.dir === 'desc' ? 'desc' as const : undefined;
+
+  const current = await recordService.getRecord(scope, moduleName, id);
+  const view = viewId
+    ? await db.queryOne<{ filter: FilterGroup; sort_by: string | null; sort_dir: string }>(
+      `SELECT filter, sort_by, sort_dir FROM ipy_view WHERE id = $1`, [viewId])
+    : null;
+
+  const field = sortParam ?? view?.sort_by ?? 'created_at';
+  // The direction comes from ?dir, or the view's, or the list default. (The
+  // sort FIELD and the direction are two different things; conflating them
+  // once produced a cursor that never matched and neighbours from the wrong
+  // end of the table.)
+  const dir: 'asc' | 'desc' = dirParam ?? (view?.sort_dir === 'asc' ? 'asc' : 'desc');
+  const value = (current.values as Record<string, unknown>)[field];
+
+  // No comparable value (a blank sort field on this record): say so rather
+  // than guess, and the UI keeps the arrows idle.
+  if (value === null || value === undefined) {
+    res.json({ prevId: null, nextId: null });
+    return;
+  }
+
+  const atOrTie = (op: 'greater_than' | 'less_than'): FilterGroup => ({
+    // A record with no value for the sort field has no position in the list;
+    // the explicit not-empty guard keeps it out of both branches whatever the
+    // comparison engine does with NULL.
+    logic: 'AND',
+    conditions: [
+      { field, operator: 'is_not_empty' },
+      {
+        logic: 'OR',
+        conditions: [
+          { field, operator: op, value },
+          { logic: 'AND', conditions: [{ field, operator: 'equals', value }, { field: 'id', operator: op, value: id }] },
+        ],
+      },
+    ],
+  });
+
+  const neighbour = async (which: 'prev' | 'next'): Promise<string | null> => {
+    // "Next" walks the list in its own direction from the cursor; "prev"
+    // walks the same list backwards, so both are one row fetches.
+    const forward = which === 'next';
+    const filter: FilterGroup = forward
+      ? atOrTie(dir === 'asc' ? 'greater_than' : 'less_than')
+      : atOrTie(dir === 'asc' ? 'less_than' : 'greater_than');
+    const result = await recordService.listRecords(scope, moduleName, {
+      ...(viewId ? { view: viewId } : {}),
+      filter,
+      sortBy: field,
+      sortDir: forward ? dir : dir === 'asc' ? 'desc' : 'asc',
+      page: 1,
+      pageSize: 1,
+    });
+    if (process.env.NEIGHBOUR_DEBUG) console.log("NB", which, JSON.stringify(filter), "row budget:", result.rows[0]?.values?.budget ?? null, result.rows[0]?.id ?? null);
+    return result.rows[0]?.id ?? null;
+  };
+
+  res.json({ prevId: await neighbour('prev'), nextId: await neighbour('next') });
+}));
+
 // Tags, stars, sharing
 // ---------------------------------------------------------------------------
 

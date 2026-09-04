@@ -1023,6 +1023,10 @@ export const api = {
   },
   importJobs: () => get<Record<string, unknown>[]>('/api/import/jobs'),
   cancelImport: (jobId: string) => post<{ ok: boolean }>(`/api/import/jobs/${jobId}/cancel`),
+  neighbours: (module: string, id: string, params: { view?: string; sort?: string; dir?: string } = {}) =>
+    get<{ prevId: string | null; nextId: string | null }>(
+      `/api/records/${module}/${id}/neighbours${qs(params as Record<string, string>)}`,
+    ),
   webforms: () => get<Record<string, unknown>[]>('/api/webforms'),
   createWebform: (data: Record<string, unknown>) => post<{ id: string; publicKey: string; endpoint: string }>('/api/webforms', data),
   leadInbox: (status?: string) => get<Record<string, unknown>[]>(`/api/lead-inbox${qs({ status })}`),
