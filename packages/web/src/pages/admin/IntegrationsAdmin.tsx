@@ -3,8 +3,8 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
 import {
-  ArrowRight, Check, CheckCircle2, Copy, Download, ExternalLink, Globe, HardDrive, Loader2,
-  Mail, MessageCircle, Phone, Plug, Settings2, Sparkles, Webhook, Wand2, X, XCircle,
+  ArrowRight, Check, CheckCircle2, ChevronDown, Copy, Download, ExternalLink, Globe, HardDrive, Loader2,
+  Mail, MessageCircle, Mic, Phone, Plug, Settings2, Sparkles, Webhook, Wand2, XCircle,
 } from 'lucide-react';
 import { api, type IntegrationSummary } from '../../lib/api';
 import { toast } from '../../lib/store';
@@ -468,61 +468,267 @@ const GUIDES: Record<string, Guide> = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// Honest status
+//
+// "Active" used to be the only word a card had, and an active provider
+// failing its test read as healthy. Every card on this page now derives one
+// of four states from the same figures, so the attention strip, the job cards
+// and the settings cards can never disagree with each other.
+// ---------------------------------------------------------------------------
+
+type IntegrationHealth = 'working' | 'attention' | 'off' | 'unconfigured';
+
+/** Config the seed migrations pre-fill so the cards are ready to use. Its presence does not mean a human has set anything up. */
+const PRESEEDED_CONFIG: Record<string, string[]> = {
+  ai_gemini: ['model', 'fastModel'],
+  ai_groq: ['model', 'fastModel'],
+  ai_openrouter: ['model', 'fastModel'],
+  ai_openai: ['model', 'fastModel'],
+  ai_ollama: ['model', 'fastModel'],
+  ai_opencode: ['model', 'fastModel'],
+  onedrive: ['rootFolder'],
+};
+
+/** Failing outright — a test or delivery attempt went wrong — as opposed to merely unfinished. */
+function isBroken(summary: IntegrationSummary): boolean {
+  return Boolean(summary.lastError) || summary.status === 'error';
+}
+
+/** Somebody has actually entered something, ignoring the pre-seeded defaults. */
+function hasSavedDetails(summary: IntegrationSummary): boolean {
+  const preseeded = PRESEEDED_CONFIG[summary.provider] ?? [];
+  const configSaved = Object.entries(summary.config).some(([key, value]) => value.trim() !== '' && !preseeded.includes(key));
+  const credentialSaved = Object.values(summary.credentialFields).some((field) => field.set);
+  return configSaved || credentialSaved;
+}
+
+function healthOf(summary: IntegrationSummary): IntegrationHealth {
+  if (isBroken(summary)) return 'attention';
+  if (summary.isActive) return hasSavedDetails(summary) ? 'working' : 'attention'; // switched on with nothing saved cannot work
+  return hasSavedDetails(summary) ? 'off' : 'unconfigured';
+}
+
+/** Card faces speak to the owner, not to the database: plain names, no provider ids. */
+const PLAIN_NAMES: Record<string, string> = {
+  meta_whatsapp: 'WhatsApp Business',
+  twilio: 'Twilio',
+  exotel: 'Exotel',
+  smtp: 'your own email address',
+  imap: 'reading replies',
+  facebook_leads: 'Facebook Lead Ads',
+  google_ads: 'Google Ads lead forms',
+  webform: 'your website form',
+  ai_gemini: 'Google Gemini',
+  ai_groq: 'Groq',
+  ai_openrouter: 'OpenRouter',
+  ai_opencode: 'OpenCode Zen',
+  ai_openai: 'OpenAI',
+  ai_ollama: 'Ollama on this machine',
+  anthropic: 'Claude',
+  stt: 'speech to text',
+  onedrive: 'OneDrive',
+  s3: 'S3 storage',
+  sentry: 'Sentry',
+  web_push: 'browser push',
+};
+
+/** The coloured badge every connector carries: honest, and three words at most. */
+function StatusBadge({ summary }: { summary: IntegrationSummary }): JSX.Element {
+  const health = healthOf(summary);
+  if (health === 'working') return <Badge color="#22c55e">Working</Badge>;
+  if (health === 'attention') return <Badge color={isBroken(summary) ? '#ef4444' : '#f59e0b'}>Needs attention</Badge>;
+  if (health === 'off') return <Badge>Switched off</Badge>;
+  return <Badge>Not set up</Badge>;
+}
+
 /**
- * What each connector is *for*, grouped by the job rather than by the
- * technology. Someone looking to reach customers on WhatsApp should not have
- * to know that the answer is filed under "messaging".
+ * The connectors, grouped by the job the owner wants done — never by provider
+ * id or technology. Jobs with several providers collapse into one card: the
+ * face shows the option that matters right now (working first, then the one
+ * failing, then the recommended default) and the rest sit behind a "More …
+ * options" expander. Nothing is removed; it is only not all visible at once.
  */
-const CATALOGUE: { title: string; blurb: string; icon: typeof MessageCircle; providers: string[] }[] = [
+interface JobDef {
+  id: string;
+  title: string;
+  /** What this does for you, one sentence. */
+  blurb: string;
+  icon: typeof MessageCircle;
+  providers: string[];
+  /** Fronts the card while nothing is set up yet. */
+  recommended?: string;
+  /** Appears in the attention strip while entirely unconfigured. */
+  wanted?: boolean;
+  /** The words the action buttons use: "Set up calls", "Fix calls". */
+  short: string;
+  /** Plain sentence for the strip and the card when set up but failing. */
+  trouble: string;
+  /** Plain sentence for the strip when nothing is set up at all. */
+  missing?: string;
+  /** Label of the expander holding the remaining options. */
+  moreLabel?: string;
+}
+
+const JOBS: JobDef[] = [
   {
-    title: 'Message customers on WhatsApp',
+    id: 'whatsapp',
+    title: 'WhatsApp',
     blurb: 'Two-way chat in the Inbox, plus templates and broadcasts.',
     icon: MessageCircle,
     providers: ['meta_whatsapp'],
+    wanted: true,
+    short: 'WhatsApp',
+    trouble: 'WhatsApp is set up but failing its connection test, so messages will not send or arrive.',
+    missing: 'WhatsApp is not set up, so you cannot message customers from the CRM.',
   },
   {
-    title: 'Make and record calls',
+    id: 'calls',
+    title: 'Phone calls',
     blurb: 'Click a number to call, with the recording saved against the lead.',
     icon: Phone,
     providers: ['twilio', 'exotel'],
+    recommended: 'exotel',
+    wanted: true,
+    short: 'calls',
+    trouble: 'Phone calls are set up but failing their test, so click-to-call will not dial.',
+    missing: 'Phone calls are not set up, so clicking a customer’s number will not dial anyone.',
+    moreLabel: 'More call options',
   },
   {
-    title: 'Capture leads automatically',
-    blurb: 'Ads, portals and your own website feed straight into Leads.',
+    id: 'leads',
+    title: 'Lead capture',
+    blurb: 'Leads from Facebook, Google and your own website arrive by themselves.',
     icon: Globe,
     providers: ['facebook_leads', 'google_ads', 'webform'],
+    recommended: 'webform',
+    wanted: true,
+    short: 'lead capture',
+    trouble: 'Lead capture is set up but failing, so new enquiries are not arriving.',
+    missing: 'Lead capture is not set up, so enquiries from ads and your website have to be typed in by hand.',
+    moreLabel: 'More lead sources',
   },
   {
-    title: 'Send and receive email',
-    blurb: 'Send from your own address; replies land on the right lead.',
+    id: 'email',
+    title: 'Email',
+    blurb: 'Send from your own address, and replies land on the right lead.',
     icon: Mail,
     providers: ['smtp', 'imap'],
+    recommended: 'smtp',
+    wanted: true,
+    short: 'email',
+    trouble: 'Email is set up but failing its test, so the CRM cannot send from your own address.',
+    missing: 'Email is not set up, so the CRM cannot send from your own address.',
+    moreLabel: 'More email options',
   },
   {
+    id: 'ai',
     title: 'Turn on AI',
     blurb: 'Lead scoring, reply drafting and the assistant. Free options available.',
     icon: Sparkles,
     providers: ['ai_gemini', 'ai_groq', 'ai_opencode', 'ai_openrouter', 'ai_openai', 'ai_ollama', 'anthropic'],
+    recommended: 'ai_gemini',
+    wanted: true,
+    short: 'AI',
+    trouble: 'AI is set up but failing its test, so the CRM is falling back to basic rules.',
+    missing: 'AI is not switched on, so lead scoring and reply drafting use the built-in rules.',
+    moreLabel: 'More AI options',
   },
   {
-    title: 'Understand voice notes and calls',
-    blurb: 'Transcribe speech so AI can extract facts and update the CRM.',
-    icon: Sparkles,
+    id: 'transcription',
+    title: 'Voice transcription',
+    blurb: 'Voice notes and call recordings become text the CRM can read.',
+    icon: Mic,
     providers: ['stt'],
+    short: 'transcription',
+    trouble: 'Speech to text is set up but failing, so recordings stay as audio.',
   },
   {
-    title: 'Store files in your own cloud',
-    blurb: 'OneDrive is recommended; S3 and local storage remain available.',
+    id: 'storage',
+    title: 'File storage',
+    blurb: 'Your photos and documents live in your own cloud, safe from server updates.',
     icon: HardDrive,
     providers: ['onedrive', 's3'],
+    recommended: 'onedrive',
+    wanted: true,
+    short: 'file storage',
+    trouble: 'File storage is set up but failing its test, so new photos may not be saved.',
+    missing: 'Cloud file storage is not set up, so photos live only on this server and are lost when the CRM is updated.',
+    moreLabel: 'More storage options',
   },
   {
-    title: 'Tell you when something breaks',
+    id: 'errors',
+    title: 'Error alerts',
     blurb: 'Errors reach your Sentry dashboard with customer details removed.',
     icon: Webhook,
     providers: ['sentry'],
+    short: 'error alerts',
+    trouble: 'Error reporting is set up but failing, so a crash may go unnoticed.',
   },
 ];
+
+interface AttentionItem {
+  /** Stable key: the job id, or the provider for anything outside a job. */
+  key: string;
+  sentence: string;
+  provider: string;
+  action: string;
+  mode: 'setup' | 'manage';
+}
+
+/**
+ * The "Needs your attention" list, judged per job rather than per provider:
+ * the owner thinks in jobs, and a job with one working option is not broken
+ * no matter what state its other options are in — those surface as badges on
+ * their own rows instead. A provider deliberately switched off raises no
+ * alarm either: that was a decision, not an accident. Providers outside every
+ * job (error reporting, web push) still earn a line when they fail.
+ */
+function buildAttentionItems(summaries: IntegrationSummary[]): AttentionItem[] {
+  const find = (provider: string): IntegrationSummary | undefined => summaries.find((s) => s.provider === provider);
+  const inJobs = new Set(JOBS.flatMap((job) => job.providers));
+  const trouble: AttentionItem[] = [];
+  const missing: AttentionItem[] = [];
+
+  for (const job of JOBS) {
+    const rows = job.providers.map(find).filter((s): s is IntegrationSummary => Boolean(s));
+    if (!rows.length) continue;
+    if (rows.some((s) => healthOf(s) === 'working')) continue;
+    const failing = rows.find((s) => healthOf(s) === 'attention');
+    if (failing) {
+      trouble.push({
+        key: job.id,
+        sentence: job.trouble,
+        provider: failing.provider,
+        action: `Fix ${job.short}`,
+        mode: GUIDES[failing.provider] ? 'setup' : 'manage',
+      });
+    } else if (job.wanted && job.missing && !rows.some(hasSavedDetails)) {
+      const target = (job.recommended ? find(job.recommended) : undefined) ?? rows[0];
+      missing.push({
+        key: job.id,
+        sentence: job.missing,
+        provider: target.provider,
+        action: `Set up ${job.short}`,
+        mode: GUIDES[target.provider] ? 'setup' : 'manage',
+      });
+    }
+  }
+
+  for (const summary of summaries) {
+    if (inJobs.has(summary.provider) || healthOf(summary) !== 'attention') continue;
+    const guided = Boolean(GUIDES[summary.provider]);
+    trouble.push({
+      key: summary.provider,
+      sentence: `${summary.label} is set up but failing its test.`,
+      provider: summary.provider,
+      action: guided ? 'Fix' : 'Manage',
+      mode: guided ? 'setup' : 'manage',
+    });
+  }
+
+  return [...trouble, ...missing];
+}
 
 /** A token the user would otherwise have to invent. Long enough to be unguessable. */
 function generateSecret(): string {
@@ -741,30 +947,121 @@ function ConnectWizard({
   );
 }
 
-/** One tile in the catalogue: what it does, whether it's on, and one button. */
-function ConnectorTile({
-  summary, onConnect,
-}: { summary: IntegrationSummary; onConnect: () => void }): JSX.Element {
-  const guide = GUIDES[summary.provider];
-  const connected = summary.isActive && !summary.lastError;
+/** One alternative option under a collapsed job card. */
+function ProviderRow({ summary, onSetup, onManage }: {
+  summary: IntegrationSummary;
+  onSetup: (provider: string) => void;
+  onManage: (provider: string) => void;
+}): JSX.Element {
+  const health = healthOf(summary);
+  const hint = PROVIDER_HINTS[summary.provider];
+  return (
+    <div className="flex items-center gap-2">
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium">{summary.label}</span>
+        {hint && health !== 'working' && <span className="block text-2xs text-muted">{hint.text}</span>}
+      </span>
+      <StatusBadge summary={summary} />
+      {health === 'working' || health === 'off' ? (
+        <button className="btn-secondary btn-sm shrink-0" onClick={() => onManage(summary.provider)}>Manage</button>
+      ) : (
+        <button className="btn-primary btn-sm shrink-0" onClick={() => onSetup(summary.provider)}>
+          {health === 'attention' ? 'Fix' : 'Set up'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** One job card: what the job does for you, an honest status, one action. */
+function JobCard({ job, summaries, onSetup, onManage }: {
+  job: JobDef;
+  summaries: IntegrationSummary[];
+  onSetup: (provider: string) => void;
+  onManage: (provider: string) => void;
+}): JSX.Element | null {
+  const [expanded, setExpanded] = useState(false);
+  const rows = job.providers
+    .map((provider) => summaries.find((s) => s.provider === provider))
+    .filter((s): s is IntegrationSummary => Boolean(s));
+  if (!rows.length) return null;
+
+  // The face answers the question the owner is actually asking: is this job
+  // fine? A working option leads; otherwise the one closest to working does;
+  // with nothing set up at all, the recommended option fronts the card.
+  const face = rows.find((s) => healthOf(s) === 'working')
+    ?? rows.find((s) => healthOf(s) === 'attention')
+    ?? rows.find((s) => healthOf(s) === 'off')
+    ?? rows.find((s) => s.provider === job.recommended)
+    ?? rows[0];
+  const health = healthOf(face);
+  const others = rows.filter((s) => s.provider !== face.provider);
 
   return (
-    <div className="flex flex-col rounded-xl border border-slate-200 p-3 dark:border-slate-700">
-      <div className="mb-1 flex items-center gap-2">
-        <span className={cn('h-2 w-2 shrink-0 rounded-full', connected ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700')} />
-        <p className="min-w-0 flex-1 truncate text-sm font-medium">{summary.label}</p>
-        {connected && <Badge color="#22c55e">Connected</Badge>}
-        {summary.lastError && <Badge color="#ef4444">Needs attention</Badge>}
+    <div className="card flex flex-col p-4">
+      <div className="flex items-start gap-2.5">
+        <job.icon className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+        <p className="min-w-0 flex-1 text-sm font-semibold">{job.title}</p>
+        <StatusBadge summary={face} />
+      </div>
+      <p className="mt-2 text-xs text-muted">{job.blurb}</p>
+      {health === 'working' && (
+        <p className="mt-1 text-xs text-positive">Running on {PLAIN_NAMES[face.provider] ?? face.label}.</p>
+      )}
+      {health === 'attention' && <p className="mt-1 text-xs text-negative">{job.trouble}</p>}
+      {health === 'off' && <p className="mt-1 text-xs text-muted">Set up, but its switch is off.</p>}
+
+      <div className="mt-3 flex items-center gap-2">
+        {health === 'working' || health === 'off' ? (
+          <button className="btn-secondary btn-sm" onClick={() => onManage(face.provider)}>Manage</button>
+        ) : (
+          <button className="btn-primary btn-sm" onClick={() => onSetup(face.provider)}>
+            {health === 'attention' ? `Fix ${job.short}` : `Set up ${job.short}`}
+          </button>
+        )}
+        {others.length > 0 && (
+          <button className="btn-ghost btn-sm ml-auto shrink-0" onClick={() => setExpanded((v) => !v)}>
+            {expanded ? 'Fewer options' : job.moreLabel}
+            <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')} />
+          </button>
+        )}
       </div>
 
-      <p className="mb-3 flex-1 text-xs text-muted">
-        {guide?.outcome ?? 'Configure this provider.'}
-      </p>
+      {expanded && others.length > 0 && (
+        <div className="mt-3 space-y-2.5 border-t border-slate-100 pt-3 dark:border-slate-800">
+          {others.map((summary) => (
+            <ProviderRow key={summary.provider} summary={summary} onSetup={onSetup} onManage={onManage} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
-      <button onClick={onConnect} className={cn('btn-sm w-full', connected ? 'btn-secondary' : 'btn-primary')}>
-        <Wand2 className="h-3.5 w-3.5" />
-        {connected ? 'Reconnect' : `Connect${guide ? ` · ${guide.minutes} min` : ''}`}
-      </button>
+/** The strip at the top of the page: one plain sentence and one button per line. */
+function AttentionStrip({ items, onAction }: {
+  items: AttentionItem[];
+  onAction: (item: AttentionItem) => void;
+}): JSX.Element {
+  return (
+    <div className="card p-4">
+      <Badge color="#f59e0b">Needs your attention</Badge>
+      <div className="mt-1">
+        {items.map((item, index) => (
+          <div
+            key={item.key}
+            className={cn('flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5', index > 0 && 'border-t border-slate-100 dark:border-slate-800')}
+          >
+            <p className="min-w-0 flex-1 text-sm">{item.sentence}</p>
+            <button
+              className={cn('btn-sm shrink-0', item.mode === 'manage' ? 'btn-secondary' : 'btn-primary')}
+              onClick={() => onAction(item)}
+            >
+              {item.action}
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -869,7 +1166,7 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
       <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
         <span className={cn('h-2 w-2 shrink-0 rounded-full', summary.isActive ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700')} />
         <p className="text-sm font-medium">{summary.label}</p>
-        <Badge color={summary.isActive ? '#22c55e' : '#94a3b8'}>{summary.isActive ? 'Active' : 'Inactive'}</Badge>
+        <StatusBadge summary={summary} />
         {summary.lastSyncAt && (
           <span className="text-2xs text-muted">verified {relativeTime(summary.lastSyncAt)}</span>
         )}
@@ -974,6 +1271,7 @@ export default function IntegrationsAdmin(): JSX.Element {
   const [tab, setTab] = useState('connect');
   const [copied, setCopied] = useState<string | null>(null);
   const [connecting, setConnecting] = useState<IntegrationSummary | null>(null);
+  const [manageProvider, setManageProvider] = useState<string | null>(null);
 
   const { data: integrations, isLoading } = useQuery({
     queryKey: ['integrations'],
@@ -992,6 +1290,21 @@ export default function IntegrationsAdmin(): JSX.Element {
     enabled: tab === 'inbox',
   });
 
+  const summaries = integrations ?? [];
+
+  // Resolved from the query on every render rather than stashed, so a save or
+  // a test inside the modal updates the card in place instead of showing a
+  // stale snapshot.
+  const managing = manageProvider ? summaries.find((s) => s.provider === manageProvider) : null;
+
+  const openSetup = (provider: string): void => {
+    const summary = summaries.find((s) => s.provider === provider);
+    if (!summary) return;
+    // Guided steps where they exist; the detailed settings where they don't.
+    if (GUIDES[provider]) setConnecting(summary); else setManageProvider(provider);
+  };
+  const openManage = (provider: string): void => setManageProvider(provider);
+
   const copy = (text: string): void => {
     void navigator.clipboard.writeText(text);
     setCopied(text);
@@ -1002,6 +1315,8 @@ export default function IntegrationsAdmin(): JSX.Element {
     messaging: 'WhatsApp', telephony: 'Telephony', lead_source: 'Lead sources', email: 'Email', ai: 'AI', storage: 'Storage',
   };
 
+  const attention = buildAttentionItems(summaries);
+
   return (
     <div className="p-4 sm:p-6">
       <div className="mb-4">
@@ -1011,6 +1326,24 @@ export default function IntegrationsAdmin(): JSX.Element {
           a config file, and nothing needs a redeploy.
         </p>
       </div>
+
+      {/* The page's first screenful answers one question: is anything wrong,
+          and what do I do about it? */}
+      {!isLoading && integrations && (
+        attention.length > 0 ? (
+          <div className="mb-4">
+            <AttentionStrip
+              items={attention}
+              onAction={(item) => (item.mode === 'manage' ? openManage(item.provider) : openSetup(item.provider))}
+            />
+          </div>
+        ) : (
+          <p className="mb-4 flex items-center gap-1.5 text-sm text-muted">
+            <CheckCircle2 className="h-4 w-4 text-positive" />
+            Everything is connected.
+          </p>
+        )
+      )}
 
       <Tabs
         tabs={[
@@ -1027,44 +1360,16 @@ export default function IntegrationsAdmin(): JSX.Element {
 
       {tab === 'connect' && (
         isLoading ? (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-28" />)}
           </div>
         ) : (
           <div className="space-y-6">
-            {CATALOGUE.map((group) => {
-              const list = group.providers
-                .map((name) => (integrations ?? []).find((i) => i.provider === name))
-                .filter((i): i is IntegrationSummary => Boolean(i));
-              if (!list.length) return null;
-              const connected = list.filter((i) => i.isActive && !i.lastError).length;
-
-              return (
-                <div key={group.title}>
-                  <div className="mb-2 flex items-center gap-2">
-                    <group.icon className="h-4 w-4 shrink-0 text-slate-400" />
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium">{group.title}</p>
-                      <p className="text-xs text-muted">{group.blurb}</p>
-                    </div>
-                    {connected > 0 && (
-                      <Badge className="ml-auto shrink-0" color="#22c55e">
-                        {connected} connected
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {list.map((summary) => (
-                      <ConnectorTile
-                        key={summary.provider}
-                        summary={summary}
-                        onConnect={() => setConnecting(summary)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
+            <div className="grid gap-3 md:grid-cols-2">
+              {JOBS.map((job) => (
+                <JobCard key={job.id} job={job} summaries={summaries} onSetup={openSetup} onManage={openManage} />
+              ))}
+            </div>
 
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs dark:border-slate-800 dark:bg-slate-900 text-muted">
               <p className="mb-1.5 font-medium text-slate-700 dark:text-slate-300">If something will not connect</p>
@@ -1081,6 +1386,12 @@ export default function IntegrationsAdmin(): JSX.Element {
 
       {connecting && (
         <ConnectWizard summary={connecting} onClose={() => setConnecting(null)} />
+      )}
+
+      {managing && (
+        <Modal open onClose={() => setManageProvider(null)} title={managing.label} size="lg">
+          <ProviderCard summary={managing} />
+        </Modal>
       )}
 
       {tab === 'providers' && (

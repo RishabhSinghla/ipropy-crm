@@ -16,9 +16,17 @@
  * Three settings hold structured values and get purpose-built controls below.
  * Anything else structured is shown read-only rather than as JSON in a text
  * box, which would save the object back as a string and break what reads it.
+ *
+ * The page opens as a list, not a form. Each group is one quiet row — what it
+ * is called, one line on what it is for, and a peek at two or three of the
+ * values it currently holds — and clicking opens just that group inline.
+ * "Your business" starts open, because it is filled in once; the groups a
+ * desk opens once a year sit under an "Advanced settings" divider. A search
+ * opens everything it matches, so nothing is harder to find than before,
+ * merely quieter until wanted.
  */
 import type { JSX } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronRight, RotateCcw, Save, Search, SlidersHorizontal } from 'lucide-react';
 import { api } from '../../lib/api';
@@ -30,6 +38,9 @@ interface Setting {
   key: string; value: unknown; category: string;
   label: string | null; description: string | null; is_secret: boolean;
 }
+
+/** One row on the page: a category of settings with the rows in it. */
+interface Group { id: string; title: string; blurb: string; rows: Setting[] }
 
 /** Edited on their own screens; showing them twice invites them to disagree. */
 const OWNED_ELSEWHERE = new Set(['brand', 'social', 'branding']);
@@ -76,6 +87,21 @@ const GROUPS: { id: string; title: string; blurb: string }[] = [
   },
 ];
 
+/**
+ * Groups a desk opens once a year, if ever: the scoring numbers, what the AI
+ * may do on its own, the WhatsApp and call rules, and tracking the team's
+ * phones. They stay on this page — nothing has been taken away — but they
+ * render under the "Advanced settings" divider, below the groups a desk
+ * actually lives in.
+ *
+ * A category added to the settings table after this screen was written shows
+ * above the divider, where a brand-new setting cannot be missed.
+ */
+const ADVANCED = new Set(['scoring', 'whatsapp', 'telephony', 'ai', 'ai_features', 'ai_models', 'team_location']);
+
+/** Filled in once, then left alone: the one group that starts open. */
+const STARTS_OPEN = 'general';
+
 export default function SettingsAdmin(): JSX.Element {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ['admin-settings'], queryFn: () => api.settings() });
@@ -83,13 +109,15 @@ export default function SettingsAdmin(): JSX.Element {
   const [query, setQuery] = useState('');
   /*
     Fourteen groups drawn open at once is a page you land on and scroll, and
-    the feedback on it was that it felt heavy before you had read a word. Shut
-    by default, it is a list of fourteen headings you can take in at a glance,
-    and you open the one you came for.
+    the feedback on it was that it felt heavy before you had read a word. So
+    the page opens as a list: every group is one row — its title, a line on
+    what it is for, a peek at what it currently holds — and only "Your
+    business", which is filled in once and then left alone, starts open.
 
     Undefined here means "nobody has clicked yet", which is not the same as
-    closed — a search opens everything it matched, and a group the admin has
-    explicitly shut stays shut.
+    closed — "Your business" falls open until somebody shuts it, a search
+    opens everything it matched, and a group the admin has explicitly shut
+    stays shut.
   */
   const [opened, setOpened] = useState<Record<string, boolean>>({});
 
@@ -130,6 +158,45 @@ export default function SettingsAdmin(): JSX.Element {
 
   const dirty = Object.keys(draft).length;
 
+  // Everyday groups above the line, the once-a-year ones under it. The split
+  // is presentation only: both halves render the same rows, the same way.
+  const everyday = grouped.filter((g) => !ADVANCED.has(g.id));
+  const advanced = grouped.filter((g) => ADVANCED.has(g.id));
+
+  const renderGroup = (g: Group): JSX.Element => {
+    // A search opens what it found; otherwise the admin's own choice wins,
+    // and "Your business" starts open because it is filled in once.
+    const isOpen = q ? true : (opened[g.id] ?? g.id === STARTS_OPEN);
+    const changedHere = g.rows.filter((s) => s.key in draft).length;
+
+    return (
+      <GroupCard
+        key={g.id}
+        group={g}
+        peek={peekLine(g.id, g.rows, draft)}
+        open={isOpen}
+        changed={changedHere}
+        onToggle={() => setOpened((o) => ({ ...o, [g.id]: !isOpen }))}
+      >
+        <div className="divide-y divide-slate-100 dark:divide-slate-800">
+          {g.rows.map((s) => (
+            <Row
+              key={s.key}
+              setting={s}
+              changed={s.key in draft}
+              value={s.key in draft ? draft[s.key] : s.value}
+              onChange={(v) => setDraft((d) => ({ ...d, [s.key]: v }))}
+              onReset={() => setDraft((d) => {
+                const { [s.key]: _drop, ...rest } = d;
+                return rest;
+              })}
+            />
+          ))}
+        </div>
+      </GroupCard>
+    );
+  };
+
   if (isLoading) {
     return <div className="space-y-3 p-6">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-20" />)}</div>;
   }
@@ -161,64 +228,21 @@ export default function SettingsAdmin(): JSX.Element {
         />
       )}
 
-      {grouped.map((g) => {
-        // A search opens what it found; otherwise the admin's own choice wins,
-        // and failing that everything starts shut.
-        const isOpen = q ? true : (opened[g.id] ?? false);
-        const changedHere = g.rows.filter((s) => s.key in draft).length;
+      {everyday.length > 0 && <div className="space-y-3">{everyday.map(renderGroup)}</div>}
 
-        return (
-          <section key={g.id} className="card overflow-hidden">
-            <button
-              type="button"
-              aria-expanded={isOpen}
-              onClick={() => setOpened((o) => ({ ...o, [g.id]: !isOpen }))}
-              className="flex w-full items-start gap-3 p-4 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
-            >
-              <ChevronRight
-                aria-hidden
-                className={cn(
-                  'mt-0.5 h-4 w-4 shrink-0 text-slate-400 transition-transform',
-                  isOpen && 'rotate-90',
-                )}
-              />
-              <span className="min-w-0 flex-1">
-                <span className="flex flex-wrap items-center gap-2 text-sm font-semibold">
-                  {g.title}
-                  {/* Unsaved work inside a shut group would otherwise be invisible. */}
-                  {changedHere > 0 && (
-                    <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-2xs font-normal text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-                      {changedHere} changed
-                    </span>
-                  )}
-                </span>
-                {g.blurb && <span className="mt-0.5 block text-xs font-normal text-muted">{g.blurb}</span>}
-              </span>
-              <span className="shrink-0 text-2xs text-muted tnum">{g.rows.length}</span>
-            </button>
-
-            {isOpen && (
-              <div className="border-t border-slate-100 px-4 pb-1 dark:border-slate-800">
-                <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {g.rows.map((s) => (
-                    <Row
-                      key={s.key}
-                      setting={s}
-                      changed={s.key in draft}
-                      value={s.key in draft ? draft[s.key] : s.value}
-                      onChange={(v) => setDraft((d) => ({ ...d, [s.key]: v }))}
-                      onReset={() => setDraft((d) => {
-                        const { [s.key]: _drop, ...rest } = d;
-                        return rest;
-                      })}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-          </section>
-        );
-      })}
+      {advanced.length > 0 && (
+        <section aria-label="Advanced settings">
+          <div className="flex items-center gap-3" role="separator">
+            <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
+            <span className="shrink-0 text-2xs font-semibold uppercase tracking-wider text-muted">Advanced settings</span>
+            <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
+          </div>
+          <p className="mt-1.5 text-center text-xs text-muted">
+            The numbers and switches most desks never open. Leave these alone and the CRM works as it should.
+          </p>
+          <div className="mt-4 space-y-3">{advanced.map(renderGroup)}</div>
+        </section>
+      )}
 
       {/* Follows the page rather than sitting at the top, because on a long
           screen the button belongs where the eyes are. Only appears when there
@@ -237,6 +261,218 @@ export default function SettingsAdmin(): JSX.Element {
         </div>
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The peek on a closed group
+//
+// Two or three of the values the group currently holds, in plain words, so
+// the list answers "what is set here?" without being opened. It is read-only
+// rendering of the same values the rows show; anything missing or too
+// structured to summarise is simply left out of the line.
+// ---------------------------------------------------------------------------
+
+/** One "Label: value" phrase on a closed group's row. */
+interface PeekPair { label: string; value: string }
+
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/** A switch that is off is information too, so booleans read as words. */
+const onOff = (v: unknown): string | null => (typeof v === 'boolean' ? (v ? 'On' : 'Off') : null);
+
+/** A phrase long enough to wrap the row is cut short rather than spilled. */
+const glance = (v: unknown, max = 44): string | null => {
+  if (typeof v !== 'string') return null;
+  const t = v.trim();
+  if (!t) return null;
+  return t.length > max ? `${t.slice(0, max - 1).trimEnd()}…` : t;
+};
+
+const withDays = (v: unknown): string | null => (typeof v === 'number' ? `${v} days` : null);
+const withHours = (v: unknown): string | null => (typeof v === 'number' ? `${v} hours` : null);
+const withMinutes = (v: unknown): string | null => (typeof v === 'number' ? `${v} min` : null);
+
+/** The day the desk is shut, when there is exactly one. */
+const weekOff = (v: unknown): string | null => {
+  const days = (v as { days?: unknown } | null)?.days;
+  if (!Array.isArray(days) || days.length === 0) return null;
+  const off = DAYS.filter((d) => !days.includes(d.n));
+  return off.length === 1 ? DAY_NAMES[off[0].n] : null;
+};
+
+/** Opening hours as a shop door would write them. */
+const hoursSpan = (v: unknown): string | null => {
+  const h = (v ?? {}) as { start?: string; end?: string };
+  return h.start && h.end ? `${h.start}–${h.end}` : null;
+};
+
+const keep = (pairs: (PeekPair | null)[]): PeekPair[] =>
+  pairs.filter((p): p is PeekPair => p !== null);
+
+/** Whatever a value says in one breath — for categories this screen was not written knowing. */
+function plainValue(v: unknown): string | null {
+  if (typeof v === 'boolean') return v ? 'On' : 'Off';
+  if (typeof v === 'number') return String(v);
+  if (isStringList(v)) return v.join(', ');
+  if (typeof v === 'string') return glance(v);
+  return null;
+}
+
+/**
+ * Which of a group's values are worth a glance, and what to call them.
+ *
+ * Known groups get the two or three settings that describe the group's
+ * current behaviour — the currency the documents carry, the day the desk is
+ * shut, whether the AI may answer for itself. A category this screen was
+ * not written knowing falls back to whatever its rows say plainly.
+ */
+function peekPairs(id: string, rows: Setting[], draft: Record<string, unknown>): PeekPair[] {
+  // The draft when there is one, so a peek matches what reopening the group
+  // would show — not the last thing that was saved.
+  const current = (key: string): unknown => {
+    const s = rows.find((r) => r.key === key);
+    if (!s) return undefined;
+    return s.key in draft ? draft[s.key] : s.value;
+  };
+  const pair = (label: string, v: unknown, fmt?: (x: unknown) => string | null): PeekPair | null => {
+    const value = fmt ? fmt(v) : plainValue(v);
+    return value ? { label, value } : null;
+  };
+
+  switch (id) {
+    case 'general':
+      return keep([
+        pair('Currency', current('org.currency')),
+        pair('Week off', current('business_hours'), weekOff),
+        pair('Hours', current('business_hours'), hoursSpan),
+      ]);
+    case 'sales':
+      return keep([
+        pair('Auto-assign', current('leads.auto_assign')),
+        pair('Duplicate window', current('leads.duplicate_window_days'), withDays),
+      ]);
+    case 'scoring':
+      return keep([
+        pair('Hot at', current('scoring.hot_at')),
+        pair('Warm at', current('scoring.warm_at')),
+        pair('Match floor', current('scoring.match_floor')),
+      ]);
+    case 'inventory':
+      return keep([
+        pair('Unit holds', current('inventory.default_hold_days'), withDays),
+        pair('Overbooking', current('inventory.allow_overbooking')),
+      ]);
+    case 'website':
+      return keep([pair('Visible statuses', current('website.public_statuses'))]);
+    case 'sharing': {
+      const link = (current('sharing.property_link') ?? null) as { visibleFields?: unknown; showPhotos?: unknown } | null;
+      return keep([
+        pair('Photos', link?.showPhotos, onOff),
+        pair('Fields shown', link?.visibleFields, (x) => (Array.isArray(x) && x.length > 0 ? String(x.length) : null)),
+      ]);
+    }
+    case 'whatsapp':
+      return keep([pair('Reply window', current('whatsapp.session_window_hours'), withHours)]);
+    case 'telephony':
+      return keep([
+        pair('Recording', current('telephony.record_calls')),
+        pair('Masking', current('telephony.mask_numbers')),
+      ]);
+    case 'ai':
+      return keep([
+        pair('WhatsApp replies', current('ai.auto_reply_whatsapp')),
+        pair('Call analysis', current('ai.call_analysis')),
+        pair('Daily digest', current('ai.daily_digest')),
+      ]);
+    case 'ai_features': {
+      // One switch each, so the honest glance is a count rather than nine Ons and Offs.
+      const switches = rows.filter((r) => typeof r.value === 'boolean');
+      if (!switches.length) return [];
+      const on = switches.filter((r) => (r.key in draft ? draft[r.key] : r.value)).length;
+      return [{ label: 'Switched on', value: `${on} of ${switches.length}` }];
+    }
+    case 'ai_models':
+      return [{ label: 'Models set', value: String(rows.length) }];
+    case 'team_location': {
+      const enabled = current('team_location.enabled');
+      const out = keep([pair('Tracking', enabled)]);
+      if (enabled) {
+        const every = pair('Every', current('team_location.every_minutes'), withMinutes);
+        if (every) out.push(every);
+      }
+      return out;
+    }
+    case 'house_style':
+      return keep([
+        pair('Captions', current('house_style.caption_tone'), (x) => glance(x, 40)),
+        pair('Voiceover', current('house_style.voice_language'), (x) => glance(x, 40)),
+      ]);
+    default:
+      return rows
+        .flatMap((s) => {
+          const value = plainValue(s.key in draft ? draft[s.key] : s.value);
+          return value ? [{ label: s.label ?? s.key, value }] : [];
+        })
+        .slice(0, 2);
+  }
+}
+
+/** The peek as one muted line, or nothing when the group has nothing to say. */
+function peekLine(id: string, rows: Setting[], draft: Record<string, unknown>): string | null {
+  const pairs = peekPairs(id, rows, draft);
+  return pairs.length ? pairs.map((p) => `${p.label}: ${p.value}`).join(' · ') : null;
+}
+
+/**
+ * One group as one row.
+ *
+ * Shut, it answers three questions without being opened: what is this, what
+ * is it for, and what does it currently say. Open, it is the group's own
+ * form, exactly as it has always been.
+ */
+function GroupCard({ group, peek, open, changed, onToggle, children }: {
+  group: Group; peek: string | null; open: boolean; changed: number;
+  onToggle: () => void; children: ReactNode;
+}): JSX.Element {
+  return (
+    <section className="card overflow-hidden">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={onToggle}
+        className="flex w-full items-start gap-3 p-4 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
+      >
+        <ChevronRight
+          aria-hidden
+          className={cn(
+            'mt-0.5 h-4 w-4 shrink-0 text-slate-400 transition-transform',
+            open && 'rotate-90',
+          )}
+        />
+        <span className="min-w-0 flex-1">
+          <span className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+            {group.title}
+            {/* Unsaved work inside a shut group would otherwise be invisible. */}
+            {changed > 0 && (
+              <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-2xs font-normal text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                {changed} changed
+              </span>
+            )}
+          </span>
+          {group.blurb && <span className="mt-0.5 block text-xs font-normal text-muted">{group.blurb}</span>}
+          {/* Only on a shut row: when the group is open its values are right there below. */}
+          {!open && peek && <span className="mt-1 block truncate text-2xs text-muted">{peek}</span>}
+        </span>
+        <span className="shrink-0 text-2xs text-muted tnum">{group.rows.length}</span>
+      </button>
+
+      {open && (
+        <div className="border-t border-slate-100 px-4 pb-1 dark:border-slate-800">
+          {children}
+        </div>
+      )}
+    </section>
   );
 }
 

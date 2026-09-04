@@ -76,11 +76,17 @@ export async function adminContext(): Promise<ServiceContext> {
 }
 
 /** Minimum viable Lead payload for the current one-name, split-country-code form. */
+let leadSeq = 0;
+
 export function leadInput(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   const unique = Math.random().toString(36).slice(2, 10);
+  // Strictly unique per call: the leads-module duplicate check matches on the
+  // 10-digit mobile, and a random 8-digit tail eventually collides across the
+  // many suites sharing one throwaway database (seen once in CI).
+  const mobile = `9${String(Date.now()).slice(-8)}${leadSeq++ % 10}`;
   return {
     full_name: `Integration Test-${unique}`,
-    mobile: `99${Math.floor(10000000 + Math.random() * 89999999)}`,
+    mobile,
     ...overrides,
   };
 }
