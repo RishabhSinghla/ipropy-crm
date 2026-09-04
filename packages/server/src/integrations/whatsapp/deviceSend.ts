@@ -120,7 +120,10 @@ interface QueueRow {
 }
 
 const QUEUE_COLUMNS =
-  'd.id, d.handle, d.name, d.body, d.reason, d.record_id, d.module_name, d.created_at';
+  // A row enqueued before the name was stored (or by a path that never knew
+  // it) still shows the lead's name: the record's display label is the same
+  // fact, one join away.
+  'd.id, d.handle, COALESCE(d.name, r.label) AS name, d.body, d.reason, d.record_id, d.module_name, d.created_at';
 
 function toPending(r: QueueRow): PendingDeviceSend {
   return {
@@ -234,10 +237,15 @@ export async function editBody(
   if (!text) throw new BadRequestError('A message cannot be empty');
 
   const row = await db.queryOne<QueueRow>(
-    `UPDATE ipy_device_send d SET body = $4
-     WHERE d.id = $1 AND d.status IN ('pending','opened')
-       AND (d.assigned_to = $2 OR d.assigned_to IS NULL OR $3)
-     RETURNING ${QUEUE_COLUMNS}`,
+    `WITH updated AS (
+       UPDATE ipy_device_send d SET body = $4
+       WHERE d.id = $1 AND d.status IN ('pending','opened')
+         AND (d.assigned_to = $2 OR d.assigned_to IS NULL OR $3)
+       RETURNING d.id, d.handle, d.name, d.body, d.reason, d.record_id, d.module_name, d.created_at
+     )
+     SELECT u.id, u.handle, COALESCE(u.name, r.label) AS name, u.body, u.reason,
+            u.record_id, u.module_name, u.created_at
+     FROM updated u LEFT JOIN ipy_record r ON r.id = u.record_id`,
     [id, userId, isAdmin, text.slice(0, MAX_PREFILL)],
   );
   return row ? toPending(row) : null;
