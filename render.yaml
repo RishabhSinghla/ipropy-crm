@@ -27,7 +27,17 @@ services:
   - type: web
     name: ipropy-crm
     runtime: docker
-    plan: free
+    # 0.5 CPU, 512 MB, $7/month. Not `starter` — Render's blueprint spec takes
+    # instance type IDs now, and the old plan names are gone. The id is the one
+    # printed beside the price in the dashboard's Compute tab.
+    #
+    # Paid rather than free for one reason that is not speed. This service runs
+    # the API, the web app and ENABLE_SCHEDULER=true together, so when a free
+    # instance sleeps after fifteen minutes the scheduler sleeps with it: no
+    # follow-up reminder fires, no untouched lead escalates, no birthday message
+    # goes out. Nothing errors. The work silently does not happen overnight and
+    # at weekends, which is exactly when nobody is watching.
+    plan: 0.5c-512mb
     region: singapore # closest Render region to India — lowest latency for the team
     branch: main
     # Render waits for every GitHub check and deploys only when all of them

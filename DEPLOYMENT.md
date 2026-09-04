@@ -313,9 +313,16 @@ Be upfront with your team about these — they are properties of "free", not bug
 
 | Limit | Effect | Fix |
 |---|---|---|
-| Render free instances sleep after ~15 min idle | First visit takes **~50 seconds** to wake. Later visits are instant. | Render Starter, $7/mo, always on |
-| …and the scheduler sleeps with it | This is the one that costs you money rather than patience. `render.yaml` runs the API, the web app and `ENABLE_SCHEDULER=true` in **one** service, so while it is asleep no follow-up reminder fires, no untouched lead escalates and no birthday message goes out. Nothing errors; the work silently does not happen overnight and at weekends. | Render Starter — same $7/mo |
-| 512 MB RAM / 0.1 CPU | Large video transcodes are slow, and a very large upload can OOM the container | Starter tier |
+> **Plan names are gone.** Render's blueprint spec takes instance type IDs now, so
+> the $7 tier is `0.5c-512mb`, not `starter`. The id is printed beside the price in
+> the dashboard's Compute tab. Writing the old name gets the blueprint rejected.
+>
+> The service is **Blueprint managed**, which means `render.yaml` wins: changing the
+> plan in the dashboard alone is undone by the next sync. Change it here.
+
+| Render free instances sleep after ~15 min idle | First visit takes **~50 seconds** to wake. Later visits are instant. | `plan: 0.5c-512mb`, $7/mo, always on |
+| …and the scheduler sleeps with it | This is the one that costs you money rather than patience. `render.yaml` runs the API, the web app and `ENABLE_SCHEDULER=true` in **one** service, so while it is asleep no follow-up reminder fires, no untouched lead escalates and no birthday message goes out. Nothing errors; the work silently does not happen overnight and at weekends. | `plan: 0.5c-512mb` — same $7/mo |
+| 512 MB RAM / 0.1 CPU | Large video transcodes are slow, and a very large upload can OOM the container | `0.5c-512mb` |
 | No persistent disk | Uploads vanish on redeploy — **unless you did step 2** | Cloudflare R2 (step 2) |
 | Neon free tier | 0.5 GB storage; idle databases sleep briefly | Neon paid tiers |
 
@@ -347,7 +354,7 @@ Nothing needs redeploying; both hosts do free HTTPS automatically.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| CRM URL hangs ~50s then loads | Free instance was asleep | Normal. Starter tier removes it. |
+| CRM URL hangs ~50s then loads | Free instance was asleep | Normal on free. `0.5c-512mb` removes it. |
 | Website shows no projects | CRM asleep/unreachable at render time | Reload after the CRM wakes. Listing pages degrade to empty instead of erroring, and ISR self-repairs within 60s. |
 | Images broken on the website | `APP_URL` missing the Vercel origin | Step 5 |
 | "relation does not exist" | Migrations didn't run | Check the Render deploy log for the `applying database migrations…` line |
