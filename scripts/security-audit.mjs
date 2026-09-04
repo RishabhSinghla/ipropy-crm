@@ -27,17 +27,19 @@
 import { readFileSync } from 'node:fs';
 
 // GHSA id → why it is accepted, and what retires it.
-const ALLOWED = new Map([
-  // fast-uri 3.1.5, newest published. Retire by bumping @modelcontextprotocol/sdk
-  // once its ajv picks up a fixed fast-uri, or by replacing ajv validation.
-  ['GHSA-5jgf-p345-68v8', 'fast-uri IDN host confusion (via ajv ← MCP SDK)'],
-  ['GHSA-f65p-4m7j-42xc', 'fast-uri IPv6 SSRF (via ajv ← MCP SDK)'],
-  ['GHSA-fph4-wmhf-6fwf', 'fast-uri percent-decoding SSRF (via ajv ← MCP SDK)'],
-  ['GHSA-jqff-g426-hqxp', 'fast-uri scheme-normalisation host confusion (via ajv ← MCP SDK)'],
-  // qs 6.15.3, newest published. Retire when express/body-parser ship the fixed qs.
-  ['GHSA-x5fp-wj9c-mxmx', 'qs array-limit bypass (via body-parser ← express)'],
-  ['GHSA-4mjr-xmp4-gh2g', 'qs isBuffer DoS (via body-parser ← express)'],
-]);
+//
+// Empty, and that is the goal state rather than an oversight.
+//
+// Six advisories lived here — four in fast-uri, two in qs — and all six are now
+// genuinely fixed rather than accepted. qs went with the Express 5 upgrade:
+// Express 4 pinned `qs` to `~6.15.1`, so the patched 6.16.0 was outside the
+// range no matter what any override said, and only the major upgrade opened it.
+// fast-uri needed nothing but `npm update` once the tree would re-resolve.
+//
+// Keep the machinery. An advisory with no upstream fix will land again, and the
+// alternative to a named allowlist is either a permanently red gate that
+// everybody learns to ignore, or no gate at all.
+const ALLOWED = new Map([]);
 
 let raw;
 try {

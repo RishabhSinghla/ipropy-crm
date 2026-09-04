@@ -80,7 +80,24 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
 }
 
 /** Wrap an async handler so rejections reach the error middleware. */
-export function asyncHandler<T extends Request = Request>(
+/**
+ * A request whose route parameters are plain strings.
+ *
+ * Express 5 types `req.params` values as `string | string[]`, because a named
+ * wildcard can capture several path segments at once. True in general, and not
+ * true here: the only wildcard in this app is the single-page-app fallback in
+ * `app.ts`, which matches everything and reads no parameter at all. Every other
+ * route takes `:id`, `:module`, `:recordId` and friends, each of which is one
+ * segment and therefore always a string.
+ *
+ * Declaring that once is the alternative to writing a cast at nearly three
+ * hundred call sites, which would be noise nobody reads and one of them would
+ * eventually be wrong. If a route is ever added that genuinely captures a splat,
+ * it should take its own request type rather than widening this one back.
+ */
+export type AppRequest = Request<Record<string, string>>;
+
+export function asyncHandler<T extends Request = AppRequest>(
   fn: (req: T, res: Response, next: NextFunction) => Promise<unknown>,
 ) {
   return (req: Request, res: Response, next: NextFunction): void => {

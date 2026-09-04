@@ -99,7 +99,7 @@ export const DASHBOARDS: DashboardSeed[] = [
         type: 'list', title: 'Priority Leads to Call', x: 8, y: 2, w: 4, h: 6,
         config: {
           module: 'leads', limit: 10, sortBy: 'ai_score', sortDir: 'desc',
-          columns: ['full_name', 'mobile', 'ai_score', 'budget_max'],
+          columns: ['full_name', 'mobile', 'ai_score', 'budget'],
           filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'is_me' }, { field: 'is_converted', operator: 'is_false' }, { field: 'ai_score', operator: 'greater_or_equal', value: 60 }] },
         },
       },

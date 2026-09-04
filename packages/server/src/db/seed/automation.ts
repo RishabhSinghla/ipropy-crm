@@ -119,7 +119,7 @@ const WORKFLOWS: WorkflowSeed[] = [
     name: 'Re-score on engagement',
     description: 'Recomputes the AI score whenever the lead\'s status or requirement changes.',
     trigger: 'on_field_change',
-    watchFields: ['status', 'budget_max', 'possession_timeline', 'interested_project', 'funding_type'],
+    watchFields: ['status', 'budget', 'possession_timeline', 'interested_project', 'funding_type'],
     tasks: [{ type: 'ai_action', name: 'Re-score', config: { action: 'score_lead', writeTo: { score: 'ai_score', reasons: 'ai_score_reasons' } } }],
   },
 
@@ -251,7 +251,7 @@ export async function seedAssignmentRules(conn: Tx): Promise<void> {
   const rules = [
     {
       name: 'High-value leads to field sales',
-      conditions: { logic: 'AND', conditions: [{ field: 'budget_max', operator: 'greater_or_equal', value: 15000000 }] },
+      conditions: { logic: 'AND', conditions: [{ field: 'budget', operator: 'greater_or_equal', value: 15000000 }] },
       strategy: 'load_balanced',
       groupId: fieldSales?.id ?? null,
       sequence: 0,
@@ -341,7 +341,7 @@ const WHATSAPP_TEMPLATES: TemplateSeed[] = [
     body: 'Hi {{1}}, just checking in on your home search. We have new inventory in {{2}} that fits your budget of {{3}}.\n\nWould you like to see the latest options?',
     footer: 'Reply STOP to opt out',
     buttons: [{ type: 'QUICK_REPLY', text: 'Yes, share options' }, { type: 'QUICK_REPLY', text: 'Not right now' }],
-    variables: { '1': 'record.first_name', '2': 'record.preferred_locations', '3': 'record.budget_max' },
+    variables: { '1': 'record.first_name', '2': 'record.preferred_locations', '3': 'record.budget' },
   },
   {
     name: 'site_visit_confirmation', category: 'UTILITY',
@@ -393,7 +393,7 @@ const WHATSAPP_TEMPLATES: TemplateSeed[] = [
     header: 'Handpicked for you',
     body: 'Hi {{1}}, based on your requirement ({{2}}, {{3}}) I\'ve shortlisted {{4}} options for you.\n\nShall I send the details?',
     buttons: [{ type: 'QUICK_REPLY', text: 'Yes please' }, { type: 'QUICK_REPLY', text: 'Call me' }],
-    variables: { '1': 'record.first_name', '2': 'record.configuration', '3': 'record.budget_max', '4': 'ai.match_count' },
+    variables: { '1': 'record.first_name', '2': 'record.configuration', '3': 'record.budget', '4': 'ai.match_count' },
   },
 ];
 

@@ -315,7 +315,20 @@ export function createApp(): Express {
         if (path.endsWith('.html')) applyAppSecurityPolicy(res);
       },
     }));
-    app.get('*', (req, res, next) => {
+    /*
+      `/*splat`, not `*`.
+
+      Express 5 replaced path-to-regexp, and a bare `*` is no longer a valid
+      route — it throws at startup rather than quietly matching nothing, which
+      is the one mercy in the change. A wildcard has to be named now, and the
+      name is arbitrary; `splat` is the convention the migration guide uses.
+
+      This is the single-page-app fallback: any path that is not a file on disk
+      and not an API call returns index.html so the browser router can handle it.
+      Getting it wrong means every deep link 404s while the home page works,
+      which looks like a routing bug in the front end.
+    */
+    app.get('/*splat', (req, res, next) => {
       if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) return next();
       applyAppSecurityPolicy(res);
       res.sendFile(resolve(webDist, 'index.html'));

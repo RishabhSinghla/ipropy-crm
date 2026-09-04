@@ -52,8 +52,19 @@ export function operatorAuth(): express.RequestHandler {
   };
 }
 
-const asyncRoute = (fn: express.RequestHandler): express.RequestHandler => (req, res, next) => {
-  void Promise.resolve(fn(req, res, next)).catch(next);
+/*
+  Route parameters here are plain strings, and Express 5's types say
+  `string | string[]` because a named wildcard can span segments. There is no
+  wildcard on this router at all, so the narrower type is the accurate one.
+  Mirrors `AppRequest` in middleware/errorHandler.ts.
+*/
+type ControlRequest = express.Request<Record<string, string>>;
+
+const asyncRoute = (
+  fn: (req: ControlRequest, res: express.Response, next: express.NextFunction) => Promise<unknown> | unknown,
+): express.RequestHandler => (req, res, next) => {
+  // Narrowed once, at the boundary, rather than at every handler.
+  void Promise.resolve(fn(req as ControlRequest, res, next)).catch(next);
 };
 
 export function operatorRouter(): express.Router {
@@ -105,9 +116,24 @@ export function operatorRouter(): express.Router {
     });
   }));
 
-  router.post('/tenants/:slug/:action(suspend|resume)', asyncRoute(async (req, res) => {
-    const tenant = await store.requireBySlug(req.params.slug);
+  /*
+    `:action`, not `:action(suspend|resume)`.
+
+    Express 5 replaced path-to-regexp, and an inline pattern on a parameter is
+    no longer parsed — it throws while the route is being registered, so the
+    whole console fails to start rather than one endpoint misbehaving.
+
+    The check moves into the handler, which is better anyway: the old form
+    answered 404 for a bad action, as though the tenant did not exist. Now it
+    says what was wrong with the request.
+  */
+  router.post('/tenants/:slug/:action', asyncRoute(async (req, res) => {
     const action = req.params.action;
+    if (action !== 'suspend' && action !== 'resume') {
+      res.status(400).json({ error: `Unknown action "${action}" — expected suspend or resume.` });
+      return;
+    }
+    const tenant = await store.requireBySlug(req.params.slug);
     const status: TenantStatus = action === 'suspend' ? 'suspended' : 'active';
     const result = await setTenantService(tenant.id, status, 'from the operator console');
     logger.info({ slug: tenant.slug, status, ...result }, 'status changed from the console');
