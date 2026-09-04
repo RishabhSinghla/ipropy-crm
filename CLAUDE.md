@@ -329,9 +329,20 @@ back into TypeScript would reverse that.
   "Auto-Deploy": `fefa721` shows twice on 4 September, once as **Manual — by
   you** and once as **Compute plan updated**. A red CI run next to a deploy of
   the same commit looked like the gate failing, and it was neither.
-* **Render is on the paid instance.** `render.yaml` declares `plan: 0.5c-512mb`
-  ($7/month, always on); deployed 4 September 2026. The scheduler no longer
-  sleeps with the site.
+* **Render is on the paid instance, and the sleeping is measured as gone.**
+  `render.yaml` declares `plan: 0.5c-512mb` ($7/month), paid 4 September 2026;
+  Render's deploys page records the changeover as a deploy triggered by "Compute
+  plan updated". Verified by leaving production completely alone for 21 minutes
+  and reading `/api/health`: uptime went 772s → 2032s, a difference of exactly
+  1260s, so it ran continuously through a window the free tier would have slept
+  in twice.
+  Two earlier attempts to measure this concluded the opposite, both wrong, both
+  because a deploy restarted the service mid-test and uptime resetting looks
+  identical either way. **If you measure this again, stop pushing first**, and
+  check the deploys page before reading a reset as a sleep.
+  What it buys is not speed. The scheduler shares this process, so a sleeping
+  instance meant no follow-up reminders, no lead escalation and no birthday
+  messages overnight and at weekends — silently, with nothing logged.
 * **The demo logins are gone from production.** `go-live:users` has been run: the
   4 September deploy seeded `users ✓ (1)`, a single real account. The twelve
   demo users sharing a password published in this repo no longer exist there.
