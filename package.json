@@ -44,7 +44,7 @@
     "go-live:users": "npm run go-live:users -w @ipropy/server"
   },
   "devDependencies": {
-    "concurrently": "^10.0.4",
+    "concurrently": "^10.0.5",
     "typescript": "^5.7.2"
   },
   "overrides": {
