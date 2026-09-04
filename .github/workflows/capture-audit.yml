@@ -40,8 +40,9 @@ jobs:
           PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
         run: |
           psql "$PROD_DATABASE_URL" -X -c "
-            SELECT lead_number, full_name, lead_source,
-                   to_char(created_at AT TIME ZONE 'Asia/Kolkata', 'DD Mon HH24:MI') AS created
-            FROM ipy_e_leads
-            WHERE lead_source = 'facebook'
-            ORDER BY created_at DESC LIMIT 5;"
+            SELECT l.lead_number, l.full_name, l.lead_source,
+                   to_char(r.created_at AT TIME ZONE 'Asia/Kolkata', 'DD Mon HH24:MI') AS created
+            FROM ipy_e_leads l
+            JOIN ipy_record r ON r.id = l.record_id
+            WHERE l.lead_source = 'facebook'
+            ORDER BY r.created_at DESC LIMIT 5;"
