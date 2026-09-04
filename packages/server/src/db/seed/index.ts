@@ -127,9 +127,26 @@ export async function seed(): Promise<void> {
   logger.info('iPropy is ready.');
   logger.info(`   Sign in at ${config.appUrl}`);
   logger.info(`   Email:    ${config.seed.adminEmail}`);
-  logger.info(`   Password: ${config.seed.adminPassword}`);
-  if (config.seed.demoData) {
-    logger.info('   Demo users share the same password (e.g. priya.sharma@ipropy.com — Sales Head).');
+
+  /*
+    The password is printed in development and never in production.
+    
+    In development it is the demo one, published in this repo, and having it on
+    screen saves looking it up. In production it is the owner's real password,
+    and this line wrote it into the deploy log on every single deploy — a log
+    that is retained, readable by anyone with dashboard access, and routinely
+    copied into a chat window when somebody is asking why a build failed.
+    
+    Nothing here needed the password. It was convenience code that followed the
+    seed from a laptop onto a live server.
+  */
+  if (config.isProd) {
+    logger.info('   Password: (set from ADMIN_PASSWORD — not printed on a live server)');
+  } else {
+    logger.info(`   Password: ${config.seed.adminPassword}`);
+    if (config.seed.demoData) {
+      logger.info('   Demo users share the same password (e.g. priya.sharma@ipropy.com — Sales Head).');
+    }
   }
   logger.info('');
 }
