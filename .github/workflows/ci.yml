@@ -69,13 +69,20 @@ jobs:
       # had checked them; it had checked nothing.
       #
       # A stale advisory in somebody else's package should not be able to hide
-      # whether this code compiles and passes its tests. It still fails the
-      # build, so the deploy gate still holds and the security signal is not
-      # lost. It just no longer costs every other signal alongside it.
+      # whether this code compiles and passes its tests. But with the deploy
+      # gate on `checksPass`, a permanently red audit makes the gate itself
+      # unreadable — deploys have gone out anyway while runs failed, so the
+      # one thing the gate exists to say can no longer be told from the thing
+      # that is merely noisy.
+      #
+      # The allowlist (scripts/security-audit.mjs) is how the signal survives:
+      # advisories nobody can fix yet (fast-uri via the MCP SDK's ajv, qs via
+      # express) are accepted by name, each with a reason and what retires it,
+      # and anything NEW still fails the build. Development tooling included: a
+      # compromised build dependency can still alter the production bundle this
+      # job publishes evidence for.
       - name: Security audit
-        # Development tooling included: a compromised build dependency can still
-        # alter the production bundle this job publishes evidence for.
-        run: npm audit --audit-level=moderate
+        run: npm audit --json | node scripts/security-audit.mjs
 
   # Build the image Render actually deploys.
   #
