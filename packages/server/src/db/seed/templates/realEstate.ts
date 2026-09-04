@@ -431,7 +431,21 @@ const MODULES: ModuleDef[] = [
           F.pct('stamp_duty_percent', 'Stamp Duty %'),
           F.money('registration_charge', 'Registration Charge'),
           {
-            name: 'total_price', label: 'All-inclusive Price', uitype: 'formula', column: 'total_price',
+            /*
+              Not "All-inclusive". The formula below is base price plus the six
+              charge fields; GST, stamp duty and registration are not in it, and
+              all three sit directly above this on the same form. Registration
+              Charge is a plain rupee figure, so it is the one somebody is most
+              likely to fill in and expect to see counted.
+
+              The label is what was wrong, not the formula. This number is the
+              advertised price everywhere — the website, the big figure on every
+              share link, the Price line in the WhatsApp summary — and adding tax
+              to it would raise all of them by about 11% overnight, while
+              silently narrowing buyer matching, which counts inventory at
+              `total_price <= budget * 1.1`.
+            */
+            name: 'total_price', label: 'Price with Charges', uitype: 'formula', column: 'total_price',
             readonly: true,
             config: {
               formula: {
@@ -461,7 +475,24 @@ const MODULES: ModuleDef[] = [
         fields: [
           F.pick('possession_status', 'Possession Status', 'possession_status'),
           F.date('possession_date', 'Possession Date'),
-          F.date('blocked_until', 'Blocked Until'),
+          F.date('blocked_until', 'Blocked Until', {
+            /*
+              Required once the unit is actually Held.
+
+              A unit set to Held with no expiry never reaches the hourly release
+              job — its condition is "blocked_until older than 0 days", and a
+              blank date is never older than anything — so the unit leaves the
+              market permanently and nothing says so. Making the field mandatory
+              outright would block every property that is not on hold, which is
+              nearly all of them.
+            */
+            config: {
+              requiredWhen: {
+                logic: 'AND',
+                conditions: [{ field: 'status', operator: 'in', value: ['Held', 'Blocked'] }],
+              },
+            },
+          }),
           { name: 'blocked_by', label: 'Blocked By', uitype: 'user', column: 'blocked_by', readonly: true },
           F.ref('blocked_for_lead_id', 'Blocked For', ['leads']),
           F.bool('is_resale', 'Resale Unit'),

@@ -378,6 +378,15 @@ export interface FieldConfig {
   fullWidth?: boolean;
   /** conditional visibility inside forms */
   visibleWhen?: FilterGroup;
+  /**
+   * Required only when this condition holds, using the same filter grammar.
+   *
+   * Some fields matter only in one state. A hold needs an end date, but only
+   * once the unit is actually Held; a lost lead needs a reason, but only once it
+   * is Lost. `isMandatory` cannot express that — it is required always or never,
+   * and "always" would block every draft.
+   */
+  requiredWhen?: FilterGroup;
   /** placeholder text */
   placeholder?: string;
   /** integrations may mark fields as synced */
@@ -494,6 +503,15 @@ export interface BlockMeta {
   columns: number;
   /** Blocks can be limited to certain profiles */
   visibleWhen?: FilterGroup;
+  /**
+   * Required only when this condition holds, using the same filter grammar.
+   *
+   * Some fields matter only in one state. A hold needs an end date, but only
+   * once the unit is actually Held; a lost lead needs a reason, but only once it
+   * is Lost. `isMandatory` cannot express that — it is required always or never,
+   * and "always" would block every draft.
+   */
+  requiredWhen?: FilterGroup;
   fields: FieldMeta[];
 }
 

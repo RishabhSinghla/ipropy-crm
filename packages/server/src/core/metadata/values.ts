@@ -398,15 +398,40 @@ export function validateRequired(
 ): void {
   const errors: { field: string; message: string }[] = [];
   for (const f of fields) {
-    if (!f.isMandatory || !f.isActive) continue;
+    if (!f.isActive) continue;
+    /*
+      Required always, or required only in a particular state.
+
+      A hold needs an end date, but only once the unit is Held — a unit set to
+      Held with no expiry never reaches the hourly release job, so it leaves the
+      market and does not come back. Marking the field mandatory outright would
+      instead block every ordinary property that is not on hold, which is all of
+      them. The condition is what makes the rule sayable.
+    */
+    const required = f.isMandatory
+      || (f.config.requiredWhen ? evaluateFilter(f.config.requiredWhen, merged) : false);
+    if (!required) continue;
     if (f.displayType === 'hidden') continue;
     // A field the form was told to hide cannot have been filled in. Requiring
     // it anyway would reject a save the user had no way to make valid — the
     // form and the API have to agree on which fields are even on screen.
     if (f.config.visibleWhen && !evaluateFilter(f.config.visibleWhen, merged)) continue;
-    // On update, a field simply absent from the payload keeps its stored value.
-    if (!isCreate && !(f.name in values)) continue;
-    if (isEmpty(values[f.name])) {
+
+    /*
+      A conditional requirement is judged on the whole record, not the payload.
+
+      "Absent from the payload keeps its stored value" is right for a plain
+      mandatory field — it was satisfied when the record was created and nothing
+      here changes it. It is wrong for a conditional one, because the payload is
+      exactly what turns the condition on. A rep setting a unit to Held sends
+      `status` and nothing else, so skipping the untouched date is how a hold
+      with no end date gets saved, which is the whole failure.
+    */
+    const conditional = Boolean(f.config.requiredWhen);
+    if (!isCreate && !conditional && !(f.name in values)) continue;
+
+    const value = isCreate || f.name in values ? values[f.name] : merged[f.name];
+    if (isEmpty(value)) {
       errors.push({ field: f.name, message: `${f.label} is required` });
     }
   }

@@ -239,7 +239,13 @@ export default function RecordForm({
     for (const block of blocks) {
       for (const name of block.fields) {
         const field = fieldMap.get(name);
-        if (!field || !field.isMandatory || field.isReadonly) continue;
+        if (!field || field.isReadonly) continue;
+        // Required always, or required only in a particular state — the same
+        // rule the server applies, so the form cannot accept what the API will
+        // refuse. A hold needs an end date once the unit is Held, and not before.
+        const required = field.isMandatory
+          || (field.config?.requiredWhen ? evaluateFilter(field.config.requiredWhen, values) : false);
+        if (!required) continue;
         if (field.displayType === 'hidden' || field.displayType === 'detail_only') continue;
         // A field hidden by its own condition cannot be filled in, so requiring
         // it would deadlock the form on something the user cannot even see.
