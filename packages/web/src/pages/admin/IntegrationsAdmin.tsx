@@ -516,6 +516,12 @@ const CATALOGUE: { title: string; blurb: string; icon: typeof MessageCircle; pro
     icon: HardDrive,
     providers: ['onedrive', 's3'],
   },
+  {
+    title: 'Tell you when something breaks',
+    blurb: 'Errors reach your Sentry dashboard with customer details removed.',
+    icon: Webhook,
+    providers: ['sentry'],
+  },
 ];
 
 /** A token the user would otherwise have to invent. Long enough to be unguessable. */

@@ -1,0 +1,55 @@
+# Wire error reporting on production.
+#
+# The Sentry card on Admin → Integrations can do this from the UI, but the
+# card only renders for a provider the catalogue lists, and the owner asked
+# for the setup to be done for them. This writes the DSN into the stored
+# integration settings using the backup job's database secret.
+#
+# The DSN is deliberately in this file, not in a secret: a DSN is a public
+# write-only address for our own project, the same class of string that sits
+# in every website's JavaScript. After this runs, one restart makes the
+# server configure itself from the stored settings at boot.
+#
+# Run by hand: Actions → Set up Sentry → Run workflow.
+name: Set up Sentry
+
+on:
+  workflow_dispatch:
+
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install PostgreSQL 18 client
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: Configure the Sentry integration
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          test -n "$PROD_DATABASE_URL" || { echo "PROD_DATABASE_URL is not set"; exit 1; }
+          psql "$PROD_DATABASE_URL" -X -v ON_ERROR_STOP=1 -c "
+            INSERT INTO ipy_integration (provider, kind, label, is_active, config, status)
+            VALUES ('sentry', 'ops', 'Error reporting (Sentry)', true,
+                    '{\"dsn\":\"https://6b56e0c56d149110a97707b0e903632e@o4512003277914112.ingest.us.sentry.io/4512028472246272\",\"environment\":\"production\"}'::jsonb,
+                    'connected')
+            ON CONFLICT (provider, label) DO UPDATE
+              SET config = '{\"dsn\":\"https://6b56e0c56d149110a97707b0e903632e@o4512003277914112.ingest.us.sentry.io/4512028472246272\",\"environment\":\"production\"}'::jsonb,
+                  is_active = true,
+                  status = 'connected',
+                  updated_at = now();"
+
+      - name: Read it back
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          psql "$PROD_DATABASE_URL" -X -c "
+            SELECT provider, is_active, status,
+                   config->>'environment' AS environment,
+                   left(config->>'dsn', 30) || '…' AS dsn
+            FROM ipy_integration WHERE provider = 'sentry';"
