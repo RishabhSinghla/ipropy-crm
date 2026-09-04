@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { recordConsent } from '../../core/consent/index.js';
 import { db } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
@@ -304,7 +305,26 @@ telephonyRouter.post('/calls/:id/disposition', asyncHandler(async (req, res) => 
 
   if (call.record_id) {
     if (input.disposition === 'Do Not Call') {
-      await db.query(`UPDATE ipy_e_leads SET do_not_call = true WHERE record_id = $1`, [call.record_id]);
+      /*
+        Store the request, do not paint a flag on the lead.
+
+        This used to write a boolean onto the lead record. That column was
+        deleted on 11 August, so the statement was a Postgres 42703 with no
+        guard and no catch, inside asyncHandler. A rep marking a call
+        "Do Not Call" got a 500 and the opt-out was persisted nowhere at all —
+        not to a column, not to the consent store. Under TRAI that is a request
+        we were legally obliged to honour and did not even record.
+
+        The number is what the request is about, so the number is what is
+        stored. It is honoured even for a caller the CRM holds no record for.
+      */
+      await recordConsent({
+        handle: call.to_number,
+        channel: 'call',
+        action: 'opt_out',
+        source: 'call_disposition',
+        recordId: call.record_id,
+      });
     }
     if (input.disposition === 'Wrong Number') {
       await db.query(

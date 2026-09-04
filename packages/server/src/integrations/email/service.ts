@@ -8,6 +8,7 @@ import nodemailer, { type Transporter } from 'nodemailer';
 import { renderTemplate } from '@ipropy/shared';
 import { config } from '../../config.js';
 import { getSettings } from '../../core/settings/integrations.js';
+import { filterOptedOut, normaliseHandle } from '../../core/consent/index.js';
 import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { NotFoundError } from '../../utils/errors.js';
@@ -53,11 +54,41 @@ export interface SendEmailInput {
   isAiGenerated?: boolean;
   /** append a 1x1 pixel so opens are tracked */
   track?: boolean;
+  /**
+   * A reply to a thread this person started, which unsubscribing does not stop.
+   * Set it only for genuine replies — never for a broadcast or a nudge.
+   */
+  sessionReply?: boolean;
 }
 
 export async function sendEmail(input: SendEmailInput): Promise<{ id: string; status: string; error?: string }> {
-  const to = Array.isArray(input.to) ? input.to : [input.to];
+  const requested = Array.isArray(input.to) ? input.to : [input.to];
   const trackingId = crypto.randomUUID();
+
+  /*
+    Drop anyone who has unsubscribed.
+
+    Email had no suppression at all — not a check, not a field, nothing. The
+    `email_opt_out` column was deleted on 11 August and, unlike WhatsApp, there
+    was no store behind it, so an unsubscribe request had nowhere to go and
+    nothing to stop the next send. Under DPDP, withdrawal of consent has to
+    actually withdraw something.
+
+    A reply to a conversation the person started is exempt for the same reason
+    it is on WhatsApp: refusing to answer someone who just wrote to you is not
+    what unsubscribing means.
+  */
+  const to = input.sessionReply
+    ? requested
+    : await (async () => {
+      const blocked = await filterOptedOut(requested, 'email');
+      return requested.filter((address) => !blocked.has(normaliseHandle(address, 'email')));
+    })();
+
+  if (!to.length) {
+    logger.info({ requested: requested.length }, 'email not sent — every recipient has unsubscribed');
+    return { id: '', status: 'suppressed' };
+  }
 
   let html = input.html;
   if (input.track !== false) {

@@ -98,27 +98,15 @@ export async function recordConsent(input: {
   }
 
   /*
-    Mirror onto the record so it is visible and filterable where people work.
+    There was a mirror here, copying the opt-out onto a `do_not_whatsapp` boolean
+    on the lead so it showed up in list views and filters.
 
-    The opt-out itself does not depend on this. `ipy_channel_optout` is the
-    record of consent and `maySend` reads that, so somebody who replies STOP is
-    genuinely blocked whether or not this line succeeds. This is the copy that
-    makes it *visible* in the CRM.
-
-    Which matters, because it has been failing since 11 August, when
-    `do_not_whatsapp` was deleted from the leads module. The catch below turned a
-    42703 into a log line nobody reads, so the enforcement kept working and the
-    flag quietly stopped appearing on any record. Skipped entirely when the field
-    is absent now, rather than attempted and swallowed.
+    It is gone with the field. That column was deleted on 11 August and is no
+    longer created by the seed either, so the mirror could never fire — but the
+    deeper reason is that holding consent in two places is what broke all three
+    channels at once. `ipy_channel_optout` is the single authority now, shared
+    with calls and email through `core/consent`.
   */
-  if (await leadsHaveField(conn, 'do_not_whatsapp')) {
-    await conn.query(
-      `UPDATE ipy_e_leads SET do_not_whatsapp = $2
-       WHERE right(regexp_replace(coalesce(mobile,''), '\\D', '', 'g'), 10) = right($1, 10)
-          OR right(regexp_replace(coalesce(whatsapp_number,''), '\\D', '', 'g'), 10) = right($1, 10)`,
-      [handle.replace(/\D/g, ''), input.action === 'opt_out'],
-    ).catch((err) => logger.warn({ err }, 'could not mirror consent onto lead records'));
-  }
 
   await conn.query(
     `INSERT INTO ipy_consent_event (record_id, handle, channel, action, source, message_text)

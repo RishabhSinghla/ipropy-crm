@@ -206,16 +206,25 @@ const MODULES: ModuleDef[] = [
           F.text('passport_number', 'Passport Number'),
         ],
       },
-      {
-        name: 'preferences',
-        label: 'Communication Preferences',
-        collapsed: true,
-        fields: [
-          F.bool('do_not_call', 'Do Not Call'),
-          F.bool('do_not_whatsapp', 'Do Not WhatsApp'),
-          F.bool('email_opt_out', 'Email Opt Out'),
-        ],
-      },
+      /*
+        Communication Preferences held three booleans — Do Not Call, Do Not
+        WhatsApp, Email Opt Out — and they are deliberately not here any more.
+
+        They were deleted from this CRM on 11 August. A tombstone stops them
+        returning to a database that already has one, but a fresh install has no
+        tombstones, so leaving them defined here meant every new deployment got
+        three fields the owner had removed.
+
+        They are also the wrong shape. Consent belongs to a phone number or an
+        address, not to a lead record: someone can text STOP from a number the
+        CRM has never seen, and that still has to be honoured. Keeping the fact
+        in two places is what broke it — all three columns went in one go and
+        the code kept naming them, so a do-not-call request was neither stored
+        nor obeyed for three weeks.
+
+        `core/consent/index.ts` is the one store now, keyed by handle and
+        channel, and every send path reads it.
+      */
       {
         name: 'relationship',
         label: 'Relationship Value',

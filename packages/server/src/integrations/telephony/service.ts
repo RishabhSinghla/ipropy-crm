@@ -9,6 +9,7 @@
 import { toE164 } from '@ipropy/shared';
 import { config } from '../../config.js';
 import { getSettings } from '../../core/settings/integrations.js';
+import { isOptedOut } from '../../core/consent/index.js';
 import { db, type Tx } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { BadRequestError, IntegrationError } from '../../utils/errors.js';
@@ -161,23 +162,19 @@ export async function placeCall(input: PlaceCallInput): Promise<{ callId: string
   /*
     Respect Do Not Call before dialling anything.
 
-    Read as JSON rather than as a column, because `do_not_call` was deleted from
-    this CRM on 11 August and naming a dropped column is a Postgres 42703. This
-    query sits before the try block below, so it threw uncaught and every
-    click-to-call returned a 500 — including calls to people who had never asked
-    not to be called.
+    This used to read a `do_not_call` column, then — after that column was
+    deleted on 11 August — the same value through `to_jsonb`, which is always
+    null and therefore always false. The comment called that failing safe "in
+    the honest direction". It was not honest, it was fail-open: the gate looked
+    present and blocked nobody, and the matching write path was erroring out, so
+    a request to stop calling was neither stored nor obeyed.
 
-    It fails safe now in the honest direction: no field means nothing has been
-    recorded, so nothing is blocked, and the call goes through. If the field
-    comes back the check starts working again with no further change.
+    It reads the consent store now, which is the same place a WhatsApp STOP
+    lands and does not depend on a field an admin can delete. Checked by number
+    rather than by record, so a request from someone with no lead still counts.
   */
-  if (input.recordId) {
-    const dnc = await db.queryOne<{ blocked: boolean }>(
-      `SELECT COALESCE((to_jsonb(l)->>'do_not_call')::boolean, false) AS blocked
-         FROM ipy_e_leads l WHERE l.record_id = $1`,
-      [input.recordId],
-    );
-    if (dnc?.blocked) throw new BadRequestError('This contact is marked Do Not Call');
+  if (input.toNumber && await isOptedOut(input.toNumber, 'call')) {
+    throw new BadRequestError('This number has asked not to be called.');
   }
 
   const adapter = getAdapter();
