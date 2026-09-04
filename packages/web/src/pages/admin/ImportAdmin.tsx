@@ -7,7 +7,7 @@ import { Database, FileUp, Upload } from 'lucide-react';
 import { api } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
 import { cn } from '../../lib/utils';
-import { Badge, EmptyState, Select, Skeleton, Spinner } from '../../components/ui';
+import { Badge, EmptyState, Modal, Select, Skeleton, Spinner } from '../../components/ui';
 
 interface Preview {
   headers: string[];
@@ -15,6 +15,14 @@ interface Preview {
   totalRows: number;
   suggestedMapping: Record<string, string>;
   fields: { name: string; label: string; uitype: string; mandatory: boolean }[];
+}
+
+interface JobRow {
+  id: string; file_name: string; module: string; status: string;
+  total_rows: number; processed_rows: number; created_rows: number;
+  skipped_rows: number; failed_rows: number; created_at: string;
+  errors: { row: number; error: string }[];
+  details: { created: string[]; skipped: string[] };
 }
 
 export default function ImportAdmin(): JSX.Element {
@@ -31,12 +39,27 @@ export default function ImportAdmin(): JSX.Element {
   // away for the day they are wanted.
   const [runWorkflows, setRunWorkflows] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [openJob, setOpenJob] = useState<JobRow | null>(null);
 
   const { data: jobs } = useQuery({
     queryKey: ['import-jobs'],
     queryFn: () => api.importJobs(),
-    refetchInterval: 5000,
+    // Live while something is running, quiet otherwise. Two seconds because a
+    // row lands about every hundred milliseconds; faster polls just re-render
+    // the same numbers.
+    refetchInterval: (query) =>
+      (query.state.data as JobRow[] | undefined)?.some((j) => j.status === 'running') ? 2000 : false,
   });
+
+  const cancel = async (id: string): Promise<void> => {
+    try {
+      await api.cancelImport(id);
+      toast.success('Cancelling', 'The import stops on its current row.');
+      void queryClient.invalidateQueries({ queryKey: ['import-jobs'] });
+    } catch (err) {
+      toast.error('Could not cancel', (err as Error).message);
+    }
+  };
 
   const analyse = async (selected: File): Promise<void> => {
     setBusy(true);
@@ -189,6 +212,7 @@ export default function ImportAdmin(): JSX.Element {
         <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
           <Database className="h-4 w-4 text-slate-400" />
           <p className="text-sm font-medium">Recent imports</p>
+          <p className="ml-auto text-2xs text-muted">Click a number to see the rows behind it</p>
         </div>
         {!jobs?.length ? (
           <EmptyState title="No imports yet" />
@@ -196,42 +220,128 @@ export default function ImportAdmin(): JSX.Element {
           <table className="w-full">
             <thead>
               <tr>
-                {['File', 'Module', 'Status', 'Created', 'Skipped', 'Failed', 'When'].map((h) => (
+                {['File', 'Module', 'Status', 'Created', 'Skipped', 'Failed', 'When', ''].map((h) => (
                   <th key={h} className="table-head">{h}</th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {(jobs as { id: string; file_name: string; module: string; status: string; total_rows: number; processed_rows: number; created_rows: number; skipped_rows: number; failed_rows: number; created_at: string }[])
-                .map((job) => (
+            <tbody className="divide-y divide-slate-100 dark:border-slate-800 dark:divide-slate-800">
+              {(jobs as unknown as JobRow[]).map((job) => {
+                const running = job.status === 'running';
+                return (
                   <tr key={job.id}>
                     <td className="table-cell max-w-[14rem] truncate font-medium">{job.file_name}</td>
                     <td className="table-cell capitalize text-slate-500">{job.module}</td>
                     <td className="table-cell">
                       <Badge color={
                         job.status === 'completed' ? '#22c55e'
-                          : job.status === 'running' ? '#0ea5e9' : '#94a3b8'
+                          : job.status === 'cancelled' ? '#f59e0b'
+                          : job.status === 'running' || job.status === 'cancelling' ? '#0ea5e9' : '#94a3b8'
                       }>
                         {job.status}
                       </Badge>
-                      {job.status === 'running' && (
+                      {running && (
                         <span className="ml-1.5 text-2xs text-muted tnum">
                           {job.processed_rows}/{job.total_rows}
                         </span>
                       )}
                     </td>
-                    <td className="table-cell tnum text-positive">{job.created_rows}</td>
-                    <td className="table-cell tnum text-slate-500">{job.skipped_rows}</td>
-                    <td className="table-cell tnum">
-                      {job.failed_rows > 0 ? <span className="text-negative">{job.failed_rows}</span> : '—'}
+                    <td className="table-cell">
+                      <CountButton count={job.created_rows} onClick={() => setOpenJob(job)} tone="positive" />
+                    </td>
+                    <td className="table-cell">
+                      <CountButton count={job.skipped_rows} onClick={() => setOpenJob(job)} tone="muted" />
+                    </td>
+                    <td className="table-cell">
+                      <CountButton count={job.failed_rows} onClick={() => setOpenJob(job)} tone={job.failed_rows > 0 ? 'negative' : 'muted'} />
                     </td>
                     <td className="table-cell text-2xs text-muted">{relativeTime(job.created_at)}</td>
+                    <td className="table-cell text-right">
+                      {running && (
+                        <button onClick={() => void cancel(job.id)} className="btn-secondary btn-sm">
+                          Cancel
+                        </button>
+                      )}
+                    </td>
                   </tr>
-                ))}
+                );
+              })}
             </tbody>
           </table>
         )}
       </div>
+
+      {openJob && <JobDetailsModal job={openJob} onClose={() => setOpenJob(null)} />}
     </div>
+  );
+}
+
+function CountButton({ count, onClick, tone }: {
+  count: number; onClick: () => void; tone: 'positive' | 'negative' | 'muted';
+}): JSX.Element {
+  const colour = tone === 'positive' ? 'text-positive'
+    : tone === 'negative' ? 'text-negative'
+    : 'text-slate-600 dark:text-slate-300';
+  return (
+    <button
+      onClick={onClick}
+      disabled={count === 0}
+      className={cn('tnum tabular-nums', colour, count > 0 && 'cursor-pointer underline decoration-dotted underline-offset-2 hover:opacity-80')}
+      title="Show the rows"
+    >
+      {count || '—'}
+    </button>
+  );
+}
+
+function JobDetailsModal({ job, onClose }: { job: JobRow; onClose: () => void }): JSX.Element {
+  const [section, setSection] = useState<'created' | 'skipped' | 'failed'>(
+    job.failed_rows > 0 ? 'failed' : job.skipped_rows > 0 ? 'skipped' : 'created',
+  );
+  const lists = {
+    created: job.details?.created ?? [],
+    skipped: job.details?.skipped ?? [],
+    failed: (job.errors ?? []).map((e) => `row ${e.row} — ${e.error}`),
+  };
+  const CAP = 300;
+  const items = lists[section];
+  const total = section === 'created' ? job.created_rows
+    : section === 'skipped' ? job.skipped_rows
+    : job.failed_rows;
+
+  return (
+    <Modal open title={`Import — ${job.file_name}`} onClose={onClose} size="lg">
+      <div className="mb-3 flex gap-1.5">
+        {(['created', 'skipped', 'failed'] as const).map((key) => (
+          <button
+            key={key}
+            onClick={() => setSection(key)}
+            className={cn(
+              'rounded-full px-3 py-1 text-xs font-medium capitalize transition-colors',
+              section === key ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
+            )}
+          >
+            {key} ({key === 'created' ? job.created_rows : key === 'skipped' ? job.skipped_rows : job.failed_rows})
+          </button>
+        ))}
+      </div>
+
+      {items.length === 0 ? (
+        <EmptyState title={`Nothing ${section} yet`} />
+      ) : (
+        <>
+          {total > CAP && (
+            <p className="mb-2 rounded-lg bg-amber-50 px-3 py-1.5 text-2xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+              Showing the first {CAP} of {total}.
+            </p>
+          )}
+          <ul className="max-h-80 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800">
+            {items.map((line, i) => (
+              <li key={i} className="px-1 py-1.5 text-sm">{line}</li>
+            ))}
+          </ul>
+        </>
+      )}
+    </Modal>
   );
 }

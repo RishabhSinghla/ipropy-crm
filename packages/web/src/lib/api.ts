@@ -998,6 +998,7 @@ export const api = {
     return request<{ jobId: string; totalRows: number }>(`/api/import/${module}`, { method: 'POST', body: form });
   },
   importJobs: () => get<Record<string, unknown>[]>('/api/import/jobs'),
+  cancelImport: (jobId: string) => post<{ ok: boolean }>(`/api/import/jobs/${jobId}/cancel`),
   webforms: () => get<Record<string, unknown>[]>('/api/webforms'),
   createWebform: (data: Record<string, unknown>) => post<{ id: string; publicKey: string; endpoint: string }>('/api/webforms', data),
   leadInbox: (status?: string) => get<Record<string, unknown>[]>(`/api/lead-inbox${qs({ status })}`),

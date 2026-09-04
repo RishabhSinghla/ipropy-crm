@@ -944,6 +944,12 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
   void (async () => {
     let created = 0; let skipped = 0; let failed = 0;
     const errors: { row: number; error: string }[] = [];
+    // What the counts are made of, shown when a number is clicked in the UI.
+    // Bounded: a five-figure import does not need five-figure lists in one
+    // jsonb cell, so each list stops at 300 and the UI says so.
+    const CAP = 300;
+    const details: { created: string[]; skipped: string[] } = { created: [], skipped: [] };
+    let cancelled = false;
 
     for (const [i, raw] of rows.entries()) {
       const values: Record<string, unknown> = {};
@@ -955,45 +961,71 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
       if (!Object.keys(values).length) { skipped++; continue; }
 
       try {
-        await recordService.createRecord(scope, module.name, values, {
+        const envelope = await recordService.createRecord(scope, module.name, values, {
           skipDuplicateCheck: duplicateHandling === 'create',
           skipWorkflow: !runWorkflows,
         });
         created++;
+        if (details.created.length < CAP) {
+          details.created.push(String(envelope.label ?? envelope.id));
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'unknown error';
         if (duplicateHandling === 'skip' && message.includes('already exists')) {
           skipped++;
+          if (details.skipped.length < CAP) {
+            const name = String(values.full_name ?? values.name ?? Object.values(values)[0] ?? `row ${i + 2}`);
+            details.skipped.push(`${name} — ${message}`);
+          }
         } else {
           failed++;
           if (errors.length < 100) errors.push({ row: i + 2, error: message });
         }
       }
 
-      if (i % 25 === 0) {
-        await db.query(
-          `UPDATE ipy_import_job SET processed_rows = $2, created_rows = $3, skipped_rows = $4, failed_rows = $5 WHERE id = $1`,
-          [job!.id, i + 1, created, skipped, failed],
-        ).catch(() => undefined);
-      }
+      // Progress every row: the screen reads like a live thing, not a report.
+      // The guard on status doubles as the cancel signal — a cancelled job's
+      // row no longer matches `running`, so the loop stops on its next write.
+      const step = await db.query(
+        `UPDATE ipy_import_job
+         SET processed_rows = $2, created_rows = $3, skipped_rows = $4, failed_rows = $5,
+             details = $6::jsonb
+         WHERE id = $1 AND status = 'running'
+         RETURNING id`,
+        [job!.id, i + 1, created, skipped, failed, JSON.stringify(details)],
+      ).catch(() => undefined);
+      if (step && step.rowCount === 0) { cancelled = true; break; }
     }
 
     await db.query(
       `UPDATE ipy_import_job
-       SET status = 'completed', processed_rows = $2, created_rows = $3, skipped_rows = $4,
-           failed_rows = $5, errors = $6, completed_at = now()
+       SET status = $6, processed_rows = $2, created_rows = $3, skipped_rows = $4,
+           failed_rows = $5, errors = $7, completed_at = now()
        WHERE id = $1`,
-      [job!.id, rows.length, created, skipped, failed, JSON.stringify(errors)],
+      [job!.id, rows.length, created, skipped, failed, cancelled ? 'cancelled' : 'completed', JSON.stringify(errors)],
     );
 
     // An import of any size outlives the page that started it.
     await notify({
       userId: user.id,
       kind: 'import',
-      title: 'Import complete',
+      title: cancelled ? 'Import cancelled' : 'Import complete',
       body: `${created} created, ${skipped} skipped, ${failed} failed.`,
     });
   })().catch((err) => logger.error({ err }, 'import job failed'));
+}));
+
+miscRouter.post('/import/jobs/:id/cancel', asyncHandler(async (req, res) => {
+  // Sets the flag the worker watches; the worker does the stopping, on its
+  // next row, so nothing is killed mid-write.
+  const result = await db.query(
+    `UPDATE ipy_import_job SET status = 'cancelling'
+     WHERE id = $1 AND user_id = $2 AND status = 'running'
+     RETURNING id`,
+    [req.params.id, getUser(req).id],
+  );
+  if (!result.rowCount) throw new NotFoundError('No running import with that id');
+  res.json({ ok: true });
 }));
 
 miscRouter.get('/import/jobs', asyncHandler(async (req, res) => {
