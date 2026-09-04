@@ -1,0 +1,46 @@
+# Did the lead land?
+#
+# The Lead Ads Testing Tool reports which apps received a test lead, but the
+# database is the ground truth: either a row exists in ipy_lead_inbox or the
+# webhook never arrived. This answers that in one read-only query, without
+# opening Render logs.
+#
+# Run by hand: Actions -> Lead capture audit -> Run workflow.
+name: Lead capture audit
+
+on:
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install PostgreSQL 18 client
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: Recent lead inbox rows
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          test -n "$PROD_DATABASE_URL" || { echo "PROD_DATABASE_URL is not set"; exit 1; }
+          psql "$PROD_DATABASE_URL" -X -c "
+            SELECT source, status, external_id,
+                   to_char(created_at AT TIME ZONE 'Asia/Kolkata', 'DD Mon HH24:MI') AS arrived
+            FROM ipy_lead_inbox
+            ORDER BY created_at DESC LIMIT 8;"
+
+      - name: Facebook-sourced leads
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          psql "$PROD_DATABASE_URL" -X -c "
+            SELECT lead_number, full_name, lead_source, sub_source,
+                   to_char(created_at AT TIME ZONE 'Asia/Kolkata', 'DD Mon HH24:MI') AS created
+            FROM ipy_e_leads
+            WHERE lead_source = 'facebook'
+            ORDER BY created_at DESC LIMIT 5;"
