@@ -1,0 +1,44 @@
+# Who can sign in to production?
+#
+# The demo seed creates about a dozen users sharing one password that is
+# published in this repository. Production was seeded without demo data, and
+# the repo's default admin password is rejected, so the honest belief is that
+# no demo login exists on the live database — but a belief is not a record.
+# This answers the question from the database itself.
+#
+# Read-only: one SELECT. It lists every user account on production, active
+# first, so anything unexpected (a name nobody recognises, an account that
+# should have been deactivated) is visible in the run log. It never selects
+# password material.
+#
+# Run by hand: Actions → Production user audit → Run workflow. Costs seconds
+# and one billed minute, which is why it is dispatch-only rather than cron.
+name: Production user audit
+
+on:
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install PostgreSQL 18 client
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: List production users
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          test -n "$PROD_DATABASE_URL" || { echo "PROD_DATABASE_URL is not set"; exit 1; }
+          psql "$PROD_DATABASE_URL" -X -v ON_ERROR_STOP=1 -c "
+            SELECT u.email,
+                   u.is_active,
+                   u.is_admin,
+                   to_char(u.created_at, 'YYYY-MM-DD') AS created
+            FROM ipy_user u
+            ORDER BY u.is_active DESC, u.is_admin DESC, u.created_at;"

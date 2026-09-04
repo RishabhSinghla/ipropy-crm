@@ -4,8 +4,17 @@
 
 | | URL |
 |---|---|
-| CRM | https://ipropy-crm.onrender.com |
+| CRM | https://crm.ipropy.com (custom domain, attached 4 September 2026; `https://ipropy-crm.onrender.com` still answers and always will) |
 | Website | https://ipropy-website.vercel.app |
+| Marketing site | https://www.ipropy.com — a Wix site, not this repo |
+
+The CRM's certificate is issued and renewed by Render automatically. The health
+monitor's `HEALTH_URL` repository variable points at the custom domain, so the
+every-two-hours check now exercises DNS and the certificate as well as the
+database. The website's `CRM_API_URL` on Vercel still names the old
+`onrender.com` host and works — when it is next changed, point it at
+`https://crm.ipropy.com`. Anything that posts webhooks to the CRM (Meta lead
+ads, WhatsApp, telephony) should carry the new host too.
 
 Both verified: health check green, DB connected, CORS allows the website's
 origin, the deployed bundle matches `main`, and the seed admin password is in
