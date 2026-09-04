@@ -173,7 +173,17 @@ const WORKFLOWS: WorkflowSeed[] = [
     description: 'Sends a WhatsApp greeting on a customer\'s birthday.',
     trigger: 'scheduled',
     schedule: { frequency: 'daily', time: '09:00' },
-    conditions: { logic: 'AND', conditions: [{ field: 'date_of_birth', operator: 'today' }, { field: 'do_not_whatsapp', operator: 'is_false' }] },
+    /*
+      No consent condition here. It used to check `do_not_whatsapp`, a field
+      deleted on 11 August, and a condition naming a missing field makes
+      buildWhere raise — which the scheduler catches and logs, so the workflow
+      simply stopped running for three weeks with nothing to show for it.
+
+      Consent is checked at send time instead: every WhatsApp send goes through
+      `maySend`, which reads ipy_channel_optout. One check, in the place that
+      cannot be skipped.
+    */
+    conditions: { logic: 'AND', conditions: [{ field: 'date_of_birth', operator: 'today' }] },
     tasks: [{ type: 'send_whatsapp', name: 'Birthday wish', config: { to: '{{mobile}}', template: 'birthday_greeting' } }],
   },
 ];
