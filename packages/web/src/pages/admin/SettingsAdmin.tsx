@@ -100,7 +100,7 @@ const GROUPS: { id: string; title: string; blurb: string }[] = [
 const ADVANCED = new Set(['scoring', 'whatsapp', 'telephony', 'ai', 'ai_features', 'ai_models', 'team_location']);
 
 /** Filled in once, then left alone: the one group that starts open. */
-const STARTS_OPEN = 'general';
+const STARTS_OPEN = ''; // nothing open on arrival — the list IS the page
 
 export default function SettingsAdmin(): JSX.Element {
   const qc = useQueryClient();
@@ -114,10 +114,10 @@ export default function SettingsAdmin(): JSX.Element {
     what it is for, a peek at what it currently holds — and only "Your
     business", which is filled in once and then left alone, starts open.
 
-    Undefined here means "nobody has clicked yet", which is not the same as
-    closed — "Your business" falls open until somebody shuts it, a search
-    opens everything it matched, and a group the admin has explicitly shut
-    stays shut.
+    Everything starts shut, including Your business: the page must read as a
+    list of headings, not a wall of forms (e2e/adminSettings.spec.ts pins
+    that). A search opens whatever it matched, and a group the admin has
+    explicitly shut stays shut.
   */
   const [opened, setOpened] = useState<Record<string, boolean>>({});
 
