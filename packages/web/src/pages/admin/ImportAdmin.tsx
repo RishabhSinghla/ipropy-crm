@@ -301,7 +301,7 @@ function JobDetailsModal({ job, onClose }: { job: JobRow; onClose: () => void })
   const lists = {
     created: job.details?.created ?? [],
     skipped: job.details?.skipped ?? [],
-    failed: (job.errors ?? []).map((e) => `row ${e.row} — ${e.error}`),
+    failed: (job.errors ?? []).map((e) => (e.row ? `row ${e.row} — ${e.error}` : e.error)),
   };
   const CAP = 300;
   const items = lists[section];

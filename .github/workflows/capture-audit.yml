@@ -46,3 +46,14 @@ jobs:
             JOIN ipy_record r ON r.id = l.record_id
             WHERE l.lead_source = 'facebook'
             ORDER BY r.created_at DESC LIMIT 5;"
+
+      - name: Recent import jobs
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          psql "$PROD_DATABASE_URL" -X -c "
+            SELECT j.status, j.total_rows, j.processed_rows, j.created_rows,
+                   j.skipped_rows, j.failed_rows,
+                   to_char(j.created_at AT TIME ZONE 'Asia/Kolkata', 'DD Mon HH24:MI') AS started
+            FROM ipy_import_job j
+            ORDER BY j.created_at DESC LIMIT 6;"

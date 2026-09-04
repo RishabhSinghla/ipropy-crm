@@ -13,6 +13,8 @@ import { registerLeadGreeting } from './integrations/whatsapp/greetNewLead.js';
 import { startScheduler, stopScheduler } from './core/workflow/scheduler.js';
 import { initRealtime, closeRealtime } from './realtime.js';
 import { aiStatus } from './ai/client.js';
+import { recoverOrphanedImports } from './core/import/recover.js';
+import { db } from './db/pool.js';
 
 async function main(): Promise<void> {
   logger.info('starting iPropy CRM server…');
@@ -60,6 +62,11 @@ async function main(): Promise<void> {
   registerLifecycleSync();
   // A new enquiry gets its WhatsApp hello before anybody picks up the phone.
   registerLeadGreeting();
+
+  // Imports live in this process. Anything still marked running at boot died
+  // with the previous container — say so on the import screen rather than
+  // leaving a job that looks alive.
+  await recoverOrphanedImports(db);
 
   const app = createApp();
   const server = createServer(app);
