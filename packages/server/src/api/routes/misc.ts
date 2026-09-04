@@ -885,6 +885,61 @@ miscRouter.get('/lead-inbox', asyncHandler(async (req, res) => {
 // Import
 // ---------------------------------------------------------------------------
 
+/**
+ * A fill-in template for this module: one column per importable field, with
+ * a sample row that is itself a valid record — picklist cells carry a real
+ * option value, booleans say "yes", dates are ISO. Upload it unchanged and it
+ * simply imports one obviously-sample row; fill it in and it imports yours.
+ * Generated from live metadata, so it can never drift from the importer.
+ */
+miscRouter.get('/import/:module/template', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'records.import');
+  const module = await registry.requireModule(req.params.module);
+
+  const fields = module.fields.filter(
+    (f) => f.isActive && !f.isReadonly && f.displayType !== 'hidden',
+  );
+
+  const sampleFor = (f: typeof module.fields[number]): string => {
+    switch (f.uitype) {
+      case 'picklist': return f.options?.find((o) => o.isActive)?.value ?? '';
+      case 'multipicklist':
+      case 'tags': return (f.options ?? []).filter((o) => o.isActive).slice(0, 2).map((o) => o.value).join('; ');
+      case 'boolean': return 'yes';
+      case 'date': return '2026-01-15';
+      case 'datetime': return '2026-01-15 10:30';
+      case 'phone': return '9876543210';
+      case 'email': return 'name@example.com';
+      case 'url': return 'https://example.com';
+      case 'currency': return '1500000';
+      case 'area': return '1250';
+      case 'integer': case 'decimal': case 'percent': case 'score': return '10';
+      case 'string': return 'Sample text';
+      case 'textarea': case 'richtext': return 'Sample text';
+      // Composite and machine-managed types get no sample: blank is always a
+      // valid import, and guessing a shape teaches the wrong format.
+      default: return '';
+    }
+  };
+
+  const escape = (cell: string): string =>
+    /[",\n]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell;
+
+  // A required field gets the star. Header matching normalises away
+  // everything but letters and numbers, so "Full Name *" still maps to
+  // Full Name — the marker teaches without breaking the match.
+  const header = fields.map((f) => escape(f.isMandatory ? `${f.label} *` : f.label)).join(',');
+  const row = fields.map((f) => escape(sampleFor(f))).join(',');
+  // BOM first: Excel only reads the accents in Indian names correctly with it.
+  const csv = `\uFEFF${header}\n${row}\n`;
+
+  const safe = module.label.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '') || 'import';
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${safe}-import-template.csv"`);
+  res.send(csv);
+}));
+
 miscRouter.post('/import/:module/preview', upload.single('file'), asyncHandler(async (req, res) => {
   const user = getUser(req);
   await assertCapability(user, 'records.import');

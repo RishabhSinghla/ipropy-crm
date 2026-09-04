@@ -3,8 +3,8 @@ import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
-import { Database, FileUp, Upload } from 'lucide-react';
-import { api } from '../../lib/api';
+import { Database, Download, FileUp, Upload } from 'lucide-react';
+import { api, authedFileUrl } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
 import { cn } from '../../lib/utils';
 import { Badge, EmptyState, Modal, Select, Skeleton, Spinner } from '../../components/ui';
@@ -127,6 +127,15 @@ export default function ImportAdmin(): JSX.Element {
               onChange={(e) => { const f = e.target.files?.[0]; if (f) void analyse(f); e.target.value = ''; }}
             />
           </label>
+
+          <a
+            className="btn-secondary btn-sm"
+            href={authedFileUrl(`/api/import/${moduleName}/template`)}
+            download
+            title="A ready-made sheet with the right columns and one example row"
+          >
+            <Download className="h-4 w-4" /> Template CSV
+          </a>
 
           {preview && (
             <div className="w-52">
