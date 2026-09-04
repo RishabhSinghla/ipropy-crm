@@ -850,6 +850,7 @@ async function prepareValues(
     opts.isCreate ? out.values : input,
     opts.isCreate,
     { ...(opts.existing ?? {}), ...out.values },
+    module.requireOneOf,
   );
   // Format, range and cross-field rules, against the stored record merged with
   // this payload — a partial update of "budget from" must still be checked

@@ -257,6 +257,9 @@ async function load(conn: Tx = db): Promise<RegistryCache> {
       labelFields: m.label_fields ?? [],
       pipelineField: m.pipeline_field,
       duplicateCheckFields: m.duplicate_check_fields ?? [],
+      requireOneOf: Array.isArray(m.settings?.requireOneOf)
+        ? (m.settings.requireOneOf as string[][]).filter((g) => Array.isArray(g) && g.length > 1)
+        : [],
       supportsComments: m.supports_comments,
       supportsAttachments: m.supports_attachments,
       supportsWorkflow: m.supports_workflow,

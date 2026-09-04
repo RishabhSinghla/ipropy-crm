@@ -52,6 +52,11 @@ export interface ModuleDef {
   blocks: BlockDef[];
   relations?: RelationDef[];
   views?: ViewDef[];
+  /**
+   * Module-level rules that are not structure. Filled in only when absent, so
+   * an admin's change survives a cold start.
+   */
+  settings?: Record<string, unknown>;
 }
 
 export interface RelationDef {
@@ -261,21 +266,29 @@ export async function upsertModule(conn: Tx, def: ModuleDef): Promise<string> {
   const row = await conn.queryOne<{ id: string }>(
     `INSERT INTO ipy_module
       (name, label, singular_label, table_name, icon, color, sequence, menu_group,
-       show_in_menu, label_fields, pipeline_field, duplicate_check_fields, supports_conversion)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+       show_in_menu, label_fields, pipeline_field, duplicate_check_fields, supports_conversion,
+       settings)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
      ON CONFLICT (name) DO UPDATE SET
        label = EXCLUDED.label, singular_label = EXCLUDED.singular_label,
        icon = EXCLUDED.icon, color = EXCLUDED.color, sequence = EXCLUDED.sequence,
        menu_group = EXCLUDED.menu_group, show_in_menu = EXCLUDED.show_in_menu,
        label_fields = EXCLUDED.label_fields, pipeline_field = EXCLUDED.pipeline_field,
        duplicate_check_fields = EXCLUDED.duplicate_check_fields,
-       supports_conversion = EXCLUDED.supports_conversion, updated_at = now()
+       supports_conversion = EXCLUDED.supports_conversion,
+       -- Structure upserts; settings do not. An admin who changes a validation
+       -- rule must not have it undone by the next cold start, so each key is
+       -- filled in only when it is absent. Same reasoning as is_customised on
+       -- a field.
+       settings = EXCLUDED.settings || ipy_module.settings,
+       updated_at = now()
      RETURNING id`,
     [
       def.name, def.label, def.singular, def.table, def.icon, def.color, def.sequence,
       def.menuGroup ?? 'CRM', def.showInMenu ?? true,
       JSON.stringify(def.labelFields), def.pipelineField ?? null,
       JSON.stringify(def.duplicateCheckFields ?? []), def.supportsConversion ?? false,
+      JSON.stringify(def.settings ?? {}),
     ],
   );
   const moduleId = row!.id;

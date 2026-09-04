@@ -515,6 +515,15 @@ export interface ModuleMeta {
   pipelineField: string | null;
   /** duplicate-check field names */
   duplicateCheckFields: string[];
+  /**
+   * Groups of fields where at least one must be filled in.
+   *
+   * `[['mobile', 'email']]` means a lead needs one of the two, and does not
+   * care which. Expressed as a rule on the module rather than a flag on a field
+   * because it is a statement about a *pair* — neither field is mandatory on
+   * its own, which is exactly what a per-field `isMandatory` cannot say.
+   */
+  requireOneOf: string[][];
   supportsComments: boolean;
   supportsAttachments: boolean;
   supportsWorkflow: boolean;

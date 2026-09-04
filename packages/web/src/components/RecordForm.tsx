@@ -250,6 +250,34 @@ export default function RecordForm({
       }
     }
 
+    /*
+      "At least one of these" — a rule about a pair, held on the module.
+
+      Mobile is no longer mandatory on its own, because an email-only enquiry is
+      a real enquiry. Without this the form would happily submit a lead with
+      neither and the server would refuse it, which is the mismatch the comment
+      below promises does not happen.
+    */
+    for (const group of module.requireOneOf ?? []) {
+      const live = group
+        .map((name) => fieldMap.get(name))
+        .filter((f) => f && !f.isReadonly && f.displayType !== 'hidden' && isVisible(f));
+      if (!live.length) continue;
+
+      const anyFilled = live.some((f) => {
+        const v = values[f!.name];
+        return !(v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0));
+      });
+      if (anyFilled) continue;
+
+      const labels = live.map((f) => f!.label);
+      const message = labels.length === 1
+        ? `${labels[0]} is required`
+        : `${labels.slice(0, -1).join(', ')} or ${labels[labels.length - 1]} is required`;
+      // Marked on every field in the group, so the reader can see which two.
+      for (const f of live) next[f!.name] ??= message;
+    }
+
     // Format, range and cross-field rules — the same code the server runs, so
     // the form can never accept something the API will reject, or vice versa.
     for (const err of collectFieldErrors(module.fields, values, { ...(record?.values ?? {}), ...values })) {

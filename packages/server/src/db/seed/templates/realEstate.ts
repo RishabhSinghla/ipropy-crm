@@ -43,6 +43,15 @@ const MODULES: ModuleDef[] = [
     labelFields: ['full_name'],
     pipelineField: 'status',
     duplicateCheckFields: ['mobile', 'email'],
+    /*
+      A lead needs one way to reach them, not one particular way.
+
+      `mobile` used to be mandatory on its own, which refused every email-only
+      and NRI enquiry outright. What a rep does when a form will not save is type
+      a fake number, so the strict rule produced worse data than the loose one
+      and produced it permanently. Neither field is mandatory now; the pair is.
+    */
+    settings: { requireOneOf: [['mobile', 'email']] },
     supportsConversion: true,
     blocks: [
       {
@@ -59,8 +68,9 @@ const MODULES: ModuleDef[] = [
           // field — `codePrefix` — that the phone control paints in front of
           // the box and nothing has to fill in. Change it in one place and
           // every create form, every list and every WhatsApp link follows.
+          // Not mandatory on its own — see `requireOneOf` on the module above.
           F.phone('mobile', 'Mobile', {
-            mandatory: true, quickCreate: true, maxLength: 10,
+            quickCreate: true, maxLength: 10,
             config: { digits: 10, codePrefix: '+91' },
             help: 'Ten digits, without the country code',
           }),

@@ -394,6 +394,7 @@ export function validateRequired(
   values: Record<string, unknown>,
   isCreate: boolean,
   merged: Record<string, unknown> = values,
+  requireOneOf: string[][] = [],
 ): void {
   const errors: { field: string; message: string }[] = [];
   for (const f of fields) {
@@ -409,7 +410,42 @@ export function validateRequired(
       errors.push({ field: f.name, message: `${f.label} is required` });
     }
   }
+  /*
+    "At least one of these" — a rule about a pair, which no per-field flag can say.
+
+    `mobile` was mandatory on its own, so a lead with only an email address could
+    not be saved at all. That rejects the email-only and NRI enquiries this
+    business actually gets, and what a rep does about it is type a fake number to
+    get past the form — so the strict rule produced worse data than the loose one
+    would have, and produced it permanently.
+
+    Checked against `merged` rather than `values`, so a partial update touching
+    neither field does not fail on values already stored. Both empty is still a
+    record nobody can contact, and that is still refused.
+  */
+  for (const group of requireOneOf) {
+    const live = group.filter((name) => {
+      const f = fields.find((x) => x.name === name);
+      return f?.isActive && f.displayType !== 'hidden';
+    });
+    // A group whose fields have all been deleted or hidden is not a rule any
+    // more. Enforcing it would be unsatisfiable — there would be nothing on
+    // screen to fill in.
+    if (!live.length) continue;
+    if (live.some((name) => !isEmpty(merged[name]))) continue;
+
+    const labels = live.map((name) => fields.find((f) => f.name === name)?.label ?? name);
+    const message = labels.length === 1
+      ? `${labels[0]} is required`
+      : `${labels.slice(0, -1).join(', ')} or ${labels[labels.length - 1]} is required`;
+    // The same message on every field in the group, so the form marks them all.
+    for (const name of live) errors.push({ field: name, message });
+  }
+
+
   if (errors.length) {
-    throw new ValidationError(errors.map((e) => e.message).join('; '), { fields: errors });
+    // One "Mobile or Email is required" in the summary, not one per field.
+    const summary = [...new Set(errors.map((e) => e.message))];
+    throw new ValidationError(summary.join('; '), { fields: errors });
   }
 }
