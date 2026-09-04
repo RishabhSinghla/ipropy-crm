@@ -923,6 +923,12 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
 
   const mapping = JSON.parse(String(req.body.mapping ?? '{}')) as Record<string, string>;
   const duplicateHandling = String(req.body.duplicateHandling ?? 'skip') as 'skip' | 'overwrite' | 'create';
+  // Automations (instant greeting → the outreach queue, scoring, first-call
+  // tasks) fire per record through the workflow engine. On a bulk import that
+  // meant a queue of hundreds of WhatsApp greetings nobody asked for, and a
+  // row-by-row crawl while each one was evaluated. Off by default now; the
+  // import form opts in explicitly.
+  const runWorkflows = String(req.body.runWorkflows ?? 'false') === 'true';
   const module = await registry.requireModule(req.params.module);
   const { rows } = parseCsv(file.buffer.toString('utf8'));
 
@@ -951,6 +957,7 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
       try {
         await recordService.createRecord(scope, module.name, values, {
           skipDuplicateCheck: duplicateHandling === 'create',
+          skipWorkflow: !runWorkflows,
         });
         created++;
       } catch (err) {

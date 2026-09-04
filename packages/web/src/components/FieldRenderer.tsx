@@ -97,13 +97,16 @@ export function FieldValue({
 
     case 'phone': {
       // The server joins the country code onto the number (see
-      // resolveDisplayValues), so this shows one value — "+91 98115 33636" —
+      // resolveDisplayValues), so this shows one value — "+91 9811533636" —
       // instead of a bare ten digits beside a separate Country chip.
       const shown = display || formatPhone(String(value));
+      // Plain text colour, like the name beside it. The number used to sit in
+      // the brand blue, which read as decoration on something reps dial from.
+      // Still a link, still underlines on hover, no longer shouting.
       return (
         <a
           href={`tel:${shown.replace(/[^\d+]/g, '') || value}`}
-          className="inline-flex items-center gap-1 text-brand-600 hover:underline dark:text-brand-400 tnum"
+          className="inline-flex items-center gap-1 text-slate-900 hover:underline dark:text-slate-100 tnum"
         >
           {!compact && <Phone className="h-3 w-3" />}
           {shown}

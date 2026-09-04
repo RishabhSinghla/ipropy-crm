@@ -26,6 +26,10 @@ export default function ImportAdmin(): JSX.Element {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [duplicateHandling, setDuplicateHandling] = useState('skip');
+  // Off on purpose: an import that queues five hundred WhatsApp greetings is
+  // the failure this checkbox exists to prevent. Automations stay one tick
+  // away for the day they are wanted.
+  const [runWorkflows, setRunWorkflows] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const { data: jobs } = useQuery({
@@ -53,7 +57,7 @@ export default function ImportAdmin(): JSX.Element {
     if (!file) return;
     setBusy(true);
     try {
-      const result = await api.runImport(moduleName, file, mapping, duplicateHandling);
+      const result = await api.runImport(moduleName, file, mapping, duplicateHandling, runWorkflows);
       toast.success('Import started', `${result.totalRows} rows queued — progress appears below.`);
       setFile(null);
       setPreview(null);
@@ -113,6 +117,18 @@ export default function ImportAdmin(): JSX.Element {
                 ]}
               />
             </div>
+          )}
+
+          {preview && (
+            <label className="flex cursor-pointer items-center gap-2 pb-0.5">
+              <input
+                type="checkbox"
+                checked={runWorkflows}
+                onChange={(e) => setRunWorkflows(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              <span className="text-sm">Run automations (greeting queue, scoring, tasks)</span>
+            </label>
           )}
 
           {preview && (

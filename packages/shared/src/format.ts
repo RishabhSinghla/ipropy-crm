@@ -121,21 +121,25 @@ export function formatPercent(value: number | null | undefined, decimals = 1): s
 export function formatPhone(value: string | null | undefined): string {
   if (!value) return '—';
   const digits = value.replace(/\D/g, '');
-  if (digits.length === 10) return `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`;
+  if (digits.length === 10) return `+91 ${digits}`;
   if (digits.length === 12 && digits.startsWith('91')) {
-    return `+91 ${digits.slice(2, 7)} ${digits.slice(7)}`;
+    return `+91 ${digits.slice(2)}`;
   }
   return value;
 }
 
 /**
- * A number the way a person reads it: "+91 98115 33636".
+ * A number the way a person reads it: "+91 9811533636".
  *
  * The code and the national number are stored apart (see `toInternational`),
  * but nobody wants to read them apart — a lead's mobile should look like one
  * value everywhere it is displayed, not a "Country" chip next to a bare ten
- * digits. Grouping follows the length, so a nine-digit UAE number does not get
- * India's 5-5 split.
+ * digits.
+ *
+ * The national digits used to be grouped 5-5, the way Indian numbers print on
+ * cards. The owner asked for them unbroken: reps read the tail of a number
+ * off the screen while dialling, and the split is one more thing to skip
+ * over. So the digits run together, whatever their length.
  */
 export function formatPhoneWithCode(
   countryCode: string | null | undefined,
@@ -144,13 +148,8 @@ export function formatPhoneWithCode(
   const digits = (national ?? '').replace(/\D/g, '');
   if (!digits) return '—';
   const code = (countryCode ?? '').trim();
-  const grouped = digits.length === 10
-    ? `${digits.slice(0, 5)} ${digits.slice(5)}`
-    : digits.length > 6
-      ? `${digits.slice(0, digits.length - 4)} ${digits.slice(-4)}`
-      : digits;
   if (!code) return formatPhone(digits);
-  return `${code.startsWith('+') ? code : `+${code}`} ${grouped}`;
+  return `${code.startsWith('+') ? code : `+${code}`} ${digits}`;
 }
 
 /** Normalise a phone number to E.164 for WhatsApp/telephony providers. */

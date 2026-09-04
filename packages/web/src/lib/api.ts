@@ -989,11 +989,12 @@ export const api = {
       `/api/import/${module}/preview`, { method: 'POST', body: form },
     );
   },
-  runImport: (module: string, file: File, mapping: Record<string, string>, duplicateHandling: string) => {
+  runImport: (module: string, file: File, mapping: Record<string, string>, duplicateHandling: string, runWorkflows = false) => {
     const form = new FormData();
     form.append('file', file);
     form.append('mapping', JSON.stringify(mapping));
     form.append('duplicateHandling', duplicateHandling);
+    form.append('runWorkflows', String(runWorkflows));
     return request<{ jobId: string; totalRows: number }>(`/api/import/${module}`, { method: 'POST', body: form });
   },
   importJobs: () => get<Record<string, unknown>[]>('/api/import/jobs'),
