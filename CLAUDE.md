@@ -312,15 +312,25 @@ back into TypeScript would reverse that.
   again. `node_modules` is 456 MB. **The symptom is a fix that never reaches
   production while everything looks green**, so check
   `gh api repos/OWNER/REPO/deployments` and its `/statuses` before assuming a
-  deploy is merely slow. A retry usually works; Starter would stop it happening.
+  deploy is merely slow. A retry usually works. The paid instance since 4 September should stop it, but
+  that is an expectation rather than something observed yet.
 * **A markdown-only commit never deploys, and that is correct.** CI has
   `paths-ignore: '**/*.md'` to save billed minutes, so no checks run, so
   `checksPass` has nothing to wait for. Surprising once, then obvious.
 * **Render is on the paid instance.** `render.yaml` declares `plan: 0.5c-512mb`
   ($7/month, always on); deployed 4 September 2026. The scheduler no longer
   sleeps with the site.
-* **Demo logins are still on production.** `npm run go-live:users`.
-* No domain, no error-reporting DSN pasted in, no staging environment.
+* **The demo logins are gone from production.** `go-live:users` has been run: the
+  4 September deploy seeded `users ✓ (1)`, a single real account. The twelve
+  demo users sharing a password published in this repo no longer exist there.
+* **Production answers on `crm.ipropy.com`**, with `ipropy-crm.onrender.com` still
+  working alongside it. DNS is at **Wix**, not GoDaddy — GoDaddy is only the
+  registrar, its DNS page is ignored, and a record typed there does nothing. The
+  subdomain is one CNAME to `ipropy-crm.onrender.com`, and `APP_URL` must list
+  every origin the app answers on or the browser is refused and **passkey sign-in
+  breaks**, since the relying-party check reads that list.
+* Still open: no error-reporting DSN pasted in (the Sentry code is complete and
+  applies a pasted DSN without a redeploy), and no staging environment.
 
 ### Two bugs the restored gate caught immediately
 
