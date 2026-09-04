@@ -51,10 +51,6 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Security audit
-        # Include development tooling too: a compromised build dependency can
-        # still alter the production bundle that this job publishes evidence for.
-        run: npm audit --audit-level=moderate
       - name: Typecheck
         run: npm run typecheck
       - name: Build
@@ -63,6 +59,23 @@ jobs:
         run: npm test
       - name: Integration tests
         run: npm run test:integration
+      # Last, not first.
+      #
+      # This ran before the tests and failed on a published advisory in a
+      # transitive dependency. A failed step skips every step after it, so
+      # typecheck, build and both test suites did not run at all — for days,
+      # across every push, while the runs showed red for a reason that had
+      # nothing to do with the code in them. Five fixes went out believing CI
+      # had checked them; it had checked nothing.
+      #
+      # A stale advisory in somebody else's package should not be able to hide
+      # whether this code compiles and passes its tests. It still fails the
+      # build, so the deploy gate still holds and the security signal is not
+      # lost. It just no longer costs every other signal alongside it.
+      - name: Security audit
+        # Development tooling included: a compromised build dependency can still
+        # alter the production bundle this job publishes evidence for.
+        run: npm audit --audit-level=moderate
 
   # Build the image Render actually deploys.
   #
