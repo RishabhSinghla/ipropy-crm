@@ -145,7 +145,7 @@ export async function seed(): Promise<void> {
   } else {
     logger.info(`   Password: ${config.seed.adminPassword}`);
     if (config.seed.demoData) {
-      logger.info('   Demo users share the same password (e.g. priya.sharma@ipropy.com — Sales Head).');
+      logger.info('   Demo users share the same password (e.g. priya.sharma@ipropy.com — Sales Manager).');
     }
   }
   logger.info('');

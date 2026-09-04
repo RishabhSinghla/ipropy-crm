@@ -118,7 +118,7 @@ async function getRoleTree(conn: Tx = db): Promise<Map<string, string[]>> {
  * pipeline, which is the exact thing record ownership exists to prevent.
  *
  * A manager still sees their reports: Sales Executive sits under Regional Sales
- * Manager under Sales Head, so those roles are descendants rather than peers.
+ * Manager under Administrator, so those roles are descendants rather than peers.
  * Two people who genuinely should share a queue get a sharing rule or a group,
  * both of which say so explicitly.
  */
