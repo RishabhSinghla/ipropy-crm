@@ -26,7 +26,22 @@ test('clicking a value in the list does not turn it into an edit box', async ({ 
 });
 
 test('a record opens in a new tab, leaving the list where it was', async ({ page, context }) => {
-  const listUrl = page.url();
+  // The list mirrors its state into the URL once the active view resolves —
+  // a beat after the heading appears (ListView's setSearchParams with
+  // replace:true writes ?view=…&sort=… for the default view). Capturing
+  // "where the list was" before that lands races the mirror: the click then
+  // looks like it moved the list when the mirror merely caught up. Wait for
+  // the URL to hold still first.
+  const listUrl = await (async () => {
+    let url = page.url();
+    for (let i = 0; i < 20; i++) {
+      await page.waitForTimeout(250);
+      const next = page.url();
+      if (next === url) return url;
+      url = next;
+    }
+    return url;
+  })();
 
   const opened = context.waitForEvent('page');
   // The whole <tr> carries the click, so target the record-number cell: it holds
