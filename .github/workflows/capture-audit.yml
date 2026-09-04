@@ -30,16 +30,17 @@ jobs:
           test -n "$PROD_DATABASE_URL" || { echo "PROD_DATABASE_URL is not set"; exit 1; }
           psql "$PROD_DATABASE_URL" -X -c "
             SELECT source, status, external_id,
-                   to_char(created_at AT TIME ZONE 'Asia/Kolkata', 'DD Mon HH24:MI') AS arrived
+                   left(error, 100) AS error,
+                   to_char(received_at AT TIME ZONE 'Asia/Kolkata', 'DD Mon HH24:MI') AS arrived
             FROM ipy_lead_inbox
-            ORDER BY created_at DESC LIMIT 8;"
+            ORDER BY received_at DESC LIMIT 8;"
 
       - name: Facebook-sourced leads
         env:
           PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
         run: |
           psql "$PROD_DATABASE_URL" -X -c "
-            SELECT lead_number, full_name, lead_source, sub_source,
+            SELECT lead_number, full_name, lead_source,
                    to_char(created_at AT TIME ZONE 'Asia/Kolkata', 'DD Mon HH24:MI') AS created
             FROM ipy_e_leads
             WHERE lead_source = 'facebook'
