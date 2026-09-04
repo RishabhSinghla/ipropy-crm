@@ -31,8 +31,7 @@ interface Lead {
   interested_project: string | null;
   configuration: unknown;
   preferred_locations: unknown;
-  budget_min: number | null;
-  budget_max: number | null;
+  budget: number | null;
   possession_timeline: string | null;
   description: string | null;
   owner_id: string | null;
@@ -82,7 +81,7 @@ async function matchingUnits(lead: Lead): Promise<string[]> {
         AND ($3::numeric IS NULL OR (to_jsonb(p)->>'base_price')::numeric <= $3 * 1.15)
       ORDER BY r.updated_at DESC
       LIMIT 2`,
-    [configurations, localities, lead.budget_max],
+    [configurations, localities, lead.budget],
   );
   return rows.map((r) => [r.label, r.configuration, r.locality].filter(Boolean).join(' '));
 }
@@ -126,7 +125,7 @@ export async function draftFirstReply(recordId: string): Promise<void> {
       lead.interested_project && `asked about ${lead.interested_project}`,
       asList(lead.configuration) && `wants ${asList(lead.configuration)}`,
       asList(lead.preferred_locations) && `in ${asList(lead.preferred_locations)}`,
-      lead.budget_max && `budget up to ${lead.budget_max}`,
+      lead.budget && `budget around ${lead.budget}`,
       lead.possession_timeline && `possession ${lead.possession_timeline}`,
     ].filter(Boolean).join(', ');
 

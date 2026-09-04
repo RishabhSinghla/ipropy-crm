@@ -72,8 +72,7 @@ describe('a lead field somebody removed', () => {
     const lead = await recordService.createRecord(ctx, 'leads', {
       full_name: 'Requirement Survives',
       mobile: `9${String(Date.now()).slice(-9)}`,
-      budget_min: 5_000_000,
-      budget_max: 9_000_000,
+      budget: 9_000_000,
     });
 
     // Works before.
@@ -85,7 +84,7 @@ describe('a lead field somebody removed', () => {
     // 42703 and property matching answered 400 on every lead in the CRM.
     const requirement = await loadRequirement(lead.id);
     expect(requirement).not.toBeNull();
-    expect(requirement?.budgetMin).toBe(5_000_000);
+    expect(requirement?.budget).toBe(9_000_000);
     // The removed field reads as absent rather than exploding.
     expect(requirement?.projectName ?? null).toBeNull();
   });
@@ -97,7 +96,7 @@ describe('the fields the engine reads', () => {
     // refused; deleting one was not, and deleting is the worse of the two.
     const field = await db.queryOne<{ id: string }>(
       `SELECT f.id FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
-        WHERE m.name = 'leads' AND f.name = 'budget_min'`,
+        WHERE m.name = 'leads' AND f.name = 'budget'`,
     );
     expect(field).toBeTruthy();
 

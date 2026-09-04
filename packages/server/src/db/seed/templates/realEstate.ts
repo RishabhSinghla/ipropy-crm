@@ -131,8 +131,7 @@ const MODULES: ModuleDef[] = [
           F.pick('property_type', 'Property Type', 'property_type'),
           F.multipick('configuration', 'Configuration', 'configuration'),
           F.pick('purpose', 'Purpose', 'purpose'),
-          F.money('budget_min', 'Budget (Min)', { quickCreate: true, config: { min: 0, notAfterField: 'budget_max' } }),
-          F.money('budget_max', 'Budget (Max)', { quickCreate: true, config: { min: 0 } }),
+          F.money('budget', 'Budget / Demand', { quickCreate: true, config: { min: 0 } }),
           F.pick('budget_band', 'Budget Band', 'budget_band'),
           F.multipick('preferred_locations', 'Preferred Locations', 'locality'),
           // One area with its own unit, not a min/max pair. A buyer says "about
@@ -266,7 +265,7 @@ const MODULES: ModuleDef[] = [
     views: [
       {
         name: 'All Records', isDefault: true, showMetrics: true,
-        columns: ['lead_number', 'full_name', 'mobile', 'lifecycle_stage', 'status', 'lead_source', 'ai_score', 'budget_max', 'owner_id'],
+        columns: ['lead_number', 'full_name', 'mobile', 'lifecycle_stage', 'status', 'lead_source', 'ai_score', 'budget', 'owner_id'],
         sortBy: 'created_at',
       },
       {
@@ -302,7 +301,7 @@ const MODULES: ModuleDef[] = [
       },
       {
         name: 'Hot Leads',
-        columns: ['full_name', 'mobile', 'ai_score', 'budget_max', 'next_followup_at', 'owner_id'],
+        columns: ['full_name', 'mobile', 'ai_score', 'budget', 'next_followup_at', 'owner_id'],
         filter: { logic: 'AND', conditions: [{ field: 'ai_score', operator: 'greater_or_equal', value: 70 }, { field: 'is_converted', operator: 'is_false' }] },
         sortBy: 'ai_score',
       },
@@ -326,7 +325,7 @@ const MODULES: ModuleDef[] = [
       },
       {
         name: 'Pipeline', displayMode: 'kanban', groupBy: 'status',
-        columns: ['full_name', 'mobile', 'ai_score', 'budget_max', 'owner_id'],
+        columns: ['full_name', 'mobile', 'ai_score', 'budget', 'owner_id'],
         filter: { logic: 'AND', conditions: [{ field: 'is_converted', operator: 'is_false' }] },
       },
     ],

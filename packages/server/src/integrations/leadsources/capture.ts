@@ -147,8 +147,7 @@ export async function captureLead(
       interested_project: normalized.projectName ?? null,
       configuration: normalized.configuration ?? [],
       preferred_locations: normalized.locations ?? [],
-      budget_min: normalized.budgetMin ?? null,
-      budget_max: normalized.budgetMax ?? null,
+      budget: normalized.budgetMax ?? normalized.budgetMin ?? null,
       possession_timeline: normalized.timeline ?? null,
       purpose: normalized.purpose ?? null,
       utm_source: normalized.utm?.utm_source ?? null,
@@ -224,13 +223,13 @@ async function findRecentLead(
 /** A repeat enquiry is a buying signal — record it rather than discarding it. */
 async function enrichExistingLead(recordId: string, normalized: NormalizedLead): Promise<void> {
   const updates: Record<string, unknown> = {};
-  const current = await db.queryOne<{ email: string | null; budget_max: number | null; description: string | null; contact_attempts: number }>(
-    `SELECT email, budget_max, description, contact_attempts FROM ipy_e_leads WHERE record_id = $1`,
+  const current = await db.queryOne<{ email: string | null; budget: number | null; description: string | null; contact_attempts: number }>(
+    `SELECT email, budget, description, contact_attempts FROM ipy_e_leads WHERE record_id = $1`,
     [recordId],
   );
 
   if (!current?.email && normalized.email) updates.email = normalized.email;
-  if (!current?.budget_max && normalized.budgetMax) updates.budget_max = normalized.budgetMax;
+  if (!current?.budget && normalized.budgetMax) updates.budget = normalized.budgetMax ?? normalized.budgetMin;
 
   const note = `[Repeat enquiry ${new Date().toLocaleDateString('en-IN')} via ${normalized.source}]${
     normalized.message ? ` ${normalized.message}` : ''}`;

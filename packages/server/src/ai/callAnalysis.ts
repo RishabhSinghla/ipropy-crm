@@ -143,7 +143,7 @@ Return JSON:
   "talkRatio": <estimated % of the call the AGENT spoke, 0-100, or null>,
   "score": <call quality 0-100: did the rep qualify, handle objections, and secure a next step?>,
   "extractedFields": {
-    "budget_max": <number in rupees if a budget was stated, else omit>,
+    "budget": <number in rupees if a budget was stated, else omit>,
     "possession_timeline": <"Immediate" | "Within 1 Month" | "1-3 Months" | "3-6 Months" | "6-12 Months" | "Just Exploring", if stated>,
     "configuration": [<BHK types mentioned, e.g. "3 BHK">],
     "preferred_locations": [<areas mentioned>],
@@ -320,7 +320,7 @@ async function applyExtractedFields(
  * stays empty and a person fills it, which is exactly where it was before.
  */
 function plausibleMoney(field: string, value: unknown): boolean {
-  const MONEY_FIELDS = new Set(['budget_min', 'budget_max', 'annual_income', 'lifetime_value']);
+  const MONEY_FIELDS = new Set(['budget', 'annual_income', 'lifetime_value']);
   if (!MONEY_FIELDS.has(field)) return true;
   const amount = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(amount)) return false;

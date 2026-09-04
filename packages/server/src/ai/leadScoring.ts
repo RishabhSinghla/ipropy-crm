@@ -81,7 +81,7 @@ async function loadContext(recordId: string): Promise<LeadContext | null> {
 
 /** How many available units actually fit this buyer? Zero is a real risk. */
 async function countMatchingInventory(lead: Record<string, unknown>): Promise<number> {
-  const budgetMax = Number(lead.budget_max ?? 0);
+  const budgetMax = Number(lead.budget ?? 0);
   if (!budgetMax) return 0;
   const configs = Array.isArray(lead.configuration) ? lead.configuration as string[] : [];
   const row = await db.queryOne<{ count: number }>(
@@ -134,7 +134,7 @@ function applyRules(ctx: LeadContext): RuleOutcome {
   if (sourceScore >= 11) reasons.push(`${source} leads convert well historically`);
 
   // Budget clarity and inventory fit.
-  const budgetMax = Number(v.budget_max ?? 0);
+  const budgetMax = Number(v.budget ?? 0);
   let budgetScore = 0;
   if (budgetMax > 0) {
     budgetScore = 8;
@@ -308,7 +308,7 @@ async function refineWithAi(ctx: LeadContext, rules: RuleOutcome): Promise<LeadS
 ${fenced(fence, 'Name', ctx.label)}
 Status: ${v.status}
 Source: ${v.lead_source}${v.sub_source ? ` (${v.sub_source})` : ''}
-Budget: ${v.budget_min ? formatIndianPrice(Number(v.budget_min)) : '—'} to ${v.budget_max ? formatIndianPrice(Number(v.budget_max)) : '—'}
+Budget: ${v.budget ? formatIndianPrice(Number(v.budget)) : '—'}
 Configuration: ${Array.isArray(v.configuration) ? (v.configuration as string[]).join(', ') : '—'}
 Preferred locations: ${Array.isArray(v.preferred_locations) ? (v.preferred_locations as string[]).join(', ') : '—'}
 Purchase timeline: ${v.possession_timeline ?? '—'}
@@ -385,10 +385,10 @@ function defaultActions(ctx: LeadContext, score: number): string[] {
   else if (ctx.answeredCalls === 0) actions.push('Try WhatsApp — repeated calls have gone unanswered.');
   if (score >= 55 && ctx.answeredCalls === 0) actions.push('Push for a site visit; it is the strongest conversion step.');
   if (score >= 60 && ctx.answeredCalls > 0) actions.push('Share a cost sheet and propose a visit with the family.');
-  if (ctx.matchingInventory === 0 && Number(ctx.values.budget_max ?? 0) > 0) {
+  if (ctx.matchingInventory === 0 && Number(ctx.values.budget ?? 0) > 0) {
     actions.push('No inventory fits the stated budget — re-qualify the budget or offer another project.');
   }
-  if (!ctx.values.budget_max) actions.push('Qualify the budget on the next call.');
+  if (!ctx.values.budget) actions.push('Qualify the budget on the next call.');
   return actions.slice(0, 4);
 }
 

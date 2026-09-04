@@ -249,7 +249,7 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
     const source = pick(sources, i * 2);
     const projectIdx = i % 3;
     const budgetMin = [50 * LAKH, 80 * LAKH, 1.2 * CRORE, 1.8 * CRORE, 2.5 * CRORE][i % 5];
-    const budgetMax = budgetMin * 1.35;
+    const budget = budgetMin;
     const createdDaysAgo = randInt(s, 0, 75);
     const timeline = pick(timelines, i);
 
@@ -259,7 +259,7 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
     else if (timeline === '1-3 Months') score += 12;
     else if (timeline === 'Just Exploring') score -= 12;
     if (['Referral', 'Walk-in', 'Channel Partner'].includes(source)) score += 15;
-    if (budgetMax >= 2 * CRORE) score += 10;
+    if (budget >= 2 * CRORE) score += 10;
     if (['Qualified', 'Site Visit Scheduled', 'Site Visit Done', 'Negotiation'].includes(status)) score += 18;
     if (['Junk', 'Lost'].includes(status)) score -= 30;
     score = Math.max(3, Math.min(97, score + randInt(s * 2, -8, 8)));
@@ -267,7 +267,7 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
     const reasons: string[] = [];
     if (['Immediate', 'Within 1 Month'].includes(timeline)) reasons.push(`Purchase timeline is "${timeline}" — high urgency`);
     if (['Referral', 'Walk-in'].includes(source)) reasons.push(`${source} leads convert ~3x better than paid channels`);
-    if (budgetMax >= 2 * CRORE) reasons.push('Budget comfortably covers available premium inventory');
+    if (budget >= 2 * CRORE) reasons.push('Budget comfortably covers available premium inventory');
     if (status === 'Site Visit Done') reasons.push('Already completed a site visit');
     if (['Junk', 'Lost'].includes(status)) reasons.push('Marked as lost/junk by the rep');
     if (!reasons.length) reasons.push('Limited qualification signal captured so far');
@@ -291,7 +291,7 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
         property_type: 'Apartment',
         configuration: [pick(configs, i), pick(configs, i + 1)],
         purpose: i % 5 === 0 ? 'Investment' : 'Buy',
-        budget_min: budgetMin, budget_max: budgetMax,
+        budget: budget,
         preferred_locations: [projectDefs[projectIdx].locality],
         area: 1000, area_unit: 'sqft',
         possession_timeline: timeline,
@@ -346,7 +346,7 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
         designation: pick(['Product Manager', 'Director', 'Consultant', 'Senior Engineer', 'Founder', 'VP Finance'], i),
         occupation: pick(['Salaried — IT', 'Business Owner', 'Doctor', 'Chartered Accountant', 'Salaried — Non IT'], i),
         annual_income: randInt(s * 2, 25, 90) * LAKH,
-        budget_min: budgetMin, budget_max: budgetMin * 1.4,
+        budget: budgetMin,
         preferred_locations: [projectDefs[projectIdx].locality],
         configuration: [pick(configs, i), pick(configs, i + 1)],
         purpose: i % 8 === 0 ? 'Investment' : 'Buy',

@@ -13,8 +13,8 @@ import { db } from '../db/pool.js';
 import { completeJson, isAiAvailable, saveInsight, REAL_ESTATE_SYSTEM } from './client.js';
 
 export interface Requirement {
-  budgetMin?: number | null;
-  budgetMax?: number | null;
+  /** One stated price. The old min/max pair folded into this single number. */
+  budget?: number | null;
   configurations?: string[];
   locations?: string[];
   /** One stated area, with the unit it was quoted in. */
@@ -85,8 +85,7 @@ export async function loadRequirement(recordId: string): Promise<Requirement | n
   const lead = row?.row;
   if (lead) {
     return {
-      budgetMin: lead.budget_min as number | null,
-      budgetMax: lead.budget_max as number | null,
+      budget: lead.budget as number | null,
       configurations: (lead.configuration as string[]) ?? [],
       locations: (lead.preferred_locations as string[]) ?? [],
       area: lead.area as number | null,
@@ -120,9 +119,11 @@ async function candidateInventory(req: Requirement, limit = 60): Promise<Propert
 }
 
 async function queryInventory(req: Requirement, limit: number): Promise<PropertyRow[]> {
-  // Allow 10% headroom over the stated ceiling — buyers routinely stretch.
-  const maxPrice = req.budgetMax ? req.budgetMax * 1.1 : null;
-  const minPrice = req.budgetMin ? req.budgetMin * 0.8 : null;
+  // Allow 10% headroom over the stated number — buyers routinely stretch —
+  // and 20% underneath, where a smaller config of the same building still
+  // interests them.
+  const maxPrice = req.budget ? req.budget * 1.1 : null;
+  const minPrice = req.budget ? req.budget * 0.8 : null;
 
   const res = await db.query<PropertyRow>(
     `SELECT p.record_id, r.label, p.name, p.configuration, p.carpet_area, p.area_unit, p.total_price,
@@ -172,16 +173,16 @@ function scoreProperty(row: PropertyRow, req: Requirement): ScoredProperty {
   const price = row.total_price ?? row.base_price ?? 0;
 
   // Budget fit — the dominant factor.
-  if (req.budgetMax && price) {
-    const ratio = price / req.budgetMax;
-    if (ratio <= 0.9) { score += 22; reasons.push(`${formatIndianPrice(price)} sits comfortably under the ${formatIndianPrice(req.budgetMax)} budget`); }
+  if (req.budget && price) {
+    const ratio = price / req.budget;
+    if (ratio <= 0.9) { score += 22; reasons.push(`${formatIndianPrice(price)} sits comfortably under the ${formatIndianPrice(req.budget)} budget`); }
     else if (ratio <= 1.0) { score += 18; reasons.push(`${formatIndianPrice(price)} fits the stated budget`); }
     else if (ratio <= 1.05) { score += 6; mismatches.push(`${Math.round((ratio - 1) * 100)}% above budget — negotiable`); }
     else { score -= 15; mismatches.push(`${formatIndianPrice(price)} exceeds the budget by ${Math.round((ratio - 1) * 100)}%`); }
   }
-  if (req.budgetMin && price && price < req.budgetMin * 0.7) {
+  if (req.budget && price && price < req.budget * 0.7) {
     score -= 8;
-    mismatches.push('Well below the buyer\'s stated range — may read as a downgrade');
+    mismatches.push('Well below the buyer\'s stated budget — may read as a downgrade');
   }
 
   // Configuration.
@@ -361,7 +362,7 @@ async function addNarrative(
   recordId?: string,
 ): Promise<PropertyMatch[] | null> {
   const prompt = `A buyer has this requirement:
-- Budget: ${req.budgetMin ? formatIndianPrice(req.budgetMin) : '—'} to ${req.budgetMax ? formatIndianPrice(req.budgetMax) : '—'}
+- Budget: ${req.budget ? formatIndianPrice(req.budget) : '—'}
 - Configuration: ${req.configurations?.join(', ') || '—'}
 - Preferred locations: ${req.locations?.join(', ') || '—'}
 - Area: ${req.area ?? '—'} ${req.areaUnit ?? 'sqft'}
@@ -444,14 +445,14 @@ function revivalReason(
 ): string | null {
   if (!lostReason) return null;
   const price = property.total_price ?? property.base_price ?? 0;
-  const inBudget = Boolean(req.budgetMax && price && price <= req.budgetMax);
+  const inBudget = Boolean(req.budget && price && price <= req.budget);
 
   switch (lostReason) {
     // The objection was a number, and the number has changed.
     case 'Price Too High':
     case 'Budget Mismatch':
       return inBudget
-        ? `Lost on price — this one is ${formatIndianPrice(price)}, inside their ${formatIndianPrice(req.budgetMax!)} budget`
+        ? `Lost on price — this one is ${formatIndianPrice(price)}, inside their ${formatIndianPrice(req.budget!)} budget`
         : null;
 
     // They wanted something we did not have. Now we do.
@@ -545,16 +546,16 @@ export async function matchBuyersForProperty(propertyId: string, limit = 10): Pr
 
   const price = property.total_price ?? property.base_price ?? 0;
 
-  const leads = await db.query<{ record_id: string; label: string; owner_id: string | null; budget_min: number | null; budget_max: number | null; configuration: string[] | null; preferred_locations: string[] | null; possession_timeline: string | null; purpose: string | null; status: string; lost_reason: string | null }>(
+  const leads = await db.query<{ record_id: string; label: string; owner_id: string | null; budget: number | null; configuration: string[] | null; preferred_locations: string[] | null; possession_timeline: string | null; purpose: string | null; status: string; lost_reason: string | null }>(
     // Lost leads are in scope now; Junk never is. A wrong number, a broker
     // fishing or a test entry does not become a buyer because a unit appeared,
     // and `revivalReason` is what decides which of the Lost are worth raising.
     //
-    // The budget bounds are relaxed for them: somebody lost on price stated a
-    // ceiling *before* saying no, and the whole point is that this unit may now
+    // The budget bound is relaxed for them: somebody lost on price stated a
+    // number *before* saying no, and the whole point is that this unit may now
     // sit under it — filtering on the same ±band as a live lead would drop
     // exactly the ones worth reviving.
-    `SELECT l.record_id, r.label, r.owner_id, l.budget_min, l.budget_max,
+    `SELECT l.record_id, r.label, r.owner_id, l.budget,
             l.configuration, l.preferred_locations, l.possession_timeline, l.purpose,
             l.status, l.lost_reason
      FROM ipy_e_leads l JOIN ipy_record r ON r.id = l.record_id
@@ -562,8 +563,7 @@ export async function matchBuyersForProperty(propertyId: string, limit = 10): Pr
        AND l.status <> 'Junk'
        AND (
          l.status <> 'Lost'
-           AND (l.budget_max IS NULL OR l.budget_max >= $1 * 0.85)
-           AND (l.budget_min IS NULL OR l.budget_min <= $1 * 1.2)
+           AND (l.budget IS NULL OR (l.budget >= $1 * 0.85 AND l.budget <= $1 * 1.2))
          OR l.status = 'Lost' AND l.lost_reason IS NOT NULL
        )
      -- Ordered by how likely this lead is to match *this unit*, not by how
@@ -592,8 +592,7 @@ export async function matchBuyersForProperty(propertyId: string, limit = 10): Pr
   return leads.rows
     .map((lead) => {
       const req: Requirement = {
-        budgetMin: lead.budget_min,
-        budgetMax: lead.budget_max,
+        budget: lead.budget,
         configurations: lead.configuration ?? [],
         locations: lead.preferred_locations ?? [],
         possessionTimeline: lead.possession_timeline,

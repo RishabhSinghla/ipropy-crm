@@ -224,7 +224,7 @@ export async function listRecords(
 
   // A field this profile cannot see must not be usable to *ask questions about*
   // either. Stripping the value from the response but still honouring
-  // `budget_max > 5000000` leaves a binary-search oracle: a dozen requests
+  // `budget > 5000000` leaves a binary-search oracle: a dozen requests
   // recover the exact number the permission was meant to withhold, and sorting
   // or grouping by it gives away the ordering for nothing. Checked here, before
   // any SQL is built, so filter, saved-view filter, sort and group-by are all

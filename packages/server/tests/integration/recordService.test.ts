@@ -93,12 +93,12 @@ describe('create', () => {
   });
 
   it('coerces values to their column types rather than storing strings', async () => {
-    const created = await createRecord(admin, 'leads', leadInput({ budget_max: '15000000' }));
+    const created = await createRecord(admin, 'leads', leadInput({ budget: '15000000' }));
     const fetched = await getRecord(admin, 'leads', created.id);
     // Money is NUMERIC read back as a JS number (db/pool.ts configures the
     // type parser for this) — a string here would break every price format.
-    expect(typeof fetched?.values.budget_max).toBe('number');
-    expect(fetched?.values.budget_max).toBe(15000000);
+    expect(typeof fetched?.values.budget).toBe('number');
+    expect(fetched?.values.budget).toBe(15000000);
   });
 
   it('keeps an empty array as an empty array, not null', async () => {

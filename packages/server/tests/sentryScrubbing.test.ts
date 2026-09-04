@@ -353,7 +353,7 @@ describe('the request body, which was going out whole', () => {
     const event = beforeSend({
       request: {
         url: 'https://crm.example.com/api/records/leads',
-        data: { full_name: 'Aftab Siddiqui', mobile: '9811533633', budget_max: 18000000 },
+        data: { full_name: 'Aftab Siddiqui', mobile: '9811533633', budget: 18000000 },
       },
     } as never, {} as never);
 

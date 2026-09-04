@@ -95,7 +95,7 @@ describe('editing an existing lead', () => {
       not re-sending a phone number that is already stored.
     */
     const lead = await create({ mobile: freshMobile() });
-    const updated = await update(lead.id, { budget_max: 14000000 });
+    const updated = await update(lead.id, { budget: 14000000 });
     expect(updated.id).toBe(lead.id);
   });
 
