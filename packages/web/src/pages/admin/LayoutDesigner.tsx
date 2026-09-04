@@ -21,7 +21,7 @@ import {
 import { api } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
 import { cn } from '../../lib/utils';
-import { Badge, Select, Skeleton, Spinner } from '../../components/ui';
+import { Badge, Modal, Select, Skeleton, Spinner } from '../../components/ui';
 
 interface LayoutBlock {
   key: string;
@@ -69,6 +69,7 @@ export default function LayoutDesigner(): JSX.Element {
   const [moduleName, setModuleName] = useState(modules[0]?.name ?? 'leads');
   const [layoutType, setLayoutType] = useState<'detail' | 'edit' | 'quick_create'>('detail');
   const [blocks, setBlocks] = useState<LayoutBlock[]>([]);
+  const [newSection, setNewSection] = useState(false);
   const [headerFields, setHeaderFields] = useState<string[]>([]);
   const [defaultTab, setDefaultTab] = useState('overview');
   const [showRecordNumber, setShowRecordNumber] = useState(false);
@@ -177,9 +178,8 @@ export default function LayoutDesigner(): JSX.Element {
   const blockIdFor = (key: string): string | undefined =>
     (meta?.blocks ?? []).find((b) => b.name === key)?.id;
 
-  const addSection = async (): Promise<void> => {
-    const label = window.prompt('Name the new section');
-    if (!label?.trim()) return;
+  const addSection = async (label: string): Promise<void> => {
+    if (!label.trim()) return;
     // Keyed on time rather than the label so renaming a section never collides
     // with another one, and so two "New section"s can coexist while being named.
     const key = `section_${Date.now().toString(36)}`;
@@ -271,6 +271,15 @@ export default function LayoutDesigner(): JSX.Element {
 
   return (
     <div className="p-4 sm:p-6">
+      {newSection && (
+        <NewSectionDialog
+          onClose={() => setNewSection(false)}
+          onSave={(label) => {
+            setNewSection(false);
+            void addSection(label);
+          }}
+        />
+      )}
       <div className="mb-4 flex flex-wrap items-start gap-3">
         <div className="min-w-0">
           <h1 className="text-lg font-semibold tracking-tight">Layout Designer</h1>
@@ -495,7 +504,7 @@ export default function LayoutDesigner(): JSX.Element {
               </div>
             ))}
 
-            <button onClick={() => void addSection()} className="btn-secondary btn-sm">
+            <button onClick={() => setNewSection(true)} className="btn-secondary btn-sm">
               <Plus className="h-3.5 w-3.5" /> Add section
             </button>
           </div>
@@ -726,5 +735,49 @@ function HeaderStripEditor({
         </div>
       </div>
     </div>
+  );
+}
+
+
+/**
+ * Names a new section before it is created, in the same styled dialog the
+ * rest of the admin uses. It replaced a bare window.prompt, which broke the
+ * app's own look and gave no Escape handling worth the name.
+ */
+function NewSectionDialog({ onClose, onSave }: { onClose: () => void; onSave: (label: string) => void }): JSX.Element {
+  const [label, setLabel] = useState('');
+  const ready = label.trim().length > 0;
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="New section"
+      size="sm"
+      footer={
+        <>
+          <button className="btn-secondary" onClick={onClose}>Cancel</button>
+          <button
+            className="btn-primary"
+            disabled={!ready}
+            onClick={() => onSave(label.trim())}
+          >
+            Create section
+          </button>
+        </>
+      }
+    >
+      <label className="label" htmlFor="new-section-label">Section name</label>
+      <input
+        id="new-section-label"
+        className="input"
+        value={label}
+        onChange={(e) => setLabel(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter' && ready) onSave(label.trim()); }}
+        autoFocus
+      />
+      <p className="mt-1.5 text-2xs text-muted">
+        The section is added to the end of this layout; drag it where you want it.
+      </p>
+    </Modal>
   );
 }

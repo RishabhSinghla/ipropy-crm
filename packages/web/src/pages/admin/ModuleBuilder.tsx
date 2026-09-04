@@ -25,6 +25,7 @@ export default function ModuleBuilder(): JSX.Element {
   // in the Section dropdown, for ever. This is where a section actually lives.
   const [pendingSection, setPendingSection] = useState<{ id: string; label: string } | null>(null);
   const [renamingSection, setRenamingSection] = useState<{ id: string; label: string } | null>(null);
+  const [creatingSection, setCreatingSection] = useState(false);
 
   const { data: fieldModules = [], isLoading: isModulesLoading } = useQuery({
     queryKey: ['field-modules'],
@@ -205,10 +206,7 @@ export default function ModuleBuilder(): JSX.Element {
                   {meta.fields.length} fields · {meta.blocks.length} blocks
                 </span>
                 <button
-                  onClick={() => {
-                    const label = window.prompt('Name the new section');
-                    if (label?.trim()) addSectionMutation.mutate(label.trim());
-                  }}
+                  onClick={() => setCreatingSection(true)}
                   className="btn-secondary btn-sm ml-auto"
                 >
                   <Plus className="h-3.5 w-3.5" /> Add section
@@ -403,11 +401,26 @@ export default function ModuleBuilder(): JSX.Element {
 
       {renamingSection && (
         <SectionRenamer
+          title="Rename section"
+          cta="Save"
           label={renamingSection.label}
           onClose={() => setRenamingSection(null)}
           onSave={(label) => {
             sectionMutation.mutate({ id: renamingSection.id, label });
             setRenamingSection(null);
+          }}
+        />
+      )}
+
+      {creatingSection && (
+        <SectionRenamer
+          title="New section"
+          cta="Create section"
+          label=""
+          onClose={() => setCreatingSection(false)}
+          onSave={(label) => {
+            addSectionMutation.mutate(label);
+            setCreatingSection(false);
           }}
         />
       )}
@@ -434,24 +447,28 @@ export default function ModuleBuilder(): JSX.Element {
 
 /** Rename a section without leaving the page it lives on. */
 function SectionRenamer({
-  label, onClose, onSave,
-}: { label: string; onClose: () => void; onSave: (label: string) => void }): JSX.Element {
+  label, onClose, onSave, title = 'Rename section', cta = 'Save',
+}: {
+  label: string; onClose: () => void; onSave: (label: string) => void;
+  title?: string; cta?: string;
+}): JSX.Element {
   const [value, setValue] = useState(label);
+  const ready = value.trim().length > 0 && value.trim() !== label;
   return (
     <Modal
       open
       onClose={onClose}
-      title="Rename section"
+      title={title}
       size="sm"
       footer={
         <>
           <button className="btn-secondary" onClick={onClose}>Cancel</button>
           <button
             className="btn-primary"
-            disabled={!value.trim() || value.trim() === label}
+            disabled={!ready}
             onClick={() => onSave(value.trim())}
           >
-            Save
+            {cta}
           </button>
         </>
       }
@@ -462,6 +479,7 @@ function SectionRenamer({
         className="input"
         value={value}
         onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter' && ready) onSave(value.trim()); }}
         autoFocus
       />
       <p className="mt-1.5 text-2xs text-muted">
