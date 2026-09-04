@@ -351,7 +351,22 @@ const MODULES: ModuleDef[] = [
     menuGroup: 'Inventory',
     labelFields: ['name'],
     pipelineField: 'status',
-    duplicateCheckFields: ['property_code'],
+    /*
+      The duplicate check used to be ['property_code'] — an autonumber the system
+      generates on the way in. `prepareValues` stamps a fresh number before the
+      check runs, so it searched for a value that had never been stored and could
+      not match. It was configured protection that gave none.
+
+      The real identity of a builder floor here is where it is, which building,
+      and which floor. `tower` and `unit_number` are deliberately not in the key:
+      not one live property fills them in, and a key containing a field nobody
+      fills is the same no-op in different clothes.
+
+      `all` because these combine — two floors in one locality are not
+      duplicates; the same house number on the same floor is.
+    */
+    duplicateCheckFields: ['name', 'locality', 'floor'],
+    settings: { duplicateCheckMode: 'all' },
     blocks: [
       {
         name: 'property_information',

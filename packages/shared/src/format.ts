@@ -60,12 +60,49 @@ export function parseIndianPrice(input: string): number | null {
   }
 }
 
-export function formatArea(value: number | null | undefined, unit = 'sqft'): string {
+/**
+ * Square feet per unit, for comparing two areas quoted differently.
+ *
+ * Faridabad quotes plots in gaj — a square yard — and flats in square feet, so a
+ * buyer asking for 200 and a listing offering 1800 can be the same size. The
+ * matcher divided one by the other regardless, which made 200 gaj look nine
+ * times too small.
+ */
+const SQFT_PER: Record<string, number> = {
+  sqft: 1,
+  sqyd: 9,
+  gaj: 9,
+  sqm: 10.7639,
+  acre: 43560,
+  hectare: 107639,
+};
+
+/**
+ * An area in square feet, whatever it was quoted in.
+ *
+ * The property side of this is a free-text box, so the unit arrives as "Sq. Yd.",
+ * "sq yd" or "GAJ" as often as "sqyd". Punctuation and spaces are stripped before
+ * the lookup, because an unrecognised unit silently falls back to square feet and
+ * that is exactly the bug this exists to fix.
+ */
+export function toSqFt(value: number, unit: string | null | undefined): number {
+  const key = (unit ?? 'sqft').toLowerCase().replace(/[^a-z]/g, '');
+  return value * (SQFT_PER[key] ?? 1);
+}
+
+export function formatArea(
+  value: number | null | undefined,
+  // Null as well as undefined, because the unit comes off a nullable column at
+  // most call sites and a `?? 'sqft'` at each one is a fallback waiting to be
+  // forgotten at the one that matters.
+  unit: string | null | undefined = 'sqft',
+): string {
   if (value === null || value === undefined || Number.isNaN(value)) return '—';
   const labels: Record<string, string> = {
-    sqft: 'sq.ft', sqm: 'sq.m', sqyd: 'sq.yd', acre: 'acre', hectare: 'ha',
+    sqft: 'sq.ft', sqm: 'sq.m', sqyd: 'sq.yd', gaj: 'sq.yd', acre: 'acre', hectare: 'ha',
   };
-  return `${new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(value)} ${labels[unit] ?? unit}`;
+  const key = (unit ?? 'sqft').toLowerCase().replace(/[^a-z]/g, '');
+  return `${new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(value)} ${labels[key] ?? unit ?? 'sq.ft'}`;
 }
 
 export function formatNumber(value: number | null | undefined, decimals = 0, locale = 'en-IN'): string {

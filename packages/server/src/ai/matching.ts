@@ -8,7 +8,7 @@
  */
 import type { PropertyMatch } from '@ipropy/shared';
 import { scoringThresholds } from '../core/settings/scoring.js';
-import { formatArea, formatIndianPrice } from '@ipropy/shared';
+import { formatArea, formatIndianPrice, toSqFt } from '@ipropy/shared';
 import { db } from '../db/pool.js';
 import { completeJson, isAiAvailable, saveInsight, REAL_ESTATE_SYSTEM } from './client.js';
 
@@ -47,6 +47,7 @@ interface PropertyRow {
   name: string;
   configuration: string | null;
   carpet_area: number | null;
+  area_unit: string | null;
   total_price: number | null;
   base_price: number | null;
   floor: number | null;
@@ -124,7 +125,7 @@ async function queryInventory(req: Requirement, limit: number): Promise<Property
   const minPrice = req.budgetMin ? req.budgetMin * 0.8 : null;
 
   const res = await db.query<PropertyRow>(
-    `SELECT p.record_id, r.label, p.name, p.configuration, p.carpet_area, p.total_price,
+    `SELECT p.record_id, r.label, p.name, p.configuration, p.carpet_area, p.area_unit, p.total_price,
             p.base_price, p.floor, p.facing, p.vastu_compliant, p.status,
             p.possession_date, p.possession_status, p.locality,
             p.amenities, p.corner_unit, p.bedrooms,
@@ -217,13 +218,36 @@ function scoreProperty(row: PropertyRow, req: Requirement): ScoredProperty {
   // Area. The buyer states one figure, so it is read as "about this much":
   // 15% either side counts as a match, well under is a miss.
   if (row.carpet_area && req.area) {
-    const ratio = row.carpet_area / req.area;
+    /*
+      Both sides converted before dividing.
+
+      Faridabad quotes plots in gaj and flats in square feet, so a buyer asking
+      for 200 and a listing offering 1,800 are the same size. This divided one by
+      the other as though the numbers were comparable, which made 200 gaj look
+      nine times too small — and a ratio of 9 lands in the silent `else` below,
+      so the unit lost 3 points and the rep was shown no sentence to notice was
+      wrong. The rename guard already says this field is needed "because a number
+      without its unit matches nothing correctly"; it simply was not read.
+
+      Each side is printed in the unit it was quoted in, so a gaj buyer reads
+      "1,850 sq.ft is about the 200 sq.yd asked for" rather than a converted
+      figure they never typed.
+    */
+    const wanted = toSqFt(req.area, req.areaUnit);
+    const offered = toSqFt(row.carpet_area, row.area_unit);
+    const ratio = offered / wanted;
     if (ratio >= 0.85 && ratio <= 1.15) {
       score += 8;
-      reasons.push(`${formatArea(row.carpet_area)} is about the ${formatArea(req.area)} asked for`);
+      reasons.push(
+        `${formatArea(row.carpet_area, row.area_unit ?? 'sqft')} is about the `
+        + `${formatArea(req.area, req.areaUnit)} asked for`,
+      );
     } else if (ratio < 0.85) {
       score -= 8;
-      mismatches.push(`${formatArea(row.carpet_area)} is smaller than the ${formatArea(req.area)} asked for`);
+      mismatches.push(
+        `${formatArea(row.carpet_area, row.area_unit ?? 'sqft')} is smaller than the `
+        + `${formatArea(req.area, req.areaUnit)} asked for`,
+      );
     } else {
       score -= 3;
     }
@@ -348,7 +372,7 @@ Here are the shortlisted units with their computed fit scores:
 
 ${scored.map((s, i) => `### ${i + 1}. ${s.row.label} (score ${s.score})
 - Project: ${s.row.project_name ?? '—'}
-- Configuration: ${s.row.configuration ?? '—'}, ${s.row.carpet_area ?? '—'} sq.ft carpet
+- Configuration: ${s.row.configuration ?? '—'}, ${formatArea(s.row.carpet_area, s.row.area_unit ?? 'sqft')} carpet
 - Price: ${formatIndianPrice(s.row.total_price ?? s.row.base_price ?? 0)}
 - Floor ${s.row.floor ?? '—'}, ${s.row.facing ?? '—'} facing${s.row.corner_unit ? ', corner unit' : ''}
 - Location: ${s.row.locality ?? '—'}, ${s.row.city ?? '—'}
@@ -508,7 +532,7 @@ export interface BuyerMatch {
 export async function matchBuyersForProperty(propertyId: string, limit = 10): Promise<BuyerMatch[]> {
   const { matchFloor } = await scoringThresholds();
   const property = await db.queryOne<PropertyRow>(
-    `SELECT p.record_id, r.label, p.name, p.configuration, p.carpet_area, p.total_price, p.base_price,
+    `SELECT p.record_id, r.label, p.name, p.configuration, p.carpet_area, p.area_unit, p.total_price, p.base_price,
             p.floor, p.facing, p.vastu_compliant, p.status, p.possession_date, p.possession_status,
             p.locality, p.amenities, p.corner_unit, p.bedrooms,
             to_jsonb(p)->>'city'         AS city,

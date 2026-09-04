@@ -966,19 +966,37 @@ async function findDuplicate(
 ): Promise<{ id: string; label: string } | null> {
   const conditions: string[] = [];
   const params: unknown[] = [module.id];
+  const composite = module.duplicateCheckMode === 'all';
+
   for (const name of module.duplicateCheckFields) {
     const field = module.fields.find((f) => f.name === name);
     if (!field) continue;
     const v = values[name];
-    if (isEmpty(v)) continue;
+    if (isEmpty(v)) {
+      /*
+        A composite identity with a hole in it is not an identity.
+
+        Under `all`, a blank part would silently shrink the key — leave the floor
+        out and every unit in the building matches. Refusing to judge is right:
+        the record saves, and the form's duplicate panel still shows anything
+        worth a second look.
+      */
+      if (composite) return null;
+      continue;
+    }
     params.push(v);
     conditions.push(`${fieldExpr(field)} = $${params.length}`);
   }
   if (!conditions.length) return null;
+
+  // `any` — each field alone identifies the record (the same mobile is the same
+  // person). `all` — the fields together do (locality, house number and floor
+  // are one physical unit; any one of them alone is a whole street).
+  const joiner = composite ? ' AND ' : ' OR ';
   return conn.queryOne<{ id: string; label: string }>(
     `SELECT r.id, r.label FROM ipy_record r
      JOIN ${quoteIdent(module.tableName)} e ON e.record_id = r.id
-     WHERE r.module_id = $1 AND r.is_deleted = false AND (${conditions.join(' OR ')})
+     WHERE r.module_id = $1 AND r.is_deleted = false AND (${conditions.join(joiner)})
      LIMIT 1`,
     params,
   );
@@ -1003,7 +1021,11 @@ export async function findPossibleDuplicates(
     params.push(value);
     return `CASE WHEN ${fieldExpr(field)} = $${params.length} THEN '${field.name}' ELSE NULL END`;
   });
-  const where = checks.map(({ field }, i) => `${fieldExpr(field)} = $${i + 2}`).join(' OR ');
+  // Same combining rule as the save-time check, so the panel never warns about
+  // something the save accepts, or stays quiet about something it refuses.
+  if (module.duplicateCheckMode === 'all' && checks.length !== module.duplicateCheckFields.length) return [];
+  const joiner = module.duplicateCheckMode === 'all' ? ' AND ' : ' OR ';
+  const where = checks.map(({ field }, i) => `${fieldExpr(field)} = $${i + 2}`).join(joiner);
   if (excludeId) params.push(excludeId);
 
   const res = await db.query<{ id: string; label: string; matched: (string | null)[] }>(

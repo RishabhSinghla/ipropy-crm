@@ -516,6 +516,17 @@ export interface ModuleMeta {
   /** duplicate-check field names */
   duplicateCheckFields: string[];
   /**
+   * How `duplicateCheckFields` combine.
+   *
+   * `'any'` — each field alone identifies the same record. Right for a person:
+   * the same mobile is the same human whatever else differs.
+   *
+   * `'all'` — the fields together form one composite identity. Right for a
+   * physical unit: two floors in the same locality are not duplicates, but the
+   * same door number on the same floor of the same building is.
+   */
+  duplicateCheckMode: 'any' | 'all';
+  /**
    * Groups of fields where at least one must be filled in.
    *
    * `[['mobile', 'email']]` means a lead needs one of the two, and does not
