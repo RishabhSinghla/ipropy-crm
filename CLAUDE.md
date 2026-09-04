@@ -314,9 +314,21 @@ back into TypeScript would reverse that.
   `gh api repos/OWNER/REPO/deployments` and its `/statuses` before assuming a
   deploy is merely slow. A retry usually works. The paid instance since 4 September should stop it, but
   that is an expectation rather than something observed yet.
-* **A markdown-only commit never deploys, and that is correct.** CI has
-  `paths-ignore: '**/*.md'` to save billed minutes, so no checks run, so
-  `checksPass` has nothing to wait for. Surprising once, then obvious.
+* **A markdown-only commit CAN deploy, and this file used to say the opposite.**
+  CI has `paths-ignore: '**/*.md'` so it does not run on a docs commit — that
+  part was right. The conclusion drawn from it was wrong: `checksPass` waits for
+  whatever check suites report on the commit, and it accepts **any** of them, not
+  specifically CI. `a8eca56` on 4 September was CLAUDE.md alone, CI never ran, a
+  scheduled *Production user audit* reported success on that SHA, and Render
+  auto-deployed twenty-nine seconds later.
+  So the gate is weaker than its name suggests: a workflow that has nothing to do
+  with whether the code compiles can satisfy it. Worth knowing before trusting it
+  to hold back a bad commit.
+* **`gh run list` is not the whole story on why something deployed.** Render's
+  own deploys page names the trigger, and the answers there are not always
+  "Auto-Deploy": `fefa721` shows twice on 4 September, once as **Manual — by
+  you** and once as **Compute plan updated**. A red CI run next to a deploy of
+  the same commit looked like the gate failing, and it was neither.
 * **Render is on the paid instance.** `render.yaml` declares `plan: 0.5c-512mb`
   ($7/month, always on); deployed 4 September 2026. The scheduler no longer
   sleeps with the site.
