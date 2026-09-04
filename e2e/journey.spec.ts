@@ -83,6 +83,7 @@ test.describe('lead lifecycle through the UI', () => {
   const mobile = `97${String(Date.now()).slice(-8)}`;
 
   test('create a lead from the form', async ({ page }) => {
+    const phone = test.info().project.name === 'mobile';
     await page.goto('/leads/new');
     await page.waitForLoadState('domcontentloaded');
     await page.getByLabel(/full name/i).fill(name);
@@ -96,19 +97,29 @@ test.describe('lead lifecycle through the UI', () => {
   });
 
   test('find it on the list', async ({ page }) => {
+    const phone = test.info().project.name === 'mobile';
+    const row = (text: string) =>
+      phone
+        ? page.getByTestId('record-card-list').getByText(text).first()
+        : page.locator('tr', { hasText: text }).first();
     await page.goto('/leads');
     await page.waitForTimeout(1500);
     await page.getByPlaceholder(/search leads/i).fill(name);
     await page.waitForTimeout(1200);
-    await expect(page.locator('tr', { hasText: name }).first()).toBeVisible();
+    await expect(row(name)).toBeVisible();
   });
 
   test('edit it from the edit page', async ({ page }) => {
+    const phone = test.info().project.name === 'mobile';
+    const row = (text: string) =>
+      phone
+        ? page.getByTestId('record-card-list').getByText(text).first()
+        : page.locator('tr', { hasText: text }).first();
     await page.goto('/leads');
     await page.waitForTimeout(1200);
     await page.getByPlaceholder(/search leads/i).fill(name);
     await page.waitForTimeout(1200);
-    const rowClick = page.locator('tr', { hasText: name }).first().click();
+    const rowClick = row(name).click();
     const detail = await page.context().waitForEvent('page');
     await detail.waitForLoadState('domcontentloaded');
     await detail.waitForURL(/\/leads\/[0-9a-f-]{36}/);
@@ -123,12 +134,17 @@ test.describe('lead lifecycle through the UI', () => {
   });
 
   test('delete it', async ({ page }) => {
+    const phone = test.info().project.name === 'mobile';
+    const row = (text: string) =>
+      phone
+        ? page.getByTestId('record-card-list').getByText(text).first()
+        : page.locator('tr', { hasText: text }).first();
     const renamed = `${name} II`;
     await page.goto('/leads');
     await page.waitForTimeout(1200);
     await page.getByPlaceholder(/search leads/i).fill(renamed);
     await page.waitForTimeout(1200);
-    const rowClick = page.locator('tr', { hasText: renamed }).first().click();
+    const rowClick = row(renamed).click();
     const detail = await page.context().waitForEvent('page');
     await detail.waitForLoadState('domcontentloaded');
     await rowClick;

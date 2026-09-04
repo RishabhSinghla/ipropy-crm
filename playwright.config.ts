@@ -59,7 +59,9 @@ export default defineConfig({
       name: 'mobile',
       use: { ...devices['Pixel 7'], storageState: STORAGE_STATE },
       dependencies: ['setup'],
-      testMatch: /mobile\.spec\.ts/,
+      // The journey walks every screen at phone size too — the phone is
+      // where the team actually lives.
+      testMatch: /mobile\.spec\.ts|journey\.spec\.ts/,
     },
   ],
   webServer: [
