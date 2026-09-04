@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import crypto from 'node:crypto';
 import { z } from 'zod';
+import { clearRefreshCookie, readRefreshToken, setRefreshCookie } from '../../core/auth/refreshCookie.js';
 import rateLimit from 'express-rate-limit';
 import { db, queryOne } from '../../db/pool.js';
 import { config } from '../../config.js';
@@ -69,7 +70,18 @@ authRouter.post('/login', loginLimiter, asyncHandler(async (req, res) => {
   }
   if (!row.is_active) throw new UnauthorizedError('This account has been deactivated');
 
-  res.json(await issueSession(row.id, req));
+  const session = await issueSession(row.id, req);
+  /*
+    The refresh token goes in an httpOnly cookie *and* in the body.
+
+    The cookie is the protection; the body is what stops this deploy signing
+    everybody out. A browser running the older bundle reads the body and files it
+    in localStorage as before, and a browser running the newer one ignores the
+    body and lets the cookie do the work. Both are correct at once, which is the
+    only way to change where a credential lives without a forced logout.
+  */
+  setRefreshCookie(res, session.refreshToken);
+  res.json(session);
 }));
 
 /*
@@ -80,7 +92,10 @@ authRouter.post('/login', loginLimiter, asyncHandler(async (req, res) => {
   one: the moment a retired token is presented again, two parties are holding it.
 */
 authRouter.post('/refresh', asyncHandler(async (req, res) => {
-  const token = z.object({ refreshToken: z.string().min(10) }).parse(req.body).refreshToken;
+  // Cookie first, body second. See `readRefreshToken` for why the body is still
+  // accepted at all.
+  const token = readRefreshToken(req);
+  if (!token) throw new UnauthorizedError('Session expired — please sign in again');
 
   let rotated: { userId: string; refreshToken: string } | null = null;
   let userId: string;
@@ -102,6 +117,11 @@ authRouter.post('/refresh', asyncHandler(async (req, res) => {
   const user = await loadUser(userId);
   if (!user?.isActive) throw new UnauthorizedError('Account is unavailable');
 
+  // Rotation mints a replacement, so the cookie has to move with it or the next
+  // refresh presents a retired token — which the server reads as theft and
+  // answers by revoking the whole session family.
+  if (rotated) setRefreshCookie(res, rotated.refreshToken);
+
   res.json({
     token: signAccessToken(user),
     user,
@@ -111,7 +131,8 @@ authRouter.post('/refresh', asyncHandler(async (req, res) => {
 }));
 
 authRouter.post('/logout', requireAuth, asyncHandler(async (req, res) => {
-  const token = (req.body as { refreshToken?: string })?.refreshToken;
+  const token = readRefreshToken(req);
+  clearRefreshCookie(res);
   if (token) {
     await db.query(`UPDATE ipy_session SET revoked_at = now() WHERE token_hash = $1`, [hashRefreshToken(token)]);
   } else {

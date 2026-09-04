@@ -92,7 +92,13 @@ async function adoptSession(
   set: (partial: Partial<AppState>) => void,
 ): Promise<void> {
   tokenStore.set(result.token);
-  tokenStore.setRefresh(result.refreshToken);
+  /*
+    The refresh token is not stored. The login response set an httpOnly cookie
+    carrying it, which the browser attaches to `/api/auth` on its own and no
+    script can read. Anything left in localStorage would only be a second copy
+    in the one place an attacker can reach.
+  */
+  tokenStore.forgetRefresh();
   const modules = await api.modules();
   cacheUser(result.user);
   cacheModules(modules);

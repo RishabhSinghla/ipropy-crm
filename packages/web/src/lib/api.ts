@@ -27,8 +27,21 @@ export class ApiError extends Error {
 export const tokenStore = {
   get: (): string | null => localStorage.getItem(TOKEN_KEY),
   set: (token: string): void => localStorage.setItem(TOKEN_KEY, token),
+  /*
+    Read, but no longer written.
+
+    The refresh token lives in an httpOnly cookie now, where no script on the
+    page can reach it — not an injected advert, not a compromised dependency.
+    It is good for thirty days and exists to mint logins, so a copy of it in
+    localStorage was a month of somebody else's access sitting in reach of any
+    XSS.
+
+    The getter stays because browsers signed in before this shipped still have
+    the old value, and the server still accepts it. They hand it over once, get
+    a cookie back, and `forgetRefresh` clears it. Nobody is logged out.
+  */
   getRefresh: (): string | null => localStorage.getItem(REFRESH_KEY),
-  setRefresh: (token: string): void => localStorage.setItem(REFRESH_KEY, token),
+  forgetRefresh: (): void => localStorage.removeItem(REFRESH_KEY),
   clear: (): void => {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(REFRESH_KEY);
@@ -41,8 +54,10 @@ async function refreshToken(): Promise<boolean> {
   // Collapse concurrent 401s into a single refresh attempt.
   if (refreshPromise) return refreshPromise;
 
+  // No localStorage token is the normal case now: the cookie carries it and the
+  // browser attaches it on its own. Only give up if there is no session at all,
+  // which the server tells us by refusing the refresh.
   const refresh = tokenStore.getRefresh();
-  if (!refresh) return false;
 
   refreshPromise = fetch('/api/auth/refresh', {
     method: 'POST',
@@ -65,7 +80,13 @@ async function refreshToken(): Promise<boolean> {
         deliberately carries no new refresh token, and the one already held is
         still the live one.
       */
-      if (data.refreshToken) tokenStore.setRefresh(data.refreshToken);
+      /*
+        The server set a cookie alongside this response, so the copy in
+        localStorage is now both redundant and the only one an attacker could
+        read. Clearing it here is what actually completes the migration, one
+        browser at a time, without anybody signing in again.
+      */
+      tokenStore.forgetRefresh();
       return true;
     })
     .catch(() => false)
@@ -513,6 +534,9 @@ export const api = {
     post('/api/auth/pin/enrol', { pin, currentPassword, label }),
   pinDevices: () => get<PinDevice[]>('/api/auth/pin'),
   deletePinDevice: (id: string) => del(`/api/auth/pin/${id}`),
+  // The cookie is what usually identifies the session here; the body still
+  // carries an old localStorage token if this browser has not refreshed yet, so
+  // signing out revokes the right session either way.
   logout: () => post('/api/auth/logout', { refreshToken: tokenStore.getRefresh() }),
   me: () => get<AuthUser>('/api/auth/me'),
   updateProfile: (data: Record<string, unknown>) => patch<AuthUser>('/api/auth/me', data),

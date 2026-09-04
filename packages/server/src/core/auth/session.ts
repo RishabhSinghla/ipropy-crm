@@ -14,12 +14,23 @@ export interface IssuedSession {
   user: AuthUser;
 }
 
-function refreshExpiry(): Date {
+/**
+ * How long a refresh token lives, in milliseconds.
+ *
+ * Exported because the cookie's `maxAge` has to be the same number. Two copies
+ * of this arithmetic would drift, and the drift would be invisible: a cookie
+ * that expires early logs people out for no stated reason, and one that expires
+ * late leaves a token in the browser the server has already stopped honouring.
+ */
+export function refreshLifetimeMs(): number {
   const match = config.auth.refreshExpiresIn.match(/^(\d+)([smhd])$/);
-  const milliseconds = match
+  return match
     ? Number(match[1]) * ({ s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 }[match[2]] ?? 86_400_000)
     : 30 * 86_400_000;
-  return new Date(Date.now() + milliseconds);
+}
+
+function refreshExpiry(): Date {
+  return new Date(Date.now() + refreshLifetimeMs());
 }
 
 /**
