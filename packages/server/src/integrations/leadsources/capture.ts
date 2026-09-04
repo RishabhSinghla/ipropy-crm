@@ -238,6 +238,38 @@ async function enrichExistingLead(recordId: string, normalized: NormalizedLead):
 
   await updateRecord(systemContext(), 'leads', recordId, updates, { skipDuplicateCheck: true });
 
+  /*
+    Put the enquiry on the timeline, not only in the notes box.
+
+    The line above was the only record that somebody had come back, and it was
+    being thrown away. `description` is switched off on this CRM, so
+    `recordService` strips it — and when the email and budget are already filled
+    it is the *only* change, which leaves an empty change set, and an empty
+    change set skips the write, the audit row and the timeline entry together.
+    Somebody could enquire three times and the CRM would show one enquiry.
+
+    That is the strongest buying signal there is, so it goes somewhere that does
+    not depend on a field an admin can hide. A repeat enquiry is also genuinely
+    an event rather than a property of the person, which is what the timeline is
+    for.
+
+    Deliberately after the update and outside it: failing to file the note must
+    never cost the email or budget that came with the enquiry.
+  */
+  try {
+    const owner = await db.queryOne<{ owner_id: string | null }>(
+      `SELECT owner_id FROM ipy_record WHERE id = $1`, [recordId],
+    );
+    if (owner?.owner_id) {
+      await db.query(
+        `INSERT INTO ipy_comment (record_id, user_id, body) VALUES ($1,$2,$3)`,
+        [recordId, owner.owner_id, note],
+      );
+    }
+  } catch (err) {
+    logger.warn({ err, recordId }, 'could not file the repeat enquiry on the timeline');
+  }
+
   const record = await db.queryOne<{ label: string; owner_id: string | null }>(
     `SELECT label, owner_id FROM ipy_record WHERE id = $1`,
     [recordId],
