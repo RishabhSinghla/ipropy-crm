@@ -569,6 +569,27 @@ ago; and pacing belongs in the CRM, never in a laptop script that forgets on res
 must also decide, up front, that a business CRM has no business storing a rep's personal
 chats.
 
+## Every request appears twice in development, and once in production
+
+`main.tsx` wraps the app in `React.StrictMode`, which double-invokes effects in
+development so that effects which are not idempotent show themselves. So the
+network tab on `localhost:5173` shows `/api/auth/me`, `/api/meta/modules`, the
+record, its comments, its neighbours and both AI panels each fetched twice, and
+a full Playwright run can trip the 600-per-minute rate limit and log 429s.
+
+**None of that happens in production.** Measured 5 September by running the
+container and reading the same page: one request each. React strips StrictMode
+from a production build.
+
+Recorded because it looks exactly like an over-fetching bug and is not one.
+Removing StrictMode to "fix" it would throw away the thing that surfaces real
+effect bugs, in exchange for nothing.
+
+The rate limit itself is fine: `API_RATE_LIMIT` is 600 a minute and is keyed
+**per user** (`apiRateLimitKey` in `app.ts`), not per IP, so one busy person
+cannot throttle the team. A test suite hits it only because a hundred specs share
+one admin account.
+
 ## Scale
 
 `scripts/load-test-data.sql` loads a realistic year — 60,000 leads, 8,000 units, 272,000
