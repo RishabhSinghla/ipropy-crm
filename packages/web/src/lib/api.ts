@@ -742,6 +742,9 @@ export const api = {
   saveDashboardLayout: (dashboardId: string, widgets: { id: string; x: number; y: number; w: number; h: number }[]) =>
     post(`/api/dashboards/${dashboardId}/layout`, { widgets }),
   reports: () => get<Record<string, unknown>[]>('/api/reports'),
+  report: (id: string) => get<Record<string, unknown>>(`/api/reports/${id}`),
+  saveReport: (data: Record<string, unknown>) => post<{ id: string }>('/api/reports', data),
+  deleteReport: (id: string) => del(`/api/reports/${id}`),
   runReport: (spec: Record<string, unknown>) =>
     post<{ rows: Record<string, unknown>[]; columns: string[]; totals?: Record<string, number> }>('/api/reports/run', spec),
 

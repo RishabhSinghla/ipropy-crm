@@ -10,19 +10,28 @@ import type { JSX } from 'react';
  * select showed the wrong label and both dropdowns underneath rendered blank.
  * Every default here now comes from the metadata that is actually loaded.
  */
-import { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatIndianPrice } from '@ipropy/shared';
 import type { FieldMeta } from '@ipropy/shared';
-import { BarChart3, Download, Play, Plus, X } from 'lucide-react';
+import { BarChart3, Download, Play, Plus, Save, Trash2, X } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
-import { EmptyState, Select, Skeleton, Spinner } from '../components/ui';
+import { ConfirmDialog, EmptyState, Modal, Select, Skeleton, Spinner, Toggle } from '../components/ui';
 import { toCsvDownload } from '../lib/download';
 
 type AggregateFn = 'count' | 'sum' | 'avg' | 'min' | 'max';
 type Aggregate = { field: string; fn: AggregateFn; label?: string };
+
+interface SavedReport {
+  id: string; name: string; description: string | null; type: string; module: string;
+  ownerId: string; isShared: boolean; lastRunAt: string | null; canDelete: boolean;
+}
+
+/** Column keys that mean money even when no metadata says so — a user-typed label like "Rent roll" carries no uitype. */
+const MONEY_WORDS = /value|amount|budget|price|rent|revenue|cost|deposit|emi/;
+
 
 const GROUPABLE = ['picklist', 'reference', 'owner', 'user', 'boolean', 'string', 'date'];
 const NUMERIC = ['currency', 'integer', 'decimal', 'percent', 'area', 'score'];
@@ -32,7 +41,8 @@ const FN_LABELS: Record<AggregateFn, string> = {
 };
 
 export default function ReportsPage(): JSX.Element {
-  const { modules } = useApp();
+  const { modules, user } = useApp();
+  const queryClient = useQueryClient();
   const entityModules = useMemo(() => modules.filter((m) => m.isEntity), [modules]);
 
   const [moduleName, setModuleName] = useState('');
@@ -42,6 +52,22 @@ export default function ReportsPage(): JSX.Element {
   const [columns, setColumns] = useState<string[]>([]);
   const [result, setResult] = useState<{ rows: Record<string, unknown>[]; columns: string[]; totals?: Record<string, number> } | null>(null);
   const [running, setRunning] = useState(false);
+
+  // Saving and re-opening reports.
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [saveName, setSaveName] = useState('');
+  const [saveShared, setSaveShared] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [toDelete, setToDelete] = useState<SavedReport | null>(null);
+  // A saved report being opened is applied the moment its module's metadata
+  // lands; the ref carries it across that render boundary.
+  const loadRef = useRef<{ module: string; type: 'tabular' | 'summary'; groupBy: string[]; aggregates: Aggregate[]; columns: string[] } | null>(null);
+
+  const saved = useQuery({
+    queryKey: ['saved-reports'],
+    queryFn: async (): Promise<SavedReport[]> => (await api.reports()) as unknown as SavedReport[],
+  });
+
 
   // Modules arrive asynchronously, so the first real module is adopted once
   // rather than guessed at in the initialiser.
@@ -66,10 +92,12 @@ export default function ReportsPage(): JSX.Element {
   /**
    * Sensible starting point for whichever module is loaded: group by its
    * pipeline field (Status on a lead), count the records, and total the first
-   * money field if it has one.
+   * money field if it has one. Skipped while a saved report is being opened —
+   * its definition, not these defaults, owns the builder.
    */
   useEffect(() => {
-    if (!meta) return;
+    if (!meta || loadRef.current) return;
+
     const pipeline = meta.pipelineField && groupableFields.some((f) => f.name === meta.pipelineField)
       ? meta.pipelineField
       : groupableFields[0]?.name;
@@ -84,37 +112,138 @@ export default function ReportsPage(): JSX.Element {
     setResult(null);
   }, [meta?.id]);
 
-  const run = async (): Promise<void> => {
+  const run = async (explicit?: { type: 'tabular' | 'summary'; groupBy: string[]; aggregates: Aggregate[]; columns: string[] }): Promise<void> => {
     if (!moduleName) return;
-    if (type === 'summary' && !groupBy.length) {
+    const t = explicit?.type ?? type;
+    const gb = explicit?.groupBy ?? groupBy;
+    const aggs = explicit?.aggregates ?? aggregates;
+    const cols = explicit?.columns ?? columns;
+    if (t === 'summary' && !gb.length) {
       toast.error('Pick something to group by', 'A summary report needs at least one grouping.');
       return;
     }
     setRunning(true);
     try {
-      const spec = {
-        module: moduleName,
-        type,
-        columns: type === 'tabular'
-          ? (columns.length ? columns : tabularFields.slice(0, 8).map((f) => f.name))
-          : [],
-        groupBy: type === 'summary' ? groupBy : [],
-        // COUNT does not read a field, but the API still expects one named;
-        // any valid field will do, so an empty measure never blocks the run.
-        aggregates: type === 'summary'
-          ? aggregates
-              .filter((a) => a.fn === 'count' || a.field)
-              .map((a) => ({ ...a, field: a.field || numericFields[0]?.name || 'id' }))
-          : [],
-        filter: { logic: 'AND', conditions: [] },
-      };
-      setResult(await api.runReport(spec));
+      setResult(await api.runReport(currentSpec(t, gb, aggs, cols)));
     } catch (err) {
       toast.error('Report failed', (err as Error).message);
     } finally {
       setRunning(false);
     }
   };
+
+  /** The payload the API expects for what is on screen. Shared by Run and Save so a saved report runs exactly like the one the user just looked at. */
+  const currentSpec = (t: 'tabular' | 'summary', gb: string[], aggs: Aggregate[], cols: string[]) => ({
+    module: moduleName,
+    type: t,
+    columns: t === 'tabular'
+      ? (cols.length ? cols : tabularFields.slice(0, 8).map((f) => f.name))
+      : [],
+    groupBy: t === 'summary' ? gb : [],
+    // COUNT does not read a field, but the API still expects one named;
+    // any valid field will do, so an empty measure never blocks the run.
+    aggregates: t === 'summary'
+      ? aggs
+          .filter((a) => a.fn === 'count' || a.field)
+          .map((a) => ({ ...a, field: a.field || numericFields[0]?.name || 'id' }))
+      : [],
+    filter: { logic: 'AND', conditions: [] },
+  });
+
+  // A saved report is applied once the metadata for its module is on screen.
+  useEffect(() => {
+    const pending = loadRef.current;
+    if (!pending || !meta || moduleName !== pending.module) return;
+    loadRef.current = null;
+    setType(pending.type);
+    setGroupBy(pending.groupBy);
+    setAggregates(pending.aggregates);
+    setColumns(pending.columns);
+    void run(pending);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meta, moduleName]);
+
+  /** Load a saved report back into the builder and run it. */
+  const openSaved = async (id: string): Promise<void> => {
+    const def = await api.report(id) as {
+      module: string; type: string; groupBy?: string[];
+      aggregates?: Aggregate[]; columns?: string[];
+    };
+    const payload = {
+      module: def.module,
+      type: (def.type === 'tabular' ? 'tabular' : 'summary') as 'tabular' | 'summary',
+      groupBy: def.groupBy ?? [],
+      aggregates: def.aggregates ?? [],
+      columns: def.columns ?? [],
+    };
+    setModuleName(payload.module);
+    setResult(null);
+    if (moduleName === payload.module && meta) {
+      // This module's metadata is already on screen: apply straight away.
+      setType(payload.type);
+      setGroupBy(payload.groupBy);
+      setAggregates(payload.aggregates);
+      setColumns(payload.columns);
+      void run(payload);
+    } else {
+      loadRef.current = payload;
+    }
+  };
+
+  const openSaveDialog = (): void => {
+    const moduleLabel = entityModules.find((m) => m.name === moduleName)?.label ?? moduleName;
+    const first = groupBy[0];
+    const by = type === 'summary' && first
+      ? ` by ${(meta?.fields ?? []).find((f) => f.name === first)?.label ?? first}`
+      : '';
+    setSaveName(`${moduleLabel}${by}`);
+    setSaveShared(false);
+    setSaveOpen(true);
+  };
+
+  const save = async (): Promise<void> => {
+    const name = saveName.trim();
+    if (!name) {
+      toast.error('Give the report a name', 'You will be looking for it in a list later.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.saveReport({ name, ...currentSpec(type, groupBy, aggregates, columns), isShared: saveShared });
+      toast.success('Report saved', `Find “${name}” under Saved reports.`);
+      setSaveOpen(false);
+      void queryClient.invalidateQueries({ queryKey: ['saved-reports'] });
+    } catch (err) {
+      toast.error('Could not save the report', (err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeSaved = async (id: string): Promise<void> => {
+    try {
+      await api.deleteReport(id);
+      toast.success('Report deleted');
+      void queryClient.invalidateQueries({ queryKey: ['saved-reports'] });
+    } catch (err) {
+      toast.error('Could not delete the report', (err as Error).message);
+    }
+  };
+
+  /**
+   * Columns that mean money, from metadata rather than guessing: a tabular
+   * column key is a field name and a summary column key is the measure's
+   * label over a field, so a currency-typed field marks both. The word list
+   * stays as a fallback for labels metadata cannot see.
+   */
+  const moneyColumns = useMemo(() => {
+    const currency = new Set((meta?.fields ?? []).filter((f) => f.uitype === 'currency').map((f) => f.name));
+    const set = new Set<string>(currency);
+    for (const a of aggregates) if (currency.has(a.field)) set.add(a.label ?? `${a.fn}(${a.field})`);
+    return set;
+  }, [meta, aggregates]);
+  const isMoneyColumn = (c: string): boolean => moneyColumns.has(c) || MONEY_WORDS.test(c.toLowerCase());
+
 
   const fieldLabel = (name: string): string =>
     (meta?.fields ?? []).find((f) => f.name === name)?.label
@@ -128,9 +257,48 @@ export default function ReportsPage(): JSX.Element {
       <div className="mb-4">
         <h1 className="text-lg font-semibold tracking-tight">Reports</h1>
         <p className="text-sm text-muted">
-          Build a summary or tabular report over any module, then export it.
+          Build a summary or tabular report over any module, save it, then export it.
         </p>
       </div>
+
+      {saved.data && saved.data.length > 0 && (
+        <div className="card mb-4 overflow-hidden">
+          <div className="border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+            <h2 className="text-sm font-semibold">Saved reports</h2>
+            <p className="text-2xs text-muted">Run one again, or load it into the builder to tweak and re-save.</p>
+          </div>
+          <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+            {saved.data.map((r) => (
+              <li key={r.id} className="flex flex-wrap items-center gap-2 px-4 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{r.name}</p>
+                  <p className="text-2xs text-muted">
+                    {modules.find((m) => m.name === r.module)?.label ?? r.module}
+                    {' · '}{r.type === 'tabular' ? 'Tabular' : 'Summary'}
+                    {r.isShared ? ' · Shared' : ''}
+                    {' · '}{r.lastRunAt
+                      ? `last run ${new Date(r.lastRunAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
+                      : 'never run'}
+                  </p>
+                </div>
+                <button className="btn-secondary btn-sm" onClick={() => void openSaved(r.id)}>
+                  <Play className="h-3.5 w-3.5" /> Run
+                </button>
+                {r.canDelete && (
+                  <button
+                    className="btn-ghost btn-sm text-slate-400 hover:text-red-500"
+                    aria-label={`Delete ${r.name}`}
+                    onClick={() => setToDelete(r)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
 
       <div className="card mb-4 overflow-hidden">
         <div className="grid gap-4 p-4 sm:grid-cols-2">
@@ -138,7 +306,8 @@ export default function ReportsPage(): JSX.Element {
             <label className="label">Module</label>
             <Select
               value={moduleName}
-              onChange={(v) => { setModuleName(v); setResult(null); }}
+              onChange={(v) => { setModuleName(v); setResult(null); loadRef.current = null; }}
+
               options={entityModules.map((m) => ({ value: m.name, label: m.label }))}
               className="w-full"
             />
@@ -267,13 +436,19 @@ export default function ReportsPage(): JSX.Element {
 
         <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 px-4 py-3 dark:border-slate-800">
           {result && result.rows.length > 0 && (
-            <button
-              onClick={() => toCsvDownload(result.rows, `${moduleName}-report.csv`)}
-              className="btn-secondary"
-            >
-              <Download className="h-4 w-4" /> Export CSV
-            </button>
+            <>
+              <button
+                onClick={() => toCsvDownload(result.rows, `${moduleName}-report.csv`)}
+                className="btn-secondary"
+              >
+                <Download className="h-4 w-4" /> Export CSV
+              </button>
+              <button onClick={openSaveDialog} className="btn-secondary">
+                <Save className="h-4 w-4" /> Save report
+              </button>
+            </>
           )}
+
           <button onClick={() => void run()} disabled={running || !canRun} className="btn-primary">
             {running ? <Spinner /> : <Play className="h-4 w-4" />} Run report
           </button>
@@ -311,7 +486,7 @@ export default function ReportsPage(): JSX.Element {
                       const value = row[c];
                       return (
                         <td key={c} className={cn('table-cell', typeof value === 'number' && 'tnum font-medium')}>
-                          {formatCell(value, c)}
+                          {formatCell(value, isMoneyColumn(c))}
                         </td>
                       );
                     })}
@@ -323,7 +498,7 @@ export default function ReportsPage(): JSX.Element {
                   <tr className="border-t-2 border-slate-200 bg-slate-50 font-semibold dark:border-slate-700 dark:bg-slate-800">
                     {result.columns.map((c, i) => (
                       <td key={c} className="table-cell tnum">
-                        {i === 0 ? 'Total' : result.totals?.[c] !== undefined ? formatCell(result.totals[c], c) : ''}
+                        {i === 0 ? 'Total' : result.totals?.[c] !== undefined ? formatCell(result.totals[c], isMoneyColumn(c)) : ''}
                       </td>
                     ))}
                   </tr>
@@ -333,6 +508,48 @@ export default function ReportsPage(): JSX.Element {
           </div>
         )}
       </div>
+
+      <Modal open={saveOpen} onClose={() => setSaveOpen(false)} title="Save report" size="sm"
+        footer={
+          <>
+            <button className="btn-secondary" onClick={() => setSaveOpen(false)} disabled={saving}>Cancel</button>
+            <button className="btn-primary" onClick={() => void save()} disabled={saving || !saveName.trim()}>
+              {saving ? <Spinner /> : <Save className="h-4 w-4" />} Save
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="label" htmlFor="report-name">Report name</label>
+            <input
+              id="report-name"
+              className="input w-full"
+              value={saveName}
+              onChange={(e) => setSaveName(e.target.value)}
+              placeholder="e.g. Properties by status"
+            />
+          </div>
+          {user?.isAdmin && (
+            <Toggle
+              checked={saveShared}
+              onChange={setSaveShared}
+              label="Share with everyone"
+              ariaLabel="Share this report with everyone"
+            />
+          )}
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={!!toDelete}
+        onClose={() => setToDelete(null)}
+        title="Delete this report?"
+        danger
+        confirmLabel="Delete"
+        body={toDelete ? `“${toDelete.name}” will be gone for everyone who can see it. Nothing in the CRM itself is affected.` : undefined}
+        onConfirm={async () => { if (toDelete) await removeSaved(toDelete.id); }}
+      />
     </div>
   );
 }
@@ -406,15 +623,12 @@ function MeasureRow({
 }
 
 /** Money reads as ₹ crores; every other number as a plain Indian-grouped figure. */
-function formatCell(value: unknown, column: string): JSX.Element | string {
+function formatCell(value: unknown, money: boolean): JSX.Element | string {
   if (value === null || value === undefined || value === '') {
     return <span className="text-slate-300 dark:text-slate-700">—</span>;
   }
   if (typeof value !== 'number') return String(value);
-  const key = column.toLowerCase();
-  const isMoney = key.includes('value') || key.includes('amount') || key.includes('budget')
-    || key.includes('price') || key.includes('revenue') || key.includes('cost');
-  return isMoney
+  return money
     ? formatIndianPrice(value)
     : new Intl.NumberFormat('en-IN', { maximumFractionDigits: 1 }).format(value);
 }

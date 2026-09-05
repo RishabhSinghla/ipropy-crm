@@ -280,7 +280,10 @@ reportsRouter.use(requireAuth);
 
 reportsRouter.get('/', asyncHandler(async (req, res) => {
   const user = getUser(req);
-  const rows = await db.query(
+  const rows = await db.query<{
+    id: string; name: string; description: string | null; type: string;
+    owner_id: string; is_shared: boolean; last_run_at: string | null; module: string;
+  }>(
     `SELECT r.id, r.name, r.description, r.type, r.owner_id, r.is_shared, r.last_run_at,
             m.name AS module
      FROM ipy_report r JOIN ipy_module m ON m.id = r.module_id
@@ -288,8 +291,41 @@ reportsRouter.get('/', asyncHandler(async (req, res) => {
      ORDER BY r.name`,
     [user.id],
   );
-  res.json(rows.rows);
+  // camelCase and `canDelete` here, as the dashboards list above does — the
+  // client should not be re-deriding ownership rules from raw columns.
+  res.json(rows.rows.map((r) => ({
+    id: r.id, name: r.name, description: r.description, type: r.type, module: r.module,
+    ownerId: r.owner_id, isShared: r.is_shared, lastRunAt: r.last_run_at,
+    canDelete: user.isAdmin || r.owner_id === user.id,
+  })));
 }));
+
+/** The saved definition, so "Run" can put the report back into the builder. */
+reportsRouter.get('/:id', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const report = await db.queryOne<{
+    name: string; description: string | null; type: string; columns: string[];
+    group_by: string[]; aggregates: { field: string; fn: 'count' | 'sum' | 'avg' | 'min' | 'max'; label?: string }[];
+    filter: Record<string, unknown>; sort_by: string | null; sort_dir: string;
+    owner_id: string | null; is_shared: boolean; module: string;
+  }>(
+    `SELECT r.name, r.description, r.type, r.columns, r.group_by, r.aggregates, r.filter,
+            r.sort_by, r.sort_dir, r.owner_id, r.is_shared, m.name AS module
+     FROM ipy_report r JOIN ipy_module m ON m.id = r.module_id WHERE r.id = $1`,
+    [req.params.id],
+  );
+  if (!report) throw new NotFoundError('Report not found');
+  if (!report.is_shared && report.owner_id !== user.id) throw new ForbiddenError();
+
+  res.json({
+    name: report.name, description: report.description, module: report.module,
+    type: report.type, columns: report.columns, groupBy: report.group_by,
+    aggregates: report.aggregates, filter: report.filter,
+    sortBy: report.sort_by ?? undefined, sortDir: report.sort_dir,
+    ownerId: report.owner_id, isShared: report.is_shared,
+  });
+}));
+
 
 const reportSchema = z.object({
   name: z.string().min(1),
@@ -325,7 +361,7 @@ reportsRouter.post('/', asyncHandler(async (req, res) => {
       input.name, input.description ?? null, mod.id, input.type,
       JSON.stringify(input.columns), JSON.stringify(input.groupBy),
       JSON.stringify(input.aggregates), JSON.stringify(input.filter),
-      input.sortBy ?? null, input.sortDir, user.id, input.isShared,
+      input.sortBy ?? null, input.sortDir, user.id, input.isShared && user.isAdmin,
       input.chartConfig ? JSON.stringify(input.chartConfig) : null,
     ],
   );
