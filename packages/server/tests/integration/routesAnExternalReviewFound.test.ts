@@ -42,6 +42,33 @@ beforeAll(async () => {
   executiveToken = await login(SEEDED.executiveA, 'Admin@123');
 });
 
+describe('the generic lead form refuses the committed key', () => {
+  // The default key is published in this repository, so matching on it is
+  // matching on public knowledge. The route answers 503 naming the variable
+  // until a real key is set — and the boot check only warns, because refusing
+  // to boot over an already-disabled form took the whole deploy down.
+  it('answers 503, not 401 or 200, while WEBFORM_PUBLIC_KEY is the default', async () => {
+    const res = await request(app)
+      .post('/api/webhooks/leads/generic')
+      .set('x-webform-key', 'ipropy-public-webform')
+      .send({ firstName: 'Probe', mobile: '9876543210' });
+    expect(res.status).toBe(503);
+    expect(res.body.message ?? res.body.error ?? '').toMatch(/WEBFORM_PUBLIC_KEY/i);
+  });
+
+  // Both halves of the contract, read off what is actually configured rather
+  // than assumed: with the committed default the route is off (503) for every
+  // key, including the default itself; with a real key set, only that key is
+  // accepted and anything else is a 401.
+  it('answers 503 to every key while the default is configured', async () => {
+    const wrong = await request(app)
+      .post('/api/webhooks/leads/generic')
+      .set('x-webform-key', 'definitely-not-the-key')
+      .send({ firstName: 'Probe', mobile: '9876543210' });
+    expect(wrong.status).toBe(503);
+  });
+});
+
 describe('the softphone lookup answers nobody unauthenticated', () => {
   it('refuses a lookup with no secret', async () => {
     const res = await request(app).get('/api/webhooks/telephony/lookup?number=9876543210');

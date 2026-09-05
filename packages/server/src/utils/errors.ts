@@ -17,6 +17,17 @@ export class BadRequestError extends AppError {
   }
 }
 
+/*
+  Not a client mistake and not a server bug: a feature is switched off because
+  the configuration it needs is missing. The caller may retry after an admin
+  has set the value, which is what distinguishes it from 400 and 500.
+*/
+export class ServiceUnavailableError extends AppError {
+  constructor(message = 'Service unavailable', details?: unknown) {
+    super(message, 503, 'service_unavailable', details);
+  }
+}
+
 export class ValidationError extends AppError {
   constructor(message = 'Validation failed', details?: unknown) {
     super(message, 422, 'validation_error', details);

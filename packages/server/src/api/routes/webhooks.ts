@@ -12,7 +12,7 @@ import { getSettings } from '../../core/settings/integrations.js';
 import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
-import { BadRequestError, NotFoundError, UnauthorizedError } from '../../utils/errors.js';
+import { BadRequestError, NotFoundError, ServiceUnavailableError, UnauthorizedError } from '../../utils/errors.js';
 import * as waProvider from '../../integrations/whatsapp/provider.js';
 import * as waService from '../../integrations/whatsapp/service.js';
 import { routeInboundCall, updateCallStatus } from '../../integrations/telephony/service.js';
@@ -530,8 +530,16 @@ webhooksRouter.get('/email/open/:trackingId.gif', asyncHandler(async (req, res) 
 // ---------------------------------------------------------------------------
 
 webhooksRouter.post('/leads/generic', asyncHandler(async (req, res) => {
+  const configured = getSettings().leadSources.webformPublicKey;
+  // The committed default is published in this repo, so accepting it is
+  // accepting anyone who has read the source. A tenant who never set
+  // WEBFORM_PUBLIC_KEY gets a 503 naming the variable rather than an open
+  // form: the deploy still boots, the form says why it is off.
+  if (configured === 'ipropy-public-webform') {
+    throw new ServiceUnavailableError('WEBFORM_PUBLIC_KEY is not set — the generic lead form is disabled until a unique key is configured (Admin → Integrations, or the WEBFORM_PUBLIC_KEY environment variable)');
+  }
   const key = req.headers['x-webform-key'];
-  if (key !== getSettings().leadSources.webformPublicKey) throw new UnauthorizedError('Invalid webhook key');
+  if (key !== configured) throw new UnauthorizedError('Invalid webhook key');
 
   const input = z.object({
     firstName: z.string().min(1),

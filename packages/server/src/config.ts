@@ -336,10 +336,14 @@ export function validateProductionConfig(): string[] {
     problems.push('JWT_SECRET is still a known development default — generate a strong secret with `npm run secrets:generate`');
   }
   if (config.leadSources.webformPublicKey === 'ipropy-public-webform') {
-    // The generic lead webhook checks this key, and its default is committed
-    // in this repo — a tenant who does not override it has published the
-    // answer to "who may post leads".
-    problems.push('WEBFORM_PUBLIC_KEY is still the committed default — set a unique key, or the generic lead form accepts leads from anyone holding the repo');
+    // The generic lead webhook route refuses the committed default outright
+    // (503, naming the variable), so a tenant who never set it has a disabled
+    // form rather than an open one. The boot check only *warns*: refusing to
+    // boot took the whole deploy down for a form that was already safe.
+    // console, not logger: logger reads this module for its own level, so
+    // importing it back here is a cycle that crashes boot before the warning
+    // could ever print.
+    console.warn('[config] WEBFORM_PUBLIC_KEY is the committed default — the generic lead form answers 503 until a unique key is set');
   }
   if (config.seed.demoData) {
     problems.push('SEED_DEMO_DATA must be false in production (it would create demo users)');
