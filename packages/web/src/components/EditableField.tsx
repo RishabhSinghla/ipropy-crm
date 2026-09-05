@@ -322,6 +322,7 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
   ) : (
     <EditTrigger
       onClick={openEdit}
+      label={field.label}
       status={status}
       flashKey={flashKey}
       compact={compact}
@@ -523,13 +524,15 @@ function StatusRing({ status, children }: { status: Status; children: React.Reac
  * editor sits on top — that is what keeps the table from reflowing on click.
  */
 function EditTrigger({
-  onClick, status, flashKey, compact, invisible, children,
+  onClick, status, flashKey, compact, invisible, label, children,
 }: {
   onClick?: () => void;
   status: Status;
   flashKey: number;
   compact?: boolean;
   invisible?: boolean;
+  /** The field this edits, so the button can say which one it is. */
+  label: string;
   children: React.ReactNode;
 }): JSX.Element {
   return (
@@ -540,6 +543,20 @@ function EditTrigger({
       disabled={status === 'saving' || invisible}
       tabIndex={invisible ? -1 : undefined}
       aria-hidden={invisible}
+      /*
+        Named for the field, not "Click to edit".
+
+        Every editable value on a record was a button whose only accessible name
+        was the tooltip, so a record page presented twenty identical "Click to
+        edit" buttons. A screen reader announced the same three words for the
+        mobile number, the budget and the pipeline status alike, and the value
+        beside it was decoration the button did not claim. Nothing said which
+        field was about to open.
+
+        The tooltip stays as it was for a sighted user hovering; the label is
+        what anyone not looking at the screen actually gets.
+      */
+      aria-label={invisible ? undefined : `Edit ${label}`}
       title={invisible ? undefined : 'Click to edit'}
       className={cn(
         'group/ef -mx-1 inline-flex items-center gap-1 rounded px-1 py-0.5 text-left transition-colors',

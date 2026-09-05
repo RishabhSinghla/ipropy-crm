@@ -86,7 +86,7 @@ test.describe('lead lifecycle through the UI', () => {
     const phone = test.info().project.name === 'mobile';
     await page.goto('/leads/new');
     await page.waitForLoadState('domcontentloaded');
-    await page.getByLabel(/full name/i).fill(name);
+    await page.getByRole('textbox', { name: /full name/i }).fill(name);
     await page.getByLabel(/mobile/i).first().fill(mobile);
     await page.getByRole('button', { name: /save|create/i }).click();
     // Creating deliberately returns to the list — reps add several leads in a
@@ -127,7 +127,7 @@ test.describe('lead lifecycle through the UI', () => {
     await detail.getByRole('link', { name: 'Edit' }).click();
     await detail.waitForURL(/\/edit$/);
     const renamed = `${name} II`;
-    await detail.getByLabel(/full name/i).first().fill(renamed);
+    await detail.getByRole('textbox', { name: /full name/i }).first().fill(renamed);
     await detail.getByRole('button', { name: /save/i }).click();
     // An edit returns to the record itself, where the new name is the heading.
     await expect(detail.getByRole('heading', { name: renamed })).toBeVisible({ timeout: 10_000 });
