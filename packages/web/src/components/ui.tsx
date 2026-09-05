@@ -38,9 +38,12 @@ export function Badge({
 }: { children: ReactNode; color?: string | null; className?: string }): JSX.Element {
   return (
     <span
+      // Solid, not tinted: the team reads statuses down a column all day and
+      // came off a CRM that fills the chip. lib/color.ts still guarantees the
+      // pair clears AA — see solidColors.
       className={cn('badge border', className, color
-        ? 'badge-tinted'
-        : 'border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300')}
+        ? 'badge-solid'
+        : 'border-slate-300 bg-slate-200 text-slate-800 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100')}
       style={badgeVars(color)}
     >
       {children}

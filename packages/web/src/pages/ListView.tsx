@@ -4,13 +4,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FieldMeta, type FilterGroup, formatIndianPrice, formatPhoneWithCode, type ListQuery, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, CloudOff, Columns3, Compass, Download, Filter,
-  LayoutGrid, List, MailCheck, Plus, RefreshCw, Save, Search, Settings2, Sparkles, Star, Trash2, Upload, Users, X,
+  LayoutGrid, List, MailCheck, Plus, RefreshCw, Ruler, Save, Search, Settings2, Star, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { ApiError, api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { saveListNav } from '../lib/listNav';
-import { badgeVars } from '../lib/color';
 import { cn, restrictionForField } from '../lib/utils';
 import { FieldValue } from '../components/FieldRenderer';
 import { EditableField, isInlineEditable } from '../components/EditableField';
@@ -22,6 +21,7 @@ import { ModuleIcon } from '../components/Layout';
 import RecordForm from '../components/RecordForm';
 import RecordPeek from '../components/RecordPeek';
 import { usePressPreview } from '../lib/pressPreview';
+import { SELECT_COL_WIDTH, useColumnWidths } from '../lib/columnWidths';
 import { useOfflineList, useOfflineMeta } from '../lib/useOfflineList';
 
 const EMPTY_FILTER: FilterGroup = { logic: 'AND', conditions: [] };
@@ -44,8 +44,7 @@ export default function ListView(): JSX.Element {
     else navigate(path);
   };
   const queryClient = useQueryClient();
-  const { moduleByName, user } = useApp();
-  const summary = moduleByName(moduleName ?? '');
+  const { user } = useApp();
 
 
   const [page, setPage] = useState(1);
@@ -64,6 +63,7 @@ export default function ListView(): JSX.Element {
   const [showQuickCreate, setShowQuickCreate] = useState(false);
   const [showColumns, setShowColumns] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const colWidths = useColumnWidths(moduleName);
 
   /**
    * Which view the sort/columns effect below has already applied, and whether
@@ -397,39 +397,48 @@ export default function ListView(): JSX.Element {
   const fieldMap = new Map(meta.fields.map((f) => [f.name, f]));
   const canCreate = meta.permissions.create;
   const rows = offline.rows;
+  // A fixed-layout table still shrinks its columns to fit a narrow container,
+  // which would quietly undo a drag. Declaring the sum as a minimum makes the
+  // body scroll instead.
+  const tableMinWidth = SELECT_COL_WIDTH
+    + visibleColumns.reduce((sum, col) => sum + colWidths.widthOf(col, fieldMap.get(col)), 0);
 
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="shrink-0 border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900 sm:px-6">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2.5">
-            <span
-              className="badge-tinted flex h-9 w-9 items-center justify-center rounded-lg"
-              style={badgeVars(meta.color)}
-            >
-              <ModuleIcon name={meta.icon} className="h-4.5 w-4.5" />
-            </span>
-            <div>
-              <h1 className="text-lg font-semibold leading-tight tracking-tight">{meta.label}</h1>
-              <p className="text-xs text-muted tnum">
-                {isFetching && !data && !offline.stale
-                  ? 'Loading…'
-                  : `${(data?.total ?? (offline.stale ? offline.rows.length : 0)).toLocaleString('en-IN')} records`}
-              </p>
-            </div>
+      <div className="shrink-0 border-b border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-900 sm:px-4">
+        {/*
+          No title bar.
+
+          The module name is already in the sidebar, in the tab title and in the
+          URL, and a 9mm-tall heading repeating it cost a row of records on every
+          screen in the office. The toolbar starts at the left edge instead and
+          the record count rides along with the search box, which is where
+          somebody actually looks for it.
+
+          The heading itself stays for screen readers and for the page's
+          document outline — removing the only h1 from a route is a real
+          regression, just not a visible one.
+        */}
+        <h1 className="sr-only">{meta.label}</h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+            <input
+              className="input w-44 py-1.5 pl-8 text-sm sm:w-64"
+              placeholder={`Search ${meta.label.toLowerCase()}…`}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+            />
           </div>
 
+          <span className="hidden shrink-0 text-xs text-muted tnum sm:inline">
+            {isFetching && !data && !offline.stale
+              ? 'Loading…'
+              : `${(data?.total ?? (offline.stale ? offline.rows.length : 0)).toLocaleString('en-IN')} records`}
+          </span>
+
           <div className="ml-auto flex flex-wrap items-center gap-2">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-              <input
-                className="input w-40 py-1.5 pl-8 text-sm sm:w-48"
-                placeholder={`Search ${meta.label.toLowerCase()}…`}
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-              />
-            </div>
 
             <button
               onClick={() => setShowFilters(true)}
@@ -471,6 +480,14 @@ export default function ListView(): JSX.Element {
                   <DropdownItem icon={<Columns3 className="h-3.5 w-3.5" />} onClick={() => { setShowColumns(true); close(); }}>
                     Choose columns
                   </DropdownItem>
+                  {colWidths.customised && (
+                    <DropdownItem
+                      icon={<Ruler className="h-3.5 w-3.5" />}
+                      onClick={() => { colWidths.resetAll(); close(); }}
+                    >
+                      Reset column widths
+                    </DropdownItem>
+                  )}
                   {activeView && (
                     <DropdownItem
                       icon={<Save className="h-3.5 w-3.5" />}
@@ -657,10 +674,23 @@ export default function ListView(): JSX.Element {
             ))}
           </div>
 
-          <table className="hidden w-full border-collapse lg:table">
+          {/* `table-fixed` is what makes the drag-to-resize below real: with an
+              auto layout the browser re-measures every cell on each pointermove
+              and the columns fight the width you just set. The trade is that
+              each column needs a declared width, which the <colgroup> supplies
+              — a stored one if this user has dragged it, otherwise a default
+              derived from the field type. The table can now be wider than the
+              viewport, so the body scrolls horizontally, as it did on Vtiger. */}
+          <table className="hidden w-full table-fixed border-collapse lg:table" style={{ minWidth: tableMinWidth }}>
+            <colgroup>
+              <col style={{ width: SELECT_COL_WIDTH }} />
+              {visibleColumns.map((col) => (
+                <col key={col} style={{ width: colWidths.widthOf(col, fieldMap.get(col)) }} />
+              ))}
+            </colgroup>
             <thead>
               <tr>
-                <th className="table-head w-10">
+                <th className="list-head">
                   <input
                     type="checkbox"
                     aria-label={`Select all ${meta.label.toLowerCase()} on this page`}
@@ -672,19 +702,36 @@ export default function ListView(): JSX.Element {
                 {visibleColumns.map((col) => {
                   const field = fieldMap.get(col);
                   return (
-                    <th key={col} className="table-head">
+                    <th key={col} className="list-head relative">
                       <button
-                        className="inline-flex items-center gap-1 hover:text-slate-700 dark:hover:text-slate-200"
+                        className="inline-flex max-w-full items-center gap-1 truncate hover:text-slate-700 dark:hover:text-slate-200"
                         onClick={() => {
                           if (sortBy === col) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
                           else { setSortBy(col); setSortDir('desc'); }
                         }}
                       >
-                        {field?.label ?? col}
+                        <span className="truncate">{field?.label ?? col}</span>
                         {sortBy === col
-                          ? <ChevronDown className={cn('h-3 w-3', sortDir === 'asc' && 'rotate-180')} />
-                          : <ArrowUpDown className="h-2.5 w-2.5 opacity-0 group-hover:opacity-40" />}
+                          ? <ChevronDown className={cn('h-3 w-3 shrink-0', sortDir === 'asc' && 'rotate-180')} />
+                          : <ArrowUpDown className="h-2.5 w-2.5 shrink-0 opacity-0 group-hover:opacity-40" />}
                       </button>
+                      {/* Drag to resize, double-click to put it back. `role` and
+                          the arrow keys are here because a column width is a
+                          real setting and a pointer is not the only way in. */}
+                      <span
+                        role="separator"
+                        aria-orientation="vertical"
+                        aria-label={`Resize ${field?.label ?? col}`}
+                        tabIndex={0}
+                        className={cn('col-resizer', colWidths.resizing === col && 'col-resizer-active')}
+                        onPointerDown={(e) => colWidths.beginResize(col, colWidths.widthOf(col, field), e)}
+                        onDoubleClick={(e) => { e.stopPropagation(); colWidths.resetColumn(col); }}
+                        onKeyDown={(e) => {
+                          if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+                          e.preventDefault();
+                          colWidths.nudge(col, colWidths.widthOf(col, field), e.key === 'ArrowLeft' ? -16 : 16);
+                        }}
+                      />
                     </th>
                   );
                 })}
@@ -697,16 +744,19 @@ export default function ListView(): JSX.Element {
                 <tr
                   key={row.id}
                   className={cn(
-                    'group cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60',
-                    row.starred
-                      ? 'bg-amber-50/80 dark:bg-amber-950/25'
-                      : isNew
-                        ? 'bg-brand-50/60 dark:bg-brand-950/25'
-                        : 'bg-white dark:bg-slate-900',
+                    // Striping, hover and selection all live in .list-row
+                    // (styles.css) so they layer in a predictable order.
+                    'list-row group cursor-pointer transition-colors',
+                    selected.has(row.id) && 'list-row-selected',
+                    // A new record is marked by weight, not by a coloured
+                    // sheet: tinting the row fought the zebra stripe, and on a
+                    // list where most rows are new it stopped meaning anything.
+                    // Starred keeps its tint — that one is rare by nature.
+                    row.starred && 'bg-amber-50/80 dark:bg-amber-950/25',
                   )}
                   onClick={() => openRecord(`/${moduleName}/${row.id}?return=${encodeURIComponent(returnTo)}`)}
                 >
-                  <td className="table-cell" onClick={(e) => e.stopPropagation()}>
+                  <td className="list-cell" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
                       aria-label={`Select ${row.label}`}
@@ -722,18 +772,18 @@ export default function ListView(): JSX.Element {
                   {visibleColumns.map((col, ci) => {
                     const field = fieldMap.get(col);
                     if (!field) {
-                      return <td key={col} className="table-cell text-muted">—</td>;
+                      return <td key={col} className="list-cell text-muted">—</td>;
                     }
                     return (
                       <td
                         key={col}
                         className={cn(
-                          'table-cell',
+                          'list-cell',
                           ci === 0 && 'font-medium text-slate-900 dark:text-slate-100',
-                          // Unread weight, like an inbox. Applied to the whole
-                          // row rather than the name alone so the row reads as
-                          // one unit at a glance.
-                          isNew && 'font-semibold text-slate-900 dark:text-white',
+                          // Unread weight, like an inbox — and now the *only*
+                          // marker for it. Applied to the whole row rather than
+                          // the name alone so the row reads as one unit.
+                          isNew && 'font-bold text-slate-900 dark:text-white',
                         )}
                       >
                         {ci === 0 && row.starred && (
@@ -1018,7 +1068,7 @@ function MobileRecordCard({
         'px-4 py-3 [-webkit-touch-callout:none]',
         isStarred
           ? 'bg-amber-50/80 dark:bg-amber-950/25'
-          : isNew ? 'bg-brand-50/60 dark:bg-brand-950/25' : 'bg-white dark:bg-slate-900',
+          : 'bg-white dark:bg-slate-900',
       )}
     >
       <div className="flex items-start gap-3">
@@ -1030,7 +1080,7 @@ function MobileRecordCard({
           aria-label="Select record"
         />
         <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
-          <p className={cn('truncate text-slate-900 dark:text-slate-100', isNew ? 'font-semibold' : 'font-medium')}>
+          <p className={cn('truncate text-slate-900 dark:text-slate-100', isNew ? 'font-bold' : 'font-medium')}>
             {isStarred && <Star className="mr-1.5 inline-block h-3.5 w-3.5 fill-amber-400 text-amber-500 align-middle" aria-label="Favourite" />}
             {isNew && (
               <span

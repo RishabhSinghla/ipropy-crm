@@ -311,7 +311,16 @@ export interface ModulePermission {
   import: boolean;
 }
 
-export type FieldPermission = 'hidden' | 'readonly' | 'editable';
+/**
+ * What a profile may do with one field.
+ *
+ * `owner_only` is the record-aware one: the field reads normally for the user
+ * who owns the record and is masked for everybody else, which is how a mobile
+ * number stops being a list anybody can copy without stopping the person
+ * working the lead from ringing it. It is a *visibility* rule — writing is
+ * governed by whether you can edit the record at all.
+ */
+export type FieldPermission = 'hidden' | 'readonly' | 'owner_only' | 'editable';
 
 export interface Group {
   id: string;

@@ -98,7 +98,7 @@ export async function getRecord(
   });
   if (!ctx.system) {
     stripHidden(envelope, await hiddenFieldsFor(ctx, moduleName));
-    maskPhones(envelope, await maskedPhoneFields(ctx.user, moduleName));
+    maskPhones(envelope, await maskedPhoneFields(ctx.user, moduleName, envelope.ownerId));
   }
   return envelope;
 }
@@ -316,10 +316,13 @@ export async function listRecords(
   // easiest place to copy a thousand numbers from, so masking matters most here.
   if (!ctx.system) {
     const hidden = await hiddenFieldsFor(ctx, moduleName);
-    const masked = await maskedPhoneFields(ctx.user, moduleName);
+    // Resolved once for the whole page — the answer depends on the profile,
+    // which does not change between rows — and then applied per row against
+    // that row's owner, because `owner_only` does.
+    const masked = await maskedPhoneFields(ctx.user, moduleName, null);
     for (const row of rows) {
       stripHidden(row, hidden);
-      maskPhones(row, masked);
+      if (row.ownerId !== ctx.user.id) maskPhones(row, masked);
     }
   }
 
@@ -969,13 +972,34 @@ export function buildLabel(module: ModuleMeta, values: Record<string, unknown>):
   return fallback ? String(fallback).slice(0, 300) : `${module.singularLabel}`;
 }
 
+/**
+ * What the search box can match this record on.
+ *
+ * Phone numbers are in here whether or not anybody ticked "searchable" on the
+ * field. Pasting a missed call into the search box is the single most common
+ * lookup on a property desk, and it silently returned nothing: `mobile` is not
+ * a searchable field in the seed, so no lead could be found by its number —
+ * by its owner or by anyone else. That reads exactly like a permissions
+ * problem, and it was reported as one.
+ *
+ * Both forms go in. The stored value may be `9811421156` while the caller ID
+ * says `+91 98114 21156`, and the tokeniser treats those as different words,
+ * so the digits-only form is appended alongside whatever was typed.
+ */
 function buildSearchText(module: ModuleMeta, values: Record<string, unknown>): string {
   const parts: string[] = [];
   for (const f of module.fields) {
-    if (!f.searchable || !f.isActive) continue;
+    if (!f.isActive) continue;
+    const phone = f.uitype === 'phone';
+    if (!f.searchable && !phone) continue;
     const v = values[f.name];
     if (isEmpty(v)) continue;
-    parts.push(Array.isArray(v) ? v.join(' ') : String(v));
+    const raw = Array.isArray(v) ? v.join(' ') : String(v);
+    parts.push(raw);
+    if (phone) {
+      const digits = raw.replace(/\D/g, '');
+      if (digits && digits !== raw) parts.push(digits);
+    }
   }
   return parts.join(' ').slice(0, 4000);
 }
@@ -1243,12 +1267,111 @@ export async function lookupRecords(
   return res.rows.map((r) => ({ id: r.id, label: r.label, recordNumber: r.record_number }));
 }
 
+export interface SearchHit {
+  id: string;
+  module: string;
+  moduleLabel: string;
+  label: string;
+  recordNumber: string | null;
+  /**
+   * A number that exists in the CRM on a record this user cannot open.
+   *
+   * Carries a name and an owner and nothing else — no id to follow, no
+   * fields. See `assignedNumberLookup`.
+   */
+  restricted?: true;
+  ownerName?: string | null;
+}
+
+/**
+ * Is this number already on somebody's record, and whose?
+ *
+ * Runs **outside** the searcher's record scope on purpose — that is the whole
+ * point, and it is why the answer is cut down to two facts. What comes back is
+ * a name and an owner. There is no record id in it, so the UI has nothing to
+ * link to; no field values, so the mobile itself is never re-served to someone
+ * a profile has masked it from.
+ *
+ * Guards that keep this from becoming a back door:
+ *
+ *  * **Phone-shaped terms only** — eight digits or more. A name, a locality or
+ *    a budget goes nowhere near this path, so it cannot be used to browse.
+ *  * **Digits compared to digits.** The stored value may be `9811421156`,
+ *    `+91 98114 21156` or `098114-21156`; a `LIKE` on the raw column matches
+ *    the first and misses the rest, which would report "not taken" for a number
+ *    that is.
+ *  * **The last eight digits.** Indian mobiles are ten, and the pair that
+ *    differs between a stored `+91…` and a typed `0…` is at the front.
+ *  * **Phone fields only**, found by uitype, so an admin adding "Alternate
+ *    number" tomorrow is covered and a text field holding an invoice number
+ *    is not.
+ */
+async function assignedNumberLookup(
+  ctx: ServiceContext,
+  term: string,
+  labelByName: Map<string, string>,
+): Promise<SearchHit | null> {
+  const digits = term.replace(/\D/g, '');
+  if (digits.length < 8) return null;
+  const tail = digits.slice(-8);
+
+  const modules = await registry.getModules({ entityOnly: true });
+  for (const module of modules) {
+    const phoneFields = module.fields.filter((f) => f.uitype === 'phone' && f.isActive);
+    if (!phoneFields.length) continue;
+
+    // right(digits-only, 8) = the typed tail. Written per field rather than
+    // concatenated so a null in one column cannot swallow the row. A JSON
+    // field's key is bound, not interpolated — it is metadata, but nothing in
+    // this file interpolates a value into SQL and this is not the place to
+    // start the exception.
+    const params: unknown[] = [module.id, tail];
+    const clauses = phoneFields.map((f) => {
+      let expr: string;
+      if (f.storage === 'json') {
+        params.push(f.columnName);
+        expr = `e.custom_fields->>$${params.length}`;
+      } else {
+        expr = `e.${quoteIdent(f.columnName)}`;
+      }
+      return `right(regexp_replace(coalesce(${expr}, ''), '\\D', '', 'g'), 8) = $2`;
+    });
+
+    const row = await db.queryOne<{ label: string; owner_name: string | null }>(
+      `SELECT r.label, nullif(trim(u.first_name || ' ' || u.last_name), '') AS owner_name
+         FROM ipy_record r
+         JOIN ${quoteIdent(module.tableName)} e ON e.record_id = r.id
+         LEFT JOIN ipy_user u ON u.id = r.owner_id
+        WHERE r.module_id = $1 AND r.is_deleted = false AND (${clauses.join(' OR ')})
+        ORDER BY r.updated_at DESC
+        LIMIT 1`,
+      params,
+    );
+    if (!row) continue;
+
+    logger.info(
+      { userId: ctx.user.id, module: module.name },
+      'search revealed an out-of-scope number as assigned',
+    );
+    return {
+      id: `restricted:${module.name}`,
+      module: module.name,
+      moduleLabel: labelByName.get(module.name) ?? module.name,
+      label: row.label,
+      recordNumber: null,
+      restricted: true,
+      ownerName: row.owner_name,
+    };
+  }
+  return null;
+}
+
 /** Global search across every module the user can see. */
 export async function globalSearch(
   ctx: ServiceContext,
   term: string,
   limit = 20,
-): Promise<{ id: string; module: string; moduleLabel: string; label: string; recordNumber: string | null }[]> {
+): Promise<SearchHit[]> {
   if (!term.trim()) return [];
   const modules = await registry.getModules({ entityOnly: true });
   const allowed: ModuleMeta[] = [];
@@ -1291,13 +1414,30 @@ export async function globalSearch(
   );
 
   const labelByName = new Map(modules.map((m) => [m.name, m.label]));
-  const found = res.rows.map((r) => ({
+  const found: SearchHit[] = res.rows.map((r) => ({
     id: r.id,
     module: r.module_name,
     moduleLabel: labelByName.get(r.module_name) ?? r.module_name,
     label: r.label,
     recordNumber: r.record_number,
   }));
+
+  /*
+    "Nobody has this number" and "you cannot see who does" look identical from
+    the search box, and only one of them is true. A rep who dials a number
+    the desk already owns has cold-called a colleague's customer, which is the
+    single most expensive avoidable mistake on a property desk.
+
+    So a phone-shaped search that found nothing gets one extra, deliberately
+    tiny answer: the name on the record and who it is assigned to. No id, so
+    there is nothing to open; no fields, so there is nothing to read. And it
+    only fires on a number the searcher already had in their hand, which is
+    why it cannot be used to build a list of numbers.
+  */
+  if (!ctx.system && !found.length) {
+    const assigned = await assignedNumberLookup(ctx, term, labelByName);
+    if (assigned) found.push(assigned);
+  }
 
   /**
    * When the words did not match, try the meaning.

@@ -2,11 +2,12 @@ import { type JSX, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
-import { Database, Download, FileUp, Upload } from 'lucide-react';
-import { api, authedFileUrl } from '../../lib/api';
+import { AlertTriangle, Database, Download, FileUp, Upload } from 'lucide-react';
+import { api, authedFileUrl, type ImportSection } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
 import { cn } from '../../lib/utils';
-import { Badge, EmptyState, Modal, Select, Skeleton, Spinner } from '../../components/ui';
+import { Badge, Dropdown, DropdownItem, EmptyState, Modal, Select, Spinner } from '../../components/ui';
+import { ImportDuplicateReview } from '../../components/ImportDuplicateReview';
 
 interface Preview {
   headers: string[];
@@ -17,9 +18,10 @@ interface Preview {
 }
 
 interface JobRow {
-  id: string; file_name: string; module: string; status: string;
+  id: string; file_name: string; module: string; module_label: string; status: string;
   total_rows: number; processed_rows: number; created_rows: number;
   skipped_rows: number; failed_rows: number; created_at: string;
+  duplicate_rows: number; pending_rows: number; updated_rows: number;
   errors: { row: number; error: string }[];
   details: { created: string[]; skipped: string[] };
 }
@@ -32,13 +34,18 @@ export default function ImportAdmin(): JSX.Element {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({});
-  const [duplicateHandling, setDuplicateHandling] = useState('skip');
+  // Review by default. The other two answer a per-row question with a
+  // file-wide rule, and both are wrong often enough to lose real data —
+  // "skip" throws away the corrected spelling and the new budget, "create"
+  // leaves the desk with two of the same person.
+  const [duplicateHandling, setDuplicateHandling] = useState('review');
   // Off on purpose: an import that queues five hundred WhatsApp greetings is
   // the failure this checkbox exists to prevent. Automations stay one tick
   // away for the day they are wanted.
   const [runWorkflows, setRunWorkflows] = useState(false);
   const [busy, setBusy] = useState(false);
   const [openJob, setOpenJob] = useState<JobRow | null>(null);
+  const [reviewJob, setReviewJob] = useState<JobRow | null>(null);
 
   const { data: jobs } = useQuery({
     queryKey: ['import-jobs'],
@@ -100,7 +107,7 @@ export default function ImportAdmin(): JSX.Element {
       <div className="mb-4">
         <h1 className="text-lg font-semibold tracking-tight">Import Data</h1>
         <p className="text-sm text-muted">
-          Bring existing leads, contacts or inventory in from a CSV. Columns are matched to fields automatically.
+          Bring existing contacts or inventory in from a CSV. Columns are matched to fields automatically.
         </p>
       </div>
 
@@ -143,6 +150,7 @@ export default function ImportAdmin(): JSX.Element {
                 value={duplicateHandling}
                 onChange={setDuplicateHandling}
                 options={[
+                  { value: 'review', label: 'Let me decide at the end' },
                   { value: 'skip', label: 'Skip duplicates' },
                   { value: 'create', label: 'Create anyway' },
                 ]}
@@ -173,6 +181,14 @@ export default function ImportAdmin(): JSX.Element {
             </button>
           )}
         </div>
+
+        {duplicateHandling === 'review' && preview && (
+          <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300">
+            Rows that match a record already here — same mobile or email — are set aside rather than
+            imported or thrown away. When the file finishes you get them side by side and choose,
+            row by row, which values to keep.
+          </p>
+        )}
 
         {unmappedMandatory.length > 0 && (
           <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
@@ -228,8 +244,8 @@ export default function ImportAdmin(): JSX.Element {
           <table className="w-full">
             <thead>
               <tr>
-                {['File', 'Module', 'Status', 'Created', 'Skipped', 'Failed', 'When', ''].map((h) => (
-                  <th key={h} className="table-head">{h}</th>
+                {['File', 'Module', 'Status', 'Created', 'Skipped', 'Failed', 'Duplicates', 'When', ''].map((h) => (
+                  <th key={h} className="list-head">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -238,9 +254,9 @@ export default function ImportAdmin(): JSX.Element {
                 const running = job.status === 'running';
                 return (
                   <tr key={job.id}>
-                    <td className="table-cell max-w-[14rem] truncate font-medium">{job.file_name}</td>
-                    <td className="table-cell capitalize text-slate-500">{job.module}</td>
-                    <td className="table-cell">
+                    <td className="list-cell max-w-[14rem] truncate font-medium">{job.file_name}</td>
+                    <td className="list-cell text-slate-500">{job.module_label ?? job.module}</td>
+                    <td className="list-cell">
                       <Badge color={
                         job.status === 'completed' ? '#22c55e'
                           : job.status === 'cancelled' ? '#f59e0b'
@@ -254,21 +270,41 @@ export default function ImportAdmin(): JSX.Element {
                         </span>
                       )}
                     </td>
-                    <td className="table-cell">
+                    <td className="list-cell">
                       <CountButton count={job.created_rows} onClick={() => setOpenJob(job)} tone="positive" />
                     </td>
-                    <td className="table-cell">
+                    <td className="list-cell">
                       <CountButton count={job.skipped_rows} onClick={() => setOpenJob(job)} tone="muted" />
                     </td>
-                    <td className="table-cell">
+                    <td className="list-cell">
                       <CountButton count={job.failed_rows} onClick={() => setOpenJob(job)} tone={job.failed_rows > 0 ? 'negative' : 'muted'} />
                     </td>
-                    <td className="table-cell text-2xs text-muted">{relativeTime(job.created_at)}</td>
-                    <td className="table-cell text-right">
-                      {running && (
+                    <td className="list-cell">
+                      {job.pending_rows > 0 ? (
+                        <button
+                          onClick={() => setReviewJob(job)}
+                          className="inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-2xs font-semibold text-amber-900 hover:bg-amber-200 dark:bg-amber-950 dark:text-amber-200 dark:hover:bg-amber-900"
+                          title="Look at each one beside the record it matched, and decide"
+                        >
+                          <AlertTriangle className="h-3 w-3" />
+                          {job.pending_rows} to review
+                        </button>
+                      ) : job.duplicate_rows > 0 ? (
+                        <span className="text-2xs text-muted tnum" title="All reviewed">
+                          {job.duplicate_rows} reviewed
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
+                    </td>
+                    <td className="list-cell text-2xs text-muted">{relativeTime(job.created_at)}</td>
+                    <td className="list-cell text-right">
+                      {running ? (
                         <button onClick={() => void cancel(job.id)} className="btn-secondary btn-sm">
                           Cancel
                         </button>
+                      ) : (
+                        <ResultDownload job={job} />
                       )}
                     </td>
                   </tr>
@@ -280,7 +316,70 @@ export default function ImportAdmin(): JSX.Element {
       </div>
 
       {openJob && <JobDetailsModal job={openJob} onClose={() => setOpenJob(null)} />}
+      {reviewJob && (
+        <ImportDuplicateReview
+          jobId={reviewJob.id}
+          fileName={reviewJob.file_name}
+          onClose={() => setReviewJob(null)}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * The finished import, as sheets you can open in Excel.
+ *
+ * One file per outcome, not one file with three tabs: CSV has no tabs, and a
+ * single file pretending to hold three is either three headers glued together
+ * (which Excel reads as one broken table) or a lie about the format. "Everything"
+ * is the fourth option — every row with its outcome in a column, which is the
+ * one to filter and pivot.
+ *
+ * The failed sheet is the useful one: it carries the original line number and
+ * the mapped values, so the fix is edit, save, re-import that file alone.
+ */
+function ResultDownload({ job }: { job: JobRow }): JSX.Element | null {
+  const base = job.file_name.replace(/\.csv$/i, '') || 'import';
+  const sections: { key: ImportSection; label: string; count: number }[] = [
+    { key: 'all', label: 'Everything', count: job.total_rows },
+    { key: 'created', label: 'Created', count: job.created_rows },
+    { key: 'updated', label: 'Merged into existing', count: job.updated_rows ?? 0 },
+    { key: 'skipped', label: 'Skipped', count: job.skipped_rows },
+    { key: 'failed', label: 'Failed', count: job.failed_rows },
+    { key: 'duplicates', label: 'Duplicates', count: job.duplicate_rows ?? 0 },
+  ];
+
+  return (
+    <Dropdown
+      trigger={
+        <button className="btn-secondary btn-sm" title="Download this import's result as CSV">
+          <Download className="h-3.5 w-3.5" />
+          Result
+        </button>
+      }
+    >
+      {(close) => (
+        <>
+          {sections.map(({ key, label, count }) => (
+            <a
+              key={key}
+              href={api.importResultUrl(job.id, key, base)}
+              download
+              onClick={close}
+              // A section with nothing in it still downloads — an empty sheet
+              // with the right headers is a truthful answer, and hiding the
+              // row makes the menu jump around between jobs.
+              className={cn(count === 0 && 'opacity-50')}
+            >
+              <DropdownItem icon={<Download className="h-3.5 w-3.5" />}>
+                {label} <span className="ml-1 text-2xs text-muted tnum">({count})</span>
+              </DropdownItem>
+            </a>
+          ))}
+        </>
+      )}
+    </Dropdown>
   );
 }
 

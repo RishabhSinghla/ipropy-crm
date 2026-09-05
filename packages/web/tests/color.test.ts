@@ -8,6 +8,7 @@ import {
   hexToRgb,
   readableOn,
   rgbToHex,
+  solidColors,
   avatarBackground,
   tintedTextVars,
 } from '../src/lib/color';
@@ -100,6 +101,66 @@ describe('readableOn', () => {
   });
 });
 
+describe('solidColors', () => {
+  /**
+   * The chip the team actually reads, since the list moved to Vtiger's
+   * full-strength fill. The tinted variant's guarantee does not carry over:
+   * the fill is now the admin's hue at full saturation and the text is black
+   * or white, so this is a different pair and needs its own assertion.
+   */
+  it('clears AA for every seeded colour, in both themes', () => {
+    for (const color of SEEDED_PALETTE) {
+      for (const theme of ['light', 'dark'] as const) {
+        const c = solidColors(color, theme)!;
+        expect(c, `${color} / ${theme}`).not.toBeNull();
+        const r = ratio(c.fg, c.bg);
+        expect(r, `${color} / ${theme}: ${c.fg} on ${c.bg} = ${r.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA_NORMAL);
+      }
+    }
+  });
+
+  it('only ever puts black or white on the fill', () => {
+    // The point of the solid chip is that the hue is the fill. A third
+    // "readable-ish" foreground would drift the design back toward the tinted
+    // variant one colour at a time.
+    for (const color of SEEDED_PALETTE) {
+      for (const theme of ['light', 'dark'] as const) {
+        expect(['#ffffff', '#0f172a']).toContain(solidColors(color, theme)!.fg);
+      }
+    }
+  });
+
+  it('keeps the hue the admin picked', () => {
+    // Lightness may move to earn the contrast; hue may not. A red status that
+    // arrives on screen orange is a bug report, not an accessibility win.
+    // Compared as the ranking of the R/G/B channels rather than through an HSL
+    // round-trip: that ordering is what makes a colour read as "the red one",
+    // and it survives the lightness walk exactly when the hue does.
+    const rank = (rgb: readonly number[]): string => [0, 1, 2].sort((a, b) => rgb[b] - rgb[a]).join('');
+    for (const color of SEEDED_PALETTE) {
+      for (const theme of ['light', 'dark'] as const) {
+        const fill = hexToRgb(solidColors(color, theme)!.bg)!;
+        expect(rank(fill), `${color} / ${theme}`).toBe(rank(hexToRgb(color)!));
+      }
+    }
+  });
+
+  it('never returns a fill that vanishes into the page', () => {
+    for (const color of SEEDED_PALETTE) {
+      for (const [theme, surfaces] of Object.entries(SURFACES) as ['light' | 'dark', Record<string, string>][]) {
+        const c = solidColors(color, theme)!;
+        for (const [name, surface] of Object.entries(surfaces)) {
+          expect(ratio(c.bg, surface), `${color} / ${theme} / ${name}`).toBeGreaterThan(1.05);
+        }
+      }
+    }
+  });
+
+  it('rejects a bad hex rather than painting a NaN chip', () => {
+    expect(solidColors('not-a-colour', 'light')).toBeNull();
+  });
+});
+
 describe('badgeColors', () => {
   it('clears AA for every seeded colour, in both themes', () => {
     for (const color of SEEDED_PALETTE) {
@@ -162,6 +223,9 @@ describe('badgeVars', () => {
     const vars = badgeVars('#f97316') as Record<string, string>;
     expect(Object.keys(vars).sort()).toEqual([
       '--badge-bd', '--badge-bd-dark', '--badge-bg', '--badge-bg-dark', '--badge-fg', '--badge-fg-dark',
+      // Both variants come off one call. A chip and the module tile beside it
+      // share a hue, and computing them separately doubled the cache.
+      '--badge-solid-bg', '--badge-solid-bg-dark', '--badge-solid-fg', '--badge-solid-fg-dark',
       // So .text-tinted on a child of the chip resolves against the chip.
       '--tinted-fg', '--tinted-fg-dark',
     ]);

@@ -241,7 +241,7 @@ function MultiValueEditor({
               className={cn(
                 'rounded px-1.5 py-0.5 text-2xs transition-colors',
                 active
-                  ? cn('font-medium', o.color && 'badge-tinted')
+                  ? cn('font-medium', o.color && 'badge-solid')
                   : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800',
               )}
               style={active ? badgeVars(o.color) : undefined}

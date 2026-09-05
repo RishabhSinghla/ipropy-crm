@@ -18,6 +18,27 @@
     --text-muted: #5b6b80;
     --text-positive: #047857;
     --text-negative: #c81e1e;
+
+    /*
+      List typography and row shading, in one place.
+
+      The team came off Vtiger and reads these lists all day, so the grid is
+      tuned to the metrics they already scan: 13px rows rather than 14, a
+      slightly darker body colour than the app's default, an 11px uppercase
+      header, and alternating row tints instead of a flat white sheet. Every
+      one of these is a variable because "a bit bigger" is a five-second
+      change here and a find-and-replace across four files otherwise.
+    */
+    --list-font: 13px;
+    --list-head-font: 11px;
+    --list-line: 1.35;
+    --list-row-pad-y: 7px;
+    --list-row-pad-x: 12px;
+    --list-text: #1f2937;
+    --list-row: #ffffff;
+    --list-row-alt: #f4f6f8;
+    --list-row-hover: #e3edfb;
+    --list-row-selected: #d6e6fa;
   }
 
   .dark {
@@ -29,6 +50,12 @@
     --text-muted: #94a3b8;
     --text-positive: #34d399;
     --text-negative: #f87171;
+
+    --list-text: #e2e8f0;
+    --list-row: #0f172a;
+    --list-row-alt: #16213a;
+    --list-row-hover: #1e3a5f;
+    --list-row-selected: #24456e;
   }
 
   html, body, #root { height: 100%; }
@@ -123,8 +150,23 @@
     color: var(--text-muted);
   }
 
+  /*
+    A status chip is a fixed object, not text that happens to be coloured.
+
+    Its size is pinned — same height, same type, same padding — whether it is
+    read on a list, chosen from a dropdown, or re-rendered a moment after
+    somebody picked a new value. That last case is the one that was reported:
+    a picklist edit swapped the read-state chip for the editor's own type
+    scale, so the row's height changed under the cursor mid-click.
+  */
   .badge {
-    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-2xs font-medium leading-4;
+    @apply inline-flex shrink-0 items-center gap-1 rounded font-semibold;
+    height: 20px;
+    padding: 0 8px;
+    font-size: 11.5px;
+    line-height: 1;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
   }
 
   /* Chips tinted from an admin-chosen hue. lib/color.ts emits both themes'
@@ -142,6 +184,19 @@
     border-color: var(--badge-bd-dark);
   }
 
+  /* The full-strength variant — the hue as the fill, black or white on top,
+     both chosen by lib/color.ts so the pair still clears AA. This is what a
+     status looks like on the Vtiger list the team is used to. */
+  .badge-solid {
+    background-color: var(--badge-solid-bg);
+    color: var(--badge-solid-fg);
+    border-color: transparent;
+  }
+  .dark .badge-solid {
+    background-color: var(--badge-solid-bg-dark);
+    color: var(--badge-solid-fg-dark);
+  }
+
   /* An admin-chosen hue used as text, corrected for contrast. Fed either by
      badgeVars — for text inside a tinted chip, such as the inventory tiles
      that keep their full-strength status border — or by tintedTextVars, for
@@ -155,12 +210,54 @@
      into horizontal scrolling for every row, and the name column scrolls away
      first. Clipped at a readable width instead; the full value is a hover or a
      tap away on the record. */
-  .table-cell { @apply max-w-[20rem] truncate px-3 py-2.5 text-sm; }
-  .table-head {
-    @apply sticky top-0 z-10 whitespace-nowrap bg-slate-50 px-3 py-2 text-left text-2xs font-semibold
-           uppercase tracking-wide dark:bg-slate-800/80;
+  /* Widths are set per column by the list's own <colgroup> once a user drags
+     a divider, so the cell no longer carries a max-width of its own — a cap
+     here would silently override a column somebody widened on purpose.
+     `truncate` still holds the single-line rule. */
+  .list-cell {
+    @apply truncate;
+    padding: var(--list-row-pad-y) var(--list-row-pad-x);
+    font-size: var(--list-font);
+    line-height: var(--list-line);
+    color: var(--list-text);
+  }
+  .list-head {
+    @apply sticky top-0 z-10 whitespace-nowrap text-left font-semibold uppercase tracking-wide;
+    padding: 6px var(--list-row-pad-x);
+    font-size: var(--list-head-font);
+    background-color: var(--surface-muted);
     color: var(--text-muted);
   }
+  .dark .list-head { background-color: #1e293b; }
+
+  /* Zebra striping, hover and selection as one set, because they layer: a
+     selected row must still show it is selected under the cursor, and the
+     hover tint has to beat the stripe underneath it. Painted on <tr> with
+     background-color rather than Tailwind row utilities so the cascade order
+     is explicit and a chip's own opaque fill is unaffected. */
+  .list-row { background-color: var(--list-row); }
+  .list-row:nth-child(even) { background-color: var(--list-row-alt); }
+  .list-row:hover { background-color: var(--list-row-hover); }
+  .list-row-selected,
+  .list-row-selected:nth-child(even) { background-color: var(--list-row-selected); }
+
+  /* The drag handle between two column headers. Invisible until the pointer
+     is near it — a visible divider on every header reads as a table border
+     and made the grid look like a spreadsheet. */
+  .col-resizer {
+    @apply absolute right-0 top-0 z-20 h-full w-2 translate-x-1/2 cursor-col-resize
+           select-none touch-none opacity-0 transition-opacity;
+  }
+  .col-resizer::after {
+    content: '';
+    @apply absolute left-1/2 top-1/2 h-1/2 w-px -translate-x-1/2 -translate-y-1/2 bg-slate-400;
+  }
+  th:hover > .col-resizer, .col-resizer:hover, .col-resizer-active { @apply opacity-100; }
+  .col-resizer-active::after { @apply w-0.5 bg-brand-500; }
+  /* While a drag is in flight the pointer is captured and may leave the
+     header entirely; without this every cell it crosses shows a text caret
+     and the browser starts selecting the table. */
+  .resizing-columns, .resizing-columns * { cursor: col-resize !important; user-select: none !important; }
 
   .skeleton {
     @apply animate-pulse rounded bg-slate-200 dark:bg-slate-800;

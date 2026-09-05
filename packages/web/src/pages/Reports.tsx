@@ -473,7 +473,7 @@ export default function ReportsPage(): JSX.Element {
               <thead>
                 <tr>
                   {result.columns.map((c) => (
-                    <th key={c} className="table-head">{fieldLabel(c)}</th>
+                    <th key={c} className="list-head">{fieldLabel(c)}</th>
                   ))}
                 </tr>
               </thead>
@@ -483,7 +483,7 @@ export default function ReportsPage(): JSX.Element {
                     {result.columns.map((c) => {
                       const value = row[c];
                       return (
-                        <td key={c} className={cn('table-cell', typeof value === 'number' && 'tnum font-medium')}>
+                        <td key={c} className={cn('list-cell', typeof value === 'number' && 'tnum font-medium')}>
                           {formatCell(value, isMoneyColumn(c))}
                         </td>
                       );
@@ -495,7 +495,7 @@ export default function ReportsPage(): JSX.Element {
                 <tfoot>
                   <tr className="border-t-2 border-slate-200 bg-slate-50 font-semibold dark:border-slate-700 dark:bg-slate-800">
                     {result.columns.map((c, i) => (
-                      <td key={c} className="table-cell tnum">
+                      <td key={c} className="list-cell tnum">
                         {i === 0 ? 'Total' : result.totals?.[c] !== undefined ? formatCell(result.totals[c], isMoneyColumn(c)) : ''}
                       </td>
                     ))}

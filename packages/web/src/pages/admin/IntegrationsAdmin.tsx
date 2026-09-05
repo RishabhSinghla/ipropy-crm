@@ -1516,14 +1516,14 @@ export default function IntegrationsAdmin(): JSX.Element {
           ) : (
             <table className="w-full">
               <thead>
-                <tr>{['Source', 'Status', 'Received', 'Error'].map((h) => <th key={h} className="table-head">{h}</th>)}</tr>
+                <tr>{['Source', 'Status', 'Received', 'Error'].map((h) => <th key={h} className="list-head">{h}</th>)}</tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {(inbox as { id: string; source: string; status: string; received_at: string; error: string | null; record_id: string | null }[])
                   .map((row) => (
                     <tr key={row.id}>
-                      <td className="table-cell font-medium capitalize">{row.source.replace(/_/g, ' ')}</td>
-                      <td className="table-cell">
+                      <td className="list-cell font-medium capitalize">{row.source.replace(/_/g, ' ')}</td>
+                      <td className="list-cell">
                         <Badge color={
                           row.status === 'processed' ? '#22c55e'
                             : row.status === 'duplicate' ? '#f59e0b'
@@ -1532,8 +1532,8 @@ export default function IntegrationsAdmin(): JSX.Element {
                           {row.status}
                         </Badge>
                       </td>
-                      <td className="table-cell text-2xs text-muted">{relativeTime(row.received_at)}</td>
-                      <td className="table-cell max-w-xs truncate text-2xs text-negative">{row.error ?? '—'}</td>
+                      <td className="list-cell text-2xs text-muted">{relativeTime(row.received_at)}</td>
+                      <td className="list-cell max-w-xs truncate text-2xs text-negative">{row.error ?? '—'}</td>
                     </tr>
                   ))}
               </tbody>

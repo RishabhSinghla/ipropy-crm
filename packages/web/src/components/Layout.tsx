@@ -2,11 +2,11 @@ import { type JSX, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Bell, Building2, ChevronLeft, Facebook, Globe, Instagram, Linkedin, LogOut, Menu,
+  Bell, Building2, ChevronLeft, Facebook, Globe, Instagram, Linkedin, Lock, LogOut, Menu,
   MessageCircle, Moon, Search, Settings, Shield, Sparkles, Sun, Twitter, X, Youtube,
 } from 'lucide-react';
 import { useApp } from '../lib/store';
-import { api } from '../lib/api';
+import { api, type SearchHit } from '../lib/api';
 import { useRealtime } from '../lib/realtime';
 import { cn, groupModules } from '../lib/utils';
 import { resolveIcon } from '../lib/icons';
@@ -484,7 +484,7 @@ function NotificationBell(): JSX.Element {
 function GlobalSearch(): JSX.Element {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
-  const [results, setResults] = useState<{ id: string; module: string; moduleLabel: string; label: string }[]>([]);
+  const [results, setResults] = useState<SearchHit[]>([]);
   const [loading, setLoading] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -541,7 +541,31 @@ function GlobalSearch(): JSX.Element {
           {!loading && results.length === 0 && (
             <p className="px-3 py-6 text-center text-xs text-muted">No matches for “{query}”</p>
           )}
-          {results.map((r) => (
+          {results.map((r) => (r.restricted ? (
+            /*
+              Not a link, because there is nothing to open — this record is
+              outside what this user may see, and the row exists to answer one
+              question: is this number already ours, and whose? Anything more
+              would be a way around the sharing rules rather than a courtesy
+              inside them.
+            */
+            <div
+              key={r.id}
+              className="flex items-start gap-2 border-l-2 border-amber-400 bg-amber-50/60 px-3 py-2 dark:bg-amber-950/30"
+            >
+              <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{r.label}</p>
+                <p className="text-xs text-muted">
+                  Already in {r.moduleLabel}, assigned to{' '}
+                  <strong className="font-medium text-slate-700 dark:text-slate-200">
+                    {r.ownerName ?? 'nobody yet'}
+                  </strong>
+                  . Not shared with you.
+                </p>
+              </div>
+            </div>
+          ) : (
             <PeekLink
               key={r.id}
               module={r.module}
@@ -556,7 +580,7 @@ function GlobalSearch(): JSX.Element {
               <span className="truncate text-sm">{r.label}</span>
               <Badge className="shrink-0">{r.moduleLabel}</Badge>
             </PeekLink>
-          ))}
+          )))}
         </div>
       )}
     </div>

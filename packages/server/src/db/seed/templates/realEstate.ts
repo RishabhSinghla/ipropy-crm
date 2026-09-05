@@ -27,10 +27,10 @@ const MODULES: ModuleDef[] = [
   {
     name: 'leads',
     // One party record for the whole journey: enquiry → prospect → customer.
-    // A separate Contacts module would duplicate the person and split their
-    // timeline across two ids at conversion.
-    label: 'Leads & Contacts',
-    singular: 'Lead',
+    // Labelled the way the desk speaks — a second module for the "converted"
+    // half would duplicate the person and split their timeline across two ids.
+    label: 'Contacts',
+    singular: 'Contact',
     table: 'ipy_e_leads',
     icon: 'users',
     color: '#8b5cf6',

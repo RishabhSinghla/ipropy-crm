@@ -32,7 +32,7 @@ import {
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { cn, deepEqual } from '../lib/utils';
-import { Avatar } from './ui';
+import { Avatar, Badge } from './ui';
 import {
   FieldInput, FieldValue, MultiSelect, ReferencePicker, TagInput,
 } from './FieldRenderer';
@@ -515,7 +515,7 @@ function StatusRing({ status, children }: { status: Status; children: React.Reac
  * drops a flex item's `min-width` from `auto` to `0`, so the value could
  * shrink to nothing; `max-w-full` inside an auto-layout `<table>` then let
  * every column resolve to that new near-zero minimum ("Test" rendered as
- * "T…"). Cells already clip via `.table-cell`'s `whitespace-nowrap`, and
+ * "T…"). Cells already clip via `.list-cell`'s `whitespace-nowrap`, and
  * FieldValue does its own length-capping in `compact` mode, so neither is
  * this component's job.
  *
@@ -675,11 +675,14 @@ function PicklistPopover({
             role="option"
             aria-selected={o.value === value}
             onClick={() => onPick(o.value)}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
           >
-            <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: o.color ?? '#94a3b8' }} />
-            <span className="flex-1 truncate">{o.label}</span>
-            {o.value === value && <Check className="h-3.5 w-3.5 shrink-0 text-brand-600" />}
+            {/* The option is shown as the chip it will become, not as a dot
+                beside plain text. Picking then changes nothing about how the
+                value looks — same fill, same type, same box — which is what
+                made the old menu feel like it resized the row on every edit. */}
+            <Badge color={o.color} className="min-w-0 max-w-full"><span className="truncate">{o.label}</span></Badge>
+            {o.value === value && <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-brand-600" />}
           </button>
         ))}
         {options.length === 0 && <p className="px-3 py-4 text-center text-xs text-muted">No options</p>}

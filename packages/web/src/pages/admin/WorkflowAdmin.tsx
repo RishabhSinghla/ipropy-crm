@@ -226,7 +226,7 @@ export default function WorkflowAdmin(): JSX.Element {
               <thead>
                 <tr>
                   {['Task', 'Record', 'Run at', 'Status', 'Attempts'].map((h) => (
-                    <th key={h} className="table-head">{h}</th>
+                    <th key={h} className="list-head">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -234,13 +234,13 @@ export default function WorkflowAdmin(): JSX.Element {
                 {(queue as { id: string; task_name: string; task_type: string; workflow_name: string; record_label: string; run_at: string; status: string; attempts: number; last_error: string | null }[])
                   .map((job) => (
                     <tr key={job.id}>
-                      <td className="table-cell">
+                      <td className="list-cell">
                         <p className="font-medium">{job.task_name}</p>
                         <p className="text-2xs text-muted">{job.workflow_name}</p>
                       </td>
-                      <td className="table-cell text-slate-600 dark:text-slate-400">{job.record_label ?? '—'}</td>
-                      <td className="table-cell text-2xs tnum text-muted">{relativeTime(job.run_at)}</td>
-                      <td className="table-cell">
+                      <td className="list-cell text-slate-600 dark:text-slate-400">{job.record_label ?? '—'}</td>
+                      <td className="list-cell text-2xs tnum text-muted">{relativeTime(job.run_at)}</td>
+                      <td className="list-cell">
                         <Badge color={
                           job.status === 'done' ? '#22c55e'
                             : job.status === 'failed' ? '#ef4444'
@@ -254,7 +254,7 @@ export default function WorkflowAdmin(): JSX.Element {
                           </p>
                         )}
                       </td>
-                      <td className="table-cell tnum text-slate-500">{job.attempts}</td>
+                      <td className="list-cell tnum text-slate-500">{job.attempts}</td>
                     </tr>
                   ))}
               </tbody>

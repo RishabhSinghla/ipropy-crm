@@ -19,35 +19,16 @@
  *
  * `98xxxxxx56` rather than `**********`: enough to recognise a number you
  * already know, useless for building a list.
+ *
+ * Which numbers are masked is a **field permission**, not a global switch:
+ * a profile sets a field to `owner_only` in Roles & Profiles and the value then
+ * reads normally for whoever the record is assigned to and masked for everybody
+ * else. Migration 099 moved it there, and says why.
  */
 import type { AuthUser } from '@ipropy/shared';
 import { db } from '../../db/pool.js';
-import { logger } from '../../utils/logger.js';
 import { registry } from '../metadata/registry.js';
-
-const SETTING_KEY = 'privacy.mask_phone_numbers';
-
-let cached: boolean | null = null;
-
-export function invalidatePhoneMasking(): void {
-  cached = null;
-}
-
-export async function maskingOn(): Promise<boolean> {
-  if (cached !== null) return cached;
-  try {
-    const row = await db.queryOne<{ value: unknown }>(
-      `SELECT value FROM ipy_setting WHERE key = $1`, [SETTING_KEY],
-    );
-    cached = row?.value === true;
-    return cached;
-  } catch (err) {
-    // Off on failure. A settings read that fails must not start hiding data the
-    // team needs to do its job.
-    logger.warn({ err }, 'could not read the phone-masking setting');
-    return false;
-  }
-}
+import { getFieldPermissions } from './index.js';
 
 /**
  * `9811421156` → `98xxxxxx56`.
@@ -64,18 +45,38 @@ export function maskNumber(raw: unknown): unknown {
 }
 
 /**
- * Which fields on this module hold a phone number.
+ * Which fields this viewer sees masked on this record.
  *
- * By uitype rather than by name: an admin can add "Husband's number" as a phone
- * field tomorrow, and a list of names would not know about it. Empty when
- * masking is off or the viewer is an admin, so the caller does no work.
+ * Driven by the profile's field permissions rather than a global switch, and
+ * record-aware: `owner_only` means the person the record is assigned to reads
+ * the number normally and everybody else gets `98xxxxxx56`. That is the rule
+ * the risk actually wants — the rep working the lead has to be able to ring
+ * them; nobody else needs the list.
+ *
+ * `ownerId` is the record's. Passing `null` — a list row with no owner, a
+ * context with no record — masks, because "not yours" is the safe reading of
+ * "unknown".
+ *
+ * Not restricted to phone fields any more. `owner_only` is a permission an
+ * admin can set on any field, and the masking is the same idea whatever the
+ * field holds; `maskNumber` leaves anything without six digits untouched.
  */
-export async function maskedPhoneFields(user: AuthUser, moduleName: string): Promise<Set<string>> {
+export async function maskedPhoneFields(
+  user: AuthUser,
+  moduleName: string,
+  ownerId?: string | null,
+): Promise<Set<string>> {
   if (user.isAdmin) return new Set();
-  if (!(await maskingOn())) return new Set();
   const module = await registry.getModule(moduleName);
   if (!module) return new Set();
-  return new Set(module.fields.filter((f) => f.uitype === 'phone').map((f) => f.name));
+  if (ownerId && ownerId === user.id) return new Set();
+
+  const perms = await getFieldPermissions(user, moduleName);
+  const masked = new Set<string>();
+  for (const [name, permission] of perms) {
+    if (permission === 'owner_only') masked.add(name);
+  }
+  return masked;
 }
 
 /**
@@ -94,6 +95,14 @@ export async function revealPhone(
   const module = await registry.getModule(moduleName);
   const field = module?.fields.find((f) => f.name === fieldName && f.uitype === 'phone');
   if (!module || !field) return null;
+
+  // A field the profile hides outright is not revealable. Only the masked
+  // middle ground has a reveal, which is the point of having two settings:
+  // `hidden` means no, `owner_only` means yes but on the record and in the log.
+  if (!user.isAdmin) {
+    const perms = await getFieldPermissions(user, moduleName);
+    if (perms.get(fieldName) === 'hidden') return null;
+  }
 
   const column = field.storage === 'json'
     ? `custom_fields->>'${field.columnName}'`

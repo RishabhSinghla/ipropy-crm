@@ -149,7 +149,7 @@ export default function ModuleManager(): JSX.Element {
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         <div>
           <p>
-            <strong>Leads &amp; Contacts</strong> is core — the rest of the CRM reads from it, so it
+            <strong>Contacts</strong> is core — the rest of the CRM reads from it, so it
             cannot be switched off.
           </p>
         </div>

@@ -155,6 +155,41 @@ export interface BadgeColors {
   border: string;
 }
 
+/**
+ * A chip painted in the admin's colour at full strength, with black or white
+ * text on top — the way a status reads on the Vtiger list the team came from.
+ *
+ * The tinted variant above keeps the hue as *text*; this one keeps it as the
+ * *fill*, which is louder and scans faster down a column of two hundred rows.
+ * Both still have to clear AA, so the choice made here is which of black or
+ * white sits on the hue, and the fill's lightness is only moved if neither
+ * reaches 4.5:1 unaided — a mid-tone amber needs black, a mid-tone red needs
+ * white, and a few hues in between need the fill nudged a step to earn either.
+ */
+export function solidColors(color: string, theme: 'light' | 'dark'): { bg: string; fg: string } | null {
+  const hue = hexToRgb(color);
+  if (!hue) return null;
+
+  let bg = hue;
+  // A fill that is nearly the page is not a chip. Only ever moves away from
+  // the surface, so the hue is preserved on everything but the extremes.
+  if (contrastRatio(bg, SURFACE[theme]) < 1.25) {
+    bg = readableOn(bg, SURFACE[theme], theme === 'light', 1.25);
+  }
+
+  const white = contrastRatio(WHITE, bg);
+  const black = contrastRatio(INK, bg);
+  const preferDark = black >= white;
+  const fg = preferDark ? INK : WHITE;
+  if (Math.max(white, black) < AA_NORMAL) {
+    // Walk the fill instead of the text: the text is already at one end of
+    // the scale, so there is nowhere for it to go. Away from the chosen
+    // foreground — lighter under black text, darker under white.
+    bg = readableOn(bg, fg, !preferDark);
+  }
+  return { bg: rgbToHex(bg), fg: rgbToHex(fg) };
+}
+
 /** Readable background/text/border for `color` in one theme. */
 export function badgeColors(color: string, theme: 'light' | 'dark'): BadgeColors | null {
   const hue = hexToRgb(color);
@@ -182,7 +217,9 @@ export function badgeVars(color: string | null | undefined): CSSProperties | und
 
   const light = badgeColors(color, 'light');
   const dark = badgeColors(color, 'dark');
-  const vars = light && dark
+  const solidLight = solidColors(color, 'light');
+  const solidDark = solidColors(color, 'dark');
+  const vars = light && dark && solidLight && solidDark
     ? ({
         '--badge-bg': light.bg,
         '--badge-fg': light.fg,
@@ -190,6 +227,14 @@ export function badgeVars(color: string | null | undefined): CSSProperties | und
         '--badge-bg-dark': dark.bg,
         '--badge-fg-dark': dark.fg,
         '--badge-bd-dark': dark.border,
+        // The full-strength variant, selected by `.badge-solid` rather than
+        // by a second call: a status chip and the module tile beside it come
+        // from the same hue, and computing both here keeps one cache entry
+        // per colour instead of two.
+        '--badge-solid-bg': solidLight.bg,
+        '--badge-solid-fg': solidLight.fg,
+        '--badge-solid-bg-dark': solidDark.bg,
+        '--badge-solid-fg-dark': solidDark.fg,
         // So `.text-tinted` on a child reads correctly against the chip's own
         // background rather than the page surface.
         '--tinted-fg': light.fg,
@@ -273,4 +318,6 @@ export function avatarBackground(name: string): string {
 }
 
 const WHITE: RGB = [255, 255, 255];
+/** Not pure black: slate-900, the colour body copy already uses. */
+const INK: RGB = [15, 23, 42];
 const avatarCache = new Map<string, string>();

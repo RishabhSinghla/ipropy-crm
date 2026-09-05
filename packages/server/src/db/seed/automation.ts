@@ -483,7 +483,6 @@ export async function seedSettings(conn: Tx): Promise<void> {
     { key: 'ai.call_analysis', value: true, category: 'ai', label: 'Analyse call recordings with AI' },
     { key: 'ai.daily_digest', value: true, category: 'ai', label: 'Send AI daily digest to reps' },
     { key: 'telephony.record_calls', value: true, category: 'telephony', label: 'Record calls' },
-    { key: 'telephony.mask_numbers', value: true, category: 'telephony', label: 'Mask customer numbers from agents' },
     { key: 'whatsapp.session_window_hours', value: 24, category: 'whatsapp', label: 'Customer service window (hours)' },
   ];
 

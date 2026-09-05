@@ -53,14 +53,14 @@ export default function UsersAdmin(): JSX.Element {
             <thead>
               <tr>
                 {['User', 'Role', 'Profile', 'Extension', 'Last login', ''].map((h) => (
-                  <th key={h} className="table-head">{h}</th>
+                  <th key={h} className="list-head">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {list.map((u) => (
                 <tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/60">
-                  <td className="table-cell">
+                  <td className="list-cell">
                     <div className="flex items-center gap-2.5">
                       <Avatar name={u.fullName} size={30} />
                       <div className="min-w-0">
@@ -73,13 +73,13 @@ export default function UsersAdmin(): JSX.Element {
                       </div>
                     </div>
                   </td>
-                  <td className="table-cell text-slate-600 dark:text-slate-400">{u.roleName ?? '—'}</td>
-                  <td className="table-cell">{u.profileName ? <Badge>{u.profileName}</Badge> : '—'}</td>
-                  <td className="table-cell tnum text-slate-500">{u.extension ?? '—'}</td>
-                  <td className="table-cell text-2xs text-muted">
+                  <td className="list-cell text-slate-600 dark:text-slate-400">{u.roleName ?? '—'}</td>
+                  <td className="list-cell">{u.profileName ? <Badge>{u.profileName}</Badge> : '—'}</td>
+                  <td className="list-cell tnum text-slate-500">{u.extension ?? '—'}</td>
+                  <td className="list-cell text-2xs text-muted">
                     {u.lastLoginAt ? relativeTime(u.lastLoginAt) : 'Never'}
                   </td>
-                  <td className="table-cell">
+                  <td className="list-cell">
                     <div className="flex justify-end gap-1">
                       <button onClick={() => setEditing(u)} className="btn-ghost p-1.5" title="Edit">
                         <UserCog className="h-3.5 w-3.5" />

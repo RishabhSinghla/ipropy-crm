@@ -13,7 +13,11 @@ import { test, expect } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/leads');
-  await expect(page.getByRole('heading', { name: /Leads/ })).toBeVisible();
+  // The list no longer paints its own title — the toolbar starts at the left
+  // edge and the module name lives in the sidebar (the h1 is still there, for
+  // screen readers, but asserting on an sr-only node proves nothing about what
+  // a user can see). The record count is the honest "the data arrived" signal.
+  await expect(page.getByText(/^[\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
 });
 
 test('clicking a value in the list does not turn it into an edit box', async ({ page }) => {

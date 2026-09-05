@@ -15,7 +15,7 @@ import { db, transaction } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
-import { BadRequestError, ForbiddenError, NotFoundError } from '../../utils/errors.js';
+import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../utils/errors.js';
 import { assertCapability, canAccessRecord } from '../../core/permissions/index.js';
 import { getDriver, getStorageSettings } from '../../core/storage/index.js';
 import { buildStorageKey } from '../../core/storage/keys.js';
@@ -36,6 +36,10 @@ import { runSchedulerNow } from '../../core/workflow/scheduler.js';
 import { TASK_TYPES } from '../../core/workflow/tasks.js';
 import { mergeRecords } from '../../core/entity/conversion.js';
 import { parseCsv } from '../../utils/csv.js';
+import {
+  pendingDuplicates, resolve as resolveDuplicate, resolveAll, resultCsv,
+  type Resolution, type Section,
+} from '../../core/import/duplicates.js';
 
 export const miscRouter = Router();
 miscRouter.use(requireAuth);
@@ -981,7 +985,9 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
   if (!file) throw new BadRequestError('No file uploaded');
 
   const mapping = JSON.parse(String(req.body.mapping ?? '{}')) as Record<string, string>;
-  const duplicateHandling = String(req.body.duplicateHandling ?? 'skip') as 'skip' | 'overwrite' | 'create';
+  // `review` parks every collision for a person to answer afterwards instead
+  // of deciding it now — see core/import/duplicates.ts.
+  const duplicateHandling = String(req.body.duplicateHandling ?? 'review') as 'skip' | 'create' | 'review';
   // Automations (instant greeting → the outreach queue, scoring, first-call
   // tasks) fire per record through the workflow engine. On a bulk import that
   // meant a queue of hundreds of WhatsApp greetings nobody asked for, and a
@@ -1001,7 +1007,7 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
   res.status(202).json({ jobId: job?.id, totalRows: rows.length });
 
   void (async () => {
-    let created = 0; let skipped = 0; let failed = 0;
+    let created = 0; let skipped = 0; let failed = 0; let duplicates = 0;
     const errors: { row: number; error: string }[] = [];
     // What the counts are made of, shown when a number is clicked in the UI.
     // Bounded: a five-figure import does not need five-figure lists in one
@@ -1017,7 +1023,15 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
         const v = raw[header];
         if (v !== undefined && v !== '') values[fieldName] = v;
       }
-      if (!Object.keys(values).length) { skipped++; continue; }
+      if (!Object.keys(values).length) {
+        skipped++;
+        await logRow(job!.id, i + 2, 'skipped', {}, { message: 'Every mapped column was empty on this row' });
+        continue;
+      }
+
+      // The line number as the user sees it in Excel: the header is line 1.
+      const sheetRow = i + 2;
+      const rowName = String(values.full_name ?? values.name ?? Object.values(values)[0] ?? `row ${sheetRow}`);
 
       try {
         const envelope = await recordService.createRecord(scope, module.name, values, {
@@ -1028,17 +1042,32 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
         if (details.created.length < CAP) {
           details.created.push(String(envelope.label ?? envelope.id));
         }
+        await logRow(job!.id, sheetRow, 'created', values, {
+          recordId: envelope.id, label: String(envelope.label ?? ''),
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'unknown error';
-        if (duplicateHandling === 'skip' && message.includes('already exists')) {
+        const conflict = err instanceof ConflictError
+          ? (err.details as { duplicateId?: string; duplicateLabel?: string } | undefined)
+          : undefined;
+
+        if (conflict?.duplicateId && duplicateHandling === 'review') {
+          // Parked, not decided. It counts as neither created nor skipped
+          // until somebody has looked at it.
+          duplicates++;
+          await logRow(job!.id, sheetRow, 'duplicate', values, {
+            label: rowName, message, existingId: conflict.duplicateId,
+          });
+        } else if (duplicateHandling === 'skip' && message.includes('already exists')) {
           skipped++;
           if (details.skipped.length < CAP) {
-            const name = String(values.full_name ?? values.name ?? Object.values(values)[0] ?? `row ${i + 2}`);
-            details.skipped.push(`${name} — ${message}`);
+            details.skipped.push(`${rowName} — ${message}`);
           }
+          await logRow(job!.id, sheetRow, 'skipped', values, { label: rowName, message });
         } else {
           failed++;
-          if (errors.length < 100) errors.push({ row: i + 2, error: message });
+          if (errors.length < 100) errors.push({ row: sheetRow, error: message });
+          await logRow(job!.id, sheetRow, 'failed', values, { label: rowName, message });
         }
       }
 
@@ -1048,10 +1077,10 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
       const step = await db.query(
         `UPDATE ipy_import_job
          SET processed_rows = $2, created_rows = $3, skipped_rows = $4, failed_rows = $5,
-             details = $6::jsonb
+             details = $6::jsonb, duplicate_rows = $7, pending_rows = $7
          WHERE id = $1 AND status = 'running'
          RETURNING id`,
-        [job!.id, i + 1, created, skipped, failed, JSON.stringify(details)],
+        [job!.id, i + 1, created, skipped, failed, JSON.stringify(details), duplicates],
       ).catch(() => undefined);
       if (step && step.rowCount === 0) { cancelled = true; break; }
     }
@@ -1059,9 +1088,11 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
     await db.query(
       `UPDATE ipy_import_job
        SET status = $6, processed_rows = $2, created_rows = $3, skipped_rows = $4,
-           failed_rows = $5, errors = $7, completed_at = now()
+           failed_rows = $5, errors = $7, duplicate_rows = $8, pending_rows = $8,
+           completed_at = now()
        WHERE id = $1`,
-      [job!.id, rows.length, created, skipped, failed, cancelled ? 'cancelled' : 'completed', JSON.stringify(errors)],
+      [job!.id, rows.length, created, skipped, failed, cancelled ? 'cancelled' : 'completed',
+        JSON.stringify(errors), duplicates],
     );
 
     // An import of any size outlives the page that started it.
@@ -1069,9 +1100,111 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
       userId: user.id,
       kind: 'import',
       title: cancelled ? 'Import cancelled' : 'Import complete',
-      body: `${created} created, ${skipped} skipped, ${failed} failed.`,
+      body: duplicates > 0
+        ? `${created} created, ${skipped} skipped, ${failed} failed — ${duplicates} need a decision.`
+        : `${created} created, ${skipped} skipped, ${failed} failed.`,
     });
   })().catch((err) => logger.error({ err }, 'import job failed'));
+}));
+
+/**
+ * One line of the import's own record of what it did.
+ *
+ * Written per row rather than only counted, because two things need the detail
+ * and neither can be reconstructed afterwards: the duplicate-review screen,
+ * which has to show the incoming values beside the record they collided with,
+ * and the downloadable result, which has to hold every row rather than the
+ * first 300 `ipy_import_job.details` can carry.
+ *
+ * Never allowed to break the import. A failed audit write is worth a log line;
+ * it is not worth abandoning a file halfway through.
+ */
+async function logRow(
+  jobId: string,
+  rowNumber: number,
+  outcome: 'created' | 'skipped' | 'failed' | 'duplicate',
+  values: Record<string, unknown>,
+  extra: { recordId?: string; label?: string; message?: string; existingId?: string } = {},
+): Promise<void> {
+  try {
+    await db.query(
+      `INSERT INTO ipy_import_row (job_id, row_number, outcome, values, record_id, label, message, existing_id)
+       VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8)`,
+      [jobId, rowNumber, outcome, JSON.stringify(values),
+        extra.recordId ?? null, extra.label ?? null, extra.message ?? null, extra.existingId ?? null],
+    );
+  } catch (err) {
+    logger.warn({ err, jobId, rowNumber }, 'could not record import row');
+  }
+}
+
+/** The job, if it belongs to the caller. Every route below needs exactly this. */
+async function ownedJob(req: Parameters<typeof getUser>[0], jobId: string): Promise<{ id: string; module: string }> {
+  const job = await db.queryOne<{ id: string; module: string }>(
+    `SELECT j.id, m.name AS module
+       FROM ipy_import_job j JOIN ipy_module m ON m.id = j.module_id
+      WHERE j.id = $1 AND j.user_id = $2`,
+    [jobId, getUser(req).id],
+  );
+  if (!job) throw new NotFoundError('No import with that id');
+  return job;
+}
+
+/**
+ * The duplicates this job parked, each beside the record it collided with.
+ *
+ * Deliberately not paginated. A file that produces hundreds of collisions is
+ * telling you the whole file is a re-import, and the answer to that is "skip
+ * them all" at the top of the screen — not thirty pages of side-by-side
+ * comparison.
+ */
+miscRouter.get('/import/jobs/:id/duplicates', asyncHandler(async (req, res) => {
+  const job = await ownedJob(req, req.params.id);
+  res.json({
+    module: job.module,
+    pairs: await pendingDuplicates(getScope(req), job.id, job.module),
+  });
+}));
+
+/** Answer one parked duplicate: merge, skip, or create it as a second record. */
+miscRouter.post('/import/jobs/:id/duplicates/:rowId', asyncHandler(async (req, res) => {
+  const job = await ownedJob(req, req.params.id);
+  const { action, fieldChoices } = z.object({
+    action: z.enum(['merged', 'skipped', 'created']),
+    fieldChoices: z.record(z.enum(['incoming', 'existing'])).default({}),
+  }).parse(req.body);
+
+  res.json(await resolveDuplicate(
+    getScope(req), job.id, req.params.rowId, action as Resolution, fieldChoices, job.module,
+  ));
+}));
+
+/** Answer every remaining duplicate the same way. */
+miscRouter.post('/import/jobs/:id/duplicates', asyncHandler(async (req, res) => {
+  const job = await ownedJob(req, req.params.id);
+  const { action } = z.object({ action: z.enum(['merged', 'skipped', 'created']) }).parse(req.body);
+  res.json(await resolveAll(getScope(req), job.id, action as Resolution, job.module));
+}));
+
+/**
+ * The result as a sheet.
+ *
+ * One file per outcome rather than one workbook with three tabs: this is CSV,
+ * which has no tabs, and inventing a single file with a mixed shape to stand
+ * in for them would be worse than four honest downloads. `all` is the fourth —
+ * every row, with its outcome in a column, which is the one you filter and
+ * pivot.
+ */
+miscRouter.get('/import/jobs/:id/result.csv', asyncHandler(async (req, res) => {
+  const job = await ownedJob(req, req.params.id);
+  const section = (['created', 'updated', 'skipped', 'failed', 'duplicates', 'all'] as const)
+    .find((s) => s === req.query.section) ?? 'all';
+
+  const csv = await resultCsv(job.id, section as Section, job.module);
+  const name = String(req.query.name ?? 'import').replace(/[^a-z0-9._-]+/gi, '-').replace(/^-+|-+$/g, '');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${name || 'import'}-${section}.csv"`);
+  res.send(csv);
 }));
 
 miscRouter.post('/import/jobs/:id/cancel', asyncHandler(async (req, res) => {
@@ -1089,7 +1222,8 @@ miscRouter.post('/import/jobs/:id/cancel', asyncHandler(async (req, res) => {
 
 miscRouter.get('/import/jobs', asyncHandler(async (req, res) => {
   const rows = await db.query(
-    `SELECT j.*, m.name AS module FROM ipy_import_job j JOIN ipy_module m ON m.id = j.module_id
+    `SELECT j.*, m.name AS module, m.label AS module_label
+     FROM ipy_import_job j JOIN ipy_module m ON m.id = j.module_id
      WHERE j.user_id = $1 ORDER BY j.created_at DESC LIMIT 20`,
     [getUser(req).id],
   );

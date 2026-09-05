@@ -356,7 +356,12 @@ export default function RecordDetail(): JSX.Element {
                     truncates: header fields carry free text (a last name imported
                     as "Phone-1786183963173-290" is real data here), and one long
                     value used to widen the whole card past the viewport. */}
-                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted">
+                {/* Bigger and darker than the rest of the secondary copy on
+                    purpose. This strip carries the four things a rep checks
+                    before dialling — number, next follow-up, budget, owner —
+                    and at 11px muted it was being read past. The labels stay
+                    quiet; the values are what got the weight. */}
+                <div className="mt-2.5 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm font-medium text-slate-800 dark:text-slate-100">
                   {(layoutConfig.headerFields ?? []).map((name) => {
                     const field = fieldMap.get(name);
                     if (!field || !field.isActive || field.displayType === 'hidden') return null;
@@ -364,7 +369,7 @@ export default function RecordDetail(): JSX.Element {
                     if (name === meta.pipelineField) return null;
                     return (
                       <span key={name} className="inline-flex min-w-0 max-w-full items-center gap-1.5 truncate">
-                        <span className="shrink-0 text-muted">{field.label}:</span>
+                        <span className="shrink-0 text-xs font-normal text-muted">{field.label}:</span>
                         {record.can?.edit && isInlineEditable(field) ? (
                           <EditableField
                             module={moduleName!}
@@ -384,7 +389,7 @@ export default function RecordDetail(): JSX.Element {
                     );
                   })}
                   <span className="inline-flex items-center gap-1.5">
-                    <span className="text-muted">Owner:</span>
+                    <span className="text-xs font-normal text-muted">Owner:</span>
                     {fieldMap.get('owner_id') && record.can?.edit ? (
                       <EditableField
                         module={moduleName!}
@@ -401,7 +406,7 @@ export default function RecordDetail(): JSX.Element {
                       <span className="text-muted">Unassigned</span>
                     )}
                   </span>
-                  <span className="shrink-0 text-muted">Updated {relativeTime(record.updatedAt)}</span>
+                  <span className="shrink-0 text-xs font-normal text-muted">Updated {relativeTime(record.updatedAt)}</span>
                 </div>
               </div>
             </div>
@@ -1013,9 +1018,9 @@ function RelatedTab({
             <thead>
               <tr>
                 {columns.map((c) => (
-                  <th key={c} className="table-head">{fieldMap.get(c)?.label ?? c}</th>
+                  <th key={c} className="list-head">{fieldMap.get(c)?.label ?? c}</th>
                 ))}
-                {relation?.actions.includes('remove') && <th className="table-head w-10" />}
+                {relation?.actions.includes('remove') && <th className="list-head w-10" />}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1024,7 +1029,7 @@ function RelatedTab({
                   {columns.map((c, i) => {
                     const field = fieldMap.get(c);
                     return (
-                      <td key={c} className="table-cell">
+                      <td key={c} className="list-cell">
                         {i === 0 ? (
                           <PeekLink
                             module={relation!.targetModule}
@@ -1041,7 +1046,7 @@ function RelatedTab({
                     );
                   })}
                   {relation?.actions.includes('remove') && (
-                    <td className="table-cell w-10">
+                    <td className="list-cell w-10">
                       <button
                         onClick={() => unlinkMutation.mutate(row.id)}
                         disabled={unlinkMutation.isPending && unlinkMutation.variables === row.id}

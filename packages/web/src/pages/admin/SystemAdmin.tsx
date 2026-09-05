@@ -290,7 +290,7 @@ export default function SystemAdmin(): JSX.Element {
                 <thead>
                   <tr>
                     {['Feature', 'Calls', 'Cost', 'Input tokens', 'Output tokens', 'Avg latency', 'Failures'].map((h) => (
-                      <th key={h} className="table-head">{h}</th>
+                      <th key={h} className="list-head">{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -298,13 +298,13 @@ export default function SystemAdmin(): JSX.Element {
                   {(aiUsage.byFeature as { feature: string; calls: number; cost_paise: number; input_tokens: number; output_tokens: number; avg_latency_ms: number; failures: number }[])
                     .map((row) => (
                       <tr key={row.feature}>
-                        <td className="table-cell font-medium capitalize">{row.feature.replace(/_/g, ' ')}</td>
-                        <td className="table-cell tnum">{row.calls}</td>
-                        <td className="table-cell tnum font-medium">{formatRupees(row.cost_paise)}</td>
-                        <td className="table-cell tnum text-slate-500">{row.input_tokens?.toLocaleString('en-IN')}</td>
-                        <td className="table-cell tnum text-slate-500">{row.output_tokens?.toLocaleString('en-IN')}</td>
-                        <td className="table-cell tnum text-slate-500">{row.avg_latency_ms}ms</td>
-                        <td className="table-cell tnum">
+                        <td className="list-cell font-medium capitalize">{row.feature.replace(/_/g, ' ')}</td>
+                        <td className="list-cell tnum">{row.calls}</td>
+                        <td className="list-cell tnum font-medium">{formatRupees(row.cost_paise)}</td>
+                        <td className="list-cell tnum text-slate-500">{row.input_tokens?.toLocaleString('en-IN')}</td>
+                        <td className="list-cell tnum text-slate-500">{row.output_tokens?.toLocaleString('en-IN')}</td>
+                        <td className="list-cell tnum text-slate-500">{row.avg_latency_ms}ms</td>
+                        <td className="list-cell tnum">
                           {row.failures > 0 ? <span className="text-negative">{row.failures}</span> : '—'}
                         </td>
                       </tr>

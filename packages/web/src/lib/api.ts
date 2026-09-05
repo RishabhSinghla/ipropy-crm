@@ -191,6 +191,52 @@ function qs(params: Record<string, unknown>): string {
 
 
 /** A link that shows one property to one person — see server/core/sharing/shareLinks.ts. */
+/** One field of an import collision, as it stands on each side. */
+export interface ImportFieldComparison {
+  name: string;
+  label: string;
+  uitype: string;
+  incoming: unknown;
+  existing: unknown;
+  incomingDisplay: string | null;
+  existingDisplay: string | null;
+  /** Both sides filled in, and they disagree — the only case needing a decision. */
+  conflict: boolean;
+  /** The sheet has something the record does not. Merged in unless told otherwise. */
+  fillsGap: boolean;
+  /** The sheet's column is empty here, so the record's value simply stands. */
+  absent: boolean;
+  matched: boolean;
+}
+
+export interface ImportDuplicatePair {
+  id: string;
+  rowNumber: number;
+  existingId: string;
+  existingLabel: string;
+  incomingLabel: string;
+  matchedOn: string[];
+  fields: ImportFieldComparison[];
+  /** The record it collided with can no longer be read — only Skip and Create apply. */
+  existingMissing: boolean;
+}
+
+export type ImportResolution = 'merged' | 'skipped' | 'created';
+export type ImportSection = 'created' | 'updated' | 'skipped' | 'failed' | 'duplicates' | 'all';
+
+export interface SearchHit {
+  id: string;
+  module: string;
+  moduleLabel: string;
+  label: string;
+  /**
+   * The number is on a record this user cannot open. Carries a name and an
+   * owner and nothing else — there is no id to follow.
+   */
+  restricted?: true;
+  ownerName?: string | null;
+}
+
 export interface ShareLink {
   id: string;
   recordId: string;
@@ -944,7 +990,7 @@ export const api = {
   }>('/api/ai/usage'),
 
   // --- misc ---------------------------------------------------------------
-  search: (q: string) => get<{ id: string; module: string; moduleLabel: string; label: string }[]>(`/api/search${qs({ q })}`),
+  search: (q: string) => get<SearchHit[]>(`/api/search${qs({ q })}`),
   recent: () => get<{ id: string; label: string; module_name: string }[]>('/api/recent'),
   // --- branding & the company's own social accounts ------------------------
   /** Public: the sign-in screen renders before there is a session. */
@@ -1026,6 +1072,22 @@ export const api = {
   },
   importJobs: () => get<Record<string, unknown>[]>('/api/import/jobs'),
   cancelImport: (jobId: string) => post<{ ok: boolean }>(`/api/import/jobs/${jobId}/cancel`),
+  /** The collisions this import parked, each beside the record it hit. */
+  importDuplicates: (jobId: string) =>
+    get<{ module: string; pairs: ImportDuplicatePair[] }>(`/api/import/jobs/${jobId}/duplicates`),
+  resolveImportDuplicate: (
+    jobId: string,
+    rowId: string,
+    action: ImportResolution,
+    fieldChoices: Record<string, 'incoming' | 'existing'> = {},
+  ) => post<{ recordId: string | null }>(
+    `/api/import/jobs/${jobId}/duplicates/${rowId}`, { action, fieldChoices },
+  ),
+  resolveAllImportDuplicates: (jobId: string, action: ImportResolution) =>
+    post<{ resolved: number }>(`/api/import/jobs/${jobId}/duplicates`, { action }),
+  /** A section of a finished import as a downloadable sheet. */
+  importResultUrl: (jobId: string, section: ImportSection, name: string) =>
+    authedFileUrl(`/api/import/jobs/${jobId}/result.csv`, { section, name }),
   neighbours: (module: string, id: string, params: { view?: string; sort?: string; dir?: string } = {}) =>
     get<{ prevId: string | null; nextId: string | null }>(
       `/api/records/${module}/${id}/neighbours${qs(params as Record<string, string>)}`,

@@ -1,6 +1,6 @@
 import { type JSX, useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, ChevronRight, Eye, EyeOff, Lock, Plus, Save, Shield, Users } from 'lucide-react';
+import { Check, ChevronRight, Eye, EyeOff, Lock, Plus, Save, Shield, UserCheck, Users } from 'lucide-react';
 import { api } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
 import { cn } from '../../lib/utils';
@@ -12,7 +12,7 @@ interface RoleNode {
 }
 
 type Perm = { view: boolean; create: boolean; edit: boolean; delete: boolean; export: boolean; import: boolean };
-type FieldPermValue = 'editable' | 'readonly' | 'hidden';
+type FieldPermValue = 'editable' | 'readonly' | 'owner_only' | 'hidden';
 
 export default function RolesProfiles(): JSX.Element {
   const [tab, setTab] = useState('roles');
@@ -286,8 +286,8 @@ function ProfilesTab(): JSX.Element {
             <table className="w-full">
               <thead>
                 <tr>
-                  <th className="table-head">Module</th>
-                  {ACTIONS.map((a) => <th key={a} className="table-head text-center capitalize">{a}</th>)}
+                  <th className="list-head">Module</th>
+                  {ACTIONS.map((a) => <th key={a} className="list-head text-center capitalize">{a}</th>)}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -295,9 +295,9 @@ function ProfilesTab(): JSX.Element {
                   const p = perms[m.name] ?? { view: false, create: false, edit: false, delete: false, export: false, import: false };
                   return (
                     <tr key={m.name} className="hover:bg-slate-50 dark:hover:bg-slate-800/60">
-                      <td className="table-cell font-medium">{m.label}</td>
+                      <td className="list-cell font-medium">{m.label}</td>
                       {ACTIONS.map((action) => (
-                        <td key={action} className="table-cell text-center">
+                        <td key={action} className="list-cell text-center">
                           <button
                             onClick={() => toggle(m.name, action)}
                             className={cn(
@@ -352,14 +352,24 @@ function ProfilesTab(): JSX.Element {
                     </div>
                     <div className="flex shrink-0 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
                       {([
-                        { value: 'editable' as const, label: 'Editable', icon: Eye },
-                        { value: 'readonly' as const, label: 'Read-only', icon: Lock },
-                        { value: 'hidden' as const, label: 'Hidden', icon: EyeOff },
+                        { value: 'editable' as const, label: 'Editable', icon: Eye,
+                          hint: 'Read and change it.' },
+                        { value: 'readonly' as const, label: 'Read-only', icon: Lock,
+                          hint: 'See the value; cannot change it.' },
+                        // The record-aware one. Named for what it does rather
+                        // than for the mechanism ("masked"), because the choice
+                        // being made here is about who, not about asterisks.
+                        { value: 'owner_only' as const, label: 'Owner only', icon: UserCheck,
+                          hint: 'Only the person the record is assigned to sees the real value. '
+                            + 'Everyone else gets 98xxxxxx56 and can reveal one number at a time, '
+                            + 'which is written to the audit log.' },
+                        { value: 'hidden' as const, label: 'Hidden', icon: EyeOff,
+                          hint: 'Not sent to this profile at all.' },
                       ]).map((opt, i) => (
                         <button
                           key={opt.value}
                           onClick={() => setFieldPerm(fieldModule, f.name, opt.value)}
-                          title={opt.label}
+                          title={`${opt.label} — ${opt.hint}`}
                           className={cn(
                             'flex items-center gap-1 px-2 py-1 text-2xs transition-colors',
                             i > 0 && 'border-l border-slate-200 dark:border-slate-700',

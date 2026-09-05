@@ -57,7 +57,7 @@ const GROUPS: { id: string; title: string; blurb: string }[] = [
   { id: 'website', title: 'Public website', blurb: 'What visitors to your site can see.' },
   { id: 'sharing', title: 'Share links', blurb: 'What a buyer sees when you send them a property.' },
   { id: 'whatsapp', title: 'WhatsApp', blurb: 'Messaging rules.' },
-  { id: 'telephony', title: 'Calls', blurb: 'Recording and number masking.' },
+  { id: 'telephony', title: 'Calls', blurb: 'Call recording.' },
   { id: 'ai', title: 'AI', blurb: 'Which parts of the CRM the AI is allowed to do on its own.' },
   {
     id: 'ai_features',
@@ -374,9 +374,11 @@ function peekPairs(id: string, rows: Setting[], draft: Record<string, unknown>):
     case 'whatsapp':
       return keep([pair('Reply window', current('whatsapp.session_window_hours'), withHours)]);
     case 'telephony':
+      // Masking used to be summarised here. It was never read by anything, and
+      // number visibility is now a field permission per profile — Roles &
+      // Profiles → Field permissions → Owner only. Migration 099 has the why.
       return keep([
         pair('Recording', current('telephony.record_calls')),
-        pair('Masking', current('telephony.mask_numbers')),
       ]);
     case 'ai':
       return keep([

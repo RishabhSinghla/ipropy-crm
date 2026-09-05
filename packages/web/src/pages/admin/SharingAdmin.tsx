@@ -68,9 +68,9 @@ export default function SharingAdmin(): JSX.Element {
           <table className="w-full">
             <thead>
               <tr>
-                <th className="table-head">Module</th>
-                <th className="table-head">Default access</th>
-                <th className="table-head">What it means</th>
+                <th className="list-head">Module</th>
+                <th className="list-head">Default access</th>
+                <th className="list-head">What it means</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -79,7 +79,7 @@ export default function SharingAdmin(): JSX.Element {
                 const level = ACCESS_LEVELS.find((l) => l.value === access);
                 return (
                   <tr key={m.module} className="hover:bg-slate-50 dark:hover:bg-slate-800/60">
-                    <td className="table-cell">
+                    <td className="list-cell">
                       <div className="flex items-center gap-2">
                         {access === 'private'
                           ? <Lock className="h-3.5 w-3.5 text-slate-400" />
@@ -87,7 +87,7 @@ export default function SharingAdmin(): JSX.Element {
                         <span className="font-medium">{m.label}</span>
                       </div>
                     </td>
-                    <td className="table-cell">
+                    <td className="list-cell">
                       <Select
                         value={access}
                         onChange={(v) => { setDefaults({ ...defaults, [m.module]: v }); setDirty(true); }}
@@ -95,7 +95,7 @@ export default function SharingAdmin(): JSX.Element {
                         className="w-52 py-1.5 text-sm"
                       />
                     </td>
-                    <td className="table-cell">
+                    <td className="list-cell">
                       <span className="text-xs text-muted">{level?.hint}</span>
                     </td>
                   </tr>
