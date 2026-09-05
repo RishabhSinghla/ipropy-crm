@@ -491,6 +491,23 @@ recordsRouter.get('/:module/:id/neighbours', asyncHandler(async (req, res) => {
     logic: 'AND',
     conditions: [
       { field, operator: 'is_not_empty' },
+      /*
+        A record is never its own neighbour. Said outright, because leaving it
+        to the value comparison is what broke the back arrow.
+
+        Postgres keeps timestamps to the microsecond and a JavaScript Date only
+        to the millisecond, so a `created_at` of `04:34:17.534234` reaches this
+        filter as `04:34:17.534`. On the default newest-first list "previous"
+        asks for `created_at > .534000` — and `.534234` is greater, so every
+        record matched itself and the arrow reloaded the page you were already
+        on. "Next" asks for `< .534000`, which excludes it, which is why only
+        one arrow appeared broken.
+
+        The equality tiebreak below cannot save it either: the two values are
+        not equal once one has been truncated. Excluding the id is exact,
+        needs no precision at all, and is what the rule actually means.
+      */
+      { field: 'id', operator: 'not_equals', value: id },
       {
         logic: 'OR',
         conditions: [
