@@ -10,6 +10,7 @@
  * `recordScopeSql()` produces the WHERE fragment that scopes any list query,
  * so data access is enforced in SQL rather than filtered in JS after the fact.
  */
+import { CAPABILITIES } from '@ipropy/shared';
 import type { AuthUser, FieldPermission, ModulePermission } from '@ipropy/shared';
 import { db, type Tx } from '../../db/pool.js';
 import { ForbiddenError } from '../../utils/errors.js';
@@ -170,6 +171,21 @@ export async function hasCapability(user: AuthUser, capability: string): Promise
   if (!user.profileId) return false;
   const profile = await loadProfile(user.profileId);
   return profile.capabilities.has(capability);
+}
+
+/**
+ * Everything this person may do, for the browser to decide what to show.
+ *
+ * The same source `hasCapability` reads, so the screen and the server cannot
+ * disagree about who may open what. An admin holds all of them implicitly, and
+ * says so explicitly here rather than making every caller remember the special
+ * case.
+ */
+export async function listCapabilities(user: AuthUser): Promise<string[]> {
+  if (user.isAdmin) return [...CAPABILITIES];
+  if (!user.profileId) return [];
+  const profile = await loadProfile(user.profileId);
+  return [...profile.capabilities].sort();
 }
 
 export async function assertCapability(user: AuthUser, capability: string): Promise<void> {

@@ -252,6 +252,14 @@ export interface AuthUser {
   avatarUrl: string | null;
   phone: string | null;
   isAdmin: boolean;
+  /**
+   * What this person may do, from `GET /api/auth/me`.
+   *
+   * Optional because a browser holding a user cached before this shipped has
+   * none, and the screens treat an absent list as "nothing extra" rather than
+   * as "everything" — the safe direction if the two ever disagree.
+   */
+  capabilities?: string[];
   isActive: boolean;
   roleId: string | null;
   roleName: string | null;

@@ -1,7 +1,7 @@
 import SettingsAdmin from './SettingsAdmin';
 import type { JSX } from 'react';
 import { Suspense, lazy } from 'react';
-import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
+import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {
   Activity, Blocks, Database, GitBranch, Globe, KeyRound, Layers, LayoutTemplate, MapPin,
   Columns3, ListTree, Plug, Settings2, Shield, Sliders, Sparkles, ToggleLeft, Users, Workflow,
@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { Spinner } from '../../components/ui';
 import { cn } from '../../lib/utils';
+import { useApp } from '../../lib/store';
 
 const ModuleBuilder = lazy(() => import('./ModuleBuilder'));
 const ModuleManager = lazy(() => import('./ModuleManager'));
@@ -25,45 +26,87 @@ const ImportAdmin = lazy(() => import('./ImportAdmin'));
 const BrandAdmin = lazy(() => import('./BrandAdmin'));
 const ViewsAdmin = lazy(() => import('./ViewsAdmin'));
 
+/*
+  Every section names the capability that opens it.
+
+  Admin was a route with no guard: the sidebar link was hidden from non-admins
+  and the route was not, so a Sales Executive typing /admin/users was handed the
+  whole control panel — Modules & Fields, Dropdowns, Roles & Profiles,
+  Integrations, a "New user" button — every control of which answers 403 when
+  pressed. The server was never fooled; the person was.
+
+  Named per section rather than gated on `isAdmin`, because the answer is not
+  binary. A Sales Manager holds `records.import` and no admin capability at all,
+  and Import Data lives in here — one blanket check would have taken away the one
+  screen they are meant to use.
+*/
 const SECTIONS = [
   {
     group: 'Customisation',
     items: [
-      { path: 'modules', label: 'Enable / Disable', icon: ToggleLeft, element: <ModuleManager /> },
-      { path: 'fields', label: 'Modules & Fields', icon: Blocks, element: <ModuleBuilder /> },
-      { path: 'layouts', label: 'Layout Designer', icon: LayoutTemplate, element: <LayoutDesigner /> },
-      { path: 'views', label: 'List View Tabs', icon: Columns3, element: <ViewsAdmin /> },
-      { path: 'picklists', label: 'Dropdowns', icon: ListTree, element: <PicklistManager /> },
+      { path: 'modules', capability: 'admin.modules', label: 'Enable / Disable', icon: ToggleLeft, element: <ModuleManager /> },
+      { path: 'fields', capability: 'admin.fields', label: 'Modules & Fields', icon: Blocks, element: <ModuleBuilder /> },
+      { path: 'layouts', capability: 'admin.layouts', label: 'Layout Designer', icon: LayoutTemplate, element: <LayoutDesigner /> },
+      { path: 'views', capability: 'admin.layouts', label: 'List View Tabs', icon: Columns3, element: <ViewsAdmin /> },
+      { path: 'picklists', capability: 'admin.picklists', label: 'Dropdowns', icon: ListTree, element: <PicklistManager /> },
     ],
   },
   {
     group: 'Access',
     items: [
-      { path: 'users', label: 'Users', icon: Users, element: <UsersAdmin /> },
-      { path: 'roles', label: 'Roles & Profiles', icon: Shield, element: <RolesProfiles /> },
-      { path: 'sharing', label: 'Data Sharing', icon: KeyRound, element: <SharingAdmin /> },
-      { path: 'map', label: 'Team map', icon: MapPin, element: <TeamMap /> },
+      { path: 'users', capability: 'admin.users', label: 'Users', icon: Users, element: <UsersAdmin /> },
+      { path: 'roles', capability: 'admin.roles', label: 'Roles & Profiles', icon: Shield, element: <RolesProfiles /> },
+      { path: 'sharing', capability: 'admin.sharing', label: 'Data Sharing', icon: KeyRound, element: <SharingAdmin /> },
+      { path: 'map', capability: 'admin.users', label: 'Team map', icon: MapPin, element: <TeamMap /> },
     ],
   },
   {
     group: 'Automation',
     items: [
-      { path: 'workflows', label: 'Workflows', icon: Workflow, element: <WorkflowAdmin /> },
-      { path: 'import', label: 'Import Data', icon: Database, element: <ImportAdmin /> },
+      { path: 'workflows', capability: 'admin.workflows', label: 'Workflows', icon: Workflow, element: <WorkflowAdmin /> },
+      { path: 'import', capability: 'records.import', label: 'Import Data', icon: Database, element: <ImportAdmin /> },
     ],
   },
   {
     group: 'Platform',
     items: [
-      { path: 'integrations', label: 'Integrations', icon: Plug, element: <IntegrationsAdmin /> },
-      { path: 'settings', label: 'Settings', icon: SlidersHorizontal, element: <SettingsAdmin /> },
-      { path: 'brand', label: 'Brand & Social', icon: Sparkles, element: <BrandAdmin /> },
-      { path: 'system', label: 'System & Audit', icon: Activity, element: <SystemAdmin /> },
+      { path: 'integrations', capability: 'admin.integrations', label: 'Integrations', icon: Plug, element: <IntegrationsAdmin /> },
+      { path: 'settings', capability: 'admin.access', label: 'Settings', icon: SlidersHorizontal, element: <SettingsAdmin /> },
+      { path: 'brand', capability: 'admin.access', label: 'Brand & Social', icon: Sparkles, element: <BrandAdmin /> },
+      { path: 'system', capability: 'admin.audit', label: 'System & Audit', icon: Activity, element: <SystemAdmin /> },
     ],
   },
 ];
 
 export default function AdminPage(): JSX.Element {
+  const { user } = useApp();
+  const allowed = new Set(user?.capabilities ?? []);
+  const sections = SECTIONS
+    .map((s) => ({ ...s, items: s.items.filter((i) => allowed.has(i.capability)) }))
+    .filter((s) => s.items.length > 0);
+
+  /*
+    Nothing here for you, said plainly rather than by handing over a panel of
+    buttons that all fail.
+
+    A rep who follows an old link or types the address deserves a sentence, not
+    a 403 the moment they touch anything.
+  */
+  if (sections.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center p-8">
+        <div className="max-w-sm text-center">
+          <h2 className="text-base font-semibold">This is the admin area</h2>
+          <p className="mt-2 text-sm text-muted">
+            Your account does not manage the CRM&apos;s setup, so there is nothing for
+            you here. Everything you need is on the other screens.
+          </p>
+          <Link to="/dashboard" className="btn-primary mt-4 inline-flex">Back to the dashboard</Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     // A fixed 14rem rail is fine on a desktop and ruinous on a phone: it left
     // about 160px for the panel, which wrapped every label a character at a
@@ -80,7 +123,7 @@ export default function AdminPage(): JSX.Element {
             rather than repeated — 12 destinations are quicker to scan in a row
             than 4 headings are to read. */}
         <div className="flex gap-1 overflow-x-auto px-2 py-2 lg:hidden">
-          {SECTIONS.flatMap((s) => s.items).map((item) => (
+          {sections.flatMap((s) => s.items).map((item) => (
             <NavLink
               key={item.path}
               to={`/admin/${item.path}`}
@@ -98,7 +141,7 @@ export default function AdminPage(): JSX.Element {
         </div>
 
         <div className="hidden space-y-4 lg:block">
-          {SECTIONS.map((section) => (
+          {sections.map((section) => (
             <div key={section.group}>
               <p className="mb-1 px-3 text-2xs font-semibold uppercase tracking-wider text-muted">
                 {section.group}
@@ -128,7 +171,7 @@ export default function AdminPage(): JSX.Element {
         }>
           <Routes>
             <Route index element={<Navigate to="modules" replace />} />
-            {SECTIONS.flatMap((s) => s.items).map((item) => (
+            {sections.flatMap((s) => s.items).map((item) => (
               <Route key={item.path} path={item.path} element={item.element} />
             ))}
             <Route path="*" element={<Navigate to="modules" replace />} />

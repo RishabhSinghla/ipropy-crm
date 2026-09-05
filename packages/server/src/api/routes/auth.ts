@@ -11,7 +11,7 @@ import {
   getUser, hashPassword, loadUser, requireAuth, signAccessToken, verifyPassword,
 } from '../../middleware/auth.js';
 import { BadRequestError, UnauthorizedError, ValidationError } from '../../utils/errors.js';
-import { getSubordinateUserIds } from '../../core/permissions/index.js';
+import { getSubordinateUserIds, listCapabilities } from '../../core/permissions/index.js';
 import { issueSession, hashRefreshToken, rotateRefreshToken, RetryableRefresh } from '../../core/auth/session.js';
 import { clearPinDeviceCookie } from '../../core/auth/devicePin.js';
 
@@ -147,8 +147,27 @@ authRouter.get('/me', requireAuth, asyncHandler(async (req, res) => {
   // client already fetches this at start-up, and the answer is the same for
   // everybody. See core/settings/ui.ts.
   const { uiSettings } = await import('../../core/settings/ui.js');
-  const [subordinateIds, ui] = await Promise.all([getSubordinateUserIds(user), uiSettings()]);
-  res.json({ ...user, subordinateIds, ui });
+  /*
+    Capabilities travel with the user, because the browser cannot hide a screen
+    it has no opinion about.
+
+    Admin was a route with no guard on it. The sidebar link was hidden from
+    non-admins and the route was not, so a Sales Executive who typed /admin/users
+    got the whole control panel — Modules & Fields, Dropdowns, Roles & Profiles,
+    Integrations, a "New user" button — every control of which fails with a 403
+    when pressed. The data was safe; the experience was a CRM that looked broken.
+
+    Sent as a plain list rather than a single isAdmin flag, because the answer is
+    not binary: a Sales Manager holds `records.import` and nothing else in the
+    admin area, and Import Data lives there. Gating on isAdmin would have locked
+    them out of the one screen they are meant to use.
+  */
+  const [subordinateIds, ui, capabilities] = await Promise.all([
+    getSubordinateUserIds(user),
+    uiSettings(),
+    listCapabilities(user),
+  ]);
+  res.json({ ...user, subordinateIds, ui, capabilities });
 }));
 
 const preferencesSchema = z.object({
