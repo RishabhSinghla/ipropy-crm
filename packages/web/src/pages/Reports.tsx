@@ -1,4 +1,4 @@
-import type { JSX } from 'react';
+import { type JSX, useEffect, useMemo, useRef, useState } from 'react';
 /**
  * Ad-hoc reporting over any module.
  *
@@ -10,10 +10,8 @@ import type { JSX } from 'react';
  * select showed the wrong label and both dropdowns underneath rendered blank.
  * Every default here now comes from the metadata that is actually loaded.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { formatIndianPrice } from '@ipropy/shared';
-import type { FieldMeta } from '@ipropy/shared';
+import { type FieldMeta, formatIndianPrice } from '@ipropy/shared';
 import { BarChart3, Download, Play, Plus, Save, Trash2, X } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';

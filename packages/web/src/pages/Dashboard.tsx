@@ -4,8 +4,7 @@ import type { ReactNode } from 'react';
 import type { Ref } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Dashboard, DashboardWidget, FilterGroup, FilterOperator } from '@ipropy/shared';
-import { formatIndianPrice, relativeTime } from '@ipropy/shared';
+import { type Dashboard, type DashboardWidget, type FilterGroup, type FilterOperator, formatIndianPrice, relativeTime } from '@ipropy/shared';
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart,
   Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,

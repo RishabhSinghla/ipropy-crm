@@ -58,13 +58,13 @@ metadataRouter.get('/modules', asyncHandler(async (req, res) => {
       supportsComments: m.supportsComments,
       supportsAttachments: m.supportsAttachments,
       supportsTags: m.supportsTags,
-      supportsConversion: (m as unknown as { supportsConversion?: boolean }).supportsConversion ?? false,
-      menuGroup: (m as unknown as { menuGroup?: string }).menuGroup ?? 'CRM',
-      showInMenu: (m as unknown as { showInMenu?: boolean }).showInMenu ?? true,
+      supportsConversion: m.supportsConversion ?? false,
+      menuGroup: m.menuGroup ?? 'CRM',
+      showInMenu: m.showInMenu ?? true,
       // Modules naming the same `settings.tabGroup` render as tabs of one
       // another — one menu entry for Properties and Projects, say. The UI reads
       // this generically, so an admin can group custom modules the same way.
-      settings: (m as unknown as { settings?: Record<string, unknown> }).settings ?? {},
+      settings: m.settings ?? {},
       permissions: perm,
     });
   }
@@ -101,18 +101,14 @@ metadataRouter.get('/modules/all', asyncHandler(async (req, res) => {
   }
 
   res.json(modules.map((m) => {
-    const extra = m as unknown as {
-      isCore?: boolean; disabledReason?: string | null;
-      menuGroup?: string; showInMenu?: boolean;
-    };
     return {
       id: m.id, name: m.name, label: m.label, singularLabel: m.singularLabel,
       icon: m.icon, color: m.color, sequence: m.sequence,
       isActive: m.isActive, isCustom: m.isCustom, isEntity: m.isEntity,
-      isCore: extra.isCore ?? false,
-      disabledReason: extra.disabledReason ?? null,
-      menuGroup: extra.menuGroup ?? 'CRM',
-      showInMenu: extra.showInMenu ?? true,
+      isCore: m.isCore ?? false,
+      disabledReason: m.disabledReason ?? null,
+      menuGroup: m.menuGroup ?? 'CRM',
+      showInMenu: m.showInMenu ?? true,
       fieldCount: m.fields.length,
       recordCount: countByModule.get(m.id) ?? 0,
       dependents: dependents.get(m.name) ?? [],

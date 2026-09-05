@@ -1,4 +1,4 @@
-import type { JSX } from 'react';
+import { type JSX, useEffect, useMemo, useState } from 'react';
 /**
  * The master for list view tabs — "All Records", "Open Leads", "Hot Leads".
  *
@@ -12,7 +12,6 @@ import type { JSX } from 'react';
  * filter they spent time building, and a delete that loses work is a reason
  * people stop customising at all.
  */
-import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CustomView, FilterGroup, ModuleMeta } from '@ipropy/shared';
 import {

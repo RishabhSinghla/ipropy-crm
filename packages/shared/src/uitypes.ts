@@ -557,6 +557,18 @@ export interface ModuleMeta {
   supportsAttachments: boolean;
   supportsWorkflow: boolean;
   supportsTags: boolean;
+  /** module can be converted to another module (e.g. lead to contact) */
+  supportsConversion?: boolean;
+  /** grouping in the admin menu */
+  menuGroup?: string;
+  /** whether to show in the main navigation */
+  showInMenu?: boolean;
+  /** module-specific settings bag */
+  settings?: Record<string, unknown>;
+  /** a core module cannot be disabled; this flag marks it */
+  isCore?: boolean;
+  /** if disabled, the reason it was (used by the admin enable/disable screen) */
+  disabledReason?: string | null;
   blocks: BlockMeta[];
   fields: FieldMeta[];
   relations: RelationMeta[];

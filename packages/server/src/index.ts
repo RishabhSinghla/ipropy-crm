@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises';
 import { config, validateProductionConfig } from './config.js';
 import { logger } from './utils/logger.js';
 import { createApp } from './app.js';
-import { checkConnection, closePool } from './db/pool.js';
+import { checkConnection, closePool, db } from './db/pool.js';
 import { registry } from './core/metadata/registry.js';
 import { warmup as warmupIntegrationSettings, getSettings } from './core/settings/integrations.js';
 import { configureSentry } from './core/observability/sentry.js';
@@ -14,7 +14,6 @@ import { startScheduler, stopScheduler } from './core/workflow/scheduler.js';
 import { initRealtime, closeRealtime } from './realtime.js';
 import { aiStatus } from './ai/client.js';
 import { recoverOrphanedImports } from './core/import/recover.js';
-import { db } from './db/pool.js';
 
 async function main(): Promise<void> {
   logger.info('starting iPropy CRM server…');

@@ -6,9 +6,8 @@
  * writes the *reasoning* — why this unit suits this buyer — which is what a rep
  * actually pastes into a WhatsApp message.
  */
-import type { PropertyMatch } from '@ipropy/shared';
+import { formatArea, formatIndianPrice, type PropertyMatch, toSqFt } from '@ipropy/shared';
 import { scoringThresholds } from '../core/settings/scoring.js';
-import { formatArea, formatIndianPrice, toSqFt } from '@ipropy/shared';
 import { db } from '../db/pool.js';
 import { completeJson, isAiAvailable, saveInsight, REAL_ESTATE_SYSTEM } from './client.js';
 

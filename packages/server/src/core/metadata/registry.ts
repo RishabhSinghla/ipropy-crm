@@ -198,9 +198,7 @@ async function load(conn: Tx = db): Promise<RegistryCache> {
     const list = relationsBySource.get(r.source_module) ?? [];
     list.push(r);
     relationsBySource.set(r.source_module, list);
-  }
-
-  const modules = new Map<string, ModuleMeta>();
+  }   const modules = new Map<string, ModuleMeta>();
   const modulesById = new Map<string, ModuleMeta>();
 
   for (const m of moduleRes.rows) {
@@ -215,6 +213,26 @@ async function load(conn: Tx = db): Promise<RegistryCache> {
       list.push(f);
       fieldsByBlock.set(f.blockId, list);
     }
+
+    const blockOrder = new Map<string, number>();
+    for (const b of (blocksByModule.get(m.id) ?? [])) blockOrder.set(b.id, b.sequence);
+
+    /*
+      The flat `fields` list follows the layout: block order first, then the
+      field's own sequence inside its block. `ipy_field.sequence` restarts at
+      zero in every block, so ordering by it alone leaves fields from different
+      blocks tied and Postgres free to return them in any physical order —
+      the same seed produced "first currency field = Base Price" on one
+      database and "Monthly Rent" on another, and every consumer that asks
+      for the first of a uitype (the reports builder's default money column)
+      picks whichever the database happened to return. Fields with no block
+      sort after every block, by sequence, so they stay stable too.
+    */
+    const layoutOrdered = [...fields].sort((a, z) => {
+      const ba = a.blockId ? blockOrder.get(a.blockId) ?? Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER;
+      const bz = z.blockId ? blockOrder.get(z.blockId) ?? Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER;
+      return ba !== bz ? ba - bz : a.sequence - z.sequence;
+    });
 
     const blocks: BlockMeta[] = (blocksByModule.get(m.id) ?? []).map((b) => ({
       id: b.id,
@@ -266,7 +284,7 @@ async function load(conn: Tx = db): Promise<RegistryCache> {
       supportsWorkflow: m.supports_workflow,
       supportsTags: m.supports_tags,
       blocks,
-      fields,
+      fields: layoutOrdered,
       relations,
     };
     // extra server-only bits ride along on the object without widening the shared type

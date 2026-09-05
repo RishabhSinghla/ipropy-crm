@@ -1,5 +1,4 @@
-import type { JSX } from 'react';
-import { useEffect, useState } from 'react';
+import { type JSX, useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { RecordEnvelope } from '@ipropy/shared';
 import { Check, ExternalLink, ListPlus, Send, Sparkles } from 'lucide-react';

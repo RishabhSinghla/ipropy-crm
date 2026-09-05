@@ -27,12 +27,10 @@
  * appear at a gate is an admin decision in Layout Designer, not a constant in
  * this file.
  */
-import type { JSX } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { type JSX, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import type { FieldMeta, ModuleMeta } from '@ipropy/shared';
-import { collectFieldErrors } from '@ipropy/shared';
+import { collectFieldErrors, type FieldMeta, type ModuleMeta } from '@ipropy/shared';
 import { Check, ChevronDown, Images, MapPin, Plus } from 'lucide-react';
 import { api, ApiError } from '../lib/api';
 import { startingValues } from '../lib/recordDefaults';

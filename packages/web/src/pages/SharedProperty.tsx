@@ -1,4 +1,4 @@
-import type { JSX } from 'react';
+import { type JSX, useState } from 'react';
 /**
  * What the buyer sees.
  *
@@ -17,7 +17,6 @@ import type { JSX } from 'react';
  * status of the record is the dealer's business, and the label on the link is
  * their private note about the recipient.
  */
-import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Building2, ChevronLeft, ChevronRight, ImageOff, MapPin, X } from 'lucide-react';

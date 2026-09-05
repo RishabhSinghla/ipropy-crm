@@ -8,8 +8,7 @@
  * here, so the two can never drift into offering different things.
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { CrmClient } from './client.js';
-import { CrmError } from './client.js';
+import { CrmError, type CrmClient } from './client.js';
 import { toolsFor } from './tools.js';
 
 /**

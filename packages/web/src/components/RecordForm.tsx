@@ -1,4 +1,4 @@
-import type { JSX } from 'react';
+import { type JSX, useEffect, useMemo, useState } from 'react';
 /**
  * Dynamic record form.
  *
@@ -6,10 +6,8 @@ import type { JSX } from 'react';
  * FieldRenderer. Handles mandatory validation, dependent picklists, conditional
  * visibility, live duplicate detection and server-side field errors.
  */
-import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { FieldMeta, ModuleMeta, RecordEnvelope } from '@ipropy/shared';
-import { collectFieldErrors, evaluateFilter } from '@ipropy/shared';
+import { collectFieldErrors, evaluateFilter, type FieldMeta, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
 import { AlertTriangle, ChevronDown, Save, TrendingUp, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';

@@ -407,7 +407,7 @@ aiRouter.post('/ask', modelLimiter, asyncHandler(async (req, res) => {
 
 /** Browser-recorded voice → text for the assistant compose box. */
 aiRouter.post('/transcribe', modelLimiter, assistantAudioUpload.single('audio'), asyncHandler(async (req, res) => {
-  const file = (req as unknown as { file?: Express.Multer.File }).file;
+  const file = req.file;
   if (!file) throw new BadRequestError('Record a voice question first');
 
   const { getSettings } = await import('../../core/settings/integrations.js');
@@ -473,7 +473,7 @@ aiRouter.post('/records/:module/:id/duplicates/dismiss', asyncHandler(async (req
  * feature at all.
  */
 aiRouter.post('/voice-note', modelLimiter, assistantAudioUpload.single('audio'), asyncHandler(async (req, res) => {
-  const file = (req as unknown as { file?: Express.Multer.File }).file;
+  const file = req.file;
   if (!file) throw new BadRequestError('Record something first');
 
   const { featureOn } = await import('../../core/settings/aiFeatures.js');

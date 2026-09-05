@@ -7,8 +7,7 @@
  * name a column that isn't a declared field, which is what keeps this safe
  * despite building SQL text.
  */
-import type { FieldMeta, FilterCondition, FilterGroup, ModuleMeta } from '@ipropy/shared';
-import { isFilterGroup } from '@ipropy/shared';
+import { type FieldMeta, type FilterCondition, type FilterGroup, isFilterGroup, type ModuleMeta } from '@ipropy/shared';
 import { BadRequestError } from '../../utils/errors.js';
 import { registry } from '../metadata/registry.js';
 

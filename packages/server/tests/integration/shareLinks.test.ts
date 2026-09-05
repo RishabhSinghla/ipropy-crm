@@ -16,10 +16,9 @@ import type { Express } from 'express';
 import { createApp } from '../../src/app.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import { db } from '../../src/db/pool.js';
-import { recordService } from '../../src/core/entity/recordService.js';
+import { recordService, type ServiceContext } from '../../src/core/entity/recordService.js';
 import { mintToken } from '../../src/core/sharing/shareLinks.js';
 import { adminContext, leadInput, SEEDED } from './fixtures.js';
-import type { ServiceContext } from '../../src/core/entity/recordService.js';
 
 let app: Express;
 let token: string;

@@ -1,4 +1,4 @@
-import type { JSX } from 'react';
+import { type JSX, useEffect, useState } from 'react';
 /**
  * Brand line and the company's own social accounts.
  *
@@ -7,7 +7,6 @@ import type { JSX } from 'react';
  * and more than one plausible iPropy account exists. Somebody has to be able to
  * correct a wrong handle in ten seconds, not in a deploy.
  */
-import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Facebook, Globe, GripVertical, Instagram, Linkedin, MessageCircle, Plus, Save, Trash2, Twitter, Youtube,

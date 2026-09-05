@@ -1,4 +1,4 @@
-import type { JSX } from 'react';
+import { type JSX, useState } from 'react';
 /**
  * The enquiry form a visitor fills — the front door of the whole CRM.
  *
@@ -16,7 +16,6 @@ import type { JSX } from 'react';
  * passes UTM parameters from the page URL straight into the submission so
  * attribution survives, and shows the form's own success message.
  */
-import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { CheckCircle2, FileQuestion, SendHorizontal } from 'lucide-react';

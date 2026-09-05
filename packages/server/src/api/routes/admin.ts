@@ -202,11 +202,20 @@ adminRouter.get('/roles', asyncHandler(async (_req, res) => {
   );
 
   // Nest into a tree so the UI can render the hierarchy directly.
-  const byId = new Map(rows.rows.map((r) => [r.id, { ...r, children: [] as unknown[] }]));
-  const roots: unknown[] = [];
+  interface RoleNode {
+    id: string;
+    name: string;
+    parent_id: string | null;
+    depth: number;
+    description: string | null;
+    user_count: number;
+    children: RoleNode[];
+  }
+  const byId = new Map(rows.rows.map((r) => [r.id, { ...r, children: [] as RoleNode[] }]));
+  const roots: RoleNode[] = [];
   for (const role of byId.values()) {
     if (role.parent_id && byId.has(role.parent_id)) {
-      (byId.get(role.parent_id)!.children as unknown[]).push(role);
+      byId.get(role.parent_id)!.children.push(role);
     } else {
       roots.push(role);
     }

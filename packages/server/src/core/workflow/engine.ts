@@ -6,12 +6,11 @@
  * queue. Failures are logged per-workflow and never propagate back to the save
  * that triggered them.
  */
-import type { AuthUser, FilterGroup } from '@ipropy/shared';
+import { type AuthUser, evaluateFilter, type FilterGroup } from '@ipropy/shared';
 import { organisationTimezone } from '../../core/settings/timezone.js';
 import { db, type Tx } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { bus, type RecordEventPayload } from '../events/bus.js';
-import { evaluateFilter } from '@ipropy/shared';
 import { registry } from '../metadata/registry.js';
 import { runTask, type TaskContext } from './tasks.js';
 

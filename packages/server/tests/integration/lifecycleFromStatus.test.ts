@@ -12,10 +12,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { registry } from '../../src/core/metadata/registry.js';
 import { db } from '../../src/db/pool.js';
-import { recordService } from '../../src/core/entity/recordService.js';
+import { recordService, type ServiceContext } from '../../src/core/entity/recordService.js';
 import { syncLifecycle } from '../../src/core/entity/lifecycleFromStatus.js';
 import { adminContext } from './fixtures.js';
-import type { ServiceContext } from '../../src/core/entity/recordService.js';
 
 let ctx: ServiceContext;
 const made: string[] = [];

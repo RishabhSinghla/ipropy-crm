@@ -39,8 +39,7 @@
 import type { AuthUser } from '@ipropy/shared';
 import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
-import { bus } from '../events/bus.js';
-import type { RecordEventPayload } from '../events/bus.js';
+import { bus, type RecordEventPayload } from '../events/bus.js';
 import { registry } from '../metadata/registry.js';
 import { advanceLifecycle } from './conversion.js';
 

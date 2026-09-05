@@ -1,5 +1,4 @@
-import type { JSX } from 'react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   Brain, Check, Clock3, History, Menu, Mic, Plus, Send, Sparkles, Square,

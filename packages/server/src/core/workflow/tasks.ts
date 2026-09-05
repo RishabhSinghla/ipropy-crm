@@ -5,8 +5,7 @@
  * automation capability means adding one entry to TASK_HANDLERS — the engine,
  * the queue and the admin UI pick it up without further changes.
  */
-import type { AuthUser } from '@ipropy/shared';
-import { renderTemplate, toE164, toInternational } from '@ipropy/shared';
+import { type AuthUser, renderTemplate, toE164, toInternational } from '@ipropy/shared';
 import { db, type Tx } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { registry } from '../metadata/registry.js';

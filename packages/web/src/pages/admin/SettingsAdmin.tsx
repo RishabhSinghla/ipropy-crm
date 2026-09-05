@@ -25,8 +25,7 @@
  * opens everything it matches, so nothing is harder to find than before,
  * merely quieter until wanted.
  */
-import type { JSX } from 'react';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { type JSX, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronRight, RotateCcw, Save, Search, SlidersHorizontal } from 'lucide-react';
 import { api } from '../../lib/api';

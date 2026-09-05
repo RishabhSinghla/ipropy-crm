@@ -1,4 +1,4 @@
-import type { JSX } from 'react';
+import { type JSX, useEffect, useMemo, useState } from 'react';
 /**
  * Layout Designer — what a record page looks like, as data.
  *
@@ -13,7 +13,6 @@ import type { JSX } from 'react';
  * Saving marks the layout as customised, which stops `db:seed` rewriting it on
  * the next schema change — see seed/helpers.ts.
  */
-import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ChevronDown, ChevronUp, GripVertical, Plus, Save, Trash2, X,

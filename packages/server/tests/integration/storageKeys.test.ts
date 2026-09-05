@@ -9,7 +9,7 @@
 import { describe, expect, it, beforeAll } from 'vitest';
 import { resolve } from 'node:path';
 import { db } from '../../src/db/pool.js';
-import { recordService } from '../../src/core/entity/recordService.js';
+import { recordService, type ServiceContext } from '../../src/core/entity/recordService.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import {
   buildStorageKey, derivativeStorageKey, PROPERTY_MEDIA_FOLDERS, propertyFolder,
@@ -18,7 +18,6 @@ import {
 import { localPath } from '../../src/core/storage/index.js';
 import { config } from '../../src/config.js';
 import { adminContext } from './fixtures.js';
-import type { ServiceContext } from '../../src/core/entity/recordService.js';
 
 describe('storage keys', () => {
   let ctx: ServiceContext;

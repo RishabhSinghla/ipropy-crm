@@ -204,6 +204,9 @@ export async function listRecords(
 
   // saved view filter merges with the ad-hoc filter
   let effectiveFilter = q.filter;
+  let effectiveSortBy = q.sortBy;
+  let effectiveSortDir = q.sortDir ?? 'desc';
+  let effectiveColumns = q.columns;
   if (q.view) {
     const view = await loadView(
       conn,
@@ -214,11 +217,12 @@ export async function listRecords(
     );
     if (!view) throw new NotFoundError('Saved view not found or not available');
     effectiveFilter = mergeFilters(view.filter, q.filter);
-    if (!q.sortBy && view.sort_by) {
-      q = { ...q, sortBy: view.sort_by, sortDir: (view.sort_dir as 'asc' | 'desc') ?? 'desc' };
+    if (!effectiveSortBy && view.sort_by) {
+      effectiveSortBy = view.sort_by;
+      effectiveSortDir = (view.sort_dir as 'asc' | 'desc') ?? 'desc';
     }
-    if (!q.columns?.length && Array.isArray(view.columns) && view.columns.length) {
-      q = { ...q, columns: view.columns };
+    if (!effectiveColumns?.length && Array.isArray(view.columns) && view.columns.length) {
+      effectiveColumns = view.columns;
     }
   }
 
@@ -274,7 +278,7 @@ export async function listRecords(
   const countRes = await conn.queryOne<{ count: number }>(`SELECT COUNT(*)::int AS count ${from}`, params.all());
   const total = countRes?.count ?? 0;
 
-  const orderBy = await buildOrderBy(module, q.sortBy, q.sortDir ?? 'desc', joinMap);
+  const orderBy = await buildOrderBy(module, effectiveSortBy, effectiveSortDir, joinMap);
   const limitParam = params.add(pageSize);
   const offsetParam = params.add((page - 1) * pageSize);
 
@@ -325,7 +329,7 @@ export async function listRecords(
     pageSize,
     total,
     totalPages: Math.max(1, Math.ceil(total / pageSize)),
-    columns: q.columns,
+    columns: effectiveColumns,
   };
 
   if (q.groupBy) {
@@ -775,13 +779,16 @@ export async function deleteRecord(
     source: ctx.source ?? 'app',
   });
 
-  await emit('record.deleted', {
+  // Deferred like create/update: no caller passes a transaction today, but the
+  // `opts.conn` door is open, and emitting inline under one is the deadlock
+  // this codebase has already paid for once — see onCommit in db/pool.ts.
+  onCommit(conn, () => emit('record.deleted', {
     module: moduleName,
     recordId,
     record: before.values,
     user: ctx.user,
     source: ctx.source ?? 'app',
-  });
+  }));
 }
 
 export async function restoreRecord(ctx: ServiceContext, moduleName: string, recordId: string): Promise<void> {
@@ -792,6 +799,20 @@ export async function restoreRecord(ctx: ServiceContext, moduleName: string, rec
   );
   await writeAudit(db, {
     recordId, module: moduleName, userId: ctx.user.id, action: 'restore', changes: [], source: 'app',
+  });
+  /*
+    The event bus and realtime.ts both know `record.restored` — a restored
+    record should pop back into other users' lists the way a deleted one
+    disappears — but nothing ever emitted it, so the restore reached only the
+    screen that did it. This runs outside any transaction, so a direct emit
+    is safe here (same shape as delete above uses onCommit for symmetry).
+  */
+  await emit('record.restored', {
+    module: moduleName,
+    recordId,
+    record: (await getRecord({ ...ctx, system: true }, moduleName, recordId)).values,
+    user: ctx.user,
+    source: ctx.source ?? 'app',
   });
 }
 

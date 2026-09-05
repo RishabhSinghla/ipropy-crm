@@ -19,6 +19,8 @@ declare global {
        * an assistant acting on their behalf through a connected app.
        */
       authSource?: 'app' | 'api_key';
+      /** Populated by Multer's `.single()` middleware on file upload routes. */
+      file?: Express.Multer.File;
     }
   }
 }

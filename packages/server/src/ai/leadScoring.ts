@@ -7,9 +7,8 @@
  * and writes the reasoning a rep can act on. Without an API key the rule score
  * stands on its own, so scoring never silently stops working.
  */
-import type { LeadScoreResult } from '@ipropy/shared';
+import { formatIndianPrice, type LeadScoreResult } from '@ipropy/shared';
 import { scoringThresholds, temperatureFor } from '../core/settings/scoring.js';
-import { formatIndianPrice } from '@ipropy/shared';
 import { db } from '../db/pool.js';
 import { logger } from '../utils/logger.js';
 import { completeJson, isAiAvailable, saveInsight, REAL_ESTATE_SYSTEM } from './client.js';

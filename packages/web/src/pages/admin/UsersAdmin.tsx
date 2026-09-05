@@ -1,5 +1,4 @@
-import type { JSX } from 'react';
-import { useState } from 'react';
+import { type JSX, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
 import { KeyRound, Plus, UserCog, UserX } from 'lucide-react';

@@ -32,10 +32,19 @@ let roleTreeCache: Map<string, string[]> | null = null; // roleId → descendant
 
 const CACHE_TTL_MS = 60_000;
 
+// In-flight load promises — prevents cache stampede when many concurrent requests
+// miss the cache at once (e.g. after a permission change invalidates it).
+const profileLoadPromises = new Map<string, Promise<ProfileCacheEntry>>();
+const sharingLoadPromises = new Map<string, Promise<string>>();
+let roleTreeLoadPromise: Promise<Map<string, string[]>> | null = null;
+
 export function invalidatePermissions(): void {
   profileCache.clear();
   sharingCache.clear();
   roleTreeCache = null;
+  profileLoadPromises.clear();
+  sharingLoadPromises.clear();
+  roleTreeLoadPromise = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -46,33 +55,46 @@ async function loadProfile(profileId: string, conn: Tx = db): Promise<ProfileCac
   const cached = profileCache.get(profileId);
   if (cached && Date.now() - cached.loadedAt < CACHE_TTL_MS) return cached;
 
-  const [modRes, fldRes, profRes] = await Promise.all([
-    conn.query<{ module_name: string; can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean; can_export: boolean; can_import: boolean }>(
-      `SELECT m.name AS module_name, p.can_view, p.can_create, p.can_edit, p.can_delete, p.can_export, p.can_import
-       FROM ipy_profile_module_perm p JOIN ipy_module m ON m.id = p.module_id
-       WHERE p.profile_id = $1`,
-      [profileId],
-    ),
-    conn.query<{ field_id: string; permission: FieldPermission }>(
-      `SELECT field_id, permission FROM ipy_profile_field_perm WHERE profile_id = $1`,
-      [profileId],
-    ),
-    conn.query<{ capabilities: string[] }>(`SELECT capabilities FROM ipy_profile WHERE id = $1`, [profileId]),
-  ]);
+  // Coalesce concurrent loads for the same profile into one DB round-trip.
+  const existing = profileLoadPromises.get(profileId);
+  if (existing) return existing;
 
-  const entry: ProfileCacheEntry = {
-    modulePerms: new Map(
-      modRes.rows.map((r) => [
-        r.module_name,
-        { view: r.can_view, create: r.can_create, edit: r.can_edit, delete: r.can_delete, export: r.can_export, import: r.can_import },
-      ]),
-    ),
-    fieldPerms: new Map(fldRes.rows.map((r) => [r.field_id, r.permission])),
-    capabilities: new Set(profRes.rows[0]?.capabilities ?? []),
-    loadedAt: Date.now(),
-  };
-  profileCache.set(profileId, entry);
-  return entry;
+  const promise = (async (): Promise<ProfileCacheEntry> => {
+    try {
+      const [modRes, fldRes, profRes] = await Promise.all([
+        conn.query<{ module_name: string; can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean; can_export: boolean; can_import: boolean }>(
+          `SELECT m.name AS module_name, p.can_view, p.can_create, p.can_edit, p.can_delete, p.can_export, p.can_import
+           FROM ipy_profile_module_perm p JOIN ipy_module m ON m.id = p.module_id
+           WHERE p.profile_id = $1`,
+          [profileId],
+        ),
+        conn.query<{ field_id: string; permission: FieldPermission }>(
+          `SELECT field_id, permission FROM ipy_profile_field_perm WHERE profile_id = $1`,
+          [profileId],
+        ),
+        conn.query<{ capabilities: string[] }>(`SELECT capabilities FROM ipy_profile WHERE id = $1`, [profileId]),
+      ]);
+
+      const entry: ProfileCacheEntry = {
+        modulePerms: new Map(
+          modRes.rows.map((r) => [
+            r.module_name,
+            { view: r.can_view, create: r.can_create, edit: r.can_edit, delete: r.can_delete, export: r.can_export, import: r.can_import },
+          ]),
+        ),
+        fieldPerms: new Map(fldRes.rows.map((r) => [r.field_id, r.permission])),
+        capabilities: new Set(profRes.rows[0]?.capabilities ?? []),
+        loadedAt: Date.now(),
+      };
+      profileCache.set(profileId, entry);
+      return entry;
+    } finally {
+      profileLoadPromises.delete(profileId);
+    }
+  })();
+
+  profileLoadPromises.set(profileId, promise);
+  return promise;
 }
 
 async function getOrgSharing(moduleName: string, conn: Tx = db): Promise<string> {

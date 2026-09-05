@@ -1,14 +1,11 @@
-import type { JSX, ReactNode } from 'react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type JSX, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { FieldMeta, ModuleMeta, RecordEnvelope, TimelineEntry } from '@ipropy/shared';
-import { CALL_DISPOSITIONS, formatIndianPrice, relativeTime } from '@ipropy/shared';
+import { CALL_DISPOSITIONS, type FieldMeta, formatIndianPrice, type ModuleMeta, type RecordEnvelope, relativeTime, type TimelineEntry } from '@ipropy/shared';
 import {
   Activity, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Edit3, ExternalLink, Eye, FileQuestion, FileText, FolderOpen, Images, LayoutDashboard, Link2, MessageCircle, Mic, MoreHorizontal, Paperclip, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Trash2, Upload, UserCheck, X,
 } from 'lucide-react';
-import type { PropertyStorageInfo } from '../lib/api';
-import { api, authedFileUrl } from '../lib/api';
+import { api, authedFileUrl, type PropertyStorageInfo } from '../lib/api';
 import { compressImage, formatBytes } from '../lib/compressImage';
 import { toast, useApp } from '../lib/store';
 import { useWatchRecord } from '../lib/realtime';

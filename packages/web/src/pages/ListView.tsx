@@ -1,9 +1,7 @@
-import type { JSX } from 'react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type JSX, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { FieldMeta, FilterGroup, ListQuery, ModuleMeta, RecordEnvelope } from '@ipropy/shared';
-import { formatIndianPrice, formatPhoneWithCode } from '@ipropy/shared';
+import { type FieldMeta, type FilterGroup, formatIndianPrice, formatPhoneWithCode, type ListQuery, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, CloudOff, Columns3, Compass, Download, Filter,
   LayoutGrid, List, MailCheck, Plus, RefreshCw, Save, Search, Settings2, Sparkles, Star, Trash2, Upload, Users, X,

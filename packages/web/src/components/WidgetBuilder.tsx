@@ -1,4 +1,4 @@
-import type { JSX } from 'react';
+import { type JSX, useEffect, useMemo, useState } from 'react';
 /**
  * Add / edit a dashboard widget.
  *
@@ -12,7 +12,6 @@ import type { JSX } from 'react';
  * under the current user's permissions, so what the builder shows is what the
  * widget will show.
  */
-import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { DashboardWidget, FilterGroup, ModuleMeta, WidgetConfig, WidgetType } from '@ipropy/shared';
 import {

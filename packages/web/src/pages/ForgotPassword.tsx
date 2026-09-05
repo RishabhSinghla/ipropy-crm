@@ -10,8 +10,7 @@
  * this form to find out who works here — and a screen that said "no such
  * account" would hand back exactly what the endpoint refused to say.
  */
-import type { JSX } from 'react';
-import { useState } from 'react';
+import { type JSX, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { CheckCircle2, KeyRound, Mail } from 'lucide-react';
 import { api, ApiError } from '../lib/api';

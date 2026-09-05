@@ -1,9 +1,7 @@
-import type { JSX } from 'react';
-import { useState } from 'react';
+import { type JSX, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
-import type { FieldMeta, FilterGroup, FilterOperator } from '@ipropy/shared';
-import { NULLARY_OPERATORS, UITYPE_LIST } from '@ipropy/shared';
+import { type FieldMeta, type FilterGroup, type FilterOperator, NULLARY_OPERATORS, UITYPE_LIST } from '@ipropy/shared';
 import { Blocks, ChevronDown, ChevronUp, Edit3, Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';

@@ -1,5 +1,4 @@
-import type { JSX } from 'react';
-import { useEffect, useState } from 'react';
+import { type JSX, useEffect, useState } from 'react';
 import { Navigate, useLocation, useNavigate, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Building2, Eye, EyeOff, Fingerprint, KeyRound, Sparkles } from 'lucide-react';

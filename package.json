@@ -2,7 +2,7 @@
   "name": "ipropy-crm",
   "version": "1.0.0",
   "private": true,
-  "description": "iPropy \u2014 AI-native, metadata-driven CRM for real estate",
+  "description": "iPropy — AI-native, metadata-driven CRM for real estate",
   "license": "UNLICENSED",
   "workspaces": [
     "packages/shared",
@@ -44,8 +44,14 @@
     "go-live:users": "npm run go-live:users -w @ipropy/server"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "concurrently": "^10.0.4",
-    "typescript": "^5.7.2"
+    "eslint": "^10.10.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.6",
+    "globals": "^17.12.0",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.69.0"
   },
   "overrides": {
     "qs": "^6.16.0",

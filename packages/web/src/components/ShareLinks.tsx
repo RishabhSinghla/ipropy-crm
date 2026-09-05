@@ -1,4 +1,4 @@
-import type { JSX } from 'react';
+import { type JSX, useState } from 'react';
 /**
  * Making a link and sending it.
  *
@@ -11,7 +11,6 @@ import type { JSX } from 'react';
  * Links already made are listed underneath, because the second question after
  * "send this" is always "did they look at it?".
  */
-import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Copy, Eye, Link2, MessageCircle, Trash2 } from 'lucide-react';
 import { api, type ShareLink } from '../lib/api';

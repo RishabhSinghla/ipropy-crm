@@ -4,8 +4,7 @@
  * Uses UPDATE ... RETURNING on a single sequence row so concurrent inserts
  * cannot produce duplicates, and supports yearly/monthly resets.
  */
-import type { Tx } from '../../db/pool.js';
-import { db } from '../../db/pool.js';
+import { db, type Tx } from '../../db/pool.js';
 
 export interface NumberingSpec {
   prefix?: string;

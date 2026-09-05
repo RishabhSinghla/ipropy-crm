@@ -1,4 +1,4 @@
-import type { JSX } from 'react';
+import { type CSSProperties, type JSX, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 /**
  * Universal inline editing. Click any editable field's displayed value —
  * in a list table cell, a kanban card, or a record detail page — and change
@@ -24,7 +24,6 @@ import type { JSX } from 'react';
  * pulse-error keyframes in tailwind.config.js. A failed save reverts the
  * value and explains why via toast, rather than silently dropping the edit.
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import type { FieldMeta } from '@ipropy/shared';
 import {

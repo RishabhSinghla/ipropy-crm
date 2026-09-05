@@ -21,7 +21,7 @@
  * the two is in use is a setting, not a rewrite.
  */
 import { db } from '../../db/pool.js';
-import { toInternational } from '@ipropy/shared';
+import { type RecordEnvelope, toInternational } from '@ipropy/shared';
 import { logger } from '../../utils/logger.js';
 import { withNameParts } from '../../core/entity/nameParts.js';
 import { BadRequestError, NotFoundError } from '../../utils/errors.js';
@@ -30,7 +30,6 @@ import { filterOptedOut } from './consent.js';
 import { sendMessage, bindTemplateParams } from './service.js';
 import { queueDeviceSend, renderForValues } from './deviceSend.js';
 import * as provider from './provider.js';
-import type { RecordEnvelope } from '@ipropy/shared';
 
 export type ChannelMode = 'api' | 'device';
 

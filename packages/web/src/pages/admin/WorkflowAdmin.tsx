@@ -1,8 +1,6 @@
-import type { JSX } from 'react';
-import { useEffect, useState } from 'react';
+import { type JSX, useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { FilterGroup, ModuleMeta } from '@ipropy/shared';
-import { relativeTime } from '@ipropy/shared';
+import { type FilterGroup, type ModuleMeta, relativeTime } from '@ipropy/shared';
 import {
   Clock, Edit3, GripVertical, PlayCircle, Plus, Timer, Trash2, Workflow, X, Zap,
 } from 'lucide-react';

@@ -22,15 +22,21 @@ test.describe.serial('reports', () => {
   test('a summary run formats its money column as money and can be saved', async ({ page }) => {
     reportName = unique('Rent by status');
     await page.goto('/reports');
-    await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible();
+    // exact: "Saved reports" also matches /Reports/ — and once anything has
+    // been saved on this database, that sidebar heading is always present.
+    await expect(page.getByRole('heading', { name: 'Reports', exact: true })).toBeVisible();
 
     await builderCard(page).locator('select').first().selectOption({ label: 'Properties' });
     await page.getByRole('button', { name: /run report/i }).click();
 
-    // The regression: "Total monthly rent" is a currency field, so its total
-    // must read as ₹ — it used to fall out of a keyword list that knew
-    // "price" and "value" but not "rent", and rendered a bare number.
-    const th = page.getByRole('columnheader', { name: /total monthly rent/i });
+    // The regression: the money column is whichever currency field the
+    // module's metadata offers first, and its total must read as ₹ — it used
+    // to fall out of a keyword list that knew "price" and "value" but not
+    // "rent", and rendered a bare number. Asserting on whichever "Total …"
+    // column actually rendered keeps this true whichever currency field a
+    // database's layout puts first (the seed's first has differed between
+    // databases).
+    const th = page.getByRole('columnheader', { name: /^Total /i });
     await expect(th).toBeVisible();
     const idx = await th.evaluate((el) => Array.from(el.parentElement?.children ?? []).indexOf(el));
     await expect(page.locator('tfoot td').nth(idx)).toHaveText(/^₹/);
@@ -58,7 +64,7 @@ test.describe.serial('reports', () => {
     // The builder opens on Leads; this saved report is a Properties report,
     // so running it must rederive the module and its controls, not just print.
     await row.getByRole('button', { name: 'Run' }).click();
-    await expect(page.getByRole('columnheader', { name: /total monthly rent/i })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('columnheader', { name: /^Total /i })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('columnheader', { name: /properties count/i })).toBeVisible();
   });
 

@@ -10,8 +10,7 @@
  * user types, and a second implementation in the web package would be a copy
  * that drifts. Same reasoning as `collectFieldErrors` in uitypes.ts.
  */
-import type { FilterCondition, FilterGroup, FilterOperator } from './uitypes.js';
-import { isFilterGroup } from './uitypes.js';
+import { isFilterGroup, type FilterCondition, type FilterGroup, type FilterOperator } from './uitypes.js';
 
 export interface EvalContext {
   userId?: string;

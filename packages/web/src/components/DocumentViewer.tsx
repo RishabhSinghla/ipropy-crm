@@ -1,4 +1,4 @@
-import type { JSX } from 'react';
+import { type JSX, useEffect, useMemo, useRef, useState } from 'react';
 /**
  * In-CRM viewer for whatever anyone attaches.
  *
@@ -19,7 +19,6 @@ import type { JSX } from 'react';
  * keeps range requests working, which matters — a Blob URL would force the
  * whole video into memory before playback.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Download, ExternalLink, FileQuestion, FileText, ChevronLeft, ChevronRight,
   Maximize2, RotateCw, X, ZoomIn, ZoomOut,

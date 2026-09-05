@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { FieldMeta } from '@ipropy/shared';
-import { toInternational } from '@ipropy/shared';
+import { type FieldMeta, toInternational } from '@ipropy/shared';
 import { validateValues } from '../src/core/metadata/values.js';
 
 /**

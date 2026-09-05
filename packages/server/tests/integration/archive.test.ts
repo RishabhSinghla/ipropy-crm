@@ -13,13 +13,12 @@ import { randomUUID } from 'node:crypto';
 import yauzl from 'yauzl';
 import { db } from '../../src/db/pool.js';
 import { getDriver } from '../../src/core/storage/index.js';
-import { recordService } from '../../src/core/entity/recordService.js';
+import { recordService, type ServiceContext } from '../../src/core/entity/recordService.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import {
   contentDisposition, countRecordMedia, safeName, writeRecordArchive, type ArchiveSet,
 } from '../../src/core/media/archive.js';
 import { adminContext } from './fixtures.js';
-import type { ServiceContext } from '../../src/core/entity/recordService.js';
 
 /** Collect a stream into one Buffer, so the zip can be handed to a reader. */
 function collector(): { stream: Writable; done: Promise<Buffer> } {

@@ -1,4 +1,4 @@
-import type { JSX } from 'react';
+import { createContext, type JSX, type ReactNode, useCallback, useContext, useMemo, useState } from 'react';
 /**
  * A link to a record that also answers "who is this?" without going there.
  *
@@ -13,7 +13,6 @@ import type { JSX } from 'react';
  * peeking from inside a peek (a lead's "Interested In" leading to the unit)
  * swaps the target rather than stacking a second modal on top of the first.
  */
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { usePressPreview } from '../lib/pressPreview';
 import { RecordPeekById } from './RecordPeek';

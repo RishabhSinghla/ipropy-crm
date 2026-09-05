@@ -1,7 +1,5 @@
-import type { JSX } from 'react';
-import { useMemo, useState } from 'react';
-import type { FieldMeta, FilterCondition, FilterGroup, FilterOperator, ModuleMeta } from '@ipropy/shared';
-import { OPERATOR_LABELS, UITYPES, isFilterGroup, operatorTakesValue } from '@ipropy/shared';
+import { type JSX, useMemo, useState } from 'react';
+import { type FieldMeta, type FilterCondition, type FilterGroup, type FilterOperator, isFilterGroup, type ModuleMeta, OPERATOR_LABELS, operatorTakesValue, UITYPES } from '@ipropy/shared';
 import { Plus, Trash2, X } from 'lucide-react';
 import { badgeVars } from '../lib/color';
 import { cn } from '../lib/utils';

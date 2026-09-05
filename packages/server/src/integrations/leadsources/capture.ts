@@ -6,15 +6,13 @@
  * attribution, assignment and SLA start. Raw payloads are always stored first
  * so a mapping bug never loses a lead.
  */
-import type { AuthUser } from '@ipropy/shared';
-import { splitPhone, toE164 } from '@ipropy/shared';
+import { type AuthUser, evaluateFilter, splitPhone, toE164 } from '@ipropy/shared';
 import { db, type Tx } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { bus } from '../../core/events/bus.js';
 import { createRecord, updateRecord, type ServiceContext } from '../../core/entity/recordService.js';
 import { assignOwner } from '../../core/workflow/assignment.js';
 import { notify } from '../../core/notifications/index.js';
-import { evaluateFilter } from '@ipropy/shared';
 
 const SYSTEM_USER: AuthUser = {
   id: '00000000-0000-0000-0000-000000000000',

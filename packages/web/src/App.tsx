@@ -1,5 +1,4 @@
-import type { JSX } from 'react';
-import { Suspense, lazy, useEffect } from 'react';
+import { type JSX, lazy, Suspense, useEffect } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useApp } from './lib/store';
 import { Spinner, ToastHost } from './components/ui';

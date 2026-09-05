@@ -1,6 +1,5 @@
 import SettingsAdmin from './SettingsAdmin';
-import type { JSX } from 'react';
-import { Suspense, lazy } from 'react';
+import { type JSX, lazy, Suspense } from 'react';
 import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {
   Activity, Blocks, Database, GitBranch, Globe, KeyRound, Layers, LayoutTemplate, MapPin,
