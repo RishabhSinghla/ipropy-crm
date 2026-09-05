@@ -92,3 +92,17 @@ jobs:
             SELECT 'leads: ' || (SELECT count(*) FROM ipy_record WHERE module_name = 'leads' AND NOT is_deleted)
               || ' | properties: ' || (SELECT count(*) FROM ipy_record WHERE module_name = 'properties' AND NOT is_deleted)
               || ' | mobiles still stored: ' || (SELECT count(*) FROM ipy_e_leads WHERE mobile IS NOT NULL);"
+
+          # Can the team find a lead by its phone number? For a long time the
+          # answer was no for everybody, including the lead's own owner, because
+          # no phone field was flagged searchable and nothing reached the index.
+          # Reported as a permissions problem; it was not one. Migration 098
+          # backfilled it, and this is the line that says whether it held.
+          echo "--- can a lead be found by its number ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -tAc "
+            SELECT 'leads with a mobile: ' || count(*)
+              || ' | findable by that number: '
+              || count(*) FILTER (
+                   WHERE position(regexp_replace(e.mobile, '\\D', '', 'g') in r.search_text) > 0)
+              FROM ipy_record r JOIN ipy_e_leads e ON e.record_id = r.id
+             WHERE NOT r.is_deleted AND e.mobile IS NOT NULL;"
