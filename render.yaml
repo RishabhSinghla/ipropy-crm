@@ -102,6 +102,15 @@ services:
       - key: JWT_SECRET
         generateValue: true
 
+      # The key the generic lead webform checks. Its fallback is committed in
+      # this repo, so `validateProductionConfig()` refuses to boot while it is
+      # still the default — and because that variable did not exist here, every
+      # deploy after the check was added failed at start-up with a healthy
+      # build behind it. Generated like the secret above: unique per install,
+      # never in git, and set before the first boot that needs it.
+      - key: WEBFORM_PUBLIC_KEY
+        generateValue: true
+
       # --- optional ---------------------------------------------------------
       # MUST stay false. validateProductionConfig() (config.ts) refuses to boot
       # otherwise, because the demo seed creates a dozen users that all share
