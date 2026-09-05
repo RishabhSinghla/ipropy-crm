@@ -104,7 +104,7 @@ test.describe('lead lifecycle through the UI', () => {
         : page.locator('tr', { hasText: text }).first();
     await page.goto('/leads');
     await page.waitForTimeout(1500);
-    await page.getByPlaceholder(/search leads/i).fill(name);
+    await page.getByTestId('list-search').fill(name);
     await page.waitForTimeout(1200);
     await expect(row(name)).toBeVisible();
   });
@@ -117,7 +117,7 @@ test.describe('lead lifecycle through the UI', () => {
         : page.locator('tr', { hasText: text }).first();
     await page.goto('/leads');
     await page.waitForTimeout(1200);
-    await page.getByPlaceholder(/search leads/i).fill(name);
+    await page.getByTestId('list-search').fill(name);
     await page.waitForTimeout(1200);
     const rowClick = row(name).click();
     const detail = await page.context().waitForEvent('page');
@@ -142,7 +142,7 @@ test.describe('lead lifecycle through the UI', () => {
     const renamed = `${name} II`;
     await page.goto('/leads');
     await page.waitForTimeout(1200);
-    await page.getByPlaceholder(/search leads/i).fill(renamed);
+    await page.getByTestId('list-search').fill(renamed);
     await page.waitForTimeout(1200);
     const rowClick = row(renamed).click();
     const detail = await page.context().waitForEvent('page');
@@ -155,7 +155,7 @@ test.describe('lead lifecycle through the UI', () => {
     await detail.getByRole('button', { name: 'Delete', exact: true }).click();
     await page.waitForTimeout(1500);
     await page.goto('/leads');
-    await page.getByPlaceholder(/search leads/i).fill(renamed);
+    await page.getByTestId('list-search').fill(renamed);
     await page.waitForTimeout(1200);
     await expect(page.getByText(renamed)).toHaveCount(0);
   });

@@ -14,7 +14,7 @@ test('signs in and lands on a working dashboard', async ({ page }) => {
   await page.goto('/dashboard');
   await expect(page.getByRole('heading', { name: /command centre|dashboard/i }).first()).toBeVisible();
   // The sidebar proves module metadata loaded, not just that a shell rendered.
-  await expect(page.getByRole('link', { name: /leads & contacts/i })).toBeVisible();
+  await expect(page.locator('a[href="/leads"]').first()).toBeVisible();
 });
 
 test('creates a lead and finds it again in the list', async ({ page }) => {
@@ -25,7 +25,7 @@ test('creates a lead and finds it again in the list', async ({ page }) => {
   const mobile = `9${String(Date.now()).slice(-9)}`;
 
   await page.goto('/leads');
-  await page.getByRole('button', { name: /new lead/i }).click();
+  await page.getByTestId('list-create').click();
 
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
@@ -37,7 +37,7 @@ test('creates a lead and finds it again in the list', async ({ page }) => {
   // are mandatory is an admin setting, so naming them here would mean this test
   // reports "creating a lead is broken" the next time he tightens one.
   await fillRequiredFields(dialog);
-  await dialog.getByRole('button', { name: /create lead/i }).click();
+  await dialog.getByTestId('record-form-submit').click();
 
   // Quick-create deliberately stays on the list rather than opening the new
   // record — see ListView's onSaved. The refetch is what has to surface it.
@@ -45,7 +45,7 @@ test('creates a lead and finds it again in the list', async ({ page }) => {
 
   // And it is findable through search, which exercises the list query path.
   await page.goto('/leads');
-  await page.getByPlaceholder(/search leads/i).fill(surname);
+  await page.getByTestId('list-search').fill(surname);
   // `visible=true` matters: ListView renders both a mobile card list and a
   // desktop table, so the name is in the DOM twice and only one is displayed.
   await expect(
@@ -157,7 +157,7 @@ test('keeps the app usable when a page throws', async ({ page }) => {
   await page.goto('/leads/00000000-0000-0000-0000-000000000000');
 
   // Something must be rendered, and the shell must survive.
-  await expect(page.getByRole('link', { name: /leads & contacts/i })).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('a[href="/leads"]').first()).toBeVisible({ timeout: 30_000 });
   const body = await page.locator('body').innerText();
   expect(body.trim().length).toBeGreaterThan(0);
 });

@@ -464,7 +464,8 @@ export default function RecordForm({
             <X className="h-4 w-4" /> Cancel
           </button>
         )}
-        <button type="submit" className="btn-primary" disabled={saving}>
+        <button
+          data-testid="record-form-submit" type="submit" className="btn-primary" disabled={saving}>
           {saving ? <Spinner /> : <Save className="h-4 w-4" />}
           {isCreate ? `Create ${module.singularLabel}` : 'Save changes'}
         </button>

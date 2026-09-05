@@ -124,7 +124,7 @@ test.describe('accessibility', () => {
 
   test('the new-record dialog has no violations', async ({ page }) => {
     await page.goto('/leads');
-    await page.getByRole('button', { name: /new lead/i }).click();
+    await page.getByTestId('list-create').click();
     await expect(page.getByRole('dialog')).toBeVisible();
     const { violations } = await scan(page);
     expect(violations, summarise(violations)).toEqual([]);
@@ -145,13 +145,13 @@ test('has no colour-contrast violations in either theme', async ({ page }) => {
 
   for (const theme of ['light', 'dark'] as const) {
     await page.goto('/dashboard');
-    await expect(page.getByRole('link', { name: /leads & contacts/i })).toBeVisible();
+    await expect(page.locator('a[href="/leads"]').first()).toBeVisible();
     await setTheme(page, theme);
 
     for (const route of ['/dashboard', '/leads', '/properties', '/settings']) {
       await page.goto(route);
       if (route === '/leads' || route === '/properties') await waitForRecords(page);
-      await expect(page.getByRole('link', { name: /leads & contacts/i })).toBeVisible();
+      await expect(page.locator('a[href="/leads"]').first()).toBeVisible();
       const { violations } = await scanContrast(page);
       if (violations.length) failures.push(`\n[${theme}] ${route}${summarise(violations)}`);
     }
@@ -160,7 +160,7 @@ test('has no colour-contrast violations in either theme', async ({ page }) => {
   // Restore the shared account before asserting, so a failure here cannot
   // leave every subsequent spec running in the wrong theme.
   await page.goto('/dashboard');
-  await expect(page.getByRole('link', { name: /leads & contacts/i })).toBeVisible();
+  await expect(page.locator('a[href="/leads"]').first()).toBeVisible();
   await setTheme(page, 'light');
 
   expect(failures.join(''), failures.join('')).toBe('');
@@ -171,7 +171,7 @@ test.describe('keyboard operation', () => {
     await page.goto('/dashboard');
     // Wait for the shell: before it renders, RequireAuth shows only a spinner
     // and the skip link does not exist yet.
-    await expect(page.getByRole('link', { name: /leads & contacts/i })).toBeVisible();
+    await expect(page.locator('a[href="/leads"]').first()).toBeVisible();
 
     // A skip link must be the first focusable thing on the page, or a keyboard
     // user tabs through the entire sidebar on every single page load.
@@ -201,7 +201,7 @@ test.describe('keyboard operation', () => {
   test('a modal traps focus and restores it on close', async ({ page }) => {
     await page.goto('/leads');
 
-    const opener = page.getByRole('button', { name: /new lead/i });
+    const opener = page.getByTestId('list-create');
     await opener.click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();

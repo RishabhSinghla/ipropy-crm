@@ -22,13 +22,13 @@ test('a rep adds a lead they just spoke to', async ({ page }) => {
   await page.goto('/leads/new');
   await page.getByRole('textbox', { name: /full name/i }).fill(name);
   await page.getByRole('textbox', { name: /^mobile/i }).fill(String(9811570000 + (Date.now() % 9000)));
-  await page.getByRole('button', { name: /create lead|save/i }).click();
-  await expect(page.getByText(/lead created/i)).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId('record-form-submit').click();
+  await expect(page.getByText(/created/i).first()).toBeVisible({ timeout: 15_000 });
 });
 
 test('they open it from the list', async ({ page, context }) => {
   await page.goto('/leads');
-  await page.getByPlaceholder(/search leads/i).fill(name);
+  await page.getByTestId('list-search').fill(name);
   await page.waitForTimeout(1200);
 
   // The list opens records in a new tab on purpose, so the list is never lost.
@@ -98,6 +98,6 @@ test('every editable field says which field it is', async ({ page }) => {
 test.afterAll(async ({ browser }) => {
   const page = await browser.newPage();
   await page.goto('/leads');
-  await page.getByPlaceholder(/search leads/i).fill(name).catch(() => undefined);
+  await page.getByTestId('list-search').fill(name).catch(() => undefined);
   await page.close();
 });

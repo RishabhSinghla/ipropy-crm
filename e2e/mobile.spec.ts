@@ -27,7 +27,7 @@ test.describe('phone', () => {
     // hidden-check for the wrong reason.
     const openButton = page.getByRole('button', { name: 'Open menu' });
     await expect(openButton).toBeVisible();
-    const leadsLink = page.getByRole('link', { name: /leads & contacts/i });
+    const leadsLink = page.locator('a[href="/leads"]').first();
     await expect(leadsLink).toBeAttached();
 
     // toBeInViewport, not toBeHidden: the drawer is moved off-canvas with
@@ -228,7 +228,7 @@ test.describe('phone', () => {
     await page.goto('/leads');
     await waitForRecords(page);
 
-    await page.getByRole('button', { name: /new lead/i }).click();
+    await page.getByTestId('list-create').click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
 
@@ -240,14 +240,14 @@ test.describe('phone', () => {
     // And whatever else is mandatory today. That is an admin setting, so it is
     // discovered rather than listed here.
     await fillRequiredFields(dialog);
-    await dialog.getByRole('button', { name: /create lead/i }).click();
+    await dialog.getByTestId('record-form-submit').click();
 
     // Quick-create stays on the list by design — see ListView's onSaved.
     await expect(dialog).toBeHidden({ timeout: 30_000 });
 
     // And it comes back in the card list — the mobile-only render path.
     await page.goto('/leads');
-    await page.getByPlaceholder(/search leads/i).fill(surname);
+    await page.getByTestId('list-search').fill(surname);
     // `visible=true` matters: the desktop table is still in the DOM at this
     // width, just display:none, so the text matches twice.
     await expect(
@@ -267,7 +267,7 @@ test.describe('phone', () => {
     // Scan again with the drawer open: it is the one piece of UI that only
     // exists at this width, so it is the one axe has never seen.
     await page.getByRole('button', { name: 'Open menu' }).click();
-    await expect(page.getByRole('link', { name: /leads & contacts/i })).toBeVisible();
+    await expect(page.locator('a[href="/leads"]').first()).toBeVisible();
     const open = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
       .analyze();

@@ -49,7 +49,7 @@ function watchConsole(page: Page): string[] {
 /** Every one-segment route in the sidebar: the modules, and the tool pages when they are rendered. */
 async function moduleRoutes(page: Page): Promise<string[]> {
   await page.goto('/dashboard');
-  await expect(page.getByRole('link', { name: /leads & contacts/i })).toBeVisible();
+  await expect(page.locator('a[href="/leads"]').first()).toBeVisible();
 
   const routes = await page.evaluate(() => {
     const skip = new Set(['/dashboard', '/settings', '/inbox', '/calls', '/reports', '/portal']);

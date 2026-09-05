@@ -21,7 +21,7 @@ import { ModuleIcon } from '../components/Layout';
 import RecordForm from '../components/RecordForm';
 import RecordPeek from '../components/RecordPeek';
 import { usePressPreview } from '../lib/pressPreview';
-import { SELECT_COL_WIDTH, useColumnWidths } from '../lib/columnWidths';
+import { MAX_WIDTH, MIN_WIDTH, SELECT_COL_WIDTH, useColumnWidths } from '../lib/columnWidths';
 import { useOfflineList, useOfflineMeta } from '../lib/useOfflineList';
 
 const EMPTY_FILTER: FilterGroup = { logic: 'AND', conditions: [] };
@@ -425,6 +425,13 @@ export default function ListView(): JSX.Element {
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
             <input
+              // The stable handle. The placeholder is built from the module's
+              // label, which an admin renames — "Leads & Contacts" became
+              // "Contacts" and every spec selecting on `/search leads/i` then
+              // waited out its full timeout instead of failing fast. Same
+              // lesson as `record-card-list`: a label is content, not an
+              // identifier.
+              data-testid="list-search"
               className="input w-44 py-1.5 pl-8 text-sm sm:w-64"
               placeholder={`Search ${meta.label.toLowerCase()}…`}
               value={searchInput}
@@ -528,7 +535,9 @@ export default function ListView(): JSX.Element {
             )}
 
             {canCreate && (
-              <button onClick={() => setShowQuickCreate(true)} className="btn-primary btn-sm">
+              // Same reason as `list-search` above: the label is the admin's
+              // word for the record, so "New Lead" became "New Contact".
+              <button data-testid="list-create" onClick={() => setShowQuickCreate(true)} className="btn-primary btn-sm">
                 <Plus className="h-3.5 w-3.5" />
                 New {meta.singularLabel}
               </button>
@@ -722,6 +731,14 @@ export default function ListView(): JSX.Element {
                         role="separator"
                         aria-orientation="vertical"
                         aria-label={`Resize ${field?.label ?? col}`}
+                        // A *focusable* separator is a widget, and axe rates a
+                        // widget missing its value as critical — the arrow keys
+                        // below are what make it one. The numbers are real
+                        // pixels, so a screen reader announces the width it is
+                        // actually changing rather than a percentage of nothing.
+                        aria-valuenow={colWidths.widthOf(col, field)}
+                        aria-valuemin={MIN_WIDTH}
+                        aria-valuemax={MAX_WIDTH}
                         tabIndex={0}
                         className={cn('col-resizer', colWidths.resizing === col && 'col-resizer-active')}
                         onPointerDown={(e) => colWidths.beginResize(col, colWidths.widthOf(col, field), e)}

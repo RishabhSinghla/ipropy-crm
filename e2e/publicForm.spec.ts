@@ -91,7 +91,7 @@ test.describe.serial('public form as a visitor', () => {
 test.describe('public form becomes a lead', () => {
   test('the enquiry is on the rep\'s list with the visitor\'s name', async ({ page }) => {
     await page.goto('/leads');
-    await page.getByPlaceholder(/search leads/i).fill(run.phone);
+    await page.getByTestId('list-search').fill(run.phone);
     await page.waitForTimeout(1200);
     await expect(
       page.locator('tbody tr:visible').filter({ hasText: run.visitorName }),

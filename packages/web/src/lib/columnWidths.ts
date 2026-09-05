@@ -25,6 +25,12 @@ import type { FieldMeta } from '@ipropy/shared';
 
 const PREFIX = 'ipropy.colwidths.';
 export const MIN_WIDTH = 64;
+/**
+ * Not a real constraint — a drag is clamped only at the bottom — but a
+ * focusable `role="separator"` has to announce a range, and "up to 0" is worse
+ * than a generous honest ceiling. Wide enough that nobody meets it by dragging.
+ */
+export const MAX_WIDTH = 1200;
 
 /** The tick-box column. Not resizable, so it is not part of the stored map. */
 export const SELECT_COL_WIDTH = 40;
