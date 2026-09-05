@@ -6,6 +6,14 @@
  * real number is **not in the response at all**. Masking in the interface would
  * pass a screenshot test and leave the number one devtools tab away from the
  * person it is hidden from.
+ *
+ * Since migration `099` the switch is a **field permission**, `owner_only`, set
+ * per profile in Roles & Profiles rather than one global tick. That changes who
+ * the subject of these tests has to be: the guarantee is now "everyone except
+ * the record's owner", so the viewer being masked must be somebody who can open
+ * the record and does not own it. A manager reading their own report's lead is
+ * exactly that, and is the case the feature exists for — the rep working the
+ * lead has to be able to ring it, and nobody above them needs the list.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
@@ -14,16 +22,21 @@ import { createApp } from '../../src/app.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import { db } from '../../src/db/pool.js';
 import { recordService } from '../../src/core/entity/recordService.js';
+import { invalidatePermissions } from '../../src/core/permissions/index.js';
 import { adminContext } from './fixtures.js';
-import { invalidatePhoneMasking, maskNumber } from '../../src/core/permissions/maskPhones.js';
+import { maskNumber } from '../../src/core/permissions/maskPhones.js';
 
 let app: Express;
-let repToken: string;
+/** Owns the lead. Under `owner_only` this is the one person who still sees it. */
+let ownerToken: string;
+/** Can open the lead through the role hierarchy, but does not own it. */
+let managerToken: string;
 let adminToken: string;
 let leadId: string;
+let mobileFieldId: string;
+const profileIds: string[] = [];
 const MOBILE = '9811421156';
 const made: string[] = [];
-let repEmail: string;
 
 async function login(email: string): Promise<string> {
   const res = await request(app).post('/api/auth/login').send({ email, password: 'Admin@123' });
@@ -31,13 +44,28 @@ async function login(email: string): Promise<string> {
   return res.body.token as string;
 }
 
-async function setMasking(on: boolean): Promise<void> {
-  await db.query(
-    `INSERT INTO ipy_setting (key, value) VALUES ('privacy.mask_phone_numbers', $1::jsonb)
-     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
-    [JSON.stringify(on)],
-  );
-  invalidatePhoneMasking();
+/**
+ * Turn the rule on or off for both profiles under test.
+ *
+ * Both, not just the manager's: the owner has to be subject to the same
+ * permission for "the owner still sees it" to mean anything. If only the
+ * manager's profile carried it, that test would pass with the feature deleted.
+ */
+async function setOwnerOnly(on: boolean): Promise<void> {
+  if (on) {
+    await db.query(
+      `INSERT INTO ipy_profile_field_perm (profile_id, field_id, permission)
+       SELECT unnest($1::uuid[]), $2::uuid, 'owner_only'
+       ON CONFLICT (profile_id, field_id) DO UPDATE SET permission = 'owner_only'`,
+      [profileIds, mobileFieldId],
+    );
+  } else {
+    await db.query(
+      `DELETE FROM ipy_profile_field_perm WHERE profile_id = ANY($1::uuid[]) AND field_id = $2`,
+      [profileIds, mobileFieldId],
+    );
+  }
+  invalidatePermissions();
 }
 
 beforeAll(async () => {
@@ -50,25 +78,71 @@ beforeAll(async () => {
   );
   adminToken = await login(admin!.email);
 
-  const rep = await db.queryOne<{ id: string; email: string }>(
-    `SELECT id, email FROM ipy_user WHERE is_admin = false AND password_hash IS NOT NULL
-       AND is_active AND deleted_at IS NULL AND email LIKE '%@%.%' ORDER BY created_at LIMIT 1`,
+  /*
+    A pair where one can see the other's records without owning them, found
+    through the **role hierarchy** — `ipy_role.path` holds a role's ancestors,
+    and a role above another sees its records.
+
+    Deliberately not `reports_to`: the seed never sets that column, and it is an
+    admin's to configure, so a test keyed on it passes on a developer's own
+    database and fails on a fresh one. Same trap the e2e suite already learned —
+    assert on what the seed guarantees, discover the rest.
+  */
+  const pair = await db.queryOne<{
+    owner_id: string; owner_email: string; owner_profile: string;
+    manager_email: string; manager_profile: string;
+  }>(
+    `SELECT r.id AS owner_id, r.email AS owner_email, r.profile_id AS owner_profile,
+            m.email AS manager_email, m.profile_id AS manager_profile
+       FROM ipy_user r
+       JOIN ipy_role rr ON rr.id = r.role_id
+       JOIN ipy_user m ON m.role_id = ANY(rr.path)
+      WHERE r.is_admin = false AND m.is_admin = false
+        AND r.id <> m.id
+        AND r.password_hash IS NOT NULL AND m.password_hash IS NOT NULL
+        AND r.is_active AND m.is_active
+        AND r.deleted_at IS NULL AND m.deleted_at IS NULL
+        AND r.profile_id IS NOT NULL AND m.profile_id IS NOT NULL
+        AND r.email LIKE '%@%.%' AND m.email LIKE '%@%.%'
+      ORDER BY r.created_at LIMIT 1`,
   );
-  repEmail = rep!.email;
-  repToken = await login(repEmail);
+  if (!pair) throw new Error('no non-admin pair with one role above the other to test ownership against');
+
+  ownerToken = await login(pair.owner_email);
+  managerToken = await login(pair.manager_email);
+  profileIds.push(...new Set([pair.owner_profile, pair.manager_profile]));
+
+  const field = await db.queryOne<{ id: string }>(
+    `SELECT f.id FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+      WHERE m.name = 'leads' AND f.name = 'mobile'`,
+  );
+  mobileFieldId = field!.id;
 
   const ctx = await adminContext();
-  // Owned by the rep: record-level scoping is a separate rule, and a 403 from
-  // it would look like masking working when it is not.
   const rec = await recordService.createRecord(ctx, 'leads', {
-    full_name: `Masking ${Date.now()}`, mobile: MOBILE, owner_id: rep!.id,
+    full_name: `Masking ${Date.now()}`, mobile: MOBILE, owner_id: pair.owner_id,
   });
   leadId = rec.id;
   made.push(rec.id);
+
+  /*
+    The precondition every test below rests on. If the hierarchy does not in
+    fact let the non-owner open this record, the masking assertions still pass —
+    a 403 contains no phone number either — and the suite would be green while
+    testing nothing. Fail loudly here instead.
+  */
+  const reachable = await request(app)
+    .get(`/api/records/leads/${leadId}`)
+    .set('Authorization', `Bearer ${managerToken}`);
+  if (reachable.status !== 200) {
+    throw new Error(
+      `the non-owner cannot open the record (${reachable.status}), so masking cannot be observed`,
+    );
+  }
 });
 
 afterAll(async () => {
-  await setMasking(false);
+  await setOwnerOnly(false);
   if (made.length) await db.query(`DELETE FROM ipy_record WHERE id = ANY($1::uuid[])`, [made]);
 });
 
@@ -82,20 +156,20 @@ describe('masking a phone number', () => {
     expect(maskNumber(null)).toBeNull();
   });
 
-  it('is off until somebody turns it on', async () => {
-    await setMasking(false);
+  it('is off until a profile asks for it', async () => {
+    await setOwnerOnly(false);
     const res = await request(app)
       .get(`/api/records/leads/${leadId}`)
-      .set('Authorization', `Bearer ${repToken}`)
+      .set('Authorization', `Bearer ${managerToken}`)
       .expect(200);
     expect(JSON.stringify(res.body)).toContain(MOBILE);
   });
 
   it('keeps the real number out of the response entirely, not just off the screen', async () => {
-    await setMasking(true);
+    await setOwnerOnly(true);
     const res = await request(app)
       .get(`/api/records/leads/${leadId}`)
-      .set('Authorization', `Bearer ${repToken}`)
+      .set('Authorization', `Bearer ${managerToken}`)
       .expect(200);
 
     // The assertion the whole feature rests on.
@@ -104,16 +178,29 @@ describe('masking a phone number', () => {
   });
 
   it('masks it on the list too, which is where a list would be copied from', async () => {
-    await setMasking(true);
+    await setOwnerOnly(true);
     const res = await request(app)
       .get('/api/records/leads?limit=100')
-      .set('Authorization', `Bearer ${repToken}`)
+      .set('Authorization', `Bearer ${managerToken}`)
       .expect(200);
     expect(JSON.stringify(res.body)).not.toContain(MOBILE);
   });
 
+  /**
+   * The rule the global switch could not express, and the reason for the change:
+   * the person actually working the lead still has the number.
+   */
+  it('leaves the record’s own owner reading it normally', async () => {
+    await setOwnerOnly(true);
+    const res = await request(app)
+      .get(`/api/records/leads/${leadId}`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+    expect(res.body.values.mobile).toBe(MOBILE);
+  });
+
   it('leaves an administrator seeing the real number', async () => {
-    await setMasking(true);
+    await setOwnerOnly(true);
     const res = await request(app)
       .get(`/api/records/leads/${leadId}`)
       .set('Authorization', `Bearer ${adminToken}`)
@@ -122,7 +209,7 @@ describe('masking a phone number', () => {
   });
 
   it('still lets a rep get one number to call, and writes down that they did', async () => {
-    await setMasking(true);
+    await setOwnerOnly(true);
     const before = await db.queryOne<{ n: string }>(
       `SELECT count(*)::text AS n FROM ipy_audit WHERE record_id = $1 AND action = 'phone_revealed'`,
       [leadId],
@@ -130,7 +217,7 @@ describe('masking a phone number', () => {
 
     const res = await request(app)
       .get(`/api/records/leads/${leadId}/phone/mobile`)
-      .set('Authorization', `Bearer ${repToken}`)
+      .set('Authorization', `Bearer ${managerToken}`)
       .expect(200);
     expect(res.body.number).toBe(MOBILE);
 
@@ -141,5 +228,31 @@ describe('masking a phone number', () => {
     // The trail is the whole deterrent: forty calls a day is fine and leaves
     // forty rows; a thousand leaves a thousand with a name against them.
     expect(Number(after!.n)).toBe(Number(before!.n) + 1);
+  });
+
+  /**
+   * `hidden` and `owner_only` are different answers and the reveal endpoint has
+   * to tell them apart — otherwise the audited escape hatch quietly becomes a
+   * way around a field an admin refused outright.
+   */
+  it('refuses to reveal a field the profile hides altogether', async () => {
+    await db.query(
+      `INSERT INTO ipy_profile_field_perm (profile_id, field_id, permission)
+       SELECT unnest($1::uuid[]), $2::uuid, 'hidden'
+       ON CONFLICT (profile_id, field_id) DO UPDATE SET permission = 'hidden'`,
+      [profileIds, mobileFieldId],
+    );
+    invalidatePermissions();
+
+    const res = await request(app)
+      .get(`/api/records/leads/${leadId}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+      .expect(200);
+    expect(res.body.values.mobile).toBeUndefined();
+
+    await request(app)
+      .get(`/api/records/leads/${leadId}/phone/mobile`)
+      .set('Authorization', `Bearer ${managerToken}`)
+      .expect(404);
   });
 });
