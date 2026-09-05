@@ -356,7 +356,12 @@ export default function LayoutDesigner(): JSX.Element {
             {layoutType === 'detail' && (
               <HeaderStripEditor
                 value={headerFields}
-                options={placeable.map((f) => ({ value: f.name, label: f.label }))}
+                // The pipeline field is drawn as the status chip beside the
+                // record name, so putting it in the header strip too renders
+                // nothing — offering it is offering a no-op.
+                options={placeable
+                  .filter((f) => f.name !== meta?.pipelineField)
+                  .map((f) => ({ value: f.name, label: f.label }))}
                 defaultTab={defaultTab}
                 tabOptions={tabOptions}
                 tabs={detailTabOptions}
@@ -578,7 +583,9 @@ function HeaderStripEditor({
         <div>
           <label className="label">Summary fields</label>
           <p className="mb-1.5 text-2xs text-muted">
-            Shown as chips beside the record name. Order is the order they appear in.
+            Shown as chips beside the record name, in this order. A field with no value on a
+            record shows as a dash rather than disappearing, so what you pick here is what
+            every record shows.
           </p>
           <div className="flex flex-wrap items-center gap-1.5">
             {value.map((name, i) => (

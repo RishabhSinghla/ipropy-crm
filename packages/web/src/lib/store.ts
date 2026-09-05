@@ -112,7 +112,15 @@ export const useApp = create<AppState>((set, get) => ({
   modules: [],
   loading: true,
   theme: initialTheme(),
-  sidebarCollapsed: localStorage.getItem('ipropy.sidebar') === 'collapsed',
+  /*
+    Collapsed unless this browser has been told otherwise.
+
+    The rail is a way to change screen, not something to read, and every module
+    has an icon. Starting expanded spent 13rem of a laptop screen on labels
+    somebody learns in a day — so the default flipped, and the stored value is
+    now what *opens* it rather than what closes it.
+  */
+  sidebarCollapsed: localStorage.getItem('ipropy.sidebar') !== 'expanded',
   aiAvailable: false,
   telephonyAvailable: false,
   offline: false,

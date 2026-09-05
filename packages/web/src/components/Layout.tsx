@@ -76,12 +76,22 @@ export default function Layout(): JSX.Element {
           // animated background and border, so switching to dark mode faded
           // the sidebar in behind an instantly-dark page.
           'fixed inset-y-0 left-0 z-40 flex flex-col border-r border-slate-200 bg-white transition-[width,transform] duration-200 ease-out dark:border-slate-800 dark:bg-slate-900 lg:static',
-          sidebarCollapsed ? 'w-[4.25rem]' : 'w-60',
+          // 13rem, down from 15: the longest label ("Leads & Contacts") is gone
+          // and nothing else came close to filling it.
+          sidebarCollapsed ? 'w-[3.75rem]' : 'w-52',
           mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
         )}
       >
         <div className="flex h-14 shrink-0 items-center gap-2 border-b border-slate-200 px-3 dark:border-slate-800">
-          <Link to="/dashboard" className="flex items-center gap-2 overflow-hidden">
+          <Link
+            to="/dashboard"
+            className="flex items-center gap-2 overflow-hidden"
+            // Collapsed, this is the logo mark alone — an icon with no text, so
+            // no accessible name. Same cause as the nav items below: the rail
+            // only started collapsed once that became the default, so the
+            // accessibility sweep had never scanned this state.
+            aria-label={sidebarCollapsed ? (brand?.orgName ?? 'iPropy') : undefined}
+          >
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-white">
               <Building2 className="h-4.5 w-4.5" />
             </div>
@@ -151,12 +161,10 @@ export default function Layout(): JSX.Element {
           </div>
         </nav>
 
+        {/* Admin is deliberately not here. It was in two places at once — this
+            rail and the avatar menu — and the avatar menu is where the rest of
+            "things about you and your workspace" already lives. */}
         <div className="shrink-0 border-t border-slate-200 p-2 dark:border-slate-800">
-          <SocialBar collapsed={sidebarCollapsed} />
-
-          {user?.isAdmin && (
-            <NavItem to="/admin" icon="shield" label="Admin" collapsed={sidebarCollapsed} />
-          )}
           <button
             onClick={toggleSidebar}
             className="nav-item hidden w-full lg:flex"
@@ -186,6 +194,11 @@ export default function Layout(): JSX.Element {
           <GlobalSearch />
 
           <div className="ml-auto flex items-center gap-1">
+            {/* The social links used to sit in the sidebar footer, where they
+                cost a whole row of vertical space on every screen. There is
+                empty width here and none to spare down there. */}
+            <SocialBar />
+
             {aiAvailable !== undefined && (
               <button
                 onClick={() => setAiOpen(true)}
@@ -268,6 +281,16 @@ function NavItem({
       to={to}
       className={({ isActive }) => cn('nav-item', isActive && 'nav-item-active', collapsed && 'justify-center px-2')}
       title={collapsed ? label : undefined}
+      /*
+        Collapsed, this link is an icon and nothing else — no text node, so no
+        accessible name, and a screen reader reads "link" nine times down the
+        rail. `title` is a tooltip, not a reliable name.
+
+        It was always true and never caught, because the sidebar only started
+        collapsed once that became the default: the accessibility sweep had only
+        ever scanned the expanded state.
+      */
+      aria-label={collapsed ? label : undefined}
     >
       <span style={color && !collapsed ? { color } : undefined} className="shrink-0">
         <ModuleIcon name={icon} />
@@ -286,7 +309,7 @@ function NavItem({
  * Admin-editable (Admin → Brand), so a wrong or dead handle is a text field to
  * fix, not a deploy.
  */
-function SocialBar({ collapsed }: { collapsed: boolean }): JSX.Element | null {
+function SocialBar(): JSX.Element | null {
   const { data: brand } = useQuery({
     queryKey: ['brand'],
     queryFn: () => api.brand(),
@@ -296,12 +319,10 @@ function SocialBar({ collapsed }: { collapsed: boolean }): JSX.Element | null {
   const links = brand?.socialLinks ?? [];
   if (!links.length) return null;
 
-  // Collapsed rail is 4.25rem — a row of icons would wrap or clip, so the bar
-  // is simply not shown there; expanding brings it back.
-  if (collapsed) return null;
-
+  // In the top bar now, not the sidebar footer. Hidden on a phone, where the
+  // header has no room to spare and these are the least urgent thing in it.
   return (
-    <div className="mb-1 flex flex-wrap items-center gap-0.5 px-1 pb-1">
+    <div className="mr-1 hidden items-center gap-0.5 border-r border-slate-200 pr-2 sm:flex dark:border-slate-700">
       {links.map((link) => (
         <a
           key={link.url}

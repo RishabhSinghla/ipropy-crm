@@ -39,6 +39,9 @@
     --list-row-alt: #f4f6f8;
     --list-row-hover: #e3edfb;
     --list-row-selected: #d6e6fa;
+    --list-head-bg: #e8ecf1;
+    --list-head-text: #1e293b;
+    --list-head-border: #cbd5e1;
   }
 
   .dark {
@@ -56,6 +59,9 @@
     --list-row-alt: #16213a;
     --list-row-hover: #1e3a5f;
     --list-row-selected: #24456e;
+    --list-head-bg: #263449;
+    --list-head-text: #f1f5f9;
+    --list-head-border: #3b4b63;
   }
 
   html, body, #root { height: 100%; }
@@ -221,14 +227,19 @@
     line-height: var(--list-line);
     color: var(--list-text);
   }
+  /* The header has to read as a header. At `--text-muted` on `--surface-muted`
+     it was the quietest thing on a screen full of black text, and got looked
+     past — the column names are how you navigate a wide grid. Darker ground,
+     near-black type, and a real bottom border. */
   .list-head {
-    @apply sticky top-0 z-10 whitespace-nowrap text-left font-semibold uppercase tracking-wide;
-    padding: 6px var(--list-row-pad-x);
+    @apply sticky top-0 z-10 whitespace-nowrap text-left font-bold uppercase;
+    padding: 7px var(--list-row-pad-x);
     font-size: var(--list-head-font);
-    background-color: var(--surface-muted);
-    color: var(--text-muted);
+    letter-spacing: 0.04em;
+    background-color: var(--list-head-bg);
+    color: var(--list-head-text);
+    border-bottom: 1px solid var(--list-head-border);
   }
-  .dark .list-head { background-color: #1e293b; }
 
   /* Zebra striping, hover and selection as one set, because they layer: a
      selected row must still show it is selected under the cursor, and the

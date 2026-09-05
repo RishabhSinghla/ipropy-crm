@@ -421,31 +421,55 @@ export default function ListView(): JSX.Element {
           regression, just not a visible one.
         */}
         <h1 className="sr-only">{meta.label}</h1>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-            <input
-              // The stable handle. The placeholder is built from the module's
-              // label, which an admin renames — "Leads & Contacts" became
-              // "Contacts" and every spec selecting on `/search leads/i` then
-              // waited out its full timeout instead of failing fast. Same
-              // lesson as `record-card-list`: a label is content, not an
-              // identifier.
-              data-testid="list-search"
-              className="input w-44 py-1.5 pl-8 text-sm sm:w-64"
-              placeholder={`Search ${meta.label.toLowerCase()}…`}
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-            />
-          </div>
+        {/*
+          One row, not two. The view tabs used to sit on a line of their own
+          under the toolbar, which cost another row of records on every screen.
+          They take the left of this row and scroll within it; everything that
+          acts on the list is grouped on the right, with the search box beside
+          the Filter button it belongs with.
+        */}
+        <div className="flex items-center gap-2">
+          <ViewTabStrip
+            views={views ?? []}
+            activeId={activeView?.id}
+            onPick={(id) => {
+              if (id === activeView?.id) return;
+              // A view *is* a filter. Carrying an ad-hoc one across the switch
+              // leaves the new tab quietly narrowed by conditions belonging to
+              // the tab you just left. The URL is written by the sync effect
+              // above — writing it here as well is how the two disagreed.
+              setViewId(id);
+              setPage(1);
+              setFilter(EMPTY_FILTER);
+              setSearch('');
+              setSearchInput('');
+              setSelected(new Set());
+            }}
+          />
 
-          <span className="hidden shrink-0 text-xs text-muted tnum sm:inline">
-            {isFetching && !data && !offline.stale
-              ? 'Loading…'
-              : `${(data?.total ?? (offline.stale ? offline.rows.length : 0)).toLocaleString('en-IN')} records`}
-          </span>
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <span className="hidden shrink-0 text-xs text-muted tnum xl:inline">
+              {isFetching && !data && !offline.stale
+                ? 'Loading…'
+                : `${(data?.total ?? (offline.stale ? offline.rows.length : 0)).toLocaleString('en-IN')} records`}
+            </span>
 
-          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <input
+                // The stable handle. The placeholder is built from the module's
+                // label, which an admin renames — "Leads & Contacts" became
+                // "Contacts" and every spec selecting on `/search leads/i` then
+                // waited out its full timeout instead of failing fast. Same
+                // lesson as `record-card-list`: a label is content, not an
+                // identifier.
+                data-testid="list-search"
+                className="input w-36 py-1.5 pl-8 text-sm lg:w-52"
+                placeholder={`Search ${meta.label.toLowerCase()}…`}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+              />
+            </div>
 
             <button
               onClick={() => setShowFilters(true)}
@@ -545,46 +569,6 @@ export default function ListView(): JSX.Element {
           </div>
         </div>
 
-        {/* View tabs */}
-        {views && views.length > 0 && (
-          <div className="mt-2.5 flex items-center gap-1 overflow-x-auto pb-0.5">
-            {views.map((v) => (
-              <button
-                key={v.id}
-                onClick={() => {
-                  if (v.id === activeView?.id) return;
-                  // A view *is* a filter. Carrying an ad-hoc one across the
-                  // switch leaves the new tab quietly narrowed by conditions
-                  // belonging to the tab you just left. The URL is written by
-                  // the sync effect above — writing it here as well is how the
-                  // two ended up disagreeing.
-                  setViewId(v.id);
-                  setPage(1);
-                  setFilter(EMPTY_FILTER);
-                  setSearch('');
-                  setSearchInput('');
-                  setSelected(new Set());
-                }}
-                className={cn(
-                  'flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors',
-                  activeView?.id === v.id
-                    ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
-                    : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800',
-                )}
-              >
-                {v.name}
-                {v.count !== undefined && (
-                  <span className={cn(
-                    'rounded-full px-1.5 text-2xs tnum',
-                    activeView?.id === v.id ? 'bg-white/20' : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200',
-                  )}>
-                    {v.count}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
       {/* Bulk action bar */}
@@ -1338,6 +1322,128 @@ function KanbanBoard({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * The saved-view tabs, on the toolbar row and able to hold any number of them.
+ *
+ * A plain `overflow-x-auto` strip is fine with six tabs and useless with
+ * twenty: on a trackpad you can flick it, with a mouse there is nothing to
+ * grab, and either way there is no sign that anything is off-screen. So the
+ * arrows appear only when the strip actually overflows, and each one scrolls
+ * by most of a screenful rather than a fixed pixel count.
+ *
+ * `scrollWidth > clientWidth` is re-measured on resize *and* when the view list
+ * changes — a tab added by an admin can push it over the edge without the
+ * window moving at all.
+ */
+function ViewTabStrip({
+  views, activeId, onPick,
+}: {
+  views: { id: string; name: string; count?: number }[];
+  activeId: string | undefined;
+  onPick: (id: string) => void;
+}): JSX.Element | null {
+  const strip = useRef<HTMLDivElement>(null);
+  const [overflow, setOverflow] = useState({ left: false, right: false });
+
+  const measure = (): void => {
+    const el = strip.current;
+    if (!el) return;
+    setOverflow({
+      left: el.scrollLeft > 4,
+      // The -4 absorbs sub-pixel widths, which otherwise leave the right arrow
+      // enabled for ever at the end of the strip.
+      right: el.scrollLeft + el.clientWidth < el.scrollWidth - 4,
+    });
+  };
+
+  useEffect(() => {
+    measure();
+    const el = strip.current;
+    if (!el) return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [views.length]);
+
+  // Keep the selected tab in sight when the view changes from elsewhere — a
+  // dashboard drill-through can land on a tab that is scrolled out of view.
+  useEffect(() => {
+    strip.current?.querySelector('[data-active="true"]')
+      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [activeId]);
+
+  if (!views.length) return null;
+
+  const nudge = (direction: -1 | 1): void => {
+    const el = strip.current;
+    if (!el) return;
+    el.scrollBy({ left: direction * Math.max(120, el.clientWidth * 0.8), behavior: 'smooth' });
+  };
+
+  return (
+    <div className="flex min-w-0 flex-1 items-center gap-0.5">
+      <button
+        type="button"
+        onClick={() => nudge(-1)}
+        // Hidden rather than disabled when there is nothing to scroll to: a
+        // permanently dead arrow reads as a broken control.
+        className={cn('shrink-0 rounded p-0.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800', !overflow.left && 'invisible')}
+        aria-label="Scroll views left"
+        tabIndex={overflow.left ? 0 : -1}
+      >
+        <ChevronLeft className="h-4 w-4" />
+      </button>
+
+      <div
+        ref={strip}
+        onScroll={measure}
+        role="tablist"
+        aria-label="Saved views"
+        // `scrollbar-none` is not available here, so the bar is simply thin and
+        // below the row; hiding it entirely would remove the only affordance a
+        // touch user has.
+        className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto scroll-smooth py-0.5"
+      >
+        {views.map((v) => (
+          <button
+            key={v.id}
+            role="tab"
+            aria-selected={activeId === v.id}
+            data-active={activeId === v.id}
+            onClick={() => onPick(v.id)}
+            className={cn(
+              'flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors',
+              activeId === v.id
+                ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800',
+            )}
+          >
+            {v.name}
+            {v.count !== undefined && (
+              <span className={cn(
+                'rounded-full px-1.5 text-2xs tnum',
+                activeId === v.id ? 'bg-white/20' : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200',
+              )}>
+                {v.count}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        onClick={() => nudge(1)}
+        className={cn('shrink-0 rounded p-0.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800', !overflow.right && 'invisible')}
+        aria-label="Scroll views right"
+        tabIndex={overflow.right ? 0 : -1}
+      >
+        <ChevronRight className="h-4 w-4" />
+      </button>
     </div>
   );
 }

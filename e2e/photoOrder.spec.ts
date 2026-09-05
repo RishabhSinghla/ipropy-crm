@@ -75,6 +75,12 @@ test('drags a photo to the front and the new cover survives a reload', async ({ 
   // The drag. Real mouse, real time passing: press, move in steps so Chromium
   // starts a drag rather than reading it as a click, then release on the first
   // thumbnail.
+  // Measure *after* scrolling. `boundingBox()` reports viewport coordinates and
+  // does not scroll on its own, so with the strip below the fold the numbers are
+  // real but unreachable — `mouse.move` lands outside the window and the drag
+  // silently does nothing. It only ever passed because the strip happened to sit
+  // on screen at the old sidebar width.
+  await thumbs.nth(0).scrollIntoViewIfNeeded();
   const from = await thumbs.nth(1).boundingBox();
   const to = await thumbs.nth(0).boundingBox();
   expect(from && to).toBeTruthy();

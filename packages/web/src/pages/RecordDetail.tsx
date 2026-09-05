@@ -364,9 +364,22 @@ export default function RecordDetail(): JSX.Element {
                 <div className="mt-2.5 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm font-medium text-slate-800 dark:text-slate-100">
                   {(layoutConfig.headerFields ?? []).map((name) => {
                     const field = fieldMap.get(name);
+                    // A field that no longer exists, or that a profile hides,
+                    // genuinely has nothing to show.
                     if (!field || !field.isActive || field.displayType === 'hidden') return null;
-                    if (record.values[name] == null || record.values[name] === '') return null;
+                    // The pipeline field is already the status chip above.
                     if (name === meta.pipelineField) return null;
+                    /*
+                      An empty one still renders, as a dash.
+
+                      It used to be skipped, which meant adding a field to the
+                      header in the Layout Designer did nothing at all on any
+                      record that happened to have it blank — no chip, no
+                      message, and the same click removing one worked fine. That
+                      reads as a broken designer, and it was reported as one.
+                      An admin picking four header fields has asked for four,
+                      and a dash is how a form says "nothing here yet".
+                    */
                     return (
                       <span key={name} className="inline-flex min-w-0 max-w-full items-center gap-1.5 truncate">
                         <span className="shrink-0 text-xs font-normal text-muted">{field.label}:</span>

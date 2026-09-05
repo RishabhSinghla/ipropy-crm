@@ -1204,10 +1204,37 @@ metadataRouter.put('/picklists/:name/values', asyncHandler(async (req, res) => {
     seen.add(v.value);
   }
 
+  /*
+    A save must never undo a deletion.
+
+    This endpoint takes the whole option list, and it used to clear the
+    tombstone of every value in it — the idea being that re-adding an option is
+    a decision. But the editor sends its *entire* list on every save, so a list
+    loaded before somebody deleted an option, saved after, silently re-created
+    that option and wiped the tombstone that was keeping it gone. Delete "New",
+    press Save, and "New" is back with no message: reported exactly that way.
+
+    So a tombstoned value is skipped here and reported back, and bringing one
+    back is its own explicit action (`restore`) rather than a side effect of
+    saving something else.
+  */
+  const tombstoned = new Set(
+    (await db.query<{ value: string }>(
+      `SELECT value FROM ipy_picklist_tombstone WHERE picklist_name = $1 AND value <> ''`, [name],
+    )).rows.map((r) => r.value),
+  );
+  const restore = new Set(
+    (z.object({ restore: z.array(z.string()).default([]) }).parse(req.body)).restore,
+  );
+  const skipped = values
+    .filter((v) => tombstoned.has(v.value) && !restore.has(v.value))
+    .map((v) => v.value);
+  const writable = values.filter((v) => !skipped.includes(v.value));
+
   let renamedRecords = 0;
   let renamedFilters = 0;
   await transaction(async (tx) => {
-    for (const [i, v] of values.entries()) {
+    for (const [i, v] of writable.entries()) {
       if (v.previousValue && v.previousValue !== v.value) {
         // Move the records first: the option row is what the records are
         // matched against, so renaming it first would leave nothing to find.
@@ -1227,17 +1254,19 @@ metadataRouter.put('/picklists/:name/values', asyncHandler(async (req, res) => {
            is_active = EXCLUDED.is_active, is_default = EXCLUDED.is_default, meta = EXCLUDED.meta`,
         [picklist.id, v.value, v.label, v.color ?? null, i, v.isActive, v.isDefault, JSON.stringify(v.meta ?? {})],
       );
-      // Adding back something previously deleted is a decision; clear its
-      // tombstone or the next re-seed would take it away again.
-      await tx.query(
-        `DELETE FROM ipy_picklist_tombstone WHERE picklist_name = $1 AND value = $2`,
-        [name, v.value],
-      );
+      // Only for a value the caller explicitly asked to restore — see above.
+      // Without clearing it the next re-seed would take the option away again.
+      if (restore.has(v.value)) {
+        await tx.query(
+          `DELETE FROM ipy_picklist_tombstone WHERE picklist_name = $1 AND value = $2`,
+          [name, v.value],
+        );
+      }
     }
 
     // At most one default, and it must be one of the options given. Sending no
     // default clears it rather than leaving a stale one behind.
-    const def = values.find((v) => v.isDefault);
+    const def = writable.find((v) => v.isDefault);
     await tx.query(
       `UPDATE ipy_picklist_value SET is_default = ($2::text IS NOT NULL AND value = $2)
         WHERE picklist_id = $1`,
@@ -1245,7 +1274,7 @@ metadataRouter.put('/picklists/:name/values', asyncHandler(async (req, res) => {
     );
   });
   invalidateAll();
-  res.json({ values: await registry.getPicklist(name), renamedRecords, renamedFilters });
+  res.json({ values: await registry.getPicklist(name), renamedRecords, renamedFilters, skipped });
 }));
 
 metadataRouter.put('/modules/:name/picklist-dependency', asyncHandler(async (req, res) => {

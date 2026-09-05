@@ -630,9 +630,14 @@ export const api = {
     canDelete: boolean;
     usedInCode: string | null;
   }[]>('/api/meta/picklist-catalogue'),
-  savePicklistValues: (name: string, values: unknown[]) =>
-    put<{ values: unknown[]; renamedRecords: number; renamedFilters: number }>(
-      `/api/meta/picklists/${name}/values`, { values },
+  /**
+   * `restore` names values that were deleted earlier and are being brought
+   * back deliberately. Anything else tombstoned is skipped and returned in
+   * `skipped` — a save must not undo a deletion as a side effect.
+   */
+  savePicklistValues: (name: string, values: unknown[], restore: string[] = []) =>
+    put<{ values: unknown[]; renamedRecords: number; renamedFilters: number; skipped?: string[] }>(
+      `/api/meta/picklists/${name}/values`, { values, restore },
     ),
   createPicklist: (data: { name: string; label: string; values?: unknown[] }) =>
     post('/api/meta/picklists', data),

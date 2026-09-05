@@ -80,6 +80,9 @@ export default function PicklistManager(): JSX.Element {
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState<Option | null>(null);
+  // The stored value is the rare edit; it is off unless asked for. See the
+  // note beside the option name input.
+  const [showStored, setShowStored] = useState(false);
 
   const { data: catalogue, isLoading } = useQuery({
     queryKey: ['picklist-catalogue'],
@@ -145,9 +148,9 @@ export default function PicklistManager(): JSX.Element {
   };
 
   const save = async (): Promise<void> => {
-    const blank = options.find((o) => !o.label.trim() || !o.value.trim());
+    const blank = options.find((o) => !o.label.trim());
     if (blank) {
-      toast.error('Every option needs a name and a stored value');
+      toast.error('Every option needs a name');
       return;
     }
     setSaving(true);
@@ -162,6 +165,14 @@ export default function PicklistManager(): JSX.Element {
           ? { previousValue: o.previousValue }
           : {}),
       })));
+      if (result.skipped?.length) {
+        // The server refused to re-create something deleted earlier. Saying so
+        // matters: silently doing it is the bug this replaced.
+        toast.error(
+          'Deleted options were not added back',
+          `${result.skipped.join(', ')} — deleted earlier. Use “Deleted options” below to restore.`,
+        );
+      }
       toast.success(
         'Dropdown saved',
         result.renamedRecords || result.renamedFilters
@@ -243,7 +254,16 @@ export default function PicklistManager(): JSX.Element {
             >
               <Pencil className="h-3.5 w-3.5" />
             </button>
-            <div className="ml-auto flex gap-2">
+            <div className="ml-auto flex items-center gap-2">
+              <label className="flex cursor-pointer items-center gap-1.5 text-2xs text-muted">
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 rounded border-slate-300"
+                  checked={showStored}
+                  onChange={(e) => setShowStored(e.target.checked)}
+                />
+                Show stored values
+              </label>
               <button
                 onClick={() => {
                   setOptions([...options, {
@@ -370,22 +390,43 @@ export default function PicklistManager(): JSX.Element {
                   </button>
                 </div>
 
-                <input
-                  className="input w-40 py-1.5 text-sm"
-                  placeholder="Label"
-                  aria-label="Option label"
-                  value={option.label}
-                  onChange={(e) => {
-                    const label = e.target.value;
-                    // A new row's stored value follows its label until somebody
-                    // edits the value itself. An existing row's never does:
-                    // changing it rewrites every record that holds it.
-                    const linked = !option.previousValue && option.value === option.label;
-                    update(index, { label, ...(linked ? { value: label } : {}) });
-                  }}
-                />
+                {/*
+                  One box, not two.
 
-                <div className="relative">
+                  There used to be a second "stored value" field beside this
+                  one, because renaming what is *written on the record* is a
+                  different act from renaming what is *shown*. That distinction
+                  is real but it is not the admin's problem on the way past: on
+                  a new option the stored value follows the name, and on an
+                  existing one it stays put, which is the safe answer in both
+                  cases. The rare edit is behind "Show stored values" above.
+                */}
+                <div className="relative min-w-[9rem] flex-1">
+                  <input
+                    className="input w-full py-1.5 text-sm"
+                    placeholder="Option name"
+                    aria-label="Option name"
+                    value={option.label}
+                    onChange={(e) => {
+                      const label = e.target.value;
+                      // A new row's stored value follows its name. An existing
+                      // row's never does — changing that rewrites every record
+                      // holding it, and renaming a label should stay free.
+                      const linked = !option.previousValue;
+                      update(index, { label, ...(linked ? { value: label } : {}) });
+                    }}
+                  />
+                  {option.usedInCode && (
+                    <span
+                      className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300"
+                      title={`The app looks for this option by name — it drives ${option.usedInCode}. Renaming what is stored will stop that working, with no error anywhere.`}
+                    >
+                      <AlertTriangle className="h-2.5 w-2.5" />
+                    </span>
+                  )}
+                </div>
+
+                {showStored && (
                   <input
                     className={cn(
                       'input w-40 py-1.5 font-mono text-xs',
@@ -400,17 +441,12 @@ export default function PicklistManager(): JSX.Element {
                       ? `Saving moves every record from "${option.previousValue}" to "${option.value}"`
                       : 'What gets written on the record'}
                   />
-                  {option.usedInCode && (
-                    <span
-                      className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300"
-                      title={`The app looks for this option by name — it drives ${option.usedInCode}. Renaming it will stop that working, with no error anywhere.`}
-                    >
-                      <AlertTriangle className="h-2.5 w-2.5" />
-                    </span>
-                  )}
-                </div>
+                )}
 
-                <div className="flex items-center gap-1">
+                {/* `shrink-0` matters: ten swatches plus a preview chip were
+                    squeezing the name box down to a single letter — "Attempted
+                    Contact" rendered as "A". */}
+                <div className="flex shrink-0 items-center gap-1">
                   {SWATCHES.map((c) => (
                     <button
                       key={c}
@@ -527,7 +563,14 @@ export default function PicklistManager(): JSX.Element {
         option={deleting}
         others={options.filter((o) => o.value !== deleting?.value && o.previousValue)}
         onClose={() => setDeleting(null)}
-        onDeleted={refresh}
+        onDeleted={(deletedValue) => {
+          // Removed here as well as on the server. `refresh()` only invalidates
+          // the query; until the refetch lands the editor still holds the row,
+          // and pressing Save in that window used to re-create the option and
+          // wipe its tombstone.
+          setOptions((prev) => prev.filter((o) => o.value !== deletedValue));
+          refresh();
+        }}
       />
 
       <ConfirmDialog
@@ -733,7 +776,7 @@ function DeleteOptionDialog({
   option: Option | null;
   others: Option[];
   onClose: () => void;
-  onDeleted: () => void;
+  onDeleted: (deletedValue: string) => void;
 }): JSX.Element {
   const [usage, setUsage] = useState<
     {
@@ -778,7 +821,7 @@ function DeleteOptionDialog({
           ? `${result.movedRecords} record${result.movedRecords === 1 ? '' : 's'} ${replaceWith ? `moved to "${replaceWith}"` : 'had the field cleared'}.`
           : `"${option.label}" is gone for good.`,
       );
-      onDeleted();
+      onDeleted(option.value);
       onClose();
     } catch (err) {
       toast.error(

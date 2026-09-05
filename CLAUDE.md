@@ -60,7 +60,9 @@ Vtiger (at `../vtigercrm`) is an **architecture reference only**. No Vtiger code
 * **`ipy_record` is the shared id space.** Every `*_id` reference (including `contact_id`) points at
   `ipy_record(id)`, never at a payload table. This is why the Contacts→Leads merge preserved every
   foreign key without repointing.
-* **There are two modules:** `leads` (labelled "Leads & Contacts") and `properties`.
+* **There are two modules:** `leads` (labelled "Contacts" since migration `096` — the *name*
+  stays `leads`, because it is the URL, the API path and the key inside every saved view,
+  workflow condition and bookmark) and `properties`.
   Migrations `030`, `031` and `048` removed the other eleven. Do not reintroduce one to hold a field —
   Projects and Activities both died because they existed only to carry a value the lead or the unit
   could hold itself.
@@ -84,8 +86,11 @@ Vtiger (at `../vtigercrm`) is an **architecture reference only**. No Vtiger code
   drops the column: several are `NOT NULL` with no default, so metadata-only deletion breaks inserts.
 * **Deleting a dropdown option needs a tombstone too.** Same trap, same fix:
   `ipy_picklist_tombstone` (migration `049`), consulted by `upsertPicklist`. A row with `value = ''`
-  tombstones the whole dropdown. Adding the option back clears its tombstone — that is a decision,
-  not an accident.
+  tombstones the whole dropdown. Adding the option back clears its tombstone — but **only when the
+  caller asks for it by name** (`restore: [...]` on the values PUT). It used to be cleared for every
+  value in the payload, and since the editor sends its whole list on every save, a list loaded
+  before a deletion and saved after silently re-created the option and wiped the tombstone keeping
+  it gone. Anything tombstoned and not named in `restore` is skipped and returned in `skipped`.
 * **A dropdown option is a string on every record that chose it, not a foreign key.** Renaming the
   *stored value* without rewriting those records orphans them: still stored, no longer offered,
   matched by no filter, invisible until somebody runs a report. `core/metadata/picklists.ts` is the

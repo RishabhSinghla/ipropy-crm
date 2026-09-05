@@ -7,7 +7,7 @@
  * rep would see, a screen that renders blank. Failures print a findings list
  * to the report so the next fix has an address.
  */
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
 type Finding = { page: string; kind: string; detail: string };
 const findings: Finding[] = [];
@@ -82,6 +82,20 @@ test.describe('lead lifecycle through the UI', () => {
   const name = `Journey Lead ${Date.now()}`;
   const mobile = `97${String(Date.now()).slice(-8)}`;
 
+  /*
+    The same lifecycle runs against the card list on a phone and the table on a
+    desktop, so the row locator has to branch on the project.
+
+    `test.info()` is only valid *inside* a running test — called in the describe
+    body, at collection time, it throws and takes every test in the file with
+    it. So the helper takes a page and reads the project itself, and each test
+    calls it rather than closing over a hoisted constant.
+  */
+  const rowIn = (page: Page, text: string) =>
+    (test.info().project.name === 'mobile'
+      ? page.getByTestId('record-card-list').getByText(text).first()
+      : page.locator('tr', { hasText: text }).first());
+
   test('create a lead from the form', async ({ page }) => {
     await page.goto('/leads/new');
     await page.waitForLoadState('domcontentloaded');
@@ -96,10 +110,7 @@ test.describe('lead lifecycle through the UI', () => {
   });
 
   test('find it on the list', async ({ page }) => {
-    const row = (text: string) =>
-      phone
-        ? page.getByTestId('record-card-list').getByText(text).first()
-        : page.locator('tr', { hasText: text }).first();
+    const row = (text: string) => rowIn(page, text);
     await page.goto('/leads');
     await page.waitForTimeout(1500);
     await page.getByTestId('list-search').fill(name);
@@ -108,10 +119,7 @@ test.describe('lead lifecycle through the UI', () => {
   });
 
   test('edit it from the edit page', async ({ page }) => {
-    const row = (text: string) =>
-      phone
-        ? page.getByTestId('record-card-list').getByText(text).first()
-        : page.locator('tr', { hasText: text }).first();
+    const row = (text: string) => rowIn(page, text);
     await page.goto('/leads');
     await page.waitForTimeout(1200);
     await page.getByTestId('list-search').fill(name);
@@ -131,10 +139,7 @@ test.describe('lead lifecycle through the UI', () => {
   });
 
   test('delete it', async ({ page }) => {
-    const row = (text: string) =>
-      phone
-        ? page.getByTestId('record-card-list').getByText(text).first()
-        : page.locator('tr', { hasText: text }).first();
+    const row = (text: string) => rowIn(page, text);
     const renamed = `${name} II`;
     await page.goto('/leads');
     await page.waitForTimeout(1200);
