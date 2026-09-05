@@ -2,8 +2,8 @@ import SettingsAdmin from './SettingsAdmin';
 import { type JSX, lazy, Suspense } from 'react';
 import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {
-  Activity, Blocks, Database, GitBranch, Globe, KeyRound, Layers, LayoutTemplate, MapPin,
-  Columns3, ListTree, Plug, Settings2, Shield, Sliders, Sparkles, ToggleLeft, Users, Workflow,
+  Activity, Blocks, Database, KeyRound, LayoutTemplate, MapPin,
+  Columns3, ListTree, Plug, Settings2, Shield,  Sparkles, ToggleLeft, Users, Workflow,
   SlidersHorizontal,
 } from 'lucide-react';
 import { Spinner } from '../../components/ui';

@@ -29,14 +29,6 @@ interface FormField {
   required?: boolean;
 }
 
-interface PublicForm {
-  id: string;
-  name: string;
-  fields: FormField[];
-  success_message: string | null;
-  captcha_enabled: boolean;
-}
-
 /** The control each field renders: the form's type when it has one, otherwise what the field is obviously for. */
 function controlFor(f: FormField): 'textarea' | 'input' {
   if (f.type === 'textarea') return 'textarea';

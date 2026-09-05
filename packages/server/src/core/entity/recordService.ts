@@ -5,19 +5,21 @@
  * There is no per-module CRUD code anywhere in the app; behaviour differences
  * come entirely from metadata plus the hook points at the bottom of this file.
  */
-import type {
-  AuthUser,
-  FieldMeta,
-  FilterCondition,
-  FilterGroup,
-  ListQuery,
-  ListResult,
-  ModuleMeta,
-  RecordEnvelope,
+import {
+  UITYPES,
+  formatArea,
+  formatPhoneWithCode,
+  isFilterGroup,
+  type FieldMeta,
+  type FilterCondition,
+  type FilterGroup,
+  type ListQuery,
+  type ListResult,
+  type ModuleMeta,
+  type RecordEnvelope,
 } from '@ipropy/shared';
-import { UITYPES, formatArea, formatPhoneWithCode, isFilterGroup } from '@ipropy/shared';
 import { db, onCommit, transaction, type Tx } from '../../db/pool.js';
-import { BadRequestError, ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../utils/errors.js';
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../utils/errors.js';
 import { logger } from '../../utils/logger.js';
 import { emit } from '../events/bus.js';
 import { registry } from '../metadata/registry.js';
@@ -32,10 +34,8 @@ import {
   buildSearchClause,
   buildWhere,
   fieldExpr,
-  isSystemField,
   quoteIdent,
   resolveFieldPath,
-  systemFieldExpr,
   type BuildContext,
 } from '../query/builder.js';
 import { evaluateFormula } from './formula.js';

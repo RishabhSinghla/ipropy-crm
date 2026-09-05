@@ -17,10 +17,7 @@ import { evaluateFilter } from '@ipropy/shared';
  */
 const IST = 'Asia/Kolkata';
 
-/** 02:00 on 16 August in Mumbai — still the 15th in UTC. */
-const EARLY_MORNING_IST = '2026-08-16T20:30:00+05:30';
-
-function matches(operator: string, value: string, timezone?: string, now?: Date): boolean {
+function matches(operator: string, value: string, timezone?: string, _now?: Date): boolean {
   // The evaluator reads "now" from the clock, so these assertions are written
   // against a value whose *relative* position to today is what is being tested.
   return evaluateFilter(

@@ -24,7 +24,6 @@
  * (`invalidate`), mirroring the metadata registry's cache-then-invalidate
  * pattern but exposed synchronously instead of behind an async getter.
  */
-import crypto from 'node:crypto';
 import { config } from '../../config.js';
 import { db } from '../../db/pool.js';
 import { makeSecretBox } from '../secretbox.js';

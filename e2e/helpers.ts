@@ -126,14 +126,14 @@ export async function fillRequiredFields(scope: Locator | Page): Promise<void> {
 
     for (let i = 0; i < count; i += 1) {
       const control = controls.nth(i);
-      // eslint-disable-next-line no-await-in-loop
+       
       const [name, value] = await Promise.all([
         control.getAttribute('aria-label').then((a) => a ?? ''),
         control.inputValue().catch(() => ''),
       ]);
       if (value) continue;
 
-      // eslint-disable-next-line no-await-in-loop
+       
       const label = (name || (await control.evaluate((el) => {
         const id = el.getAttribute('id');
         const byFor = id ? document.querySelector(`label[for="${id}"]`) : null;
@@ -142,7 +142,7 @@ export async function fillRequiredFields(scope: Locator | Page): Promise<void> {
 
       if (role === 'combobox') {
         // Index 1: index 0 is the empty "choose one" option.
-        // eslint-disable-next-line no-await-in-loop
+         
         await control.selectOption({ index: 1 }).catch(() => undefined);
         continue;
       }
@@ -154,7 +154,7 @@ export async function fillRequiredFields(scope: Locator | Page): Promise<void> {
       if (/mobile|phone/.test(label)) filler = `9${String(Date.now()).slice(-9)}`;
       else if (/email/.test(label)) filler = `${unique('e2e').toLowerCase()}@example.com`;
       else if (/amount|budget|price|area|score/.test(label)) filler = '100';
-      // eslint-disable-next-line no-await-in-loop
+       
       await control.fill(filler).catch(() => undefined);
     }
   }

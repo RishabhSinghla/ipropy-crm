@@ -5,9 +5,9 @@
  * becomes a JS value, so the record service, importer, workflow engine and AI
  * tools all agree on what a "date" or a "currency" is.
  */
-import type { FieldMeta } from '@ipropy/shared';
 import {
-  formatIndianPrice, formatArea, toE164, parseIndianPrice, collectFieldErrors, evaluateFilter,
+  formatIndianPrice, formatArea, parseIndianPrice, collectFieldErrors, evaluateFilter,
+  type FieldMeta,
 } from '@ipropy/shared';
 import { ValidationError } from '../../utils/errors.js';
 

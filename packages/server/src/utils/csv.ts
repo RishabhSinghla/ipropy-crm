@@ -8,6 +8,7 @@ export function toCsv(rows: Record<string, unknown>[], columns?: string[]): stri
     lines.push(cols.map((c) => escapeCell(row[c])).join(','));
   }
   // Excel needs the BOM to read UTF-8 (₹, names with diacritics) correctly.
+  // eslint-disable-next-line no-irregular-whitespace -- the BOM is the feature
   return `﻿${lines.join('\n')}\n`;
 }
 
@@ -26,6 +27,7 @@ function escapeCell(value: unknown): string {
 }
 
 export function parseCsv(text: string): { headers: string[]; rows: Record<string, string>[] } {
+  // eslint-disable-next-line no-irregular-whitespace -- matching the BOM we wrote
   const clean = text.replace(/^﻿/, '');
   const records: string[][] = [];
   let row: string[] = [];

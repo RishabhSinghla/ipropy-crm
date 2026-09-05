@@ -190,7 +190,7 @@ describe('per-record media archive', () => {
     it('survives the characters these names actually contain', () => {
       const header = contentDisposition('Verdant Greens — Tower D, Unit 702.zip');
       expect(() => Buffer.from(header, 'latin1').toString('latin1')).not.toThrow();
-      // eslint-disable-next-line no-control-regex
+       
       expect(header).toMatch(/^[\x20-\x7e]*$/);
       expect(header).toContain("filename*=UTF-8''");
       // The real name is still recoverable by any client that understands RFC 6266.
@@ -201,7 +201,7 @@ describe('per-record media archive', () => {
     it('handles rupee symbols and Devanagari', () => {
       for (const name of ['₹2.25 Cr — B110.zip', 'ग्रीनफील्ड B-110.zip', 'Curly “quoted” name.zip']) {
         const header = contentDisposition(name);
-        // eslint-disable-next-line no-control-regex
+         
         expect(header, name).toMatch(/^[\x20-\x7e]*$/);
         expect(decodeURIComponent(header.split("filename*=UTF-8''")[1])).toBe(name);
       }

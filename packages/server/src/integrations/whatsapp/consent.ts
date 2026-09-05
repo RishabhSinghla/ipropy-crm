@@ -141,21 +141,3 @@ export async function maySend(handle: string, opts: { sessionReply?: boolean } =
  * caught, because a failed statement inside a transaction poisons every
  * statement after it — the catch would hide which one died, not rescue it.
  */
-const leadColumns = new Map<string, boolean>();
-
-export function invalidateLeadColumnCache(): void { leadColumns.clear(); }
-
-async function leadsHaveField(conn: Tx, column: string): Promise<boolean> {
-  const cached = leadColumns.get(column);
-  if (cached !== undefined) return cached;
-
-  const row = await conn.queryOne(
-    `SELECT 1 FROM information_schema.columns
-      WHERE table_name = 'ipy_e_leads' AND column_name = $1`,
-    [column],
-  ).catch(() => null);
-
-  const present = Boolean(row);
-  leadColumns.set(column, present);
-  return present;
-}

@@ -375,7 +375,7 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
   await seedTargets(conn, users);
 }
 
-async function seedConversations(conn: Tx, leadIds: string[], customerIds: string[], users: SeededUser[]): Promise<void> {
+async function seedConversations(conn: Tx, leadIds: string[], customerIds: string[], _users: SeededUser[]): Promise<void> {
   const sampleThreads = [
     {
       inbound: 'Hi, I saw your ad for Skyline Aurum. What is the price for a 3 BHK?',

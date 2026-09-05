@@ -7,16 +7,16 @@
  * than hitting the DB, because it is read on essentially every request.
  * `invalidate()` is called by the admin endpoints whenever metadata changes.
  */
-import type {
-  BlockMeta,
-  FieldConfig,
-  FieldMeta,
-  ModuleMeta,
-  PicklistOption,
-  RelationMeta,
-  UIType,
+import {
+  UITYPES,
+  type BlockMeta,
+  type FieldConfig,
+  type FieldMeta,
+  type ModuleMeta,
+  type PicklistOption,
+  type RelationMeta,
+  type UIType,
 } from '@ipropy/shared';
-import { UITYPES } from '@ipropy/shared';
 import { db, type Tx } from '../../db/pool.js';
 import { NotFoundError } from '../../utils/errors.js';
 import { logger } from '../../utils/logger.js';

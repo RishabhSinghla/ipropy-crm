@@ -45,7 +45,9 @@ let started = false;
 export async function startErrorReporting(): Promise<void> {
   if (started) return;
 
-  let dsn: string | null = null;
+  // Both failure paths return early, so `dsn` is always assigned before it
+  // is read — no placeholder null to go stale.
+  let dsn: string | null;
   let environment = 'production';
   try {
     const res = await fetch('/api/public/client-config');

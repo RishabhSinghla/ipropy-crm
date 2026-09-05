@@ -172,7 +172,7 @@ export async function removeFieldEverywhere(
         sets.push(`${column} = $${values.length}::jsonb`);
       }
       if (!sets.length) continue;
-      // eslint-disable-next-line no-await-in-loop
+       
       await conn.query(`UPDATE ${table} SET ${sets.join(', ')} WHERE id = $1`, values);
       references += 1;
     }
@@ -226,7 +226,7 @@ export async function removeFieldEverywhere(
       if (next[key] === name) next[key] = null;
     }
     if (JSON.stringify(next) === JSON.stringify(w.config)) continue;
-    // eslint-disable-next-line no-await-in-loop
+     
     await conn.query(`UPDATE ipy_dashboard_widget SET config = $2::jsonb WHERE id = $1`,
       [w.id, JSON.stringify(next)]);
     references += 1;
@@ -259,7 +259,7 @@ export async function removeFieldEverywhere(
       }
     }
     if (!touched) continue;
-    // eslint-disable-next-line no-await-in-loop
+     
     await conn.query(`UPDATE ipy_workflow_task SET config = $2::jsonb WHERE id = $1`,
       [t.id, JSON.stringify(next)]);
     references += 1;

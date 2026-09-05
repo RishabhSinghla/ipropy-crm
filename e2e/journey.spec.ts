@@ -83,7 +83,6 @@ test.describe('lead lifecycle through the UI', () => {
   const mobile = `97${String(Date.now()).slice(-8)}`;
 
   test('create a lead from the form', async ({ page }) => {
-    const phone = test.info().project.name === 'mobile';
     await page.goto('/leads/new');
     await page.waitForLoadState('domcontentloaded');
     await page.getByRole('textbox', { name: /full name/i }).fill(name);
@@ -97,7 +96,6 @@ test.describe('lead lifecycle through the UI', () => {
   });
 
   test('find it on the list', async ({ page }) => {
-    const phone = test.info().project.name === 'mobile';
     const row = (text: string) =>
       phone
         ? page.getByTestId('record-card-list').getByText(text).first()
@@ -110,7 +108,6 @@ test.describe('lead lifecycle through the UI', () => {
   });
 
   test('edit it from the edit page', async ({ page }) => {
-    const phone = test.info().project.name === 'mobile';
     const row = (text: string) =>
       phone
         ? page.getByTestId('record-card-list').getByText(text).first()
@@ -134,7 +131,6 @@ test.describe('lead lifecycle through the UI', () => {
   });
 
   test('delete it', async ({ page }) => {
-    const phone = test.info().project.name === 'mobile';
     const row = (text: string) =>
       phone
         ? page.getByTestId('record-card-list').getByText(text).first()

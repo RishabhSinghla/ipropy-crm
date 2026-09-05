@@ -1,8 +1,8 @@
 import { type JSX, useEffect, useRef, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
 import {
-  Bell, BellOff, Camera, Check, Copy, Download, Fingerprint, KeyRound, MessageCircle, Monitor,
+  Bell, BellOff, Camera, Check, Copy, Download, Fingerprint, KeyRound, Monitor,
   Moon, Plus, Save, Smartphone, Sun, Trash2, User,
 } from 'lucide-react';
 import { api } from '../lib/api';
@@ -12,7 +12,7 @@ import { currentSubscription, disablePush, enablePush, permissionState, pushSupp
 import { Avatar, Badge, ConfirmDialog, EmptyState, Modal, Select, Skeleton, Spinner, Tabs } from '../components/ui';
 
 export default function SettingsPage(): JSX.Element {
-  const { user, theme, setTheme } = useApp();
+  const { theme, setTheme } = useApp();
   const [tab, setTab] = useState('profile');
 
   return (

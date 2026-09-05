@@ -4,10 +4,7 @@ import {
   Brain, Check, Clock3, History, Menu, Mic, Plus, Send, Sparkles, Square,
   Trash2, X,
 } from 'lucide-react';
-import type {
-  AiAssistantAction, AiAssistantMessage, AiMemory, AiThreadSummary,
-} from '../lib/api';
-import { api } from '../lib/api';
+import { api, type AiAssistantAction, type AiAssistantMessage, type AiMemory, type AiThreadSummary } from '../lib/api';
 import { useVoiceCapture } from '../lib/useVoiceCapture';
 import { toast, useApp } from '../lib/store';
 import { cn, renderMarkdown } from '../lib/utils';

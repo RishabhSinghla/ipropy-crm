@@ -102,7 +102,7 @@ function renderImport(entry) {
   const parts = [];
   if (entry.default) parts.push(entry.default);
   if (entry.named.length) {
-    const nameToType = new Map(); // name → typeOnly (per binding; aliases are keyed by alias)
+    // Keyed by alias when aliased, since the alias is what the file sees.
     const seen = new Map();
     for (const b of entry.named) {
       const key = b.alias ?? b.name;
@@ -133,8 +133,7 @@ let removedLines = 0;
 
 for (const file of files) {
   const lines = readFileSync(file, 'utf8').split('\n');
-  // Map specifier → index of the line we are keeping, plus parsed entries.
-  const keep = new Map();
+  // Group specifier → parsed import lines.
   const grouped = new Map();
 
   for (let i = 0; i < lines.length; i++) {

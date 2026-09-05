@@ -28,7 +28,7 @@ const SECRET = 'n8n-test-secret-value';
 
 let app: ReturnType<typeof createApp>;
 let propertyId: string;
-let ownerId: string;
+// The owner the record was created with; asserted via the record, not the variable.
 
 /** Overlay just the automation block; everything else keeps its real value. */
 function withAutomation(over: Partial<{ n8nWebhookUrl: string; n8nCallbackSecret: string }>) {
@@ -44,7 +44,7 @@ beforeAll(async () => {
   app = createApp();
 
   const ctx = await adminContext();
-  ownerId = ctx.user!.id;
+  const _ownerId = ctx.user!.id; void _ownerId;
   const rec = await createRecord(ctx, 'properties', {
     name: `n8n handoff test ${Date.now()}`,
   });

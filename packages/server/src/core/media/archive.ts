@@ -66,6 +66,7 @@ interface AttachmentRow {
  * slash or backslash left, a name like "../../etc" cannot climb out of the
  * archive root whatever it started as.
  */
+// eslint-disable-next-line no-control-regex -- stripping \x00-\x1F is the check itself: a control character in a filename is how a path stops being a name.
 const ILLEGAL_IN_FILENAME = /[<>:"|?*\\/\u0000-\u001F]/g;
 
 export function safeName(input: string, fallback = 'untitled'): string {
@@ -152,7 +153,7 @@ function entriesFor(row: AttachmentRow, set: ArchiveSet): { folder: string; key:
  * 2011. Browsers prefer `filename*` when both are present.
  */
 export function contentDisposition(fileName: string): string {
-  // eslint-disable-next-line no-control-regex
+   
   const ascii = fileName.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
   // encodeURIComponent leaves !'()* alone; RFC 5987's token set does not allow
   // them unencoded in this position, so they are escaped by hand.

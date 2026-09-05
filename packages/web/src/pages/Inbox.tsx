@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
 import {
-  AlertTriangle, Check, CheckCheck, Clock, ExternalLink, MessageCircle, Paperclip, Search, Send, Sparkles, User,
+  AlertTriangle, Check, CheckCheck, Clock, ExternalLink, MessageCircle, Search, Send, Sparkles, User,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useWatchConversation } from '../lib/realtime';

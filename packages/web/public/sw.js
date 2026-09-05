@@ -86,7 +86,7 @@ self.addEventListener('fetch', (event) => {
  * ---------------------------------------------------------------------- */
 
 self.addEventListener('push', (event) => {
-  let payload = {};
+  let payload; // assigned by both branches below before any read
   try {
     payload = event.data ? event.data.json() : {};
   } catch {

@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CALL_DISPOSITIONS, type FieldMeta, formatIndianPrice, type ModuleMeta, type RecordEnvelope, relativeTime, type TimelineEntry } from '@ipropy/shared';
 import {
-  Activity, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Edit3, ExternalLink, Eye, FileQuestion, FileText, FolderOpen, Images, LayoutDashboard, Link2, MessageCircle, Mic, MoreHorizontal, Paperclip, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Trash2, Upload, UserCheck, X,
+  Activity, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Edit3, ExternalLink, Eye, FileQuestion, FileText, FolderOpen, Images, LayoutDashboard, Link2, MessageCircle, Mic, MoreHorizontal, Paperclip, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Trash2, Upload, X,
 } from 'lucide-react';
 import { api, authedFileUrl, type PropertyStorageInfo } from '../lib/api';
 import { compressImage, formatBytes } from '../lib/compressImage';
@@ -21,7 +21,7 @@ import {
   Avatar, Badge, ConfirmDialog, Dropdown, DropdownItem, EmptyState, Modal,
   ScoreChip, Skeleton, Spinner, Tabs,
 } from '../components/ui';
-import { ModuleIcon } from '../components/Layout';
+import {} from '../components/Layout';
 import DocumentViewer, { isPreviewable, type ViewableFile } from '../components/DocumentViewer';
 import ComposeModal from '../components/ComposeModal';
 import { PeekLink } from '../components/PeekLink';
@@ -2081,7 +2081,7 @@ function proposalValue(value: unknown): string {
 }
 
 function AiPanel({
-  module, record, meta,
+  module, record, meta: _meta,
 }: { module: string; record: RecordEnvelope; meta: ModuleMeta }): JSX.Element {
   const queryClient = useQueryClient();
   const { aiAvailable } = useApp();
@@ -2290,7 +2290,7 @@ function DuplicateSuggestions({ module, id, label }: {
  * un-mentioned them, which is the behaviour anybody would assume.
  */
 function CommentsPanel({
-  module, id, currentUser,
+  module, id, currentUser: _currentUser,
 }: { module: string; id: string; currentUser: string }): JSX.Element {
   const queryClient = useQueryClient();
   const [body, setBody] = useState('');

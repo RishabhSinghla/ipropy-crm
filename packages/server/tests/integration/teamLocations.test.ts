@@ -24,7 +24,7 @@ import { adminContext, authUser, contextFor, SEEDED } from './fixtures.js';
 import type { AuthUser } from '@ipropy/shared';
 
 let admin: ServiceContext;
-let executiveA: ServiceContext;
+let _executiveA: ServiceContext;
 let executiveB: ServiceContext;
 let adminUser: AuthUser;
 let executiveAUser: AuthUser;
@@ -45,7 +45,7 @@ async function setEnabled(on: boolean): Promise<void> {
 
 beforeAll(async () => {
   admin = await adminContext();
-  executiveA = await contextFor(SEEDED.executiveA);
+  _executiveA = await contextFor(SEEDED.executiveA); // loads alongside B; the location rules under test use B
   executiveB = await contextFor(SEEDED.executiveB);
   adminUser = await authUser('admin@ipropy.com').catch(() => admin.user);
   executiveAUser = await authUser(SEEDED.executiveA);

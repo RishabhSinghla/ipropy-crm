@@ -16,9 +16,9 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
-import globalsPkg from 'globals';
-
-const { globals } = globalsPkg;
+// `globals` has no named `globals` export — destructure off the default or
+// every ESLint invocation dies reading `.browser` of undefined.
+import globals from 'globals';
 
 export default tseslint.config(
   {
@@ -65,7 +65,15 @@ export default tseslint.config(
     },
     rules: {
       // --- the rules that earn their keep ------------------------------
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      // `^_` means deliberately unused everywhere — an argument, a local, a
+      // destructured property being thrown away (`const { x: _x, ...rest }`),
+      // not just parameters.
+      '@typescript-eslint/no-unused-vars': ['error', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        destructuredArrayIgnorePattern: '^_',
+        ignoreRestSiblings: true,
+      }],
       // An explicit `any` in a typed codebase is a promise to type it later
       // that nobody ever keeps. Fixes are usually a small interface.
       '@typescript-eslint/no-explicit-any': 'error',

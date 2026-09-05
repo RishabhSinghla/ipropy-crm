@@ -17,6 +17,7 @@ export function toCsvDownload(rows: Record<string, unknown>[], filename: string)
   ].join('\n');
 
   // BOM so Excel reads UTF-8 (₹ and Indian names) correctly.
+  // eslint-disable-next-line no-irregular-whitespace -- the BOM is the feature
   const blob = new Blob([`﻿${csv}`], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');

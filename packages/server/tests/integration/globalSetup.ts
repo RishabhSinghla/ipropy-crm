@@ -24,6 +24,7 @@ export default async function setup(): Promise<void> {
       `Integration tests need a running Postgres at ${maintenanceDatabaseUrl().replace(/:[^:@]*@/, ':***@')}.\n`
       + 'Start one with `docker compose up -d db`, or set TEST_DATABASE_URL.\n'
       + `Original error: ${(err as Error).message}`,
+      { cause: err },
     );
   }
 

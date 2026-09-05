@@ -6,7 +6,7 @@
  * the queue and the admin UI pick it up without further changes.
  */
 import { type AuthUser, renderTemplate, toE164, toInternational } from '@ipropy/shared';
-import { db, type Tx } from '../../db/pool.js';
+import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { registry } from '../metadata/registry.js';
 import { withNameParts } from '../entity/nameParts.js';
@@ -508,16 +508,3 @@ async function resolveEmail(
   return rendered && rendered.includes('@') ? rendered : null;
 }
 
-// ---------------------------------------------------------------------------
-// Payment schedule generation
-// ---------------------------------------------------------------------------
-
-const DEFAULT_MILESTONES = [
-  { milestone: 'On Booking', percent: 10, offsetDays: 0 },
-  { milestone: 'On Agreement', percent: 20, offsetDays: 30 },
-  { milestone: 'On Plinth Completion', percent: 15, offsetDays: 120 },
-  { milestone: 'On 5th Slab', percent: 15, offsetDays: 210 },
-  { milestone: 'On 10th Slab', percent: 15, offsetDays: 300 },
-  { milestone: 'On Brickwork', percent: 10, offsetDays: 390 },
-  { milestone: 'On Possession', percent: 15, offsetDays: 480 },
-];

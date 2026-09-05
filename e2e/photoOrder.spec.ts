@@ -55,7 +55,7 @@ test('drags a photo to the front and the new cover survives a reload', async ({ 
       form.append('module', 'properties');
       // Sequential rather than in parallel: the order they arrive in is the
       // order under test, and two concurrent uploads have no defined one.
-      // eslint-disable-next-line no-await-in-loop
+       
       await fetch('/api/files', { method: 'POST', headers, body: form });
     }
     return created.id as string;

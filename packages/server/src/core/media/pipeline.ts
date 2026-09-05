@@ -7,7 +7,7 @@
  * no-op (wrong mime type, decode unsupported, etc.), not an error.
  */
 import { db } from '../../db/pool.js';
-import { formatIndianPrice } from '@ipropy/shared';
+import {} from '@ipropy/shared';
 import { getDriver } from '../storage/index.js';
 import { logger } from '../../utils/logger.js';
 import { processImage } from './images.js';

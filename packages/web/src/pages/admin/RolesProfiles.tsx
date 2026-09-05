@@ -4,7 +4,7 @@ import { Check, ChevronRight, Eye, EyeOff, Lock, Plus, Save, Shield, UserCheck, 
 import { api } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
 import { cn } from '../../lib/utils';
-import { Badge, Modal, Select, Skeleton, Spinner, Tabs } from '../../components/ui';
+import { Modal, Select, Skeleton, Spinner, Tabs } from '../../components/ui';
 
 interface RoleNode {
   id: string; name: string; parent_id: string | null; depth: number;

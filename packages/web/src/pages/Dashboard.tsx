@@ -1,7 +1,4 @@
-import type { JSX } from 'react';
-import { useEffect, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
-import type { Ref } from 'react';
+import { useEffect, useRef, useState, type JSX, type ReactNode, type Ref } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { type Dashboard, type DashboardWidget, type FilterGroup, type FilterOperator, formatIndianPrice, relativeTime } from '@ipropy/shared';
@@ -9,8 +6,7 @@ import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart,
   Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
-import GridLayout, { useContainerWidth } from 'react-grid-layout';
-import type { EventCallback, Layout, LayoutItem } from 'react-grid-layout';
+import GridLayout, { useContainerWidth, type EventCallback, type Layout, type LayoutItem } from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import {

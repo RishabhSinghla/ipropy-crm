@@ -542,7 +542,7 @@ export default function PicklistManager(): JSX.Element {
           // rest of the batch.
           for (const value of values) {
             try {
-              // eslint-disable-next-line no-await-in-loop
+               
               await api.deletePicklistValue(selected, value, { clear: true });
               removed += 1;
             } catch {
@@ -596,7 +596,7 @@ export default function PicklistManager(): JSX.Element {
 async function deleteWholeList(
   name: string, label: string, refresh: () => void,
 ): Promise<void> {
-  // eslint-disable-next-line no-alert
+   
   if (!window.confirm(
     `Delete the "${label}" dropdown and all of its options?\n\n`
     + 'Nothing currently uses it. This cannot be undone, and it stays deleted through restarts.',

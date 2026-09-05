@@ -39,7 +39,7 @@ export function useVoiceCapture(
   // A microphone left live after the panel closes is a red dot in the browser
   // tab that nobody can explain and nothing turns off.
   useEffect(() => () => {
-    recorder.current?.state === 'recording' && recorder.current.stop();
+    if (recorder.current?.state === 'recording') recorder.current.stop();
     stream.current?.getTracks().forEach((track) => track.stop());
   }, []);
 

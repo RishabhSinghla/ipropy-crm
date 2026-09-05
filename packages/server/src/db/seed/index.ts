@@ -30,7 +30,7 @@ import { resolveTemplate } from './templates/index.js';
 import { validateTemplate } from './templates/validate.js';
 import { seedPicklists, seedPicklistDependencies } from './picklists.js';
 import { seedDefaultLayouts, upsertModule, upsertRelations, upsertViews } from './helpers.js';
-import { seedGroups, seedProfiles, seedRoles, seedSharing, seedSystemUser, seedUsers, type SeededUser, DEMO_USERS } from './rbac.js';
+import { seedGroups, seedProfiles, seedRoles, seedSharing, seedSystemUser, seedUsers, type SeededUser } from './rbac.js';
 import { seedDashboards } from './dashboards.js';
 import {
   seedAssignmentRules, seedIntegrations, seedSettings, seedSlaPolicies,

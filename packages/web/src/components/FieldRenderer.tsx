@@ -7,10 +7,9 @@ import { type JSX, useEffect, useMemo, useRef, useState } from 'react';
  * through these two components, which is why adding a field in the admin panel
  * immediately works everywhere without touching the UI.
  */
-import { Link } from 'react-router-dom';
-import type { FieldMeta } from '@ipropy/shared';
 import {
   expectedDigits, formatArea, formatDate, formatDateTime, formatIndianPrice, formatPhone,
+  type FieldMeta,
 } from '@ipropy/shared';
 import {
   Check, ChevronDown, ExternalLink, ImagePlus, Loader2, Mail, MapPin, Phone, Search, Video, X,

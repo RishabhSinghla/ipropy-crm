@@ -21,13 +21,6 @@ interface DashboardSeed {
   widgets: WidgetSeed[];
 }
 
-const OPEN_DEAL_FILTER = {
-  logic: 'AND',
-  conditions: [
-    { field: 'is_won', operator: 'is_false' },
-    { field: 'is_lost', operator: 'is_false' },
-  ],
-};
 
 export const DASHBOARDS: DashboardSeed[] = [
   {

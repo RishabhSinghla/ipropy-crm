@@ -15,7 +15,7 @@
 import { REAL_ESTATE } from './realEstate.js';
 import type { IndustryTemplate } from './types.js';
 
-export type { IndustryTemplate } from './types.js';
+export type { IndustryTemplate };
 
 export const TEMPLATES: Record<string, IndustryTemplate> = {
   [REAL_ESTATE.key]: REAL_ESTATE,

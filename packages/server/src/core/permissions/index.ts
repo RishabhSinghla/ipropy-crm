@@ -10,8 +10,12 @@
  * `recordScopeSql()` produces the WHERE fragment that scopes any list query,
  * so data access is enforced in SQL rather than filtered in JS after the fact.
  */
-import { CAPABILITIES } from '@ipropy/shared';
-import type { AuthUser, FieldPermission, ModulePermission } from '@ipropy/shared';
+import {
+  CAPABILITIES,
+  type AuthUser,
+  type FieldPermission,
+  type ModulePermission,
+} from '@ipropy/shared';
 import { db, type Tx } from '../../db/pool.js';
 import { ForbiddenError } from '../../utils/errors.js';
 import { registry } from '../metadata/registry.js';
@@ -112,20 +116,37 @@ async function getOrgSharing(moduleName: string, conn: Tx = db): Promise<string>
 /** roleId → itself plus every descendant role id. */
 async function getRoleTree(conn: Tx = db): Promise<Map<string, string[]>> {
   if (roleTreeCache) return roleTreeCache;
-  const res = await conn.query<{ id: string; path: string[] }>(`SELECT id, path FROM ipy_role`);
-  const map = new Map<string, string[]>();
-  for (const role of res.rows) {
-    map.set(role.id, [role.id]);
-  }
-  for (const role of res.rows) {
-    // every ancestor in `path` also "contains" this role
-    for (const ancestor of role.path ?? []) {
-      const list = map.get(ancestor);
-      if (list && !list.includes(role.id)) list.push(role.id);
+  // Coalesce concurrent loads into one DB round-trip, like the profile and
+  // sharing caches above: after an invalidation, a burst of requests would
+  // otherwise each run the full role query. The promise was declared and
+  // cleared but never consulted — half a stampede fix.
+  const existing = roleTreeLoadPromise;
+  if (existing) return existing;
+
+  const promise = (async (): Promise<Map<string, string[]>> => {
+    const res = await conn.query<{ id: string; path: string[] }>(`SELECT id, path FROM ipy_role`);
+    const map = new Map<string, string[]>();
+    for (const role of res.rows) {
+      map.set(role.id, [role.id]);
     }
+    for (const role of res.rows) {
+      // every ancestor in `path` also "contains" this role
+      for (const ancestor of role.path ?? []) {
+        const list = map.get(ancestor);
+        if (list && !list.includes(role.id)) list.push(role.id);
+      }
+    }
+    return map;
+  })();
+
+  roleTreeLoadPromise = promise;
+  try {
+    const map = await promise;
+    roleTreeCache = map;
+    return map;
+  } finally {
+    roleTreeLoadPromise = null;
   }
-  roleTreeCache = map;
-  return map;
 }
 
 /**

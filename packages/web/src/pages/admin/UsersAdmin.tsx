@@ -1,11 +1,11 @@
 import { type JSX, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
-import { KeyRound, Plus, UserCog, UserX } from 'lucide-react';
+import { KeyRound, Plus, UserCog } from 'lucide-react';
 import { api } from '../../lib/api';
 import { toast } from '../../lib/store';
 import { Avatar, Badge, Modal, Select, Skeleton, Spinner, Toggle } from '../../components/ui';
-import { ReferencePicker } from '../../components/FieldRenderer';
+import {} from '../../components/FieldRenderer';
 
 interface User {
   id: string; email: string; firstName: string; lastName: string; fullName: string;

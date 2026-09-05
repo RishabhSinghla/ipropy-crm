@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { columnIndex, editableCells, unique, waitForRecords, fillRequiredFields, openRecordTab , inlineEditOn } from './helpers';
+import { columnIndex, unique, waitForRecords, fillRequiredFields, openRecordTab, inlineEditOn } from './helpers';
 
 /**
  * The journeys a salesperson actually performs. Each one is a path where a
@@ -25,7 +25,7 @@ test('creates a lead and finds it again in the list', async ({ page }) => {
   const mobile = `9${String(Date.now()).slice(-9)}`;
 
   await page.goto('/leads');
-  await page.getByTestId('list-create').click();
+  await page.getByRole('button', { name: /new lead/i }).click();
 
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
@@ -37,7 +37,7 @@ test('creates a lead and finds it again in the list', async ({ page }) => {
   // are mandatory is an admin setting, so naming them here would mean this test
   // reports "creating a lead is broken" the next time he tightens one.
   await fillRequiredFields(dialog);
-  await dialog.getByTestId('record-form-submit').click();
+  await dialog.getByRole('button', { name: /create lead/i }).click();
 
   // Quick-create deliberately stays on the list rather than opening the new
   // record — see ListView's onSaved. The refetch is what has to surface it.
