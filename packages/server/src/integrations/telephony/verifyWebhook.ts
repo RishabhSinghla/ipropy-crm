@@ -33,7 +33,7 @@ import type { Request } from 'express';
 import { getSettings } from '../../core/settings/integrations.js';
 
 /** Constant-time compare that survives a length mismatch, which throws. */
-function sameSecret(a: string, b: string): boolean {
+export function sameSecret(a: string, b: string): boolean {
   const left = Buffer.from(a);
   const right = Buffer.from(b);
   if (left.length !== right.length) return false;

@@ -4,7 +4,7 @@ import { db } from '../../db/pool.js';
 import { toInternational } from '@ipropy/shared';
 import { withNameParts } from '../../core/entity/nameParts.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
-import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
+import {getUser, requireAuth} from '../../middleware/auth.js';
 import { ForbiddenError, NotFoundError } from '../../utils/errors.js';
 import { assertCapability } from '../../core/permissions/index.js';
 import * as wa from '../../integrations/whatsapp/service.js';
@@ -285,7 +285,6 @@ commsRouter.post('/broadcast', asyncHandler(async (req, res) => {
     ratePerSecond: z.number().min(1).max(50).default(10),
   }).parse(req.body);
 
-  const scope = getScope(req);
   const { registry } = await import('../../core/metadata/registry.js');
   const meta = await registry.requireModule(input.module);
 

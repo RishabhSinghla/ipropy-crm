@@ -217,7 +217,7 @@ export async function complete(opts: CompleteOptions): Promise<CompleteResult | 
   const chain = getAiFallbackChain().filter((ai) => !isCoolingDown(ai));
   if (!chain.length) return null;
 
-  let lastError = 'No provider answered.';
+  let lastError: string;
 
   for (const [index, ai] of chain.entries()) {
     const model = opts.model ?? (opts.fast ? ai.fastModel : ai.model);

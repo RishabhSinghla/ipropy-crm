@@ -731,6 +731,10 @@ recordsRouter.delete('/:module/:id/share-links/:linkId', asyncHandler(async (req
  */
 recordsRouter.post('/properties/:id/finish', asyncHandler(async (req, res) => {
   const user = getUser(req);
+  // Finishing a unit kicks off the media handoff, which is a change to the
+  // record's world — gated like one, not left open to any signed-in user who
+  // can name a UUID.
+  if (!(await canAccessRecord(req.scope!, 'properties', req.params.id, 'edit'))) throw new ForbiddenError();
   // Record it first, always. The webhook below only lands when the CRM can
   // reach n8n, which in production it cannot — n8n collects this row instead.
   await db.query(
@@ -778,6 +782,8 @@ recordsRouter.get('/:module/:id/phone/:field', asyncHandler(async (req, res) => 
 
 /** Where this property's originals live, so the CRM can link straight to it. */
 recordsRouter.get('/properties/:id/storage', asyncHandler(async (req, res) => {
+  // The folder location is a fact about the record, read like one.
+  if (!(await canAccessRecord(req.scope!, 'properties', req.params.id, 'view'))) throw new ForbiddenError();
   const { getPropertyStorageStatus } = await import('../../core/storage/propertyFolders.js');
   res.json(await getPropertyStorageStatus(req.params.id));
 }));

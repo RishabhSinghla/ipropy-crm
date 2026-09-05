@@ -532,7 +532,7 @@ async function resolveAudience(
     : undefined;
   const records: RecordEnvelope[] = [];
   let page = 1;
-  let totalPages = 1;
+  let totalPages: number;
 
   do {
     const result = await recordService.listRecords(scope, module, {

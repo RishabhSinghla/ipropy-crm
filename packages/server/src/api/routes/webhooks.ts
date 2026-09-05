@@ -8,7 +8,6 @@
 import { Router, type Request } from 'express';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { config } from '../../config.js';
 import { getSettings } from '../../core/settings/integrations.js';
 import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
@@ -17,7 +16,7 @@ import { BadRequestError, NotFoundError, UnauthorizedError } from '../../utils/e
 import * as waProvider from '../../integrations/whatsapp/provider.js';
 import * as waService from '../../integrations/whatsapp/service.js';
 import { routeInboundCall, updateCallStatus } from '../../integrations/telephony/service.js';
-import { verifyTelephonyWebhook } from '../../integrations/telephony/verifyWebhook.js';
+import { sameSecret, verifyTelephonyWebhook } from '../../integrations/telephony/verifyWebhook.js';
 import {
   captureLead, normalizeFacebook, normalizeGoogleAds, normalizePortal, type NormalizedLead,
 } from '../../integrations/leadsources/capture.js';
@@ -239,8 +238,33 @@ webhooksRouter.post('/telephony/:provider/incoming', asyncHandler(async (req, re
   });
 }));
 
-/** Screen-pop: the softphone polls this to know who is calling. */
+/**
+ * Screen-pop: the softphone polls this to know who is calling.
+ *
+ * It answers a lead's name for a phone number, which made it an
+ * identity-lookup oracle for anyone who could reach the URL — ask for any
+ * number, learn who it belongs to, no other authentication required. The
+ * fix that closed /status, /recording and /incoming missed this one.
+ *
+ * The softphone is configured by the same admin who configured the provider,
+ * so it carries the same proof that provider's callbacks carry: the Exotel
+ * webhook secret or the Twilio auth token, as a header. Nothing configured
+ * means the route refuses — fail-closed, like every other webhook here.
+ */
 webhooksRouter.get('/telephony/lookup', asyncHandler(async (req, res) => {
+  const telephony = getSettings().telephony;
+  const expected = telephony.provider === 'twilio'
+    ? telephony.twilio.authToken
+    : telephony.exotel.webhookSecret;
+  const provided = (req.headers['x-telephony-secret'] as string | undefined)
+    ?? (typeof req.query.secret === 'string' ? req.query.secret : '');
+
+  if (!expected || !provided || !sameSecret(expected, provided)) {
+    logger.warn('rejected an unauthenticated softphone lookup');
+    res.sendStatus(401);
+    return;
+  }
+
   const number = String(req.query.number ?? '');
   if (!number) throw new BadRequestError('number is required');
   const tail = number.replace(/\D/g, '').slice(-10);

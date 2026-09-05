@@ -7,7 +7,7 @@ import crypto from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { unlink } from 'node:fs/promises';
 import os from 'node:os';
-import { extname, resolve } from 'node:path';
+import { extname, resolve, sep } from 'node:path';
 import multer from 'multer';
 import { z } from 'zod';
 import { config } from '../../config.js';
@@ -352,6 +352,11 @@ miscRouter.get('/files/:id', asyncHandler(async (req, res) => {
     if (record && !(await canAccessRecord(scope, record.module_name, file.record_id, 'view'))) {
       throw new ForbiddenError();
     }
+  } else if (file.uploaded_by !== scope.user.id && !scope.user.isAdmin) {
+    // An attachment with no record yet — a photo taken but not yet filed, a
+    // document mid-upload — belongs to whoever put it there. A guessed UUID
+    // is not a grant.
+    throw new ForbiddenError();
   }
 
   // ?size=thumb|medium|large serves a generated derivative when one exists,
@@ -370,8 +375,11 @@ miscRouter.get('/files/:id', asyncHandler(async (req, res) => {
   const storage = getStorageSettings();
   if (storage.driver === 'local') {
     // Preserve the streaming path for local storage.
-    const path = resolve(storage.localPath, storageKey);
-    if (!path.startsWith(resolve(storage.localPath))) throw new ForbiddenError();
+    const root = resolve(storage.localPath);
+    const path = resolve(root, storageKey);
+    // Separator-aware, like the public route: a bare startsWith(root) would
+    // also admit a sibling directory that shares the root as a prefix.
+    if (path === root || !path.startsWith(root + sep)) throw new ForbiddenError();
 
     applyFileSecurityHeaders(res, mimeType, file.file_name, wantsDownload);
     res.sendFile(path, (err) => {

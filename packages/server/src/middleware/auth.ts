@@ -120,12 +120,32 @@ export async function loadUser(userId: string): Promise<AuthUser | null> {
   };
 }
 
+/**
+ * The routes whose media embeds (`<img>`, `<iframe>`, `<video>`, a CSV
+ * download) cannot carry an Authorization header, so they accept the session
+ * token as `?access_token=`. Nowhere else: a token in the URL lands in proxy
+ * and access logs and referrers, so the fewer routes that read it, the
+ * smaller the surface carrying a live credential around in plaintext.
+ *
+ * Matched against the original URL, not `req.path`: this middleware runs
+ * inside mounted routers where the mount prefix is already stripped.
+ */
+const QUERY_TOKEN_ROUTES: RegExp[] = [
+  /^\/api\/files\/[^/]+/, // gallery thumbs, document previews, video streams
+  /^\/api\/records\/[^/]+\/(archive|export)/, // downloads, not data reads
+  /^\/api\/import\/jobs\/[^/]+\/result\.csv$/,
+  /^\/api\/telephony\/calls\/[^/]+\/recording/,
+];
+
 function extractToken(req: Request): string | null {
   const header = req.headers.authorization;
   if (header?.startsWith('Bearer ')) return header.slice(7);
-  // Some embeds (document preview, tracking pixels) can only pass a query token.
   const q = req.query.access_token;
-  if (typeof q === 'string' && q) return q;
+  const full = req.originalUrl.split('?')[0];
+  if (typeof q === 'string' && q && (req.method === 'GET' || req.method === 'HEAD')
+    && QUERY_TOKEN_ROUTES.some((re) => re.test(full))) {
+    return q;
+  }
   return null;
 }
 

@@ -7,7 +7,9 @@
  * actually pastes into a WhatsApp message.
  */
 import { formatArea, formatIndianPrice, type PropertyMatch, toSqFt } from '@ipropy/shared';
+import { recordScopeSql, type ScopeContext } from '../core/permissions/index.js';
 import { scoringThresholds } from '../core/settings/scoring.js';
+import { SqlParams } from '../core/query/builder.js';
 import { db } from '../db/pool.js';
 import { completeJson, isAiAvailable, saveInsight, REAL_ESTATE_SYSTEM } from './client.js';
 
@@ -111,18 +113,33 @@ export async function loadRequirement(recordId: string): Promise<Requirement | n
  * Silence is the one answer that is never useful to somebody about to make a
  * call.
  */
-async function candidateInventory(req: Requirement, limit = 60): Promise<PropertyRow[]> {
-  const withProject = await queryInventory(req, limit);
+async function candidateInventory(req: Requirement, limit = 60, scope?: ScopeContext): Promise<PropertyRow[]> {
+  const withProject = await queryInventory(req, limit, scope);
   if (withProject.length || !req.projectName) return withProject;
-  return queryInventory({ ...req, projectName: null }, limit);
+  return queryInventory({ ...req, projectName: null }, limit, scope);
 }
 
-async function queryInventory(req: Requirement, limit: number): Promise<PropertyRow[]> {
+async function queryInventory(req: Requirement, limit: number, scope?: ScopeContext): Promise<PropertyRow[]> {
   // Allow 10% headroom over the stated number — buyers routinely stretch —
   // and 20% underneath, where a smaller config of the same building still
   // interests them.
   const maxPrice = req.budget ? req.budget * 1.1 : null;
   const minPrice = req.budget ? req.budget * 0.8 : null;
+
+  // One accumulator for the whole statement: the scope fragment appends its
+  // own params, so numbering by hand past it would collide.
+  const params = new SqlParams();
+  const maxP = params.add(maxPrice);
+  const minP = params.add(minPrice);
+  const projectP = params.add(req.projectName ?? null);
+  const limitP = params.add(limit);
+  const configP = params.add(req.configurations?.length ? req.configurations : ['']);
+  const locationP = params.add(req.locations?.length ? req.locations : ['']);
+  // The permission fragment for the candidate rows, or nothing when this
+  // caller can see the whole table — a workflow or the scheduler has no user.
+  const scopeSql = scope
+    ? await (async () => { const f = await recordScopeSql(scope, 'properties', params, false); return f ? `AND ${f}` : ''; })()
+    : '';
 
   const res = await db.query<PropertyRow>(
     `SELECT p.record_id, r.label, p.name, p.configuration, p.carpet_area, p.area_unit, p.total_price,
@@ -135,9 +152,10 @@ async function queryInventory(req: Requirement, limit: number): Promise<Property
      JOIN ipy_record r ON r.id = p.record_id
      WHERE r.is_deleted = false
        AND p.status = 'Available'
-       AND ($1::numeric IS NULL OR COALESCE(p.total_price, p.base_price) <= $1)
-       AND ($2::numeric IS NULL OR COALESCE(p.total_price, p.base_price) >= $2)
-       AND ($3::text IS NULL OR to_jsonb(p)->>'project_name' ILIKE $3)
+       AND (${maxP}::numeric IS NULL OR COALESCE(p.total_price, p.base_price) <= ${maxP})
+       AND (${minP}::numeric IS NULL OR COALESCE(p.total_price, p.base_price) >= ${minP})
+       AND (${projectP}::text IS NULL OR to_jsonb(p)->>'project_name' ILIKE ${projectP})
+       ${scopeSql}
      -- Relevance before price, for the same reason the reverse match orders by
      -- it: this takes a bounded slice and scores it in memory, so the slice has
      -- to be the units most likely to suit *this* buyer. Ordering by price
@@ -145,15 +163,11 @@ async function queryInventory(req: Requirement, limit: number): Promise<Property
      -- units in budget means a perfect 3 BHK in their preferred area loses to
      -- sixty cheap 1 BHKs somewhere else. Price still breaks the tie, because
      -- among equally suitable units the cheaper one is the better pitch.
-     ORDER BY (p.configuration = ANY($5::text[])) DESC,
-              (p.locality = ANY($6::text[])) DESC,
+     ORDER BY (p.configuration = ANY(${configP}::text[])) DESC,
+              (p.locality = ANY(${locationP}::text[])) DESC,
               COALESCE(p.total_price, p.base_price) ASC
-     LIMIT $4`,
-    [
-      maxPrice, minPrice, req.projectName ?? null, limit,
-      req.configurations?.length ? req.configurations : [''],
-      req.locations?.length ? req.locations : [''],
-    ],
+     LIMIT ${limitP}`,
+    params.all(),
   );
   return res.rows;
 }
@@ -307,13 +321,21 @@ export interface MatchOptions {
   withNarrative?: boolean;
   persist?: boolean;
   recordId?: string;
+  /**
+   * Caller's permission scope. When present, candidates the caller cannot
+   * view are excluded — in SQL, not afterwards, so a private record never
+   * reaches the scorer that would have ranked it. Matching runs against the
+   * whole table by design when driven by a workflow or the scheduler, which
+   * have no user; the API routes always pass one.
+   */
+  scope?: ScopeContext;
 }
 
 export async function matchProperties(
   req: Requirement,
   opts: MatchOptions = {},
 ): Promise<PropertyMatch[]> {
-  const candidates = await candidateInventory(req);
+  const candidates = await candidateInventory(req, 60, opts.scope);
   if (!candidates.length) return [];
 
   const scored = candidates
@@ -529,7 +551,11 @@ export interface BuyerMatch {
  * Reverse match: given a property, which open leads should be pitched it?
  * Used when a unit is released or repriced.
  */
-export async function matchBuyersForProperty(propertyId: string, limit = 10): Promise<BuyerMatch[]> {
+export async function matchBuyersForProperty(
+  propertyId: string,
+  limit = 10,
+  scope?: ScopeContext,
+): Promise<BuyerMatch[]> {
   const { matchFloor } = await scoringThresholds();
   const property = await db.queryOne<PropertyRow>(
     `SELECT p.record_id, r.label, p.name, p.configuration, p.carpet_area, p.area_unit, p.total_price, p.base_price,
@@ -544,6 +570,15 @@ export async function matchBuyersForProperty(propertyId: string, limit = 10): Pr
   if (!property) return [];
 
   const price = property.total_price ?? property.base_price ?? 0;
+
+  // One accumulator: the scope fragment appends its own params after these.
+  const params = new SqlParams();
+  const priceP = params.add(price);
+  const configP = params.add(acceptableConfigurations(property.configuration));
+  const localityP = params.add(property.locality ?? '');
+  const scopeSql = scope
+    ? await (async () => { const f = await recordScopeSql(scope, 'leads', params, false); return f ? `AND ${f}` : ''; })()
+    : '';
 
   const leads = await db.query<{ record_id: string; label: string; owner_id: string | null; budget: number | null; configuration: string[] | null; preferred_locations: string[] | null; possession_timeline: string | null; purpose: string | null; status: string; lost_reason: string | null }>(
     // Lost leads are in scope now; Junk never is. A wrong number, a broker
@@ -562,9 +597,10 @@ export async function matchBuyersForProperty(propertyId: string, limit = 10): Pr
        AND l.status <> 'Junk'
        AND (
          l.status <> 'Lost'
-           AND (l.budget IS NULL OR (l.budget >= $1 * 0.85 AND l.budget <= $1 * 1.2))
+           AND (l.budget IS NULL OR (l.budget >= ${priceP} * 0.85 AND l.budget <= ${priceP} * 1.2))
          OR l.status = 'Lost' AND l.lost_reason IS NOT NULL
        )
+       ${scopeSql}
      -- Ordered by how likely this lead is to match *this unit*, not by how
      -- good a lead they are in general.
      --
@@ -581,11 +617,11 @@ export async function matchBuyersForProperty(propertyId: string, limit = 10): Pr
      -- Nothing is excluded that was not excluded before — the scorer still
      -- decides, and still forgives a location miss or an adjacent BHK count.
      -- This only makes the four hundred rows fetched the right four hundred.
-     ORDER BY (l.configuration ?| $2::text[]) DESC,
-              (l.preferred_locations ? $3) DESC,
+     ORDER BY (l.configuration ?| ${configP}::text[]) DESC,
+              (l.preferred_locations ? ${localityP}) DESC,
               l.ai_score DESC NULLS LAST
      LIMIT 400`,
-    [price, acceptableConfigurations(property.configuration), property.locality ?? ''],
+    params.all(),
   );
 
   return leads.rows

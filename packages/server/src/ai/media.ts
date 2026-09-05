@@ -17,7 +17,7 @@
  * throw. A property still gets its photos when there is no voice to put on the
  * video, and the caller decides what a missing piece means.
  */
-import { modelFor, type AiJob } from '../core/settings/aiModels.js';
+import { AI_JOBS, aiModels, modelFor, type AiJob } from '../core/settings/aiModels.js';
 import { getAiProviderSettings, getSttProviderSettings } from '../core/settings/integrations.js';
 import { db } from '../db/pool.js';
 import { logger } from '../utils/logger.js';
@@ -30,7 +30,7 @@ import { costInPaise } from './modelCatalogue.js';
  * asks. That is the difference between swapping a model in a text box and
  * swapping it in a release.
  */
-export { AI_JOBS, aiModels } from '../core/settings/aiModels.js';
+export { AI_JOBS, aiModels };
 export type MediaJob = AiJob;
 
 interface Endpoint { baseUrl: string; apiKey: string }

@@ -13,11 +13,11 @@
  *  * `mergeRecords` folds a duplicate into the record it duplicates, keeping
  *    the timeline, conversations and files on one id.
  */
-import { onCommit, transaction, type Tx } from '../../db/pool.js';
-import { BadRequestError, ConflictError } from '../../utils/errors.js';
-import { emit } from '../events/bus.js';
+import { transaction, type Tx } from '../../db/pool.js';
+import { BadRequestError } from '../../utils/errors.js';
+import {} from '../events/bus.js';
 import { registry } from '../metadata/registry.js';
-import { createRecord, getRecord, updateRecord, type ServiceContext } from './recordService.js';
+import { getRecord, updateRecord, type ServiceContext } from './recordService.js';
 
 /** Lead → Prospect → Customer → Past Customer. Only ever moves forward. */
 const STAGE_ORDER = ['Lead', 'Prospect', 'Customer', 'Past Customer'];

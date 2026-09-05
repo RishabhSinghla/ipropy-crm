@@ -7,7 +7,7 @@ import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, NotFoundError } from '../../utils/errors.js';
 import { assertCapability, assertModuleAccess, canAccessRecord, getFieldPermissions } from '../../core/permissions/index.js';
-import { aiStatus, complete, isAiAvailable } from '../../ai/client.js';
+import { aiStatus, complete } from '../../ai/client.js';
 import {
   isSttConfigured, SttError, transcribeAudio, transcribeRecording,
 } from '../../core/stt/index.js';
@@ -112,12 +112,19 @@ aiRouter.get('/match/:module/:id', modelLimiter, asyncHandler(async (req, res) =
     limit: Math.min(20, Number(req.query.limit) || 6),
     withNarrative: req.query.narrative !== 'false',
     persist: true,
+    // Matched units are properties: the caller must see the rows the scorer
+    // would rank, not just the lead the matches belong to.
+    scope,
   });
   res.json({ matches, requirement: await loadRequirement(id) });
 }));
 
 /** Ad-hoc matching from a requirement the rep types in. */
 aiRouter.post('/match', modelLimiter, asyncHandler(async (req, res) => {
+  const scope = getScope(req);
+  // An inventory search answers with unit ids, labels and prices — the same
+  // things a properties list gives, so it is gated by the same capability.
+  await assertModuleAccess(scope.user, 'properties', 'view');
   const input = z.object({
     budgetMin: z.number().nullable().optional(),
     budgetMax: z.number().nullable().optional(),
@@ -132,14 +139,16 @@ aiRouter.post('/match', modelLimiter, asyncHandler(async (req, res) => {
     withNarrative: z.boolean().default(false),
   }).parse(req.body);
 
-  res.json({ matches: await matchProperties(input, { limit: input.limit, withNarrative: input.withNarrative }) });
+  res.json({ matches: await matchProperties(input, { limit: input.limit, withNarrative: input.withNarrative, scope }) });
 }));
 
 /** Reverse match: who should we pitch this unit to? */
 aiRouter.get('/buyers-for/:propertyId', modelLimiter, asyncHandler(async (req, res) => {
   const scope = getScope(req);
   if (!(await canAccessRecord(scope, 'properties', req.params.propertyId, 'view'))) throw new NotFoundError();
-  res.json({ buyers: await matchBuyersForProperty(req.params.propertyId, Math.min(25, Number(req.query.limit) || 10)) });
+  // The buyer list is a leads list by another name — names, budgets and
+  // owners — so it is scoped like one.
+  res.json({ buyers: await matchBuyersForProperty(req.params.propertyId, Math.min(25, Number(req.query.limit) || 10), scope) });
 }));
 
 // ---------------------------------------------------------------------------
@@ -166,6 +175,7 @@ aiRouter.post('/draft', modelLimiter, asyncHandler(async (req, res) => {
     ...input,
     userId: user.id,
     visibleFields: await readableAiFields(user, input.module),
+    scope,
   });
   if (!draft) throw new BadRequestError('AI drafting is unavailable — check the API key configuration');
   res.json(draft);
@@ -343,7 +353,7 @@ aiRouter.post('/ask', modelLimiter, asyncHandler(async (req, res) => {
     threadId: z.string().uuid().optional(),
   }).parse(req.body);
 
-  let thread: AssistantThreadRow | null = null;
+  let thread: AssistantThreadRow | null;
   if (threadId) {
     // Ownership is checked before any AI or record lookup. Previously an
     // unknown thread still received an answer and merely failed to persist it.
@@ -734,6 +744,28 @@ aiRouter.get('/insights/:recordId', asyncHandler(async (req, res) => {
 }));
 
 aiRouter.post('/insights/:id/dismiss', asyncHandler(async (req, res) => {
+  const scope = getScope(req);
+  // An insight id is not a capability: check the record it belongs to, so a
+  // user who cannot see a record cannot silence its insights either.
+  const insight = await db.queryOne<{ record_id: string | null }>(
+    `SELECT record_id FROM ipy_ai_insight WHERE id = $1`,
+    [req.params.id],
+  );
+  if (!insight) throw new NotFoundError();
+
+  if (insight.record_id) {
+    const record = await db.queryOne<{ module_name: string }>(
+      `SELECT module_name FROM ipy_record WHERE id = $1`,
+      [insight.record_id],
+    );
+    if (!record || !(await canAccessRecord(scope, record.module_name, insight.record_id, 'view'))) {
+      throw new NotFoundError();
+    }
+  } else {
+    // Record-less insights are account-wide; only an admin can dismiss those.
+    await assertCapability(scope.user, 'admin.access');
+  }
+
   await db.query(`UPDATE ipy_ai_insight SET dismissed_at = now() WHERE id = $1`, [req.params.id]);
   res.json({ ok: true });
 }));

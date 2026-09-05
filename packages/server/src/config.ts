@@ -335,6 +335,12 @@ export function validateProductionConfig(): string[] {
   if (INSECURE_JWT_SECRETS.has(config.auth.jwtSecret)) {
     problems.push('JWT_SECRET is still a known development default — generate a strong secret with `npm run secrets:generate`');
   }
+  if (config.leadSources.webformPublicKey === 'ipropy-public-webform') {
+    // The generic lead webhook checks this key, and its default is committed
+    // in this repo — a tenant who does not override it has published the
+    // answer to "who may post leads".
+    problems.push('WEBFORM_PUBLIC_KEY is still the committed default — set a unique key, or the generic lead form accepts leads from anyone holding the repo');
+  }
   if (config.seed.demoData) {
     problems.push('SEED_DEMO_DATA must be false in production (it would create demo users)');
   }

@@ -4,6 +4,7 @@
  * actual project, price and conversation history rather than generic filler.
  */
 import { formatIndianPrice } from '@ipropy/shared';
+import type { ScopeContext } from '../core/permissions/index.js';
 import { db } from '../db/pool.js';
 import { complete, isAiAvailable, REAL_ESTATE_SYSTEM } from './client.js';
 import { matchForRecord } from './matching.js';
@@ -23,6 +24,8 @@ export interface DraftInput {
   userId?: string | null;
   /** Server-derived readable field names; never trust this from a browser. */
   visibleFields?: string[];
+  /** Caller's scope, so referenced inventory stays inside what they can see. */
+  scope?: ScopeContext;
 }
 
 export interface DraftResult {
@@ -169,7 +172,7 @@ export async function draftMessage(input: DraftInput): Promise<DraftResult | nul
 
   let propertyBlock = '';
   if (input.includeProperties) {
-    const matches = await matchForRecord(input.recordId, { limit: 3, persist: false });
+    const matches = await matchForRecord(input.recordId, { limit: 3, persist: false, scope: input.scope });
     if (matches.length) {
       propertyBlock = `\n## Matching inventory you may reference (do not invent others)\n${matches
         .map((m) => `- ${m.propertyLabel} — ${m.configuration ?? ''} — ${m.price ? formatIndianPrice(m.price) : ''}${

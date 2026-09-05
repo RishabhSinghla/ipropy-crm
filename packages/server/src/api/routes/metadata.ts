@@ -917,11 +917,16 @@ metadataRouter.delete('/fields/:id', asyncHandler(async (req, res) => {
 }));
 
 metadataRouter.post('/fields/validate-formula', asyncHandler(async (req, res) => {
+  // Formula validation belongs to the field editor, gated like it — it is
+  // also an oracle for which module fields exist, for anyone signed in.
+  await assertCapability(getUser(req), 'admin.fields');
   const { expression } = z.object({ expression: z.string() }).parse(req.body);
   res.json(validateFormula(expression));
 }));
 
 metadataRouter.get('/fields/:id/preview-number', asyncHandler(async (req, res) => {
+  // Same editor, same gate.
+  await assertCapability(getUser(req), 'admin.fields');
   const field = await db.queryOne<{ name: string; config: { numbering?: Record<string, unknown> }; module_id: string }>(
     `SELECT name, config, module_id FROM ipy_field WHERE id = $1`, [req.params.id],
   );

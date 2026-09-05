@@ -12,7 +12,7 @@
  * broken by a customer.
  */
 import { complete } from './client.js';
-import { embed, generateVideo, isMediaAiAvailable, music, rerank, speak, transcribe } from './media.js';
+import { embed, isMediaAiAvailable, music, rerank, speak, transcribe } from './media.js';
 import { getSttProviderSettings } from '../core/settings/integrations.js';
 import { logger } from '../utils/logger.js';
 
