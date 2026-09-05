@@ -1469,23 +1469,36 @@ export default function IntegrationsAdmin(): JSX.Element {
             />
           ) : (
             <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-              {(webforms as { id: string; name: string; embedUrl: string; submission_count: number; is_active: boolean }[])
-                .map((form) => (
-                  <li key={form.id} className="p-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">{form.name}</span>
-                      <Badge color={form.is_active ? '#22c55e' : '#94a3b8'}>
-                        {form.is_active ? 'Active' : 'Inactive'}
-                      </Badge>
-                      <span className="ml-auto text-2xs text-muted tnum">
-                        {form.submission_count} submissions
-                      </span>
-                    </div>
-                    <code className="mt-1 block break-all rounded bg-slate-50 px-2 py-1 font-mono text-2xs dark:bg-slate-800">
-                      {form.embedUrl}
-                    </code>
-                  </li>
-                ))}
+              {(webforms as { id: string; name: string; embedUrl: string; formPath: string; submission_count: number; is_active: boolean }[])
+                .map((form) => {
+                  const publicUrl = `${window.location.origin}${form.formPath}`;
+                  return (
+                    <li key={form.id} className="p-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">{form.name}</span>
+                        <Badge color={form.is_active ? '#22c55e' : '#94a3b8'}>
+                          {form.is_active ? 'Active' : 'Inactive'}
+                        </Badge>
+                        <span className="ml-auto text-2xs text-muted tnum">
+                          {form.submission_count} submissions
+                        </span>
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                        <a href={form.formPath} target="_blank" rel="noreferrer" className="btn-secondary btn-sm">
+                          <ExternalLink className="h-3.5 w-3.5" /> Open form
+                        </a>
+                        <button className="btn-ghost btn-sm" onClick={() => copy(publicUrl)}>
+                          {copied === publicUrl ? <Check className="h-3 w-3 text-positive" /> : <Copy className="h-3 w-3" />}
+                          {copied === publicUrl ? 'Copied' : 'Copy link'}
+                        </button>
+                      </div>
+                      <p className="mt-1.5 text-2xs text-muted">For your website&apos;s developer to post to:</p>
+                      <code className="mt-0.5 block break-all rounded bg-slate-50 px-2 py-1 font-mono text-2xs dark:bg-slate-800">
+                        {form.embedUrl}
+                      </code>
+                    </li>
+                  );
+                })}
             </ul>
           )}
         </div>

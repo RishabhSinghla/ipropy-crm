@@ -829,6 +829,10 @@ miscRouter.get('/webforms', asyncHandler(async (req, res) => {
   res.json(rows.rows.map((w) => ({
     ...w,
     embedUrl: `${config.apiUrl}/api/webhooks/forms/${(w as { public_key: string }).public_key}`,
+    // The page a human fills — same origin as this admin panel (the API serves
+    // the SPA in production), unlike embedUrl, which is for the website's
+    // server-side proxy and answers JSON.
+    formPath: `/f/${(w as { public_key: string }).public_key}`,
   })));
 }));
 

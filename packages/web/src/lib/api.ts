@@ -1031,6 +1031,11 @@ export const api = {
       `/api/records/${module}/${id}/neighbours${qs(params as Record<string, string>)}`,
     ),
   webforms: () => get<Record<string, unknown>[]>('/api/webforms'),
+  /** Public, no sign-in: what a visitor's form page renders from. */
+  publicForm: (publicKey: string) =>
+    get<{ id: string; name: string; fields: { name: string; label: string; type?: string; required?: boolean }[]; success_message: string | null; captcha_enabled: boolean }>(`/api/webhooks/forms/${publicKey}`),
+  submitPublicForm: (publicKey: string, payload: Record<string, unknown>) =>
+    post<{ ok: boolean; message: string; redirectUrl: string | null }>(`/api/webhooks/forms/${publicKey}`, payload),
   createWebform: (data: Record<string, unknown>) => post<{ id: string; publicKey: string; endpoint: string }>('/api/webforms', data),
   leadInbox: (status?: string) => get<Record<string, unknown>[]>(`/api/lead-inbox${qs({ status })}`),
 

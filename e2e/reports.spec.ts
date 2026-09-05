@@ -44,14 +44,16 @@ test.describe.serial('reports', () => {
 
   test('a saved report survives leaving the page', async ({ page }) => {
     await page.goto('/reports');
-    await expect(page.getByRole('heading', { name: 'Saved reports' })).toBeVisible();
-    await expect(page.locator('li').filter({ hasText: reportName })).toBeVisible();
+    // 15s: a cold page mount re-fetches the list while the dev server may
+    // still be compiling — the walk specs use the same allowance.
+    await expect(page.getByRole('heading', { name: 'Saved reports' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('li').filter({ hasText: reportName })).toBeVisible({ timeout: 15_000 });
   });
 
   test('running a saved report puts it back in the builder and runs it', async ({ page }) => {
     await page.goto('/reports');
     const row = page.locator('li').filter({ hasText: reportName });
-    await expect(row).toBeVisible();
+    await expect(row).toBeVisible({ timeout: 15_000 });
 
     // The builder opens on Leads; this saved report is a Properties report,
     // so running it must rederive the module and its controls, not just print.

@@ -20,6 +20,7 @@ const RecordEdit = lazy(() => import('./pages/RecordEdit'));
 const Inbox = lazy(() => import('./pages/Inbox'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const SharedPropertyPage = lazy(() => import('./pages/SharedProperty'));
+const PublicFormPage = lazy(() => import('./pages/PublicForm'));
 const Outreach = lazy(() => import('./pages/Outreach'));
 const CallsPage = lazy(() => import('./pages/Calls'));
 const SiteCapture = lazy(() => import('./pages/SiteCapture'));
@@ -72,6 +73,8 @@ export default function App(): JSX.Element {
             {/* Public: a buyer opening a link has no account, so this sits
                 outside RequireAuth alongside /login. */}
             <Route path="/s/:token" element={<SharedPropertyPage />} />
+            {/* Public too: the enquiry form a website visitor fills. */}
+            <Route path="/f/:publicKey" element={<PublicFormPage />} />
 
             <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
               <Route index element={<Navigate to="/dashboard" replace />} />
