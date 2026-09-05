@@ -29,8 +29,8 @@ adminRouter.use(blockApiKey);
 // ---------------------------------------------------------------------------
 
 adminRouter.get('/users', asyncHandler(async (req, res) => {
-  // Every signed-in user needs the directory for owner pickers and @mentions,
-  // so this returns a safe projection rather than requiring admin.
+  // Open to everyone, because owner pickers and @mentions need the directory.
+  // What each caller receives depends on who they are — see below.
   const includeInactive = req.query.includeInactive === 'true';
   const rows = await db.query(
     `SELECT u.id, u.email, u.first_name, u.last_name, u.avatar_url, u.phone, u.designation,
@@ -43,17 +43,41 @@ adminRouter.get('/users', asyncHandler(async (req, res) => {
      WHERE u.deleted_at IS NULL ${includeInactive ? '' : 'AND u.is_active = true'}
      ORDER BY u.first_name, u.last_name`,
   );
-  res.json(rows.rows.map((u) => ({
-    id: u.id, email: u.email, firstName: u.first_name, lastName: u.last_name,
-    fullName: `${u.first_name} ${u.last_name}`.trim(),
-    avatarUrl: u.avatar_url, phone: u.phone, designation: u.designation,
-    isAdmin: u.is_admin, isActive: u.is_active,
-    roleId: u.role_id, roleName: u.role_name,
-    profileId: u.profile_id, profileName: u.profile_name,
-    extension: u.extension, lastLoginAt: u.last_login_at,
-    acceptsLeads: u.accepts_leads, dailyLeadCap: u.daily_lead_cap,
-    createdAt: u.created_at,
-  })));
+  /*
+    Two shapes: the directory everyone needs, and the record only an admin does.
+
+    The comment above used to say this returned "a safe projection", and it
+    returned every column — so a telecaller opening any lead received every
+    colleague's email, phone number, **when they last signed in**, whether they
+    are an admin, and their lead-routing caps. None of that is needed to draw an
+    owner picker or an @mention list, which is the entire reason this is open to
+    everyone.
+
+    Only Admin → Users reads the rest, and only an admin can open it.
+  */
+  const isAdmin = getUser(req).isAdmin;
+  res.json(rows.rows.map((u) => {
+    const directory = {
+      id: u.id,
+      firstName: u.first_name,
+      lastName: u.last_name,
+      fullName: `${u.first_name} ${u.last_name}`.trim(),
+      avatarUrl: u.avatar_url,
+      designation: u.designation,
+      isActive: u.is_active,
+    };
+    if (!isAdmin) return directory;
+    return {
+      ...directory,
+      email: u.email, phone: u.phone,
+      isAdmin: u.is_admin,
+      roleId: u.role_id, roleName: u.role_name,
+      profileId: u.profile_id, profileName: u.profile_name,
+      extension: u.extension, lastLoginAt: u.last_login_at,
+      acceptsLeads: u.accepts_leads, dailyLeadCap: u.daily_lead_cap,
+      createdAt: u.created_at,
+    };
+  }));
 }));
 
 const userSchema = z.object({
