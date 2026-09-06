@@ -156,7 +156,9 @@ export default function Layout(): JSX.Element {
           onClose={() => setDrawerOpen(false)}
         />
 
-        <main id="main" tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto">
+        {/* The bottom tab bar is fixed, so without this the last 64px of every
+            page — a form's Save button included — sits behind it. */}
+        <main id="main" tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto pb-16 lg:pb-0">
           {/* Per-page net. Keyed on the path so a crashed page clears itself
               when the user navigates away — without the key the boundary stays
               latched and every subsequent route renders the error screen. The

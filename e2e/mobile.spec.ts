@@ -27,7 +27,10 @@ test.describe('phone', () => {
     // hidden-check for the wrong reason.
     const openButton = page.getByRole('button', { name: 'Open menu' });
     await expect(openButton).toBeVisible();
-    const leadsLink = page.locator('a[href="/leads"]').first();
+    // `nav-item` is the drawer's own class: three navs carry this href since
+    // the sidebar became a top bar (top tabs, drawer, bottom bar), and the
+    // top-bar tab is first in the DOM but display:none at phone size.
+    const leadsLink = page.locator('nav a.nav-item[href="/leads"]');
     await expect(leadsLink).toBeAttached();
 
     // toBeInViewport, not toBeHidden: the drawer is moved off-canvas with
@@ -264,7 +267,7 @@ test.describe('phone', () => {
     // Scan again with the drawer open: it is the one piece of UI that only
     // exists at this width, so it is the one axe has never seen.
     await page.getByRole('button', { name: 'Open menu' }).click();
-    await expect(page.locator('a[href="/leads"]').first()).toBeVisible();
+    await expect(page.locator('nav a.nav-item[href="/leads"]')).toBeVisible();
     const open = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
       .analyze();
