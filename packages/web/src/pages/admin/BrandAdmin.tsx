@@ -1,4 +1,4 @@
-import { type JSX, useEffect, useState } from 'react';
+import { type JSX, useEffect, useRef, useState } from 'react';
 /**
  * Brand line and the company's own social accounts.
  *
@@ -48,13 +48,23 @@ export default function BrandAdmin(): JSX.Element {
     queryFn: () => api.settings('brand'),
   });
 
+  // The header and sign-in screen draw from this, so the live logo shows here
+  // as soon as it is saved rather than after the settings rows reload.
+  const { data: brand } = useQuery({ queryKey: ['brand'], queryFn: () => api.brand() });
+
+  const [orgName, setOrgName] = useState('');
   const [tagline, setTagline] = useState('');
   const [links, setLinks] = useState<SocialLink[]>([]);
   const [saving, setSaving] = useState(false);
+  const [logoBusy, setLogoBusy] = useState(false);
+  const logoInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!settings) return;
     const byKey = new Map(settings.map((s) => [(s as { key: string }).key, (s as { value: unknown }).value]));
+    // org.name lives under the 'general' category, not 'brand' — the brand
+    // query is the one reliable place both halves are always present.
+    setOrgName(String(brand?.orgName ?? byKey.get('org.name') ?? ''));
     setTagline(String(byKey.get('brand.tagline') ?? ''));
     const raw = byKey.get('social.links');
     setLinks(Array.isArray(raw) ? raw as SocialLink[] : []);
@@ -62,6 +72,47 @@ export default function BrandAdmin(): JSX.Element {
 
   const update = (index: number, patch: Partial<SocialLink>): void => {
     setLinks((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
+  };
+
+  /** The logo goes to the file store, then its URL into a setting — the same
+   *  path an avatar takes, so permissions and serving are already handled. */
+  const uploadLogo = async (file: File): Promise<void> => {
+    if (!file.type.startsWith('image/')) {
+      toast.error('Choose an image', `${file.name} is not a picture.`);
+      return;
+    }
+    setLogoBusy(true);
+    try {
+      const { url } = await api.uploadFile(file);
+      await api.saveSettings({ 'org.logo_url': url });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['settings', 'brand'] }),
+        queryClient.invalidateQueries({ queryKey: ['brand'] }),
+        queryClient.invalidateQueries({ queryKey: ['public-brand'] }),
+      ]);
+      toast.success('Logo updated');
+    } catch (err) {
+      toast.error('Could not update the logo', (err as Error).message);
+    } finally {
+      setLogoBusy(false);
+    }
+  };
+
+  const removeLogo = async (): Promise<void> => {
+    setLogoBusy(true);
+    try {
+      await api.saveSettings({ 'org.logo_url': '' });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['settings', 'brand'] }),
+        queryClient.invalidateQueries({ queryKey: ['brand'] }),
+        queryClient.invalidateQueries({ queryKey: ['public-brand'] }),
+      ]);
+      toast.success('Logo removed');
+    } catch (err) {
+      toast.error('Could not remove the logo', (err as Error).message);
+    } finally {
+      setLogoBusy(false);
+    }
   };
 
   const save = async (): Promise<void> => {
@@ -76,6 +127,9 @@ export default function BrandAdmin(): JSX.Element {
     setSaving(true);
     try {
       await api.saveSettings({
+        // The org name renders in the header, the sign-in screen and every
+        // email footer; blank reverts it to the server's built-in default.
+        'org.name': orgName.trim(),
         'brand.tagline': tagline.trim(),
         'social.links': links
           .filter((l) => l.url.trim())
@@ -106,6 +160,67 @@ export default function BrandAdmin(): JSX.Element {
       </div>
 
       <div className="card space-y-5 p-5">
+        {/* Name and logo: the two things every screen shows. Admin-editable
+            for the same reason the tagline is — a rename or a new logo should
+            not be a deploy. */}
+        <div className="flex flex-wrap items-end gap-4">
+          <div className="min-w-[12rem] flex-1 space-y-1">
+            <label className="label">Organisation name</label>
+            <input
+              className="input"
+              value={orgName}
+              onChange={(e) => setOrgName(e.target.value)}
+              placeholder="iPropy"
+            />
+            <p className="text-2xs text-muted">
+              Shown in the header, on the sign-in screen and in message templates.
+            </p>
+          </div>
+
+          <div className="space-y-1">
+            <label className="label">Logo</label>
+            <div className="flex items-center gap-3">
+              {brand?.logoUrl ? (
+                <img src={brand.logoUrl} alt="Current logo" className="h-12 w-12 rounded-lg bg-slate-50 object-contain dark:bg-slate-800" />
+              ) : (
+                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-slate-50 text-2xs text-muted dark:bg-slate-800">
+                  None
+                </div>
+              )}
+              <div className="flex flex-col gap-1">
+                <button
+                  className="btn-secondary btn-sm"
+                  disabled={logoBusy}
+                  onClick={() => logoInput.current?.click()}
+                >
+                  {logoBusy ? <Spinner className="h-3.5 w-3.5" /> : null} Upload logo
+                </button>
+                {brand?.logoUrl && (
+                  <button
+                    className="text-left text-2xs text-negative hover:underline"
+                    disabled={logoBusy}
+                    onClick={() => void removeLogo()}
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+              <input
+                ref={logoInput}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void uploadLogo(f);
+                  // Reset so picking the same file twice still fires a change.
+                  e.target.value = '';
+                }}
+              />
+            </div>
+          </div>
+        </div>
+
         <div>
           <label className="label">Brand line</label>
           <input

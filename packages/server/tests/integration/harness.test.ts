@@ -18,7 +18,7 @@ describe('integration harness', () => {
   it('applied every migration', async () => {
     const { rows } = await db.query<{ name: string }>('SELECT name FROM ipy_migration ORDER BY name');
     expect(rows.length).toBeGreaterThanOrEqual(10);
-    expect(rows.at(-1)?.name).toMatch(/^0\d\d_.*\.sql$/);
+    expect(rows.at(-1)?.name).toMatch(/^\d{3,}_.*\.sql$/);
   });
 
   it('seeded the metadata the engine needs', async () => {

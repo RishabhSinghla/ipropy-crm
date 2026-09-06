@@ -128,7 +128,7 @@ async function writeBack(ctx: TaskContext, fieldName: string | undefined, value:
     avatarUrl: null, phone: null, isAdmin: true, isActive: true,
     roleId: null, roleName: null, profileId: null, profileName: null, groupIds: [],
     timezone: 'Asia/Kolkata', locale: 'en-IN', currency: 'INR',
-    theme: 'system' as const, defaultDashboardId: null, extension: null, lastLoginAt: null,
+    theme: 'system' as const, defaultDashboardId: null, lastLoginAt: null,
   };
 
   await updateRecord(

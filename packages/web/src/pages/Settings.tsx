@@ -50,7 +50,6 @@ function ProfileTab(): JSX.Element {
     firstName: user?.firstName ?? '',
     lastName: user?.lastName ?? '',
     phone: user?.phone ?? '',
-    extension: user?.extension ?? '',
   });
   const [saving, setSaving] = useState(false);
 
@@ -94,10 +93,6 @@ function ProfileTab(): JSX.Element {
           <label className="label">Phone</label>
           <input className="input tnum" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
           <p className="mt-1 text-2xs text-muted">Click-to-call rings this number first.</p>
-        </div>
-        <div>
-          <label className="label">Extension</label>
-          <input className="input tnum" value={form.extension} onChange={(e) => setForm({ ...form, extension: e.target.value })} />
         </div>
       </div>
 

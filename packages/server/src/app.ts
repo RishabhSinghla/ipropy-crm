@@ -283,6 +283,8 @@ export function createApp(): Express {
   app.use('/api/reports', reportsRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api/comms', commsRouter);
+  // Only the per-record WhatsApp hand-off now — the queue page, broadcasts and
+  // sequences are gone, and each remaining route exists for the lead's own page.
   app.use('/api/outreach', outreachRouter);
   app.use('/api/telephony', telephonyRouter);
   app.use('/api/ai', aiRouter);

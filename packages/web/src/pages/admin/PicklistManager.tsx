@@ -26,6 +26,13 @@ import { Badge, ConfirmDialog, Modal, Skeleton, Spinner, Toggle } from '../../co
  *   * **Deleting asks first.** An option nothing uses is deleted outright. One
  *     that records still hold cannot vanish silently, so the dialog says how
  *     many and makes the admin choose what those records should say instead.
+ *
+ * Each option is two lines, not one. The old single row crammed a tick box,
+ * drag handle, arrows, the name, ten swatches, a preview chip, a star, a
+ * toggle and a bin onto one wrapping line — everything readable only by
+ * hunting, and the name box squeezed to a letter on narrow screens. Line one
+ * is the decision (name, active, default, delete); line two is the dressing
+ * (colour, preview, and the rare stored-value edit).
  */
 
 interface Option {
@@ -241,6 +248,9 @@ export default function PicklistManager(): JSX.Element {
         </div>
 
         <div className="card overflow-hidden">
+          {/* The controls row is one line that holds: what this set is, the
+              rare-edit toggle, add, remove-ticked and save. Wrapping here is
+              what made the panel feel broken before. */}
           <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
             <ListTree className="h-4 w-4 shrink-0 text-slate-400" />
             <p className="text-sm font-medium">{current?.label ?? selected}</p>
@@ -254,7 +264,7 @@ export default function PicklistManager(): JSX.Element {
             >
               <Pencil className="h-3.5 w-3.5" />
             </button>
-            <div className="ml-auto flex items-center gap-2">
+            <div className="ml-auto flex shrink-0 items-center gap-2">
               <label className="flex cursor-pointer items-center gap-1.5 text-2xs text-muted">
                 <input
                   type="checkbox"
@@ -335,146 +345,100 @@ export default function PicklistManager(): JSX.Element {
               <div
                 key={option.previousValue ?? `new-${index}`}
                 className={cn(
-                  'flex flex-wrap items-center gap-2 p-2.5 transition-colors',
+                  'space-y-1.5 p-2.5 transition-colors',
                   dragIndex === index && 'bg-brand-50/60 dark:bg-brand-950/40',
                   !option.isActive && 'opacity-60',
                 )}
                 onDragOver={(e) => { e.preventDefault(); }}
                 onDrop={(e) => { e.preventDefault(); if (dragIndex !== null) moveTo(dragIndex, index); setDragIndex(null); }}
               >
-                {/* Only a saved option can be removed; an unsaved new row is
-                    removed by clearing what you typed. */}
-                {option.previousValue ? (
-                  <input
-                    type="checkbox"
-                    className="h-3.5 w-3.5 shrink-0"
-                    checked={picked.has(option.previousValue)}
-                    onChange={(e) => setPicked((prev) => {
-                      const next = new Set(prev);
-                      if (e.target.checked) next.add(option.previousValue!);
-                      else next.delete(option.previousValue!);
-                      return next;
-                    })}
-                    aria-label={`Select ${option.label || option.value}`}
-                  />
-                ) : <span className="w-3.5 shrink-0" />}
-
-                <div
-                  draggable
-                  onDragStart={() => setDragIndex(index)}
-                  onDragEnd={() => setDragIndex(null)}
-                  className="shrink-0 cursor-grab text-slate-300 hover:text-slate-500 active:cursor-grabbing"
-                  title="Drag to reorder"
-                >
-                  <GripVertical className="h-3.5 w-3.5" />
-                </div>
-
-                {/* Arrows as well as drag: reordering has to work on a phone,
-                    and HTML5 drag events do not fire from touch. */}
-                <div className="flex shrink-0 flex-col">
-                  <button
-                    onClick={() => moveTo(index, index - 1)}
-                    disabled={index === 0}
-                    className="btn-ghost p-0.5 disabled:opacity-25"
-                    aria-label={`Move ${option.label || 'option'} up`}
-                  >
-                    <ChevronUp className="h-3 w-3" />
-                  </button>
-                  <button
-                    onClick={() => moveTo(index, index + 1)}
-                    disabled={index === options.length - 1}
-                    className="btn-ghost p-0.5 disabled:opacity-25"
-                    aria-label={`Move ${option.label || 'option'} down`}
-                  >
-                    <ChevronDown className="h-3 w-3" />
-                  </button>
-                </div>
-
-                {/*
-                  One box, not two.
-
-                  There used to be a second "stored value" field beside this
-                  one, because renaming what is *written on the record* is a
-                  different act from renaming what is *shown*. That distinction
-                  is real but it is not the admin's problem on the way past: on
-                  a new option the stored value follows the name, and on an
-                  existing one it stays put, which is the safe answer in both
-                  cases. The rare edit is behind "Show stored values" above.
-                */}
-                <div className="relative min-w-[9rem] flex-1">
-                  <input
-                    className="input w-full py-1.5 text-sm"
-                    placeholder="Option name"
-                    aria-label="Option name"
-                    value={option.label}
-                    onChange={(e) => {
-                      const label = e.target.value;
-                      // A new row's stored value follows its name. An existing
-                      // row's never does — changing that rewrites every record
-                      // holding it, and renaming a label should stay free.
-                      const linked = !option.previousValue;
-                      update(index, { label, ...(linked ? { value: label } : {}) });
-                    }}
-                  />
-                  {option.usedInCode && (
-                    <span
-                      className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300"
-                      title={`The app looks for this option by name — it drives ${option.usedInCode}. Renaming what is stored will stop that working, with no error anywhere.`}
-                    >
-                      <AlertTriangle className="h-2.5 w-2.5" />
-                    </span>
-                  )}
-                </div>
-
-                {showStored && (
-                  <input
-                    className={cn(
-                      'input w-40 py-1.5 font-mono text-xs',
-                      option.usedInCode && option.previousValue !== option.value
-                        && 'border-amber-400 focus:border-amber-500 focus:ring-amber-500',
-                    )}
-                    placeholder="Stored value"
-                    aria-label="Stored value"
-                    value={option.value}
-                    onChange={(e) => update(index, { value: e.target.value })}
-                    title={option.previousValue && option.previousValue !== option.value
-                      ? `Saving moves every record from "${option.previousValue}" to "${option.value}"`
-                      : 'What gets written on the record'}
-                  />
-                )}
-
-                {/* `shrink-0` matters: ten swatches plus a preview chip were
-                    squeezing the name box down to a single letter — "Attempted
-                    Contact" rendered as "A". */}
-                <div className="flex shrink-0 items-center gap-1">
-                  {SWATCHES.map((c) => (
-                    <button
-                      key={c}
-                      onClick={() => update(index, { color: c })}
-                      className={cn(
-                        'h-4 w-4 rounded-full transition-transform hover:scale-125',
-                        option.color === c && 'ring-2 ring-slate-400 ring-offset-1 dark:ring-offset-slate-900',
-                      )}
-                      style={{ backgroundColor: c }}
-                      title={c}
-                      aria-label={`Colour ${c}`}
+                {/* Line one — the decision: select, reorder, name, active,
+                    default, delete. Nothing else competes for this width. */}
+                <div className="flex items-center gap-2">
+                  {/* Only a saved option can be removed; an unsaved new row is
+                      removed by clearing what you typed. */}
+                  {option.previousValue ? (
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5 shrink-0"
+                      checked={picked.has(option.previousValue)}
+                      onChange={(e) => setPicked((prev) => {
+                        const next = new Set(prev);
+                        if (e.target.checked) next.add(option.previousValue!);
+                        else next.delete(option.previousValue!);
+                        return next;
+                      })}
+                      aria-label={`Select ${option.label || option.value}`}
                     />
-                  ))}
-                  <input
-                    type="color"
-                    value={option.color ?? '#64748b'}
-                    onChange={(e) => update(index, { color: e.target.value })}
-                    className="h-4 w-4 cursor-pointer rounded-full border-0 bg-transparent p-0"
-                    title="Any other colour"
-                    aria-label="Pick any colour"
-                  />
-                </div>
+                  ) : <span className="w-3.5 shrink-0" />}
 
-                <Badge color={option.color} className="ml-1 shrink-0">
-                  {option.label || 'Preview'}
-                </Badge>
+                  <div
+                    draggable
+                    onDragStart={() => setDragIndex(index)}
+                    onDragEnd={() => setDragIndex(null)}
+                    className="shrink-0 cursor-grab text-slate-300 hover:text-slate-500 active:cursor-grabbing"
+                    title="Drag to reorder"
+                  >
+                    <GripVertical className="h-3.5 w-3.5" />
+                  </div>
 
-                <div className="ml-auto flex shrink-0 items-center gap-3">
+                  {/* Arrows as well as drag: reordering has to work on a phone,
+                      and HTML5 drag events do not fire from touch. */}
+                  <div className="flex shrink-0 flex-col">
+                    <button
+                      onClick={() => moveTo(index, index - 1)}
+                      disabled={index === 0}
+                      className="btn-ghost p-0.5 disabled:opacity-25"
+                      aria-label={`Move ${option.label || 'option'} up`}
+                    >
+                      <ChevronUp className="h-3 w-3" />
+                    </button>
+                    <button
+                      onClick={() => moveTo(index, index + 1)}
+                      disabled={index === options.length - 1}
+                      className="btn-ghost p-0.5 disabled:opacity-25"
+                      aria-label={`Move ${option.label || 'option'} down`}
+                    >
+                      <ChevronDown className="h-3 w-3" />
+                    </button>
+                  </div>
+
+                  {/*
+                    One box, not two.
+
+                    There used to be a second "stored value" field beside this
+                    one, because renaming what is *written on the record* is a
+                    different act from renaming what is *shown*. That distinction
+                    is real but it is not the admin's problem on the way past: on
+                    a new option the stored value follows the name, and on an
+                    existing one it stays put, which is the safe answer in both
+                    cases. The rare edit is behind "Show stored values" above.
+                  */}
+                  <div className="relative min-w-[9rem] flex-1">
+                    <input
+                      className="input w-full py-1.5 text-sm"
+                      placeholder="Option name"
+                      aria-label="Option name"
+                      value={option.label}
+                      onChange={(e) => {
+                        const label = e.target.value;
+                        // A new row's stored value follows its name. An existing
+                        // row's never does — changing that rewrites every record
+                        // holding it, and renaming a label should stay free.
+                        const linked = !option.previousValue;
+                        update(index, { label, ...(linked ? { value: label } : {}) });
+                      }}
+                    />
+                    {option.usedInCode && (
+                      <span
+                        className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300"
+                        title={`The app looks for this option by name — it drives ${option.usedInCode}. Renaming what is stored will stop that working, with no error anywhere.`}
+                      >
+                        <AlertTriangle className="h-2.5 w-2.5" />
+                      </span>
+                    )}
+                  </div>
+
                   <button
                     onClick={() => {
                       setOptions((prev) => prev.map((o, i) => ({
@@ -483,7 +447,7 @@ export default function PicklistManager(): JSX.Element {
                       setDirty(true);
                     }}
                     className={cn(
-                      'transition-colors',
+                      'shrink-0 transition-colors',
                       option.isDefault ? 'text-amber-500' : 'text-slate-300 hover:text-amber-500',
                     )}
                     title={option.isDefault ? 'This is the default for new records' : 'Make this the default'}
@@ -510,12 +474,60 @@ export default function PicklistManager(): JSX.Element {
                       }
                       setDeleting(option);
                     }}
-                    className="text-slate-300 hover:text-red-500"
+                    className="shrink-0 text-slate-300 hover:text-red-500"
                     title="Delete this option"
                     aria-label={`Delete ${option.label || 'option'}`}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
+                </div>
+
+                {/* Line two — the dressing: colour, preview, and the rare
+                    stored-value edit. Quietly indented under the name it
+                    belongs to, so a long list scans as name lines. */}
+                <div className="flex flex-wrap items-center gap-2 pl-14">
+                  {showStored && (
+                    <input
+                      className={cn(
+                        'input w-40 py-1 font-mono text-xs',
+                        option.usedInCode && option.previousValue !== option.value
+                          && 'border-amber-400 focus:border-amber-500 focus:ring-amber-500',
+                      )}
+                      placeholder="Stored value"
+                      aria-label="Stored value"
+                      value={option.value}
+                      onChange={(e) => update(index, { value: e.target.value })}
+                      title={option.previousValue && option.previousValue !== option.value
+                        ? `Saving moves every record from "${option.previousValue}" to "${option.value}"`
+                        : 'What gets written on the record'}
+                    />
+                  )}
+                  <div className="flex items-center gap-1">
+                    {SWATCHES.map((c) => (
+                      <button
+                        key={c}
+                        onClick={() => update(index, { color: c })}
+                        className={cn(
+                          'h-4 w-4 rounded-full transition-transform hover:scale-125',
+                          option.color === c && 'ring-2 ring-slate-400 ring-offset-1 dark:ring-offset-slate-900',
+                        )}
+                        style={{ backgroundColor: c }}
+                        title={c}
+                        aria-label={`Colour ${c}`}
+                      />
+                    ))}
+                    <input
+                      type="color"
+                      value={option.color ?? '#64748b'}
+                      onChange={(e) => update(index, { color: e.target.value })}
+                      className="h-4 w-4 cursor-pointer rounded-full border-0 bg-transparent p-0"
+                      title="Any other colour"
+                      aria-label="Pick any colour"
+                    />
+                  </div>
+                  <Badge color={option.color}>
+                    {option.label || 'Preview'}
+                  </Badge>
                 </div>
               </div>
             ))}

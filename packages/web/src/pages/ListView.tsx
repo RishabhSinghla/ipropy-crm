@@ -1,10 +1,10 @@
 import { type JSX, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { type FieldMeta, type FilterGroup, formatIndianPrice, formatPhoneWithCode, type ListQuery, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
+import { type FieldMeta, type FilterGroup, formatIndianPrice, formatPhoneWithCode, toInternational, type ListQuery, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, CloudOff, Columns3, Compass, Download, Filter,
-  LayoutGrid, List, MailCheck, Plus, RefreshCw, Ruler, Save, Search, Settings2, Star, Trash2, Upload, Users, X,
+  LayoutGrid, List, MailCheck, MessageCircle, Phone, Plus, RefreshCw, Ruler, Save, Search, Settings2, Star, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { ApiError, api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
@@ -20,7 +20,7 @@ import {
 import { ModuleIcon } from '../components/Layout';
 import RecordForm from '../components/RecordForm';
 import RecordPeek from '../components/RecordPeek';
-import { usePressPreview } from '../lib/pressPreview';
+import { useSwipeActions, type SwipeSide } from '../lib/swipeActions';
 import { MAX_WIDTH, MIN_WIDTH, SELECT_COL_WIDTH, useColumnWidths } from '../lib/columnWidths';
 import { useOfflineList, useOfflineMeta } from '../lib/useOfflineList';
 
@@ -661,7 +661,6 @@ export default function ListView(): JSX.Element {
                   setSelected(next);
                 }}
                 onOpen={() => openRecord(`/${moduleName}/${row.id}?return=${encodeURIComponent(returnTo)}`)}
-                onPeek={() => setPeekId(row.id)}
                 onSaved={() => invalidateRecordQueries(queryClient, moduleName, row.id)}
               />
             ))}
@@ -1015,7 +1014,7 @@ function defaultColumns(meta: {
  * stacked row instead of a narrow column.
  */
 function MobileRecordCard({
-  row, module, columns, fieldMap, selected, isNew, isStarred, onToggleSelect, onOpen, onPeek, onSaved,
+  row, module, columns, fieldMap, selected, isNew, isStarred, onToggleSelect, onOpen, onSaved,
 }: {
   row: RecordEnvelope;
   module: ModuleMeta & { permissions: { edit: boolean }; picklistDependencies: { sourceField: string; targetField: string; mapping: Record<string, string[]> }[] };
@@ -1028,16 +1027,182 @@ function MobileRecordCard({
   isStarred: boolean;
   onToggleSelect: (checked: boolean) => void;
   onOpen: () => void;
-  /** Press and hold — show the card without leaving the list. */
-  onPeek: () => void;
   onSaved: () => void;
 }): JSX.Element {
-  // Fields that make up row.label are already the heading — repeating them as
-  // rows ("First Name: Test", "Last Name: User" under a "Test User" title) is
-  // pure noise and doubles the card's height. The record number is likewise
-  // already under the title; it's matched by uitype rather than by name
-  // because each module names its own (lead_number, deal_number, …) and the
-  // engine must not care which module it is looking at.
+  /*
+    WhatsApp-shaped, because that is the list a rep already reads all day:
+    name, number under it, the type at the right edge, status and follow-up
+    below. The owner asked for exactly this and for the long-press peek to go —
+    swipe right calls, swipe left opens WhatsApp, Gmail-style, with the action
+    armed only once the card has travelled far enough to be deliberate.
+
+    The fixed layout is for the contact module (leads); anything else keeps the
+    generic card, because a property has no phone to call.
+  */
+  const isContact = module.name === 'leads';
+  const phone = toInternational(
+    String(row.values.country_code ?? 'India'),
+    String(row.values.mobile ?? ''),
+  );
+
+  const swipe = useSwipeActions((side: SwipeSide) => {
+    if (!isContact || !phone) return;
+    if (side === 'right') {
+      window.location.href = `tel:${phone.replace(/[^\d+]/g, '')}`;
+    } else {
+      window.open(`https://wa.me/${phone.replace(/[^\d+]/g, '')}`, '_blank', 'noopener');
+    }
+  }, isContact && Boolean(phone));
+
+  if (!isContact) {
+    return (
+      <div
+        data-record-card={row.id}
+        className={cn(
+          'px-4 py-3 [-webkit-touch-callout:none]',
+          isStarred
+            ? 'bg-amber-50/80 dark:bg-amber-950/25'
+            : 'bg-white dark:bg-slate-900',
+        )}
+      >
+        <div className="flex items-start gap-3">
+          <input
+            type="checkbox"
+            className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300"
+            checked={selected}
+            onChange={(e) => onToggleSelect(e.target.checked)}
+            aria-label="Select record"
+          />
+          <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
+            <p className={cn('truncate text-slate-900 dark:text-slate-100', isNew ? 'font-bold' : 'font-medium')}>
+              {isStarred && <Star className="mr-1.5 inline-block h-3.5 w-3.5 fill-amber-400 text-amber-500 align-middle" aria-label="Favourite" />}
+              {isNew && (
+                <span
+                  className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-brand-600 align-middle dark:bg-brand-400"
+                  title="New — you haven’t opened this yet"
+                />
+              )}
+              {row.label}
+            </p>
+            {row.recordNumber && (
+              <p className="mt-0.5 font-mono text-2xs text-muted">{row.recordNumber}</p>
+            )}
+          </button>
+          <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-300" />
+        </div>
+
+        <ContactDetails
+          row={row}
+          module={module}
+          columns={columns}
+          fieldMap={fieldMap}
+          onSaved={onSaved}
+        />
+      </div>
+    );
+  }
+
+  const statusValue = String(row.values.status ?? '');
+  const statusDisplay = row.display?.status ?? statusValue;
+
+  return (
+    /*
+      The swipe surface is the outer row: the coloured action sits behind the
+      card, the card slides over it with the finger, and touch scrolling still
+      works because the hook locks to whichever axis moved first.
+    */
+    <div
+      data-record-card={row.id}
+      className="relative overflow-hidden [-webkit-touch-callout:none]"
+    >
+      {/* The two action backgrounds. Only the armed one is fully opaque; the
+          other fades with travel so the reveal reads as "where am I going"
+          rather than a flash of colour. */}
+      <div
+        aria-hidden
+        className={cn(
+          'absolute inset-0 flex items-center justify-start bg-emerald-600 pl-6 text-white transition-opacity',
+          swipe.state.armed === 'left' ? 'opacity-100' : 'opacity-0',
+        )}
+      >
+        <MessageCircle className="h-5 w-5" />
+      </div>
+      <div
+        aria-hidden
+        className={cn(
+          'absolute inset-0 flex items-center justify-end bg-blue-600 pr-6 text-white transition-opacity',
+          swipe.state.armed === 'right' ? 'opacity-100' : 'opacity-0',
+        )}
+      >
+        <Phone className="h-5 w-5" />
+      </div>
+
+      <div
+        {...swipe.handlers}
+        style={{ transform: `translateX(${swipe.state.dx}px)` }}
+        className={cn(
+          'relative bg-white py-3 pl-4 pr-3 transition-transform dark:bg-slate-900',
+          swipe.state.dx === 0 && 'transition-transform',
+          isStarred && 'bg-amber-50/80 dark:bg-amber-950/25',
+        )}
+      >
+        <div className="flex items-start gap-3">
+          <input
+            type="checkbox"
+            className="mt-1.5 h-4 w-4 shrink-0 rounded border-slate-300"
+            checked={selected}
+            onChange={(e) => onToggleSelect(e.target.checked)}
+            aria-label="Select record"
+          />
+          <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
+            <p className={cn('truncate text-slate-900 dark:text-slate-100', isNew ? 'font-bold' : 'font-medium')}>
+              {isStarred && <Star className="mr-1.5 inline-block h-3.5 w-3.5 fill-amber-400 text-amber-500 align-middle" aria-label="Favourite" />}
+              {isNew && (
+                <span
+                  className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-brand-600 align-middle dark:bg-brand-400"
+                  title="New — you haven’t opened this yet"
+                />
+              )}
+              {row.label}
+            </p>
+            {phone && (
+              <p className="mt-0.5 tnum text-xs text-muted">{phone}</p>
+            )}
+          </button>
+          {/* Contact type at the right edge — the one thing the owner asked
+              to see without opening the record. */}
+          {row.display?.contact_type && (
+            <Badge className="mt-0.5 shrink-0" color="#64748b">{String(row.display.contact_type)}</Badge>
+          )}
+        </div>
+
+        <div className="mt-1.5 flex items-center gap-2 pl-7 text-xs">
+          {statusDisplay && (
+            <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-2xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+              {String(statusDisplay)}
+            </span>
+          )}
+          {row.values.next_followup_at ? (
+            <span className="truncate text-muted">
+              Follow-up {new Date(String(row.values.next_followup_at)).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+            </span>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** The generic detail rows for non-contact modules — the previous card body. */
+function ContactDetails({
+  row, module, columns, fieldMap, onSaved,
+}: {
+  row: RecordEnvelope;
+  module: ModuleMeta & { permissions: { edit: boolean }; picklistDependencies: { sourceField: string; targetField: string; mapping: Record<string, string[]> }[] };
+  columns: string[];
+  fieldMap: Map<string, FieldMeta>;
+  onSaved: () => void;
+}): JSX.Element {
   const titleFields = new Set(module.labelFields ?? []);
   const detailCols = columns.filter((c) => {
     if (titleFields.has(c)) return false;
@@ -1047,95 +1212,44 @@ function MobileRecordCard({
     return v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && !v.length);
   });
 
-  // Bound to the card, not the title button: the whole row is the target a
-  // thumb actually lands on, and holding over a field should peek too rather
-  // than doing nothing.
-  const press = usePressPreview(onPeek);
+  if (!detailCols.length) return <></>;
 
   return (
-    <div
-      {...press}
-      /*
-        What the browser tests wait for on a phone.
-
-        The desktop list is a table and the tests wait for `tbody tr`. On a phone
-        those rows exist but are hidden, so the shared wait falls through to this
-        attribute — and it was referenced by the test helper for three days
-        before anybody added it here. Every mobile test failed the whole time,
-        which nobody saw because the full suite was never run.
-      */
-      data-record-card={row.id}
-      className={cn(
-        'px-4 py-3 [-webkit-touch-callout:none]',
-        isStarred
-          ? 'bg-amber-50/80 dark:bg-amber-950/25'
-          : 'bg-white dark:bg-slate-900',
-      )}
-    >
-      <div className="flex items-start gap-3">
-        <input
-          type="checkbox"
-          className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300"
-          checked={selected}
-          onChange={(e) => onToggleSelect(e.target.checked)}
-          aria-label="Select record"
-        />
-        <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
-          <p className={cn('truncate text-slate-900 dark:text-slate-100', isNew ? 'font-bold' : 'font-medium')}>
-            {isStarred && <Star className="mr-1.5 inline-block h-3.5 w-3.5 fill-amber-400 text-amber-500 align-middle" aria-label="Favourite" />}
-            {isNew && (
-              <span
-                className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-brand-600 align-middle dark:bg-brand-400"
-                title="New — you haven’t opened this yet"
-              />
-            )}
-            {row.label}
-          </p>
-          {row.recordNumber && (
-            <p className="mt-0.5 font-mono text-2xs text-muted">{row.recordNumber}</p>
-          )}
-        </button>
-        <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-300" />
-      </div>
-
-      {detailCols.length > 0 && (
-        <dl className="mt-2.5 space-y-1.5 pl-7">
-          {detailCols.map((col) => {
-            const field = fieldMap.get(col)!;
-            return (
-              <div key={col} className="flex items-start gap-2 text-xs">
-                <dt className="w-28 shrink-0 truncate text-muted">{field.label}</dt>
-                <dd className="min-w-0 flex-1">
-                  {module.permissions.edit && isInlineEditable(field, 'list') ? (
-                    <EditableField
-                            surface="list"
-                      module={module.name}
-                      recordId={row.id}
-                      field={field}
-                      value={row.values[col]}
-                      display={row.display?.[col]}
-                      compact
-                      siblings={row.values}
-                      restrictTo={restrictionForField(module.picklistDependencies, row.values, field.name)}
-                      linkTo={field.uitype === 'reference' ? row.display?.[`${col}__module`] : undefined}
-                      onSaved={onSaved}
-                    />
-                  ) : (
-                    <FieldValue
-                      field={field}
-                      value={row.values[col]}
-                      display={row.display?.[col]}
-                      compact
-                      linkTo={field.uitype === 'reference' ? row.display?.[`${col}__module`] : undefined}
-                    />
-                  )}
-                </dd>
-              </div>
-            );
-          })}
-        </dl>
-      )}
-    </div>
+    <dl className="mt-2.5 space-y-1.5 pl-7">
+      {detailCols.map((col) => {
+        const field = fieldMap.get(col)!;
+        return (
+          <div key={col} className="flex items-start gap-2 text-xs">
+            <dt className="w-28 shrink-0 truncate text-muted">{field.label}</dt>
+            <dd className="min-w-0 flex-1">
+              {module.permissions.edit && isInlineEditable(field, 'list') ? (
+                <EditableField
+                        surface="list"
+                  module={module.name}
+                  recordId={row.id}
+                  field={field}
+                  value={row.values[col]}
+                  display={row.display?.[col]}
+                  compact
+                  siblings={row.values}
+                  restrictTo={restrictionForField(module.picklistDependencies, row.values, field.name)}
+                  linkTo={field.uitype === 'reference' ? row.display?.[`${col}__module`] : undefined}
+                  onSaved={onSaved}
+                />
+              ) : (
+                <FieldValue
+                  field={field}
+                  value={row.values[col]}
+                  display={row.display?.[col]}
+                  compact
+                  linkTo={field.uitype === 'reference' ? row.display?.[`${col}__module`] : undefined}
+                />
+              )}
+            </dd>
+          </div>
+        );
+      })}
+    </dl>
   );
 }
 

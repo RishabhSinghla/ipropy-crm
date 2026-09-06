@@ -81,7 +81,6 @@ describe('creating a user', () => {
         lastName: 'House',
         phone: '9811111111',
         designation: 'Sales',
-        extension: '101',
         acceptsLeads: true,
         dailyLeadCap: 5,
         isAdmin: false,
@@ -90,11 +89,10 @@ describe('creating a user', () => {
     expect(res.status, JSON.stringify(res.body)).toBe(201);
     made.push(res.body.id as string);
 
-    const row = await db.queryOne<{ daily_lead_cap: number; extension: string }>(
-      `SELECT daily_lead_cap, extension FROM ipy_user WHERE id = $1`, [res.body.id],
+    const row = await db.queryOne<{ daily_lead_cap: number }>(
+      `SELECT daily_lead_cap FROM ipy_user WHERE id = $1`, [res.body.id],
     );
     expect(row!.daily_lead_cap).toBe(5);
-    expect(row!.extension).toBe('101');
   });
 
   it('refuses a duplicate email rather than creating a second account', async () => {

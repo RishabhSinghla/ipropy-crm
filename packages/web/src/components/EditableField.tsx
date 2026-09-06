@@ -361,7 +361,7 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
           {kind === 'picklist' ? (
             <PicklistPopover field={field} value={draft as string | null} restrictTo={restrictTo} onPick={pickAndClose} />
           ) : kind === 'owner' ? (
-            <OwnerPopover value={draft as string | null} allowGroups={field.uitype === 'owner'} mandatory={field.isMandatory} onPick={pickAndClose} />
+            <OwnerPopover value={draft as string | null} mandatory={field.isMandatory} onPick={pickAndClose} />
           ) : kind === 'form' ? (
             <div className="w-80 animate-slide-up space-y-2 rounded-xl border border-slate-200 bg-white p-3 shadow-float dark:border-slate-700 dark:bg-slate-900">
               <FieldInput field={field} value={draft} onChange={setDraft} autoFocus error={mandatoryError} />
@@ -709,25 +709,21 @@ function PicklistPopover({
 // ---------------------------------------------------------------------------
 
 function OwnerPopover({
-  value, allowGroups, mandatory, onPick,
+  value, mandatory, onPick,
 }: {
   value: string | null;
-  allowGroups?: boolean;
   mandatory?: boolean;
   onPick: (v: string | null) => void;
 }): JSX.Element {
   const [search, setSearch] = useState('');
   const [users, setUsers] = useState<{ id: string; fullName: string; designation?: string }[]>([]);
-  const [groups, setGroups] = useState<{ id: string; name: string }[]>([]);
 
   useEffect(() => {
     void api.users().then((rows) => setUsers(rows as never)).catch(() => undefined);
-    if (allowGroups) void api.groups().then((rows) => setGroups(rows as never)).catch(() => undefined);
-  }, [allowGroups]);
+  }, []);
 
   const q = search.trim().toLowerCase();
   const filteredUsers = users.filter((u) => !q || u.fullName.toLowerCase().includes(q));
-  const filteredGroups = groups.filter((g) => !q || g.name.toLowerCase().includes(q));
 
   return (
     <div className="w-64 animate-slide-up overflow-hidden rounded-xl border border-slate-200 bg-white shadow-float dark:border-slate-700 dark:bg-slate-900">
@@ -750,24 +746,6 @@ function OwnerPopover({
             Unassigned
           </button>
         )}
-        {filteredGroups.length > 0 && (
-          <p className="px-3 pb-0.5 pt-1.5 text-2xs font-semibold uppercase tracking-wide text-muted">Teams</p>
-        )}
-        {filteredGroups.map((g) => (
-          <button
-            key={g.id}
-            type="button"
-            onClick={() => onPick(g.id)}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800"
-          >
-            <Avatar name={g.name} size={20} />
-            <span className="flex-1 truncate">{g.name}</span>
-            {g.id === value && <Check className="h-3.5 w-3.5 shrink-0 text-brand-600" />}
-          </button>
-        ))}
-        {filteredGroups.length > 0 && filteredUsers.length > 0 && (
-          <p className="px-3 pb-0.5 pt-1.5 text-2xs font-semibold uppercase tracking-wide text-muted">People</p>
-        )}
         {filteredUsers.map((u) => (
           <button
             key={u.id}
@@ -783,7 +761,7 @@ function OwnerPopover({
             {u.id === value && <Check className="h-3.5 w-3.5 shrink-0 text-brand-600" />}
           </button>
         ))}
-        {filteredUsers.length === 0 && filteredGroups.length === 0 && (
+        {filteredUsers.length === 0 && (
           <p className="px-3 py-4 text-center text-xs text-muted">No matches</p>
         )}
       </div>

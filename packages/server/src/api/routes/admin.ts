@@ -34,7 +34,7 @@ adminRouter.get('/users', asyncHandler(async (req, res) => {
   const includeInactive = req.query.includeInactive === 'true';
   const rows = await db.query(
     `SELECT u.id, u.email, u.first_name, u.last_name, u.avatar_url, u.phone, u.designation,
-            u.is_admin, u.is_active, u.role_id, u.profile_id, u.extension, u.last_login_at,
+            u.is_admin, u.is_active, u.role_id, u.profile_id, u.last_login_at,
             u.accepts_leads, u.daily_lead_cap, u.created_at,
             r.name AS role_name, p.name AS profile_name
      FROM ipy_user u
@@ -73,7 +73,7 @@ adminRouter.get('/users', asyncHandler(async (req, res) => {
       isAdmin: u.is_admin,
       roleId: u.role_id, roleName: u.role_name,
       profileId: u.profile_id, profileName: u.profile_name,
-      extension: u.extension, lastLoginAt: u.last_login_at,
+      lastLoginAt: u.last_login_at,
       acceptsLeads: u.accepts_leads, dailyLeadCap: u.daily_lead_cap,
       createdAt: u.created_at,
     };
@@ -91,7 +91,6 @@ const userSchema = z.object({
   profileId: z.string().uuid().nullable().optional(),
   reportsTo: z.string().uuid().nullable().optional(),
   isAdmin: z.boolean().default(false),
-  extension: z.string().optional(),
   acceptsLeads: z.boolean().default(true),
   dailyLeadCap: z.number().int().positive().nullable().optional(),
 });
@@ -111,13 +110,13 @@ adminRouter.post('/users', asyncHandler(async (req, res) => {
     // removed in migration 030, and the portal it fed does not exist.
     `INSERT INTO ipy_user
       (email, password_hash, first_name, last_name, phone, designation, role_id,
-       profile_id, reports_to, is_admin, extension, accepts_leads, daily_lead_cap)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+       profile_id, reports_to, is_admin, accepts_leads, daily_lead_cap)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
     [
       input.email, await hashPassword(input.password), input.firstName, input.lastName,
       input.phone ?? null, input.designation ?? null, input.roleId ?? null,
       input.profileId ?? null, input.reportsTo ?? null, input.isAdmin,
-      input.extension ?? null, input.acceptsLeads, input.dailyLeadCap ?? null,
+      input.acceptsLeads, input.dailyLeadCap ?? null,
     ],
   );
   invalidatePermissions();
@@ -134,7 +133,7 @@ adminRouter.patch('/users/:id', asyncHandler(async (req, res) => {
     email: 'email', firstName: 'first_name', lastName: 'last_name', phone: 'phone',
     designation: 'designation', roleId: 'role_id', profileId: 'profile_id',
     reportsTo: 'reports_to', isAdmin: 'is_admin', isActive: 'is_active',
-    extension: 'extension', acceptsLeads: 'accepts_leads', dailyLeadCap: 'daily_lead_cap',
+    acceptsLeads: 'accepts_leads', dailyLeadCap: 'daily_lead_cap',
   };
   const sets: string[] = [];
   const params: unknown[] = [req.params.id];

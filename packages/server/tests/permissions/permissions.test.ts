@@ -94,7 +94,6 @@ function user(over: Partial<AuthUser> = {}): AuthUser {
     currency: 'INR',
     theme: 'system',
     defaultDashboardId: null,
-    extension: null,
     channelPartnerId: null,
     lastLoginAt: null,
     ...over,

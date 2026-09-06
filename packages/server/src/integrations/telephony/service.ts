@@ -148,8 +148,8 @@ export function isTelephonyConfigured(): boolean {
 // ---------------------------------------------------------------------------
 
 export async function placeCall(input: PlaceCallInput): Promise<{ callId: string; providerCallId: string }> {
-  const agent = await db.queryOne<{ phone: string | null; telephony_number: string | null; extension: string | null }>(
-    `SELECT phone, telephony_number, extension FROM ipy_user WHERE id = $1`, [input.agentUserId],
+  const agent = await db.queryOne<{ phone: string | null; telephony_number: string | null }>(
+    `SELECT phone, telephony_number FROM ipy_user WHERE id = $1`, [input.agentUserId],
   );
   const agentNumber = toE164(agent?.telephony_number ?? agent?.phone ?? '');
   if (!agentNumber) {
@@ -339,7 +339,7 @@ async function createLeadFromCall(
       isAdmin: true, isActive: true, roleId: null, roleName: null,
       profileId: null, profileName: null, groupIds: [],
       timezone: 'Asia/Kolkata', locale: 'en-IN', currency: 'INR',
-      theme: 'system' as const, defaultDashboardId: null, extension: null, lastLoginAt: null,
+      theme: 'system' as const, defaultDashboardId: null, lastLoginAt: null,
     };
 
     const lead = await createRecord(

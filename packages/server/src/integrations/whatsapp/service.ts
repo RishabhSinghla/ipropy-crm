@@ -217,7 +217,8 @@ export async function handleInbound(msg: InboundMessage): Promise<{ conversation
         kind: 'whatsapp',
         title: `New WhatsApp from ${msg.profileName ?? msg.from}`,
         body: (body ?? '').slice(0, 200),
-        link: `/inbox/${conversationId}`,
+        // The inbox page is gone; the record is where a rep reads and replies now.
+        link: conv.record_id ? `/${conv.record_module ?? 'leads'}/${conv.record_id}` : '/leads',
         recordId: conv.record_id,
       }, tx);
     }

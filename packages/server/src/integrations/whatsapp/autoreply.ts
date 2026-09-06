@@ -198,8 +198,9 @@ async function handOver(conversationId: string, recordId: string | null, ruleNam
       userId: ownerUserId,
       kind: 'whatsapp',
       title: 'A WhatsApp chat needs you',
-      body: `"${ruleName}" handed this conversation over.`,
-      link: `/inbox/${conversationId}`,
+      body: `“${ruleName}” handed this conversation over.`,
+      // The inbox page is gone; the lead itself is where this is answered now.
+      link: recordId ? `/leads/${recordId}` : '/leads',
       recordId,
     });
   }

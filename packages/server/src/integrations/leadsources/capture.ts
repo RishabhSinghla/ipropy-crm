@@ -21,7 +21,7 @@ const SYSTEM_USER: AuthUser = {
   isAdmin: true, isActive: true, roleId: null, roleName: null,
   profileId: null, profileName: null, groupIds: [],
   timezone: 'Asia/Kolkata', locale: 'en-IN', currency: 'INR',
-  theme: 'system', defaultDashboardId: null, extension: null, lastLoginAt: null,
+  theme: 'system', defaultDashboardId: null, lastLoginAt: null,
 };
 
 function systemContext(): ServiceContext {

@@ -81,7 +81,14 @@ export async function seed(): Promise<void> {
     await seedSharing(tx);
     logger.info(`  roles ✓ (${roles.size})  profiles ✓ (${profiles.size})`);
     const created = await seedUsers(tx, roles, profiles, config.seed.demoData);
-    await seedGroups(tx, created);
+    /*
+      Demo groups only on demo installs. On a real org they leaked into every
+      owner picker as "Teams — Field Sales — West", names that mean nothing to
+      this business and were never maintained. The groups engine itself stays:
+      assignment rules and sharing grants may still target one, but nobody is
+      offered a group as an owner by default again.
+    */
+    if (config.seed.demoData) await seedGroups(tx, created);
     logger.info(`  users ✓ (${created.length})`);
     return created;
   });

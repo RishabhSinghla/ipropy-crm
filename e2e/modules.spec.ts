@@ -80,7 +80,7 @@ async function moduleRoutes(page: Page): Promise<string[]> {
  * did pick them up it always failed, because it waited for a record count on a
  * screen that has none.
  */
-const TOOL_ROUTES = new Set(['/outreach', '/capture']);
+const TOOL_ROUTES = new Set(['/capture']);
 
 /**
  * "Finished loading" is not the same signal on both kinds of page.

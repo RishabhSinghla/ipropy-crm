@@ -439,55 +439,6 @@ describe('outreach automation API', () => {
     expect(after.body.some((item: { id: string }) => item.id === id)).toBe(false);
   });
 
-  it('creates, edits and deletes a multi-step follow-up sequence', async () => {
-    const created = await request(app)
-      .post('/api/outreach/sequences')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ name: `Integration sequence ${Date.now()}`, moduleName: 'leads' })
-      .expect(201);
-
-    const id = created.body.id as string;
-    expect(id).toBeTruthy();
-
-    await request(app)
-      .put(`/api/outreach/sequences/${id}/steps`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        steps: [
-          { sequence: 1, delayMinutes: 60, channel: 'whatsapp', body: 'First follow-up', fallbackToDevice: true },
-          { sequence: 2, delayMinutes: 1440, channel: 'task', body: 'Call the lead', fallbackToDevice: false },
-        ],
-      })
-      .expect(200);
-
-    await request(app)
-      .patch(`/api/outreach/sequences/${id}`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ isActive: true, quietStart: 22, quietEnd: 8 })
-      .expect(200);
-
-    const detail = await request(app)
-      .get(`/api/outreach/sequences/${id}`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
-    expect(detail.body.is_active).toBe(true);
-    expect(detail.body.quiet_start).toBe(22);
-    expect(detail.body.steps).toHaveLength(2);
-    expect(detail.body.steps.map((step: { sequence: number }) => step.sequence)).toEqual([1, 2]);
-
-    const list = await request(app)
-      .get('/api/outreach/sequences')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
-    expect(list.body.some((sequence: { id: string; step_count: string }) => (
-      sequence.id === id && Number(sequence.step_count) === 2
-    ))).toBe(true);
-
-    await request(app)
-      .delete(`/api/outreach/sequences/${id}`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
-  });
 });
 
 describe('Android companion API', () => {

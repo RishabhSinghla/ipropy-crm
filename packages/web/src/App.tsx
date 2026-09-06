@@ -16,12 +16,9 @@ const DashboardPage = lazy(() => import('./pages/Dashboard'));
 const ListView = lazy(() => import('./pages/ListView'));
 const RecordDetail = lazy(() => import('./pages/RecordDetail'));
 const RecordEdit = lazy(() => import('./pages/RecordEdit'));
-const Inbox = lazy(() => import('./pages/Inbox'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const SharedPropertyPage = lazy(() => import('./pages/SharedProperty'));
 const PublicFormPage = lazy(() => import('./pages/PublicForm'));
-const Outreach = lazy(() => import('./pages/Outreach'));
-const CallsPage = lazy(() => import('./pages/Calls'));
 const SiteCapture = lazy(() => import('./pages/SiteCapture'));
 const ReportsPage = lazy(() => import('./pages/Reports'));
 const SettingsPage = lazy(() => import('./pages/Settings'));
@@ -80,13 +77,8 @@ export default function App(): JSX.Element {
               <Route path="dashboard" element={<DashboardPage />} />
               <Route path="dashboard/:id" element={<DashboardPage />} />
 
-                <Route path="inbox" element={<Inbox />} />
-              <Route path="inbox/:conversationId" element={<Inbox />} />
-
-              <Route path="calls" element={<CallsPage />} />
               <Route path="capture" element={<SiteCapture />} />
               <Route path="reports" element={<ReportsPage />} />
-              <Route path="outreach" element={<Outreach />} />
 
               <Route path="settings" element={<SettingsPage />} />
               <Route path="admin/*" element={<AdminPage />} />

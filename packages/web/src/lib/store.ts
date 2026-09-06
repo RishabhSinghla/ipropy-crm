@@ -8,7 +8,6 @@ interface AppState {
   modules: ModuleSummary[];
   loading: boolean;
   theme: 'light' | 'dark';
-  sidebarCollapsed: boolean;
   aiAvailable: boolean;
   telephonyAvailable: boolean;
   /** The CRM could not be reached on start-up; the shell is running on cached identity. */
@@ -23,7 +22,6 @@ interface AppState {
   loginWithPin: (pin: string) => Promise<void>;
   logout: () => Promise<void>;
   setTheme: (theme: 'light' | 'dark') => void;
-  toggleSidebar: () => void;
   moduleByName: (name: string) => ModuleSummary | undefined;
 }
 
@@ -61,7 +59,7 @@ function cacheUser(user: AuthUser): void {
 /**
  * The nav, remembered.
  *
- * Without it an unreachable CRM comes up with an empty sidebar and no route to
+ * Without it an unreachable CRM comes up with an empty nav and no route to
  * anything — the shell technically running, and useless. These are labels and
  * icons, not data.
  */
@@ -112,15 +110,6 @@ export const useApp = create<AppState>((set, get) => ({
   modules: [],
   loading: true,
   theme: initialTheme(),
-  /*
-    Collapsed unless this browser has been told otherwise.
-
-    The rail is a way to change screen, not something to read, and every module
-    has an icon. Starting expanded spent 13rem of a laptop screen on labels
-    somebody learns in a day — so the default flipped, and the stored value is
-    now what *opens* it rather than what closes it.
-  */
-  sidebarCollapsed: localStorage.getItem('ipropy.sidebar') !== 'expanded',
   aiAvailable: false,
   telephonyAvailable: false,
   offline: false,
@@ -198,12 +187,6 @@ export const useApp = create<AppState>((set, get) => ({
     applyTheme(theme);
     set({ theme });
     void api.updateProfile({ theme }).catch(() => undefined);
-  },
-
-  toggleSidebar: () => {
-    const next = !get().sidebarCollapsed;
-    localStorage.setItem('ipropy.sidebar', next ? 'collapsed' : 'expanded');
-    set({ sidebarCollapsed: next });
   },
 
   moduleByName: (name) => get().modules.find((m) => m.name === name),

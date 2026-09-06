@@ -69,7 +69,6 @@ interface UserRow {
   locale: string;
   currency: string;
   theme: string;
-  extension: string | null;
   default_dashboard_id: string | null;
   last_login_at: string | null;
 }
@@ -78,7 +77,7 @@ export async function loadUser(userId: string): Promise<AuthUser | null> {
   const row = await queryOne<UserRow>(
     `SELECT u.id, u.email, u.first_name, u.last_name, u.avatar_url, u.phone, u.is_admin,
             u.is_active, u.role_id, r.name AS role_name, u.profile_id, p.name AS profile_name,
-            u.timezone, u.locale, u.currency, u.theme, u.extension,
+            u.timezone, u.locale, u.currency, u.theme,
             u.default_dashboard_id, u.last_login_at
      FROM ipy_user u
      LEFT JOIN ipy_role r ON r.id = u.role_id
@@ -115,7 +114,6 @@ export async function loadUser(userId: string): Promise<AuthUser | null> {
     currency: row.currency,
     theme: (row.theme as AuthUser['theme']) ?? 'system',
     defaultDashboardId: row.default_dashboard_id,
-    extension: row.extension,
     lastLoginAt: row.last_login_at,
   };
 }

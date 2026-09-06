@@ -11,7 +11,7 @@ interface User {
   id: string; email: string; firstName: string; lastName: string; fullName: string;
   phone: string | null; designation: string | null; isAdmin: boolean; isActive: boolean;
   roleId: string | null; roleName: string | null; profileId: string | null; profileName: string | null;
-  extension: string | null; lastLoginAt: string | null; acceptsLeads: boolean; dailyLeadCap: number | null;
+  lastLoginAt: string | null; acceptsLeads: boolean; dailyLeadCap: number | null;
 }
 
 export default function UsersAdmin(): JSX.Element {
@@ -75,7 +75,6 @@ export default function UsersAdmin(): JSX.Element {
                   </td>
                   <td className="list-cell text-slate-600 dark:text-slate-400">{u.roleName ?? '—'}</td>
                   <td className="list-cell">{u.profileName ? <Badge>{u.profileName}</Badge> : '—'}</td>
-                  <td className="list-cell tnum text-slate-500">{u.extension ?? '—'}</td>
                   <td className="list-cell text-2xs text-muted">
                     {u.lastLoginAt ? relativeTime(u.lastLoginAt) : 'Never'}
                   </td>
@@ -126,7 +125,6 @@ function UserEditor({
     lastName: user?.lastName ?? '',
     phone: user?.phone ?? '',
     designation: user?.designation ?? '',
-    extension: user?.extension ?? '',
     roleId: user?.roleId ?? '',
     profileId: user?.profileId ?? '',
     isAdmin: user?.isAdmin ?? false,
@@ -147,7 +145,6 @@ function UserEditor({
       const payload = {
         email: form.email, firstName: form.firstName, lastName: form.lastName,
         phone: form.phone || undefined, designation: form.designation || undefined,
-        extension: form.extension || undefined,
         roleId: form.roleId || null, profileId: form.profileId || null,
         isAdmin: form.isAdmin, acceptsLeads: form.acceptsLeads,
         dailyLeadCap: form.dailyLeadCap,
@@ -244,10 +241,6 @@ function UserEditor({
           <div>
             <label className="label">Phone</label>
             <input className="input tnum" value={form.phone} onChange={(e) => set({ phone: e.target.value })} />
-          </div>
-          <div>
-            <label className="label">Extension</label>
-            <input className="input tnum" value={form.extension} onChange={(e) => set({ extension: e.target.value })} />
           </div>
         </div>
 

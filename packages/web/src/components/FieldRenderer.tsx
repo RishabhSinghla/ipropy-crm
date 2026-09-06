@@ -436,7 +436,7 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
 
     case 'owner':
     case 'user':
-      return <UserPicker id={id} label={field.label} value={value as string | null} onChange={onChange} disabled={readOnly} allowGroups={field.uitype === 'owner'} />;
+      return <UserPicker id={id} label={field.label} value={value as string | null} onChange={onChange} disabled={readOnly} />;
 
     case 'address':
       return <AddressInput value={value as Record<string, unknown> | null} onChange={onChange} disabled={readOnly} />;
@@ -1121,28 +1121,23 @@ export function ReferencePicker({
 // ---------------------------------------------------------------------------
 
 export function UserPicker({
-  value, onChange, disabled, allowGroups, id, label,
+  value, onChange, disabled, id, label,
 }: {
   value: string | null;
   onChange: (v: string | null) => void;
   disabled?: boolean;
-  allowGroups?: boolean;
   id?: string;
   /** Fallback accessible name when no <label htmlFor> points at this select. */
   label?: string;
 }): JSX.Element {
   const [users, setUsers] = useState<{ id: string; fullName: string; designation?: string }[]>([]);
-  const [groups, setGroups] = useState<{ id: string; name: string }[]>([]);
 
   useEffect(() => {
     void api.users().then((rows) => setUsers(rows as never)).catch(() => undefined);
-    if (allowGroups) void api.groups().then((rows) => setGroups(rows as never)).catch(() => undefined);
-  }, [allowGroups]);
+  }, []);
 
-  const selected = users.find((u) => u.id === value) ?? groups.find((g) => g.id === value);
-  const selectedName = selected
-    ? ('fullName' in selected ? selected.fullName : (selected as { name: string }).name)
-    : '';
+  const selected = users.find((u) => u.id === value);
+  const selectedName = selected ? selected.fullName : '';
 
   return (
     <div className="relative">
@@ -1155,16 +1150,9 @@ export function UserPicker({
         onChange={(e) => onChange(e.target.value || null)}
       >
         <option value="">— Unassigned —</option>
-        <optgroup label="Users">
-          {users.map((u) => (
-            <option key={u.id} value={u.id}>{u.fullName}{u.designation ? ` · ${u.designation}` : ''}</option>
-          ))}
-        </optgroup>
-        {allowGroups && groups.length > 0 && (
-          <optgroup label="Teams">
-            {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-          </optgroup>
-        )}
+        {users.map((u) => (
+          <option key={u.id} value={u.id}>{u.fullName}{u.designation ? ` · ${u.designation}` : ''}</option>
+        ))}
       </select>
       {selectedName && (
         <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2">

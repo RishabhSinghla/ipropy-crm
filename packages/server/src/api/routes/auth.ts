@@ -190,7 +190,6 @@ const preferencesSchema = z.object({
   currency: z.string().length(3).optional(),
   theme: z.enum(['light', 'dark', 'system']).optional(),
   defaultDashboardId: z.string().uuid().nullable().optional(),
-  extension: z.string().nullable().optional(),
 });
 
 authRouter.patch('/me', requireAuth, asyncHandler(async (req, res) => {
@@ -200,7 +199,7 @@ authRouter.patch('/me', requireAuth, asyncHandler(async (req, res) => {
   const columnMap: Record<string, string> = {
     firstName: 'first_name', lastName: 'last_name', phone: 'phone', avatarUrl: 'avatar_url',
     timezone: 'timezone', locale: 'locale', currency: 'currency', theme: 'theme',
-    defaultDashboardId: 'default_dashboard_id', extension: 'extension',
+    defaultDashboardId: 'default_dashboard_id',
   };
 
   const sets: string[] = [];

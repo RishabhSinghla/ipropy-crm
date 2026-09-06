@@ -2,13 +2,13 @@ import { type JSX, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Bell, Building2, ChevronLeft, Facebook, Globe, Instagram, Linkedin, Lock, LogOut, Menu,
-  MessageCircle, Moon, Search, Settings, Shield, Sparkles, Sun, Twitter, X, Youtube,
+  Bell, Facebook, Globe, Instagram, Linkedin, Lock, LogOut, Menu, MessageCircle, Moon, Search,
+  Settings, Shield, Sparkles, Sun, Twitter, X, Youtube, BarChart3, LayoutDashboard, MapPin, Building2,
 } from 'lucide-react';
 import { useApp } from '../lib/store';
 import { api, type SearchHit } from '../lib/api';
 import { useRealtime } from '../lib/realtime';
-import { cn, groupModules } from '../lib/utils';
+import { cn } from '../lib/utils';
 import { resolveIcon } from '../lib/icons';
 import { ErrorBoundary } from './ErrorBoundary';
 import { Avatar, Badge, Dropdown, DropdownItem, Spinner } from './ui';
@@ -21,27 +21,32 @@ export function ModuleIcon({ name, className }: { name: string; className?: stri
   return <Icon className={className ?? 'h-4 w-4'} />;
 }
 
+/**
+ * The shell: a single top bar instead of the old sidebar.
+ *
+ * The owner asked for the CRM to open onto the work itself — Dashboard,
+ * Contacts (leads), Properties, Site visit — as tabs beside the search box,
+ * with everything else (Reports, Settings, Admin, sign-out) behind the avatar.
+ * The sidebar spent 13rem of width and a second click on navigation that a
+ * tab performs in one, and its Inbox/Calls/Outreach entries were whole pages
+ * this business never opened; the messaging a rep actually does is on each
+ * record. On a phone the same five destinations become a bottom tab bar,
+ * WhatsApp-style, because a thumb cannot reach the top of a tall screen.
+ */
 export default function Layout(): JSX.Element {
-  const { user, modules, sidebarCollapsed, toggleSidebar, theme, setTheme, logout, aiAvailable } = useApp();
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const { user, modules, theme, setTheme, aiAvailable } = useApp();
   const [aiOpen, setAiOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const location = useLocation();
 
   // One socket for the whole session: server-side changes (workflow tasks, AI
   // scoring, another user's edit) invalidate the matching queries live.
   useRealtime(Boolean(user));
 
-  useEffect(() => { setMobileOpen(false); }, [location.pathname]);
-
-  // Records that arrived while this user was away, per module. Polled rather
-  // than pushed because it also has to be right after a colleague reassigns
-  // something, which produces no event on this session's socket.
   const { data: unseenCounts } = useQuery({
     queryKey: ['unseen-counts'],
     queryFn: () => api.unseenCounts(),
     enabled: Boolean(user),
-    // Socket invalidation makes this immediate while connected; this short
-    // poll is the safety net for a laptop that slept through a socket event.
     refetchInterval: 20_000,
     refetchOnWindowFocus: true,
   });
@@ -53,261 +58,326 @@ export default function Layout(): JSX.Element {
     staleTime: 10 * 60_000,
   });
 
-  const grouped = useMemo(
-    () => groupModules(modules.filter((m) => m.showInMenu && m.isEntity && m.permissions.view)),
+  const menuModules = useMemo(
+    () => modules.filter((m) => m.showInMenu && m.isEntity && m.permissions.view),
     [modules],
   );
 
   return (
     <PeekProvider>
-    <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950">
-      {/* Visually hidden until focused — the first Tab stop on every page. */}
-      <a
-        href="#main"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-lg focus:bg-brand-600 focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-white"
-      >
-        Skip to main content
-      </a>
+      <div className="flex h-screen flex-col overflow-hidden bg-slate-50 dark:bg-slate-950">
+        {/* Visually hidden until focused — the first Tab stop on every page. */}
+        <a
+          href="#main"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-lg focus:bg-brand-600 focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-white"
+        >
+          Skip to main content
+        </a>
 
-      {/* Sidebar */}
-      <aside
-        className={cn(
-          // Only the two properties that actually move. `transition-all` also
-          // animated background and border, so switching to dark mode faded
-          // the sidebar in behind an instantly-dark page.
-          'fixed inset-y-0 left-0 z-40 flex flex-col border-r border-slate-200 bg-white transition-[width,transform] duration-200 ease-out dark:border-slate-800 dark:bg-slate-900 lg:static',
-          // 13rem, down from 15: the longest label ("Leads & Contacts") is gone
-          // and nothing else came close to filling it.
-          sidebarCollapsed ? 'w-[3.75rem]' : 'w-52',
-          mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
-        )}
-      >
-        <div className="flex h-14 shrink-0 items-center gap-2 border-b border-slate-200 px-3 dark:border-slate-800">
-          <Link
-            to="/dashboard"
-            className="flex items-center gap-2 overflow-hidden"
-            // Collapsed, this is the logo mark alone — an icon with no text, so
-            // no accessible name. Same cause as the nav items below: the rail
-            // only started collapsed once that became the default, so the
-            // accessibility sweep had never scanned this state.
-            aria-label={sidebarCollapsed ? (brand?.orgName ?? 'iPropy') : undefined}
-          >
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-white">
-              <Building2 className="h-4.5 w-4.5" />
-            </div>
-            {!sidebarCollapsed && (
-              <span className="min-w-0">
-                <span className="block truncate text-base font-semibold leading-tight tracking-tight">
-                  {brand?.orgName ?? 'iPropy'}
-                </span>
-                {brand?.tagline && (
-                  <span className="block truncate text-[10px] leading-tight text-muted">{brand.tagline}</span>
-                )}
-              </span>
-            )}
-          </Link>
+        {/* Top bar: brand and primary navigation on the left, search and
+            actions on the right. One row, every width — the old sidebar spent
+            its whole height saying what a 12px tab now says. */}
+        <header className="flex h-14 shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-3 dark:border-slate-800 dark:bg-slate-900 sm:gap-3 sm:px-4">
           <button
-            onClick={() => setMobileOpen(false)}
-            className="btn-ghost ml-auto p-1.5 lg:hidden"
-            aria-label="Close menu"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <nav aria-label="Main" className="flex-1 space-y-4 overflow-y-auto px-2 py-3">
-          <div className="space-y-0.5">
-            <NavItem to="/dashboard" icon="layout-dashboard" label="Dashboard" collapsed={sidebarCollapsed} />
-            <NavItem to="/inbox" icon="message-circle" label="Inbox" collapsed={sidebarCollapsed} badge={<InboxBadge />} />
-            <NavItem to="/calls" icon="phone" label="Calls" collapsed={sidebarCollapsed} />
-            <NavItem to="/capture" icon="map-pin" label="Site visit" collapsed={sidebarCollapsed} />
-          </div>
-
-          {grouped.map(([group, list]) => (
-            <div key={group}>
-              {!sidebarCollapsed && (
-                <p className="mb-1 px-3 text-2xs font-semibold uppercase tracking-wider text-muted">
-                  {group}
-                </p>
-              )}
-              <div className="space-y-0.5">
-                {list.map((m) => (
-                  <NavItem
-                    key={m.name}
-                    to={`/${m.name}`}
-                    icon={m.icon}
-                    label={m.label}
-                    collapsed={sidebarCollapsed}
-                    color={m.color}
-                    badge={unseenCounts?.[m.name]
-                      ? <UnseenBadge count={unseenCounts[m.name]} module={m.name} />
-                      : undefined}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
-
-          <div>
-            {!sidebarCollapsed && (
-              <p className="mb-1 px-3 text-2xs font-semibold uppercase tracking-wider text-muted">
-                Tools
-              </p>
-            )}
-            <div className="space-y-0.5">
-              <NavItem to="/outreach" icon="send" label="Outreach" collapsed={sidebarCollapsed} badge={<QueueBadge />} />
-              <NavItem to="/reports" icon="bar-chart-3" label="Reports" collapsed={sidebarCollapsed} />
-            </div>
-          </div>
-        </nav>
-
-        {/* Admin is deliberately not here. It was in two places at once — this
-            rail and the avatar menu — and the avatar menu is where the rest of
-            "things about you and your workspace" already lives. */}
-        <div className="shrink-0 border-t border-slate-200 p-2 dark:border-slate-800">
-          <button
-            onClick={toggleSidebar}
-            className="nav-item hidden w-full lg:flex"
-            title={sidebarCollapsed ? 'Expand' : 'Collapse'}
-          >
-            <ChevronLeft className={cn('h-4 w-4 transition-transform', sidebarCollapsed && 'rotate-180')} />
-            {!sidebarCollapsed && <span>Collapse</span>}
-          </button>
-        </div>
-      </aside>
-
-      {mobileOpen && (
-        <div className="fixed inset-0 z-30 bg-slate-900/40 lg:hidden" onClick={() => setMobileOpen(false)} />
-      )}
-
-      {/* Main */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-3 dark:border-slate-800 dark:bg-slate-900 sm:px-4">
-          <button
-            onClick={() => setMobileOpen(true)}
+            onClick={() => setDrawerOpen(true)}
             className="btn-ghost p-2 lg:hidden"
             aria-label="Open menu"
           >
             <Menu className="h-4.5 w-4.5" />
           </button>
 
-          <GlobalSearch />
-
-          <div className="ml-auto flex items-center gap-1">
-            {/* The social links used to sit in the sidebar footer, where they
-                cost a whole row of vertical space on every screen. There is
-                empty width here and none to spare down there. */}
-            <SocialBar />
-
-            {aiAvailable !== undefined && (
-              <button
-                onClick={() => setAiOpen(true)}
-                className="btn-ghost gap-1.5 px-2.5"
-                title="Ask iPropy AI"
-              >
-                <Sparkles className="h-4 w-4 text-brand-500" />
-                <span className="hidden text-xs font-medium sm:inline">Ask AI</span>
-              </button>
+          <Link to="/dashboard" className="flex shrink-0 items-center gap-2 overflow-hidden" aria-label={brand?.orgName ?? 'iPropy'}>
+            {brand?.logoUrl ? (
+              <img src={brand.logoUrl} alt="" className="h-8 w-8 shrink-0 rounded-lg object-contain" />
+            ) : (
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-white">
+                <Building2 className="h-4.5 w-4.5" />
+              </div>
             )}
+            <span className="hidden truncate text-base font-semibold leading-tight tracking-tight sm:block">
+              {brand?.orgName ?? 'iPropy'}
+            </span>
+          </Link>
 
-            <NotificationBell />
+          {/* Primary tabs. The module metadata decides what exists — a custom
+              module appears here on its own, and a disabled one disappears. */}
+          <nav aria-label="Main" className="hidden min-w-0 flex-1 items-center gap-1 overflow-x-auto lg:flex">
+            <TabItem to="/dashboard" icon={<LayoutDashboard className="h-4 w-4" />} label="Dashboard" />
+            {menuModules.map((m) => (
+              <TabItem
+                key={m.name}
+                to={`/${m.name}`}
+                icon={<ModuleIcon name={m.icon} />}
+                label={m.label}
+                badge={unseenCounts?.[m.name]}
+              />
+            ))}
+            <TabItem to="/capture" icon={<MapPin className="h-4 w-4" />} label="Site visit" />
+          </nav>
 
-            <button
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-              className="btn-ghost p-2"
-              title="Toggle theme"
-            >
-              {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </button>
+          {/* Search sits beside the tabs, and shrinks before the tabs do. */}
+          <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 lg:flex-none">
+            <GlobalSearch />
 
-            <Dropdown
-              trigger={
-                <button className="ml-1 flex items-center gap-2 rounded-lg p-1 hover:bg-slate-100 dark:hover:bg-slate-800">
-                  <Avatar name={user?.fullName ?? '?'} src={user?.avatarUrl} size={28} />
+            <div className="flex shrink-0 items-center gap-1">
+              <SocialBar />
+              {aiAvailable !== undefined && (
+                <button
+                  onClick={() => setAiOpen(true)}
+                  className="btn-ghost gap-1.5 px-2.5"
+                  title="Ask iPropy AI"
+                >
+                  <Sparkles className="h-4 w-4 text-brand-500" />
+                  <span className="hidden text-xs font-medium sm:inline">Ask AI</span>
                 </button>
-              }
-            >
-              {(close) => (
-                <>
-                  <div className="border-b border-slate-100 px-3 py-2 dark:border-slate-800">
-                    <p className="truncate text-sm font-medium">{user?.fullName}</p>
-                    <p className="truncate text-xs text-muted">{user?.email}</p>
-                    {user?.profileName && (
-                      <Badge className="mt-1.5">{user.profileName}</Badge>
-                    )}
-                  </div>
-                  <Link to="/settings" onClick={close}>
-                    <DropdownItem icon={<Settings className="h-3.5 w-3.5" />}>Settings</DropdownItem>
-                  </Link>
-                  {user?.isAdmin && (
-                    <Link to="/admin" onClick={close}>
-                      <DropdownItem icon={<Shield className="h-3.5 w-3.5" />}>Admin panel</DropdownItem>
-                    </Link>
-                  )}
-                  <DropdownItem icon={<LogOut className="h-3.5 w-3.5" />} danger onClick={() => void logout()}>
-                    Sign out
-                  </DropdownItem>
-                </>
               )}
-            </Dropdown>
+
+              <NotificationBell />
+
+              <button
+                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                className="btn-ghost p-2"
+                title="Toggle theme"
+              >
+                {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </button>
+
+              <UserMenu />
+            </div>
           </div>
         </header>
+
+        {/* Mobile drawer: on a phone the tabs move to the bottom bar; the
+            drawer keeps the full navigation for anything that is not on it. */}
+        <MobileNav
+          modules={menuModules}
+          unseenCounts={unseenCounts}
+          open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+        />
 
         <main id="main" tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto">
           {/* Per-page net. Keyed on the path so a crashed page clears itself
               when the user navigates away — without the key the boundary stays
               latched and every subsequent route renders the error screen. The
-              sidebar and header live outside it and stay usable throughout. */}
+              header lives outside it and stays usable throughout. */}
           <ErrorBoundary resetKey={location.pathname}>
             <Outlet />
           </ErrorBoundary>
         </main>
-      </div>
 
-      <AiAssistant open={aiOpen} onClose={() => setAiOpen(false)} />
-    </div>
+        <AiAssistant open={aiOpen} onClose={() => setAiOpen(false)} />
+      </div>
     </PeekProvider>
   );
 }
 
-function NavItem({
-  to, icon, label, collapsed, badge, color,
-}: {
-  to: string; icon: string; label: string; collapsed: boolean;
-  badge?: JSX.Element; color?: string;
-}): JSX.Element {
+function TabItem({
+  to, icon, label, badge,
+}: { to: string; icon: JSX.Element; label: string; badge?: number }): JSX.Element {
   return (
     <NavLink
       to={to}
-      className={({ isActive }) => cn('nav-item', isActive && 'nav-item-active', collapsed && 'justify-center px-2')}
-      title={collapsed ? label : undefined}
-      /*
-        Collapsed, this link is an icon and nothing else — no text node, so no
-        accessible name, and a screen reader reads "link" nine times down the
-        rail. `title` is a tooltip, not a reliable name.
-
-        It was always true and never caught, because the sidebar only started
-        collapsed once that became the default: the accessibility sweep had only
-        ever scanned the expanded state.
-      */
-      aria-label={collapsed ? label : undefined}
+      className={({ isActive }) => cn(
+        'flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition-colors',
+        isActive
+          ? 'bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300'
+          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200',
+      )}
     >
-      <span style={color && !collapsed ? { color } : undefined} className="shrink-0">
-        <ModuleIcon name={icon} />
-      </span>
-      {!collapsed && <span className="flex-1 truncate">{label}</span>}
-      {!collapsed && badge}
+      {icon}
+      <span className="whitespace-nowrap">{label}</span>
+      {badge ? <UnseenBadge count={badge} module={to.slice(1)} /> : undefined}
     </NavLink>
+  );
+}
+
+function UnseenBadge({ count, module }: { count: number; module: string }): JSX.Element {
+  return (
+    <span
+      className="rounded-full bg-brand-600 px-1.5 py-0.5 text-2xs font-semibold text-white"
+      title={module === 'leads'
+        ? `${count} lead${count === 1 ? '' : 's'} still in New status`
+        : `${count} new — not opened yet`}
+    >
+      {count > 99 ? '99+' : count}
+    </span>
+  );
+}
+
+/**
+ * Reports, Settings, Admin panel and sign-out live here — "things about you
+ * and your workspace", as the owner put it — not on the navigation surface a
+ * rep crosses fifty times a day.
+ */
+function UserMenu(): JSX.Element {
+  const { user, logout } = useApp();
+  return (
+    <Dropdown
+      trigger={
+        <button className="ml-1 flex items-center gap-2 rounded-lg p-1 hover:bg-slate-100 dark:hover:bg-slate-800">
+          <Avatar name={user?.fullName ?? '?'} src={user?.avatarUrl} size={28} />
+        </button>
+      }
+    >
+      {(close) => (
+        <>
+          <div className="border-b border-slate-100 px-3 py-2 dark:border-slate-800">
+            <p className="truncate text-sm font-medium">{user?.fullName}</p>
+            <p className="truncate text-xs text-muted">{user?.email}</p>
+            {user?.profileName && (
+              <Badge className="mt-1.5">{user.profileName}</Badge>
+            )}
+          </div>
+          <Link to="/reports" onClick={close}>
+            <DropdownItem icon={<BarChart3 className="h-3.5 w-3.5" />}>Reports</DropdownItem>
+          </Link>
+          <Link to="/settings" onClick={close}>
+            <DropdownItem icon={<Settings className="h-3.5 w-3.5" />}>Settings</DropdownItem>
+          </Link>
+          {user?.isAdmin && (
+            <Link to="/admin" onClick={close}>
+              <DropdownItem icon={<Shield className="h-3.5 w-3.5" />}>Admin panel</DropdownItem>
+            </Link>
+          )}
+          <DropdownItem icon={<LogOut className="h-3.5 w-3.5" />} danger onClick={() => void logout()}>
+            Sign out
+          </DropdownItem>
+        </>
+      )}
+    </Dropdown>
+  );
+}
+
+/**
+ * The drawer behind the hamburger on a phone. Everything is reachable even
+ * though the bottom bar shows only the five main destinations — an admin
+ * hiding mid-work needs Reports and Settings without a detour.
+ */
+function MobileNav({
+  modules, unseenCounts, open, onClose,
+}: {
+  modules: { name: string; label: string; icon: string }[];
+  unseenCounts?: Record<string, number>;
+  open: boolean;
+  onClose: () => void;
+}): JSX.Element {
+  const location = useLocation();
+
+  // Navigating must dismiss the drawer: leaving it open covers the page the
+  // user just asked for.
+  useEffect(() => { onClose(); }, [location.pathname]);
+
+  return (
+    <>
+      {open && (
+        <div className="fixed inset-0 z-40 bg-slate-900/40 lg:hidden" onClick={onClose} />
+      )}
+
+      <div
+        className={cn(
+          'fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-slate-200 bg-white transition-transform duration-200 ease-out dark:border-slate-800 dark:bg-slate-900 lg:hidden',
+          open ? 'translate-x-0' : '-translate-x-full',
+        )}
+      >
+        <div className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 px-3 dark:border-slate-800">
+          <p className="text-sm font-semibold">Menu</p>
+          <button onClick={onClose} className="btn-ghost p-1.5" aria-label="Close menu">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <nav aria-label="Main" className="flex-1 space-y-4 overflow-y-auto px-2 py-3">
+          <div className="space-y-0.5">
+            <DrawerLink to="/dashboard" icon="layout-dashboard" label="Dashboard" />
+            {modules.map((m) => (
+              <DrawerLink
+                key={m.name}
+                to={`/${m.name}`}
+                icon={m.icon}
+                label={m.label}
+                badge={unseenCounts?.[m.name]}
+              />
+            ))}
+            <DrawerLink to="/capture" icon="map-pin" label="Site visit" />
+          </div>
+          <div className="space-y-0.5">
+            <p className="mb-1 px-3 text-2xs font-semibold uppercase tracking-wider text-muted">Tools</p>
+            <DrawerLink to="/reports" icon="bar-chart-3" label="Reports" />
+            <DrawerLink to="/settings" icon="settings" label="Settings" />
+          </div>
+        </nav>
+      </div>
+
+      {/* The bottom tab bar a thumb reaches: the five destinations this desk
+          lives on, WhatsApp-style. The active tab is the brand colour and the
+          rest are quiet, so the eye lands without reading. */}
+      <BottomTabs modules={modules} unseenCounts={unseenCounts} />
+    </>
+  );
+}
+
+function DrawerLink({
+  to, icon, label, badge,
+}: { to: string; icon: string; label: string; badge?: number }): JSX.Element {
+  return (
+    <NavLink
+      to={to}
+      className={({ isActive }) => cn('nav-item', isActive && 'nav-item-active')}
+      aria-label={badge ? `${label} — ${badge} new` : label}
+    >
+      <span className="shrink-0"><ModuleIcon name={icon} /></span>
+      <span className="flex-1 truncate">{label}</span>
+      {badge ? <UnseenBadge count={badge} module={to.slice(1)} /> : undefined}
+    </NavLink>
+  );
+}
+
+function BottomTabs({
+  modules, unseenCounts,
+}: {
+  modules: { name: string; label: string; icon: string }[];
+  unseenCounts?: Record<string, number>;
+}): JSX.Element {
+  const leads = modules.find((m) => m.name === 'leads');
+  const properties = modules.find((m) => m.name === 'properties');
+  const tabs = [
+    { to: '/dashboard', icon: 'layout-dashboard', label: 'Dashboard' },
+    leads && { to: `/${leads.name}`, icon: leads.icon, label: leads.label, badge: unseenCounts?.[leads.name] },
+    properties && { to: `/${properties.name}`, icon: properties.icon, label: properties.label, badge: unseenCounts?.[properties.name] },
+    { to: '/capture', icon: 'map-pin', label: 'Site visit' },
+    { to: '/settings', icon: 'settings', label: 'You' },
+  ].filter(Boolean) as { to: string; icon: string; label: string; badge?: number }[];
+
+  return (
+    <nav
+      aria-label="Primary"
+      className="fixed inset-x-0 bottom-0 z-40 flex shrink-0 items-stretch justify-around border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] lg:hidden dark:border-slate-800 dark:bg-slate-900"
+    >
+      {tabs.map((tab) => (
+        <NavLink
+          key={tab.to}
+          to={tab.to}
+          className={({ isActive }) => cn(
+            'flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-1 py-2 text-2xs font-medium transition-colors',
+            isActive ? 'text-brand-600 dark:text-brand-400' : 'text-slate-500 dark:text-slate-400',
+          )}
+        >
+          <span className="relative">
+            <ModuleIcon name={tab.icon} className="h-5 w-5" />
+            {tab.badge ? <span className="absolute -right-1.5 -top-1 h-1.5 w-1.5 rounded-full bg-brand-600" /> : undefined}
+          </span>
+          <span className="w-full truncate text-center">{tab.label}</span>
+        </NavLink>
+      ))}
+    </nav>
   );
 }
 
 /**
  * One-click links to the company's own social accounts.
  *
- * Lives in the sidebar footer rather than a settings page because the job it
- * serves is reactive — someone comments on the Instagram post, you open it now.
- * Admin-editable (Admin → Brand), so a wrong or dead handle is a text field to
- * fix, not a deploy.
+ * Admin-editable (Admin → Brand & Social), so a wrong or dead handle is a
+ * text field to fix, not a deploy.
  */
 function SocialBar(): JSX.Element | null {
   const { data: brand } = useQuery({
@@ -319,10 +389,8 @@ function SocialBar(): JSX.Element | null {
   const links = brand?.socialLinks ?? [];
   if (!links.length) return null;
 
-  // In the top bar now, not the sidebar footer. Hidden on a phone, where the
-  // header has no room to spare and these are the least urgent thing in it.
   return (
-    <div className="mr-1 hidden items-center gap-0.5 border-r border-slate-200 pr-2 sm:flex dark:border-slate-700">
+    <div className="mr-1 hidden items-center gap-0.5 border-r border-slate-200 pr-2 md:flex dark:border-slate-700">
       {links.map((link) => (
         <a
           key={link.url}
@@ -334,7 +402,6 @@ function SocialBar(): JSX.Element | null {
           style={{ color: SOCIAL_COLOURS[link.platform] ?? undefined }}
           className={cn(
             'rounded-md p-1.5 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800',
-            // Only the fallback needs a colour class; the rest are set inline.
             !SOCIAL_COLOURS[link.platform] && 'text-slate-400 hover:text-brand-600 dark:hover:text-brand-400',
           )}
         >
@@ -346,8 +413,8 @@ function SocialBar(): JSX.Element | null {
 }
 
 /**
- * Each platform's own brand colour, so the row is scannable by hue rather than
- * by squinting at five near-identical grey glyphs.
+ * Each platform's own brand colour, so the row is scannable by hue rather
+ * than by squinting at five near-identical grey glyphs.
  *
  * Two are not the official brand value on purpose. X's brand colour is pure
  * black, which disappears against the dark theme, and Instagram's is a gradient
@@ -375,61 +442,6 @@ function SocialIcon({ platform }: { platform: string }): JSX.Element {
     case 'whatsapp': return <MessageCircle className={className} />;
     default: return <Globe className={className} />;
   }
-}
-
-/** Count of records in a module this user has never opened. */
-function UnseenBadge({ count, module }: { count: number; module: string }): JSX.Element {
-  return (
-    <span
-      className="rounded-full bg-brand-600 px-1.5 py-0.5 text-2xs font-semibold text-white"
-      title={module === 'leads'
-        ? `${count} lead${count === 1 ? '' : 's'} still in New status`
-        : `${count} new — not opened yet`}
-    >
-      {count > 99 ? '99+' : count}
-    </span>
-  );
-}
-
-function InboxBadge(): JSX.Element | null {
-  const { data } = useQuery({
-    queryKey: ['inbox-unread'],
-    queryFn: () => api.conversations({ status: 'open', limit: 100 }),
-    refetchInterval: 45_000,
-  });
-  const unread = (data ?? []).reduce((n, c) => n + Number((c as { unread_count?: number }).unread_count ?? 0), 0);
-  if (!unread) return null;
-  return (
-    <span className="rounded-full bg-brand-600 px-1.5 py-0.5 text-2xs font-semibold text-white">
-      {unread > 99 ? '99+' : unread}
-    </span>
-  );
-}
-
-/**
- * How many messages are waiting for a human to tap send.
- *
- * Worth a badge rather than a number on a page nobody opens: in one-tap mode
- * this queue *is* the send, so an unattended queue means nothing went out.
- */
-function QueueBadge(): JSX.Element | null {
-  const { data } = useQuery({
-    queryKey: ['outreach', 'queue'],
-    queryFn: () => api.deviceQueue(),
-    refetchInterval: 60_000,
-  });
-  const waiting = data?.length ?? 0;
-  if (!waiting) return null;
-  return (
-    // amber-700, not amber-500: white on amber-500 is 2.15:1, less than half
-    // the 4.5:1 that AA asks for at this size. The badge only renders when the
-    // queue has something in it, so nothing had ever looked at it — the
-    // accessibility sweep found it the moment the WhatsApp fallback started
-    // putting messages there.
-    <span className="rounded-full bg-amber-700 px-1.5 py-0.5 text-2xs font-semibold text-white">
-      {waiting > 99 ? '99+' : waiting}
-    </span>
-  );
 }
 
 function NotificationBell(): JSX.Element {
@@ -542,7 +554,7 @@ function GlobalSearch(): JSX.Element {
   }, [query]);
 
   return (
-    <div className="relative max-w-md flex-1" ref={ref}>
+    <div className="relative ml-auto w-full max-w-md lg:ml-2 lg:w-auto lg:max-w-xs xl:max-w-sm" ref={ref}>
       <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
       <input
         ref={inputRef}

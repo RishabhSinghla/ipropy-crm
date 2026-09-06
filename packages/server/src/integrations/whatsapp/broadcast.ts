@@ -331,8 +331,9 @@ async function runBroadcast(broadcastId: string): Promise<void> {
       userId: broadcast.created_by,
       kind: 'broadcast',
       title: `Broadcast "${broadcast.name}" finished`,
-      body: `${totals?.sent ?? 0} ${verb}${totals?.failed ? `, ${totals.failed} could not be` : ''}.`,
-      link: '/outreach',
+      body: `${totals?.sent ?? 0} ${verb}${totals?.failed ? `, ${totals?.failed} could not be` : ''}.`,
+      // No outreach page exists any more; the recipients are the leads.
+      link: '/leads',
     });
   }
 

@@ -161,7 +161,6 @@ export async function sendMorningBriefs(): Promise<number> {
       currency: 'INR',
       theme: 'system',
       defaultDashboardId: null,
-      extension: null,
       lastLoginAt: null,
     };
     try {

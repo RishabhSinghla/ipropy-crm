@@ -1,4 +1,5 @@
 import type { Tx } from '../pool.js';
+import { config } from '../../config.js';
 
 /**
  * Out-of-the-box automation. Each of these is an ordinary workflow row that an
@@ -245,8 +246,19 @@ export async function seedAssignmentRules(conn: Tx): Promise<void> {
   const leads = await conn.queryOne<{ id: string }>(`SELECT id FROM ipy_module WHERE name = 'leads'`);
   if (!leads) return;
 
-  const insideSales = await conn.queryOne<{ id: string }>(`SELECT id FROM ipy_group WHERE name = 'Inside Sales'`);
-  const fieldSales = await conn.queryOne<{ id: string }>(`SELECT id FROM ipy_group WHERE name = 'Field Sales — West'`);
+  /*
+    Demo-group targeting only on demo installs. On a real org no such groups
+    exist (migration 101 removed them), and a rule with a null target group
+    would fall back to the pool's first user on every match — which is not a
+    decision this org made. Fresh demo databases still get the full showcase.
+  */
+  const demoGroups = config.seed.demoData;
+  const insideSales = demoGroups
+    ? await conn.queryOne<{ id: string }>(`SELECT id FROM ipy_group WHERE name = 'Inside Sales'`)
+    : null;
+  const fieldSales = demoGroups
+    ? await conn.queryOne<{ id: string }>(`SELECT id FROM ipy_group WHERE name = 'Field Sales — West'`)
+    : null;
 
   const rules = [
     {

@@ -273,8 +273,6 @@ export interface AuthUser {
   currency: string;
   theme: 'light' | 'dark' | 'system';
   defaultDashboardId: string | null;
-  /** telephony extension for click-to-call */
-  extension: string | null;
   lastLoginAt: string | null;
   /** Sent by GET /api/auth/me. Absent on a cached user from before this shipped. */
   ui?: UiSettings;

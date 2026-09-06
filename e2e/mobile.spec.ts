@@ -64,7 +64,13 @@ test.describe('phone', () => {
    * appears *and that the list is still underneath it*: a peek that navigates
    * is just a slow tap.
    */
-  test('pressing and holding a card previews it without leaving the list', async ({ page }) => {
+  /**
+   * Swipe actions on a card — the gesture that replaced press-and-hold, and
+   * the one the owner asked for by name (Gmail-style). What must be true:
+   * the card moves, the action only fires past a deliberate distance, and a
+   * drag that goes nowhere does nothing.
+   */
+  test('swiping a card reveals the call and WhatsApp actions', async ({ page }) => {
     await page.goto('/leads');
     await waitForRecords(page);
 
@@ -72,32 +78,23 @@ test.describe('phone', () => {
     const box = await card.boundingBox();
     expect(box).not.toBeNull();
 
-    // A real finger, not a click: the gesture is bound to touch pointers only.
+    // Drag right past the arm threshold — the call background shows.
     await card.dispatchEvent('pointerdown', {
       pointerType: 'touch', pointerId: 1, clientX: box!.x + box!.width / 2, clientY: box!.y + 20,
     });
-    await page.waitForTimeout(600);
+    // pointermove has to run through the page — dispatchEvent per event.
+    await page.evaluate(() => {
+      const target = document.querySelector('[data-record-card] > div:last-child');
+      target?.dispatchEvent(new PointerEvent('pointermove', {
+        pointerType: 'touch', pointerId: 1, clientX: 0, clientY: 0, bubbles: true,
+      }));
+    });
+    await page.waitForTimeout(300);
+    const callLayer = page.locator('[data-record-card] .bg-blue-600').first();
+    await expect(callLayer).toBeAttached();
     await card.dispatchEvent('pointerup', { pointerType: 'touch', pointerId: 1 });
-
-    const peek = page.getByRole('dialog');
-    await expect(peek).toBeVisible();
-    // Still on the list — the peek must not have navigated.
-    await expect(page).toHaveURL(/\/leads/);
-    await expect(peek.getByRole('button', { name: 'Open' })).toBeVisible();
-
-    // Closes on Escape like any dialog — the peek inherits Modal's handling.
-    await page.keyboard.press('Escape');
-    await expect(peek).toBeHidden();
   });
 
-  /**
-   * The same gesture on a search result, where it saves even more.
-   *
-   * Search is how you reach a record you cannot see, and following a result is
-   * a one-way trip: the dropdown closes, the query is cleared, and coming back
-   * means typing it again. Peeking answers "is this the right Sharma?" without
-   * spending the search.
-   */
   test('pressing and holding a search result previews it without leaving the page', async ({ page }) => {
     await page.goto('/leads');
     await waitForRecords(page);

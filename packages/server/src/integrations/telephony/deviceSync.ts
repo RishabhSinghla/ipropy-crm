@@ -234,7 +234,7 @@ export async function syncCalls(device: AuthedDevice, entries: DeviceCallEntry[]
           kind: 'call',
           title: 'Call from an unknown number',
           body: `${entry.contactName ? `${entry.contactName} · ` : ''}${number} — not in the CRM yet.`,
-          link: '/calls',
+          link: '/leads',
         }).catch(() => undefined);
       }
     } catch (err) {

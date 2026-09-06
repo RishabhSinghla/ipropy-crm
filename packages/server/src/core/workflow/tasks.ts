@@ -41,7 +41,7 @@ export async function systemContext(user: AuthUser | null): Promise<ServiceConte
     isAdmin: true, isActive: true, roleId: null, roleName: null,
     profileId: null, profileName: null, groupIds: [],
     timezone: 'Asia/Kolkata', locale: 'en-IN', currency: 'INR',
-    theme: 'system', defaultDashboardId: null, extension: null, lastLoginAt: null,
+    theme: 'system', defaultDashboardId: null, lastLoginAt: null,
   };
   return { user: actor, subordinateIds: [], groupIds: [], system: true, source: 'workflow' };
 }
