@@ -1,7 +1,7 @@
 import { type JSX, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CALL_DISPOSITIONS, type FieldMeta, formatIndianPrice, type ModuleMeta, type RecordEnvelope, relativeTime, type TimelineEntry } from '@ipropy/shared';
+import { CALL_DISPOSITIONS, type BuyerMatch, type FieldMeta, formatIndianPrice, type ModuleMeta, type PropertyMatch, type RecordEnvelope, relativeTime, type TimelineEntry } from '@ipropy/shared';
 import {
   Activity, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Edit3, ExternalLink, Eye, FileQuestion, FileText, FolderOpen, Images, LayoutDashboard, Link2, MessageCircle, Mic, MoreHorizontal, Paperclip, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Trash2, Upload, X,
 } from 'lucide-react';
@@ -226,6 +226,13 @@ export default function RecordDetail(): JSX.Element {
   const availableTabs = [
     { key: 'overview', label: 'Overview', icon: <LayoutDashboard className="h-3.5 w-3.5" /> },
     { key: 'timeline', label: 'Timeline', icon: <Activity className="h-3.5 w-3.5" /> },
+    ...(moduleName === 'leads' || moduleName === 'properties' ? [{
+      key: 'matching',
+      // The owner asked for these two labels by name: on a contact, the units
+      // that fit; on a property, the people who fit.
+      label: moduleName === 'leads' ? 'Matching property' : 'Matching contacts',
+      icon: <Link2 className="h-3.5 w-3.5" />,
+    }] : []),
     ...meta.relations.map((r) => ({
       key: `rel:${r.name}`,
       label: r.label,
@@ -513,6 +520,7 @@ export default function RecordDetail(): JSX.Element {
             />
           )}
           {activeTab === 'timeline' && <TimelineTab module={moduleName!} id={id!} />}
+          {activeTab === 'matching' && <MatchingTab module={moduleName!} id={id!} returnQuery={returnQuery} />}
           {activeTab.startsWith('rel:') && (
             <RelatedTab
               meta={meta} module={moduleName!} id={id!}
@@ -728,6 +736,136 @@ function TimelineTab({ module, id }: { module: string; id: string }): JSX.Elemen
           <ol className="relative space-y-4 border-l border-slate-200 pl-6 dark:border-slate-800">
             {data.map((entry) => <TimelineItem key={entry.id} entry={entry} />)}
           </ol>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Matching: the two-way bridge between Contacts and Properties.
+ *
+ * On a contact it lists the units from live inventory that fit the stated
+ * requirement — budget with 10% headroom, configuration (adjacent BHK counts
+ * forgiven as a soft miss), preferred areas, area, possession. On a property
+ * it runs the same engine in reverse and lists the contacts worth pitching.
+ *
+ * Both directions share one table: score, the record, the facts a rep weighs
+ * before picking up the phone, and the first AI-written reason. A row click
+ * opens the other record and carries `return` so Back lands on this record,
+ * this tab, exactly where the user was.
+ */
+function MatchingTab({ module, id, returnQuery }: { module: string; id: string; returnQuery: string }): JSX.Element {
+  const navigate = useNavigate();
+  const isContact = module === 'leads';
+
+  const { data, isLoading, refetch, isFetching } = useQuery({
+    queryKey: ['matching', module, id],
+    // Both directions answered by one query: the shape is a union narrowed by
+    // `isContact` in the useMemo below.
+    queryFn: (): Promise<{ matches?: PropertyMatch[]; buyers?: BuyerMatch[] }> => isContact
+      ? api.matchProperties(module, id, true)
+      : api.buyersForProperty(id, true),
+    // The AI narrative costs a model call — refresh is the button, not every visit.
+    staleTime: 5 * 60_000,
+  });
+
+  const matches = useMemo<{ id: string; label: string; score: number; primary: string; secondary: string; reason: string; caveat: string; status: string | null | undefined }[]>(() => {
+    if (isContact) {
+      const rows = ((data as { matches?: PropertyMatch[] } | undefined)?.matches ?? []);
+      return rows.map((m) => ({
+        id: m.propertyId,
+        label: m.propertyLabel,
+        score: m.score,
+        primary: m.configuration ?? '—',
+        secondary: m.price ? formatIndianPrice(m.price) : '—',
+        reason: m.reasons[0] ?? '',
+        caveat: m.mismatches[0] ?? '',
+        status: undefined,
+      }));
+    }
+    const rows = ((data as { buyers?: BuyerMatch[] } | undefined)?.buyers ?? []);
+    return rows.map((b) => ({
+      id: b.recordId,
+      label: b.label,
+      score: b.score,
+      primary: b.configuration?.join(', ') || '—',
+      secondary: b.budget ? formatIndianPrice(b.budget) : '—',
+      reason: b.revival ?? b.reasons[0] ?? '',
+      caveat: b.reasons.find((r) => /above budget|smaller|outside/i.test(r)) ?? '',
+      status: b.status,
+    }));
+  }, [data, isContact]);
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 p-3 dark:border-slate-800">
+        <Link2 className="h-4 w-4 text-brand-500" />
+        <span className="text-sm font-medium">
+          {isContact ? 'Matching properties' : 'Matching contacts'}
+        </span>
+        <p className="hidden text-xs text-muted sm:block">
+          {isContact
+            ? 'Live inventory against the stated requirement — 10% budget headroom, adjacent configurations forgiven'
+            : 'Open contacts worth pitching this unit — same engine, reverse direction'}
+        </p>
+        <button
+          onClick={() => void refetch()}
+          disabled={isFetching}
+          aria-label="Refresh matches"
+          className="btn-ghost btn-sm ml-auto"
+        >
+          {isFetching ? <Spinner className="h-3 w-3" /> : <RefreshCw className="h-3 w-3" />}
+        </button>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-2 p-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10" />)}</div>
+      ) : !matches.length ? (
+        <EmptyState
+          icon={<Link2 className="h-8 w-8" />}
+          title={isContact ? 'No matching inventory' : 'No matching contacts'}
+          body={isContact
+            ? 'Nothing available fits the stated requirement right now. Add or reprice a unit, or widen the requirement.'
+            : 'No open contact fits this unit yet. It sells itself when one arrives — check back after the next enquiry.'}
+        />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr>
+                <th className="list-head w-24">Fit</th>
+                <th className="list-head">{isContact ? 'Property' : 'Contact'}</th>
+                <th className="list-head hidden sm:table-cell">Configuration</th>
+                <th className="list-head hidden sm:table-cell">{isContact ? 'Price' : 'Budget'}</th>
+                {!isContact && <th className="list-head hidden md:table-cell">Status</th>}
+                <th className="list-head">Why it fits</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {matches.map((m) => (
+                <tr
+                  key={m.id}
+                  className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                  onClick={() => navigate(`/${isContact ? 'properties' : 'leads'}/${m.id}${returnQuery}`)}
+                >
+                  <td className="list-cell"><ScoreChip score={m.score} /></td>
+                  <td className="list-cell min-w-40 max-w-56">
+                    <span className="block truncate font-medium text-brand-600 hover:underline dark:text-brand-400">
+                      {m.label}
+                    </span>
+                  </td>
+                  <td className="list-cell hidden whitespace-nowrap tnum sm:table-cell">{m.primary}</td>
+                  <td className="list-cell hidden whitespace-nowrap tnum sm:table-cell">{m.secondary}</td>
+                  {!isContact && <td className="list-cell hidden md:table-cell">{m.status ?? '—'}</td>}
+                  <td className="list-cell max-w-md">
+                    <span className="block truncate text-xs">{m.reason}</span>
+                    {m.caveat && <span className="block truncate text-2xs text-amber-600 dark:text-amber-400">{m.caveat}</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

@@ -545,6 +545,14 @@ export interface BuyerMatch {
   reasons: string[];
   /** Set when this is somebody who previously said no, explaining what changed. */
   revival?: string;
+  /** Table columns for the Matching contacts tab — what a rep scans before ringing. */
+  budget?: number | null;
+  configuration?: string[] | null;
+  preferredLocations?: string[] | null;
+  possessionTimeline?: string | null;
+  purpose?: string | null;
+  status?: string | null;
+  wasLost?: boolean;
 }
 
 /**
@@ -555,6 +563,7 @@ export async function matchBuyersForProperty(
   propertyId: string,
   limit = 10,
   scope?: ScopeContext,
+  opts: { withNarrative?: boolean } = {},
 ): Promise<BuyerMatch[]> {
   const { matchFloor } = await scoringThresholds();
   const property = await db.queryOne<PropertyRow>(
@@ -624,7 +633,7 @@ export async function matchBuyersForProperty(
     params.all(),
   );
 
-  return leads.rows
+  const buyers = leads.rows
     .map((lead) => {
       const req: Requirement = {
         budget: lead.budget,
@@ -651,6 +660,15 @@ export async function matchBuyersForProperty(
           // reasons are the supporting detail.
           reasons: revival ? [revival, ...scored.reasons] : scored.reasons,
           ...(revival ? { revival } : {}),
+          // The columns the Matching contacts table shows — the requirement as
+          // the buyer stated it, so the rep can weigh the fit themselves rather
+          // than trusting a single number.
+          budget: lead.budget,
+          configuration: lead.configuration ?? [],
+          preferredLocations: lead.preferred_locations ?? [],
+          possessionTimeline: lead.possession_timeline,
+          purpose: lead.purpose,
+          status: lead.status,
         } satisfies BuyerMatch,
       };
     })
@@ -665,4 +683,70 @@ export async function matchBuyersForProperty(
     .map(({ match }) => match)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
+
+  /*
+    The LLM writes the pitch reasoning for the buyer rows too — the same
+    contract as the properties direction: the scorer decides *who*, the model
+    explains *why*, grounded in the same data and falling back to the
+    deterministic reasons whenever no provider answers.
+  */
+  if (opts.withNarrative && isAiAvailable() && buyers.length) {
+    const narrated = await addBuyerNarrative(property, buyers);
+    if (narrated) return narrated;
+  }
+
+  return buyers;
+}
+
+/**
+ * The reasoning layer for the reverse direction: one model call explains every
+ * matched buyer in the language a rep would use on the call.
+ */
+async function addBuyerNarrative(property: PropertyRow, buyers: BuyerMatch[]): Promise<BuyerMatch[] | null> {
+  const prompt = `A property is available:
+- Unit: ${property.label}
+- Project: ${property.project_name ?? '—'}
+- Configuration: ${property.configuration ?? '—'}, ${formatArea(property.carpet_area, property.area_unit ?? 'sqft')} carpet
+- Price: ${formatIndianPrice(property.total_price ?? property.base_price ?? 0)}
+- Floor ${property.floor ?? '—'}, ${property.facing ?? '—'} facing${property.corner_unit ? ', corner unit' : ''}
+- Location: ${property.locality ?? '—'}
+- Possession: ${property.possession_status ?? '—'}${property.possession_date ? ` (${property.possession_date})` : ''}
+- Amenities: ${(property.amenities ?? []).join(', ') || '—'}
+
+Here are the matched contacts with their computed fit scores:
+
+${buyers.map((b, i) => `### ${i + 1}. ${b.label} (score ${b.score})
+- Budget: ${b.budget ? formatIndianPrice(b.budget) : '—'}
+- Wanted configuration: ${b.configuration?.join(', ') || '—'}
+- Preferred areas: ${b.preferredLocations?.join(', ') || '—'}
+- Possession timeline: ${b.possessionTimeline ?? '—'}
+- Purpose: ${b.purpose ?? '—'}
+- Status: ${b.status ?? '—'}${b.revival ? `\n- Revival angle: ${b.revival}` : ''}
+- Computed strengths: ${b.reasons.join('; ') || 'none'}`).join('\n\n')}
+
+For each contact, write the reason a sales rep should pitch *this unit* to *this person*. Ground every claim in the data above — do not invent amenities, prices or dates.
+
+Return JSON:
+{
+  "matches": [
+    { "index": <1-based index above>, "reasons": [<2-3 persuasive, specific strings>] }
+  ]
+}`;
+
+  const parsed = await completeJson<{ matches: { index: number; reasons: string[] }[] }>({
+    feature: 'property_matching',
+    system: REAL_ESTATE_SYSTEM,
+    prompt,
+    maxTokens: 2000,
+    recordId: property.record_id,
+  });
+  if (!parsed?.matches) return null;
+
+  const byIndex = new Map(parsed.matches.map((m) => [m.index, m]));
+  return buyers.map((b, i) => {
+    const enriched = byIndex.get(i + 1);
+    return enriched?.reasons?.length
+      ? { ...b, reasons: enriched.reasons }
+      : b;
+  });
 }

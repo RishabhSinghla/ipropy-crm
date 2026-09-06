@@ -463,6 +463,15 @@ export async function seedDefaultLayouts(conn: Tx, def: ModuleDef): Promise<void
     tabs: [
       { key: 'overview', label: 'Overview', icon: 'layout-dashboard' },
       { key: 'timeline', label: 'Timeline', icon: 'activity' },
+      // The two-way Contacts ↔ Properties bridge, right after Timeline. The
+      // label mirrors the module: on a contact it lists the units, on a unit
+      // it lists the people.
+      ...(def.name === 'leads' ? [
+        { key: 'matching', label: 'Matching property', icon: 'link-2' },
+      ] : []),
+      ...(def.name === 'properties' ? [
+        { key: 'matching', label: 'Matching contacts', icon: 'link-2' },
+      ] : []),
       ...(def.name === 'leads' ? [{ key: 'calls', label: 'Calls', icon: 'phone' }] : []),
       { key: 'files', label: 'Files', icon: 'paperclip' },
       ...(def.relations ?? []).map((relation) => ({

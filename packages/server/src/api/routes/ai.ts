@@ -148,7 +148,11 @@ aiRouter.get('/buyers-for/:propertyId', modelLimiter, asyncHandler(async (req, r
   if (!(await canAccessRecord(scope, 'properties', req.params.propertyId, 'view'))) throw new NotFoundError();
   // The buyer list is a leads list by another name — names, budgets and
   // owners — so it is scoped like one.
-  res.json({ buyers: await matchBuyersForProperty(req.params.propertyId, Math.min(25, Number(req.query.limit) || 10), scope) });
+  const limit = Math.min(25, Number(req.query.limit) || 10);
+  const buyers = await matchBuyersForProperty(req.params.propertyId, limit, scope, {
+    withNarrative: req.query.narrative !== 'false',
+  });
+  res.json({ buyers });
 }));
 
 // ---------------------------------------------------------------------------

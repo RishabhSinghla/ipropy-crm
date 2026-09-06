@@ -5,8 +5,8 @@
  * server error envelopes into thrown ApiError objects the UI can render.
  */
 import type {
-  AuthUser, CustomView, Dashboard, FieldMeta, ListQuery, ListResult, ModuleMeta,
-  RecordEnvelope, TimelineEntry,
+  AuthUser, BuyerMatch, CustomView, Dashboard, FieldMeta, ListQuery, ListResult, ModuleMeta,
+  PropertyMatch, RecordEnvelope, TimelineEntry,
 } from '@ipropy/shared';
 
 const TOKEN_KEY = 'ipropy.token';
@@ -855,9 +855,9 @@ export const api = {
   scoreLead: (id: string) => post<Record<string, unknown>>(`/api/ai/score-lead/${id}`),
   analyseDeal: (id: string) => post<Record<string, unknown>>(`/api/ai/analyse-deal/${id}`),
   matchProperties: (module: string, id: string, narrative = false) =>
-    get<{ matches: Record<string, unknown>[]; requirement: Record<string, unknown> }>(`/api/ai/match/${module}/${id}${qs({ narrative, limit: 6 })}`),
-  buyersForProperty: (propertyId: string) =>
-    get<{ buyers: Record<string, unknown>[] }>(`/api/ai/buyers-for/${propertyId}`),
+    get<{ matches: PropertyMatch[]; requirement: Record<string, unknown> }>(`/api/ai/match/${module}/${id}${qs({ narrative, limit: 10 })}`),
+  buyersForProperty: (propertyId: string, narrative = false) =>
+    get<{ buyers: BuyerMatch[] }>(`/api/ai/buyers-for/${propertyId}${qs({ narrative, limit: 10 })}`),
   draft: (data: Record<string, unknown>) => post<{ subject?: string; body: string }>('/api/ai/draft', data),
   summarise: (module: string, id: string) => post<{ summary: string }>(`/api/ai/summarise/${module}/${id}`),
   insights: (recordId: string) => get<Record<string, unknown>[]>(`/api/ai/insights/${recordId}`),

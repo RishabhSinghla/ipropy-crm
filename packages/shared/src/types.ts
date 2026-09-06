@@ -568,6 +568,26 @@ export interface PropertyMatch {
   configuration?: string;
 }
 
+/**
+ * A buyer matched to a unit — the mirror of PropertyMatch, shown on the
+ * property's "Matching contacts" tab.
+ */
+export interface BuyerMatch {
+  recordId: string;
+  label: string;
+  module: string;
+  score: number;
+  ownerId: string | null;
+  reasons: string[];
+  revival?: string;
+  budget?: number | null;
+  configuration?: string[] | null;
+  preferredLocations?: string[] | null;
+  possessionTimeline?: string | null;
+  purpose?: string | null;
+  status?: string | null;
+}
+
 export interface LeadScoreResult {
   score: number;
   temperature: 'Hot' | 'Warm' | 'Cold';
