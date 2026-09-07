@@ -53,7 +53,13 @@ async function moduleRoutes(page: Page): Promise<string[]> {
 
   const routes = await page.evaluate(() => {
     const skip = new Set(['/dashboard', '/settings', '/inbox', '/calls', '/reports', '/portal']);
+    // Visible links only: since the header became a top bar the same href
+    // appears in three navs (top tabs, drawer, bottom bar), and the hidden
+    // ones cannot be clicked — the Site visit tab is drawer/bottom-bar-only
+    // at desktop width, so including invisible copies made this sweep click
+    // a link that never appears on screen.
     return [...document.querySelectorAll<HTMLAnchorElement>('nav a[href]')]
+      .filter((a) => a.offsetParent !== null)
       .map((a) => new URL(a.href).pathname)
       .filter((p) => /^\/[a-z_]+$/.test(p) && !skip.has(p))
       .filter((p, i, all) => all.indexOf(p) === i);
