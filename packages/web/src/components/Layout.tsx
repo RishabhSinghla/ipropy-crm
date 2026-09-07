@@ -78,7 +78,12 @@ export default function Layout(): JSX.Element {
     the same entry can rename a tab. Anything the admin has not placed is
     appended, so a module created after the arrangement still appears; the
     arrangement can only reorder and rename, never orphan.
+
+    `arrangedCapture` says whether the Site visit tab is here because the
+    admin placed it (then it renders at every width) or only from the shipped
+    default (then the desktop bar drops it — see the capture branch below).
   */
+  const arrangedCapture = Boolean(user?.ui?.headerTabs?.some((t) => t.kind === 'capture'));
   const headerTabs = useMemo(() => {
     const arranged = user?.ui?.headerTabs;
     // No arrangement yet: the shipped order. Dashboard first, the modules in
@@ -152,6 +157,16 @@ export default function Layout(): JSX.Element {
                 return <TabItem key={key} to="/dashboard" icon={<LayoutDashboard className="h-4 w-4" />} label={t.label ?? 'Dashboard'} />;
               }
               if (t.kind === 'capture') {
+                /*
+                  Phone-only by default. At a desk the capture form is two clicks
+                  from Properties ("New Property" → "Capture on site"), so the
+                  tab there duplicated a path and read as a fifth destination;
+                  on a phone it *is* the destination — one tap from the bottom
+                  bar, standing at the gate — so the drawer and bottom tabs keep
+                  it unconditionally. An admin who explicitly places the tab in
+                  Admin → Header Tabs overrides this and it shows at every width.
+                */
+                if (!arrangedCapture) return null;
                 return <TabItem key={key} to="/capture" icon={<MapPin className="h-4 w-4" />} label={t.label ?? 'Site visit'} />;
               }
               if (t.kind === 'reports') {

@@ -27,12 +27,11 @@ import { Badge, ConfirmDialog, Modal, Skeleton, Spinner, Toggle } from '../../co
  *     that records still hold cannot vanish silently, so the dialog says how
  *     many and makes the admin choose what those records should say instead.
  *
- * Each option is two lines, not one. The old single row crammed a tick box,
- * drag handle, arrows, the name, ten swatches, a preview chip, a star, a
- * toggle and a bin onto one wrapping line — everything readable only by
- * hunting, and the name box squeezed to a letter on narrow screens. Line one
- * is the decision (name, active, default, delete); line two is the dressing
- * (colour, preview, and the rare stored-value edit).
+ * Each option is one line: select, reorder, name, colour, preview, default,
+ * active, delete — side by side, so a long list scans as single rows and the
+ * name never sits alone above the dressing. On a narrow screen the line wraps
+ * inside itself rather than splitting into a separate indented row, so the
+ * colour stays beside the name it belongs to even at phone width.
  */
 
 interface Option {
@@ -345,16 +344,18 @@ export default function PicklistManager(): JSX.Element {
               <div
                 key={option.previousValue ?? `new-${index}`}
                 className={cn(
-                  'space-y-1.5 p-2.5 transition-colors',
+                  'transition-colors',
                   dragIndex === index && 'bg-brand-50/60 dark:bg-brand-950/40',
                   !option.isActive && 'opacity-60',
                 )}
                 onDragOver={(e) => { e.preventDefault(); }}
                 onDrop={(e) => { e.preventDefault(); if (dragIndex !== null) moveTo(dragIndex, index); setDragIndex(null); }}
               >
-                {/* Line one — the decision: select, reorder, name, active,
-                    default, delete. Nothing else competes for this width. */}
-                <div className="flex items-center gap-2">
+                {/* One line — the decision and the dressing together: select,
+                    reorder, name, colour, preview, default, active, delete.
+                    Wrapping stays inside the row, so the colour never drops
+                    onto a second indented line under the name. */}
+                <div className="flex flex-wrap items-center gap-2 px-2.5 py-2">
                   {/* Only a saved option can be removed; an unsaved new row is
                       removed by clearing what you typed. */}
                   {option.previousValue ? (
@@ -404,7 +405,9 @@ export default function PicklistManager(): JSX.Element {
                   </div>
 
                   {/*
-                    One box, not two.
+                    One box, not two — and sized to its job. `flex-1` stretched
+                    the name to swallow the whole panel; a fixed max keeps the
+                    line compact and lets the colour sit beside the name.
 
                     There used to be a second "stored value" field beside this
                     one, because renaming what is *written on the record* is a
@@ -414,7 +417,7 @@ export default function PicklistManager(): JSX.Element {
                     existing one it stays put, which is the safe answer in both
                     cases. The rare edit is behind "Show stored values" above.
                   */}
-                  <div className="relative min-w-[9rem] flex-1">
+                  <div className="relative w-full max-w-[16rem] sm:w-56">
                     <input
                       className="input w-full py-1.5 text-sm"
                       placeholder="Option name"
@@ -439,6 +442,52 @@ export default function PicklistManager(): JSX.Element {
                     )}
                   </div>
 
+                  {/* The colour and its preview, right beside the name they
+                      dress. The rare stored-value edit joins the line only
+                      when asked for above. */}
+                  {showStored && (
+                    <input
+                      className={cn(
+                        'input w-40 py-1 font-mono text-xs',
+                        option.usedInCode && option.previousValue !== option.value
+                          && 'border-amber-400 focus:border-amber-500 focus:ring-amber-500',
+                      )}
+                      placeholder="Stored value"
+                      aria-label="Stored value"
+                      value={option.value}
+                      onChange={(e) => update(index, { value: e.target.value })}
+                      title={option.previousValue && option.previousValue !== option.value
+                        ? `Saving moves every record from "${option.previousValue}" to "${option.value}"`
+                        : 'What gets written on the record'}
+                    />
+                  )}
+                  <div className="flex shrink-0 items-center gap-1">
+                    {SWATCHES.map((c) => (
+                      <button
+                        key={c}
+                        onClick={() => update(index, { color: c })}
+                        className={cn(
+                          'h-4 w-4 rounded-full transition-transform hover:scale-125',
+                          option.color === c && 'ring-2 ring-slate-400 ring-offset-1 dark:ring-offset-slate-900',
+                        )}
+                        style={{ backgroundColor: c }}
+                        title={c}
+                        aria-label={`Colour ${c}`}
+                      />
+                    ))}
+                    <input
+                      type="color"
+                      value={option.color ?? '#64748b'}
+                      onChange={(e) => update(index, { color: e.target.value })}
+                      className="h-4 w-4 cursor-pointer rounded-full border-0 bg-transparent p-0"
+                      title="Any other colour"
+                      aria-label="Pick any colour"
+                    />
+                  </div>
+                  <Badge color={option.color} className="hidden sm:inline-flex">
+                    {option.label || 'Preview'}
+                  </Badge>
+
                   <button
                     onClick={() => {
                       setOptions((prev) => prev.map((o, i) => ({
@@ -447,7 +496,7 @@ export default function PicklistManager(): JSX.Element {
                       setDirty(true);
                     }}
                     className={cn(
-                      'shrink-0 transition-colors',
+                      'ml-auto shrink-0 transition-colors',
                       option.isDefault ? 'text-amber-500' : 'text-slate-300 hover:text-amber-500',
                     )}
                     title={option.isDefault ? 'This is the default for new records' : 'Make this the default'}
@@ -480,54 +529,6 @@ export default function PicklistManager(): JSX.Element {
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
-                </div>
-
-                {/* Line two — the dressing: colour, preview, and the rare
-                    stored-value edit. Quietly indented under the name it
-                    belongs to, so a long list scans as name lines. */}
-                <div className="flex flex-wrap items-center gap-2 pl-14">
-                  {showStored && (
-                    <input
-                      className={cn(
-                        'input w-40 py-1 font-mono text-xs',
-                        option.usedInCode && option.previousValue !== option.value
-                          && 'border-amber-400 focus:border-amber-500 focus:ring-amber-500',
-                      )}
-                      placeholder="Stored value"
-                      aria-label="Stored value"
-                      value={option.value}
-                      onChange={(e) => update(index, { value: e.target.value })}
-                      title={option.previousValue && option.previousValue !== option.value
-                        ? `Saving moves every record from "${option.previousValue}" to "${option.value}"`
-                        : 'What gets written on the record'}
-                    />
-                  )}
-                  <div className="flex items-center gap-1">
-                    {SWATCHES.map((c) => (
-                      <button
-                        key={c}
-                        onClick={() => update(index, { color: c })}
-                        className={cn(
-                          'h-4 w-4 rounded-full transition-transform hover:scale-125',
-                          option.color === c && 'ring-2 ring-slate-400 ring-offset-1 dark:ring-offset-slate-900',
-                        )}
-                        style={{ backgroundColor: c }}
-                        title={c}
-                        aria-label={`Colour ${c}`}
-                      />
-                    ))}
-                    <input
-                      type="color"
-                      value={option.color ?? '#64748b'}
-                      onChange={(e) => update(index, { color: e.target.value })}
-                      className="h-4 w-4 cursor-pointer rounded-full border-0 bg-transparent p-0"
-                      title="Any other colour"
-                      aria-label="Pick any colour"
-                    />
-                  </div>
-                  <Badge color={option.color}>
-                    {option.label || 'Preview'}
-                  </Badge>
                 </div>
               </div>
             ))}

@@ -10,7 +10,14 @@
  *
  * So this screen is the same create, shaped for the other posture: one column,
  * four fields, a Save that never scrolls out of reach, and the rest folded away
- * for when the owner is standing there answering questions anyway.
+ * for when the owner is standing there answering questions anyway. On a desk
+ * the same fields sit beside a running list of what this session has added,
+ * because there the posture is relaxed enough for two columns.
+ *
+ * Reachable two ways, deliberately: the header tab survives on phones (the
+ * bottom bar and drawer keep it) and on the desk the Properties list's
+ * "New Property" split button offers "Capture on site" as its second action —
+ * one entry point per posture, not a tab competing with both.
  *
  * Two things it deliberately is NOT:
  *
@@ -258,65 +265,110 @@ export default function SiteCapture(): JSX.Element {
   }
 
   return (
-    // Capped narrow even on a laptop: this is a phone screen that happens to be
-    // reachable from a desk, and a four-field form stretched to 1400px reads as
-    // a broken page rather than a deliberate one.
-    <div className="mx-auto w-full max-w-lg pb-28">
-      <header className="pt-1">
-        <h1 className="text-xl font-semibold tracking-tight">Add a property on site</h1>
-        <p className="mt-1 text-sm text-muted">
-          Fill in what you know standing there. You can finish the rest later from your desk.
-        </p>
-      </header>
+    <form
+      // Capped narrow even on a laptop: this is a phone screen that happens to be
+      // reachable from a desk, and a four-field form stretched to 1400px reads as
+      // a broken page rather than a deliberate one. On a wide screen it sits
+      // beside a session column, so the whole visit is one glance.
+      className="mx-auto grid w-full max-w-4xl gap-6 pb-28 lg:grid-cols-[minmax(0,1fr)_20rem] lg:pb-6"
+      onSubmit={(e) => { e.preventDefault(); void save(); }}
+    >
+      <div>
+        <header className="pt-1">
+          <h1 className="text-xl font-semibold tracking-tight">Add a property on site</h1>
+          <p className="mt-1 text-sm text-muted">
+            Fill in what you know standing there. You can finish the rest later from your desk.
+          </p>
+        </header>
 
-      {gpsOffered && <GpsPanel enabled={useGps} onToggle={setUseGps} fix={fix} state={gpsState} />}
+        {gpsOffered && <GpsPanel enabled={useGps} onToggle={setUseGps} fix={fix} state={gpsState} />}
 
-      <div className="mt-3 space-y-3">
-        {primary.map((field) => (
-          <div key={field.name}>
-            <label htmlFor={`sc_${field.name}`} className="mb-1 block text-sm font-medium">
-              {field.label}
-              {field.isMandatory && <span className="ml-0.5 text-negative">*</span>}
-            </label>
-            <FieldInput
-              id={`sc_${field.name}`}
-              field={field}
-              value={values[field.name]}
-              onChange={(v) => setValue(field.name, v)}
-              onChangeOther={setValue}
-              error={errors[field.name]}
-              formValues={values}
-              moduleName={MODULE}
-            />
-            {errors[field.name] && (
-              <p className="mt-1 text-xs text-negative">{errors[field.name]}</p>
-            )}
-          </div>
-        ))}
+        <div className="mt-3 space-y-3">
+          {primary.map((field) => (
+            <div key={field.name}>
+              <label htmlFor={`sc_${field.name}`} className="mb-1 block text-sm font-medium">
+                {field.label}
+                {field.isMandatory && <span className="ml-0.5 text-negative">*</span>}
+              </label>
+              <FieldInput
+                id={`sc_${field.name}`}
+                field={field}
+                value={values[field.name]}
+                onChange={(v) => setValue(field.name, v)}
+                onChangeOther={setValue}
+                error={errors[field.name]}
+                formValues={values}
+                moduleName={MODULE}
+              />
+              {errors[field.name] && (
+                <p className="mt-1 text-xs text-negative">{errors[field.name]}</p>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {hidden > 0 && !showAll && (
+          <button
+            type="button"
+            onClick={() => setShowAll(true)}
+            className="btn-ghost mt-3 w-full justify-center gap-1.5 py-3 text-sm"
+          >
+            <ChevronDown className="h-4 w-4" />
+            More details ({hidden})
+          </button>
+        )}
+
+        {/*
+          The desk's own Save. The fixed bottom bar is a phone control; on a
+          wide screen the natural end of the form is where the submit belongs.
+        */}
+        <div className="mt-4 hidden items-center gap-3 lg:flex">
+          <button
+            type="submit"
+            disabled={!canSave}
+            className="btn-primary h-10 px-6 text-sm"
+          >
+            {saving ? <Spinner className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+            {saving ? 'Saving…' : 'Save property'}
+          </button>
+          {!label && (
+            <p className="text-xs text-muted">
+              Give it a name to save — the flat number is enough.
+            </p>
+          )}
+        </div>
       </div>
 
-      {hidden > 0 && !showAll && (
-        <button
-          type="button"
-          onClick={() => setShowAll(true)}
-          className="btn-ghost mt-3 w-full justify-center gap-1.5 py-3 text-sm"
-        >
-          <ChevronDown className="h-4 w-4" />
-          More details ({hidden})
-        </button>
-      )}
-
-      {saved.length > 0 && <JustAdded saved={saved} onOpen={(id) => navigate(`/${MODULE}/${id}`)} />}
+      {/*
+        The desk half: what this session has produced, where a phone shows it
+        stacked below the form. Kept on screen at lg+ so saving the sixth unit
+        of the day does not scroll back to find out whether the fifth one
+        took.
+      */}
+      <aside className="lg:sticky lg:top-4 lg:self-start">
+        {saved.length > 0 ? (
+          <JustAdded saved={saved} onOpen={(id) => navigate(`/${MODULE}/${id}`)} />
+        ) : (
+          <div className="card hidden p-4 lg:block">
+            <p className="text-sm font-medium">This visit</p>
+            <p className="mt-1 text-xs text-muted">
+              Every property you save here is listed as you go, ready to open for photos
+              and finishing when you are back at the desk.
+            </p>
+          </div>
+        )}
+      </aside>
 
       {/*
         Fixed rather than in flow. On a phone the keyboard eats the lower half of
         the screen, and a Save that lives at the bottom of a nine-field form is a
-        Save nobody finds with one thumb.
+        Save nobody finds with one thumb. At lg+ the form is short enough that
+        the footer would only duplicate it, so the bar stays phone-only.
       */}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 p-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 lg:left-60">
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 p-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 lg:hidden">
         <div className="mx-auto flex max-w-lg items-center gap-2">
           <button
-            type="button"
+            type="submit"
             onClick={() => void save()}
             disabled={!canSave}
             className="btn-primary h-12 flex-1 justify-center gap-2 text-base"
@@ -331,7 +383,7 @@ export default function SiteCapture(): JSX.Element {
           </p>
         )}
       </div>
-    </div>
+    </form>
   );
 }
 
