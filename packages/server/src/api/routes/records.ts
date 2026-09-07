@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { logger } from '../../utils/logger.js';
 import { z } from 'zod';
 import { createShareLink, listShareLinks, revokeShareLink } from '../../core/sharing/shareLinks.js';
-import type { FilterGroup } from '@ipropy/shared';
+import type { FilterGroup, ListQuery } from '@ipropy/shared';
 import { db, transaction } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { blockApiKey, getScope, getUser, requireAuth } from '../../middleware/auth.js';
@@ -213,6 +213,26 @@ recordsRouter.post('/:module/mass-update', asyncHandler(async (req, res) => {
   res.json(await recordService.massUpdate(getScope(req), req.params.module, ids, values));
 }));
 
+/**
+ * Bulk edit every record the current view/filter matches — Gmail's "select all
+ * conversations in this search", for records. The query arrives exactly as the
+ * list screen sent it, so what gets edited is what the user was looking at.
+ */
+recordsRouter.post('/:module/mass-update-all', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'records.mass_edit');
+  await assertModuleAccess(user, req.params.module, 'edit');
+  const { query, values } = z.object({
+    query: z.object({
+      view: z.string().uuid().optional(),
+      filter: z.unknown().optional(),
+      search: z.string().optional(),
+    }).passthrough(),
+    values: z.record(z.unknown()),
+  }).parse(req.body);
+  res.json(await recordService.massUpdateByQuery(getScope(req), req.params.module, query as ListQuery, values));
+}));
+
 recordsRouter.post('/:module/mass-delete', asyncHandler(async (req, res) => {
   const user = getUser(req);
   await assertCapability(user, 'records.mass_delete');
@@ -230,6 +250,21 @@ recordsRouter.post('/:module/transfer', asyncHandler(async (req, res) => {
   }).parse(req.body);
   const count = await recordService.transferOwnership(getScope(req), req.params.module, ids, ownerId, ownerType);
   res.json({ transferred: count });
+}));
+
+/** Reassign every record the view/filter matches — the select-all companion. */
+recordsRouter.post('/:module/transfer-all', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'records.transfer_ownership');
+  await assertModuleAccess(user, req.params.module, 'edit');
+  const { query, ownerId, ownerType } = z.object({
+    query: z.object({}).passthrough(),
+    ownerId: z.string().uuid(),
+    ownerType: z.enum(['user', 'group']).default('user'),
+  }).parse(req.body);
+  const ids = await recordService.idsForQuery(getScope(req), req.params.module, query as ListQuery);
+  const count = await recordService.transferOwnership(getScope(req), req.params.module, ids, ownerId, ownerType);
+  res.json({ transferred: count, matched: ids.length });
 }));
 
 // ---------------------------------------------------------------------------
@@ -311,7 +346,7 @@ recordsRouter.get('/:module/:id/comments', asyncHandler(async (req, res) => {
   if (!(await canAccessRecord(scope, req.params.module, req.params.id, 'view'))) throw new ForbiddenError();
   const rows = await db.query(
     `SELECT c.id, c.parent_id, c.user_id, c.body, c.mentions, c.is_private, c.created_at, c.updated_at,
-            trim(u.first_name || ' ' || u.last_name) AS user_name, u.avatar_url AS user_avatar
+            c.edit_history, trim(u.first_name || ' ' || u.last_name) AS user_name, u.avatar_url AS user_avatar
      FROM ipy_comment c JOIN ipy_user u ON u.id = c.user_id
      WHERE c.record_id = $1
      ORDER BY c.created_at DESC`,
@@ -351,6 +386,66 @@ recordsRouter.post('/:module/:id/comments', asyncHandler(async (req, res) => {
 
   await recordService.touchActivity(id);
   res.status(201).json({ id: row?.id, createdAt: row?.created_at });
+}));
+
+/**
+ * Edit a note you wrote.
+ *
+ * The author (or an admin) may fix a note after posting. The previous text is
+ * kept in `edit_history` — an edit is honest when what was there before is
+ * still readable, the way message apps show it, not a silent overwrite of what
+ * a colleague may already have read and acted on.
+ */
+recordsRouter.patch('/:module/:id/comments/:commentId', asyncHandler(async (req, res) => {
+  const scope = getScope(req);
+  const user = getUser(req);
+  if (!(await canAccessRecord(scope, req.params.module, req.params.id, 'view'))) throw new ForbiddenError();
+
+  const { body, mentions } = z.object({
+    body: z.string().min(1).max(10_000),
+    mentions: z.array(z.string().uuid()).optional(),
+  }).parse(req.body);
+
+  const existing = await db.queryOne<{ user_id: string; body: string; mentions: unknown; edit_history: { body: string; at: string }[] }>(
+    `SELECT user_id, body, mentions, edit_history FROM ipy_comment WHERE id = $1 AND record_id = $2`,
+    [req.params.commentId, req.params.id],
+  );
+  if (!existing) throw new NotFoundError('Comment not found');
+  if (existing.user_id !== user.id && !user.isAdmin) {
+    throw new ForbiddenError('Only the person who wrote this note can edit it');
+  }
+
+  // No history entry when nothing changed — a save is not always an edit.
+  const changed = existing.body !== body;
+  const history = changed
+    ? [...(existing.edit_history ?? []), { body: existing.body, at: new Date().toISOString() }]
+    : existing.edit_history ?? [];
+
+  // jsonb arrives already parsed; mentions only falls back to a list when null.
+  const before = new Set(Array.isArray(existing.mentions) ? existing.mentions as string[] : []);
+
+  await db.query(
+    `UPDATE ipy_comment
+        SET body = $3, mentions = $4, edit_history = $5, updated_at = now()
+      WHERE id = $1 AND record_id = $2`,
+    [req.params.commentId, req.params.id, body, JSON.stringify(mentions ?? [...before]), JSON.stringify(history)],
+  );
+
+  // Newly @mentioned colleagues hear about it the same as on a fresh post;
+  // anybody mentioned in the old text is not re-pinged.
+  const fresh = (mentions ?? []).filter((m) => m !== user.id && !before.has(m));
+  if (fresh.length) {
+    await notifyMany(fresh, {
+      kind: 'mention',
+      title: `${user.fullName} mentioned you`,
+      body: body.slice(0, 200),
+      link: `/${req.params.module}/${req.params.id}`,
+      recordId: req.params.id,
+    });
+  }
+
+  await recordService.touchActivity(req.params.id);
+  res.json({ ok: true, edited: changed });
 }));
 
 recordsRouter.delete('/:module/:id/comments/:commentId', asyncHandler(async (req, res) => {

@@ -8,7 +8,7 @@ import { api, type AiAssistantAction, type AiAssistantMessage, type AiMemory, ty
 import { useVoiceCapture } from '../lib/useVoiceCapture';
 import { toast, useApp } from '../lib/store';
 import { cn, renderMarkdown } from '../lib/utils';
-import { Badge, Spinner } from './ui';
+import { Spinner } from './ui';
 import { PeekLink } from './PeekLink';
 
 const SUGGESTIONS = [
@@ -245,8 +245,19 @@ export default function AiAssistant({
 
   return (
     <>
-      <button aria-label="Close Ask iPropy" className="fixed inset-0 z-40 bg-slate-950/30 backdrop-blur-[1px] sm:hidden" onClick={onClose} />
-      <aside className="fixed inset-x-2 bottom-2 top-14 z-50 flex animate-slide-up flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-float sm:inset-x-auto sm:bottom-4 sm:right-4 sm:top-16 sm:w-[min(30rem,calc(100vw-2rem))] dark:border-slate-700 dark:bg-slate-900">
+      {/* The backdrop dims and blurs what is behind, and a click closes the
+          panel — the split the desk asked for: the assistant comes in from the
+          right over part of the screen rather than popping out of nowhere. */}
+      <div
+        aria-hidden
+        className="fixed inset-0 z-40 animate-fade-in bg-slate-950/25 backdrop-blur-[2px]"
+        onClick={onClose}
+      />
+      <aside
+        role="complementary"
+        aria-label="Ask iPropy"
+        className="fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-[min(26rem,calc(100vw-3rem))] animate-slide-in-right flex-col overflow-hidden border-l border-slate-200 bg-white shadow-float dark:border-slate-800 dark:bg-slate-900"
+      >
         <header className="flex shrink-0 items-center gap-2 border-b border-slate-200 px-3 py-2.5 dark:border-slate-800">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-100 dark:bg-brand-950">
             <Sparkles className="h-4 w-4 text-brand-600 dark:text-brand-400" />
@@ -358,7 +369,6 @@ export default function AiAssistant({
                           {message.results.rows.slice(0, 8).map((row) => (
                             <PeekLink key={row.id} module={module} id={row.id} label={row.label} className="flex items-center justify-between gap-2 rounded px-2 py-1 text-xs hover:bg-white [-webkit-touch-callout:none] dark:hover:bg-slate-700">
                               <span className="truncate font-medium text-slate-700 dark:text-slate-200">{row.label}</span>
-                              {typeof row.values.ai_score === 'number' && <Badge color={Number(row.values.ai_score) >= 70 ? '#22c55e' : '#94a3b8'}>{String(row.values.ai_score)}</Badge>}
                             </PeekLink>
                           ))}
                         </div>

@@ -20,6 +20,13 @@ const AREA_UNITS = [
   { value: 'sqyd', label: 'Sq.yd.' },
 ];
 
+/** What a price number is qualified by: per unit of area, or the whole thing. */
+const PRICE_UNITS = [
+  { value: 'sqft', label: 'Sq. ft.' },
+  { value: 'sqyd', label: 'Sq. yd.' },
+  { value: 'total', label: 'Total' },
+];
+
 const MODULES: ModuleDef[] = [
   // =========================================================================
   // LEADS
@@ -83,33 +90,22 @@ const MODULES: ModuleDef[] = [
           // +91 +91.
           F.phone('whatsapp_number', 'WhatsApp Number', { help: 'Defaults to mobile if left blank' }),
           /*
-            Read-only, and it has to be declared here rather than only in a
-            migration. Migration 076 set this flag and the seed put it straight
-            back on the next cold start, because field structure is the one thing
-            the seed re-upserts. So the guard existed and was undone several
-            times a day.
-
-            Without it a rep can PATCH a Customer back to Lead, which is exactly
-            the outcome the forward-only rule in lifecycleFromStatus.ts says can
-            no longer happen. It cannot, through the status path — and the field
-            itself was still writable straight through it.
+            One pipeline, one field. `lifecycle_stage` was a second
+            relationship axis that nobody filled in by hand and every report
+            then silently disagreed with; migration 103 retired it. Status is
+            the pipeline and the relationship both.
           */
-          F.pick('lifecycle_stage', 'Lifecycle Stage', 'lifecycle_stage', {
-            mandatory: true, quickCreate: true, readonly: true,
-            help: 'Advances on its own as the pipeline status moves. Lead → Prospect → Customer, '
-              + 'and never backwards.',
-          }),
           F.pick('status', 'Pipeline Status', 'lead_status', { mandatory: true, quickCreate: true }),
           // Defaulted, because it is mandatory: every lead that arrives without
           // somebody choosing one — which is every automated source — is
           // otherwise rejected by validation.
           F.pick('contact_type', 'Type', 'contact_type', { default: 'Buyer' }),
           /*
-            Read-only for the same reason `ai_score` is: it is derived from that
-            score, not typed. It was editable, and an edit to it was accepted,
-            answered 200, written into the audit trail as a change that
-            happened — and then overwritten by the scorer moments later. The rep
-            saw Hot, the database kept Warm, and nothing said so.
+            Read-only because the scorer sets it, not a person. When it was
+            editable an edit was accepted, answered 200, written into the audit
+            trail as a change that happened — and then overwritten by the
+            scorer moments later. The rep saw Hot, the database kept Warm, and
+            nothing said so.
 
             A rating somebody can set by hand is a reasonable thing to want. It
             is a different field from this one.
@@ -131,7 +127,11 @@ const MODULES: ModuleDef[] = [
           F.pick('property_type', 'Property Type', 'property_type'),
           F.multipick('configuration', 'Configuration', 'configuration'),
           F.pick('purpose', 'Purpose', 'purpose'),
-          F.money('budget', 'Budget / Demand', { quickCreate: true, config: { min: 0 } }),
+          // The price box plus its qualifier — the same pair the area control
+          // made. A budget is "₹8,500/sq.yd." or "₹1.5 Cr total"; the qualifier
+          // changes what the number means, so it rides with it.
+          F.money('budget', 'Budget / Demand', { quickCreate: true, config: { min: 0, unitField: 'budget_unit', unitOptions: PRICE_UNITS } }),
+          F.pick('budget_unit', 'Budget Unit', 'price_unit', { default: 'total', displayType: 'hidden' }),
           F.pick('budget_band', 'Budget Band', 'budget_band'),
           F.multipick('preferred_locations', 'Preferred Locations', 'locality'),
           // One area with its own unit, not a min/max pair. A buyer says "about
@@ -165,12 +165,12 @@ const MODULES: ModuleDef[] = [
         ],
       },
       {
+        // The scored trio (ai_score, ai_score_reasons, ai_scored_at) is gone
+        // — migration 104. A number nobody acted on, that the desk read as
+        // noise, is not made better by three places showing it.
         name: 'ai_qualification',
         label: 'AI Qualification',
         fields: [
-          F.score('ai_score', 'AI Score', { help: 'Predicted likelihood to convert, 0-100' }),
-          F.json('ai_score_reasons', 'Score Drivers', { readonly: true, displayType: 'detail_only' }),
-          F.date('ai_scored_at', 'Last Scored', { readonly: true }),
           F.textarea('qualification_notes', 'Qualification Notes'),
         ],
       },
@@ -265,45 +265,43 @@ const MODULES: ModuleDef[] = [
     views: [
       {
         name: 'All Records', isDefault: true, showMetrics: true,
-        columns: ['lead_number', 'full_name', 'mobile', 'lifecycle_stage', 'status', 'lead_source', 'ai_score', 'budget', 'owner_id'],
+        columns: ['lead_number', 'full_name', 'mobile', 'status', 'lead_source', 'rating', 'budget', 'owner_id'],
         sortBy: 'created_at',
       },
       {
         name: 'Open Leads', showMetrics: true,
-        columns: ['full_name', 'mobile', 'status', 'ai_score', 'next_followup_at', 'owner_id'],
+        columns: ['full_name', 'mobile', 'status', 'next_followup_at', 'owner_id'],
         filter: {
           logic: 'AND',
           conditions: [
-            { field: 'lifecycle_stage', operator: 'in', value: ['Lead', 'Prospect'] },
             { field: 'status', operator: 'not_in', value: ['Junk', 'Lost', 'Converted'] },
           ],
         },
-        sortBy: 'ai_score',
+        sortBy: 'updated_at',
       },
       {
         name: 'Customers', showMetrics: true,
         columns: ['full_name', 'mobile', 'email', 'lifetime_value', 'kyc_status', 'owner_id'],
-        filter: { logic: 'AND', conditions: [{ field: 'lifecycle_stage', operator: 'equals', value: 'Customer' }] },
+        filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'equals', value: 'Converted' }] },
         sortBy: 'lifetime_value',
       },
       {
         name: 'My Open Leads', showMetrics: true,
-        columns: ['full_name', 'mobile', 'status', 'ai_score', 'next_followup_at'],
+        columns: ['full_name', 'mobile', 'status', 'next_followup_at'],
         filter: {
           logic: 'AND',
           conditions: [
             { field: 'owner_id', operator: 'is_me' },
-            { field: 'lifecycle_stage', operator: 'in', value: ['Lead', 'Prospect'] },
             { field: 'status', operator: 'not_in', value: ['Junk', 'Lost'] },
           ],
         },
-        sortBy: 'ai_score',
+        sortBy: 'updated_at',
       },
       {
         name: 'Hot Leads',
-        columns: ['full_name', 'mobile', 'ai_score', 'budget', 'next_followup_at', 'owner_id'],
-        filter: { logic: 'AND', conditions: [{ field: 'ai_score', operator: 'greater_or_equal', value: 70 }, { field: 'is_converted', operator: 'is_false' }] },
-        sortBy: 'ai_score',
+        columns: ['full_name', 'mobile', 'rating', 'budget', 'next_followup_at', 'owner_id'],
+        filter: { logic: 'AND', conditions: [{ field: 'rating', operator: 'equals', value: 'Hot' }, { field: 'is_converted', operator: 'is_false' }] },
+        sortBy: 'updated_at',
       },
       {
         name: 'Today’s Follow-ups',
@@ -325,7 +323,7 @@ const MODULES: ModuleDef[] = [
       },
       {
         name: 'Pipeline', displayMode: 'kanban', groupBy: 'status',
-        columns: ['full_name', 'mobile', 'ai_score', 'budget', 'owner_id'],
+        columns: ['full_name', 'mobile', 'budget', 'owner_id'],
         filter: { logic: 'AND', conditions: [{ field: 'is_converted', operator: 'is_false' }] },
       },
     ],
@@ -418,6 +416,13 @@ const MODULES: ModuleDef[] = [
         name: 'pricing',
         label: 'Pricing',
         fields: [
+          // What the seller is asking, with its qualifier welded on — the
+          // budget/budget_unit pair on a contact, on the inventory side.
+          F.money('demand', 'Demand', {
+            quickCreate: true,
+            config: { min: 0, unitField: 'demand_unit', unitOptions: PRICE_UNITS },
+          }),
+          F.pick('demand_unit', 'Demand Unit', 'price_unit', { default: 'total', displayType: 'hidden' }),
           F.money('base_price', 'Base Price', { quickCreate: true }),
           F.money('rate_per_sqft', 'Rate per sq.ft'),
           F.money('floor_rise_charge', 'Floor Rise Charge'),

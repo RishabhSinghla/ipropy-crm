@@ -80,7 +80,6 @@ describe('creating a user', () => {
         firstName: 'Full',
         lastName: 'House',
         phone: '9811111111',
-        designation: 'Sales',
         acceptsLeads: true,
         dailyLeadCap: 5,
         isAdmin: false,

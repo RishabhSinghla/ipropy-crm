@@ -57,8 +57,8 @@ async function buildContext(
 
   const [owner, org, messages, calls] = await Promise.all([
     record.owner_id
-      ? db.queryOne<{ name: string; phone: string | null; designation: string | null }>(
-          `SELECT trim(first_name || ' ' || last_name) AS name, phone, designation FROM ipy_user WHERE id = $1`,
+      ? db.queryOne<{ name: string; phone: string | null }>(
+          `SELECT trim(first_name || ' ' || last_name) AS name, phone FROM ipy_user WHERE id = $1`,
           [record.owner_id],
         )
       : Promise.resolve(null),

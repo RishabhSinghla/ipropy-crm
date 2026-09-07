@@ -83,7 +83,7 @@ export const DASHBOARDS: DashboardSeed[] = [
         // Activities was a second record type holding the same fact.
         type: 'tasks', title: 'Today\'s Follow-ups', x: 0, y: 2, w: 4, h: 6,
         config: {
-          module: 'leads', limit: 15, sortBy: 'ai_score', sortDir: 'desc',
+          module: 'leads', limit: 15, sortBy: 'updated_at', sortDir: 'desc',
           columns: ['full_name', 'mobile', 'status', 'next_followup_at'],
           filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'is_me' }, { field: 'next_followup_at', operator: 'today' }, { field: 'is_converted', operator: 'is_false' }] },
         },
@@ -91,9 +91,9 @@ export const DASHBOARDS: DashboardSeed[] = [
       {
         type: 'list', title: 'Priority Leads to Call', x: 8, y: 2, w: 4, h: 6,
         config: {
-          module: 'leads', limit: 10, sortBy: 'ai_score', sortDir: 'desc',
-          columns: ['full_name', 'mobile', 'ai_score', 'budget'],
-          filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'is_me' }, { field: 'is_converted', operator: 'is_false' }, { field: 'ai_score', operator: 'greater_or_equal', value: 60 }] },
+          module: 'leads', limit: 10, sortBy: 'updated_at', sortDir: 'desc',
+          columns: ['full_name', 'mobile', 'rating', 'budget'],
+          filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'is_me' }, { field: 'is_converted', operator: 'is_false' }, { field: 'rating', operator: 'equals', value: 'Hot' }] },
         },
       },
       {
@@ -183,7 +183,7 @@ export const DASHBOARDS: DashboardSeed[] = [
       {
         type: 'metric', title: 'Avg Lead Score', x: 8, y: 0, w: 4, h: 2,
         config: {
-          module: 'leads', aggregate: 'avg', aggregateField: 'ai_score', format: 'number', color: '#0ea5e9',
+          module: 'leads', aggregate: 'avg', aggregateField: 'budget', format: 'number', color: '#0ea5e9',
           filter: { logic: 'AND', conditions: [{ field: 'created_at', operator: 'this_month' }] },
         },
       },
@@ -197,7 +197,7 @@ export const DASHBOARDS: DashboardSeed[] = [
       {
         type: 'bar', title: 'Lead Quality by Source', x: 6, y: 2, w: 6, h: 5,
         config: {
-          module: 'leads', groupBy: 'lead_source', aggregate: 'avg', aggregateField: 'ai_score', limit: 12,
+          module: 'leads', groupBy: 'lead_source', aggregate: 'avg', aggregateField: 'budget', limit: 12,
           filter: { logic: 'AND', conditions: [{ field: 'created_at', operator: 'last_n_days', value: 90 }] },
         },
       },

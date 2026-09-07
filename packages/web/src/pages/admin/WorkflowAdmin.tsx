@@ -542,13 +542,6 @@ function TaskConfigFields({
           >
             <Plus className="h-3 w-3" /> Add field update
           </button>
-          <label className="label mt-2">Advance lifecycle stage to</label>
-          <Select
-            value={(task.config.advanceLifecycle as string) ?? ''}
-            onChange={(v) => set({ advanceLifecycle: v || undefined })}
-            placeholder="— No change —"
-            options={[{ value: 'Prospect', label: 'Prospect' }, { value: 'Customer', label: 'Customer' }]}
-          />
         </div>
       );
     }

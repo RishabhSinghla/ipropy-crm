@@ -11,8 +11,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Facebook, Globe, GripVertical, Instagram, Linkedin, MessageCircle, Plus, Save, Trash2, Twitter, Youtube,
 } from 'lucide-react';
-import { api } from '../../lib/api';
-import { toast } from '../../lib/store';
+import { api, authedFileUrl } from '../../lib/api';
+import { applyBrandColour, toast } from '../../lib/store';
 import { Select, Skeleton, Spinner } from '../../components/ui';
 
 interface SocialLink { platform: string; label: string; url: string }
@@ -55,6 +55,8 @@ export default function BrandAdmin(): JSX.Element {
   const [orgName, setOrgName] = useState('');
   const [tagline, setTagline] = useState('');
   const [links, setLinks] = useState<SocialLink[]>([]);
+  /** The whole CRM's accent colour — buttons, links, chips, focus rings. */
+  const [primaryColor, setPrimaryColor] = useState('#6366f1');
   const [saving, setSaving] = useState(false);
   const [logoBusy, setLogoBusy] = useState(false);
   const logoInput = useRef<HTMLInputElement>(null);
@@ -66,6 +68,7 @@ export default function BrandAdmin(): JSX.Element {
     // query is the one reliable place both halves are always present.
     setOrgName(String(brand?.orgName ?? byKey.get('org.name') ?? ''));
     setTagline(String(byKey.get('brand.tagline') ?? ''));
+    setPrimaryColor(String(byKey.get('org.primary_color') ?? '#6366f1'));
     const raw = byKey.get('social.links');
     setLinks(Array.isArray(raw) ? raw as SocialLink[] : []);
   }, [settings]);
@@ -131,6 +134,7 @@ export default function BrandAdmin(): JSX.Element {
         // email footer; blank reverts it to the server's built-in default.
         'org.name': orgName.trim(),
         'brand.tagline': tagline.trim(),
+        'org.primary_color': primaryColor,
         'social.links': links
           .filter((l) => l.url.trim())
           .map((l) => ({ platform: l.platform, label: l.label.trim() || l.platform, url: l.url.trim() })),
@@ -181,7 +185,7 @@ export default function BrandAdmin(): JSX.Element {
             <label className="label">Logo</label>
             <div className="flex items-center gap-3">
               {brand?.logoUrl ? (
-                <img src={brand.logoUrl} alt="Current logo" className="h-12 w-12 rounded-lg bg-slate-50 object-contain dark:bg-slate-800" />
+                <img src={authedFileUrl(brand.logoUrl)} alt="Current logo" className="h-12 w-12 rounded-lg bg-slate-50 object-contain dark:bg-slate-800" />
               ) : (
                 <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-slate-50 text-2xs text-muted dark:bg-slate-800">
                   None
@@ -231,6 +235,42 @@ export default function BrandAdmin(): JSX.Element {
           />
           <p className="mt-1 text-2xs text-muted">
             Appears on the sign-in screen and under the sidebar logo.
+          </p>
+        </div>
+
+        {/* The whole CRM's accent colour. Live-previewed as you pick: the
+            buttons and swatch below already wear it, and Save makes it
+            everyone's. Blank or the shipped indigo takes the CRM back to
+            default without a deploy. */}
+        <div>
+          <label className="label">Theme colour</label>
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              type="color"
+              aria-label="Pick the CRM theme colour"
+              className="h-10 w-14 cursor-pointer rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-700 dark:bg-slate-800"
+              value={primaryColor}
+              onChange={(e) => {
+                setPrimaryColor(e.target.value);
+                applyBrandColour(e.target.value);
+              }}
+            />
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs tnum">{primaryColor}</span>
+              <button className="btn-secondary btn-sm" onClick={() => { setPrimaryColor('#6366f1'); applyBrandColour(null); }}>
+                Reset to default
+              </button>
+            </div>
+            {/* The chosen colour on the very things that will wear it. */}
+            <div className="ml-auto flex items-center gap-2">
+              <span className="rounded-full px-2.5 py-1 text-2xs font-medium" style={{ background: `${primaryColor}1f`, color: primaryColor }}>
+                Accent text
+              </span>
+              <button type="button" className="btn-primary btn-sm pointer-events-none">A button</button>
+            </div>
+          </div>
+          <p className="mt-1 text-2xs text-muted">
+            Buttons, links, chips and focus rings across the CRM follow this colour.
           </p>
         </div>
 

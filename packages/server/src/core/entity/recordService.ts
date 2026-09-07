@@ -8,6 +8,7 @@
 import {
   UITYPES,
   formatArea,
+  formatIndianPrice,
   formatPhoneWithCode,
   isFilterGroup,
   type FieldMeta,
@@ -489,6 +490,13 @@ async function resolveDisplayValues(
       display[f.name] = formatPhoneWithCode(code, String(v));
     } else if (f.uitype === 'area' && f.config.unitField) {
       display[f.name] = formatArea(Number(v), String(values[String(f.config.unitField)] ?? f.config.unit ?? 'sqft'));
+    } else if (f.uitype === 'currency' && f.config.unitField) {
+      // Budget / demand: the price and its qualifier (per Sq.ft., per Sq.yd.,
+      // total) read as one value, exactly the area+unit pair above.
+      const unit = String(values[String(f.config.unitField)] ?? '');
+      display[f.name] = unit
+        ? `${formatIndianPrice(Number(v))} ${unit === 'total' ? 'total' : `per ${unit === 'sqft' ? 'Sq.ft.' : 'Sq.yd.'}`}`
+        : formatIndianPrice(Number(v));
     } else display[f.name] = formatValue(f, v);
   }
   if (values.owner_id) userIds.add(String(values.owner_id));
@@ -1191,6 +1199,49 @@ export async function massUpdate(
   return { updated, failed };
 }
 
+/**
+ * Every record id the query matches — the ids behind "select all in this view".
+ *
+ * Resolved through `listRecords` on purpose: that path already enforces the
+ * saved view, the ad-hoc filter, profile scoping and field visibility, so a
+ * bulk action cannot reach a record the same user could not have opened. A
+ * hand-written query here would be a second permission model that drifts.
+ */
+export async function idsForQuery(
+  ctx: ServiceContext,
+  moduleName: string,
+  q: ListQuery,
+  max = 5000,
+): Promise<string[]> {
+  const ids: string[] = [];
+  for (let page = 1; ids.length < max; page++) {
+    const res = await listRecords(ctx, moduleName, { ...q, page, pageSize: 500, columns: ['id'] });
+    for (const row of res.rows) ids.push(row.id);
+    if (page * 500 >= res.total) break;
+  }
+  return ids.slice(0, max);
+}
+
+/**
+ * Bulk edit everything a view/filter matches — the "select all conversations
+ * in this search" of Gmail, applied to records.
+ *
+ * The cap is a safety stop, not a design limit: a bulk edit over an
+ * unbounded result set is a workflow nobody can review, and the response says
+ * how many matched so the caller can narrow rather than guess.
+ */
+export async function massUpdateByQuery(
+  ctx: ServiceContext,
+  moduleName: string,
+  q: ListQuery,
+  values: Record<string, unknown>,
+  max = 5000,
+): Promise<{ updated: number; failed: { id: string; error: string }[]; matched: number; capped: boolean }> {
+  const ids = await idsForQuery(ctx, moduleName, q, max);
+  const result = await massUpdate(ctx, moduleName, ids, values);
+  return { ...result, matched: ids.length, capped: ids.length >= max };
+}
+
 export async function massDelete(
   ctx: ServiceContext,
   moduleName: string,
@@ -1478,6 +1529,8 @@ export const recordService = {
   deleteRecord,
   restoreRecord,
   massUpdate,
+  massUpdateByQuery,
+  idsForQuery,
   massDelete,
   transferOwnership,
   lookupRecords,

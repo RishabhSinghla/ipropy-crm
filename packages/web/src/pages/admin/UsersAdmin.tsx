@@ -9,8 +9,8 @@ import {} from '../../components/FieldRenderer';
 
 interface User {
   id: string; email: string; firstName: string; lastName: string; fullName: string;
-  phone: string | null; designation: string | null; isAdmin: boolean; isActive: boolean;
-  roleId: string | null; roleName: string | null; profileId: string | null; profileName: string | null;
+  phone: string | null; isAdmin: boolean; isActive: boolean;
+  roleId: string | null; roleName: string | null;
   lastLoginAt: string | null; acceptsLeads: boolean; dailyLeadCap: number | null;
 }
 
@@ -52,7 +52,7 @@ export default function UsersAdmin(): JSX.Element {
           <table className="w-full">
             <thead>
               <tr>
-                {['User', 'Role', 'Profile', 'Extension', 'Last login', ''].map((h) => (
+                {['User', 'Role', 'Last login', ''].map((h) => (
                   <th key={h} className="list-head">{h}</th>
                 ))}
               </tr>
@@ -74,7 +74,6 @@ export default function UsersAdmin(): JSX.Element {
                     </div>
                   </td>
                   <td className="list-cell text-slate-600 dark:text-slate-400">{u.roleName ?? '—'}</td>
-                  <td className="list-cell">{u.profileName ? <Badge>{u.profileName}</Badge> : '—'}</td>
                   <td className="list-cell text-2xs text-muted">
                     {u.lastLoginAt ? relativeTime(u.lastLoginAt) : 'Never'}
                   </td>
@@ -124,9 +123,7 @@ function UserEditor({
     firstName: user?.firstName ?? '',
     lastName: user?.lastName ?? '',
     phone: user?.phone ?? '',
-    designation: user?.designation ?? '',
     roleId: user?.roleId ?? '',
-    profileId: user?.profileId ?? '',
     isAdmin: user?.isAdmin ?? false,
     isActive: user?.isActive ?? true,
     acceptsLeads: user?.acceptsLeads ?? true,
@@ -135,7 +132,6 @@ function UserEditor({
   const [saving, setSaving] = useState(false);
 
   const { data: roles } = useQuery({ queryKey: ['roles'], queryFn: () => api.roles() });
-  const { data: profiles } = useQuery({ queryKey: ['profiles'], queryFn: () => api.profiles() });
 
   const set = (patch: Partial<typeof form>): void => setForm((f) => ({ ...f, ...patch }));
 
@@ -144,8 +140,8 @@ function UserEditor({
     try {
       const payload = {
         email: form.email, firstName: form.firstName, lastName: form.lastName,
-        phone: form.phone || undefined, designation: form.designation || undefined,
-        roleId: form.roleId || null, profileId: form.profileId || null,
+        phone: form.phone || undefined,
+        roleId: form.roleId || null,
         isAdmin: form.isAdmin, acceptsLeads: form.acceptsLeads,
         dailyLeadCap: form.dailyLeadCap,
         ...(isEdit ? { isActive: form.isActive } : { password: form.password }),
@@ -221,23 +217,9 @@ function UserEditor({
                 .map((r) => ({ value: r.id, label: `${'· '.repeat(r.depth)}${r.name}` }))}
             />
           </div>
-          <div>
-            <label className="label">Profile (permissions)</label>
-            <Select
-              value={form.profileId}
-              onChange={(v) => set({ profileId: v })}
-              placeholder="— No profile —"
-              options={((profiles ?? []) as { id: string; name: string }[])
-                .map((p) => ({ value: p.id, label: p.name }))}
-            />
-          </div>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-3">
-          <div>
-            <label className="label">Designation</label>
-            <input className="input" value={form.designation} onChange={(e) => set({ designation: e.target.value })} />
-          </div>
           <div>
             <label className="label">Phone</label>
             <input className="input tnum" value={form.phone} onChange={(e) => set({ phone: e.target.value })} />

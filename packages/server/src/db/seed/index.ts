@@ -78,6 +78,22 @@ export async function seed(): Promise<void> {
     await seedSystemUser(tx);
     const roles = await seedRoles(tx);
     const profiles = await seedProfiles(tx);
+    /*
+      One thing, one name (migration 108): every role points at the profile
+      that holds its permissions. Same-named pairs link up; anything else was
+      already linked by the migration's backfill and is left alone here — the
+      seed re-runs on every cold start and must not reassign what an admin has
+      rearranged.
+    */
+    for (const [name, roleId] of roles) {
+      const profileId = profiles.get(name);
+      if (profileId) {
+        await tx.query(
+          `UPDATE ipy_role SET profile_id = $2 WHERE id = $1 AND profile_id IS NULL`,
+          [roleId, profileId],
+        );
+      }
+    }
     await seedSharing(tx);
     logger.info(`  roles ✓ (${roles.size})  profiles ✓ (${profiles.size})`);
     const created = await seedUsers(tx, roles, profiles, config.seed.demoData);

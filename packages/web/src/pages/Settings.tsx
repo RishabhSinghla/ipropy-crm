@@ -1,9 +1,10 @@
 import { type JSX, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
 import {
   Bell, BellOff, Camera, Check, Copy, Download, Fingerprint, KeyRound, Monitor,
-  Moon, Plus, Save, Smartphone, Sun, Trash2, User,
+  Moon, Plus, Save, Smartphone, Sun, Trash2, User, X,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
@@ -11,35 +12,77 @@ import { cn } from '../lib/utils';
 import { currentSubscription, disablePush, enablePush, permissionState, pushSupport } from '../lib/push';
 import { Avatar, Badge, ConfirmDialog, EmptyState, Modal, Select, Skeleton, Spinner, Tabs } from '../components/ui';
 
+/**
+ * Settings opens as a translucent modal over the page you were on.
+ *
+ * The full-page route made "change one preference" feel like leaving the app:
+ * a whole navigation, a back click, and the list you were working in gone.
+ * A pop-over with the workspace blurred behind it says what it is — a quick
+ * detour — and clicking the backdrop or pressing Esc returns you exactly
+ * where you were.
+ */
 export default function SettingsPage(): JSX.Element {
   const { theme, setTheme } = useApp();
   const [tab, setTab] = useState('profile');
+  const navigate = useNavigate();
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Esc closes, like every modal in the app — a settings screen you can
+  // dismiss with the keyboard never traps anybody.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') navigate(-1); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [navigate]);
 
   return (
-    <div className="mx-auto max-w-3xl p-4 sm:p-6">
-      <div className="mb-4">
-        <h1 className="text-lg font-semibold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted">Your profile, preferences and security.</p>
+    <div
+      className="fixed inset-0 z-50 flex animate-fade-in items-start justify-center overflow-y-auto bg-slate-950/40 p-4 backdrop-blur-sm sm:p-8"
+      // Clicking the translucency closes; clicks inside the panel do not.
+      onMouseDown={(e) => { if (e.target === e.currentTarget) navigate(-1); }}
+    >
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Settings"
+        className="mx-auto w-full max-w-3xl animate-scale-in overflow-hidden rounded-2xl border border-slate-200/70 bg-white shadow-float dark:border-slate-700/70 dark:bg-slate-900"
+      >
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+          <div>
+            <h1 className="text-lg font-semibold tracking-tight">Settings</h1>
+            <p className="text-sm text-muted">Your profile, preferences and security.</p>
+          </div>
+          <button
+            className="btn-ghost p-2"
+            aria-label="Close settings"
+            onClick={() => navigate(-1)}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="max-h-[calc(100vh-10rem)] overflow-y-auto p-4 sm:p-6">
+          <Tabs
+            tabs={[
+              { key: 'profile', label: 'Profile', icon: <User className="h-3.5 w-3.5" /> },
+              { key: 'preferences', label: 'Preferences', icon: <Monitor className="h-3.5 w-3.5" /> },
+              { key: 'alerts', label: 'Alerts', icon: <Bell className="h-3.5 w-3.5" /> },
+              { key: 'security', label: 'Security', icon: <KeyRound className="h-3.5 w-3.5" /> },
+              { key: 'phones', label: 'Phones', icon: <Smartphone className="h-3.5 w-3.5" /> },
+            ]}
+            active={tab}
+            onChange={setTab}
+            className="mb-4"
+          />
+
+          {tab === 'profile' && <ProfileTab />}
+          {tab === 'preferences' && <PreferencesTab theme={theme} setTheme={setTheme} />}
+          {tab === 'alerts' && <AlertsTab />}
+          {tab === 'security' && <SecurityTab />}
+          {tab === 'phones' && <PhonesTab />}
+        </div>
       </div>
-
-      <Tabs
-        tabs={[
-          { key: 'profile', label: 'Profile', icon: <User className="h-3.5 w-3.5" /> },
-          { key: 'preferences', label: 'Preferences', icon: <Monitor className="h-3.5 w-3.5" /> },
-          { key: 'alerts', label: 'Alerts', icon: <Bell className="h-3.5 w-3.5" /> },
-          { key: 'security', label: 'Security', icon: <KeyRound className="h-3.5 w-3.5" /> },
-          { key: 'phones', label: 'Phones', icon: <Smartphone className="h-3.5 w-3.5" /> },
-        ]}
-        active={tab}
-        onChange={setTab}
-        className="mb-4"
-      />
-
-      {tab === 'profile' && <ProfileTab />}
-      {tab === 'preferences' && <PreferencesTab theme={theme} setTheme={setTheme} />}
-      {tab === 'alerts' && <AlertsTab />}
-      {tab === 'security' && <SecurityTab />}
-      {tab === 'phones' && <PhonesTab />}
     </div>
   );
 }
@@ -73,10 +116,9 @@ function ProfileTab(): JSX.Element {
         <div className="min-w-0">
           <p className="text-base font-semibold">{user?.fullName}</p>
           <p className="truncate text-sm text-muted">{user?.email}</p>
-          <div className="mt-1 flex flex-wrap gap-1.5">
-            {user?.roleName && <Badge>{user.roleName}</Badge>}
-            {user?.profileName && <Badge color="#6366f1">{user.profileName}</Badge>}
-          </div>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {user?.roleName && <Badge>{user.roleName}</Badge>}
+            </div>
         </div>
       </div>
 

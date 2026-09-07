@@ -33,7 +33,7 @@ adminRouter.get('/users', asyncHandler(async (req, res) => {
   // What each caller receives depends on who they are — see below.
   const includeInactive = req.query.includeInactive === 'true';
   const rows = await db.query(
-    `SELECT u.id, u.email, u.first_name, u.last_name, u.avatar_url, u.phone, u.designation,
+    `SELECT u.id, u.email, u.first_name, u.last_name, u.avatar_url, u.phone,
             u.is_admin, u.is_active, u.role_id, u.profile_id, u.last_login_at,
             u.accepts_leads, u.daily_lead_cap, u.created_at,
             r.name AS role_name, p.name AS profile_name
@@ -63,7 +63,6 @@ adminRouter.get('/users', asyncHandler(async (req, res) => {
       lastName: u.last_name,
       fullName: `${u.first_name} ${u.last_name}`.trim(),
       avatarUrl: u.avatar_url,
-      designation: u.designation,
       isActive: u.is_active,
     };
     if (!isAdmin) return directory;
@@ -86,7 +85,6 @@ const userSchema = z.object({
   firstName: z.string().min(1),
   lastName: z.string().default(''),
   phone: z.string().optional(),
-  designation: z.string().optional(),
   roleId: z.string().uuid().nullable().optional(),
   profileId: z.string().uuid().nullable().optional(),
   reportsTo: z.string().uuid().nullable().optional(),
@@ -102,20 +100,29 @@ adminRouter.post('/users', asyncHandler(async (req, res) => {
   const existing = await db.queryOne(`SELECT 1 FROM ipy_user WHERE lower(email) = lower($1) AND deleted_at IS NULL`, [input.email]);
   if (existing) throw new ConflictError('A user with that email already exists');
 
+  /*
+    The profile is not asked for any more (migration 108): a role owns its
+    permissions, and choosing the role chooses them. A caller still sending
+    profileId is answered 422 rather than silently ignored, because a value
+    arriving and being discarded is how the disagreement bug returns.
+  */
+  if (input.profileId !== undefined) {
+    throw new BadRequestError('A user\'s permissions come from their role now — pick the role.');
+  }
+
+  const profileForRole = input.roleId
+    ? await db.queryOne<{ profile_id: string | null }>(`SELECT profile_id FROM ipy_role WHERE id = $1`, [input.roleId])
+    : null;
+
   const row = await db.queryOne<{ id: string }>(
-    // channel_partner_id was dropped from this list and its value was not, so
-    // this named fourteen columns and supplied thirteen — every attempt to
-    // create a user died on "bind message supplies 13 parameters, but prepared
-    // statement requires 14". The column belongs to the channel_partners module,
-    // removed in migration 030, and the portal it fed does not exist.
     `INSERT INTO ipy_user
-      (email, password_hash, first_name, last_name, phone, designation, role_id,
+      (email, password_hash, first_name, last_name, phone, role_id,
        profile_id, reports_to, is_admin, accepts_leads, daily_lead_cap)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
     [
       input.email, await hashPassword(input.password), input.firstName, input.lastName,
-      input.phone ?? null, input.designation ?? null, input.roleId ?? null,
-      input.profileId ?? null, input.reportsTo ?? null, input.isAdmin,
+      input.phone ?? null, input.roleId ?? null,
+      profileForRole?.profile_id ?? null, input.reportsTo ?? null, input.isAdmin,
       input.acceptsLeads, input.dailyLeadCap ?? null,
     ],
   );
@@ -129,9 +136,12 @@ adminRouter.patch('/users/:id', asyncHandler(async (req, res) => {
     isActive: z.boolean().optional(),
   }).parse(req.body);
 
+  if (input.profileId !== undefined) {
+    throw new BadRequestError('A user\'s permissions come from their role now — pick the role.');
+  }
   const map: Record<string, string> = {
     email: 'email', firstName: 'first_name', lastName: 'last_name', phone: 'phone',
-    designation: 'designation', roleId: 'role_id', profileId: 'profile_id',
+    roleId: 'role_id',
     reportsTo: 'reports_to', isAdmin: 'is_admin', isActive: 'is_active',
     acceptsLeads: 'accepts_leads', dailyLeadCap: 'daily_lead_cap',
   };
@@ -142,6 +152,15 @@ adminRouter.patch('/users/:id', asyncHandler(async (req, res) => {
     if (!col) continue;
     params.push(v);
     sets.push(`${col} = $${params.length}`);
+  }
+  // Moving a user to a different role moves their permissions too — the
+  // profile follows the role, so the two can never disagree.
+  if (input.roleId) {
+    const prof = await db.queryOne<{ profile_id: string | null }>(
+      `SELECT profile_id FROM ipy_role WHERE id = $1`, [input.roleId],
+    );
+    params.push(prof?.profile_id ?? null);
+    sets.push(`profile_id = $${params.length}`);
   }
   if (sets.length) {
     await db.query(`UPDATE ipy_user SET ${sets.join(', ')}, updated_at = now() WHERE id = $1`, params);
@@ -195,7 +214,7 @@ adminRouter.delete('/users/:id', asyncHandler(async (req, res) => {
 
 adminRouter.get('/roles', asyncHandler(async (_req, res) => {
   const rows = await db.query<{ id: string; name: string; parent_id: string | null; depth: number; description: string | null; user_count: number }>(
-    `SELECT r.id, r.name, r.parent_id, r.depth, r.description,
+    `SELECT r.id, r.name, r.parent_id, r.depth, r.description, r.profile_id,
             (SELECT COUNT(*)::int FROM ipy_user u WHERE u.role_id = r.id AND u.deleted_at IS NULL) AS user_count
      FROM ipy_role r ORDER BY r.depth, r.sequence, r.name`,
   );
@@ -231,15 +250,48 @@ adminRouter.post('/roles', asyncHandler(async (req, res) => {
   }).parse(req.body);
 
   const parent = parentId
-    ? await db.queryOne<{ depth: number; path: string[] }>(`SELECT depth, path FROM ipy_role WHERE id = $1`, [parentId])
+    ? await db.queryOne<{ depth: number; path: string[]; profile_id: string | null }>(
+        `SELECT depth, path, profile_id FROM ipy_role WHERE id = $1`, [parentId],
+      )
     : null;
 
   const row = await db.queryOne<{ id: string }>(
     `INSERT INTO ipy_role (name, parent_id, depth, path, description) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
     [name, parentId ?? null, (parent?.depth ?? -1) + 1, [...(parent?.path ?? []), ...(parentId ? [parentId] : [])], description ?? null],
   );
+
+  /*
+    A role owns its permissions now (migration 108): creating one creates the
+    profile that holds them, cloned from the parent role's so a new role in an
+    existing line starts from what that line could already do. The role and the
+    profile share a name because they are the same thing to the admin.
+  */
+  const roleId = row!.id;
+  await transaction(async (tx) => {
+    const prof = await tx.queryOne<{ id: string }>(
+      `INSERT INTO ipy_profile (name, description, is_system, capabilities)
+       VALUES ($1, $2, false,
+               COALESCE((SELECT capabilities FROM ipy_profile WHERE id = $3), '[]'::jsonb))
+       RETURNING id`,
+      [name, `Permissions for the ${name} role.`, parent?.profile_id],
+    );
+    if (parent?.profile_id) {
+      await tx.query(
+        `INSERT INTO ipy_profile_module_perm (profile_id, module_id, can_view, can_create, can_edit, can_delete, can_export, can_import)
+         SELECT $1, module_id, can_view, can_create, can_edit, can_delete, can_export, can_import
+           FROM ipy_profile_module_perm WHERE profile_id = $2`,
+        [prof!.id, parent.profile_id],
+      );
+      await tx.query(
+        `INSERT INTO ipy_profile_field_perm (profile_id, field_id, permission)
+         SELECT $1, field_id, permission FROM ipy_profile_field_perm WHERE profile_id = $2`,
+        [prof!.id, parent.profile_id],
+      );
+    }
+    await tx.query(`UPDATE ipy_role SET profile_id = $2 WHERE id = $1`, [roleId, prof!.id]);
+  });
   invalidatePermissions();
-  res.status(201).json({ id: row?.id });
+  res.status(201).json({ id: roleId });
 }));
 
 adminRouter.patch('/roles/:id', asyncHandler(async (req, res) => {
@@ -743,12 +795,10 @@ adminRouter.put('/settings', asyncHandler(async (req, res) => {
   const { invalidateAiFeatures } = await import('../../core/settings/aiFeatures.js');
   const { invalidateLocationSettings } = await import('../../core/locations/index.js');
   const { invalidateUiSettings } = await import('../../core/settings/ui.js');
-  const { invalidateStageMap } = await import('../../core/entity/lifecycleFromStatus.js');
   const { invalidateGreeting } = await import('../../integrations/whatsapp/greetNewLead.js');
   invalidateGreeting();
   invalidateLocationSettings();
   invalidateUiSettings();
-  invalidateStageMap();
   invalidateAiModels();
   invalidateHouseStyle();
   invalidateAiFeatures();

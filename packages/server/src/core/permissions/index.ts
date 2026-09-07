@@ -290,8 +290,8 @@ export async function filterWritableFields(
     budget. An admin overriding that is the whole point of being an admin.
 
     `isReadonly` is not about privilege. It says the value is computed —
-    `rating` is the band of `ai_score`, `lifecycle_stage` follows the pipeline
-    status — and typing into a computed field does not become allowed because
+    `rating` is the band the scorer writes on every run — and typing into a
+    computed field does not become allowed because
     you are an admin. It becomes silently discarded, which is what happened:
     the API answered 200, the audit trail recorded the change as successful, and
     the scorer overwrote it moments later.

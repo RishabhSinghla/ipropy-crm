@@ -33,6 +33,14 @@ export const PICKLISTS: PicklistDef[] = [
     { value: 'sqft', label: 'Sq.ft.', isDefault: true },
     { value: 'sqyd', label: 'Sq.yd.' },
   ] },
+  // The qualifier half of a Budget/Demand field: is the price per Sq.ft., per
+  // Sq.yd., or the whole thing? Same shape as `area_unit` — rendered inside
+  // the price control, not a dropdown of its own.
+  { name: 'price_unit', label: 'Price Unit', values: [
+    { value: 'sqft', label: 'Sq. ft.', isDefault: true },
+    { value: 'sqyd', label: 'Sq. yd.' },
+    { value: 'total', label: 'Total' },
+  ] },
   { name: 'budget_band', label: 'Budget Band', values: [...BUDGET_BANDS] },
   { name: 'purchase_timeline', label: 'Purchase Timeline', values: [...TIMELINE_OPTIONS] },
   { name: 'funding_type', label: 'Funding Type', values: [...FUNDING_TYPE] },
@@ -84,12 +92,6 @@ export const PICKLISTS: PicklistDef[] = [
     'Competitor Offered Better', 'Legal/RERA Concerns', 'Vastu Concerns', 'No Response',
   ] },
   { name: 'junk_reason', label: 'Junk Reason', values: ['Wrong Number', 'Duplicate', 'Test Entry', 'Broker Enquiry', 'Job Seeker', 'Out of Service Area', 'Spam'] },
-  { name: 'lifecycle_stage', label: 'Lifecycle Stage', values: [
-    { value: 'Lead', label: 'Lead', color: '#94a3b8', isDefault: true },
-    { value: 'Prospect', label: 'Prospect', color: '#0ea5e9' },
-    { value: 'Customer', label: 'Customer', color: '#22c55e' },
-    { value: 'Past Customer', label: 'Past Customer', color: '#8b5cf6' },
-  ] },
   /*
     Buyer is the default, and it has to be one. `contact_type` is mandatory, and
     with no default not one automated source could create a lead — the website

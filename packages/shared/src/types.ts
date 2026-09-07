@@ -241,6 +241,24 @@ export interface UiSettings {
   inlineEdit: boolean;
   /** Open a record from a list in a new browser tab, keeping the list and its filters. */
   openInNewTab: boolean;
+  /**
+   * The header's tabs, in the order the admin wants them. Each entry is one
+   * tab: a module (by name), one of the fixed pages, or a plain link. Modules
+   * missing from the list are appended after it, so creating a module can
+   * never be invisible; null means the shipped arrangement.
+   */
+  headerTabs: HeaderTab[] | null;
+  /** Where the social icons sit: beside the brand, on the right, or nowhere. */
+  socialPosition: 'brand' | 'right' | 'hidden';
+}
+
+/** One entry in the admin-arranged header. */
+export interface HeaderTab {
+  /** `module` renders a module tab; `link` is any URL; the rest are fixed pages. */
+  kind: 'dashboard' | 'capture' | 'reports' | 'module' | 'link';
+  label?: string;
+  /** For `module`: the module's name. For `link`: the href. */
+  value?: string;
 }
 
 export interface AuthUser {

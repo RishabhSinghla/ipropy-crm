@@ -83,7 +83,7 @@ miscRouter.get('/unseen-counts', asyncHandler(async (req, res) => {
 miscRouter.get('/brand', asyncHandler(async (_req, res) => {
   const rows = await db.query<{ key: string; value: unknown }>(
     `SELECT key, value FROM ipy_setting
-     WHERE key IN ('brand.tagline', 'social.links', 'org.name', 'org.logo_url', 'org.phone', 'org.email')`,
+     WHERE key IN ('brand.tagline', 'social.links', 'org.name', 'org.logo_url', 'org.phone', 'org.email', 'org.primary_color')`,
   );
   const map = new Map(rows.rows.map((r) => [r.key, r.value]));
 
@@ -96,6 +96,8 @@ miscRouter.get('/brand', asyncHandler(async (_req, res) => {
     phone: (map.get('org.phone') as string) ?? null,
     email: (map.get('org.email') as string) ?? null,
     tagline: (map.get('brand.tagline') as string) ?? null,
+    // What the admin picked in Brand settings; null means the shipped indigo.
+    primaryColor: (map.get('org.primary_color') as string) ?? null,
     // Only http(s) leaves the server: these are admin-editable and end up in an
     // href, where a `javascript:` value would run in the app's origin.
     socialLinks: links

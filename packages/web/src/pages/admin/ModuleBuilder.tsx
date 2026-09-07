@@ -2,7 +2,7 @@ import { type JSX, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { type FieldMeta, type FilterGroup, type FilterOperator, NULLARY_OPERATORS, UITYPE_LIST } from '@ipropy/shared';
-import { ChevronDown, ChevronUp, Edit3, Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Edit3, Eye, EyeOff, GripVertical, Plus, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
 import { cn } from '../../lib/utils';
@@ -28,6 +28,12 @@ export default function ModuleBuilder(): JSX.Element {
   const { data: fieldModules = [], isLoading: isModulesLoading } = useQuery({
     queryKey: ['field-modules'],
     queryFn: () => api.fieldModules(),
+  });
+  // Dropdown labels (not their stable keys) are what the list prints beside a
+  // picklist field — an admin renames the label and the list must follow.
+  const { data: picklistCatalogue } = useQuery({
+    queryKey: ['picklist-catalogue'],
+    queryFn: () => api.picklistCatalogue(),
   });
   const requestedModule = searchParams.get('module');
   const selectedModule = requestedModule && fieldModules.some((m) => m.name === requestedModule)
@@ -126,6 +132,32 @@ export default function ModuleBuilder(): JSX.Element {
     if (target < 0 || target >= next.length) return;
     [next[index], next[target]] = [next[target]!, next[index]!];
     reorderMutation.mutate(next.map((f, i) => ({ id: f.id, blockId, sequence: i })));
+  };
+
+  /*
+    Drag a field wherever it goes — the arrows this replaces asked for the same
+    move one click at a time, and "somewhere near the bottom" was a dozen of
+    them. Native HTML5 drag: no dependency, works with a mouse everywhere the
+    panel runs. The arrows stay for one step at a time and for keyboards.
+  */
+  const [dragField, setDragField] = useState<{ field: FieldMeta; blockId: string } | null>(null);
+  const [dragOver, setDragOver] = useState<string | null>(null);
+
+  const dropFieldOnto = (blockId: string, fields: FieldMeta[], targetIndex: number): void => {
+    if (!dragField) return;
+    const moving = dragField.field;
+    const sameBlock = dragField.blockId === blockId;
+    const list = sameBlock ? [...fields] : [...fields, moving];
+    const from = list.findIndex((f) => f.id === moving.id);
+    if (from === -1) return;
+    // Remove, then clamp — dropping below where the row came from lands on the
+    // row it was pushed past, not one further down.
+    list.splice(from, 1);
+    const insertAt = Math.max(0, Math.min(targetIndex, list.length));
+    list.splice(insertAt, 0, moving);
+    reorderMutation.mutate(list.map((f, i) => ({ id: f.id, blockId, sequence: i })));
+    setDragField(null);
+    setDragOver(null);
   };
 
   const moveToSection = (field: FieldMeta, blockId: string): void => {
@@ -241,11 +273,43 @@ export default function ModuleBuilder(): JSX.Element {
                     {block.fields.map((field, fieldIndex) => (
                       <div
                         key={field.id}
-                        className="flex items-center gap-3 px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                        draggable
+                        onDragStart={(e) => {
+                          setDragField({ field, blockId: block.id });
+                          e.dataTransfer.effectAllowed = 'move';
+                          // Firefox refuses a drag with no data set on it.
+                          e.dataTransfer.setData('text/plain', field.id);
+                        }}
+                        onDragEnd={() => { setDragField(null); setDragOver(null); }}
+                        onDragOver={(e) => {
+                          if (!dragField) return;
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = 'move';
+                          setDragOver(field.id);
+                        }}
+                        onDragLeave={() => setDragOver((cur) => (cur === field.id ? null : cur))}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          dropFieldOnto(block.id, block.fields, fieldIndex);
+                        }}
+                        className={cn(
+                          'flex items-center gap-3 px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/40',
+                          dragField?.field.id === field.id && 'opacity-40',
+                          dragOver === field.id && dragField && 'border-t-2 border-brand-500',
+                        )}
                       >
-                        {/* Order, from the row. Disabled at the ends rather than
-                            hidden, so the column does not jump about as you move
-                            a field down a list. */}
+                        {/* The drag handle says "grab me"; a cursor alone does
+                            not, and half the discoverability of drag is the
+                            handle. The arrows stay beside it: one step at a
+                            time still beats drag for a single move, and it is
+                            the keyboard path. */}
+                        <span
+                          className="shrink-0 cursor-grab text-slate-300 transition-colors hover:text-brand-600 active:cursor-grabbing dark:text-slate-600"
+                          title="Drag to move"
+                          aria-hidden
+                        >
+                          <GripVertical className="h-3.5 w-3.5" />
+                        </span>
                         <div className="flex shrink-0 flex-col">
                           <button
                             onClick={() => moveField(block.id, block.fields, fieldIndex, -1)}
@@ -277,7 +341,9 @@ export default function ModuleBuilder(): JSX.Element {
                           </div>
                           <p className="mt-0.5 font-mono text-2xs text-muted">
                             {field.name} · {field.uitype}
-                            {field.config.picklist ? ` (${field.config.picklist})` : ''}
+                            {field.config.picklist
+                              ? ` (${picklistCatalogue?.find((p) => p.name === field.config.picklist)?.label ?? field.config.picklist})`
+                              : ''}
                             {field.config.referenceModules ? ` → ${(field.config.referenceModules as string[]).join('/')}` : ''}
                           </p>
                         </div>
@@ -353,6 +419,16 @@ export default function ModuleBuilder(): JSX.Element {
                         Nothing in this section yet — drop a field into it, or delete it.
                       </p>
                     )}
+                    {/* The end of the list is a drop zone too: "move to the
+                        bottom" should not need pixel aim at the last row. */}
+                    <div
+                      onDragOver={(e) => { if (dragField) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; } }}
+                      onDrop={(e) => { e.preventDefault(); dropFieldOnto(block.id, block.fields, block.fields.length); }}
+                      className={cn(
+                        'h-2 transition-colors',
+                        dragField && 'hover:bg-brand-100 dark:hover:bg-brand-900/50',
+                      )}
+                    />
                   </div>
                 ))}
               </div>
@@ -698,6 +774,10 @@ function FieldEditor({
   const [saving, setSaving] = useState(false);
 
   const { data: picklists } = useQuery({ queryKey: ['picklists'], queryFn: () => api.picklists() });
+  const { data: picklistCatalogue } = useQuery({
+    queryKey: ['picklist-catalogue'],
+    queryFn: () => api.picklistCatalogue(),
+  });
 
   const spec = UITYPE_LIST.find((u) => u.uitype === uitype);
   const needsPicklist = spec?.requiresConfig?.includes('picklist');
@@ -919,18 +999,25 @@ function FieldEditor({
           </div>
         )}
 
-        {needsPicklist && (
-          <div>
-            <label className="label">Dropdown options</label>
-            <Select
-              value={picklist}
-              onChange={setPicklist}
-              placeholder="— Choose an option set —"
-              options={[
-                ...Object.keys(picklists ?? {}).map((p) => ({ value: p, label: p.replace(/_/g, ' ') })),
-                { value: NEW_PICKLIST, label: '+ Type the options here…' },
-              ]}
-            />
+            {needsPicklist && (
+              <div>
+                <label className="label">Dropdown options</label>
+                {/*
+                  The option set is named by its stable key (`config.picklist`),
+                  but a person chooses by what they renamed it to — the label.
+                  Showing the raw name here is how "I renamed Lead Source to
+                  Source, and the field still says lead source" reads as a bug:
+                  the label changed, the picker kept printing the key.
+                */}
+                <Select
+                  value={picklist}
+                  onChange={setPicklist}
+                  placeholder="— Choose an option set —"
+                  options={[
+                    ...(picklistCatalogue ?? []).map((p) => ({ value: p.name, label: p.label })),
+                    { value: NEW_PICKLIST, label: '+ Type the options here…' },
+                  ]}
+                />
 
             {/*
               Writing the options here, rather than sending somebody to another

@@ -4,14 +4,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FieldMeta, type FilterGroup, formatIndianPrice, formatPhoneWithCode, toInternational, type ListQuery, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, CloudOff, Columns3, Compass, Download, Filter,
-  LayoutGrid, List, MailCheck, MessageCircle, Phone, Plus, RefreshCw, Ruler, Save, Search, Settings2, Star, Trash2, Upload, Users, X,
+  LayoutGrid, List, MailCheck, MessageCircle, Pencil, Phone, Plus, RefreshCw, Ruler, Save, Search, Settings2, Star, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { ApiError, api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { saveListNav } from '../lib/listNav';
 import { cn, restrictionForField } from '../lib/utils';
-import { FieldValue } from '../components/FieldRenderer';
+import { FieldInput, FieldValue } from '../components/FieldRenderer';
 import { EditableField, isInlineEditable } from '../components/EditableField';
 import { FilterBuilder, countConditions } from '../components/FilterBuilder';
 import {
@@ -56,6 +56,9 @@ export default function ListView(): JSX.Element {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [displayMode, setDisplayMode] = useState<'table' | 'kanban'>('table');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Gmail's "select all X in this search": when true, bulk actions run against
+  // every record the current view/filter matches, not just this page's ids.
+  const [selectedAll, setSelectedAll] = useState(false);
   // Which record a long press is previewing. Null when nothing is peeked.
   const [peekId, setPeekId] = useState<string | null>(null);
   const [columns, setColumns] = useState<string[]>([]);
@@ -572,19 +575,53 @@ export default function ListView(): JSX.Element {
       </div>
 
       {/* Bulk action bar */}
-      {selected.size > 0 && (
-        <div className="flex shrink-0 items-center gap-3 border-b border-brand-200 bg-brand-50 px-4 py-2 dark:border-brand-900 dark:bg-brand-950/50 sm:px-6">
+      {(selected.size > 0 || selectedAll) && (
+        <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-brand-200 bg-brand-50 px-4 py-2 dark:border-brand-900 dark:bg-brand-950/50 sm:px-6">
           <span className="text-sm font-medium text-brand-800 dark:text-brand-200">
-            {selected.size} selected
+            {selectedAll
+              ? `All ${(data?.total ?? 0).toLocaleString('en-IN')} records in this view selected`
+              : `${selected.size} selected`}
           </span>
+          {/*
+            The Gmail move: the header box selects the page, this link widens it
+            to the whole result set. Offered only when there is more than the
+            page holds, and cleared the moment the selection narrows again.
+          */}
+          {!selectedAll && (data?.total ?? 0) > rows.length && (
+            <button
+              className="text-xs text-brand-700 underline underline-offset-2 hover:text-brand-900 dark:text-brand-300 dark:hover:text-brand-100"
+              onClick={() => { setSelectedAll(true); setSelected(new Set(rows.map((r) => r.id))); }}
+            >
+              Select all {(data?.total ?? 0).toLocaleString('en-IN')} records in this view
+            </button>
+          )}
           <div className="ml-auto flex gap-2">
-            <button className="btn-secondary btn-sm" onClick={() => setSelected(new Set())}>
+            <button
+              className="btn-secondary btn-sm"
+              onClick={() => { setSelected(new Set()); setSelectedAll(false); }}
+            >
               <X className="h-3.5 w-3.5" /> Clear
             </button>
             {meta.permissions.edit && (
-              <MassOwnerButton module={moduleName} ids={[...selected]} onDone={() => { setSelected(new Set()); void refetch(); }} />
+              <>
+                <BulkEditButton
+                  module={moduleName}
+                  fieldMap={fieldMap}
+                  ids={[...selected]}
+                  allQuery={selectedAll ? query : null}
+                  allCount={data?.total ?? 0}
+                  onDone={() => { setSelected(new Set()); setSelectedAll(false); void refetch(); }}
+                />
+                <MassOwnerButton
+                  module={moduleName}
+                  ids={[...selected]}
+                  allQuery={selectedAll ? query : null}
+                  allCount={data?.total ?? 0}
+                  onDone={() => { setSelected(new Set()); setSelectedAll(false); void refetch(); }}
+                />
+              </>
             )}
-            {meta.permissions.delete && (
+            {meta.permissions.delete && !selectedAll && (
               <button className="btn-danger btn-sm" onClick={() => setConfirmDelete(true)}>
                 <Trash2 className="h-3.5 w-3.5" /> Delete
               </button>
@@ -658,6 +695,8 @@ export default function ListView(): JSX.Element {
                 onToggleSelect={(checked) => {
                   const next = new Set(selected);
                   if (checked) next.add(row.id); else next.delete(row.id);
+                  // Unchecking one row narrows "all in this view" back to the page.
+                  setSelectedAll(false);
                   setSelected(next);
                 }}
                 onOpen={() => openRecord(`/${moduleName}/${row.id}?return=${encodeURIComponent(returnTo)}`)}
@@ -688,7 +727,10 @@ export default function ListView(): JSX.Element {
                     aria-label={`Select all ${meta.label.toLowerCase()} on this page`}
                     className="h-3.5 w-3.5 rounded border-slate-300"
                     checked={rows.length > 0 && selected.size === rows.length}
-                    onChange={(e) => setSelected(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set())}
+                    onChange={(e) => {
+                      setSelectedAll(false);
+                      setSelected(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set());
+                    }}
                   />
                 </th>
                 {visibleColumns.map((col) => {
@@ -765,6 +807,7 @@ export default function ListView(): JSX.Element {
                       onChange={(e) => {
                         const next = new Set(selected);
                         if (e.target.checked) next.add(row.id); else next.delete(row.id);
+                        setSelectedAll(false);
                         setSelected(next);
                       }}
                     />
@@ -1274,9 +1317,6 @@ function KanbanBoard({
   const [dragging, setDragging] = useState<string | null>(null);
   const [overColumn, setOverColumn] = useState<string | null>(null);
   const ownerField = module.fields.find((f) => f.name === 'owner_id');
-  // The score badge takes its colour from whatever the admin set on the rating
-  // dropdown, rather than from three literals that had already drifted.
-  const ratingField = module.fields.find((f) => f.name === 'rating');
 
   const field = module.fields.find((f) => f.name === groupBy);
   const columns = groups.length
@@ -1419,13 +1459,6 @@ function KanbanBoard({
                         admin had actually chosen: Hot was red everywhere in the
                         CRM and green in this one badge. Worse, changing it in
                         Admin → Dropdowns had no effect here at all. */}
-                    {typeof row.values.ai_score === 'number' && (
-                      <Badge color={
-                        ratingField?.options?.find((o) => o.value === row.values.rating)?.color ?? undefined
-                      }>
-                        {row.values.ai_score}
-                      </Badge>
-                    )}
                   </div>
                 </div>
               ))}
@@ -1563,12 +1596,20 @@ function ViewTabStrip({
 }
 
 function MassOwnerButton({
-  module, ids, onDone,
-}: { module: string; ids: string[]; onDone: () => void }): JSX.Element {
+  module, ids, allQuery, allCount, onDone,
+}: {
+  module: string;
+  ids: string[];
+  /** Set when "select all in this view" is on — the action then runs on the whole result set. */
+  allQuery: ListQuery | null;
+  allCount: number;
+  onDone: () => void;
+}): JSX.Element {
   const [open, setOpen] = useState(false);
   const [ownerId, setOwnerId] = useState('');
   const { data: users } = useQuery({ queryKey: ['users'], queryFn: () => api.users() });
   const [busy, setBusy] = useState(false);
+  const countLabel = allQuery ? allCount.toLocaleString('en-IN') : String(ids.length);
 
   return (
     <>
@@ -1578,7 +1619,7 @@ function MassOwnerButton({
       <Modal
         open={open}
         onClose={() => setOpen(false)}
-        title={`Reassign ${ids.length} record${ids.length === 1 ? '' : 's'}`}
+        title={`Reassign ${countLabel} record${countLabel === '1' ? '' : 's'}`}
         size="sm"
         footer={
           <>
@@ -1589,8 +1630,10 @@ function MassOwnerButton({
               onClick={async () => {
                 setBusy(true);
                 try {
-                  const result = await api.transfer(module, ids, ownerId);
-                  toast.success(`${result.transferred} records reassigned`);
+                  const result = allQuery
+                    ? await api.transferAll(module, allQuery as unknown as Record<string, unknown>, ownerId)
+                    : await api.transfer(module, ids, ownerId);
+                  toast.success(`${result.transferred.toLocaleString('en-IN')} records reassigned`);
                   setOpen(false);
                   onDone();
                 } catch (err) {
@@ -1615,6 +1658,124 @@ function MassOwnerButton({
             label: String((u as { fullName: string }).fullName),
           }))}
         />
+      </Modal>
+    </>
+  );
+}
+
+/**
+ * Bulk edit any column: pick a field, type the new value once, apply it to the
+ * selection (or to the whole view when "select all" is on).
+ *
+ * The field list is the module's own editable fields — the same FieldInput the
+ * record form uses renders the value box, so picklists offer their options,
+ * currency accepts "1.5 cr", and a per-field validation mistake is caught the
+ * same way it would be one record at a time.
+ */
+function BulkEditButton({
+  module, fieldMap, ids, allQuery, allCount, onDone,
+}: {
+  module: string;
+  fieldMap: Map<string, FieldMeta>;
+  ids: string[];
+  allQuery: ListQuery | null;
+  allCount: number;
+  onDone: () => void;
+}): JSX.Element {
+  const [open, setOpen] = useState(false);
+  const [fieldName, setFieldName] = useState('');
+  const [value, setValue] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+  const countLabel = allQuery ? allCount.toLocaleString('en-IN') : String(ids.length);
+
+  const editable = useMemo(
+    () => Array.from(fieldMap.values()).filter((f) =>
+      f.isActive
+      && f.displayType !== 'hidden' && f.displayType !== 'detail_only'
+      && f.displayType !== 'readonly' && f.displayType !== 'create_only'
+      && !f.isReadonly
+      && f.massEditable
+      && f.name !== 'owner_id'),
+    [fieldMap],
+  );
+  const field = fieldName ? fieldMap.get(fieldName) : undefined;
+
+  const emptyValue = (f: FieldMeta | undefined): unknown => (
+    f?.uitype === 'multipicklist' || f?.uitype === 'tags' || f?.uitype === 'multireference' ? [] : null
+  );
+
+  return (
+    <>
+      <button className="btn-secondary btn-sm" onClick={() => setOpen(true)}>
+        <Pencil className="h-3.5 w-3.5" /> Edit
+      </button>
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title={`Edit ${countLabel} record${countLabel === '1' ? '' : 's'}`}
+        size="md"
+        footer={
+          <>
+            <button className="btn-secondary" onClick={() => setOpen(false)}>Cancel</button>
+            <button
+              className="btn-primary"
+              disabled={!field || busy}
+              onClick={async () => {
+                if (!field) return;
+                setBusy(true);
+                try {
+                  const payload = { [field.name]: value };
+                  const result = allQuery
+                    ? await api.massUpdateAll(module, allQuery as unknown as Record<string, unknown>, payload)
+                    : await api.massUpdate(module, ids, payload);
+                  const ok = result.updated ?? 0;
+                  const failed = (result.failed as unknown[] | undefined)?.length ?? 0;
+                  toast.success(
+                    `${ok.toLocaleString('en-IN')} record${ok === 1 ? '' : 's'} updated`,
+                    failed ? `${failed} could not be updated — they were left unchanged.` : undefined,
+                  );
+                  setOpen(false);
+                  onDone();
+                } catch (err) {
+                  toast.error('Bulk edit failed', (err as Error).message);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              {busy && <Spinner />} Apply to {countLabel}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="label">Field to change</label>
+            <Select
+              value={fieldName}
+              onChange={(v) => { setFieldName(v); setValue(emptyValue(fieldMap.get(v))); }}
+              placeholder="— Choose a field —"
+              options={editable.map((f) => ({ value: f.name, label: f.label }))}
+            />
+          </div>
+          {field && (
+            <div>
+              <label className="label">{field.label}</label>
+              <FieldInput
+                field={field}
+                value={value}
+                onChange={(v) => setValue(v)}
+                onChangeOther={(_, v) => setValue(v)}
+                formValues={{ [field.name]: value }}
+                moduleName={module}
+              />
+              <p className="mt-1 text-2xs text-muted">
+                Every selected record gets this value. Records where the field is
+                hidden or read-only for the acting user are left unchanged.
+              </p>
+            </div>
+          )}
+        </div>
       </Modal>
     </>
   );

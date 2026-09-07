@@ -26,10 +26,23 @@ let original: string;
 
 beforeAll(async () => {
   await registry.warmup();
+  // The first picklist field on leads used to be something no workflow
+  // filtered on. Removing lifecycle_stage moved `status` to the front, and
+  // this test renames its pick wholesale — views, workflows, the lot — while
+  // its afterAll restores only the field row. Picking `status` then left every
+  // scheduled workflow pointing at `status_renamed`, which a later suite
+  // rightly fails on. So: a dropdown field nothing else depends on.
   const row = await db.queryOne<{ id: string; module_id: string; name: string }>(
     `SELECT f.id, f.module_id, f.name
        FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
       WHERE m.name = 'leads' AND f.config->>'picklist' IS NOT NULL AND f.is_active
+        AND f.name NOT IN (
+          SELECT c->>'field'
+            FROM ipy_workflow w, jsonb_array_elements(w.conditions->'conditions') c
+           WHERE w.module_id = f.module_id
+        )
+        AND f.name NOT IN ('status', 'contact_type', 'lead_source')
+      ORDER BY f.sequence
       LIMIT 1`,
   );
   if (!row) throw new Error('no dropdown field on leads to test with');

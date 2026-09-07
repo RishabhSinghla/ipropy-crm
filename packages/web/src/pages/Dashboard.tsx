@@ -17,7 +17,7 @@ import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { tintedTextVars } from '../lib/color';
 import { cn, renderMarkdown } from '../lib/utils';
-import { Badge, ConfirmDialog, Dropdown, DropdownItem, EmptyState, Modal, ScoreChip, Skeleton, Spinner } from '../components/ui';
+import { Badge, ConfirmDialog, Dropdown, DropdownItem, EmptyState, Modal, Skeleton, Spinner } from '../components/ui';
 import WidgetBuilder from '../components/WidgetBuilder';
 import { PeekLink } from '../components/PeekLink';
 
@@ -1399,7 +1399,6 @@ function TableCard({ widget, data }: { widget: DashboardWidget; data: Record<str
                     </div>
                   </td>
                   <td className="w-16 px-4 py-2 text-right">
-                    {typeof row.ai_score === 'number' && <ScoreChip score={row.ai_score as number} />}
                     {typeof row.priority === 'string' && (
                       <Badge color={row.priority === 'High' || row.priority === 'Urgent' ? '#f97316' : undefined}>
                         {String(row.priority)}

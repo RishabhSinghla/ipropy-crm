@@ -39,7 +39,7 @@ const WORKFLOWS: WorkflowSeed[] = [
     tasks: [
       {
         type: 'ai_action', name: 'Score the lead',
-        config: { action: 'score_lead', writeTo: { score: 'ai_score', reasons: 'ai_score_reasons' } },
+        config: { action: 'score_lead' },
       },
       {
         type: 'send_whatsapp', name: 'Send welcome message',
@@ -121,7 +121,7 @@ const WORKFLOWS: WorkflowSeed[] = [
     description: 'Recomputes the AI score whenever the lead\'s status or requirement changes.',
     trigger: 'on_field_change',
     watchFields: ['status', 'budget', 'possession_timeline', 'interested_project', 'funding_type'],
-    tasks: [{ type: 'ai_action', name: 'Re-score', config: { action: 'score_lead', writeTo: { score: 'ai_score', reasons: 'ai_score_reasons' } } }],
+    tasks: [{ type: 'ai_action', name: 'Re-score', config: { action: 'score_lead' } }],
   },
 
   // --- Site visits -----------------------------------------------------------
@@ -309,7 +309,7 @@ export async function seedSlaPolicies(conn: Tx): Promise<void> {
   const leads = await conn.queryOne<{ id: string }>(`SELECT id FROM ipy_module WHERE name = 'leads'`);
   if (!leads) return;
   const policies = [
-    { name: 'Hot lead — 15 minute first response', conditions: { logic: 'AND', conditions: [{ field: 'ai_score', operator: 'greater_or_equal', value: 70 }] }, first: 15, escalateAfter: 30 },
+    { name: 'Hot lead — 15 minute first response', conditions: { logic: 'AND', conditions: [{ field: 'rating', operator: 'equals', value: 'Hot' }] }, first: 15, escalateAfter: 30 },
     { name: 'Standard lead — 2 hour first response', conditions: { logic: 'AND', conditions: [] }, first: 120, escalateAfter: 240 },
   ];
   for (const p of policies) {

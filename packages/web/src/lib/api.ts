@@ -702,6 +702,9 @@ export const api = {
     get<Record<string, unknown>[]>(`/api/records/${module}/${id}/comments`),
   addComment: (module: string, id: string, body: string, mentions: string[] = []) =>
     post(`/api/records/${module}/${id}/comments`, { body, mentions }),
+  /** Fix a note after posting — the author only; the old text is kept as history. */
+  editComment: (module: string, id: string, commentId: string, body: string, mentions: string[] = []) =>
+    patch<{ ok: boolean; edited: boolean }>(`/api/records/${module}/${id}/comments/${commentId}`, { body, mentions }),
   related: (module: string, id: string, relation: string, page = 1) =>
     get<ListResult & { relation: Record<string, unknown> }>(`/api/records/${module}/${id}/related/${relation}${qs({ page })}`),
   linkRelated: (module: string, id: string, relation: string, targetId: string) =>
@@ -713,10 +716,17 @@ export const api = {
     post<{ id: string; label: string; matchedOn: string[] }[]>(`/api/records/${module}/check-duplicates`, { values, excludeId }),
   massUpdate: (module: string, ids: string[], values: Record<string, unknown>) =>
     post<{ updated: number; failed: unknown[] }>(`/api/records/${module}/mass-update`, { ids, values }),
+  /** Gmail's "select all in this search": every record the view/filter matches. */
+  massUpdateAll: (module: string, query: Record<string, unknown>, values: Record<string, unknown>) =>
+    post<{ updated: number; matched: number; capped: boolean; failed: unknown[] }>(
+      `/api/records/${module}/mass-update-all`, { query, values },
+    ),
   massDelete: (module: string, ids: string[]) =>
     post<{ deleted: number }>(`/api/records/${module}/mass-delete`, { ids }),
   transfer: (module: string, ids: string[], ownerId: string) =>
     post<{ transferred: number }>(`/api/records/${module}/transfer`, { ids, ownerId }),
+  transferAll: (module: string, query: Record<string, unknown>, ownerId: string) =>
+    post<{ transferred: number; matched: number }>(`/api/records/${module}/transfer-all`, { query, ownerId }),
   merge: (module: string, primaryId: string, duplicateIds: string[], fieldChoices: Record<string, string> = {}) =>
     post(`/api/merge/${module}`, { primaryId, duplicateIds, fieldChoices }),
   star: (module: string, id: string, starred: boolean) => post(`/api/records/${module}/${id}/star`, { starred }),
@@ -934,7 +944,7 @@ export const api = {
   }>('/api/public/brand'),
   brand: () => get<{
     orgName: string; logoUrl: string | null; phone: string | null; email: string | null;
-    tagline: string | null;
+    tagline: string | null; primaryColor: string | null;
     socialLinks: { platform: string; label: string; url: string }[];
   }>('/api/brand'),
 

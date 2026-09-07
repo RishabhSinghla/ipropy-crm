@@ -29,7 +29,7 @@ import { db, type Tx } from '../../db/pool.js';
  *
  * `renameFieldEverywhere` puts back every reference that lives in the database.
  * What it cannot rewrite is a name written into the source — `l.mobile`, a
- * scoring rule that adds points for `ai_score`, the WhatsApp sender that looks
+ * scoring rule that reads the follow-up dates, the WhatsApp sender that looks
  * for `whatsapp_number`, the public catalogue that filters on `status`. Rename
  * one of those and the rename succeeds, every view and workflow follows, and a
  * feature silently stops with nothing anywhere saying why.
@@ -46,9 +46,7 @@ export const FIELDS_USED_IN_CODE: Record<string, string> = {
   'leads.whatsapp_number': 'which number a WhatsApp message is sent to',
   'leads.email': 'inbound email threading, and what lead capture writes',
   'leads.status': 'lead scoring, the rule that moves a lead to Contacted, and open-lead counts',
-  'leads.lifecycle_stage': 'conversion — Lead to Prospect on a site visit, Customer on a booking',
   'leads.lead_source': 'source attribution on every captured lead and every source report',
-  'leads.ai_score': 'lead scoring, buyer matching and the priority order on lists',
   'leads.next_followup_at': 'follow-ups — the one definition of “chase them on this date”',
   'leads.last_contacted_at': 'the neglected-lead rules and first-response timing',
   'leads.budget': 'buyer matching against inventory',

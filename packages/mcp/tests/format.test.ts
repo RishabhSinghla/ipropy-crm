@@ -39,8 +39,7 @@ describe('a lead as a rep would describe one', () => {
     values: {
       mobile: '9910190056',
       country_code: '+91',
-      budget_min: 25_000_000,
-      budget_max: 33_750_000,
+      budget: 25_000_000,
       configuration: ['2 BHK', '3 BHK'],
       kyc_status: 'Not Started',
       do_not_call: false,
@@ -58,7 +57,7 @@ describe('a lead as a rep would describe one', () => {
   it('leads with what matters and leaves out what does not', () => {
     const out = leadSummary(lead);
     expect(out).toContain('Riya Sharma (LD-00025)');
-    expect(out).toContain('Budget: ₹2.5 Cr–₹3.38 Cr');
+    expect(out).toContain('Budget: ₹2.5 Cr');
     expect(out).toContain('Status: Negotiation');
     // Empty and irrelevant fields are noise that costs tokens and buries the
     // four facts that matter.

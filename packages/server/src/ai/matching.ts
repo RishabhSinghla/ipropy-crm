@@ -85,8 +85,23 @@ export async function loadRequirement(recordId: string): Promise<Requirement | n
   );
   const lead = row?.row;
   if (lead) {
+    // A per-unit budget ("₹8,500/sq.yd.") is not an absolute price, and matching
+    // compares absolute prices. Where the buyer also stated an area, the unit
+    // qualifier turns into a number the engine can compare: 8500/sq.yd. over
+    // 1200 sq.ft. is a ₹1.1 Cr budget. Without an area the number stands as
+    // typed — a per-unit figure with nothing to multiply by is still closer
+    // than throwing the requirement away.
+    let budget = lead.budget as number | null;
+    const unit = (lead.budget_unit as string | null) ?? 'total';
+    const area = lead.area as number | null;
+    const areaUnit = (lead.area_unit as string | null) ?? 'sqft';
+    if (budget != null && unit !== 'total' && area != null) {
+      const sqft = toSqFt(area, areaUnit);
+      const per = unit === 'sqft' ? budget : toSqFt(budget, 'sqyd');
+      budget = Math.round(per * sqft);
+    }
     return {
-      budget: lead.budget as number | null,
+      budget,
       configurations: (lead.configuration as string[]) ?? [],
       locations: (lead.preferred_locations as string[]) ?? [],
       area: lead.area as number | null,
@@ -589,7 +604,7 @@ export async function matchBuyersForProperty(
     ? await (async () => { const f = await recordScopeSql(scope, 'leads', params, false); return f ? `AND ${f}` : ''; })()
     : '';
 
-  const leads = await db.query<{ record_id: string; label: string; owner_id: string | null; budget: number | null; configuration: string[] | null; preferred_locations: string[] | null; possession_timeline: string | null; purpose: string | null; status: string; lost_reason: string | null }>(
+  const leads = await db.query<{ record_id: string; label: string; owner_id: string | null; budget: number | null; budget_unit: string | null; area: number | null; area_unit: string | null; configuration: string[] | null; preferred_locations: string[] | null; possession_timeline: string | null; purpose: string | null; status: string; lost_reason: string | null }>(
     // Lost leads are in scope now; Junk never is. A wrong number, a broker
     // fishing or a test entry does not become a buyer because a unit appeared,
     // and `revivalReason` is what decides which of the Lost are worth raising.
@@ -599,6 +614,7 @@ export async function matchBuyersForProperty(
     // sit under it — filtering on the same ±band as a live lead would drop
     // exactly the ones worth reviving.
     `SELECT l.record_id, r.label, r.owner_id, l.budget,
+            l.budget_unit, l.area, l.area_unit,
             l.configuration, l.preferred_locations, l.possession_timeline, l.purpose,
             l.status, l.lost_reason
      FROM ipy_e_leads l JOIN ipy_record r ON r.id = l.record_id
@@ -606,7 +622,9 @@ export async function matchBuyersForProperty(
        AND l.status <> 'Junk'
        AND (
          l.status <> 'Lost'
-           AND (l.budget IS NULL OR (l.budget >= ${priceP} * 0.85 AND l.budget <= ${priceP} * 1.2))
+           AND (l.budget IS NULL
+             OR l.budget_unit IS NOT NULL AND l.budget_unit <> 'total' AND l.area IS NOT NULL
+             OR (l.budget >= ${priceP} * 0.85 AND l.budget <= ${priceP} * 1.2))
          OR l.status = 'Lost' AND l.lost_reason IS NOT NULL
        )
        ${scopeSql}
@@ -628,15 +646,24 @@ export async function matchBuyersForProperty(
      -- This only makes the four hundred rows fetched the right four hundred.
      ORDER BY (l.configuration ?| ${configP}::text[]) DESC,
               (l.preferred_locations ? ${localityP}) DESC,
-              l.ai_score DESC NULLS LAST
+              r.updated_at DESC
      LIMIT 400`,
     params.all(),
   );
 
   const buyers = leads.rows
     .map((lead) => {
+      // Same normalisation as loadRequirement: a per-unit budget with a stated
+      // area becomes the absolute figure the scorer compares.
+      let budget: number | null = lead.budget;
+      const unit = lead.budget_unit ?? 'total';
+      if (budget != null && unit !== 'total' && lead.area != null) {
+        const sqft = toSqFt(lead.area, lead.area_unit ?? 'sqft');
+        const per = unit === 'sqft' ? budget : toSqFt(budget, 'sqyd');
+        budget = Math.round(per * sqft);
+      }
       const req: Requirement = {
-        budget: lead.budget,
+        budget,
         configurations: lead.configuration ?? [],
         locations: lead.preferred_locations ?? [],
         possessionTimeline: lead.possession_timeline,

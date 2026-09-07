@@ -137,14 +137,6 @@ const updateFields: TaskHandler = async (config, ctx) => {
     values.blocked_until = new Date(Date.now() + Number(config.setBlockedUntilDays) * 86_400_000).toISOString();
   }
 
-  // Lifecycle promotion only ever moves forward, so a fresh enquiry from an
-  // existing customer can't demote them back to a lead.
-  if (config.advanceLifecycle) {
-    const { advanceLifecycle } = await import('../entity/conversion.js');
-    await advanceLifecycle(svc, targetId, config.advanceLifecycle as 'Prospect' | 'Customer');
-    if (!Object.keys(values).length) return;
-  }
-
   // Keep deal probability/win-loss in step with the stage picklist.
   if (config.applyStageMeta) {
     const module = await registry.getModule(targetModule);

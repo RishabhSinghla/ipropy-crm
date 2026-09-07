@@ -70,15 +70,13 @@ export function leadSummary(row: RecordEnvelope, opts: { full?: boolean } = {}):
 
   const core: [string, unknown][] = [
     ['Mobile', phone(v)],
-    ['Stage', d.lifecycle_stage ?? v.lifecycle_stage],
     ['Status', d.status ?? v.status],
-    ['Budget', budgetRange(v.budget_min, v.budget_max)],
+    ['Budget', indianPrice(v.budget)],
     ['Wants', v.configuration],
     ['Preferred areas', v.preferred_locations],
     ['Interested in', d.interested_project ?? v.interested_project],
     ['Next follow-up', asDate(v.next_followup_at)],
     ['Owner', d.owner_id],
-    ['AI score', v.ai_score],
   ];
 
   if (!opts.full) return `${head}\n${lines(core)}`;

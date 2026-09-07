@@ -1,12 +1,14 @@
 import { type JSX, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { relativeTime, type HeaderTab } from '@ipropy/shared';
 import {
-  Bell, Facebook, Globe, Instagram, Linkedin, Lock, LogOut, Menu, MessageCircle, Moon, Search,
-  Settings, Shield, Sparkles, Sun, Twitter, X, Youtube, BarChart3, LayoutDashboard, MapPin, Building2,
+  AtSign, Bell, Cake, Check, Facebook, Flame, Globe, Instagram, Linkedin, Lock, LogOut, Menu,
+  MessageCircle, Moon, Search, Settings, Shield, Sparkles, Sun, Twitter, Upload, X, Youtube,
+  BarChart3, LayoutDashboard, MapPin, Building2,
 } from 'lucide-react';
-import { useApp } from '../lib/store';
-import { api, type SearchHit } from '../lib/api';
+import { applyBrandColour, useApp } from '../lib/store';
+import { api, authedFileUrl, type SearchHit } from '../lib/api';
 import { useRealtime } from '../lib/realtime';
 import { cn } from '../lib/utils';
 import { resolveIcon } from '../lib/icons';
@@ -58,10 +60,45 @@ export default function Layout(): JSX.Element {
     staleTime: 10 * 60_000,
   });
 
+  // The admin's chosen colour dresses the whole CRM: buttons, links, chips and
+  // focus rings all read the same eleven variables. Applied here — where the
+  // brand row first loads — and again whenever the Brand page invalidates it.
+  useEffect(() => {
+    applyBrandColour(brand?.primaryColor);
+  }, [brand?.primaryColor]);
+
   const menuModules = useMemo(
     () => modules.filter((m) => m.showInMenu && m.isEntity && m.permissions.view),
     [modules],
   );
+
+  /*
+    The header's tab order is admin property (Admin → Header Tabs). The
+    arrangement names tabs by kind — module name, fixed page, or a link — and
+    the same entry can rename a tab. Anything the admin has not placed is
+    appended, so a module created after the arrangement still appears; the
+    arrangement can only reorder and rename, never orphan.
+  */
+  const headerTabs = useMemo(() => {
+    const arranged = user?.ui?.headerTabs;
+    // No arrangement yet: the shipped order. Dashboard first, the modules in
+    // their own sequence, Site visit last.
+    if (!arranged?.length) {
+      return [
+        { kind: 'dashboard' as const, label: undefined as string | undefined },
+        ...menuModules.map((m) => ({ kind: 'module' as const, value: m.name, label: undefined as string | undefined })),
+        { kind: 'capture' as const, label: undefined as string | undefined },
+      ];
+    }
+    const placed: HeaderTab[] = arranged.map((t) => ({ ...t }));
+    const used = new Set(placed.filter((t) => t.kind === 'module').map((t) => t.value));
+    for (const m of menuModules) {
+      if (!used.has(m.name)) placed.push({ kind: 'module' as const, value: m.name });
+    }
+    return placed;
+  }, [user?.ui?.headerTabs, menuModules]);
+
+  const socialPosition = user?.ui?.socialPosition ?? 'right';
 
   return (
     <PeekProvider>
@@ -88,7 +125,10 @@ export default function Layout(): JSX.Element {
 
           <Link to="/dashboard" className="flex shrink-0 items-center gap-2 overflow-hidden" aria-label={brand?.orgName ?? 'iPropy'}>
             {brand?.logoUrl ? (
-              <img src={brand.logoUrl} alt="" className="h-8 w-8 shrink-0 rounded-lg object-contain" />
+              // A CRM-hosted logo is permission-checked, and an <img> cannot
+              // send the session header — so the token rides in the query
+              // string. An external https logo passes through untouched.
+              <img src={authedFileUrl(brand.logoUrl)} alt="" className="h-8 w-8 shrink-0 rounded-lg object-contain" />
             ) : (
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-white">
                 <Building2 className="h-4.5 w-4.5" />
@@ -99,20 +139,53 @@ export default function Layout(): JSX.Element {
             </span>
           </Link>
 
-          {/* Primary tabs. The module metadata decides what exists — a custom
-              module appears here on its own, and a disabled one disappears. */}
+          {/* Social beside the brand — the admin's choice of where they sit. */}
+          {socialPosition === 'brand' && <div className="hidden shrink-0 lg:block"><SocialBar /></div>}
+
+          {/* Primary tabs. The admin's arrangement decides the order, names and
+              extras (Admin → Header Tabs); modules still appear here on their
+              own, and a disabled one disappears. */}
           <nav aria-label="Main" className="hidden min-w-0 flex-1 items-center gap-1 overflow-x-auto lg:flex">
-            <TabItem to="/dashboard" icon={<LayoutDashboard className="h-4 w-4" />} label="Dashboard" />
-            {menuModules.map((m) => (
-              <TabItem
-                key={m.name}
-                to={`/${m.name}`}
-                icon={<ModuleIcon name={m.icon} />}
-                label={m.label}
-                badge={unseenCounts?.[m.name]}
-              />
-            ))}
-            <TabItem to="/capture" icon={<MapPin className="h-4 w-4" />} label="Site visit" />
+            {headerTabs.map((t, i) => {
+              const key = `${t.kind}-${t.value ?? ''}-${i}`;
+              if (t.kind === 'dashboard') {
+                return <TabItem key={key} to="/dashboard" icon={<LayoutDashboard className="h-4 w-4" />} label={t.label ?? 'Dashboard'} />;
+              }
+              if (t.kind === 'capture') {
+                return <TabItem key={key} to="/capture" icon={<MapPin className="h-4 w-4" />} label={t.label ?? 'Site visit'} />;
+              }
+              if (t.kind === 'reports') {
+                return <TabItem key={key} to="/reports" icon={<BarChart3 className="h-4 w-4" />} label={t.label ?? 'Reports'} />;
+              }
+              if (t.kind === 'link') {
+                return (
+                  <a
+                    key={key}
+                    href={t.value}
+                    target={t.value?.startsWith('http') ? '_blank' : undefined}
+                    rel="noreferrer"
+                    className="flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                  >
+                    <Globe className="h-4 w-4" />
+                    <span className="whitespace-nowrap">{t.label ?? t.value}</span>
+                  </a>
+                );
+              }
+              const m = menuModules.find((x) => x.name === t.value);
+              // A module the admin hid from the menu, or one this user cannot
+              // open, is not rendered — the arrangement merely names what
+              // would appear anyway.
+              if (!m) return null;
+              return (
+                <TabItem
+                  key={key}
+                  to={`/${m.name}`}
+                  icon={<ModuleIcon name={m.icon} />}
+                  label={t.label ?? m.label}
+                  badge={unseenCounts?.[m.name]}
+                />
+              );
+            })}
           </nav>
 
           {/* Search sits beside the tabs, and shrinks before the tabs do. */}
@@ -120,7 +193,7 @@ export default function Layout(): JSX.Element {
             <GlobalSearch />
 
             <div className="flex shrink-0 items-center gap-1">
-              <SocialBar />
+              {socialPosition === 'right' && <SocialBar />}
               {aiAvailable !== undefined && (
                 <button
                   onClick={() => setAiOpen(true)}
@@ -227,8 +300,8 @@ function UserMenu(): JSX.Element {
           <div className="border-b border-slate-100 px-3 py-2 dark:border-slate-800">
             <p className="truncate text-sm font-medium">{user?.fullName}</p>
             <p className="truncate text-xs text-muted">{user?.email}</p>
-            {user?.profileName && (
-              <Badge className="mt-1.5">{user.profileName}</Badge>
+            {user?.roleName && (
+              <Badge className="mt-1.5">{user.roleName}</Badge>
             )}
           </div>
           <Link to="/reports" onClick={close}>
@@ -446,6 +519,21 @@ function SocialIcon({ platform }: { platform: string }): JSX.Element {
   }
 }
 
+/** One line per kind, so the panel can lead with a picture rather than text. */
+function NotificationIcon({ kind, link }: { kind: string; link: string | null }): JSX.Element {
+  const c = 'h-3.5 w-3.5';
+  const to = (icon: JSX.Element, tone: string): JSX.Element => (
+    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${tone}`}>{icon}</span>
+  );
+  if (link?.startsWith('/capture')) return to(<MapPin className={c} />, 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400');
+  if (kind === 'ai') return to(<Sparkles className={c} />, 'bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-400');
+  if (kind === 'mention') return to(<AtSign className={c} />, 'bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-400');
+  if (kind === 'import') return to(<Upload className={c} />, 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400');
+  if (kind === 'escalation') return to(<Flame className={c} />, 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400');
+  if (kind === 'birthday') return to(<Cake className={c} />, 'bg-pink-100 text-pink-700 dark:bg-pink-950 dark:text-pink-400');
+  return to(<Bell className={c} />, 'bg-brand-100 text-brand-700 dark:bg-brand-950 dark:text-brand-400');
+}
+
 function NotificationBell(): JSX.Element {
   const { data, refetch } = useQuery({
     queryKey: ['notifications'],
@@ -454,63 +542,90 @@ function NotificationBell(): JSX.Element {
   });
   const navigate = useNavigate();
   const unread = data?.unreadCount ?? 0;
+  const notes = ((data?.notifications ?? []) as {
+    id: string; title: string; body: string | null; link: string | null;
+    is_read: boolean; kind: string; created_at: string;
+  }[]);
 
   return (
     <Dropdown
       trigger={
-        <button className="btn-ghost relative p-2" title="Notifications">
-          <Bell className="h-4 w-4" />
+        <button
+          className="btn-ghost relative rounded-full p-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+          title="Notifications"
+          aria-label={unread > 0 ? `${unread} unread notification${unread === 1 ? '' : 's'}` : 'Notifications'}
+        >
+          <Bell className={cn('h-4 w-4 transition-transform', unread > 0 && 'text-brand-600 dark:text-brand-400')} />
           {unread > 0 && (
-            <span className="absolute right-1 top-1 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-bold text-white">
+            <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[1rem] animate-pulse-success items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-bold text-white ring-2 ring-white dark:ring-slate-900">
               {unread > 9 ? '9+' : unread}
             </span>
           )}
         </button>
       }
-      className="w-80"
+      className="w-[min(24rem,calc(100vw-1.5rem))] py-0"
     >
       {(close) => (
-        <>
-          <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2 dark:border-slate-800">
-            <p className="text-sm font-medium">Notifications</p>
+        <div className="max-h-[min(28rem,70vh)] overflow-y-auto">
+          {/* The header stays put while the list scrolls — unread state and
+              actions belong to the whole panel, not to wherever you scrolled. */}
+          <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-slate-100 bg-white/95 px-4 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
+            <div>
+              <p className="text-sm font-semibold">Notifications</p>
+              <p className="text-2xs text-muted">
+                {unread > 0 ? `${unread} unread` : 'You are all caught up'}
+              </p>
+            </div>
             {unread > 0 && (
               <button
-                className="text-xs text-brand-600 hover:underline"
+                className="shrink-0 rounded-full px-2.5 py-1 text-2xs font-medium text-brand-700 transition-colors hover:bg-brand-50 dark:text-brand-300 dark:hover:bg-brand-950/60"
                 onClick={() => { void api.markNotificationsRead().then(() => refetch()); }}
               >
                 Mark all read
               </button>
             )}
           </div>
-          <div className="max-h-96 overflow-y-auto">
-            {(data?.notifications ?? []).length === 0 && (
-              <p className="px-3 py-8 text-center text-xs text-muted">Nothing new</p>
-            )}
-            {(data?.notifications ?? []).map((n) => {
-              const note = n as { id: string; title: string; body: string | null; link: string | null; is_read: boolean; created_at: string };
-              return (
+
+          {notes.length === 0 && (
+            <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
+                <Check className="h-5 w-5 text-slate-400" />
+              </span>
+              <p className="text-sm font-medium">Nothing new</p>
+              <p className="text-2xs text-muted">Follow-ups, mentions and matches land here.</p>
+            </div>
+          )}
+
+          <ul className="divide-y divide-slate-50 dark:divide-slate-800/60">
+            {notes.map((n) => (
+              <li key={n.id}>
                 <button
-                  key={note.id}
                   onClick={() => {
-                    void api.markNotificationsRead([note.id]).then(() => refetch());
-                    if (note.link) navigate(note.link);
+                    void api.markNotificationsRead([n.id]).then(() => refetch());
+                    if (n.link) navigate(n.link);
                     close();
                   }}
                   className={cn(
-                    'block w-full border-b border-slate-50 px-3 py-2 text-left last:border-0 hover:bg-slate-50 dark:border-slate-800/60 dark:hover:bg-slate-800',
-                    !note.is_read && 'bg-brand-50/50 dark:bg-brand-950/30',
+                    'flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/70',
+                    !n.is_read && 'bg-brand-50/60 dark:bg-brand-950/30',
                   )}
                 >
-                  <p className="text-xs font-medium text-slate-800 dark:text-slate-200">{note.title}</p>
-                  {note.body && <p className="mt-0.5 line-clamp-2 text-2xs text-muted">{note.body}</p>}
-                  <p className="mt-1 text-2xs text-muted">
-                    {new Date(note.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                  </p>
+                  <NotificationIcon kind={n.kind} link={n.link} />
+                  <span className="min-w-0 flex-1">
+                    <span className={cn('flex items-baseline gap-2', !n.is_read && 'font-medium')}>
+                      <span className="min-w-0 flex-1 truncate text-xs text-slate-800 dark:text-slate-200">{n.title}</span>
+                      {/* A dot, not a colour: the unread state survives every
+                          theme and does not fight the body copy. */}
+                      {!n.is_read && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-brand-500" />}
+                    </span>
+                    {n.body && <span className="mt-0.5 line-clamp-2 block text-2xs text-muted">{n.body}</span>}
+                    <span className="mt-1 block text-2xs text-muted">{relativeTime(n.created_at)}</span>
+                  </span>
                 </button>
-              );
-            })}
-          </div>
-        </>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </Dropdown>
   );

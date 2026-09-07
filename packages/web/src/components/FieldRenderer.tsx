@@ -57,7 +57,9 @@ export function FieldValue({
 
   switch (field.uitype) {
     case 'currency':
-      return <span className="font-medium tnum">{formatIndianPrice(Number(value))}</span>;
+      // A budget/demand carries its per-unit qualifier in `display` — the same
+      // deal as the area pair above.
+      return <span className="font-medium tnum">{display || formatIndianPrice(Number(value))}</span>;
 
     case 'area':
       // `display` carries the unit when the field has one of its own
@@ -660,14 +662,22 @@ function AreaInput({
 }
 
 // ---------------------------------------------------------------------------
-// Currency — accepts "1.5 cr" and shows the parsed value
+// Currency — accepts "1.5 cr" and shows the parsed value. A currency field
+// with `config.unitField` (budget, demand) additionally carries a unit
+// selector welded to its right edge, exactly the shape the area control made.
 // ---------------------------------------------------------------------------
 
 function CurrencyInput({
-  value, onChange, readOnly, className, id,
+  field, value, onChange, onChangeOther, formValues, readOnly, className, id,
 }: FieldInputProps & { readOnly: boolean; className: string }): JSX.Element {
   const [text, setText] = useState(value === null || value === undefined ? '' : String(value));
   const [focused, setFocused] = useState(false);
+
+  const unitField = field.config.unitField ? String(field.config.unitField) : null;
+  const unitOptions = (field.config.unitOptions as { value: string; label: string }[] | undefined) ?? null;
+  const unit = unitField && unitOptions
+    ? String(formValues?.[unitField] ?? unitOptions[0]?.value ?? '')
+    : null;
 
   useEffect(() => {
     if (!focused) setText(value === null || value === undefined ? '' : String(value));
@@ -688,12 +698,12 @@ function CurrencyInput({
     }
   };
 
-  return (
-    <div className="relative">
+  const amount = (
+    <div className={cn('relative', unitField && 'min-w-0 flex-1')}>
       <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted">₹</span>
       <input
         id={id}
-        className={cn(className, 'pl-7 tnum')}
+        className={cn(className, 'pl-7 tnum', unitField && 'rounded-r-none')}
         value={focused ? text : (value ? formatIndianPrice(Number(value)).replace('₹', '') : '')}
         onFocus={() => { setFocused(true); setText(value ? String(value) : ''); }}
         onBlur={() => { setFocused(false); onChange(parse(text)); }}
@@ -702,10 +712,30 @@ function CurrencyInput({
         placeholder="e.g. 1.5 Cr or 12500000"
       />
       {focused && text && parse(text) !== null && (
-        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-2xs text-muted">
+        <span className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 text-2xs text-muted sm:block">
           {formatIndianPrice(parse(text)!)}
         </span>
       )}
+    </div>
+  );
+
+  if (!unitField || !unitOptions) return amount;
+
+  return (
+    <div className="flex items-stretch">
+      {amount}
+      <div className="relative shrink-0">
+        <select
+          aria-label={`${field.label} unit`}
+          className="input w-[6.75rem] appearance-none rounded-l-none border-l-0 pl-2.5 pr-6 text-sm"
+          value={unit ?? ''}
+          disabled={readOnly || !onChangeOther}
+          onChange={(e) => onChangeOther?.(unitField, e.target.value)}
+        >
+          {unitOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+      </div>
     </div>
   );
 }
@@ -1130,7 +1160,7 @@ export function UserPicker({
   /** Fallback accessible name when no <label htmlFor> points at this select. */
   label?: string;
 }): JSX.Element {
-  const [users, setUsers] = useState<{ id: string; fullName: string; designation?: string }[]>([]);
+  const [users, setUsers] = useState<{ id: string; fullName: string }[]>([]);
 
   useEffect(() => {
     void api.users().then((rows) => setUsers(rows as never)).catch(() => undefined);
@@ -1151,7 +1181,7 @@ export function UserPicker({
       >
         <option value="">— Unassigned —</option>
         {users.map((u) => (
-          <option key={u.id} value={u.id}>{u.fullName}{u.designation ? ` · ${u.designation}` : ''}</option>
+          <option key={u.id} value={u.id}>{u.fullName}</option>
         ))}
       </select>
       {selectedName && (

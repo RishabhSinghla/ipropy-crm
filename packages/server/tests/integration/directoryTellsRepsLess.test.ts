@@ -58,7 +58,7 @@ describe('the staff directory', () => {
       .set('Authorization', `Bearer ${repToken}`).expect(200);
 
     expect(res.body.length).toBeGreaterThan(0);
-    for (const key of ['id', 'fullName', 'firstName', 'lastName', 'avatarUrl', 'designation']) {
+    for (const key of ['id', 'fullName', 'firstName', 'lastName', 'avatarUrl']) {
       expect(res.body[0], `a picker cannot draw a person without ${key}`).toHaveProperty(key);
     }
   });

@@ -30,6 +30,83 @@ function applyTheme(theme: 'light' | 'dark'): void {
   localStorage.setItem('ipropy.theme', theme);
 }
 
+/*
+  The eleven brand shades, generated from one admin-chosen hex.
+
+  Rather than a colour-science library, this walks lightness in HSL around the
+  chosen hue — the same relationship the shipped indigo scale has between its
+  own steps. Two guarantees that matter more than fidelity:
+
+   * the chosen hex is used verbatim for `--brand-500` (accents) and the
+     closest generated step for 600 (buttons), so what the admin picked is
+     what the CRM wears;
+   * 50 stays a whisper and 950 stays near-black whatever the hue, because
+     those two carry "tinted background" and "dark tinted background" and a
+     saturated either would shout.
+*/
+export function applyBrandColour(hex: string | null | undefined): void {
+  const root = document.documentElement;
+  if (!hex || !/^#[0-9a-f]{6}$/i.test(hex)) {
+    // Empty means "back to the shipped indigo" — remove the overrides and let
+    // the values in styles.css speak.
+    for (let i = 50; i <= 950; i += 50) root.style.removeProperty(`--brand-${i}`);
+    return;
+  }
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const d = max - min;
+  // A grey (no hue) keeps neutral steps; a hue-less "brand" would otherwise
+  // divide by zero below.
+  const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+  let h = 0;
+  if (d !== 0) {
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60;
+    if (h < 0) h += 360;
+  }
+  const sat = s <= 0 ? 0 : Math.min(1, s * (l > 0.75 ? 0.7 : 1));
+  const shade = (lightness: number, saturation = sat): string => {
+    const c = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 255);
+    // hsl → rgb, done inline so no colour library joins the bundle.
+    const satV = saturation;
+    const chroma = (1 - Math.abs(2 * lightness - 1)) * satV;
+    const hp = h / 60;
+    const x = chroma * (1 - Math.abs((hp % 2) - 1));
+    let r1 = 0; let g1 = 0; let b1 = 0;
+    if (hp < 1) { r1 = chroma; g1 = x; }
+    else if (hp < 2) { r1 = x; g1 = chroma; }
+    else if (hp < 3) { g1 = chroma; b1 = x; }
+    else if (hp < 4) { g1 = x; b1 = chroma; }
+    else if (hp < 5) { r1 = x; b1 = chroma; }
+    else { r1 = chroma; b1 = x; }
+    const m = lightness - chroma / 2;
+    return `#${[c(r1 + m), c(g1 + m), c(b1 + m)].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+  };
+  // The admin's own hex, untouched, where the eye lands on it.
+  const steps: Record<number, string> = {
+    50: shade(0.96, Math.min(sat, 0.55)),
+    100: shade(0.92, Math.min(sat, 0.6)),
+    200: shade(0.84, Math.min(sat, 0.65)),
+    300: shade(0.73),
+    400: shade(0.62),
+    500: hex,
+    600: shade(Math.max(0.38, Math.min(l, 0.52))),
+    700: shade(0.32),
+    800: shade(0.27),
+    900: shade(0.22),
+    950: shade(0.16, Math.min(sat, 0.5)),
+  };
+  for (const [step, value] of Object.entries(steps)) {
+    root.style.setProperty(`--brand-${step}`, value);
+  }
+}
+
 function initialTheme(): 'light' | 'dark' {
   const stored = localStorage.getItem('ipropy.theme');
   if (stored === 'dark' || stored === 'light') return stored;

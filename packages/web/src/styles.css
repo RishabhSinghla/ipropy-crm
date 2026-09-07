@@ -20,6 +20,25 @@
     --text-negative: #c81e1e;
 
     /*
+      The brand scale. These are the indigo values the CRM shipped with; the
+      whole point of variables is that an admin can overwrite every one of
+      them from Brand settings (`applyBrandColour` in lib/store.ts generates
+      the eleven shades from a single chosen hex). Tailwind's `brand-*` tokens
+      resolve here, so buttons, links, chips and focus rings all follow.
+    */
+    --brand-50: #eef2ff;
+    --brand-100: #e0e7ff;
+    --brand-200: #c7d2fe;
+    --brand-300: #a5b4fc;
+    --brand-400: #818cf8;
+    --brand-500: #6366f1;
+    --brand-600: #4f46e5;
+    --brand-700: #4338ca;
+    --brand-800: #3730a3;
+    --brand-900: #312e81;
+    --brand-950: #1e1b4b;
+
+    /*
       List typography and row shading, in one place.
 
       The team came off Vtiger and reads these lists all day, so the grid is
@@ -318,7 +337,7 @@
 }
 .react-grid-layout .react-grid-item.react-grid-placeholder {
   border-radius: 0.75rem;
-  background: #6366f1;
+  background: var(--brand-500);
   opacity: 0.15;
 }
 .react-grid-layout .react-grid-item > .react-resizable-handle {
@@ -329,6 +348,6 @@
 .react-grid-layout .react-grid-item > .react-resizable-handle::after {
   width: 9px;
   height: 9px;
-  border-right: 2px solid #6366f1;
-  border-bottom: 2px solid #6366f1;
+  border-right: 2px solid var(--brand-500);
+  border-bottom: 2px solid var(--brand-500);
 }

@@ -4,75 +4,89 @@ import { Check, ChevronRight, Eye, EyeOff, Lock, Plus, Save, Shield, UserCheck, 
 import { api } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
 import { cn } from '../../lib/utils';
-import { Modal, Select, Skeleton, Spinner, Tabs } from '../../components/ui';
+import { Modal, Select, Skeleton, Spinner } from '../../components/ui';
 
+/**
+ * One page, one thing: the Role.
+ *
+ * A role used to come with a second choice called a Profile, which was only
+ * ever "what this role may do" — two dropdowns for one decision, and nothing
+ * stopping them disagreeing (a Sales Executive holding an Administrator
+ * profile was one misclick away). They are merged: every role owns its
+ * permissions, the hierarchy on the left decides whose records a user sees,
+ * and the panels on the right decide what the role's people can do.
+ */
 interface RoleNode {
   id: string; name: string; parent_id: string | null; depth: number;
-  description: string | null; user_count: number; children: RoleNode[];
+  description: string | null; user_count: number; profile_id?: string | null; children: RoleNode[];
 }
 
 type Perm = { view: boolean; create: boolean; edit: boolean; delete: boolean; export: boolean; import: boolean };
 type FieldPermValue = 'editable' | 'readonly' | 'owner_only' | 'hidden';
 
 export default function RolesProfiles(): JSX.Element {
-  const [tab, setTab] = useState('roles');
-
-  return (
-    <div className="p-4 sm:p-6">
-      <div className="mb-4">
-        <h1 className="text-lg font-semibold tracking-tight">Roles & Profiles</h1>
-        <p className="text-sm text-muted">
-          Roles form the reporting hierarchy and decide <em>whose records</em> a user can see.
-          Profiles decide <em>what they can do</em>.
-        </p>
-      </div>
-
-      <Tabs
-        tabs={[
-          { key: 'roles', label: 'Role hierarchy', icon: <Users className="h-3.5 w-3.5" /> },
-          { key: 'profiles', label: 'Profiles', icon: <Shield className="h-3.5 w-3.5" /> },
-        ]}
-        active={tab}
-        onChange={setTab}
-        className="mb-4"
-      />
-
-      {tab === 'roles' ? <RolesTab /> : <ProfilesTab />}
-    </div>
-  );
-}
-
-function RolesTab(): JSX.Element {
   const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const { data, isLoading } = useQuery({ queryKey: ['roles'], queryFn: () => api.roles() });
 
   const tree = (data?.tree ?? []) as unknown as RoleNode[];
+  const flat = (data?.flat ?? []) as unknown as RoleNode[];
+
+  /** The selected role — the first root while nothing is picked. */
+  const active = flat.find((r) => r.id === (selectedId ?? tree[0]?.id)) ?? null;
 
   return (
-    <>
-      <div className="mb-3 flex justify-end">
+    <div className="p-4 sm:p-6">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-semibold tracking-tight">Roles</h1>
+          <p className="text-sm text-muted">
+            One role is both the reporting line and what it may do — pick a role on the left,
+            set its permissions on the right.
+          </p>
+        </div>
         <button onClick={() => setCreating(true)} className="btn-primary btn-sm">
           <Plus className="h-3.5 w-3.5" /> New role
         </button>
       </div>
 
-      <div className="card p-4">
-        {isLoading ? (
-          <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
+      <div className="grid gap-4 lg:grid-cols-[15rem_minmax(0,1fr)]">
+        <div className="card h-fit overflow-hidden">
+          <div className="border-b border-slate-100 px-3 py-2 dark:border-slate-800">
+            <p className="text-xs font-medium text-muted">Hierarchy</p>
+          </div>
+          {isLoading ? (
+            <div className="space-y-1 p-1.5">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
+          ) : (
+            <div className="p-1.5">
+              {tree.map((role) => (
+                <RoleRow
+                  key={role.id}
+                  role={role}
+                  activeId={active?.id ?? null}
+                  onSelect={(id) => setSelectedId(id)}
+                />
+              ))}
+              <p className="mt-3 border-t border-slate-100 px-2 pt-2 text-2xs text-muted dark:border-slate-800">
+                A user sees records owned by themselves and by everyone below them here.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {active ? (
+          <RolePermissions key={active.id} role={active} />
         ) : (
-          <div className="space-y-0.5">
-            {tree.map((role) => <RoleRow key={role.id} role={role} />)}
+          <div className="card flex items-center justify-center p-10 text-sm text-muted">
+            {isLoading ? <Spinner /> : 'No roles yet — create the first one.'}
           </div>
         )}
-        <p className="mt-4 border-t border-slate-100 pt-3 text-xs text-muted dark:border-slate-800">
-          A user sees records owned by themselves and by everyone below them in this tree.
-        </p>
       </div>
 
       {creating && (
         <RoleCreator
-          roles={(data?.flat ?? []) as unknown as RoleNode[]}
+          roles={flat}
           onClose={() => setCreating(false)}
           onCreated={() => {
             setCreating(false);
@@ -80,27 +94,36 @@ function RolesTab(): JSX.Element {
           }}
         />
       )}
-    </>
+    </div>
   );
 }
 
-function RoleRow({ role }: { role: RoleNode }): JSX.Element {
+function RoleRow({
+  role, activeId, onSelect,
+}: { role: RoleNode; activeId: string | null; onSelect: (id: string) => void }): JSX.Element {
+  const selected = activeId === role.id;
   return (
     <>
-      <div
-        className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-800/60"
-        style={{ paddingLeft: `${role.depth * 1.5 + 0.5}rem` }}
+      <button
+        onClick={() => onSelect(role.id)}
+        className={cn(
+          'flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors',
+          selected ? 'bg-brand-50 dark:bg-brand-950' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60',
+        )}
+        style={{ paddingLeft: `${role.depth * 1.25 + 0.5}rem` }}
       >
         {role.depth > 0 && <ChevronRight className="h-3 w-3 shrink-0 text-slate-300" />}
-        <Shield className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-        <span className="text-sm font-medium">{role.name}</span>
+        <Shield className={cn('h-3.5 w-3.5 shrink-0', selected ? 'text-brand-600 dark:text-brand-400' : 'text-slate-400')} />
+        <span className={cn('truncate text-sm', selected && 'font-medium text-brand-700 dark:text-brand-300')}>{role.name}</span>
         {role.user_count > 0 && (
-          <span className="rounded-full bg-slate-100 px-1.5 text-2xs text-muted tnum dark:bg-slate-800">
-            {role.user_count} user{role.user_count === 1 ? '' : 's'}
+          <span className="ml-auto shrink-0 rounded-full bg-slate-100 px-1.5 text-2xs text-muted tnum dark:bg-slate-800">
+            {role.user_count}
           </span>
         )}
-      </div>
-      {role.children?.map((child) => <RoleRow key={child.id} role={child} />)}
+      </button>
+      {role.children?.map((child) => (
+        <RoleRow key={child.id} role={child} activeId={activeId} onSelect={onSelect} />
+      ))}
     </>
   );
 }
@@ -128,7 +151,7 @@ function RoleCreator({
               setBusy(true);
               try {
                 await api.createRole({ name, parentId: parentId || null });
-                toast.success('Role created');
+                toast.success('Role created', 'It starts with the permissions of the role it reports to.');
                 onCreated();
               } catch (err) {
                 toast.error('Could not create the role', (err as Error).message);
@@ -155,6 +178,9 @@ function RoleCreator({
             placeholder="— Top level —"
             options={roles.map((r) => ({ value: r.id, label: `${'· '.repeat(r.depth)}${r.name}` }))}
           />
+          <p className="mt-1 text-2xs text-muted">
+            The new role starts with a copy of that role's permissions — change them right after creating it.
+          </p>
         </div>
       </div>
     </Modal>
@@ -163,10 +189,14 @@ function RoleCreator({
 
 // ---------------------------------------------------------------------------
 
-function ProfilesTab(): JSX.Element {
+/**
+ * What one role may do. Everything edits the role's own linked profile — the
+ * admin never sees the word "profile", because to them the role *is* its
+ * permissions now.
+ */
+function RolePermissions({ role }: { role: RoleNode }): JSX.Element {
   const queryClient = useQueryClient();
   const { modules } = useApp();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [perms, setPerms] = useState<Record<string, Perm>>({});
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const [fieldPerms, setFieldPerms] = useState<Map<string, FieldPermValue>>(new Map());
@@ -174,15 +204,11 @@ function ProfilesTab(): JSX.Element {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const { data: profiles, isLoading } = useQuery({ queryKey: ['profiles'], queryFn: () => api.profiles() });
-  const list = (profiles ?? []) as unknown as { id: string; name: string; description: string; is_system: boolean; user_count: number }[];
-
-  const activeId = selectedId ?? list[0]?.id;
-
+  const profileId = role.profile_id ?? null;
   const { data: detail } = useQuery({
-    queryKey: ['profile', activeId],
-    queryFn: () => api.profile(activeId!),
-    enabled: Boolean(activeId),
+    queryKey: ['profile', profileId],
+    queryFn: () => api.profile(profileId!),
+    enabled: Boolean(profileId),
   });
 
   const { data: fieldModuleMeta } = useQuery({
@@ -222,17 +248,17 @@ function ProfilesTab(): JSX.Element {
   };
 
   const save = async (): Promise<void> => {
-    if (!activeId) return;
+    if (!profileId) return;
     setSaving(true);
     try {
       const fieldPermissions = [...fieldPerms.entries()].map(([key, permission]) => {
         const [module, field] = key.split('::');
         return { module, field, permission };
       });
-      await api.saveProfilePermissions(activeId, { modulePermissions: perms, capabilities, fieldPermissions });
-      toast.success('Permissions saved');
+      await api.saveProfilePermissions(profileId, { modulePermissions: perms, capabilities, fieldPermissions });
+      toast.success(`${role.name} permissions saved`);
       setDirty(false);
-      void queryClient.invalidateQueries({ queryKey: ['profile', activeId] });
+      void queryClient.invalidateQueries({ queryKey: ['profile', profileId] });
     } catch (err) {
       toast.error('Could not save', (err as Error).message);
     } finally {
@@ -242,185 +268,165 @@ function ProfilesTab(): JSX.Element {
 
   const ACTIONS: (keyof Perm)[] = ['view', 'create', 'edit', 'delete', 'export', 'import'];
 
+  if (!profileId) {
+    return (
+      <div className="card flex items-center justify-center p-10 text-sm text-muted">
+        This role has no permission set attached. Re-create it or pick a different role.
+      </div>
+    );
+  }
+
   return (
-    <div className="grid gap-4 lg:grid-cols-[15rem_minmax(0,1fr)]">
-      <div className="card h-fit overflow-hidden">
-        <div className="border-b border-slate-100 px-3 py-2 dark:border-slate-800">
-          <p className="text-xs font-medium text-muted">Profiles</p>
+    <div className="space-y-4">
+      <div className="card overflow-hidden">
+        <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
+          <Users className="h-4 w-4 text-slate-400" />
+          <p className="text-sm font-medium">Module permissions — {role.name}</p>
+          <button onClick={() => void save()} disabled={!dirty || saving} className="btn-primary btn-sm ml-auto">
+            {saving ? <Spinner className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />} Save
+          </button>
         </div>
-        <div className="p-1.5">
-          {isLoading ? (
-            <div className="space-y-1">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
-          ) : list.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => setSelectedId(p.id)}
-              className={cn(
-                'w-full rounded-lg px-2.5 py-1.5 text-left transition-colors',
-                activeId === p.id
-                  ? 'bg-brand-50 dark:bg-brand-950'
-                  : 'hover:bg-slate-50 dark:hover:bg-slate-800',
-              )}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className={cn('truncate text-sm', activeId === p.id && 'font-medium text-brand-700 dark:text-brand-300')}>
-                  {p.name}
-                </span>
-                <span className="shrink-0 text-2xs text-muted tnum">{p.user_count}</span>
-              </div>
-            </button>
-          ))}
+
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr>
+                <th className="list-head">Module</th>
+                {ACTIONS.map((a) => <th key={a} className="list-head text-center capitalize">{a}</th>)}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {modules.filter((m) => m.isEntity).map((m) => {
+                const p = perms[m.name] ?? { view: false, create: false, edit: false, delete: false, export: false, import: false };
+                return (
+                  <tr key={m.name} className="hover:bg-slate-50 dark:hover:bg-slate-800/60">
+                    <td className="list-cell font-medium">{m.label}</td>
+                    {ACTIONS.map((action) => (
+                      <td key={action} className="list-cell text-center">
+                        <button
+                          onClick={() => toggle(m.name, action)}
+                          aria-label={`${action} ${m.label}`}
+                          className={cn(
+                            'inline-flex h-5 w-5 items-center justify-center rounded border transition-colors',
+                            p[action]
+                              ? 'border-brand-600 bg-brand-600 text-white'
+                              : 'border-slate-300 hover:border-slate-400 dark:border-slate-600',
+                          )}
+                        >
+                          {p[action] && <Check className="h-3 w-3" />}
+                        </button>
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
 
-      <div className="space-y-4">
-        <div className="card overflow-hidden">
-          <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
-            <p className="text-sm font-medium">Module permissions</p>
-            <button onClick={() => void save()} disabled={!dirty || saving} className="btn-primary btn-sm ml-auto">
-              {saving ? <Spinner className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />} Save
-            </button>
+      <div className="card overflow-hidden">
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
+          <p className="text-sm font-medium">Field permissions</p>
+          <span className="text-2xs text-muted">
+            — what this role sees and can edit, field by field
+          </span>
+          <div className="ml-auto w-56">
+            <Select
+              value={fieldModule}
+              onChange={setFieldModule}
+              options={modules.filter((m) => m.isEntity).map((m) => ({ value: m.name, label: m.label }))}
+            />
           </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr>
-                  <th className="list-head">Module</th>
-                  {ACTIONS.map((a) => <th key={a} className="list-head text-center capitalize">{a}</th>)}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {modules.filter((m) => m.isEntity).map((m) => {
-                  const p = perms[m.name] ?? { view: false, create: false, edit: false, delete: false, export: false, import: false };
-                  return (
-                    <tr key={m.name} className="hover:bg-slate-50 dark:hover:bg-slate-800/60">
-                      <td className="list-cell font-medium">{m.label}</td>
-                      {ACTIONS.map((action) => (
-                        <td key={action} className="list-cell text-center">
-                          <button
-                            onClick={() => toggle(m.name, action)}
-                            className={cn(
-                              'inline-flex h-5 w-5 items-center justify-center rounded border transition-colors',
-                              p[action]
-                                ? 'border-brand-600 bg-brand-600 text-white'
-                                : 'border-slate-300 hover:border-slate-400 dark:border-slate-600',
-                            )}
-                          >
-                            {p[action] && <Check className="h-3 w-3" />}
-                          </button>
-                        </td>
-                      ))}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <button onClick={() => void save()} disabled={!dirty || saving} className="btn-primary btn-sm">
+            {saving ? <Spinner className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />} Save
+          </button>
         </div>
 
-        <div className="card overflow-hidden">
-          <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
-            <p className="text-sm font-medium">Field permissions</p>
-            <span className="text-2xs text-muted">
-              — controls what this profile sees and can edit, field by field
-            </span>
-            <div className="ml-auto w-56">
-              <Select
-                value={fieldModule}
-                onChange={setFieldModule}
-                options={modules.filter((m) => m.isEntity).map((m) => ({ value: m.name, label: m.label }))}
-              />
-            </div>
-            <button onClick={() => void save()} disabled={!dirty || saving} className="btn-primary btn-sm">
-              {saving ? <Spinner className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />} Save
-            </button>
-          </div>
-
-          {!fieldModuleMeta ? (
-            <div className="space-y-2 p-4">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
-          ) : (
-            <div className="max-h-96 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800">
-              {fieldModuleMeta.fields.filter((f) => f.isActive).map((f) => {
-                const key = `${fieldModule}::${f.name}`;
-                const value = fieldPerms.get(key) ?? 'editable';
-                return (
-                  <div key={f.name} className="flex items-center gap-3 px-4 py-2">
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm">{f.label}</p>
-                      <p className="font-mono text-2xs text-muted">{f.name}</p>
-                    </div>
-                    <div className="flex shrink-0 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
-                      {([
-                        { value: 'editable' as const, label: 'Editable', icon: Eye,
-                          hint: 'Read and change it.' },
-                        { value: 'readonly' as const, label: 'Read-only', icon: Lock,
-                          hint: 'See the value; cannot change it.' },
-                        // The record-aware one. Named for what it does rather
-                        // than for the mechanism ("masked"), because the choice
-                        // being made here is about who, not about asterisks.
-                        { value: 'owner_only' as const, label: 'Owner only', icon: UserCheck,
-                          hint: 'Only the person the record is assigned to sees the real value. '
-                            + 'Everyone else gets 98xxxxxx56 and can reveal one number at a time, '
-                            + 'which is written to the audit log.' },
-                        { value: 'hidden' as const, label: 'Hidden', icon: EyeOff,
-                          hint: 'Not sent to this profile at all.' },
-                      ]).map((opt, i) => (
-                        <button
-                          key={opt.value}
-                          onClick={() => setFieldPerm(fieldModule, f.name, opt.value)}
-                          title={`${opt.label} — ${opt.hint}`}
-                          className={cn(
-                            'flex items-center gap-1 px-2 py-1 text-2xs transition-colors',
-                            i > 0 && 'border-l border-slate-200 dark:border-slate-700',
-                            value === opt.value
-                              ? 'bg-brand-600 text-white'
-                              : 'bg-white text-slate-500 hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-800',
-                          )}
-                        >
-                          <opt.icon className="h-3 w-3" /> {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-              {fieldModuleMeta.fields.filter((f) => f.isActive).length === 0 && (
-                <p className="px-4 py-6 text-center text-xs text-muted">No fields on this module.</p>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="card p-4">
-          <p className="mb-3 text-sm font-medium">Capabilities</p>
-          <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
-            {allCapabilities.map((cap) => {
-              const active = capabilities.includes(cap);
+        {!fieldModuleMeta ? (
+          <div className="space-y-2 p-4">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
+        ) : (
+          <div className="max-h-96 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800">
+            {fieldModuleMeta.fields.filter((f) => f.isActive).map((f) => {
+              const key = `${fieldModule}::${f.name}`;
+              const value = fieldPerms.get(key) ?? 'editable';
               return (
-                <label
-                  key={cap}
-                  className={cn(
-                    'flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs transition-colors',
-                    active
-                      ? 'border-brand-300 bg-brand-50 dark:border-brand-800 dark:bg-brand-950/50'
-                      : 'border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800',
-                  )}
-                >
-                  <input
-                    type="checkbox"
-                    className="h-3.5 w-3.5 rounded border-slate-300"
-                    checked={active}
-                    onChange={() => {
-                      setCapabilities(active ? capabilities.filter((c) => c !== cap) : [...capabilities, cap]);
-                      setDirty(true);
-                    }}
-                  />
-                  <span className="truncate font-mono">{cap}</span>
-                </label>
+                <div key={f.name} className="flex items-center gap-3 px-4 py-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm">{f.label}</p>
+                    <p className="font-mono text-2xs text-muted">{f.name}</p>
+                  </div>
+                  <div className="flex shrink-0 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
+                    {([
+                      { value: 'editable' as const, label: 'Editable', icon: Eye,
+                        hint: 'Read and change it.' },
+                      { value: 'readonly' as const, label: 'Read-only', icon: Lock,
+                        hint: 'See the value; cannot change it.' },
+                      // The record-aware one. Named for what it does rather
+                      // than for the mechanism ("masked"), because the choice
+                      // being made here is about who, not about asterisks.
+                      { value: 'owner_only' as const, label: 'Owner only', icon: UserCheck,
+                        hint: 'Only the person the record is assigned to sees the real value. '
+                          + 'Everyone else gets 98xxxxxx56 and can reveal one number at a time, '
+                          + 'which is written to the audit log.' },
+                      { value: 'hidden' as const, label: 'Hidden', icon: EyeOff,
+                        hint: 'Not sent to this role at all.' },
+                    ]).map((opt, i) => (
+                      <button
+                        key={opt.value}
+                        onClick={() => setFieldPerm(fieldModule, f.name, opt.value)}
+                        title={`${opt.label} — ${opt.hint}`}
+                        aria-label={`${f.label}: ${opt.label}`}
+                        className={cn(
+                          'flex items-center gap-1 px-2 py-1 text-2xs transition-colors',
+                          i > 0 && 'border-l border-slate-200 dark:border-slate-700',
+                          value === opt.value
+                            ? 'bg-brand-600 text-white'
+                            : 'bg-white text-slate-500 hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-800',
+                        )}
+                      >
+                        <opt.icon className="h-3 w-3" /> {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               );
             })}
+            {fieldModuleMeta.fields.filter((f) => f.isActive).length === 0 && (
+              <p className="px-4 py-6 text-center text-xs text-muted">No fields on this module.</p>
+            )}
           </div>
+        )}
+      </div>
+
+      <div className="card p-4">
+        <p className="mb-3 text-sm font-medium">Capabilities — extra powers beyond module access</p>
+        <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+          {allCapabilities.map((cap) => {
+            const active = capabilities.includes(cap);
+            return (
+              <label
+                key={cap}
+                className={cn(
+                  'flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs transition-colors',
+                  active
+                    ? 'border-brand-300 bg-brand-50 dark:border-brand-800 dark:bg-brand-950/50'
+                    : 'border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800',
+                )}
+              >
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 rounded border-slate-300"
+                  checked={active}
+                  onChange={() => {
+                    setCapabilities(active ? capabilities.filter((c) => c !== cap) : [...capabilities, cap]);
+                    setDirty(true);
+                  }}
+                />
+                <span className="truncate font-mono">{cap}</span>
+              </label>
+            );
+          })}
         </div>
       </div>
     </div>

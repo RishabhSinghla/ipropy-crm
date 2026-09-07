@@ -245,27 +245,18 @@ export async function scoreLead(recordId: string, opts: { persist?: boolean } = 
 
   if (opts.persist !== false) {
     /*
-      `rating = $4`, and the number matters.
+      Only the temperature persists now — the 0-100 score is retired
+      (migration 104) along with its reasons and its timestamp. What the desk
+      acts on is Hot / Warm / Cold, and that stays written here so every rule
+      keyed on `rating` keeps working.
 
-      Removing the AI grade took `ai_grade = $3` out of this SET clause. The
-      parameters after it were renumbered by one — except this line, which stayed
-      at `$5` while only four values were bound. Postgres does not ignore that:
-      it refuses the whole statement with 42P18, "could not determine data type
-      of parameter $4".
-
-      So every lead scored since has failed, silently, inside a workflow task
-      that logs and carries on. Nothing in the CRM looked wrong; scores simply
-      stopped changing.
-
-      CLAUDE.md rule 8 is about exactly this, and it says the codebase has been
-      bitten three times. This was the fourth.
+      Parameter count rule (CLAUDE.md rule 8): this UPDATE binds exactly two.
     */
     await db.query(
       `UPDATE ipy_e_leads
-       SET ai_score = $2, ai_score_reasons = $3, ai_scored_at = now(),
-           rating = $4
+       SET rating = $2
        WHERE record_id = $1`,
-      [recordId, result.score, JSON.stringify(result.reasons), result.temperature],
+      [recordId, result.temperature],
     );
 
     await saveInsight({

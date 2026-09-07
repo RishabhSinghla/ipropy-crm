@@ -438,7 +438,7 @@ export async function dailyDigest(ctx: ServiceContext): Promise<DailyDigest | nu
         { field: 'next_followup_at', operator: 'older_than_n_days', value: 0 },
         { field: 'is_converted', operator: 'is_false' },
       ] },
-      sortBy: 'ai_score', sortDir: 'desc', pageSize: 5,
+      sortBy: 'updated_at', sortDir: 'desc', pageSize: 5,
     }).catch(() => null),
 
     // Due today. Activities are gone, so "what is on today" is the leads whose
@@ -449,16 +449,16 @@ export async function dailyDigest(ctx: ServiceContext): Promise<DailyDigest | nu
         { field: 'next_followup_at', operator: 'today' },
         { field: 'is_converted', operator: 'is_false' },
       ] },
-      sortBy: 'ai_score', sortDir: 'desc', pageSize: 5,
+      sortBy: 'updated_at', sortDir: 'desc', pageSize: 5,
     }).catch(() => null),
 
     listRecords(ctx, 'leads', {
       filter: { logic: 'AND', conditions: [
         { field: 'owner_id', operator: 'is_me' },
-        { field: 'ai_score', operator: 'greater_or_equal', value: 70 },
+        { field: 'rating', operator: 'equals', value: 'Hot' },
         { field: 'is_converted', operator: 'is_false' },
       ] },
-      sortBy: 'ai_score', sortDir: 'desc', pageSize: 5,
+      sortBy: 'updated_at', sortDir: 'desc', pageSize: 5,
     }).catch(() => null),
 
 
@@ -475,14 +475,14 @@ export async function dailyDigest(ctx: ServiceContext): Promise<DailyDigest | nu
   for (const l of todayFollowups?.rows ?? []) {
     priorities.push({
       title: `Due today: ${l.label}`,
-      reason: `Score ${l.values.ai_score ?? '—'} · follow up today`,
+      reason: `${l.values.rating ? String(l.values.rating) + ' · ' : ''}follow up today`,
       recordId: l.id, module: 'leads',
     });
   }
   for (const l of overdueFollowups?.rows ?? []) {
     priorities.push({
       title: `Overdue follow-up: ${l.label}`,
-      reason: `Score ${l.values.ai_score ?? '—'} · due ${new Date(String(l.values.next_followup_at)).toLocaleDateString('en-IN')}`,
+      reason: `${l.values.rating ? String(l.values.rating) + ' · ' : ''}due ${new Date(String(l.values.next_followup_at)).toLocaleDateString('en-IN')}`,
       recordId: l.id, module: 'leads',
     });
   }
@@ -490,7 +490,7 @@ export async function dailyDigest(ctx: ServiceContext): Promise<DailyDigest | nu
     if (priorities.some((p) => p.recordId === l.id)) continue;
     priorities.push({
       title: `Hot lead: ${l.label}`,
-      reason: `AI score ${l.values.ai_score}`,
+      reason: 'Rated Hot by the scorer',
       recordId: l.id, module: 'leads',
     });
   }

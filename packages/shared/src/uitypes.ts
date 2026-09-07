@@ -444,7 +444,7 @@ export interface FieldConfig {
    * the number. `unit` stays the fallback for areas with a fixed unit.
    */
   unitField?: string;
-  /** area: units the `unitField` dropdown offers. */
+  /** area/currency: units the `unitField` dropdown offers. */
   unitOptions?: { value: string; label: string }[];
 
   [key: string]: unknown;

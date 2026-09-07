@@ -11,15 +11,14 @@
  */
 import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
+import type { HeaderTab, UiSettings } from '@ipropy/shared';
 
-export interface UiSettings {
-  /** Click a value in a list and type into it, saving on blur. Off by default. */
-  inlineEdit: boolean;
-  /** Open a record from a list in a new browser tab. On by default. */
-  openInNewTab: boolean;
-}
-
-const DEFAULTS: UiSettings = { inlineEdit: false, openInNewTab: true };
+const DEFAULTS: UiSettings = {
+  inlineEdit: false,
+  openInNewTab: true,
+  headerTabs: null,
+  socialPosition: 'right',
+};
 
 let cached: UiSettings | null = null;
 
@@ -32,7 +31,7 @@ export async function uiSettings(): Promise<UiSettings> {
   try {
     const { rows } = await db.query<{ key: string; value: unknown }>(
       `SELECT key, value FROM ipy_setting WHERE key = ANY($1)`,
-      [['ui.inline_edit', 'ui.open_in_new_tab']],
+      [['ui.inline_edit', 'ui.open_in_new_tab', 'ui.header_tabs', 'ui.social_position']],
     );
     const map = new Map(rows.map((r) => [r.key, r.value]));
     // Only an explicit boolean counts. A row that has never been saved, or one
@@ -42,9 +41,21 @@ export async function uiSettings(): Promise<UiSettings> {
       const v = map.get(key);
       return typeof v === 'boolean' ? v : fallback;
     };
+    const tabs = map.get('ui.header_tabs');
+    const position = map.get('ui.social_position');
     cached = {
       inlineEdit: read('ui.inline_edit', DEFAULTS.inlineEdit),
       openInNewTab: read('ui.open_in_new_tab', DEFAULTS.openInNewTab),
+      // An array of well-shaped entries only; anything else reads as "not
+      // arranged yet" and the header falls back to the shipped order.
+      headerTabs: Array.isArray(tabs)
+        ? (tabs as unknown[]).filter((t): t is HeaderTab =>
+          Boolean(t) && typeof t === 'object'
+          && ['dashboard', 'capture', 'reports', 'module', 'link'].includes((t as HeaderTab).kind))
+        : null,
+      socialPosition: position === 'brand' || position === 'right' || position === 'hidden'
+        ? position
+        : DEFAULTS.socialPosition,
     };
     return cached;
   } catch (err) {

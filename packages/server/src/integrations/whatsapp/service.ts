@@ -37,11 +37,11 @@ export async function resolveHandle(handle: string, conn: Tx = db): Promise<Reso
   const tail = digits.slice(-10);
 
   // Customers outrank channel partners when a number matches both, and a more
-  // advanced lifecycle stage wins over an older enquiry.
+  // advanced pipeline status wins over an older enquiry.
   const row = await conn.queryOne<{ record_id: string; module_name: string; label: string; owner_id: string | null }>(
     `SELECT record_id, module_name, label, owner_id FROM (
        SELECT r.id AS record_id, r.module_name, r.label, r.owner_id,
-              CASE l.lifecycle_stage WHEN 'Customer' THEN 0 WHEN 'Prospect' THEN 1 ELSE 2 END AS rank,
+              CASE l.status WHEN 'Converted' THEN 0 WHEN 'Negotiation' THEN 1 ELSE 2 END AS rank,
               r.updated_at
        FROM ipy_e_leads l JOIN ipy_record r ON r.id = l.record_id
        WHERE r.is_deleted = false

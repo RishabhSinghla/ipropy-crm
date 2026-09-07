@@ -39,18 +39,18 @@ afterAll(async () => {
 });
 
 describe('persisting a lead score', () => {
-  it('writes the score, the reasons and the rating', async () => {
+  it('writes the rating', async () => {
     const result = await scoreLead(recordId);
     expect(result, 'scoring should produce a result').toBeTruthy();
 
-    const row = await db.queryOne<{ ai_score: number; rating: string | null; ai_scored_at: string | null }>(
-      `SELECT ai_score, rating, ai_scored_at FROM ipy_e_leads WHERE record_id = $1`,
+    const row = await db.queryOne<{ rating: string | null }>(
+      `SELECT rating FROM ipy_e_leads WHERE record_id = $1`,
       [recordId],
     );
 
-    // The assertion that would have caught it: the statement must have RUN.
-    expect(row?.ai_scored_at, 'the write must have happened at all').toBeTruthy();
-    expect(row?.ai_score).toBeGreaterThan(0);
+    // The assertion that would have caught the parameter bug: the write must
+    // have RUN. The 0-100 score is retired (migration 104); the temperature
+    // is what persists now.
     expect(row?.rating, 'the rating is the parameter that was misnumbered').toBeTruthy();
     expect(['Hot', 'Warm', 'Cold']).toContain(row?.rating);
   });

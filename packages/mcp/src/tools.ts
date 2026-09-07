@@ -90,8 +90,8 @@ const findLeads: ToolDef = {
   async run(crm, args) {
     const conditions: unknown[] = [];
     if (args.status) conditions.push({ field: 'status', operator: 'equals', value: args.status });
-    if (typeof args.minBudget === 'number') conditions.push({ field: 'budget_max', operator: 'greater_or_equal', value: args.minBudget });
-    if (typeof args.maxBudget === 'number') conditions.push({ field: 'budget_min', operator: 'less_or_equal', value: args.maxBudget });
+    if (typeof args.minBudget === 'number') conditions.push({ field: 'budget', operator: 'greater_or_equal', value: args.minBudget });
+    if (typeof args.maxBudget === 'number') conditions.push({ field: 'budget', operator: 'less_or_equal', value: args.maxBudget });
     // preferred_locations is a multipicklist: `contains` is not one of its
     // operators, `has_any` is.
     if (args.area) conditions.push({ field: 'preferred_locations', operator: 'has_any', value: [args.area] });
@@ -100,7 +100,7 @@ const findLeads: ToolDef = {
       search: args.query || undefined,
       filter: { logic: 'AND', conditions },
       pageSize: args.limit ?? 10,
-      sortBy: 'ai_score',
+      sortBy: 'updated_at',
       sortDir: 'desc',
     });
 
@@ -317,14 +317,12 @@ const createLead: ToolDef = {
       full_name: args.fullName,
       mobile: digits,
       email: args.email,
-      budget_min: args.budgetMin,
-      budget_max: args.budgetMax,
+      budget: args.budgetMin ?? args.budgetMax,
       configuration: args.configuration,
       preferred_locations: args.preferredLocations,
       interested_project: args.interestedProject,
       lead_source: args.source,
       description: args.notes,
-      lifecycle_stage: 'Lead',
       status: 'New',
     });
 
@@ -370,8 +368,8 @@ const updateLead: ToolDef = {
       }
       patch.next_followup_at = args.nextFollowUp;
     }
-    if (typeof args.budgetMin === 'number') patch.budget_min = args.budgetMin;
-    if (typeof args.budgetMax === 'number') patch.budget_max = args.budgetMax;
+    if (typeof args.budgetMin === 'number') patch.budget = args.budgetMin;
+
     if (args.configuration) patch.configuration = args.configuration;
     if (args.preferredLocations) patch.preferred_locations = args.preferredLocations;
     if (args.interestedProject) patch.interested_project = args.interestedProject;

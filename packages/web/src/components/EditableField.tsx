@@ -716,7 +716,7 @@ function OwnerPopover({
   onPick: (v: string | null) => void;
 }): JSX.Element {
   const [search, setSearch] = useState('');
-  const [users, setUsers] = useState<{ id: string; fullName: string; designation?: string }[]>([]);
+  const [users, setUsers] = useState<{ id: string; fullName: string }[]>([]);
 
   useEffect(() => {
     void api.users().then((rows) => setUsers(rows as never)).catch(() => undefined);
@@ -756,7 +756,6 @@ function OwnerPopover({
             <Avatar name={u.fullName} size={20} />
             <span className="flex-1 truncate">
               {u.fullName}
-              {u.designation && <span className="text-muted"> · {u.designation}</span>}
             </span>
             {u.id === value && <Check className="h-3.5 w-3.5 shrink-0 text-brand-600" />}
           </button>

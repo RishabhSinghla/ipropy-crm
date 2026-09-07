@@ -28,7 +28,18 @@ function translatePgError(err: { code?: string; detail?: string; constraint?: st
     case '22P02':
       return { status: 400, code: 'invalid_input', message: 'One of the values has the wrong format.' };
     case '42703':
-      return { status: 400, code: 'unknown_field', message: 'Unknown field referenced in the request.' };
+      /*
+        "Unknown field referenced in the request" is what the desk saw when a
+        metadata row named a column the table did not have. The column name is
+        in err.column — include it, or the person staring at a contact form has
+        no way to know which of forty fields is the ghost.
+      */
+      return {
+        status: 400, code: 'unknown_field',
+        message: err.column
+          ? `The "${err.column}" field is configured in the CRM but missing from storage — hide or delete it in Admin → Modules & Fields.`
+          : 'Unknown field referenced in the request.',
+      };
     case '57014':
       return { status: 504, code: 'query_timeout', message: 'That query took too long. Try narrowing the filters.' };
     default:

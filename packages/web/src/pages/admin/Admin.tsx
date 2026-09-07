@@ -2,7 +2,7 @@ import SettingsAdmin from './SettingsAdmin';
 import { type JSX, lazy, Suspense } from 'react';
 import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {
-  Activity, Blocks, Database, KeyRound, LayoutTemplate, MapPin,
+  Activity, AppWindow, Blocks, Database, KeyRound, LayoutTemplate, MapPin,
   Columns3, ListTree, Plug, Settings2, Shield,  Sparkles, ToggleLeft, Users, Workflow,
   SlidersHorizontal,
 } from 'lucide-react';
@@ -23,6 +23,7 @@ const SystemAdmin = lazy(() => import('./SystemAdmin'));
 const TeamMap = lazy(() => import('./TeamMap'));
 const ImportAdmin = lazy(() => import('./ImportAdmin'));
 const BrandAdmin = lazy(() => import('./BrandAdmin'));
+const HeaderTabsAdmin = lazy(() => import('./HeaderTabsAdmin'));
 const ViewsAdmin = lazy(() => import('./ViewsAdmin'));
 
 /*
@@ -47,6 +48,7 @@ const SECTIONS = [
       { path: 'fields', capability: 'admin.fields', label: 'Modules & Fields', icon: Blocks, element: <ModuleBuilder /> },
       { path: 'layouts', capability: 'admin.layouts', label: 'Layout Designer', icon: LayoutTemplate, element: <LayoutDesigner /> },
       { path: 'views', capability: 'admin.layouts', label: 'List View Tabs', icon: Columns3, element: <ViewsAdmin /> },
+      { path: 'header', capability: 'admin.layouts', label: 'Header Tabs', icon: AppWindow, element: <HeaderTabsAdmin /> },
       { path: 'picklists', capability: 'admin.picklists', label: 'Dropdowns', icon: ListTree, element: <PicklistManager /> },
     ],
   },

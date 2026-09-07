@@ -249,7 +249,7 @@ export async function routeInboundCall(input: InboundCallInput): Promise<Inbound
      WHERE r.is_deleted = false
        AND (right(regexp_replace(COALESCE(l.mobile,''), '\\D','','g'), 10) = $1
          OR right(regexp_replace(COALESCE(l.alternate_phone,''), '\\D','','g'), 10) = $1)
-     ORDER BY CASE l.lifecycle_stage WHEN 'Customer' THEN 0 WHEN 'Prospect' THEN 1 ELSE 2 END
+     ORDER BY CASE l.status WHEN 'Converted' THEN 0 WHEN 'Negotiation' THEN 1 WHEN 'Won' THEN 0 ELSE 2 END
      LIMIT 1`,
     [tail],
   );

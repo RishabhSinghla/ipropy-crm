@@ -228,22 +228,21 @@ interface UserDef {
   profile: string;
   isAdmin?: boolean;
   phone?: string;
-  designation?: string;
   /** name of the channel_partners record to link — turns the account into a portal user */
 }
 
 export const DEMO_USERS: UserDef[] = [
-  { email: 'priya.sharma@ipropy.com', first: 'Priya', last: 'Sharma', role: 'Sales Manager', profile: 'Sales Manager', phone: '+919820011001', designation: 'National Sales Head' },
-  { email: 'rahul.mehta@ipropy.com', first: 'Rahul', last: 'Mehta', role: 'Sales Manager', profile: 'Sales Manager', phone: '+919820011002', designation: 'Sales Manager — West' },
-  { email: 'aisha.khan@ipropy.com', first: 'Aisha', last: 'Khan', role: 'Sales Executive', profile: 'Sales Executive', phone: '+919820011003', designation: 'Senior Sales Executive' },
-  { email: 'vikram.rao@ipropy.com', first: 'Vikram', last: 'Rao', role: 'Sales Executive', profile: 'Sales Executive', phone: '+919820011004', designation: 'Sales Executive' },
-  { email: 'neha.gupta@ipropy.com', first: 'Neha', last: 'Gupta', role: 'Telecaller', profile: 'Telecaller', phone: '+919820011005', designation: 'Pre-Sales Executive' },
-  { email: 'arjun.nair@ipropy.com', first: 'Arjun', last: 'Nair', role: 'Sales Executive', profile: 'Sales Executive', phone: '+919820011006', designation: 'CRM Executive' },
-  { email: 'divya.patel@ipropy.com', first: 'Divya', last: 'Patel', role: 'Sales Executive', profile: 'Sales Executive', phone: '+919820011007', designation: 'Marketing Manager' },
-  { email: 'sanjay.iyer@ipropy.com', first: 'Sanjay', last: 'Iyer', role: 'Sales Executive', profile: 'Sales Executive', phone: '+919820011008', designation: 'Accounts Manager' },
-  { email: 'kiran.desai@ipropy.com', first: 'Kiran', last: 'Desai', role: 'Sales Manager', profile: 'Sales Manager', phone: '+919820011009', designation: 'Channel Partner Manager' },
-  { email: 'rakesh.bhandari@ipropy.com', first: 'Rakesh', last: 'Bhandari', role: 'Sales Executive', profile: 'Sales Executive', phone: '+919820011010', designation: 'Partner — Bhandari Realty Advisors' },
-  { email: 'sunita.menon@ipropy.com', first: 'Sunita', last: 'Menon', role: 'Sales Executive', profile: 'Sales Executive', phone: '+919820011011', designation: 'Partner — Menon Properties' },
+  { email: 'priya.sharma@ipropy.com', first: 'Priya', last: 'Sharma', role: 'Sales Manager', profile: 'Sales Manager', phone: '+919820011001' },
+  { email: 'rahul.mehta@ipropy.com', first: 'Rahul', last: 'Mehta', role: 'Sales Manager', profile: 'Sales Manager', phone: '+919820011002' },
+  { email: 'aisha.khan@ipropy.com', first: 'Aisha', last: 'Khan', role: 'Sales Executive', profile: 'Sales Executive', phone: '+919820011003' },
+  { email: 'vikram.rao@ipropy.com', first: 'Vikram', last: 'Rao', role: 'Sales Executive', profile: 'Sales Executive', phone: '+919820011004' },
+  { email: 'neha.gupta@ipropy.com', first: 'Neha', last: 'Gupta', role: 'Telecaller', profile: 'Telecaller', phone: '+919820011005' },
+  { email: 'arjun.nair@ipropy.com', first: 'Arjun', last: 'Nair', role: 'Sales Executive', profile: 'Sales Executive', phone: '+919820011006' },
+  { email: 'divya.patel@ipropy.com', first: 'Divya', last: 'Patel', role: 'Sales Executive', profile: 'Sales Executive', phone: '+919820011007' },
+  { email: 'sanjay.iyer@ipropy.com', first: 'Sanjay', last: 'Iyer', role: 'Sales Executive', profile: 'Sales Executive', phone: '+919820011008' },
+  { email: 'kiran.desai@ipropy.com', first: 'Kiran', last: 'Desai', role: 'Sales Manager', profile: 'Sales Manager', phone: '+919820011009' },
+  { email: 'rakesh.bhandari@ipropy.com', first: 'Rakesh', last: 'Bhandari', role: 'Sales Executive', profile: 'Sales Executive', phone: '+919820011010' },
+  { email: 'sunita.menon@ipropy.com', first: 'Sunita', last: 'Menon', role: 'Sales Executive', profile: 'Sales Executive', phone: '+919820011011' },
 ];
 
 /**
@@ -271,8 +270,8 @@ export async function seedUsers(
   const hash = await bcrypt.hash(config.seed.adminPassword, config.auth.bcryptRounds);
 
   const admin = await conn.queryOne<{ id: string }>(
-    `INSERT INTO ipy_user (email, password_hash, first_name, last_name, is_admin, role_id, profile_id, designation, phone)
-     VALUES ($1,$2,'iPropy','Admin',true,$3,$4,'System Administrator','+919****1000')
+    `INSERT INTO ipy_user (email, password_hash, first_name, last_name, is_admin, role_id, profile_id, phone)
+     VALUES ($1,$2,'iPropy','Admin',true,$3,$4,'+919****1000')
      ON CONFLICT DO NOTHING
      RETURNING id`,
     [config.seed.adminEmail, hash, roles.get('Administrator'), profiles.get('Administrator')],
@@ -288,11 +287,11 @@ export async function seedUsers(
 
   for (const u of DEMO_USERS) {
     const row = await conn.queryOne<{ id: string }>(
-      `INSERT INTO ipy_user (email, password_hash, first_name, last_name, role_id, profile_id, phone, designation)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+      `INSERT INTO ipy_user (email, password_hash, first_name, last_name, role_id, profile_id, phone)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
        ON CONFLICT DO NOTHING
        RETURNING id`,
-      [u.email, hash, u.first, u.last, roles.get(u.role), profiles.get(u.profile), u.phone, u.designation],
+      [u.email, hash, u.first, u.last, roles.get(u.role), profiles.get(u.profile), u.phone],
     );
     const id = row?.id
       ?? (await conn.queryOne<{ id: string }>(`SELECT id FROM ipy_user WHERE lower(email) = lower($1)`, [u.email]))?.id;

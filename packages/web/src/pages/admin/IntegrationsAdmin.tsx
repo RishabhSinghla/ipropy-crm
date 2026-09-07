@@ -1075,6 +1075,7 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const hasModelFields = fields.some((field) => field.model);
   const modelCatalogue = useQuery({
@@ -1099,6 +1100,10 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
         else if (v) credentialsPatch[f.key] = v; // blank credential = leave unchanged
       }
       await api.saveIntegration(summary.provider, { config: configPatch, credentials: credentialsPatch });
+      // "Saved" means stored — that is all. The Test button is what proves the
+      // provider accepts them, and the line below says when the values were
+      // written so a save can never be mistaken for a test that passed.
+      setSavedAt(new Date());
       toast.success(`${summary.label} saved`);
       // Clear typed secrets from the form — they're persisted now, and we never
       // want a plaintext secret sitting in component state longer than needed.
@@ -1251,6 +1256,11 @@ function ProviderCard({ summary }: { summary: IntegrationSummary }): JSX.Element
         <button className="btn-primary btn-sm" disabled={saving} onClick={() => void save()}>
           {saving && <Spinner className="h-3 w-3" />} Save
         </button>
+        {savedAt && !saving && (
+          <span className="text-2xs text-muted">
+            Values stored · {savedAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+          </span>
+        )}
         {TESTABLE.has(summary.provider) && (
           <button className="btn-secondary btn-sm" disabled={testing} onClick={() => void test()}>
             {testing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plug className="h-3 w-3" />} Test connection

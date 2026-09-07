@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CALL_DISPOSITIONS, type BuyerMatch, type FieldMeta, formatIndianPrice, type ModuleMeta, type PropertyMatch, type RecordEnvelope, relativeTime, type TimelineEntry } from '@ipropy/shared';
 import {
-  Activity, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Edit3, ExternalLink, Eye, FileQuestion, FileText, FolderOpen, Images, LayoutDashboard, Link2, MessageCircle, Mic, MoreHorizontal, Paperclip, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Trash2, Upload, X,
+  Activity, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Edit3, ExternalLink, Eye, FileQuestion, FileText, FolderOpen, Images, LayoutDashboard, Link2, MessageCircle, Mic, MoreHorizontal, Paperclip, Pencil, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Trash2, Upload, X,
 } from 'lucide-react';
 import { api, authedFileUrl, type PropertyStorageInfo } from '../lib/api';
 import { compressImage, formatBytes } from '../lib/compressImage';
@@ -346,12 +346,6 @@ export default function RecordDetail(): JSX.Element {
                       <FieldValue field={fieldMap.get('rating')!} value={record.values.rating} display={record.display?.rating} />
                     )
                   )}
-                  {typeof record.values.ai_score === 'number' && (
-                    <span className="inline-flex items-center gap-1">
-                      <Sparkles className="h-3 w-3 text-brand-500" />
-                      <ScoreChip score={record.values.ai_score as number} />
-                    </span>
-                  )}
                   {typeof record.values.ai_risk_score === 'number' && (
                     <span className="inline-flex items-center gap-1 text-2xs text-muted">
                       Risk <ScoreChip score={record.values.ai_risk_score as number} invert />
@@ -544,7 +538,7 @@ export default function RecordDetail(): JSX.Element {
           <DuplicateSuggestions module={moduleName!} id={id!} label={record.label} />
           <ReplyReady recordId={id!} />
           <PendingProposals module={moduleName!} recordId={id!} />
-          <CommentsPanel module={moduleName!} id={id!} currentUser={user?.fullName ?? ''} />
+          <CommentsPanel module={moduleName!} id={id!} currentUser={user?.id ?? ''} />
           <AiPanel module={moduleName!} record={record} meta={meta} />
         </div>
       </div>
@@ -2441,11 +2435,16 @@ function DuplicateSuggestions({ module, id, label }: {
  * un-mentioned them, which is the behaviour anybody would assume.
  */
 function CommentsPanel({
-  module, id, currentUser: _currentUser,
+  module, id, currentUser,
 }: { module: string; id: string; currentUser: string }): JSX.Element {
   const queryClient = useQueryClient();
   const [body, setBody] = useState('');
   const [posting, setPosting] = useState(false);
+  /** The note being edited, and the editor's draft — null when not editing. */
+  const [editing, setEditing] = useState<{ id: string; body: string } | null>(null);
+  /** Which note's history is unfolded, if any. */
+  const [historyOpen, setHistoryOpen] = useState<string | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   /**
    * Speak the note instead of typing it.
@@ -2505,6 +2504,32 @@ function CommentsPanel({
     }
   };
 
+  /**
+   * Save the edited note. The previous text is kept by the server and becomes
+   * reachable through "(edited)" — a note someone already read and acted on is
+   * never silently rewritten.
+   */
+  const saveEdit = async (): Promise<void> => {
+    if (!editing || !editing.body.trim()) return;
+    setSavingEdit(true);
+    try {
+      const text = editing.body.trim();
+      const mentions = [...new Set(
+        picked.filter((p) => text.includes(`@${p.fullName}`)).map((p) => p.id),
+      )];
+      const result = await api.editComment(module, id, editing.id, text, mentions);
+      if (result.edited) toast.success('Note updated', 'The earlier version is kept in its history.');
+      setEditing(null);
+      setPicked([]);
+      void queryClient.invalidateQueries({ queryKey: ['comments', module, id] });
+      void queryClient.invalidateQueries({ queryKey: ['timeline', module, id] });
+    } catch (err) {
+      toast.error('Could not update the note', (err as Error).message);
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   return (
     <div className="card overflow-hidden">
       <div className="border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
@@ -2553,7 +2578,12 @@ function CommentsPanel({
 
       <div className="max-h-80 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800">
         {(data ?? []).map((raw) => {
-          const c = raw as { id: string; body: string; user_name: string; created_at: string };
+          const c = raw as {
+            id: string; body: string; user_id: string; user_name: string; created_at: string;
+            updated_at: string | null; edit_history?: { body: string; at: string }[];
+          };
+          const isMine = Boolean(currentUser) && c.user_id === currentUser;
+          const edits = c.edit_history ?? [];
           return (
             <div key={c.id} className="flex gap-2.5 p-3">
               <Avatar name={c.user_name} size={26} />
@@ -2561,10 +2591,71 @@ function CommentsPanel({
                 <div className="flex items-baseline gap-2">
                   <span className="text-xs font-medium">{c.user_name}</span>
                   <span className="text-2xs text-muted">{relativeTime(c.created_at)}</span>
+                  {edits.length > 0 && (
+                    <button
+                      className="inline-flex items-center gap-0.5 text-2xs text-muted underline underline-offset-2 hover:text-brand-600 dark:hover:text-brand-400"
+                      onClick={() => setHistoryOpen(historyOpen === c.id ? null : c.id)}
+                    >
+                      (edited {edits.length})
+                    </button>
+                  )}
+                  {/* The pencil belongs to the author: editing someone else's
+                      note would rewrite their words in their name. */}
+                  {isMine && editing?.id !== c.id && (
+                    <button
+                      aria-label="Edit this note"
+                      title="Edit this note"
+                      className="btn-ghost p-1 text-slate-400 hover:text-brand-600 dark:hover:text-brand-400"
+                      onClick={() => setEditing({ id: c.id, body: c.body })}
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </button>
+                  )}
                 </div>
-                <p className="mt-0.5 whitespace-pre-wrap text-sm text-muted">
-                  {highlightMentions(c.body, colleagues)}
-                </p>
+
+                {editing?.id === c.id ? (
+                  <div className="mt-1 space-y-2">
+                    <MentionTextarea
+                      value={editing.body}
+                      onChange={(v) => setEditing({ id: c.id, body: v })}
+                      onMention={() => undefined}
+                      colleagues={colleagues}
+                      onSubmit={() => { void saveEdit(); }}
+                    />
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        className="btn-primary btn-sm"
+                        disabled={!editing.body.trim() || savingEdit}
+                        onClick={() => { void saveEdit(); }}
+                      >
+                        {savingEdit && <Spinner className="h-3 w-3" />} Save
+                      </button>
+                      <button
+                        className="btn-secondary btn-sm"
+                        disabled={savingEdit}
+                        onClick={() => setEditing(null)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-0.5 whitespace-pre-wrap text-sm text-muted">
+                    {highlightMentions(c.body, colleagues)}
+                  </p>
+                )}
+
+                {historyOpen === c.id && edits.length > 0 && (
+                  <div className="mt-1.5 space-y-1.5 rounded-lg border border-slate-200 bg-slate-50/70 p-2 dark:border-slate-700 dark:bg-slate-800/40">
+                    <p className="text-2xs font-medium text-muted">Earlier versions</p>
+                    {edits.map((e, i) => (
+                      <div key={i} className="text-2xs">
+                        <span className="text-muted">{relativeTime(e.at)} — </span>
+                        <span className="whitespace-pre-wrap text-slate-500 line-through dark:text-slate-400">{e.body}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           );
