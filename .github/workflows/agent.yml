@@ -79,5 +79,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.AGENT_GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
-          AGENT_MAX_TURNS: '30'
+          AGENT_MAX_TURNS: '45'
         run: node scripts/agent/run-agent.mjs

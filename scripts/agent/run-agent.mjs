@@ -263,6 +263,12 @@ async function main() {
     // Before every call past the first few, collapse old tool outputs so the
     // context grows linearly at worst, not with every file ever read.
     if (turn > 3) compactConversation(messages);
+    // From turn 25 the conversation gains a nudge: an agent that has spent
+    // its whole budget investigating has nothing left for finishing, and a
+    // ticket that ends without a verdict has to be redone from scratch.
+    if (turn === 25) {
+      messages.push({ role: 'user', content: 'Budget reminder: you are past turn 25 of 45. Wrap up the investigation you have, make the fix you can already justify, run "test", and finish. A small correct fix merged today beats a perfect one that never happens.' });
+    }
     const reply = await llm(messages);
     messages.push({ role: 'assistant', content: reply });
 
