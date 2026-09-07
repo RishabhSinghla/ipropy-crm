@@ -85,9 +85,10 @@ async function throttle() {
   lastCall = Date.now();
 }
 
-/** One LLM turn. Retries a 429 with a 65s pause; retries an empty, length-truncated reply with a doubled ceiling — a reasoning model can spend the whole budget on hidden thinking before writing anything, which is a working call that looks like a failure. */
+/** One LLM turn. A 429 waits 65s; an empty length-truncated reply doubles the ceiling once — a reasoning model can spend the whole budget on hidden thinking before writing anything, which is a working call that looks like a failure. */
 async function llm(messages, maxTokens = 8000) {
   let ceiling = maxTokens;
+  let lengthRetries = 0;
   for (let attempt = 1; ; attempt++) {
     await throttle();
     const res = await fetch(`${API}/chat/completions`, {
@@ -107,10 +108,8 @@ async function llm(messages, maxTokens = 8000) {
     if (!res.ok) throw new Error(`tokenrouter ${res.status}: ${JSON.stringify(json).slice(0, 300)}`);
     const content = json.choices?.[0]?.message?.content;
     if (typeof content !== 'string' || !content.trim()) {
-      // Empty with finish_reason "length" = the thinking ate the budget.
-      // Doubling twice covers a 8k→32k path; beyond that the turn is too
-      // big anyway and the conversation needs trimming, not more ceiling.
-      if (json.choices?.[0]?.finish_reason === 'length' && ceiling < 32000) {
+      if (json.choices?.[0]?.finish_reason === 'length' && lengthRetries < 2) {
+        lengthRetries += 1;
         ceiling *= 2;
         console.log(`empty reply (finish: length) — retrying with max_tokens ${ceiling}`);
         continue;
@@ -118,6 +117,28 @@ async function llm(messages, maxTokens = 8000) {
       throw new Error(`model returned no content (finish: ${json.choices?.[0]?.finish_reason})`);
     }
     return content;
+  }
+}
+
+/**
+ * Keep the conversation small enough that a reasoning model can still answer
+ * inside one request. Old tool outputs are the bulk of every turn's context:
+ * once the agent has moved on, a file it read in turn 3 is noise that costs
+ * thinking budget in turn 25. Collapse each old tool result to its first line
+ * (usually the path or the verdict) and keep the last three verbatim.
+ */
+function compactConversation(messages, keepVerbatim = 3) {
+  const toolResults = [];
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i].role === 'user' && messages[i].content.startsWith('Result of ')) {
+      toolResults.push(i);
+    }
+  }
+  const toCollapse = toolResults.slice(0, Math.max(0, toolResults.length - keepVerbatim));
+  for (const i of toCollapse) {
+    const firstLine = messages[i].content.split('\n')[0].slice(0, 300);
+    const lastLine = messages[i].content.trimEnd().split('\n').pop().slice(0, 200);
+    messages[i] = { role: 'user', content: `${firstLine}\n…(earlier output trimmed)…\n${lastLine}` };
   }
 }
 
@@ -227,6 +248,9 @@ async function main() {
   let prTitle = '', prBody = '';
   for (let turn = 1; turn <= MAX_TURNS; turn++) {
     console.log(`--- turn ${turn}`);
+    // Before every call past the first few, collapse old tool outputs so the
+    // context grows linearly at worst, not with every file ever read.
+    if (turn > 3) compactConversation(messages);
     const reply = await llm(messages);
     messages.push({ role: 'assistant', content: reply });
 
