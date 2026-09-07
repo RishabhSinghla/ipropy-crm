@@ -16,6 +16,7 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { Avatar, Badge, Dropdown, DropdownItem, Spinner } from './ui';
 import AiAssistant from './AiAssistant';
 import { PeekLink, PeekProvider } from './PeekLink';
+import { ReportProblemButton } from './ReportProblem';
 
 /** Resolve a lucide icon by its kebab-case metadata name (see lib/icons.ts for why this is a registry, not a namespace lookup). */
 export function ModuleIcon({ name, className }: { name: string; className?: string }): JSX.Element {
@@ -220,6 +221,8 @@ export default function Layout(): JSX.Element {
                 </button>
               )}
 
+              <ReportProblemButton />
+
               <NotificationBell />
 
               <button
@@ -393,6 +396,7 @@ function MobileNav({
           <div className="space-y-0.5">
             <p className="mb-1 px-3 text-2xs font-semibold uppercase tracking-wider text-muted">Tools</p>
             <DrawerLink to="/reports" icon="bar-chart-3" label="Reports" />
+            <DrawerLink to="/feedback" icon="wrench" label="Meri Reports" />
             <DrawerLink to="/settings" icon="settings" label="Settings" />
           </div>
         </nav>

@@ -30,6 +30,7 @@ import { webhooksRouter } from './api/routes/webhooks.js';
 import { miscRouter } from './api/routes/misc.js';
 import { mcpRouter } from './api/routes/mcp.js';
 import { publicRouter } from './api/routes/public.js';
+import { feedbackRouter } from './api/routes/feedback.js';
 
 /**
  * The policy on the app's own HTML.
@@ -290,6 +291,8 @@ export function createApp(): Express {
   app.use('/api/ai', aiRouter);
   // Connected assistants. Mounted before miscRouter's catch-all /api paths.
   app.use('/api/mcp', mcpRouter);
+  // Report-a-problem: the owner's direct line to the AI engineering pipeline.
+  app.use('/api/feedback', feedbackRouter);
   app.use('/api', miscRouter);
   // Records last: its /:module route would otherwise swallow the paths above.
   app.use('/api/records', recordsRouter);

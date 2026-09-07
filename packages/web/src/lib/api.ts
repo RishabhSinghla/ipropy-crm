@@ -442,6 +442,24 @@ export interface IntegrationSummary {
   credentialFields: Record<string, { set: boolean; preview: string }>;
 }
 
+/** One "Report a Problem" entry, with its timeline and screenshots. */
+export interface FeedbackItem {
+  id: string;
+  text: string;
+  kind: 'bug' | 'idea' | 'question';
+  severity: 'blocking' | 'important' | 'minor';
+  status: 'submitted' | 'triaging' | 'working' | 'reviewing' | 'fixed' | 'reopened' | 'failed' | 'declined';
+  ai_summary: string | null;
+  module_name: string | null;
+  route: string | null;
+  issue_url: string | null;
+  pr_url: string | null;
+  created_at: string;
+  updated_at: string;
+  events: { stage: string; note: string | null; actor: string; at: string }[] | null;
+  screenshots: { id: string; name: string; mime: string }[] | null;
+}
+
 export interface IntegrationModel {
   id: string;
   label: string;
@@ -560,6 +578,15 @@ export const api = {
     revoked_at: string | null; created_at: string;
   }[]>('/api/auth/api-keys'),
   revokeApiKey: (id: string) => del(`/api/auth/api-keys/${id}`),
+
+  // --- report a problem -----------------------------------------------------
+  submitFeedback: (form: FormData) =>
+    request<{ id: string; message: string }>('/api/feedback', { method: 'POST', body: form }),
+  feedbackList: () => get<FeedbackItem[]>('/api/feedback'),
+  verifyFeedback: (id: string, ok: boolean, note?: string) =>
+    post<{ ok: true; message: string }>(`/api/feedback/${id}/verify`, { ok, note }),
+  feedbackNote: (id: string, text: string) =>
+    post<{ ok: true }>(`/api/feedback/${id}/note`, { text }),
 
   // --- metadata -----------------------------------------------------------
   modules: () => get<ModuleSummary[]>('/api/meta/modules'),

@@ -1,0 +1,83 @@
+# The AI engineer: a labelled issue becomes an investigated, tested pull request.
+#
+# Triggers:
+#   * an issue labelled `ai-fix` (the label the CRM's report form puts on)
+#   * an issue comment that starts with `ai: go` — the owner's "try again"
+#
+# Both paths run the same agent: read the issue, investigate the repo, make
+# the smallest correct change, prove it (typecheck + unit tests), open a PR.
+# The agent works on its own branch and never pushes to main; the CRM's
+# scheduler polls the PR and merges it only when every check is green.
+#
+# Minutes discipline (this repository ran out once): one run of this workflow
+# costs roughly 10-15 minutes. It does not run on pushes or schedules, and the
+# issue-opened trigger below is filtered by label so ordinary bug reports from
+# a human do not start it.
+name: AI Engineer
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+on:
+  issues:
+    types: [opened, reopened, labeled]
+  issue_comment:
+    types: [created]
+
+concurrency:
+  # One agent per issue. A relabel race or a comment while a run is live waits
+  # rather than doubling the bill; the newest run proceeds in sequence.
+  group: ai-agent-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    if: |
+      (github.event_name == 'issues' && contains(github.event.label.name, 'ai-fix')) ||
+      (github.event_name == 'issue_comment' && startsWith(github.event.comment.body, 'ai: go'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Comment "on it"
+        uses: actions/github-script@v8
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: '🤖 AI engineer ne kaam shuru kiya hai. Jaise hi PR khulti hai, yahin bataya jayega.'
+            });
+
+      - uses: actions/checkout@v7
+        with:
+          # The whole history: the agent diffs against recent work and reads
+          # CLAUDE.md's living context.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        # `npm test` runs against the real workspace tree; the agent also
+        # builds @ipropy/shared first because the tests import it.
+        # --no-audit --no-fund keeps the log quiet and the minutes down.
+        run: npm ci --no-audit --no-fund && npm run build:deps
+
+      - name: Run the agent
+        env:
+          TOKENROUTER_API_KEY: ${{ secrets.TOKENROUTER_API_KEY }}
+          TOKENROUTER_BASE_URL: ${{ vars.TOKENROUTER_BASE_URL || 'https://api.tokenrouter.com/v1' }}
+          TOKENROUTER_MODEL: ${{ vars.TOKENROUTER_MODEL || 'z-ai/glm-5.3-free' }}
+          # The push and PR-open must use a PAT, not GITHUB_TOKEN: an event
+          # created with GITHUB_TOKEN does not trigger other workflows, so CI
+          # would never run on the agent's PR and the merge gate would wait
+          # forever on a check suite that never starts.
+          GITHUB_TOKEN: ${{ secrets.AGENT_GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          AGENT_MAX_TURNS: '30'
+        run: node scripts/agent/run-agent.mjs

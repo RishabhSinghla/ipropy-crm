@@ -23,6 +23,7 @@ const SiteCapture = lazy(() => import('./pages/SiteCapture'));
 const ReportsPage = lazy(() => import('./pages/Reports'));
 const SettingsPage = lazy(() => import('./pages/Settings'));
 const AdminPage = lazy(() => import('./pages/admin/Admin'));
+const FeedbackPage = lazy(() => import('./pages/Feedback'));
 
 function RequireAuth({ children }: { children: JSX.Element }): JSX.Element {
   const { user, loading } = useApp();
@@ -79,6 +80,8 @@ export default function App(): JSX.Element {
 
               <Route path="capture" element={<SiteCapture />} />
               <Route path="reports" element={<ReportsPage />} />
+              {/* The reporter's side of the report-a-problem pipeline. */}
+              <Route path="feedback" element={<FeedbackPage />} />
 
               <Route path="settings" element={<SettingsPage />} />
               <Route path="admin/*" element={<AdminPage />} />

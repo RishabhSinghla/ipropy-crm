@@ -57,6 +57,7 @@ async function tick(): Promise<void> {
       runSequences(),
       startDueBroadcasts(),
       housekeeping(),
+      pollFeedback(),
     ]);
   } catch (err) {
     logger.error({ err }, 'scheduler tick failed');
@@ -90,6 +91,21 @@ async function startDueBroadcasts(): Promise<void> {
     await runDueBroadcasts();
   } catch (err) {
     logger.error({ err }, 'scheduled broadcast dispatch failed');
+  }
+}
+
+/**
+ * The report-a-problem pipeline's heartbeat: watch the GitHub issues and PRs
+ * the agent works on, and translate their progress into the reporter's
+ * timeline. Dynamically imported and error-swallowing like the others — a
+ * broken feedback module must never stop the queue from draining.
+ */
+async function pollFeedback(): Promise<void> {
+  try {
+    const { pollFeedback: poll } = await import('../feedback/index.js');
+    await poll();
+  } catch (err) {
+    logger.error({ err }, 'feedback poll failed');
   }
 }
 
