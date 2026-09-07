@@ -89,6 +89,7 @@ async function throttle() {
 async function llm(messages, maxTokens = 8000) {
   let ceiling = maxTokens;
   let lengthRetries = 0;
+  let serverRetries = 0;
   for (let attempt = 1; ; attempt++) {
     await throttle();
     const res = await fetch(`${API}/chat/completions`, {
@@ -98,9 +99,20 @@ async function llm(messages, maxTokens = 8000) {
       signal: AbortSignal.timeout(300_000),
     });
     if (res.status === 429) {
-      if (attempt >= 4) throw new Error('rate limit did not clear after 4 tries');
+      if (attempt >= 6) throw new Error('rate limit did not clear after 6 tries');
       console.log(`429 — waiting 65s (attempt ${attempt})`);
       await new Promise((r) => setTimeout(r, 65_000));
+      lastCall = 0;
+      continue;
+    }
+    // Free-tier gateways shed load with 5xx "cache_only_cold"-style errors.
+    // Transient on every measurement; killing a 20-turn investigation over
+    // one would make the whole pipeline a coin flip.
+    if (res.status >= 500) {
+      if (serverRetries >= 5) throw new Error(`gateway stayed unavailable after 5 tries (last: ${res.status})`);
+      serverRetries += 1;
+      console.log(`${res.status} from the gateway — waiting 30s (retry ${serverRetries})`);
+      await new Promise((r) => setTimeout(r, 30_000));
       lastCall = 0;
       continue;
     }
