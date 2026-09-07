@@ -46,9 +46,14 @@ function applyTheme(theme: 'light' | 'dark'): void {
 */
 export function applyBrandColour(hex: string | null | undefined): void {
   const root = document.documentElement;
-  if (!hex || !/^#[0-9a-f]{6}$/i.test(hex)) {
-    // Empty means "back to the shipped indigo" — remove the overrides and let
-    // the values in styles.css speak.
+  /*
+    The shipped indigo is never regenerated — the eleven values in styles.css
+    are hand-tuned to clear WCAG AA, and a generator walking lightness lands a
+    few percent off on exactly the steps buttons and links are tested against.
+    Choosing it again (or clearing the setting) must be a no-op, not a repaint.
+  */
+  const isDefault = !hex || /^#6366f1$/i.test(hex.trim());
+  if (isDefault || !/^#[0-9a-f]{6}$/i.test(hex)) {
     for (let i = 50; i <= 950; i += 50) root.style.removeProperty(`--brand-${i}`);
     return;
   }
@@ -89,6 +94,31 @@ export function applyBrandColour(hex: string | null | undefined): void {
     return `#${[c(r1 + m), c(g1 + m), c(b1 + m)].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
   };
   // The admin's own hex, untouched, where the eye lands on it.
+  /*
+    Contrast is enforced, not hoped for: the button step darkens until white
+    text on it clears WCAG AA (4.5:1). A hue can be too light for that at any
+    saturation — a lime or an amber — and a pretty ramp that stops short makes
+    every button in the CRM illegible. Lightness walks down at most to 0.26,
+    which every hue reaches AA at.
+  */
+  const contrastWithWhite = (rgb: [number, number, number]): number => {
+    const lum = (v: number): number => {
+      const c = v / 255;
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    };
+    const l = 0.2126 * lum(rgb[0]) + 0.7152 * lum(rgb[1]) + 0.0722 * lum(rgb[2]);
+    return (1.05) / (l + 0.05);
+  };
+  const hexRgb = (value: string): [number, number, number] => [
+    parseInt(value.slice(1, 3), 16), parseInt(value.slice(3, 5), 16), parseInt(value.slice(5, 7), 16),
+  ];
+  let buttonLightness = Math.min(0.42, l);
+  let buttonStep = shade(buttonLightness);
+  while (contrastWithWhite(hexRgb(buttonStep)) < 4.5 && buttonLightness > 0.24) {
+    buttonLightness -= 0.02;
+    buttonStep = shade(buttonLightness);
+  }
+
   const steps: Record<number, string> = {
     50: shade(0.96, Math.min(sat, 0.55)),
     100: shade(0.92, Math.min(sat, 0.6)),
@@ -96,8 +126,10 @@ export function applyBrandColour(hex: string | null | undefined): void {
     300: shade(0.73),
     400: shade(0.62),
     500: hex,
-    600: shade(Math.max(0.38, Math.min(l, 0.52))),
-    700: shade(0.32),
+    // Buttons paint white text on 600/700, so both are pushed darker than a
+    // pretty ramp would put them — white needs ~4.5:1 and a light 600 misses.
+    600: buttonStep,
+    700: shade(Math.min(buttonLightness - 0.04, 0.32)),
     800: shade(0.27),
     900: shade(0.22),
     950: shade(0.16, Math.min(sat, 0.5)),
