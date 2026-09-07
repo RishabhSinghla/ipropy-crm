@@ -85,14 +85,15 @@ async function throttle() {
   lastCall = Date.now();
 }
 
-/** One LLM turn. Retries a 429 with a 65s pause — the documented window. */
+/** One LLM turn. Retries a 429 with a 65s pause; retries an empty, length-truncated reply with a doubled ceiling — a reasoning model can spend the whole budget on hidden thinking before writing anything, which is a working call that looks like a failure. */
 async function llm(messages, maxTokens = 8000) {
+  let ceiling = maxTokens;
   for (let attempt = 1; ; attempt++) {
     await throttle();
     const res = await fetch(`${API}/chat/completions`, {
       method: 'POST',
       headers: { authorization: `Bearer ${KEY}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ model: MODEL, messages, max_tokens: maxTokens, temperature: 0.2 }),
+      body: JSON.stringify({ model: MODEL, messages, max_tokens: ceiling, temperature: 0.2 }),
       signal: AbortSignal.timeout(300_000),
     });
     if (res.status === 429) {
@@ -106,6 +107,14 @@ async function llm(messages, maxTokens = 8000) {
     if (!res.ok) throw new Error(`tokenrouter ${res.status}: ${JSON.stringify(json).slice(0, 300)}`);
     const content = json.choices?.[0]?.message?.content;
     if (typeof content !== 'string' || !content.trim()) {
+      // Empty with finish_reason "length" = the thinking ate the budget.
+      // Doubling twice covers a 8k→32k path; beyond that the turn is too
+      // big anyway and the conversation needs trimming, not more ceiling.
+      if (json.choices?.[0]?.finish_reason === 'length' && ceiling < 32000) {
+        ceiling *= 2;
+        console.log(`empty reply (finish: length) — retrying with max_tokens ${ceiling}`);
+        continue;
+      }
       throw new Error(`model returned no content (finish: ${json.choices?.[0]?.finish_reason})`);
     }
     return content;
@@ -177,11 +186,13 @@ RULES (all absolute):
 2. Only edit files under packages/, e2e/, scripts/, or root configs EXCEPT .env*, .github/workflows/*, render.yaml, Dockerfile, docker-compose.yml. Never edit those.
 3. Make the smallest correct change. No refactors, no drive-by fixes, no new dependencies.
 4. After editing, ALWAYS run the "test" tool (it runs typecheck + unit tests) and fix anything it reports before finishing.
-5. Each turn, reply with ONE action as JSON, nothing else:
+5. Be concise: keep tool arguments small, read only what you need, and think briefly. Long thinking burns the output budget and truncates your answer.
+6. Each turn, reply with ONE action as JSON, nothing else — no prose before or after:
    {"action": "<tool>", "args": {...}, "done": false}
    or when finished:
    {"action": "finish", "pr_title": "...", "pr_body": "...", "summary": "...", "done": true}
-6. The "finish" action's pr_body must explain root cause, the change, and how it was tested.`;
+7. The "finish" action's pr_body must explain root cause, the change, and how it was tested.
+8. Be frugal with reads: CLAUDE.md's first half is the rules; do not read whole directories when a search pinpoints the file.`;
 
 async function main() {
   // 1. The issue, its comments, and the repo's brain.
