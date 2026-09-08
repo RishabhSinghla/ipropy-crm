@@ -160,9 +160,12 @@ function compactConversation(messages, keepVerbatim = 3) {
 // ---------------------------------------------------------------------------
 
 const TOOLS = {
-  read: { run: (a) => { const p = safePath(a.path); return existsSync(p) ? readFileSync(p, 'utf8').slice(0, 60000) : 'FILE NOT FOUND'; } },
-  list: { run: (a) => JSON.stringify(listDir(safePath(a.path)), null, 1).slice(0, 4000) },
-  search: { run: (a) => grep(a.pattern || '', a.path ? safePath(a.path) : ROOT).slice(0, 12000) },
+  // Reads are capped tight on purpose. A 2,700-line page read whole is 100KB
+  // of context a small model drowns in — it spends the rest of the run
+  // re-reading and never converges. Search pinpoints, read targets.
+  read: { run: (a) => { const p = safePath(a.path); return existsSync(p) ? readFileSync(p, 'utf8').slice(0, 15000) : 'FILE NOT FOUND'; } },
+  list: { run: (a) => JSON.stringify(listDir(safePath(a.path)), null, 1).slice(0, 3000) },
+  search: { run: (a) => grep(a.pattern || '', a.path ? safePath(a.path) : ROOT).slice(0, 8000) },
   write: { run: (a) => { const p = safePath(a.path); checkAllowed(p); writeFileSync(p, a.content ?? ''); return `wrote ${a.content?.length ?? 0} bytes`; } },
   edit: { run: (a) => {
     const p = safePath(a.path); checkAllowed(p);
@@ -266,8 +269,11 @@ async function main() {
     // From turn 25 the conversation gains a nudge: an agent that has spent
     // its whole budget investigating has nothing left for finishing, and a
     // ticket that ends without a verdict has to be redone from scratch.
+    if (turn === 15) {
+      messages.push({ role: 'user', content: 'Budget note: turn 15 of 45. Half the investigation budget is gone. Stop reading new files after this point unless absolutely forced; move to editing and testing what you already know.' });
+    }
     if (turn === 25) {
-      messages.push({ role: 'user', content: 'Budget reminder: you are past turn 25 of 45. Wrap up the investigation you have, make the fix you can already justify, run "test", and finish. A small correct fix merged today beats a perfect one that never happens.' });
+      messages.push({ role: 'user', content: 'Budget reminder: turn 25 of 45. Wrap up: make the fix you can already justify with what you have read, run "test", and finish. A small correct fix merged today beats a perfect one that never happens.' });
     }
     const reply = await llm(messages);
     messages.push({ role: 'assistant', content: reply });
@@ -289,6 +295,23 @@ async function main() {
     try { result = String(tool.run(parsed.args ?? {})); }
     catch (err) { result = `ERROR: ${err.message}`; }
     messages.push({ role: 'user', content: `Result of ${parsed.action}:\n${result.slice(0, 40000)}` });
+  }
+
+  if (!prTitle) {
+    // Budget expired, but the working tree may hold a real fix the model was
+    // too polite to declare finished. Verify for real, and if it passes, ship
+    // it — 45 turns of investigation that never becomes a PR is pure waste.
+    const t = trySh('npm', ['test']);
+    const tc = trySh('npm', ['run', 'typecheck']);
+    if (t.ok && tc.ok) {
+      sh('git', ['add', '-A']);
+      const changed = sh('git', ['status', '--porcelain']);
+      if (changed.trim()) {
+        prTitle = `[AI] ${issue.title}`.slice(0, 120);
+        prBody = 'The AI engineer hit its turn budget mid-investigation, but the changes it had made so far pass typecheck and the unit tests, so they are offered as a PR for CI to judge.\n\nFixes #' + ISSUE;
+        console.log('turn budget expired with passing changes — salvaging into a PR');
+      }
+    }
   }
 
   if (!prTitle) {
