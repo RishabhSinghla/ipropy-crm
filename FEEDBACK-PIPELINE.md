@@ -58,6 +58,33 @@ Papa (any page) → 🐞 Report → text + optional screenshots + optional voice
 - **Turn off auto-merge:** set `autoMerge` = `false` on the GitHub card. Every
   PR then waits for a manual merge; nothing else changes.
 
+## Switching the AI engineer's model — Admin panel, no redeploys
+
+Admin → Integrations → **GitHub (AI engineering)** card:
+
+- **AI Base URL** — any OpenAI-compatible provider:
+  - `https://api.tokenrouter.com/v1` (GLM, free)
+  - `https://openrouter.ai/api/v1` (Claude, Gemini, Qwen, DeepSeek — one key,
+    hundreds of models; recommended)
+  - `https://api.groq.com/openai/v1` (fastest cheap lane)
+  - `https://api.deepseek.com/v1` · `https://api.anthropic.com/v1` needs the
+    Anthropic shape, so prefer it through OpenRouter.
+- **AI Model** — the provider's model id, e.g. `anthropic/claude-sonnet-4.5`
+  (OpenRouter), `z-ai/glm-5.3` (TokenRouter paid), `deepseek/deepseek-v4-pro`.
+- **AI API Key** (secret) — stored sealed in the CRM; also paste the same key
+  once as the repo secret `AGENT_AI_API_KEY` (Settings → Secrets → Actions),
+  which is what the workflow actually runs with.
+
+Saving the card pushes Base URL + Model to GitHub repo *variables*
+automatically. The key is the one manual step (repo secrets need GitHub's
+encryption; the card keeps its own sealed copy as the record of what's set).
+
+**About subscriptions:** Claude Pro/Max, Codex and z.ai subscriptions do not
+expose API keys — they work inside their own apps only. To use those models
+here, buy pay-as-you-go API credit from any provider (OpenRouter gives every
+major model behind one key) and put that key on the card. The model changes
+anytime; the pipeline code never does.
+
 ## Costs
 
 - TokenRouter GLM: free tier, 8 req/min. The agent throttles itself to 7/min
