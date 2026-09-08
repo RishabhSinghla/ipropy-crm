@@ -16,6 +16,9 @@ coverage/
 *.tsbuildinfo
 backups/
 
+# Claude Code
+.claude/settings.local.json
+
 # Playwright
 /test-results/
 /playwright-report/

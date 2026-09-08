@@ -620,13 +620,13 @@ counts are `ipy_migration`, `ipy_user`, `ipy_record`, `ipy_module`, `ipy_field`.
 
 ## 10. Testing commands
 
-The current baseline is 374 unit tests (320 server, 46 web and 8 MCP), 274 integration tests against
-real throwaway Postgres databases, and 28 Playwright tests across desktop and mobile. The integration
+The current baseline is 592 unit tests (515 server, 69 web and 8 MCP), 421 integration tests against
+real throwaway Postgres databases, and 81 Playwright tests across desktop and mobile. The integration
 suite provisions a real customer database and drives signed billing webhook fixtures through it.
 CI also runs a moderate-or-higher dependency audit and a clean Linux production-Docker build.
 
 ```bash
-npm test                      # 374 tests, no DB required
+npm test                      # 592 tests, no DB required
 npm run typecheck             # all four workspaces — MUST be clean before committing
 npm run build                 # full build incl. Vite production bundle
 npm audit --audit-level=moderate

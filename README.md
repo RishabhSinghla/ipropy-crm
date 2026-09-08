@@ -34,12 +34,15 @@ data is not code:
 * Storage, backups, always-on hosting and real accounts are deployment checks owned outside this
   repository.
 
-**Every push to `main` deploys straight to production until 1 September 2026.** The CI gate is off
-because the free Actions minutes ran out; `render.yaml` goes back to `autoDeployTrigger: checksPass`
-on the 1st. Until then, `npm run typecheck`, `npm test`, `npm run test:integration` and a
-`linux/amd64` Docker build all have to pass locally before anything is pushed, and
-`python3 scripts/check-deployed.py` has to pass afterwards — n8n and the media worker deploy
-separately and have drifted silently twice.
+**Deploys are gated on CI.** `render.yaml` uses `autoDeployTrigger: checksPass` — Render deploys the
+newest `main` commit only after CI has passed on it: typecheck, the unit suites, the integration
+suite against a real Postgres, and the production `linux/amd64` Docker image. CI runs on every push
+to `main` and every pull request, and cancels superseded runs so three pushes cost three jobs, not
+nine; a commit that changes only markdown skips CI, and a deploy it can never pass is the one thing
+that deliberately never starts. `python3 scripts/check-deployed.py` verifies n8n and the media worker
+afterwards — they deploy separately and have drifted silently twice. Health checks ping the deployed
+CRM every two hours: a failure opens an issue, a recovery closes it, so the issue list is the
+incident log.
 
 See [`DEPLOYMENT.md`](DEPLOYMENT.md) and **Admin → System & Audit → Go live** before importing real
 data.
@@ -322,7 +325,7 @@ npm run db:backup      # pg_dump the DB to backups/ipropy-<timestamp>.dump
 npm run db:backup:verify  # restore newest dump to a scratch DB, compare counts, drop it
 npm run db:restore <dump> # replace the live DB from a backup (see PROJECT_HANDOVER.md §9)
 
-npm test               # 374 unit tests, no database needed
+npm test               # 592 unit tests, no database needed
 npm run test:integration  # API + recordService against a real throwaway Postgres
 npm run test:e2e       # Playwright, against a real browser and the dev stack
 ```
@@ -352,9 +355,9 @@ Three layers, fastest first:
 
 | | |
 |---|---|
-| `npm test` | **374 unit tests**, no database — 320 server, 46 web and 8 MCP |
-| `npm run test:integration` | **274 tests** against real throwaway Postgres databases; never point it at a database you care about |
-| `npm run test:e2e` | **28 Playwright tests** across desktop and mobile browser projects |
+| `npm test` | **592 unit tests**, no database — 515 server, 69 web and 8 MCP |
+| `npm run test:integration` | **421 tests** against real throwaway Postgres databases; never point it at a database you care about |
+| `npm run test:e2e` | **81 Playwright tests** across desktop and mobile browser projects |
 | `npm audit --audit-level=moderate` | Dependency advisory gate, including build tooling |
 | `docker build --platform linux/amd64 -t ipropy-crm:local .` | The production image Render actually builds |
 
