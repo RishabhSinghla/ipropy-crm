@@ -9,7 +9,7 @@ import { type JSX, useEffect, useRef, useState } from 'react';
  */
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Facebook, Globe, GripVertical, Instagram, Linkedin, MessageCircle, Plus, Save, Trash2, Twitter, Youtube,
+  Camera, Globe, GripVertical, Link2, MessageCircle, Play, Plus, Save, Trash2, X,
 } from 'lucide-react';
 import { api, authedFileUrl } from '../../lib/api';
 import { applyBrandColour, toast } from '../../lib/store';
@@ -31,11 +31,11 @@ const PLATFORMS = [
 function PlatformIcon({ platform }: { platform: string }): JSX.Element {
   const c = 'h-4 w-4';
   switch (platform) {
-    case 'instagram': return <Instagram className={c} />;
-    case 'facebook': return <Facebook className={c} />;
-    case 'x': return <Twitter className={c} />;
-    case 'linkedin': return <Linkedin className={c} />;
-    case 'youtube': return <Youtube className={c} />;
+    case 'instagram': return <Camera className={c} />;
+    case 'facebook': return <Globe className={c} />;
+    case 'x': return <X className={c} />;
+    case 'linkedin': return <Link2 className={c} />;
+    case 'youtube': return <Play className={c} />;
     case 'whatsapp': return <MessageCircle className={c} />;
     default: return <Globe className={c} />;
   }
