@@ -291,7 +291,9 @@ function UnseenBadge({ count, module }: { count: number; module: string }): JSX.
       className="rounded-full bg-brand-600 px-1.5 py-0.5 text-2xs font-semibold text-white"
       title={module === 'leads'
         ? `${count} lead${count === 1 ? '' : 's'} still in New status`
-        : `${count} new — not opened yet`}
+        : module === 'feedback'
+          ? `${count} report${count === 1 ? '' : 's'} — fix ready, check karein`
+          : `${count} new — not opened yet`}
     >
       {count > 99 ? '99+' : count}
     </span>
@@ -357,6 +359,18 @@ function MobileNav({
 }): JSX.Element {
   const location = useLocation();
 
+  // The one count outside the modules worth a badge: a report the AI engineer
+  // has marked fixed is waiting for its owner's verdict, and news the owner
+  // never sees is news that never happened. Same list and cadence the Meri
+  // Reports page uses — one query key, one cache — so the drawer and the page
+  // can never disagree about what is waiting.
+  const { data: feedback } = useQuery({
+    queryKey: ['feedback'],
+    queryFn: api.feedbackList,
+    refetchInterval: 60_000,
+  });
+  const readyToVerify = (feedback ?? []).filter((f) => f.status === 'fixed').length;
+
   // Navigating must dismiss the drawer: leaving it open covers the page the
   // user just asked for.
   useEffect(() => { onClose(); }, [location.pathname]);
@@ -396,7 +410,7 @@ function MobileNav({
           <div className="space-y-0.5">
             <p className="mb-1 px-3 text-2xs font-semibold uppercase tracking-wider text-muted">Tools</p>
             <DrawerLink to="/reports" icon="bar-chart-3" label="Reports" />
-            <DrawerLink to="/feedback" icon="wrench" label="Meri Reports" />
+            <DrawerLink to="/feedback" icon="wrench" label="Meri Reports" badge={readyToVerify || undefined} />
             <DrawerLink to="/settings" icon="settings" label="Settings" />
           </div>
         </nav>
