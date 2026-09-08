@@ -30,6 +30,7 @@ import {
   Check, ChevronDown, Loader2, Pencil,
 } from 'lucide-react';
 import { api } from '../lib/api';
+import { optionsWithValue } from '../lib/picklistOptions';
 import { toast, useApp } from '../lib/store';
 import { cn, deepEqual } from '../lib/utils';
 import { Avatar, Badge } from './ui';
@@ -654,7 +655,10 @@ function PicklistPopover({
 }): JSX.Element {
   const options = useMemo(() => {
     const all = (field.options ?? []).filter((o) => o.isActive || o.value === value);
-    return restrictTo?.length ? all.filter((o) => restrictTo.includes(o.value)) : all;
+    const narrowed = restrictTo?.length ? all.filter((o) => restrictTo.includes(o.value)) : all;
+    // A stored value the narrowed list no longer offers must still render,
+    // or the popover shows no selection for a record that has one.
+    return optionsWithValue(narrowed, value);
   }, [field.options, restrictTo, value]);
 
   return (
