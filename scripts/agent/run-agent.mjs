@@ -158,6 +158,7 @@ async function llm(messages, maxTokens = 8000) {
   let lengthRetries = 0;
   let serverRetries = 0;
   let networkRetries = 0;
+  let emptyRetries = 0;
   for (let attempt = 1; ; attempt++) {
     await throttle();
     const payload = JSON.stringify({
@@ -211,7 +212,16 @@ async function llm(messages, maxTokens = 8000) {
         console.log(`empty reply (finish: length) — retrying with max_tokens ${ceiling}`);
         continue;
       }
-      throw new Error(`model returned no content (finish: ${json.finish_reason})`);
+      // finish: stop with nothing visible = the model spent the whole turn on
+      // hidden reasoning and stopped without writing an answer. Transient
+      // behaviour; a retry usually produces the action it had decided on.
+      if (emptyRetries < 2) {
+        emptyRetries += 1;
+        console.log('empty reply (finish: stop) — retrying');
+        await new Promise((r) => setTimeout(r, 5_000));
+        continue;
+      }
+      return null;
     }
     return content;
   }
@@ -361,6 +371,13 @@ async function main() {
       messages.push({ role: 'user', content: 'Budget reminder: turn 25 of 45. Wrap up: make the fix you can already justify with what you have read, run "test", and finish. A small correct fix merged today beats a perfect one that never happens.' });
     }
     const reply = await llm(messages);
+    if (reply === null) {
+      // The model went silent twice at this exact point in the conversation.
+      // Give it one explicit prompt for the action rather than abandoning the
+      // whole investigation — the context is still right there.
+      messages.push({ role: 'user', content: 'Your last turn produced no visible answer. Reply now with exactly one action JSON: {"action": "...", "args": {...}} — or the finish form.' });
+      continue;
+    }
     messages.push({ role: 'assistant', content: reply });
 
     let parsed;
