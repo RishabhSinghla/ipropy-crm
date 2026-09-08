@@ -214,11 +214,19 @@ describe('opening a link', () => {
     await request(app).get(`/api/public/share/${body.token}`).expect(200);
     await request(app).get(`/api/public/share/${body.token}`).expect(200);
 
-    // Counted asynchronously so a failed counter cannot block the response.
-    await new Promise((r) => setTimeout(r, 120));
-    const row = await db.queryOne<{ view_count: number; last_viewed_at: Date | null }>(
-      `SELECT view_count, last_viewed_at FROM ipy_share_link WHERE id = $1`, [body.id],
-    );
+    // Counted asynchronously so a failed counter cannot block the response,
+    // which means the count can lag the 200s on a loaded runner. Poll rather
+    // than sleeping a fixed interval: the assertion is about whether both
+    // views were recorded, not about how fast, and a fixed 120ms occasionally
+    // raced the fire-and-forget UPDATE (view_count 1 of 2).
+    let row: { view_count: number; last_viewed_at: Date | null } | null = null;
+    for (let attempt = 0; attempt < 50; attempt++) {
+      row = await db.queryOne<{ view_count: number; last_viewed_at: Date | null }>(
+        `SELECT view_count, last_viewed_at FROM ipy_share_link WHERE id = $1`, [body.id],
+      );
+      if (row?.view_count === 2) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
     expect(row!.view_count).toBe(2);
     expect(row!.last_viewed_at).not.toBeNull();
   });
