@@ -88,30 +88,69 @@ async function throttle() {
 
 /** One LLM turn. A 429 waits 65s; an empty length-truncated reply doubles the ceiling once — a reasoning model can spend the whole budget on hidden thinking before writing anything, which is a working call that looks like a failure. */
 /**
- * POST with an honest 480-second ceiling.
+ * POST one streaming SSE chat completion, resolved to { status, text }.
  *
- * Not undici's `fetch`: Node's global fetch aborts at a hidden 300s
- * `headersTimeout`, so an AbortSignal of 480s is a promise the transport
- * does not keep — measured as `Headers Timeout Error` at exactly 05:00 on
- * a request the gateway would have answered. `node:https` alone gives every
- * phase of the request one clock.
+ * Streaming is not an optimisation here — it is how this gateway stays
+ * answerable at all. A non-streaming response buffers the model's *entire*
+ * hidden reasoning before the first byte of the answer, so a thinking-heavy
+ * turn held the connection 5-8 minutes and died at any transport ceiling
+ * (measured: undici's hidden 300s, then our own 480s, then the 90-minute
+ * job limit). Streamed, the bytes arrive as they are produced and the
+ * connection is never idle — the same turn completes in the model's own
+ * thinking time.
+ *
+ * `idleTimeoutMs` (not a total deadline) is the failure detector: bytes
+ * flowing reset it; silence for that long is a genuinely dead request.
  */
-function postJson(url, body, headers, timeoutMs) {
+function postJsonStream(url, body, headers, idleTimeoutMs = 120_000) {
   return new Promise((resolve, reject) => {
     const req = https.request(url, {
       method: 'POST',
       headers: { ...headers, 'content-length': Buffer.byteLength(body) },
-      timeout: timeoutMs,
     }, (res) => {
       let data = '';
+      let idle = null;
+      const armIdle = () => {
+        if (idle) clearTimeout(idle);
+        idle = setTimeout(() => {
+          req.destroy(new Error(`stream went silent for ${Math.round(idleTimeoutMs / 1000)}s`));
+        }, idleTimeoutMs);
+      };
       res.setEncoding('utf8');
-      res.on('data', (c) => { data += c; });
-      res.on('end', () => resolve({ status: res.statusCode ?? 0, text: data }));
+      armIdle();
+      res.on('data', (c) => { data += c; armIdle(); });
+      res.on('end', () => { if (idle) clearTimeout(idle); resolve({ status: res.statusCode ?? 0, text: data }); });
+      res.on('error', (err) => { if (idle) clearTimeout(idle); reject(err); });
     });
-    req.on('timeout', () => { req.destroy(new Error(`request exceeded ${Math.round(timeoutMs / 1000)}s`)); });
     req.on('error', reject);
     req.end(body);
   });
+}
+
+/** Glue an SSE stream back into one plain chat-completion object. */
+function sseToCompletion(text) {
+  let content = null;
+  let finish = null;
+  let usage = null;
+  for (const line of text.split('\n')) {
+    if (!line.startsWith('data:')) continue;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === '[DONE]') continue;
+    try {
+      const chunk = JSON.parse(payload);
+      const choice = chunk.choices?.[0];
+      const delta = choice?.delta;
+      if (typeof delta?.content === 'string') {
+        content = (content ?? '') + delta.content;
+      }
+      // Some gateways send the visible answer on .reasoning_content first and
+      // the real content last; only .content is the answer, so accumulate only
+      // that, but record the finish reason from whichever chunk carries it.
+      if (choice?.finish_reason) finish = choice.finish_reason;
+      if (chunk.usage) usage = chunk.usage;
+    } catch { /* a partial line at a chunk boundary — the next one completes it */ }
+  }
+  return { content, finish_reason: finish, usage };
 }
 
 async function llm(messages, maxTokens = 8000) {
@@ -121,12 +160,16 @@ async function llm(messages, maxTokens = 8000) {
   let networkRetries = 0;
   for (let attempt = 1; ; attempt++) {
     await throttle();
-    const payload = JSON.stringify({ model: MODEL, messages, max_tokens: ceiling, temperature: 0.2 });
+    const payload = JSON.stringify({
+      model: MODEL, messages, max_tokens: ceiling, temperature: 0.2,
+      stream: true,
+      stream_options: { include_usage: true },
+    });
     let res;
     try {
-      res = await postJson(`${API}/chat/completions`, payload, {
-        authorization: `Bearer ${KEY}`, 'content-type': 'application/json',
-      }, 480_000);
+      res = await postJsonStream(`${API}/chat/completions`, payload, {
+        authorization: `Bearer ${KEY}`, 'content-type': 'application/json', accept: 'text/event-stream',
+      });
     } catch (err) {
       if (networkRetries >= 4) throw new Error(`network failed after 4 retries: ${err.message}`);
       networkRetries += 1;
@@ -154,17 +197,21 @@ async function llm(messages, maxTokens = 8000) {
       continue;
     }
     let json;
-    try { json = JSON.parse(res.text); } catch { json = {}; }
+    if (res.status === 200) {
+      json = sseToCompletion(res.text);
+    } else {
+      try { json = JSON.parse(res.text); } catch { json = {}; }
+    }
     if (res.status !== 200) throw new Error(`tokenrouter ${res.status}: ${res.text.slice(0, 300)}`);
-    const content = json.choices?.[0]?.message?.content;
+    const content = json.content;
     if (typeof content !== 'string' || !content.trim()) {
-      if (json.choices?.[0]?.finish_reason === 'length' && lengthRetries < 2) {
+      if (json.finish_reason === 'length' && lengthRetries < 2) {
         lengthRetries += 1;
         ceiling *= 2;
         console.log(`empty reply (finish: length) — retrying with max_tokens ${ceiling}`);
         continue;
       }
-      throw new Error(`model returned no content (finish: ${json.choices?.[0]?.finish_reason})`);
+      throw new Error(`model returned no content (finish: ${json.finish_reason})`);
     }
     return content;
   }
