@@ -67,6 +67,31 @@ Papa (any page) → 🐞 Report → text + optional screenshots + optional voice
 - Vision (screenshot descriptions): uses the CRM's configured OpenRouter key —
   the same models that read documents. Fractions of a rupee per screenshot.
 
+## The model is the ceiling — measured 8 Sep 2026
+
+Everything around the model is proven live: reports file issues, the agent
+triggers, investigates for 45 turns, the transport survives 429s, 503s,
+length-truncations and 8-minute-long responses. But **`z-ai/glm-5.3-free` at
+depth is ~8 minutes per turn** on long investigations, so a real ticket needs
+200+ minutes — far past the workflow's 90-minute job ceiling. Seven live runs
+all investigated well and never committed an edit.
+
+**The one-click fix:** set the repo variable `TOKENROUTER_MODEL` to any paid
+model the account can reach (`z-ai/glm-5.3` is the same brain, paid lane):
+
+```bash
+gh variable set TOKENROUTER_MODEL --repo RishabhSinghla/ipropy-crm --body "z-ai/glm-5.3"
+```
+
+The account had $0.00 credit on 7 Sep (measured — every non-`:free` model
+answers `insufficient_user_quota`), so it needs a top-up first. No code
+changes; the pipeline picks the variable up on the next ticket automatically.
+
+Until then, Papa's reports still: file themselves, get triaged, appear on
+GitHub with full context, and stay queued. `ai: go` on an issue retries the
+agent any time. And you can always fix a ticket yourself — the report row
+links straight to its issue and PR.
+
 ## The safety rails (why this cannot burn the house down)
 
 - The agent never pushes to `main`. It works on its own branch.
