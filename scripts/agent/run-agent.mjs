@@ -96,7 +96,10 @@ async function llm(messages, maxTokens = 8000) {
       method: 'POST',
       headers: { authorization: `Bearer ${KEY}`, 'content-type': 'application/json' },
       body: JSON.stringify({ model: MODEL, messages, max_tokens: ceiling, temperature: 0.2 }),
-      signal: AbortSignal.timeout(300_000),
+      // 480s, not 300: the free gateway queues long-context requests, and
+      // measured latencies for a 20+-turn conversation reach 5-7 minutes.
+      // Aborting at 5 killed more finished answers than it saved.
+      signal: AbortSignal.timeout(480_000),
     });
     if (res.status === 429) {
       if (attempt >= 6) throw new Error('rate limit did not clear after 6 tries');
