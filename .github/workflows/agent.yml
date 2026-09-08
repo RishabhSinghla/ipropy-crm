@@ -69,9 +69,12 @@ jobs:
 
       - name: Run the agent
         env:
-          TOKENROUTER_API_KEY: ${{ secrets.TOKENROUTER_API_KEY }}
-          TOKENROUTER_BASE_URL: ${{ vars.TOKENROUTER_BASE_URL || 'https://api.tokenrouter.com/v1' }}
-          TOKENROUTER_MODEL: ${{ vars.TOKENROUTER_MODEL || 'z-ai/glm-5.3-free' }}
+          # Which lane the agent thinks on. Set once as repo secrets/variables
+          # (Admin → Integrations → GitHub card syncs AGENT_AI_* automatically);
+          # the fallbacks keep the original TokenRouter free-tier lane working.
+          TOKENROUTER_API_KEY: ${{ secrets.AGENT_AI_API_KEY || secrets.TOKENROUTER_API_KEY }}
+          TOKENROUTER_BASE_URL: ${{ vars.AGENT_AI_BASE_URL || 'https://api.tokenrouter.com/v1' }}
+          TOKENROUTER_MODEL: ${{ vars.AGENT_AI_MODEL || 'z-ai/glm-5.3-free' }}
           # The push and PR-open must use a PAT, not GITHUB_TOKEN: an event
           # created with GITHUB_TOKEN does not trigger other workflows, so CI
           # would never run on the agent's PR and the merge gate would wait

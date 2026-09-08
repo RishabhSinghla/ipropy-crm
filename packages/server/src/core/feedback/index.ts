@@ -74,6 +74,49 @@ async function readGithubToken(): Promise<{ token: string; repo: string } | null
   return cfg ? { token: cfg.token, repo: cfg.repo } : null;
 }
 
+/**
+ * Push the agent's AI settings to GitHub repo *variables*, where the workflow
+ * reads them. The admin edits the card; the next ticket runs on the new
+ * provider — no redeploys to change a model.
+ *
+ * The API key is deliberately NOT mirrored here: repo variables are readable
+ * by anyone with repo read access, and repo *secrets* need a libsodium sealed
+ * box this server has no dependency for. The key is pasted once as a repo
+ * secret (AGENT_AI_API_KEY) or left as the existing TOKENROUTER_API_KEY —
+ * both are documented on the card and in FEEDBACK-PIPELINE.md.
+ */
+export async function syncAgentAiToRepo(): Promise<void> {
+  const ghc = await readGithubToken();
+  if (!ghc) return;
+  const row = await db.queryOne<{ config: Record<string, string> }>(
+    `SELECT config FROM ipy_integration WHERE provider = 'github_agent' AND is_active = true`,
+  );
+  const cfg = row?.config ?? {};
+
+  const setVariable = async (name: string, value: string): Promise<void> => {
+    const headers = {
+      authorization: `Bearer ${ghc.token}`,
+      accept: 'application/vnd.github+json',
+      'x-github-api-version': '2022-11-28',
+      'user-agent': 'ipropy-crm',
+    };
+    // Create-or-update: GitHub has no upsert for variables. A 409 on POST
+    // means "already exists" — fall through to the PATCH.
+    const post = await fetch(`https://api.github.com/repos/${ghc.repo}/actions/variables`, {
+      method: 'POST', headers, body: JSON.stringify({ name, value }),
+      signal: AbortSignal.timeout(15_000),
+    }).catch(() => null);
+    if (post?.status === 201) return;
+    await fetch(`https://api.github.com/repos/${ghc.repo}/actions/variables/${name}`, {
+      method: 'PATCH', headers, body: JSON.stringify({ name, value }),
+      signal: AbortSignal.timeout(15_000),
+    }).catch((err) => logger.warn({ err, name }, 'could not set repo variable'));
+  };
+
+  await setVariable('AGENT_AI_BASE_URL', cfg.aiBaseUrl || 'https://api.tokenrouter.com/v1');
+  await setVariable('AGENT_AI_MODEL', cfg.aiModel || 'z-ai/glm-5.3-free');
+}
+
 // ---------------------------------------------------------------------------
 // The REST half: everything GitHub's API needs, wrapped small.
 // ---------------------------------------------------------------------------
