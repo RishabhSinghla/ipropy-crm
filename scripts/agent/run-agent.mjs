@@ -27,6 +27,7 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import https from 'node:https';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const API = process.env.TOKENROUTER_BASE_URL || 'https://api.tokenrouter.com/v1';
@@ -86,21 +87,54 @@ async function throttle() {
 }
 
 /** One LLM turn. A 429 waits 65s; an empty length-truncated reply doubles the ceiling once — a reasoning model can spend the whole budget on hidden thinking before writing anything, which is a working call that looks like a failure. */
+/**
+ * POST with an honest 480-second ceiling.
+ *
+ * Not undici's `fetch`: Node's global fetch aborts at a hidden 300s
+ * `headersTimeout`, so an AbortSignal of 480s is a promise the transport
+ * does not keep — measured as `Headers Timeout Error` at exactly 05:00 on
+ * a request the gateway would have answered. `node:https` alone gives every
+ * phase of the request one clock.
+ */
+function postJson(url, body, headers, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const req = https.request(url, {
+      method: 'POST',
+      headers: { ...headers, 'content-length': Buffer.byteLength(body) },
+      timeout: timeoutMs,
+    }, (res) => {
+      let data = '';
+      res.setEncoding('utf8');
+      res.on('data', (c) => { data += c; });
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, text: data }));
+    });
+    req.on('timeout', () => { req.destroy(new Error(`request exceeded ${Math.round(timeoutMs / 1000)}s`)); });
+    req.on('error', reject);
+    req.end(body);
+  });
+}
+
 async function llm(messages, maxTokens = 8000) {
   let ceiling = maxTokens;
   let lengthRetries = 0;
   let serverRetries = 0;
+  let networkRetries = 0;
   for (let attempt = 1; ; attempt++) {
     await throttle();
-    const res = await fetch(`${API}/chat/completions`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${KEY}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ model: MODEL, messages, max_tokens: ceiling, temperature: 0.2 }),
-      // 480s, not 300: the free gateway queues long-context requests, and
-      // measured latencies for a 20+-turn conversation reach 5-7 minutes.
-      // Aborting at 5 killed more finished answers than it saved.
-      signal: AbortSignal.timeout(480_000),
-    });
+    const payload = JSON.stringify({ model: MODEL, messages, max_tokens: ceiling, temperature: 0.2 });
+    let res;
+    try {
+      res = await postJson(`${API}/chat/completions`, payload, {
+        authorization: `Bearer ${KEY}`, 'content-type': 'application/json',
+      }, 480_000);
+    } catch (err) {
+      if (networkRetries >= 4) throw new Error(`network failed after 4 retries: ${err.message}`);
+      networkRetries += 1;
+      console.log(`network error (${err.message}) — waiting 20s (retry ${networkRetries})`);
+      await new Promise((r) => setTimeout(r, 20_000));
+      lastCall = 0;
+      continue;
+    }
     if (res.status === 429) {
       if (attempt >= 6) throw new Error('rate limit did not clear after 6 tries');
       console.log(`429 — waiting 65s (attempt ${attempt})`);
@@ -119,8 +153,9 @@ async function llm(messages, maxTokens = 8000) {
       lastCall = 0;
       continue;
     }
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(`tokenrouter ${res.status}: ${JSON.stringify(json).slice(0, 300)}`);
+    let json;
+    try { json = JSON.parse(res.text); } catch { json = {}; }
+    if (res.status !== 200) throw new Error(`tokenrouter ${res.status}: ${res.text.slice(0, 300)}`);
     const content = json.choices?.[0]?.message?.content;
     if (typeof content !== 'string' || !content.trim()) {
       if (json.choices?.[0]?.finish_reason === 'length' && lengthRetries < 2) {
