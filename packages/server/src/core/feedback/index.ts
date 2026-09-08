@@ -547,9 +547,21 @@ async function advanceOne(ghc: { token: string; repo: string }, fb: OpenFeedback
     method: 'GET', token: ghc.token, path: `/repos/${ghc.repo}/issues/${fb.issue_number}`,
   });
 
-  // A human closed the issue without a merge — respect it as "declined"
-  // unless the agent already merged, which the PR check below catches.
-  if (issue.state === 'closed' && !issue.pull_request) {
+  // The PR is read before the issue's closure is judged. A merged PR closes
+  // its issue — "Fixes #N" auto-closes on the squash — and a poll that saw
+  // the closure first would report a live, deployed fix as a declined ticket,
+  // and a declined row is terminal: the reporter would never be asked to
+  // verify the very fix that just shipped.
+  let pr: GhPull | null = null;
+  try {
+    pr = await findLinkedPr({ repo: ghc.repo, token: ghc.token, branch: `ai/${fb.issue_number}` });
+  } catch { /* no PR yet — normal mid-work state */ }
+
+  // A human closed the issue: a merged PR still means a shipped fix (handled
+  // below), but no PR at all — or an unmerged one — means the work was
+  // stopped before it shipped. Respect it as "declined". (The agent's own
+  // no-change verdict closes its issue and lands here on purpose.)
+  if (issue.state === 'closed' && (!pr || !pr.merged)) {
     await setStatus(fb.id, 'declined', 'Ticket band kar di gayi. Agar zaroorat ho to naya report bhejein.');
     await notify({
       userId: fb.user_id, kind: 'feedback',
@@ -559,13 +571,6 @@ async function advanceOne(ghc: { token: string; repo: string }, fb: OpenFeedback
     });
     return;
   }
-
-  // Find the PR by branch convention: the agent works on ai/<issue>-<short>.
-  const branch = `ai/${fb.issue_number}`;
-  let pr: GhPull | null = null;
-  try {
-    pr = await findLinkedPr({ repo: ghc.repo, token: ghc.token, branch });
-  } catch { /* no PR yet — normal mid-work state */ }
 
   if (!pr) {
     if (fb.status !== 'triaging' && fb.status !== 'reopened') {

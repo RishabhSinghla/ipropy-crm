@@ -195,6 +195,11 @@ export default function RecordForm({
       // Clear a dependent picklist when its parent changes to an incompatible value.
       for (const dep of module.picklistDependencies ?? []) {
         if (dep.sourceField !== name) continue;
+        // An unmapped parent (a city the dependency map has never heard of)
+        // means "no localities are known for it", not "every locality is
+        // wrong" — clearing the child here once wiped a stored locality on
+        // any unrelated change of its city.
+        if (!Object.hasOwn(dep.mapping, String(value))) continue;
         const allowed = dep.mapping[String(value)] ?? [];
         const current = next[dep.targetField];
         if (Array.isArray(current)) {
@@ -228,6 +233,8 @@ export default function RecordForm({
     if (!dep) return undefined;
     const sourceValue = values[dep.sourceField];
     if (!sourceValue) return undefined;
+    // An unmapped parent narrows nothing — there is no list to narrow to.
+    if (!Object.hasOwn(dep.mapping, String(sourceValue))) return undefined;
     return dep.mapping[String(sourceValue)] ?? [];
   };
 

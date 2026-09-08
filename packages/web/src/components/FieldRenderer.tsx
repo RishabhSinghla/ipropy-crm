@@ -15,6 +15,7 @@ import {
   Check, ChevronDown, ExternalLink, ImagePlus, Loader2, Mail, MapPin, Phone, Search, Video, X,
 } from 'lucide-react';
 import { api, tokenStore } from '../lib/api';
+import { optionsWithValue } from '../lib/picklistOptions';
 import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
 import { Avatar, Badge, ScoreChip } from './ui';
@@ -409,7 +410,13 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
         />
       );
 
-    case 'picklist':
+    case 'picklist': {
+      // A stored value no option backs — a locality from before the picklist
+      // knew that city, a deleted option — must still render: a select with
+      // no matching option shows blank, and the next save writes that blank
+      // over the record. Same rule the phone control applies to a stored
+      // country code whose option was deleted.
+      const opts = optionsWithValue(options, value);
       return (
         <div className="relative">
           <select
@@ -421,11 +428,12 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
             autoFocus={autoFocus}
           >
             <option value="">— Select —</option>
-            {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            {opts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
           <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         </div>
       );
+    }
 
     case 'multipicklist':
       return <MultiSelect options={options} value={(value as string[]) ?? []} onChange={onChange} disabled={readOnly} />;

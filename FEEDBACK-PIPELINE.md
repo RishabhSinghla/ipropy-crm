@@ -53,6 +53,11 @@ Papa (any page) → 🐞 Report → text + optional screenshots + optional voice
 - **PR stays open forever:** check the PR's checks on GitHub. A red check is a
   real failure — the agent will not be auto-merged. Comment `ai: go` after
   fixing, or look yourself.
+- **"No change needed":** when the agent investigates and concludes the report
+  needs no code change, it closes the issue itself and posts why. The report
+  then shows as closed in the CRM — nothing stays stuck on "AI samajh raha
+  hai". If the verdict is wrong, comment `ai: go` on the issue and it takes
+  another look.
 - **Everything merged but the fix is not live:** check the Render deploy of the
   merge commit (`gh api repos/RishabhSinghla/ipropy-crm/deployments`).
 - **Turn off auto-merge:** set `autoMerge` = `false` on the GitHub card. Every
