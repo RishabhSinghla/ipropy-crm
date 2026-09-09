@@ -7,6 +7,8 @@
  * what to do — give it to an AI engineer, fix it themselves, whatever.
  *
  * No GitHub issues, no autonomous agents, no poller. Just: report → AI understands → email.
+ * (The email is the whole delivery: if it fails, the report exists only in the
+ * CRM's own list — which is why tests/feedbackEmail.test.ts pins this flow.)
  */
 
 import { db } from '../../db/pool.js';
