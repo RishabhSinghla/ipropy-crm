@@ -21,7 +21,7 @@ import { complete } from '../../ai/client.js';
 import { untrustedRule, fenceId, fenced } from '../../ai/untrusted.js';
 import { makeSecretBox } from '../secretbox.js';
 import { mergeIfGreen } from './mergeGate.js';
-import { analyzeAndEmail } from './analyzeAndEmail.js';
+import { analyzeAndEmail } from './analyzeAndEmail';
 
 /** Where the GitHub half of the config lives, same as every other integration. */
 export interface GithubConfig {
@@ -376,7 +376,7 @@ export async function submitFeedback(input: SubmitInput): Promise<string> {
   await logEvent(row.id, 'submitted', 'Report mil gayi — AI analyze kar raha hai, owner ko email bhej dega.');
 
   // Fire and forget: the reporter's request is done; AI analysis + email happen in background.
-  void analyzeAndEmail(row.id).catch((err) => {
+  void analyzeAndEmail(row.id).catch((err: Error) => {
     logger.error({ err, feedbackId: row.id }, 'analyzeAndEmail failed');
   });
 
