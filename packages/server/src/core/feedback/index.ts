@@ -21,6 +21,7 @@ import { complete } from '../../ai/client.js';
 import { untrustedRule, fenceId, fenced } from '../../ai/untrusted.js';
 import { makeSecretBox } from '../secretbox.js';
 import { mergeIfGreen } from './mergeGate.js';
+import { analyzeAndEmail } from './analyzeAndEmail.js';
 
 /** Where the GitHub half of the config lives, same as every other integration. */
 export interface GithubConfig {
@@ -359,9 +360,11 @@ export interface SubmitInput {
 }
 
 /**
- * Store the report, then start the pipeline without blocking the response:
- * triage, issue creation and (later) the agent all happen after the HTTP 201
- * has gone back, because none of them change what the reporter sees next.
+ * Store the report, then fire AI+email in the background.
+ *
+ * The report is stored first (so it's never lost), then analyzeAndEmail runs
+ * after the HTTP 201 returns to the client — that function uses Gemini vision
+ * to read screenshots, builds a super-prompt, and emails it to the owner.
  */
 export async function submitFeedback(input: SubmitInput): Promise<string> {
   const row = await db.queryOne<{ id: string; share_token: string }>(
@@ -370,11 +373,11 @@ export async function submitFeedback(input: SubmitInput): Promise<string> {
     [input.userId, input.text, input.kind, input.severity, input.moduleName, input.recordId, input.route],
   );
   if (!row) throw new Error('feedback insert failed');
-  await logEvent(row.id, 'submitted', 'Report mil gayi — AI team dekh rahi hai.');
+  await logEvent(row.id, 'submitted', 'Report mil gayi — AI analyze kar raha hai, owner ko email bhej dega.');
 
-  // Fire and forget: the reporter's request is done; the machinery starts.
-  void startPipeline(row.id).catch((err) => {
-    logger.error({ err, feedbackId: row.id }, 'feedback pipeline failed to start');
+  // Fire and forget: the reporter's request is done; AI analysis + email happen in background.
+  void analyzeAndEmail(row.id).catch((err) => {
+    logger.error({ err, feedbackId: row.id }, 'analyzeAndEmail failed');
   });
 
   return row.id;

@@ -127,9 +127,11 @@ export function ReportProblemModal({ onClose }: { onClose: () => void }): JSX.El
     speech.continuous = true;
     speech.interimResults = false;
     speech.onresult = (e) => {
-      let chunk = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) chunk += e.results[i][0].transcript;
-      setText((prev) => (prev ? `${prev} ${chunk.trim()}` : chunk.trim()));
+      // Get the final transcript from the last result in this batch.
+      // With interimResults=false only final results are returned.
+      const transcript = e.results[e.results.length - 1]?.[0]?.transcript ?? '';
+      if (!transcript.trim()) return;
+      setText((prev) => (prev ? `${prev} ${transcript.trim()}` : transcript.trim()));
     };
     speech.onend = () => setListening(false);
     speech.onerror = () => setListening(false);
