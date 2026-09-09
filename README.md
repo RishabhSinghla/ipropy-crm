@@ -325,7 +325,7 @@ npm run db:backup      # pg_dump the DB to backups/ipropy-<timestamp>.dump
 npm run db:backup:verify  # restore newest dump to a scratch DB, compare counts, drop it
 npm run db:restore <dump> # replace the live DB from a backup (see PROJECT_HANDOVER.md §9)
 
-npm test               # 592 unit tests, no database needed
+npm test               # 597 unit tests, no database needed
 npm run test:integration  # API + recordService against a real throwaway Postgres
 npm run test:e2e       # Playwright, against a real browser and the dev stack
 ```
@@ -355,7 +355,7 @@ Three layers, fastest first:
 
 | | |
 |---|---|
-| `npm test` | **592 unit tests**, no database — 515 server, 69 web and 8 MCP |
+| `npm test` | **597 unit tests**, no database — 520 server, 69 web and 8 MCP |
 | `npm run test:integration` | **421 tests** against real throwaway Postgres databases; never point it at a database you care about |
 | `npm run test:e2e` | **81 Playwright tests** across desktop and mobile browser projects |
 | `npm audit --audit-level=moderate` | Dependency advisory gate, including build tooling |

@@ -77,7 +77,7 @@ feedbackRouter.post('/', upload.array('screenshots', 4), asyncHandler(async (req
     );
   }
 
-  res.status(201).json({ id, message: 'Report mil gayi! AI engineer turant dekhne laga hai.' });
+  res.status(201).json({ id, message: 'Report mil gayi! Poori report email par pahunch gayi hai.' });
 }));
 
 feedbackRouter.get('/', asyncHandler(async (req, res) => {
@@ -94,7 +94,7 @@ feedbackRouter.post('/:id/verify', asyncHandler(async (req, res) => {
   const user = getUser(req);
   const input = verifySchema.parse(req.body);
   await verifyFeedback({ feedbackId: req.params.id, userId: user.id, ok: input.ok, note: input.note });
-  res.json({ ok: true, message: input.ok ? 'Shukriya! Note kar liya.' : 'Theek hai — AI engineer ko bhej diya dobara dekhne ke liye.' });
+  res.json({ ok: true, message: input.ok ? 'Shukriya! Note kar liya.' : 'Theek hai — dobara dekhne ke liye report phir se khul gayi.' });
 }));
 
 /** A comment from the reporter mid-flight: context the agent should have. */

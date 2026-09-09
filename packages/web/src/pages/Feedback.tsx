@@ -70,7 +70,7 @@ export default function FeedbackPage(): JSX.Element {
     if (!text?.trim()) return;
     try {
       await api.feedbackNote(item.id, text.trim());
-      toast.success('Note add ho gaya — AI engineer ko dikhega.');
+      toast.success('Note add ho gaya — report ke saath saved.');
       void qc.invalidateQueries({ queryKey: ['feedback'] });
     } catch (err) {
       toast.error('Nahi bana', err instanceof Error ? err.message : 'Dobara try karein.');
