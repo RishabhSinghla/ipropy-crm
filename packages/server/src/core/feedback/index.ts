@@ -21,7 +21,7 @@ import { complete } from '../../ai/client.js';
 import { untrustedRule, fenceId, fenced } from '../../ai/untrusted.js';
 import { makeSecretBox } from '../secretbox.js';
 import { mergeIfGreen } from './mergeGate.js';
-import { analyzeAndEmail } from './analyzeAndEmail';
+import { analyzeAndEmail } from './analyzeAndEmail.js';
 
 /** Where the GitHub half of the config lives, same as every other integration. */
 export interface GithubConfig {
