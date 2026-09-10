@@ -35,6 +35,11 @@ export default function ModuleBuilder(): JSX.Element {
     queryKey: ['picklist-catalogue'],
     queryFn: () => api.picklistCatalogue(),
   });
+  const { data: removalImpact, isFetching: isLoadingRemovalImpact } = useQuery({
+    queryKey: ['field-impact', pendingRemoval?.field.id],
+    queryFn: () => api.fieldImpact(pendingRemoval!.field.id),
+    enabled: pendingRemoval?.mode === 'delete',
+  });
   const requestedModule = searchParams.get('module');
   const selectedModule = requestedModule && fieldModules.some((m) => m.name === requestedModule)
     ? requestedModule
@@ -541,7 +546,7 @@ export default function ModuleBuilder(): JSX.Element {
           ? `Delete “${pendingRemoval.field.label}” permanently?`
           : `Hide “${pendingRemoval?.field.label}”?`}
         body={pendingRemoval?.mode === 'delete'
-          ? 'The field, every value stored in it, and its place in any view or layout are all removed. This cannot be undone — and it stays deleted when the app is next updated.'
+          ? `The field, every value stored in it, and its place in any view or layout are all removed. This cannot be undone — and it stays deleted when the app is next updated.${isLoadingRemovalImpact ? ' Checking where it is used…' : removalImpact && Object.values(removalImpact).some(Boolean) ? `\n\nImpact: used in ${Object.values(removalImpact).reduce((total, count) => total + count, 0)} place(s): ${Object.entries(removalImpact).filter(([, count]) => count).map(([kind, count]) => `${count} ${kind.replace(/([A-Z])/g, ' $1').toLowerCase()}`).join(', ')}. These references will be removed or updated with the field.` : '\n\nImpact: no saved CRM references found.'}`
           : 'The field comes off every screen but keeps its data, and you can restore it from this page at any time.'}
         confirmLabel={pendingRemoval?.mode === 'delete' ? 'Delete permanently' : 'Hide'}
         danger
