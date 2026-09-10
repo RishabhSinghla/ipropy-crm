@@ -894,14 +894,15 @@ function FieldEditor({
       // deliberately shown at the last safe moment: admin has all their new
       // field settings in front of them before deciding what invalid values do.
       if (isEdit && field && uitype !== field.uitype) {
-        const preview = await api.previewFieldConversion(field.id, { targetType: uitype, invalidStrategy });
+        const conversion = { targetType: uitype, invalidStrategy, defaultValue: field.defaultValue };
+        const preview = await api.previewFieldConversion(field.id, conversion);
         const note = preview.invalidRecords
           ? `\n\n${preview.invalidRecords} value(s) cannot convert and will be ${invalidStrategy === 'blank' ? 'cleared' : invalidStrategy === 'keep' ? 'kept as-is' : 'replaced with the default'}.`
           : '';
         if (!window.confirm(`Convert ${preview.totalRecords} existing record value(s) from ${field.uitype} to ${uitype}?\n\n${preview.convertibleRecords} can be converted.${note}\n\nThis is applied safely as one change.`)) {
           setSaving(false); return;
         }
-        await api.convertField(field.id, { targetType: uitype, invalidStrategy });
+        await api.convertField(field.id, conversion);
       }
       // Start from what is already stored. Rebuilding config from scratch — as
       // this did — silently discarded every key this form does not render, so

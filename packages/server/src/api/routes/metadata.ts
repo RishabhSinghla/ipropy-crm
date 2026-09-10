@@ -951,6 +951,14 @@ metadataRouter.post('/fields/:id/type-conversion', asyncHandler(async (req, res)
       field.storage === 'json' ? [field.column_name] : [],
     );
     let invalid = 0;
+    // "Keep" is meaningful for an already compatible value, but not for a
+    // value that the target control cannot read (for example free text in a
+    // Date field). Leaving it behind would preserve bytes while corrupting the
+    // field semantically, so require the admin to choose blank/default or map
+    // it first. The transaction has changed nothing at this point.
+    if (input.invalidStrategy === 'keep' && rows.rows.some((row) => !convertFieldValue(row.value, plan).ok)) {
+      throw new BadRequestError('Some values cannot use the new field type. Map them, clear them, or use a default value.');
+    }
     for (const row of rows.rows) {
       const converted = convertFieldValue(row.value, plan);
       if (!converted.ok) invalid++;
