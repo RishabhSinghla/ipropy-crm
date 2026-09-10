@@ -77,9 +77,13 @@ describe('matching when the price lives in an admin-created field', () => {
       .expect(201);
     fieldId = created.body.id;
 
-    const props = await request(app).get('/api/records/properties?pageSize=1')
-      .set('Authorization', `Bearer ${token}`).expect(200);
-    propertyId = props.body.rows[0].id;
+    // Picked in a fixed order. `LIMIT 1` with no ORDER BY returns whichever row
+    // Postgres reaches first, and that changes once an earlier test file has
+    // updated the table — so this passed alone and failed in the full run.
+    const chosen = await db.queryOne<{ record_id: string }>(
+      `SELECT p.record_id FROM ipy_e_properties p JOIN ipy_record r ON r.id = p.record_id
+        WHERE r.is_deleted = false ORDER BY p.record_id LIMIT 1`);
+    propertyId = chosen!.record_id;
     await request(app).patch(`/api/records/properties/${propertyId}`)
       .set('Authorization', `Bearer ${token}`).send({ [PRICE_FIELD]: PRICE, status: 'Available' }).expect(200);
     // The built-in columns are emptied, exactly as they are on production.
@@ -90,7 +94,8 @@ describe('matching when the price lives in an admin-created field', () => {
       `SELECT l.record_id, to_jsonb(l)->>'budget' AS budget FROM ipy_e_leads l JOIN ipy_record r ON r.id = l.record_id
         WHERE r.is_deleted = false
           AND COALESCE((to_jsonb(l)->>'is_converted')::boolean, false) = false
-          AND COALESCE(to_jsonb(l)->>'status','') NOT IN ('Junk','Lost') LIMIT 1`);
+          AND COALESCE(to_jsonb(l)->>'status','') NOT IN ('Junk','Lost')
+        ORDER BY l.record_id LIMIT 1`);
     leadId = lead!.record_id; previousBudget = lead!.budget;
     /*
       Budget is the only requirement for the duration.

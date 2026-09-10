@@ -10,6 +10,7 @@
 import { formatIndianPrice, type LeadScoreResult } from '@ipropy/shared';
 import { scoringThresholds, temperatureFor } from '../core/settings/scoring.js';
 import { db } from '../db/pool.js';
+import { priceField, priceSql } from '../core/settings/priceField.js';
 import { logger } from '../utils/logger.js';
 import { completeJson, isAiAvailable, saveInsight, REAL_ESTATE_SYSTEM } from './client.js';
 import { fenceId, fenced, fencedList, untrustedRule } from './untrusted.js';
@@ -97,16 +98,19 @@ async function countMatchingInventory(lead: Record<string, unknown>): Promise<nu
     that way. This is the same fix `matching.ts` already carries, and the same
     failure for the seventh time.
   */
+  // The price is whichever field Budget is mapped to. Naming the built-in
+  // columns meant "how much inventory fits this budget" answered zero for every
+  // lead once an admin created their own price field — and that count feeds the
+  // lead's score, so every score quietly shifted.
+  const price = await priceField();
   const row = await db.queryOne<{ count: number }>(
     `SELECT COUNT(*)::int AS count FROM ipy_e_properties p
      JOIN ipy_record r ON r.id = p.record_id
      WHERE r.is_deleted = false AND to_jsonb(p)->>'status' = 'Available'
-       AND COALESCE(
-             ipy_try_numeric(to_jsonb(p)->>'total_price'),
-             ipy_try_numeric(to_jsonb(p)->>'base_price')) <= $1 * 1.1
+       AND ${priceSql(price, '$3')} <= $1 * 1.1
        AND ($2::text[] = '{}' OR to_jsonb(p)->>'configuration' = ANY($2::text[])
                               OR to_jsonb(p)->>'bedrooms' = ANY($2::text[]))`,
-    [budgetMax, configs],
+    [budgetMax, configs, price.column],
   );
   return row?.count ?? 0;
 }

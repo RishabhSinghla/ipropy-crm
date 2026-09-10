@@ -10,6 +10,7 @@ import { formatArea, formatIndianPrice, type PropertyMatch, toSqFt } from '@ipro
 import { recordScopeSql, type ScopeContext } from '../core/permissions/index.js';
 import { scoringThresholds } from '../core/settings/scoring.js';
 import { matchingConfig, pairFor, mappedValue, type MatchingConfig } from '../core/settings/matching.js';
+import { priceFieldFrom, priceSql, priceFromRow, type PriceField } from '../core/settings/priceField.js';
 import { SqlParams } from '../core/query/builder.js';
 import { db } from '../db/pool.js';
 import { completeJson, isAiAvailable, saveInsight, REAL_ESTATE_SYSTEM } from './client.js';
@@ -41,39 +42,6 @@ function bedroomPropertyField(config: MatchingConfig): string {
 function areaPropertyField(config: MatchingConfig): string {
   const pair = pairFor(config, 'area');
   return pair?.propertyColumn ?? pair?.propertyField ?? 'area';
-}
-
-/**
- * Where the property's price lives, according to the Budget mapping.
- *
- * This used to be `total_price` and `base_price`, read from the top level of
- * `to_jsonb(p)` and nowhere else. Both are built-in columns, and an admin who
- * retires them and creates their own price field — `asking_price`, say — gets
- * a field the record shows, the export contains, the mapping screen points
- * Budget at, and matching cannot see. Worse than invisible: the SQL band is
- * `COALESCE(total, base) <= :max`, and NULL fails that comparison, so *every*
- * property drops out for any contact who stated a budget. Matching answers
- * "nothing suitable" for the whole desk and looks like bad scoring.
- *
- * An admin-created field is JSON-backed, so its value is inside
- * `custom_fields` rather than on the row — the same rule `recordService` uses.
- */
-function pricePropertyField(config: MatchingConfig): { column: string; storage: 'column' | 'json' } {
-  const pair = pairFor(config, 'budget');
-  const column = pair?.propertyColumn ?? pair?.propertyField;
-  return column
-    ? { column, storage: pair?.propertyStorage === 'json' ? 'json' : 'column' }
-    : { column: 'base_price', storage: 'column' };
-}
-
-/** The SQL for that field, with the built-in columns as a fallback. */
-function priceSql(price: { column: string; storage: 'column' | 'json' }, columnParam: string): string {
-  const mapped = price.storage === 'json'
-    ? `ipy_try_numeric(to_jsonb(p)->'custom_fields'->>${columnParam})`
-    : `ipy_try_numeric(to_jsonb(p)->>${columnParam})`;
-  return `COALESCE(${mapped},
-             ipy_try_numeric(to_jsonb(p)->>'total_price'),
-             ipy_try_numeric(to_jsonb(p)->>'base_price'))`;
 }
 
 function parsedBedrooms(row: PropertyRow): number | null {
@@ -172,10 +140,8 @@ function toPropertyRow(
   label: string,
   bedroomField: string,
   areaField: string,
-  price: { column: string; storage: 'column' | 'json' } = { column: 'base_price', storage: 'column' },
+  price: PriceField = { column: 'base_price', storage: 'column' },
 ): PropertyRow {
-  const custom = (raw.custom_fields ?? {}) as Record<string, unknown>;
-  const mappedPrice = price.storage === 'json' ? custom[price.column] : raw[price.column];
   return {
     record_id: String(raw.record_id),
     label,
@@ -185,7 +151,7 @@ function toPropertyRow(
     area_unit: str(raw.area_unit),
     total_price: num(raw.total_price),
     base_price: num(raw.base_price),
-    matched_price: num(mappedPrice),
+    matched_price: priceFromRow(raw, price),
     floor: num(raw.floor),
     facing: str(raw.facing),
     vastu_compliant: raw.vastu_compliant === true,
@@ -299,7 +265,7 @@ async function queryInventory(req: Requirement, config: MatchingConfig, limit: n
   const maxPrice = req.budget ? req.budget * (1 + grace) : null;
   const minPrice = req.budget ? req.budget * (1 - grace) : null;
   const bedroomField = bedroomPropertyField(config);
-  const price = pricePropertyField(config);
+  const price = priceFieldFrom(config);
   const wantedBedrooms = toList(req.configurations).map(bhkNumber).filter((n): n is number => n !== null);
 
   // One accumulator for the whole statement: the scope fragment appends its
@@ -791,7 +757,7 @@ export async function matchBuyersForProperty(
   const [{ matchFloor }, config] = await Promise.all([scoringThresholds(), matchingConfig()]);
   const bedroomField = bedroomPropertyField(config);
   const areaField = areaPropertyField(config);
-  const priceField = pricePropertyField(config);
+  const mappedPriceField = priceFieldFrom(config);
   const propertyRaw = await db.queryOne<{ record_id: string; label: string; row: Record<string, unknown> }>(
     `SELECT p.record_id, r.label, to_jsonb(p) AS row
      FROM ipy_e_properties p JOIN ipy_record r ON r.id = p.record_id
@@ -799,7 +765,7 @@ export async function matchBuyersForProperty(
     [propertyId],
   );
   if (!propertyRaw) return [];
-  const property = toPropertyRow(propertyRaw.row, propertyRaw.label, bedroomField, areaField, priceField);
+  const property = toPropertyRow(propertyRaw.row, propertyRaw.label, bedroomField, areaField, mappedPriceField);
 
   const price = property.matched_price ?? property.total_price ?? property.base_price ?? 0;
 

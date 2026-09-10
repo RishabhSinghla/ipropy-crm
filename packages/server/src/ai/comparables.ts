@@ -20,6 +20,7 @@
  */
 import { formatIndianPrice } from '@ipropy/shared';
 import { db } from '../db/pool.js';
+import { priceField, priceSql } from '../core/settings/priceField.js';
 
 /**
  * The fewest comparable units worth speaking about.
@@ -72,9 +73,19 @@ export async function comparablesFor(input: {
   // locality, bedrooms, status and every area field are fields an admin may
   // delete, and naming a deleted one raises 42703 — which fails the statement
   // rather than the row, and turns a price hint into a 400 on the record form.
+  /*
+    The price is whichever field Budget is mapped to — see core/settings/
+    priceField.ts. Naming `total_price`/`base_price` here meant a CRM whose
+    admin created their own price field had every comparable priced at NULL,
+    filtered out by the `> 0` below, and the record form showed no price hint
+    at all rather than a wrong one.
+  */
+  const price = await priceField();
+  // $6, after the five the statement already binds.
+  const priceExpr = priceSql(price, '$6');
+
   const rows = await db.query<Row>(
-    `SELECT COALESCE(ipy_try_numeric(to_jsonb(p)->>'total_price'),
-                     ipy_try_numeric(to_jsonb(p)->>'base_price')) AS price,
+    `SELECT ${priceExpr} AS price,
             to_jsonb(p)->>'status' AS status,
             CASE WHEN to_jsonb(p)->>'status' IN ('Sold','Registered','Agreement Done','Booked')
                  THEN EXTRACT(DAY FROM (r.updated_at - r.created_at))::int
@@ -84,8 +95,7 @@ export async function comparablesFor(input: {
      WHERE r.is_deleted = false
        AND to_jsonb(p)->>'locality' = $1
        AND ipy_try_numeric(to_jsonb(p)->>'bedrooms') = $2
-       AND COALESCE(ipy_try_numeric(to_jsonb(p)->>'total_price'),
-                    ipy_try_numeric(to_jsonb(p)->>'base_price')) > 0
+       AND ${priceExpr} > 0
        AND r.created_at > now() - ($3 || ' days')::interval
        AND ($4::uuid IS NULL OR p.record_id <> $4)
        -- Same size bracket, or no size recorded either side. A 700 sq ft and a
@@ -94,7 +104,7 @@ export async function comparablesFor(input: {
        AND ($5::numeric IS NULL OR ipy_try_numeric(to_jsonb(p)->>'area') IS NULL
             OR ipy_try_numeric(to_jsonb(p)->>'area')
                  BETWEEN $5 * ${1 - AREA_TOLERANCE} AND $5 * ${1 + AREA_TOLERANCE})`,
-    [input.locality, input.bedrooms, String(MAX_AGE_DAYS), input.excludeRecordId ?? null, input.area],
+    [input.locality, input.bedrooms, String(MAX_AGE_DAYS), input.excludeRecordId ?? null, input.area, price.column],
   );
 
   if (rows.rows.length < MIN_COMPARABLES) return null;
