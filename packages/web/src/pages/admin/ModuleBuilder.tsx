@@ -770,6 +770,7 @@ function FieldEditor({
       ?? [],
   );
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [invalidStrategy, setInvalidStrategy] = useState<'blank' | 'default' | 'keep'>('blank');
 
   const [saving, setSaving] = useState(false);
 
@@ -831,6 +832,20 @@ function FieldEditor({
 
     setSaving(true);
     try {
+      // Type changes use the explicit conversion endpoint, rather than a
+      // metadata patch that could leave old values unreadable. The preview is
+      // deliberately shown at the last safe moment: admin has all their new
+      // field settings in front of them before deciding what invalid values do.
+      if (isEdit && field && uitype !== field.uitype) {
+        const preview = await api.previewFieldConversion(field.id, { targetType: uitype, invalidStrategy });
+        const note = preview.invalidRecords
+          ? `\n\n${preview.invalidRecords} value(s) cannot convert and will be ${invalidStrategy === 'blank' ? 'cleared' : invalidStrategy === 'keep' ? 'kept as-is' : 'replaced with the default'}.`
+          : '';
+        if (!window.confirm(`Convert ${preview.totalRecords} existing record value(s) from ${field.uitype} to ${uitype}?${note}\n\nThis is applied safely as one change.`)) {
+          setSaving(false); return;
+        }
+        await api.convertField(field.id, { targetType: uitype, invalidStrategy });
+      }
       // Start from what is already stored. Rebuilding config from scratch — as
       // this did — silently discarded every key this form does not render, so
       // editing Mobile's label wiped its digit rules and country codes.
@@ -970,6 +985,17 @@ function FieldEditor({
             </select>
             {TYPE_HELP[uitype] && (
               <p className="mt-1.5 text-2xs leading-relaxed text-muted">{TYPE_HELP[uitype]}</p>
+            )}
+            {isEdit && field && uitype !== field.uitype && (
+              <div className="mt-2 rounded-md bg-amber-50 p-2 text-2xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+                <p className="font-medium">Existing values will be analysed before changing this type.</p>
+                <label className="mt-1 block">If a value cannot convert</label>
+                <select className="input mt-1 h-7 w-full py-0 text-2xs" value={invalidStrategy} onChange={(e) => setInvalidStrategy(e.target.value as typeof invalidStrategy)}>
+                  <option value="blank">Clear that value</option>
+                  <option value="keep">Keep its original value</option>
+                  <option value="default">Use the field default</option>
+                </select>
+              </div>
             )}
           </div>
           <div>

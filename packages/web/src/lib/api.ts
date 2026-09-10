@@ -647,6 +647,10 @@ export const api = {
   deleteModule: (name: string, force = false) => del(`/api/meta/modules/${name}${force ? '?force=true' : ''}`),
   createField: (module: string, data: Record<string, unknown>) => post(`/api/meta/modules/${module}/fields`, data),
   updateField: (id: string, data: Record<string, unknown>) => patch(`/api/meta/fields/${id}`, data),
+  previewFieldConversion: (id: string, data: { targetType: string; invalidStrategy: 'blank' | 'default' | 'keep'; valueMap?: Record<string, string>; defaultValue?: unknown }) =>
+    post<{ totalRecords: number; convertibleRecords: number; invalidRecords: number; invalidSamples: { recordId: string; value: unknown }[] }>(`/api/meta/fields/${id}/type-conversion/preview`, data),
+  convertField: (id: string, data: { targetType: string; invalidStrategy: 'blank' | 'default' | 'keep'; valueMap?: Record<string, string>; defaultValue?: unknown }) =>
+    post<{ ok: boolean; convertedRecords: number; invalidRecords: number }>(`/api/meta/fields/${id}/type-conversion`, data),
   /** `permanent` drops the column and its data; otherwise the field is only hidden. */
   deleteField: (id: string, permanent = false) =>
     del<{ ok: boolean; deactivated?: boolean; deleted?: boolean; hadValues?: number }>(
