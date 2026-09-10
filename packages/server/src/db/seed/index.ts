@@ -34,6 +34,7 @@ import { reconcileColumns } from './reconcileColumns.js';
 import { pruneFieldRefs } from './pruneFieldRefs.js';
 import { seedGroups, seedProfiles, seedRoles, seedSharing, seedSystemUser, seedUsers, type SeededUser } from './rbac.js';
 import { seedDashboards } from './dashboards.js';
+import { seedMatchingMappings } from './matchingMappings.js';
 import {
   seedAssignmentRules, seedIntegrations, seedSettings, seedSlaPolicies,
   seedTemplates, seedWebforms, seedWorkflows,
@@ -134,7 +135,8 @@ export async function seed(): Promise<void> {
     await seedSettings(tx);
     await seedIntegrations(tx);
     await seedWebforms(tx);
-    logger.info('  dashboards, workflows, templates and settings ✓');
+    const mappings = await seedMatchingMappings(tx);
+    logger.info(`  dashboards, workflows, templates and settings ✓${mappings ? `  matching pairs ✓ (${mappings})` : ''}`);
   });
 
   // Point every seeded user at the default dashboard.
