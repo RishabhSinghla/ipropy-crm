@@ -16,9 +16,33 @@ export interface ExportRow { values: Record<string, unknown>; display?: Record<s
 
 export interface ResolvedExportColumn { field: FieldMeta; header: string }
 
+/*
+  An amount and its unit travel together.
+
+  `budget` and `area` each carry a companion picklist — `budget_unit`,
+  `area_unit` — holding whether the number is a total or per sq. ft. Those
+  companions are `display_type: hidden`, because the form shows one combined
+  control rather than two boxes, so a plain export dropped them and wrote
+  ₹26,000,000 in a column that might have meant per square yard. A spreadsheet
+  is exactly where nobody can ask.
+
+  So a field that names a `unitField` gets its unit in the next column. That is
+  the "separate columns" half of the brief (`Demand | Demand Unit`); the number
+  stays a real number so Excel can still sum and sort it.
+*/
+function withUnitCompanion(module: ModuleMeta, column: ResolvedExportColumn): ResolvedExportColumn[] {
+  const unitName = typeof column.field.config.unitField === 'string' ? column.field.config.unitField : null;
+  if (!unitName) return [column];
+  const unit = module.fields.find((f) => f.name === unitName && f.isActive);
+  if (!unit) return [column];
+  return [column, { field: unit, header: `${column.header} Unit` }];
+}
+
 export function resolveExportColumns(module: ModuleMeta, requested?: ExportColumn[]): ResolvedExportColumn[] {
   const candidates = module.fields.filter((f) => f.isActive && f.displayType !== 'hidden' && f.config.exportable !== false);
-  if (!requested?.length) return candidates.map((field) => ({ field, header: field.label }));
+  if (!requested?.length) {
+    return candidates.flatMap((field) => withUnitCompanion(module, { field, header: field.label }));
+  }
   const byId = new Map(candidates.map((f) => [f.internalId, f]));
   const seen = new Set<string>();
   return requested.flatMap((column): ResolvedExportColumn[] => {
@@ -27,7 +51,7 @@ export function resolveExportColumns(module: ModuleMeta, requested?: ExportColum
     // because an old template remembers it.
     if (!field || seen.has(field.internalId)) return [];
     seen.add(field.internalId);
-    return [{ field, header: column.header?.trim() || field.label }];
+    return withUnitCompanion(module, { field, header: column.header?.trim() || field.label });
   });
 }
 

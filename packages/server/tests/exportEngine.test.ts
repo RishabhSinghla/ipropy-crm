@@ -8,6 +8,29 @@ describe('universal export engine', () => {
   const demand = field({ name: 'demand', uitype: 'currency' });
   const meta = module({ name: 'properties', fields: [phone, demand] });
 
+  it('exports the unit beside the amount it belongs to', async () => {
+    /*
+      ₹26,000,000 in a spreadsheet is not an answer on its own — the CRM stores
+      whether that is a total or a rate per square yard in a companion picklist
+      the form hides, and an export that drops it makes the number unreadable
+      to the one person who cannot ask.
+    */
+    const budgetUnit = field({ name: 'budget_unit', uitype: 'picklist', displayType: 'hidden' });
+    const budget = field({ name: 'budget', uitype: 'currency', label: 'Budget / Demand', config: { unitField: 'budget_unit' } });
+    const withUnits = module({ name: 'leads', fields: [budget, budgetUnit] });
+
+    const columns = resolveExportColumns(withUnits, [{ fieldId: budget.internalId }]);
+    expect(columns.map((c) => c.header)).toEqual(['Budget / Demand', 'Budget / Demand Unit']);
+
+    // And on a default export, where no columns were chosen at all: the unit
+    // sits immediately after its amount rather than at the end of the sheet.
+    const all = resolveExportColumns(withUnits).map((c) => c.header);
+    expect(all.indexOf('Budget / Demand Unit')).toBe(all.indexOf('Budget / Demand') + 1);
+
+    const file = await buildExport('csv', columns, [{ values: { budget: 26000000, budget_unit: 'Per Sq. Yd.' } }]);
+    expect(file.content.toString('utf8')).toContain('26000000,Per Sq. Yd.');
+  });
+
   it('uses permanent Field IDs and preserves phone numbers in Excel', async () => {
     const columns = resolveExportColumns(meta, [
       { fieldId: demand.internalId, header: 'Asking price' },

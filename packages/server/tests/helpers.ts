@@ -14,6 +14,8 @@ export interface FieldSpec {
   isReadonly?: boolean;
   isMandatory?: boolean;
   displayType?: FieldMeta['displayType'];
+  /** Defaults to the name with underscores as spaces; set it when the test is about labels. */
+  label?: string;
   /** extra config bag, e.g. `{ __record: true }` for ipy_record-backed fields */
   config?: Record<string, unknown>;
 }
@@ -27,7 +29,7 @@ export function field(spec: FieldSpec, moduleName = 'leads'): FieldMeta {
     moduleName,
     blockId: null,
     name: spec.name,
-    label: spec.name.replace(/_/g, ' '),
+    label: spec.label ?? spec.name.replace(/_/g, ' '),
     uitype: spec.uitype ?? 'string',
     storage: spec.storage ?? 'column',
     columnName: spec.columnName ?? spec.name,
