@@ -162,6 +162,27 @@ function toPropertyRow(
   };
 }
 
+/**
+ * A list field's value, as a list.
+ *
+ * `preferred_locations` and `configuration` are multi-picklists in the template
+ * and hold arrays — but an admin may retype a field, an import may write a
+ * plain string, and a single-select stores one. `as string[]` is a cast, not a
+ * check, so the string sailed through and produced two different production
+ * failures on two different leads: `req.configurations?.map is not a function`
+ * (a 500), and `malformed array literal: "Greenfield Colony"` when the same
+ * value reached a `::text[]` cast (a 400). Both looked like matching being
+ * "not proper" rather than matching being dead.
+ */
+function toList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((v) => String(v)).filter((v) => v !== '');
+  if (typeof value === 'string' && value.trim() !== '') {
+    // A comma-separated cell is what an import leaves behind.
+    return value.split(',').map((v) => v.trim()).filter((v) => v !== '');
+  }
+  return [];
+}
+
 /** Pull the requirement off a lead or contact record. */
 export async function loadRequirement(recordId: string): Promise<Requirement | null> {
   // The whole row as JSON rather than a hand-written column list.
@@ -199,8 +220,8 @@ export async function loadRequirement(recordId: string): Promise<Requirement | n
     }
     return {
       budget,
-      configurations: (lead.configuration as string[]) ?? [],
-      locations: (lead.preferred_locations as string[]) ?? [],
+      configurations: toList(lead.configuration),
+      locations: toList(lead.preferred_locations),
       area: lead.area as number | null,
       areaUnit: (lead.area_unit as string | null) ?? 'sqft',
       possessionTimeline: lead.possession_timeline as string | null,
@@ -239,7 +260,7 @@ async function queryInventory(req: Requirement, config: MatchingConfig, limit: n
   const maxPrice = req.budget ? req.budget * (1 + grace) : null;
   const minPrice = req.budget ? req.budget * (1 - grace) : null;
   const bedroomField = bedroomPropertyField(config);
-  const wantedBedrooms = req.configurations?.map(bhkNumber).filter((n): n is number => n !== null) ?? [];
+  const wantedBedrooms = toList(req.configurations).map(bhkNumber).filter((n): n is number => n !== null);
 
   // One accumulator for the whole statement: the scope fragment appends its
   // own params, so numbering by hand past it would collide.
@@ -250,7 +271,8 @@ async function queryInventory(req: Requirement, config: MatchingConfig, limit: n
   const limitP = params.add(limit);
   const bedroomFieldP = params.add(bedroomField);
   const wantedBedroomsP = params.add(wantedBedrooms.length ? wantedBedrooms : [-1]);
-  const locationP = params.add(req.locations?.length ? req.locations : ['']);
+  const locations = toList(req.locations);
+  const locationP = params.add(locations.length ? locations : ['']);
   // The permission fragment for the candidate rows, or nothing when this
   // caller can see the whole table — a workflow or the scheduler has no user.
   const scopeSql = scope
@@ -333,7 +355,7 @@ function scoreProperty(row: PropertyRow, req: Requirement, config: MatchingConfi
   // Bedrooms — the field admin-mapped to the buyer's "configuration" wish
   // list (Admin → Matching Setup, default `bedrooms`).
   const actualBedrooms = parsedBedrooms(row);
-  const wantedBedrooms = req.configurations?.map(bhkNumber).filter((n): n is number => n !== null) ?? [];
+  const wantedBedrooms = toList(req.configurations).map(bhkNumber).filter((n): n is number => n !== null);
   if (wantedBedrooms.length && actualBedrooms !== null) {
     if (wantedBedrooms.includes(actualBedrooms)) {
       score += 20;

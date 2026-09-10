@@ -39,7 +39,15 @@ import { readFileSync } from 'node:fs';
 // Keep the machinery. An advisory with no upstream fix will land again, and the
 // alternative to a named allowlist is either a permanently red gate that
 // everybody learns to ignore, or no gate at all.
-const ALLOWED = new Map([]);
+const ALLOWED = new Map([
+  ['GHSA-w5hq-g745-h8pq',
+   'uuid <11.1.1, reached only through exceljs (the .xlsx export). The bug is a '
+   + 'missing bounds check in v3/v5/v6 when the caller passes its own `buf`; '
+   + 'exceljs calls `v4()` with no arguments, in one file '
+   + '(xlsx/xform/sheet/cf-ext/cf-rule-ext-xform.js), so the vulnerable path is '
+   + 'not reachable. Retires when exceljs accepts uuid >=11.1.1 — an npm '
+   + '`overrides` entry was tried first and npm keeps resolving 8.3.2.'],
+]);
 
 let raw;
 try {

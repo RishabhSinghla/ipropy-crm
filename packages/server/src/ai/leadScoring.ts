@@ -82,13 +82,30 @@ async function loadContext(recordId: string): Promise<LeadContext | null> {
 async function countMatchingInventory(lead: Record<string, unknown>): Promise<number> {
   const budgetMax = Number(lead.budget ?? 0);
   if (!budgetMax) return 0;
-  const configs = Array.isArray(lead.configuration) ? lead.configuration as string[] : [];
+  const configs = Array.isArray(lead.configuration)
+    ? (lead.configuration as unknown[]).map((v) => String(v)).filter((v) => v !== '')
+    : typeof lead.configuration === 'string' && lead.configuration.trim() !== ''
+      ? lead.configuration.split(',').map((v) => v.trim()).filter((v) => v !== '')
+      : [];
+  /*
+    Read through `to_jsonb(p)`, not by naming columns.
+
+    `p.total_price` and `p.configuration` were named outright, and both were
+    deleted from Properties long ago. Postgres answers 42703 for the whole
+    statement, the caller is a workflow task that logs and carries on, and lead
+    scoring simply stopped — silently, on every lead, for as long as it has been
+    that way. This is the same fix `matching.ts` already carries, and the same
+    failure for the seventh time.
+  */
   const row = await db.queryOne<{ count: number }>(
     `SELECT COUNT(*)::int AS count FROM ipy_e_properties p
      JOIN ipy_record r ON r.id = p.record_id
-     WHERE r.is_deleted = false AND p.status = 'Available'
-       AND p.total_price <= $1 * 1.1
-       AND ($2::text[] = '{}' OR p.configuration = ANY($2::text[]))`,
+     WHERE r.is_deleted = false AND to_jsonb(p)->>'status' = 'Available'
+       AND COALESCE(
+             ipy_try_numeric(to_jsonb(p)->>'total_price'),
+             ipy_try_numeric(to_jsonb(p)->>'base_price')) <= $1 * 1.1
+       AND ($2::text[] = '{}' OR to_jsonb(p)->>'configuration' = ANY($2::text[])
+                              OR to_jsonb(p)->>'bedrooms' = ANY($2::text[]))`,
     [budgetMax, configs],
   );
   return row?.count ?? 0;

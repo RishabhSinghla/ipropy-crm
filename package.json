@@ -2,7 +2,7 @@
   "name": "ipropy-crm",
   "version": "1.0.0",
   "private": true,
-  "description": "iPropy — AI-native, metadata-driven CRM for real estate",
+  "description": "iPropy \u2014 AI-native, metadata-driven CRM for real estate",
   "license": "UNLICENSED",
   "workspaces": [
     "packages/shared",
