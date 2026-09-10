@@ -928,15 +928,6 @@ adminRouter.put('/integrations/:provider', asyncHandler(async (req, res) => {
 
   await saveIntegration(req.params.provider, input);
 
-  // The AI engineer's lane is configured from this card, but the workflow that
-  // runs the agent reads its model from repo variables — so a card save pushes
-  // the choice to GitHub immediately. Fire-and-forget: a GitHub hiccup must
-  // not fail the admin's save when the row itself is already written.
-  if (req.params.provider === 'github_agent') {
-    void import('../../core/feedback/index.js')
-      .then(({ syncAgentAiToRepo }) => syncAgentAiToRepo())
-      .catch(() => undefined);
-  }
   res.json(await getIntegrationSummary(req.params.provider));
 }));
 

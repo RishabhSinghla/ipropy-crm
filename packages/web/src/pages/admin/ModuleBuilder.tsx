@@ -943,7 +943,7 @@ function FieldEditor({
               <p className="mt-1 text-2xs text-muted">
                 {name === field!.name
                   ? 'The name this field goes by in imports, exports and connected apps. Change it and every view, layout, filter and automation follows.'
-                  : `Renaming moves no data — every value stays exactly where it is. Views, layouts, filters, automations and reports that name “${field!.name}” are rewritten with it.`}
+                  : `Renaming moves no data — every value stays exactly where it is. Views, layouts, filters and automations that name “${field!.name}” are rewritten with it.`}
               </p>
             )}
           </div>

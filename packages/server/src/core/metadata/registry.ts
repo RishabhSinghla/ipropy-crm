@@ -224,7 +224,7 @@ async function load(conn: Tx = db): Promise<RegistryCache> {
       blocks tied and Postgres free to return them in any physical order —
       the same seed produced "first currency field = Base Price" on one
       database and "Monthly Rent" on another, and every consumer that asks
-      for the first of a uitype (the reports builder's default money column)
+      for the first of a uitype (a widget's default money column)
       picks whichever the database happened to return. Fields with no block
       sort after every block, by sequence, so they stay stable too.
     */

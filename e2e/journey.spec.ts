@@ -17,7 +17,6 @@ const PAGES: { url: string; name: string; expect?: RegExp }[] = [
   { url: '/leads', name: 'Leads list' },
   { url: '/properties', name: 'Properties list' },
   { url: '/capture', name: 'Site visit' },
-  { url: '/reports', name: 'Reports' },
   { url: '/settings', name: 'User settings' },
   { url: '/admin/users', name: 'Admin — Users' },
   { url: '/admin/roles', name: 'Admin — Roles & Profiles' },

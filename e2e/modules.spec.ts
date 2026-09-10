@@ -52,7 +52,7 @@ async function moduleRoutes(page: Page): Promise<string[]> {
   await expect(page.locator('a[href="/leads"]').first()).toBeVisible();
 
   const routes = await page.evaluate(() => {
-    const skip = new Set(['/dashboard', '/settings', '/inbox', '/calls', '/reports', '/portal']);
+    const skip = new Set(['/dashboard', '/settings', '/inbox', '/calls', '/portal']);
     // Visible links only: since the header became a top bar the same href
     // appears in three navs (top tabs, drawer, bottom bar), and the hidden
     // ones cannot be clicked — the Site visit tab is drawer/bottom-bar-only

@@ -1,9 +1,9 @@
 /**
- * Widget/report query engine.
+ * Widget query engine.
  *
  * One function turns a WidgetConfig (module + aggregate + groupBy + filter)
- * into a result, so dashboards, reports and the AI's data tools all share the
- * same code path and the same permission scoping.
+ * into a result, so dashboards and the AI's data tools share the same code
+ * path and the same permission scoping.
  */
 import type { WidgetConfig, WidgetType } from '@ipropy/shared';
 import { db, type Tx } from '../../db/pool.js';
@@ -592,94 +592,3 @@ async function runHeatmap(ctx: ScopeContext, config: WidgetConfig, conn: Tx): Pr
   };
 }
 
-// ---------------------------------------------------------------------------
-// Report runner (tabular / summary / matrix) reuses the same primitives.
-// ---------------------------------------------------------------------------
-
-export interface ReportSpec {
-  module: string;
-  type: 'tabular' | 'summary' | 'matrix' | 'chart';
-  columns: string[];
-  groupBy: string[];
-  aggregates: { field: string; fn: 'count' | 'sum' | 'avg' | 'min' | 'max'; label?: string }[];
-  filter?: WidgetConfig['filter'];
-  sortBy?: string;
-  sortDir?: 'asc' | 'desc';
-  limit?: number;
-}
-
-export async function runReport(ctx: ScopeContext, spec: ReportSpec, conn: Tx = db): Promise<{
-  rows: Record<string, unknown>[];
-  columns: string[];
-  totals?: Record<string, number>;
-}> {
-  const module = await registry.requireModule(spec.module);
-
-  if (spec.type === 'tabular') {
-    const { listRecords } = await import('../entity/recordService.js');
-    const res = await listRecords(
-      { ...ctx, source: 'report' },
-      spec.module,
-      { filter: spec.filter, sortBy: spec.sortBy, sortDir: spec.sortDir, pageSize: Math.min(spec.limit ?? 1000, 5000), page: 1 },
-      { conn },
-    );
-    return {
-      columns: spec.columns,
-      rows: res.rows.map((r) => ({
-        id: r.id,
-        ...Object.fromEntries(spec.columns.map((c) => [c, r.display?.[c] ?? r.values[c]])),
-      })),
-    };
-  }
-
-  // summary / matrix: GROUP BY the requested dimensions with the aggregates.
-  const joins = new Map<string, string>();
-  const groupExprs: string[] = [];
-  for (const g of spec.groupBy) {
-    const resolved = await resolveFieldPath(module, g, joins);
-    groupExprs.push(`${resolved.expr}::text`);
-  }
-  const { from, where, params } = await baseQuery(ctx, spec.module, spec.filter, joins);
-
-  const aggSelects = spec.aggregates.map((a, i) => {
-    const f = module.fields.find((x) => x.name === a.field);
-    return `${aggregateExpr(a.fn, f ? fieldExpr(f) : null)} AS agg_${i}`;
-  });
-
-  const selectParts = [
-    ...groupExprs.map((e, i) => `${e} AS grp_${i}`),
-    ...(aggSelects.length ? aggSelects : ['COUNT(*)::numeric AS agg_0']),
-  ];
-
-  const res = await conn.query<Record<string, unknown>>(
-    `SELECT ${selectParts.join(', ')}
-     ${from} ${where}
-     ${groupExprs.length ? `GROUP BY ${groupExprs.map((_, i) => i + 1).join(', ')}` : ''}
-     ORDER BY ${groupExprs.length ? '1 ASC' : '1 DESC'}
-     LIMIT ${params.add(spec.limit ?? 1000)}`,
-    params.all(),
-  );
-
-  const columns = [
-    ...spec.groupBy,
-    ...spec.aggregates.map((a) => a.label ?? `${a.fn}(${a.field})`),
-  ];
-
-  const rows = res.rows.map((r) => {
-    const out: Record<string, unknown> = {};
-    spec.groupBy.forEach((g, i) => { out[g] = r[`grp_${i}`]; });
-    spec.aggregates.forEach((a, i) => { out[a.label ?? `${a.fn}(${a.field})`] = Number(r[`agg_${i}`] ?? 0); });
-    if (!spec.aggregates.length) out.count = Number(r.agg_0 ?? 0);
-    return out;
-  });
-
-  const totals: Record<string, number> = {};
-  for (const a of spec.aggregates) {
-    const key = a.label ?? `${a.fn}(${a.field})`;
-    if (a.fn === 'sum' || a.fn === 'count') {
-      totals[key] = rows.reduce((sum, r) => sum + Number(r[key] ?? 0), 0);
-    }
-  }
-
-  return { rows, columns, totals };
-}

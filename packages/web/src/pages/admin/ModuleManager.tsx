@@ -58,7 +58,7 @@ export default function ModuleManager(): JSX.Element {
         <div>
           <h1 className="text-lg font-semibold tracking-tight">Modules</h1>
           <p className="text-sm text-muted">
-            Switch off what you don't use. Disabling hides a module everywhere — nav, search, reports
+            Switch off what you don't use. Disabling hides a module everywhere — nav, search
             and the API — but keeps its data, so re-enabling restores it exactly.
           </p>
         </div>

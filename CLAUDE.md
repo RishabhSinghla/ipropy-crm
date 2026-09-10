@@ -508,38 +508,6 @@ Two traps worth knowing:
 
 ---
 
-## Report a Problem → AI engineering pipeline
-
-The owner reports in Hinglish from inside the CRM (`🐞 Report` button, any page); the report becomes a
-GitHub issue labelled `ai-fix`; the **AI Engineer** workflow (`.github/workflows/agent.yml`) runs
-`scripts/agent/run-agent.mjs` — a tool-loop agent on the TokenRouter GLM key (7 req/min throttle, 429
-backoff) that investigates, edits, runs typecheck + tests, and opens a PR on `ai/<issue>-<rand>`. The
-server's scheduler (`pollFeedback` in `core/workflow/scheduler.ts` → `core/feedback/`) polls the issue
-timeline every tick, walks the feedback row's status forward, and **merges the PR itself when every
-check on its head SHA is green and the diff touches nothing on the forbidden list** (`.env*`,
-workflows, render.yaml, Dockerfile — a modified workflow can green-light itself, so none may be
-agent-authored; `tests/feedbackMergeGate.test.ts` pins the list). Merge = squash. Render auto-deploys
-on green CI. The reporter verifies in-app (`/feedback` page): "Ho gaya" closes the issue; "Abhi theek
-nahi hai" reopens it and comments, which re-triggers the agent with the follow-up.
-
-Facts that will bite anyone who does not know them:
-
-* **The coding model is text-only.** Screenshots are *described in words* at intake by the CRM's own
-  vision provider (`describeScreenshot` in `core/feedback/index.ts`) and folded into the issue body.
-  No vision key configured → the description is simply absent and the reporter's words carry the report.
-* **No AI at all still files a ticket.** Triage falls back to a deterministic title built from the raw
-  text. `writeTicket` returning null must never block issue creation.
-* **The GitHub PAT the agent pushes with must be `AGENT_GITHUB_TOKEN`, not `GITHUB_TOKEN`.** An event
-  created with the workflow's own token does not trigger CI, so the merge gate would wait forever on
-  a check suite that never starts.
-* **The `github_agent` integration row** (Admin → Integrations) holds the sealed PAT, `config.repo`,
-  `config.autoMerge`. `autoMerge: "false"` in config = every PR waits for a human.
-* **`findLinkedPr` maps issue → PR through the issue timeline's cross-references** (the agent's PR
-  body always says "Fixes #N"), not through branch-name matching — the branch has a random suffix.
-* The feedback tables (`ipy_feedback`, `ipy_feedback_event`, migration `110`) keep the reporter's
-  words verbatim forever; screenshots are ordinary `ipy_attachment` rows against the feedback id.
-
----
 
 ## Connected apps (MCP)
 

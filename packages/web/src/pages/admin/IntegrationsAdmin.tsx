@@ -151,17 +151,6 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
   webform: [
     { key: 'key', label: 'Public Webhook Key', source: 'config', placeholder: 'ipropy-public-webform' },
   ],
-  // The AI engineer's brain. Any OpenAI-compatible provider works: paste a
-  // base URL + key + model id and the next ticket runs on it. The model field
-  // stays free text on purpose — catalogues lock people out of new ids.
-  github_agent: [
-    { key: 'token', label: 'GitHub PAT (repo scope) — files issues, opens PRs', source: 'credentials', secret: true },
-    { key: 'repo', label: 'Repository — owner/name', source: 'config', placeholder: 'RishabhSinghla/ipropy-crm' },
-    { key: 'autoMerge', label: 'Auto-merge green PRs — "true" or "false"', source: 'config', placeholder: 'true' },
-    { key: 'aiBaseUrl', label: 'AI Base URL (OpenAI-compatible)', source: 'config', placeholder: 'https://api.tokenrouter.com/v1' },
-    { key: 'aiApiKey', label: 'AI API Key', source: 'credentials', secret: true },
-    { key: 'aiModel', label: 'AI Model — any id your provider serves', source: 'config', placeholder: 'z-ai/glm-5.3-free' },
-  ],
 };
 
 const TESTABLE = new Set([

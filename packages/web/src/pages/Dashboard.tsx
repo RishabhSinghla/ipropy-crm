@@ -287,7 +287,7 @@ export default function DashboardPage(): JSX.Element {
         onClose={() => setConfirmDelete(false)}
         onConfirm={deleteDashboard}
         title={`Delete “${dashboard?.name ?? ''}”?`}
-        body="The dashboard and its widgets are removed permanently. Records and reports are untouched."
+        body="The dashboard and its widgets are removed permanently. Records are untouched."
         confirmLabel="Delete"
         danger
       />

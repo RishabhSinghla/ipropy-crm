@@ -36,7 +36,6 @@ adds WhatsApp, telephony, portal lead capture and an AI layer.
 | Telephony | Click-to-call, inbound routing/screen-pop, recordings, AI call analysis, coaching report |
 | Property inventory | Table/kanban views, availability, pricing, blocks, comparables and buyer matching |
 | Dashboards | 5 seeded dashboards with metrics, funnel, inventory, leaderboards and AI insight tiles |
-| Reports | Ad-hoc summary + tabular with grouping, measures, CSV export |
 | Automation | Editable workflows, 14 task types, delayed scheduling, assignment rules and SLA tracking |
 | Admin panel | Module enable/disable, field builder, layout designer, dropdowns, users, roles, profiles, sharing, **field permissions per profile**, workflows (**full create/edit composer**), **integrations (editable in-UI, encrypted credentials)**, import, audit |
 | AI | Lead scoring, property matching, call analysis, drafting and permission-scoped "Ask iPropy" |
@@ -86,7 +85,7 @@ every module an admin creates afterwards.
 
 A `FilterGroup` (defined in `packages/shared/src/uitypes.ts`) is compiled two ways:
 
-* `core/query/builder.ts` → **SQL**, for list views, widgets and reports.
+* `core/query/builder.ts` → **SQL**, for list views and widgets.
 * `core/query/evaluate.ts` → **in-memory**, for workflow conditions and conditional field visibility.
 
 An admin builds a condition once and it means the same thing in both places.
@@ -131,10 +130,10 @@ exists, which is the authoritative account.
 |---|---|---|
 | `001_core.sql` | 2026-08-06 13:35 | Metadata engine (`ipy_module`/`block`/`field`/`picklist`/`relation`), identity (`ipy_user`/`role`/`profile`/`group`/`session`), `ipy_record` base table + tsvector search, permissions, views, layouts, dashboards, audit/comments/attachments/tags/notifications, settings |
 | `002_entities.sql` | 2026-08-06 13:35 | Real-estate payload tables: organizations, contacts, leads, projects, properties, deals, site_visits, bookings, payments, channel_partners, campaigns, activities, documents |
-| `003_automation_comms_ai.sql` | 2026-08-06 13:35 | Workflow engine + task queue + logs, assignment rules, SLA, conversations/messages/templates, email log, calls + virtual numbers, AI insights/logs/threads, integrations, webforms, lead inbox, webhooks, API keys, import jobs, reports, targets |
+| `003_automation_comms_ai.sql` | 2026-08-06 13:35 | Workflow engine + task queue + logs, assignment rules, SLA, conversations/messages/templates, email log, calls + virtual numbers, AI insights/logs/threads, integrations, webforms, lead inbox, webhooks, API keys, import jobs, targets |
 | `004_merge_contacts_into_leads.sql` | 2026-08-06 16:30 | **Merged Contacts into Leads** (see below) + added module enable/disable columns (`disabled_reason`, `disabled_at`, `disabled_by`, `is_core`) |
 | `005_integration_settings.sql` | 2026-08-07 | Added the `webform` provider row to `ipy_integration` so the generic web-form capture key is editable from the admin UI like every other credential, not `.env`-only |
-| `006_remove_converted_contact_id.sql` | 2026-08-07 | Dropped the dead `ipy_e_leads.converted_contact_id` column and deleted its field metadata (no nulls, no indexes, no views/workflows/dashboards/reports references) |
+| `006_remove_converted_contact_id.sql` | 2026-08-07 | Dropped the dead `ipy_e_leads.converted_contact_id` column and deleted its field metadata (no nulls, no indexes, no views/workflows/dashboards references) |
 | `007_projects_rollup.sql` | 2026-08-07 | Real column for the `total_inventory` rollup on projects (the module has since been removed — see `031`) |
 | `008_inbound_email_threading.sql` | 2026-08-07 | Unique index on `ipy_email_log.provider_id` for idempotent inbound email sync |
 | `009_portal_user_link.sql` | 2026-08-07 | Added `channel_partner_id` to `ipy_user` linking portal users to their channel_partners record (enables Channel Partner portal) |
@@ -221,7 +220,7 @@ What 004 did, verified on live data:
 | Metadata | `ipy_module`, `ipy_block`, `ipy_field`, `ipy_picklist(_value/_dependency/_role_access)`, `ipy_relation`, `ipy_record_link` |
 | Records | `ipy_record` (base), 12 × `ipy_e_*` payload tables, `ipy_sequence` |
 | Identity/permissions | `ipy_user`, `ipy_role`, `ipy_profile`, `ipy_group(_member)`, `ipy_session`, `ipy_profile_module_perm`, `ipy_profile_field_perm`, `ipy_module_sharing`, `ipy_sharing_rule`, `ipy_record_share` |
-| UI config | `ipy_view`, `ipy_layout(_profile)`, `ipy_dashboard(_widget)`, `ipy_report` |
+| UI config | `ipy_view`, `ipy_layout(_profile)`, `ipy_dashboard(_widget)` |
 | Automation | `ipy_workflow(_task/_log/_state)`, `ipy_task_queue`, `ipy_assignment_rule`, `ipy_sla_policy/_tracker` |
 | Comms | `ipy_conversation`, `ipy_message`, `ipy_whatsapp_template`, `ipy_email_template/_log`, `ipy_call`, `ipy_virtual_number` |
 | AI | `ipy_ai_insight`, `ipy_ai_log`, `ipy_ai_thread`, `ipy_scoring_model` |
@@ -320,7 +319,7 @@ iPropy-crm/
     │   │   ├── workflow/engine.ts     event-driven workflow execution
     │   │   ├── workflow/tasks.ts      14 task types
     │   │   ├── workflow/scheduler.ts  queue drain + scheduled workflows + housekeeping
-    │   │   ├── analytics/widgets.ts   widget + report query engine — client drill-through reads
+    │   │   ├── analytics/widgets.ts   widget query engine — client drill-through reads
     │   │   │                          WidgetConfig straight off this (module/groupBy/filter/dateField)
     │   │   └── settings/integrations.ts ★ DB-first, env-fallback resolver for every integration
     │   │                          credential. AES-256-GCM at rest, key derived from JWT_SECRET.
@@ -353,7 +352,7 @@ iPropy-crm/
         │                        after every write instead of hand-picking query keys
         ├── lib/listNav.ts      sessionStorage-backed id order for RecordDetail's prev/next nav
         └── pages/              Dashboard (★ drill-through helpers), ListView, RecordDetail (★ prev/next
-                                + quick-edit), RecordEdit, Inbox, Calls, InventoryBoard, Reports,
+                                + quick-edit), RecordEdit, Inbox, Calls, InventoryBoard,
                                 Settings, Login, admin/* (★ WorkflowAdmin composer, IntegrationsAdmin,
                                 RolesProfiles field-permissions card)
 ```
@@ -420,7 +419,7 @@ committing:
     registry stubbed, no Postgres needed). Tests live in `packages/server/tests/`, outside `src/`, so
     they never compile into the server build.
 12. **Removed the dead `converted_contact_id` column** (migration 006). Pre-flight verified 0 non-null
-    values, no index, no references in views/workflows/dashboards/reports/field permissions; dropped
+    values, no index, no references in views/workflows/dashboards/field permissions; dropped
     the column and its field metadata. Verified live after a server reload: describe no longer lists
     the field (77 fields), list and lookup still work.
 13. **Wired dashboard drag-to-resize (and drag-to-rearrange).** The dashboard grid was responsive-only
@@ -1008,7 +1007,7 @@ Branch `feat/dashboard-ai-alerts`, three commits, all verified against the runni
 | 4 | Rename module to "Leads & Contacts" | Done — migration `011`; module *name* stays `leads` (URL, API path, relation target) |
 | 2 | AI without an Anthropic key | Done — Gemini/Groq/OpenRouter/OpenAI-compatible/Ollama via one adapter; migration `012` |
 | 1 | Full dashboard customisation | Done — CRUD UI + widget builder + 6 previously-unrenderable widget types |
-| 5 | Mobile UI/UX | Done for `RecordDetail` and `Dashboard`; **not yet audited**: Reports, Inbox, Calls, InventoryBoard, admin pages |
+| 5 | Mobile UI/UX | Done for `RecordDetail` and `Dashboard`; **not yet audited**: Inbox, Calls, InventoryBoard, admin pages |
 | 3 | New-lead highlighting + notifications | Done — `ipy_module_seen` watermark + Web Push; migration `013` |
 | 6 | Social links | Done — `social.links` setting, sidebar bar, Admin → Brand & Social; migration `014` |
 | 16 | "Builder Floor = iPropy" | Done — `brand.tagline` setting on sign-in + sidebar |

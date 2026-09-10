@@ -255,7 +255,7 @@ export interface UiSettings {
 /** One entry in the admin-arranged header. */
 export interface HeaderTab {
   /** `module` renders a module tab; `link` is any URL; the rest are fixed pages. */
-  kind: 'dashboard' | 'capture' | 'reports' | 'module' | 'link';
+  kind: 'dashboard' | 'capture' | 'module' | 'link';
   label?: string;
   /** For `module`: the module's name. For `link`: the href. */
   value?: string;

@@ -205,11 +205,6 @@ export const config = {
     },
   },
 
-  /** Where problem reports get emailed — the owner who reviews them. */
-  report: {
-    emailTo: str('REPORT_EMAIL_TO', 'rishabhsinghla2112@gmail.com'),
-  },
-
   push: {
     /**
      * VAPID keypair. Left blank the server generates one on first use and

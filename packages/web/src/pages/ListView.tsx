@@ -316,7 +316,7 @@ export default function ListView(): JSX.Element {
 
   // Which rows need attention. Leads remain highlighted while their pipeline
   // status is New; other modules use unread-style state. Asked for separately rather than returned by
-  // the list, because the list endpoint is shared with exports, reports and
+  // the list, because the list endpoint is shared with exports and
   // the portal, none of which have a reader to be unread for.
   const pageIds = useMemo(() => (data?.rows ?? []).map((r) => r.id), [data]);
   const { data: unseenData } = useQuery({

@@ -7,7 +7,7 @@
  * watermark and never opened.
  *
  * Deliberately *not* part of listRecords. The list engine is shared by exports,
- * reports, widgets and the portal, none of which have a "who is reading this"
+ * widgets and the portal, none of which have a "who is reading this"
  * notion, and threading a per-user join through it would put a correlated
  * subquery on every one of those paths.
  */

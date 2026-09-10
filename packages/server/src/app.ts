@@ -19,7 +19,7 @@ import { pinAuthRouter } from './api/routes/pinAuth.js';
 import { metadataRouter } from './api/routes/metadata.js';
 import { recordsRouter } from './api/routes/records.js';
 import { viewsRouter } from './api/routes/views.js';
-import { dashboardsRouter, reportsRouter } from './api/routes/dashboards.js';
+import { dashboardsRouter } from './api/routes/dashboards.js';
 import { adminRouter } from './api/routes/admin.js';
 import { commsRouter } from './api/routes/comms.js';
 import { outreachRouter } from './api/routes/outreach.js';
@@ -30,7 +30,6 @@ import { webhooksRouter } from './api/routes/webhooks.js';
 import { miscRouter } from './api/routes/misc.js';
 import { mcpRouter } from './api/routes/mcp.js';
 import { publicRouter } from './api/routes/public.js';
-import { feedbackRouter } from './api/routes/feedback.js';
 
 /**
  * The policy on the app's own HTML.
@@ -281,7 +280,6 @@ export function createApp(): Express {
   app.use('/api/meta', metadataRouter);
   app.use('/api/views', viewsRouter);
   app.use('/api/dashboards', dashboardsRouter);
-  app.use('/api/reports', reportsRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api/comms', commsRouter);
   // Only the per-record WhatsApp hand-off now — the queue page, broadcasts and
@@ -291,8 +289,6 @@ export function createApp(): Express {
   app.use('/api/ai', aiRouter);
   // Connected assistants. Mounted before miscRouter's catch-all /api paths.
   app.use('/api/mcp', mcpRouter);
-  // Report-a-problem: the owner's direct line to the AI engineering pipeline.
-  app.use('/api/feedback', feedbackRouter);
   app.use('/api', miscRouter);
   // Records last: its /:module route would otherwise swallow the paths above.
   app.use('/api/records', recordsRouter);

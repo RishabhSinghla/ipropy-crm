@@ -517,29 +517,6 @@ CREATE TABLE ipy_import_job (
   completed_at      TIMESTAMPTZ
 );
 
--- Saved reports (tabular / summary / matrix), rendered by the same query engine
-CREATE TABLE ipy_report (
-  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name              TEXT NOT NULL,
-  description       TEXT,
-  module_id         UUID NOT NULL REFERENCES ipy_module(id) ON DELETE CASCADE,
-  type              TEXT NOT NULL DEFAULT 'tabular' CHECK (type IN ('tabular','summary','matrix','chart')),
-  columns           JSONB NOT NULL DEFAULT '[]'::jsonb,
-  group_by          JSONB NOT NULL DEFAULT '[]'::jsonb,
-  aggregates        JSONB NOT NULL DEFAULT '[]'::jsonb,
-  filter            JSONB NOT NULL DEFAULT '{"logic":"AND","conditions":[]}'::jsonb,
-  sort_by           TEXT,
-  sort_dir          TEXT DEFAULT 'desc',
-  chart_config      JSONB,
-  owner_id          UUID REFERENCES ipy_user(id) ON DELETE CASCADE,
-  is_shared         BOOLEAN NOT NULL DEFAULT false,
-  -- email this report on a schedule
-  schedule          JSONB,
-  recipients        JSONB NOT NULL DEFAULT '[]'::jsonb,
-  last_run_at       TIMESTAMPTZ,
-  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
 -- Sales targets for leaderboards and forecast widgets
 CREATE TABLE ipy_target (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),

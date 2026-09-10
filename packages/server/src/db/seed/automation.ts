@@ -536,10 +536,6 @@ export async function seedIntegrations(conn: Tx): Promise<void> {
     { provider: 'sentry', kind: 'ops', label: 'Error reporting (Sentry)' },
     { provider: 's3', kind: 'storage', label: 'S3 Object Storage' },
     { provider: 'onedrive', kind: 'storage', label: 'Microsoft OneDrive' },
-    // The AI engineering pipeline: Report a Problem → GitHub issue → agent →
-    // PR → CI → merge. The token is a GitHub PAT with repo scope; the repo is
-    // owner/name of this project's GitHub home.
-    { provider: 'github_agent', kind: 'automation', label: 'GitHub (AI engineering)' },
   ];
   for (const i of integrations) {
     await conn.query(

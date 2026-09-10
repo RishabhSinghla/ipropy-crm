@@ -166,7 +166,7 @@ bookings / 21 payments still resolving, zero orphans.
 ### Enabling and disabling modules
 
 **Admin → Modules** lists every module with its field and record counts and lets you switch off what
-you don't use. Disabling hides a module everywhere — navigation, global search, reports and the API
+you don't use. Disabling hides a module everywhere — navigation, global search and the API
 (the endpoint 404s) — but **keeps its data**, so re-enabling restores it exactly. Each module shows
 which others reference it (a lookup dependency), and **Leads** is marked core and cannot be disabled
 because the rest of the CRM reads from it.
@@ -181,7 +181,6 @@ because the rest of the CRM reads from it.
 | **Timeline** | Calls, WhatsApp, email, notes, files, field changes and AI insights merged into one feed. |
 | **Inbox** | WhatsApp threads with the 24-hour window enforced, delivery receipts, AI reply suggestions. |
 | **Calls** | Call log with recordings, AI summary/sentiment/objections, and a coaching report. |
-| **Reports** | Ad-hoc summary and tabular reports with grouping, measures and CSV export. |
 | **Capture** | Built for standing at a gate: name the property, tap Start, shoot with the normal camera. Writes to IndexedDB and returns — it never waits for the network, so a visit with no signal still lands. Details can be **spoken** rather than typed. |
 | **Shoots** | The evening list of visits that still have no name — thumbnails first, because nobody can tell "9:03–9:21, 12 photos" from "9:48–10:04, 14 photos", but everybody recognises their own pictures. One box both finds a property and creates one. |
 | **Capture review** | Confirm what you said at the gate. Read a line, glance at the parsed values, tap Confirm — ten properties in about two minutes, sitting down. |
@@ -282,7 +281,7 @@ packages/
       entity/      recordService, conversion/merge, timeline, formula parser, numbering
       permissions/ the four-layer engine
       workflow/    engine, 14 task types, assignment, scheduler, follow-ups
-      analytics/   widget + report query engine
+      analytics/   widget query engine
       capture/     shoot sessions, EXIF time matching, auto-grouping, voice, vision
       media/       watermark, image/video derivatives — the processing pipeline
       sharing/     share links (one property, one unguessable URL)
@@ -295,7 +294,7 @@ packages/
   web/
     components/    FieldRenderer (the heart), RecordForm, FilterBuilder, AiAssistant,
                    ShareLinks, ui kit
-    pages/         Dashboard, ListView, RecordDetail, Inbox, Calls, Reports, Outreach,
+    pages/         Dashboard, ListView, RecordDetail, Inbox, Calls, Outreach,
                    Capture, CaptureShoots, CaptureReview, SharedProperty, admin/*
   mcp/         permission-scoped CRM tools for assistants, over stdio or HTTP
 ```
@@ -366,7 +365,7 @@ before any change is finished.
 
 The engine was also exercised end-to-end against a live Postgres — 63 checks covering auth, metadata,
 list/kanban/filters, detail, timeline, the write path (create → update → audit → duplicate detection
-→ convert → delete), inbox, telephony, inventory, reports, the full admin surface, and permission
+→ convert → delete), inbox, telephony, inventory, the full admin surface, and permission
 enforcement across three profiles.
 
 Three real bugs were found and fixed during that pass, all noted in the code:

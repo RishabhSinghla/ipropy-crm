@@ -95,7 +95,6 @@ const MODULE_SCOPED: { table: string; columns: string[]; key: string }[] = [
   { table: 'ipy_view', columns: ['columns', 'filter'], key: 'module_id' },
   { table: 'ipy_layout', columns: ['config'], key: 'module_id' },
   { table: 'ipy_workflow', columns: ['watch_fields', 'conditions'], key: 'module_id' },
-  { table: 'ipy_report', columns: ['columns', 'group_by', 'aggregates', 'filter', 'chart_config'], key: 'module_id' },
   { table: 'ipy_assignment_rule', columns: ['conditions'], key: 'module_id' },
   { table: 'ipy_field', columns: ['config'], key: 'module_id' },
 ];
@@ -186,12 +185,6 @@ export async function removeFieldEverywhere(
   await sweep('ipy_workflow', 'module_id = $1', [moduleId], [
     { column: 'watch_fields', ...asList },
     { column: 'conditions', ...asFilter },
-  ]);
-  await sweep('ipy_report', 'module_id = $1', [moduleId], [
-    { column: 'columns', ...asList },
-    { column: 'group_by', ...asList },
-    { column: 'aggregates', ...asList },
-    { column: 'filter', ...asFilter },
   ]);
   await sweep('ipy_assignment_rule', 'module_id = $1', [moduleId], [
     { column: 'conditions', ...asFilter },
@@ -352,7 +345,7 @@ export async function renameFieldEverywhere(
 
   // Plain text columns: an exact match, never a substring.
   for (const [table, column] of [
-    ['ipy_view', 'sort_by'], ['ipy_view', 'group_by'], ['ipy_report', 'sort_by'],
+    ['ipy_view', 'sort_by'], ['ipy_view', 'group_by'],
   ] as const) {
     const res = await conn.query(
       `UPDATE ${table} SET ${column} = $3 WHERE module_id = $1 AND ${column} = $2`,
