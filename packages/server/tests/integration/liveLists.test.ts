@@ -32,7 +32,7 @@ beforeAll(async () => {
 });
 
 describe('live list attention and favourites', () => {
-  it('keeps a lead highlighted until its pipeline status leaves New', async () => {
+  it('clears a lead\'s highlight the moment it is opened, like an unread email', async () => {
     const marker = randomUUID().slice(0, 8);
     const created = await auth('post', '/api/records/leads').send({
       full_name: `Pipeline New ${marker}`,
@@ -44,12 +44,8 @@ describe('live list attention and favourites', () => {
     const attention = () => auth('post', '/api/records/leads/unseen').send({ ids: [id] });
     expect((await attention().expect(200)).body.unseen).toEqual([id]);
 
-    // Merely opening it, or pressing the old "seen" control, is not work.
+    // Opening it is what clears the highlight — status is irrelevant now.
     await auth('get', `/api/records/leads/${id}`).expect(200);
-    await auth('post', '/api/records/leads/seen').send({}).expect(200);
-    expect((await attention().expect(200)).body.unseen).toEqual([id]);
-
-    await auth('patch', `/api/records/leads/${id}`).send({ status: 'Contacted' }).expect(200);
     expect((await attention().expect(200)).body.unseen).toEqual([]);
   });
 

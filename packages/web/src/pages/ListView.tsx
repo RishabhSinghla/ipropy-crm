@@ -550,7 +550,7 @@ export default function ListView(): JSX.Element {
               )}
             </Dropdown>
 
-            {moduleName !== 'leads' && unseen.size > 0 && (
+            {unseen.size > 0 && (
               <button
                 onClick={() => void markAllSeen()}
                 className="btn-ghost btn-sm text-brand-600 dark:text-brand-400"
