@@ -916,7 +916,7 @@ miscRouter.get('/import/:module/template', asyncHandler(async (req, res) => {
   const module = await registry.requireModule(req.params.module);
 
   const fields = module.fields.filter(
-    (f) => f.isActive && !f.isReadonly && f.displayType !== 'hidden',
+    (f) => f.isActive && !f.isReadonly && f.displayType !== 'hidden' && f.config.importable !== false,
   );
 
   const sampleFor = (f: typeof module.fields[number]): string => {
@@ -971,7 +971,7 @@ miscRouter.post('/import/:module/preview', upload.single('file'), asyncHandler(a
   const suggestions: Record<string, string> = {};
   for (const header of headers) {
     const norm = header.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const match = module.fields.find((f) =>
+    const match = module.fields.find((f) => f.config.importable !== false &&
       f.name.replace(/_/g, '') === norm || f.label.toLowerCase().replace(/[^a-z0-9]/g, '') === norm);
     if (match) suggestions[header] = match.name;
   }
@@ -982,7 +982,7 @@ miscRouter.post('/import/:module/preview', upload.single('file'), asyncHandler(a
     totalRows: rows.length,
     suggestedMapping: suggestions,
     fields: module.fields
-      .filter((f) => f.isActive && !f.isReadonly && f.displayType !== 'hidden')
+      .filter((f) => f.isActive && !f.isReadonly && f.displayType !== 'hidden' && f.config.importable !== false)
       .map((f) => ({ name: f.name, label: f.label, uitype: f.uitype, mandatory: f.isMandatory })),
   });
 }));

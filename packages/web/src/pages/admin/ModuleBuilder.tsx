@@ -2,7 +2,7 @@ import { type JSX, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { type FieldMeta, type FilterGroup, type FilterOperator, NULLARY_OPERATORS, UITYPE_LIST } from '@ipropy/shared';
-import { ChevronDown, ChevronUp, Edit3, Eye, EyeOff, GripVertical, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Copy, Edit3, Eye, EyeOff, GripVertical, Plus, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
 import { cn } from '../../lib/utils';
@@ -177,6 +177,11 @@ export default function ModuleBuilder(): JSX.Element {
       invalidateModule();
     },
     onError: (err: Error) => toast.error('Could not restore the field', err.message),
+  });
+  const duplicateMutation = useMutation({
+    mutationFn: (id: string) => api.duplicateField(id),
+    onSuccess: () => { toast.success('Field duplicated'); invalidateModule(); },
+    onError: (err: Error) => toast.error('Could not duplicate the field', err.message),
   });
 
   return (
@@ -374,6 +379,16 @@ export default function ModuleBuilder(): JSX.Element {
                           >
                             <Edit3 className="h-3.5 w-3.5" />
                             <span className="hidden xl:inline">Edit</span>
+                          </button>
+                          <button
+                            onClick={() => duplicateMutation.mutate(field.id)}
+                            disabled={duplicateMutation.isPending}
+                            className="btn-ghost btn-sm gap-1 px-2"
+                            title="Duplicate this field setup"
+                            aria-label={`Duplicate ${field.label}`}
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                            <span className="hidden xl:inline">Duplicate</span>
                           </button>
                           {/* Hide and Delete are separate answers to separate
                               questions — "not on my screens" and "gone". They
@@ -737,6 +752,10 @@ function FieldEditor({
   const [isUnique, setIsUnique] = useState(field?.isUnique ?? false);
   const [quickCreate, setQuickCreate] = useState(field?.quickCreate ?? false);
   const [searchable, setSearchable] = useState(field?.searchable ?? false);
+  const [filterable, setFilterable] = useState(field?.config.filterable !== false);
+  const [sortable, setSortable] = useState(field?.config.sortable !== false);
+  const [importable, setImportable] = useState(field?.config.importable !== false);
+  const [exportable, setExportable] = useState(field?.config.exportable !== false);
   const [helpText, setHelpText] = useState(field?.helpText ?? '');
   const [picklist, setPicklist] = useState((field?.config.picklist as string) ?? '');
   const [newOptions, setNewOptions] = useState('');
@@ -891,6 +910,10 @@ function FieldEditor({
       if (uitype === 'phone') {
         if (codePrefix.trim()) config.codePrefix = codePrefix.trim(); else clear('codePrefix');
       }
+      config.filterable = filterable;
+      config.sortable = sortable;
+      config.importable = importable;
+      config.exportable = exportable;
 
       const payload = {
         label, name, uitype, blockId, isMandatory, isUnique,
@@ -1335,6 +1358,10 @@ function FieldEditor({
           <Toggle checked={isUnique} onChange={setIsUnique} label="Must be unique" />
           <Toggle checked={quickCreate} onChange={setQuickCreate} label="Show in quick create" />
           <Toggle checked={searchable} onChange={setSearchable} label="Include in search" />
+          <Toggle checked={filterable} onChange={setFilterable} label="Allow filters" />
+          <Toggle checked={sortable} onChange={setSortable} label="Allow sorting" />
+          <Toggle checked={importable} onChange={setImportable} label="Allow import" />
+          <Toggle checked={exportable} onChange={setExportable} label="Allow export" />
         </div>
       </div>
     </Modal>

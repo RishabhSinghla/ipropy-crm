@@ -30,7 +30,7 @@ export function FilterBuilder({
   onChange: (filter: FilterGroup) => void;
 }): JSX.Element {
   const fields = [
-    ...module.fields.filter((f) => f.isActive && f.displayType !== 'hidden'),
+    ...module.fields.filter((f) => f.isActive && f.displayType !== 'hidden' && f.config.filterable !== false),
     ...SYSTEM_FIELDS,
   ];
 

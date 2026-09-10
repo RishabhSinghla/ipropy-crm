@@ -909,6 +909,29 @@ metadataRouter.post('/fields/reorder', asyncHandler(async (req, res) => {
   res.json({ ok: true });
 }));
 
+/** Duplicate metadata only — records keep their existing values until the new field is filled. */
+metadataRouter.post('/fields/:id/duplicate', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.fields');
+  const source = await db.queryOne<{
+    module_id: string; block_id: string | null; name: string; label: string; uitype: string; sequence: number;
+    is_mandatory: boolean; is_readonly: boolean; is_unique: boolean; display_type: string; default_value: unknown;
+    max_length: number | null; help_text: string | null; config: Record<string, unknown>; quick_create: boolean; mass_editable: boolean; searchable: boolean;
+  }>(`SELECT module_id, block_id, name, label, uitype, sequence, is_mandatory, is_readonly, is_unique, display_type, default_value, max_length, help_text, config, quick_create, mass_editable, searchable FROM ipy_field WHERE id = $1`, [req.params.id]);
+  if (!source) throw new NotFoundError('Field not found');
+  const module = await registry.getModuleById(source.module_id); if (!module) throw new NotFoundError('Module not found');
+  let number = 2; let name = `${source.name}_copy`;
+  while (module.fields.some((f) => f.name === name)) name = `${source.name}_copy_${number++}`;
+  const row = await db.queryOne<{ id: string; internal_id: string }>(
+    `INSERT INTO ipy_field (module_id, block_id, name, label, uitype, storage, column_name, sequence, is_mandatory, is_readonly, is_unique, is_custom, display_type, default_value, max_length, help_text, config, quick_create, mass_editable, searchable)
+     VALUES ($1,$2,$3,$4,$5,'json',$3,$6,$7,$8,false,true,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id, internal_id`,
+    [source.module_id, source.block_id, name, `${source.label} Copy`, source.uitype, source.sequence + 1,
+      source.is_mandatory, source.is_readonly, source.display_type, JSON.stringify(source.default_value), source.max_length, source.help_text, JSON.stringify(source.config), source.quick_create, source.mass_editable, source.searchable],
+  );
+  await db.query(`INSERT INTO ipy_profile_field_perm (profile_id, field_id, permission) SELECT id, $1, 'hidden' FROM ipy_profile WHERE name <> 'Administrator' ON CONFLICT DO NOTHING`, [row!.id]);
+  await db.query(`INSERT INTO ipy_field_change (module_id, field_internal_id, action, after_value, user_id) VALUES ($1,$2,'created',$3,$4)`, [source.module_id, row!.internal_id, JSON.stringify({ duplicatedFrom: req.params.id, name }), getUser(req).id]);
+  invalidateAll(); res.status(201).json(await registry.getField(module.name, name));
+}));
+
 /**
  * Fields the engine reads by name. Deleting one does not hide a column, it
  * breaks the module: without a label field a record has no title anywhere in
