@@ -204,14 +204,30 @@ async function findRecentLead(
   if (!mobile && !email) return null;
   const tail = mobile ? mobile.replace(/\D/g, '').slice(-10) : null;
   return conn.queryOne<{ record_id: string }>(
+    /*
+      Read through `to_jsonb`, never by naming a column.
+
+      `l.is_converted` was a column an administrator is entitled to delete, and
+      deleting it turned this into `column l.is_converted does not exist`.
+      Postgres answers 42703 for the whole statement, this is on the main path
+      of `captureLead`, and the caller records the enquiry as failed — so every
+      inbound lead with a phone number or an email was thrown away, from the
+      website form, Facebook, Google and every portal at once. The public form
+      still answered 200 with its success message, and the only trace was
+      `ipy_lead_inbox.status = 'failed'`.
+
+      This is the second time that exact sentence has been true of this file
+      (migration 026 was the first). A missing key in `to_jsonb` is `undefined`,
+      which `COALESCE(..., false)` reads as "not converted" — the safe answer.
+    */
     `SELECT l.record_id FROM ipy_e_leads l
      JOIN ipy_record r ON r.id = l.record_id
      WHERE r.is_deleted = false
-       AND l.is_converted = false
+       AND COALESCE((to_jsonb(l)->>'is_converted')::boolean, false) = false
        AND r.created_at > now() - ($3 || ' days')::interval
        AND (
-         ($1::text IS NOT NULL AND right(regexp_replace(COALESCE(l.mobile,''), '\\D','','g'), 10) = $1)
-         OR ($2::text IS NOT NULL AND lower(l.email) = lower($2))
+         ($1::text IS NOT NULL AND right(regexp_replace(COALESCE(to_jsonb(l)->>'mobile',''), '\\D','','g'), 10) = $1)
+         OR ($2::text IS NOT NULL AND lower(to_jsonb(l)->>'email') = lower($2))
        )
      ORDER BY r.created_at DESC LIMIT 1`,
     [tail, email ?? null, windowDays],
@@ -221,8 +237,15 @@ async function findRecentLead(
 /** A repeat enquiry is a buying signal — record it rather than discarding it. */
 async function enrichExistingLead(recordId: string, normalized: NormalizedLead): Promise<void> {
   const updates: Record<string, unknown> = {};
+  // Same rule: `description` and `contact_attempts` are both fields an admin
+  // may remove, and naming them here would fail the enrichment of a repeat
+  // enquiry for the same 42703 reason.
   const current = await db.queryOne<{ email: string | null; budget: number | null; description: string | null; contact_attempts: number }>(
-    `SELECT email, budget, description, contact_attempts FROM ipy_e_leads WHERE record_id = $1`,
+    `SELECT to_jsonb(l)->>'email' AS email,
+            ipy_try_numeric(to_jsonb(l)->>'budget') AS budget,
+            to_jsonb(l)->>'description' AS description,
+            COALESCE(ipy_try_int(to_jsonb(l)->>'contact_attempts'), 0) AS contact_attempts
+       FROM ipy_e_leads l WHERE l.record_id = $1`,
     [recordId],
   );
 

@@ -461,7 +461,11 @@ async function resolvePhone(
       const refId = ctx.record[key];
       if (!refId) continue;
       const phone = await db.queryOne<{ mobile: string | null }>(
-        `SELECT COALESCE(l.whatsapp_number, l.mobile) AS mobile
+        // `whatsapp_number` was removed with the linked-phone door (migration
+        // 060) and `mobile` is a field an admin may rename or retire, so both go
+        // through `to_jsonb` — a missing key is `undefined`, not a 42703 that
+        // fails the whole workflow task.
+        `SELECT COALESCE(to_jsonb(l)->>'whatsapp_number', to_jsonb(l)->>'mobile') AS mobile
            FROM ipy_e_leads l WHERE l.record_id = $1`,
         [refId],
       );

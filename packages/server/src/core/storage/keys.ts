@@ -398,14 +398,24 @@ export async function buildStorageKey({ recordId, originalName, ext }: KeyReques
 export async function propertyFolderKey(recordId: string): Promise<string | null> {
   const { db } = await import('../../db/pool.js');
   const { matchingConfig, pairFor } = await import('../settings/matching.js');
-  const bedroomField = pairFor(await matchingConfig(), 'configuration')?.propertyField || 'bedrooms';
+  // The column, not the name. A rename moves the name and never the column,
+  // and this reads the value out of `to_jsonb(p)`, which is keyed by column —
+  // production calls this field `bedrooms` and stores it in `configuration`.
+  const bedroomPair = pairFor(await matchingConfig(), 'configuration');
+  const bedroomField = bedroomPair?.propertyColumn ?? bedroomPair?.propertyField ?? 'bedrooms';
   const row = await db.queryOne<{
     label: string; is_deleted: boolean; module_name: string;
     unit_number: string | null; bedrooms: string | null;
     plot_area: string | number | null; area_unit: string | null;
   }>(
     `SELECT r.label, r.is_deleted, r.module_name,
-            p.unit_number, to_jsonb(p)->>$2 AS bedrooms, p.plot_area, p.area_unit
+            -- plot_area has already gone from production, and unit_number and
+            -- area_unit may follow: a media filename is not worth a 42703 that
+            -- stops a photo being filed.
+            to_jsonb(p)->>'unit_number' AS unit_number,
+            to_jsonb(p)->>$2 AS bedrooms,
+            ipy_try_numeric(to_jsonb(p)->>'plot_area') AS plot_area,
+            to_jsonb(p)->>'area_unit' AS area_unit
        FROM ipy_record r
        LEFT JOIN ipy_e_properties p ON p.record_id = r.id
       WHERE r.id = $1`,
