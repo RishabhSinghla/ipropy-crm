@@ -11,7 +11,7 @@ import {
   countRecordsWithValue, fieldsThatCannotBeCleared, fieldsUsingPicklist,
   PICKLISTS_USED_IN_CODE, replaceValueInRecords, valueUsedInCode,
 } from '../../core/metadata/picklists.js';
-import { interchangeableTypes } from '../../core/metadata/fieldTypes.js';
+import { COLUMN_TYPES, interchangeableTypes } from '../../core/metadata/fieldTypes.js';
 import { FIELDS_USED_IN_CODE, fieldImpact, removeFieldEverywhere, renameFieldEverywhere } from '../../core/metadata/fieldRename.js';
 import { assertCapability, canAccessModule, getFieldPermissions, getModulePermission, hasCapability, invalidatePermissions } from '../../core/permissions/index.js';
 import { FORMULA_FUNCTIONS, validateFormula } from '../../core/entity/formula.js';
@@ -876,9 +876,12 @@ metadataRouter.post('/fields/:id/type-conversion/preview', asyncHandler(async (r
   const field = await conversionField(req.params.id);
   const module = await registry.getModuleById(field.module_id);
   if (!module) throw new NotFoundError('Module not found');
-  if (field.storage !== 'json') throw new BadRequestError('This field is stored in a protected system column; create a replacement field for this conversion.');
+  const valueExpr = field.storage === 'json' ? 'custom_fields -> $1' : `to_jsonb(${quoteIdent(module.tableName)})->${quoteIdent(field.column_name)}`;
   const rows = await db.query<{ record_id: string; value: unknown }>(
-    `SELECT record_id, custom_fields -> $1 AS value FROM ${module.tableName} WHERE custom_fields ? $1`, [field.column_name],
+    field.storage === 'json'
+      ? `SELECT record_id, ${valueExpr} AS value FROM ${module.tableName} WHERE custom_fields ? $1`
+      : `SELECT record_id, ${valueExpr} AS value FROM ${module.tableName} WHERE ${quoteIdent(field.column_name)} IS NOT NULL`,
+    field.storage === 'json' ? [field.column_name] : [],
   );
   const plan: ConversionPlan = { targetType: input.targetType as import('@ipropy/shared').UIType, valueMap: input.valueMap, invalidStrategy: input.invalidStrategy, defaultValue: input.defaultValue };
   const invalid = rows.rows.filter((r) => !convertFieldValue(r.value, plan).ok);
@@ -894,15 +897,35 @@ metadataRouter.post('/fields/:id/type-conversion', asyncHandler(async (req, res)
   const field = await conversionField(req.params.id);
   const module = await registry.getModuleById(field.module_id);
   if (!module) throw new NotFoundError('Module not found');
-  if (field.storage !== 'json') throw new BadRequestError('This field is stored in a protected system column; create a replacement field for this conversion.');
   const plan: ConversionPlan = { targetType: input.targetType as import('@ipropy/shared').UIType, valueMap: input.valueMap, invalidStrategy: input.invalidStrategy, defaultValue: input.defaultValue };
   const result = await transaction(async (tx) => {
-    const rows = await tx.query<{ record_id: string; value: unknown }>(`SELECT record_id, custom_fields -> $1 AS value FROM ${module.tableName} WHERE custom_fields ? $1 FOR UPDATE`, [field.column_name]);
+    const rows = await tx.query<{ record_id: string; value: unknown }>(
+      field.storage === 'json'
+        ? `SELECT record_id, custom_fields -> $1 AS value FROM ${module.tableName} WHERE custom_fields ? $1 FOR UPDATE`
+        : `SELECT record_id, to_jsonb(${quoteIdent(module.tableName)})->${quoteIdent(field.column_name)} AS value FROM ${module.tableName} WHERE ${quoteIdent(field.column_name)} IS NOT NULL FOR UPDATE`,
+      field.storage === 'json' ? [field.column_name] : [],
+    );
     let invalid = 0;
     for (const row of rows.rows) {
       const converted = convertFieldValue(row.value, plan);
-      const value = converted.ok ? converted.value : (invalid++, input.invalidStrategy === 'default' ? input.defaultValue : input.invalidStrategy === 'keep' ? row.value : null);
-      await tx.query(`UPDATE ${module.tableName} SET custom_fields = jsonb_set(custom_fields, ARRAY[$1], $2::jsonb, true) WHERE record_id = $3`, [field.column_name, JSON.stringify(value), row.record_id]);
+      if (!converted.ok) invalid++;
+      if (field.storage === 'json') {
+        const value = converted.ok ? converted.value : (input.invalidStrategy === 'default' ? input.defaultValue : input.invalidStrategy === 'keep' ? row.value : null);
+        await tx.query(`UPDATE ${module.tableName} SET custom_fields = jsonb_set(custom_fields, ARRAY[$1], $2::jsonb, true) WHERE record_id = $3`, [field.column_name, JSON.stringify(value), row.record_id]);
+      } else if (!converted.ok && input.invalidStrategy !== 'keep') {
+        // NULL is valid in the old type and remains valid through ALTER TYPE;
+        // defaults are applied after the safe type change below.
+        await tx.query(`UPDATE ${module.tableName} SET ${quoteIdent(field.column_name)} = NULL WHERE record_id = $1`, [row.record_id]);
+      }
+    }
+    if (field.storage === 'column') {
+      if (invalid && input.invalidStrategy === 'keep') throw new BadRequestError('Some values cannot convert. Choose Clear value or Use default value.');
+      const targetSql = COLUMN_TYPES[input.targetType];
+      if (!targetSql) throw new BadRequestError('This target type must use a custom field.');
+      await tx.query(`ALTER TABLE ${quoteIdent(module.tableName)} ALTER COLUMN ${quoteIdent(field.column_name)} TYPE ${targetSql} USING ${quoteIdent(field.column_name)}::text::${targetSql}`);
+      if (invalid && input.invalidStrategy === 'default' && input.defaultValue !== undefined) {
+        await tx.query(`UPDATE ${quoteIdent(module.tableName)} SET ${quoteIdent(field.column_name)} = $1 WHERE ${quoteIdent(field.column_name)} IS NULL`, [input.defaultValue]);
+      }
     }
     await tx.query(`UPDATE ipy_field SET uitype = $2, config = $3, is_customised = true, updated_at = now() WHERE id = $1`, [field.id, input.targetType, JSON.stringify(field.config)]);
     await tx.query(`INSERT INTO ipy_field_change (module_id, field_internal_id, action, before_value, after_value, user_id) VALUES ($1,$2,'type_changed',$3,$4,$5)`, [field.module_id, field.internal_id, JSON.stringify({ uitype: field.uitype }), JSON.stringify({ uitype: input.targetType, invalidRecords: invalid }), user.id]);
