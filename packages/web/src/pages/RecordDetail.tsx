@@ -654,35 +654,33 @@ function OverviewTab({
                     className={cn(
                       // Label on the left, value on the right — scannable at a glance.
                       // Smaller than the old stacked boxes: tighter padding, smaller label.
-                      'rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 dark:border-slate-800 dark:bg-slate-800/40',
+                      'flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 dark:border-slate-800 dark:bg-slate-800/40',
                       field.config.fullWidth && 'sm:col-span-2',
                     )}
                   >
-                    <div className="flex min-w-0 items-center gap-2">
-                      <dt className="shrink-0 text-2xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{field.label}</dt>
-                      <dd className="min-w-0 flex-1 min-h-[1.25rem] text-sm font-medium text-slate-900 dark:text-slate-100">
-                        {record.can?.edit && isInlineEditable(field) ? (
-                          <EditableField
-                            module={module}
-                            recordId={record.id}
-                            field={field}
-                            value={record.values[field.name]}
-                            display={record.display?.[field.name]}
-                            siblings={record.values}
-                            restrictTo={restrictionForField(meta.picklistDependencies, record.values, field.name)}
-                            linkTo={field.uitype === 'reference' ? record.display?.[`${field.name}__module`] : undefined}
-                            onSaved={onSaved}
-                          />
-                        ) : (
-                          <FieldValue
-                            field={field}
-                            value={record.values[field.name]}
-                            display={record.display?.[field.name]}
-                            linkTo={field.uitype === 'reference' ? record.display?.[`${field.name}__module`] : undefined}
-                          />
-                        )}
-                      </dd>
-                    </div>
+                    <dt className="shrink-0 text-2xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{field.label}</dt>
+                    <dd className="min-w-0 flex-1 min-h-[1.25rem] text-sm font-medium text-slate-900 dark:text-slate-100">
+                      {record.can?.edit && isInlineEditable(field) ? (
+                        <EditableField
+                          module={module}
+                          recordId={record.id}
+                          field={field}
+                          value={record.values[field.name]}
+                          display={record.display?.[field.name]}
+                          siblings={record.values}
+                          restrictTo={restrictionForField(meta.picklistDependencies, record.values, field.name)}
+                          linkTo={field.uitype === 'reference' ? record.display?.[`${field.name}__module`] : undefined}
+                          onSaved={onSaved}
+                        />
+                      ) : (
+                        <FieldValue
+                          field={field}
+                          value={record.values[field.name]}
+                          display={record.display?.[field.name]}
+                          linkTo={field.uitype === 'reference' ? record.display?.[`${field.name}__module`] : undefined}
+                        />
+                      )}
+                    </dd>
                   </div>
                 ))}
               </dl>
