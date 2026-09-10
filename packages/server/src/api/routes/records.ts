@@ -219,6 +219,23 @@ recordsRouter.post('/:module/export', asyncHandler(async (req, res) => {
   res.send(file.content);
 }));
 
+/** Store a salesperson's shortlist/follow-up/not-suitable decision on a match. */
+recordsRouter.post('/:module/:id/matches/:targetId/feedback', asyncHandler(async (req, res) => {
+  const user = getUser(req); const scope = getScope(req);
+  await assertModuleAccess(user, req.params.module, 'edit');
+  if (!(await canAccessRecord(scope, req.params.module, req.params.id, 'view'))) throw new NotFoundError('Record not found');
+  const { decision } = z.object({ decision: z.enum(['shortlisted', 'not_suitable', 'follow_up']) }).parse(req.body);
+  const target = await db.queryOne<{ module_name: string }>(`SELECT module_name FROM ipy_record WHERE id = $1 AND is_deleted = false`, [req.params.targetId]);
+  if (!target || !(await canAccessRecord(scope, target.module_name, req.params.targetId, 'view'))) throw new NotFoundError('Matching record not found');
+  await db.query(
+    `INSERT INTO ipy_match_feedback (source_record_id, target_record_id, decision, decided_by, decided_at)
+     VALUES ($1,$2,$3,$4,now())
+     ON CONFLICT (source_record_id, target_record_id) DO UPDATE SET decision = EXCLUDED.decision, decided_by = EXCLUDED.decided_by, decided_at = now()`,
+    [req.params.id, req.params.targetId, decision, user.id],
+  );
+  res.json({ ok: true, decision });
+}));
+
 /** Saved exports retain Field IDs, so a field rename never breaks a template. */
 recordsRouter.get('/:module/export/templates', asyncHandler(async (req, res) => {
   const user = getUser(req);

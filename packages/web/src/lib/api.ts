@@ -756,6 +756,8 @@ export const api = {
     `/api/records/${module}/export${qs({ ...query, filter: query.filter, access_token: tokenStore.get() })}`,
   exportRecords: (module: string, data: Record<string, unknown>) =>
     request<Response>(`/api/records/${module}/export`, { method: 'POST', body: data, raw: true }),
+  matchFeedback: (module: string, id: string, targetId: string, decision: 'shortlisted' | 'not_suitable' | 'follow_up') =>
+    post(`/api/records/${module}/${id}/matches/${targetId}/feedback`, { decision }),
   exportTemplates: (module: string) => get<{ id: string; name: string; columns: { fieldId: string; header?: string }[]; filter: FilterGroup | null; isDefault: boolean }[]>(`/api/records/${module}/export/templates`),
   createExportTemplate: (module: string, data: Record<string, unknown>) => post<{ id: string }>(`/api/records/${module}/export/templates`, data),
   updateExportTemplate: (module: string, id: string, data: Record<string, unknown>) => patch(`/api/records/${module}/export/templates/${id}`, data),

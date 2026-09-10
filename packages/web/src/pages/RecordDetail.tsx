@@ -1,4 +1,4 @@
-import { type JSX, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type JSX, type MouseEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CALL_DISPOSITIONS, type BuyerMatch, type FieldMeta, formatIndianPrice, type ModuleMeta, type PropertyMatch, type RecordEnvelope, relativeTime, type TimelineEntry } from '@ipropy/shared';
@@ -798,6 +798,11 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
       status: b.status,
     }));
   }, [data, isContact]);
+  const feedback = async (event: MouseEvent, targetId: string, decision: 'shortlisted' | 'not_suitable' | 'follow_up'): Promise<void> => {
+    event.stopPropagation();
+    try { await api.matchFeedback(module, id, targetId, decision); toast.success(decision === 'shortlisted' ? 'Match shortlisted' : decision === 'not_suitable' ? 'Marked not suitable' : 'Follow-up marked'); }
+    catch (err) { toast.error('Could not save match decision', (err as Error).message); }
+  };
 
   return (
     <div className="card overflow-hidden">
@@ -842,6 +847,7 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
                 <th className="list-head hidden sm:table-cell">{isContact ? 'Price' : 'Budget'}</th>
                 {!isContact && <th className="list-head hidden md:table-cell">Status</th>}
                 <th className="list-head">Why it fits</th>
+                <th className="list-head w-32">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -863,6 +869,11 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
                   <td className="list-cell max-w-md">
                     <span className="block truncate text-xs">{m.reason}</span>
                     {m.caveat && <span className="block truncate text-2xs text-amber-600 dark:text-amber-400">{m.caveat}</span>}
+                  </td>
+                  <td className="list-cell whitespace-nowrap">
+                    <button className="btn-ghost btn-sm px-1.5" onClick={(e) => void feedback(e, m.id, 'shortlisted')} title="Shortlist"><Star className="h-3.5 w-3.5" /></button>
+                    <button className="btn-ghost btn-sm px-1.5" onClick={(e) => void feedback(e, m.id, 'follow_up')} title="Follow-up"><Check className="h-3.5 w-3.5" /></button>
+                    <button className="btn-ghost btn-sm px-1.5 text-red-500" onClick={(e) => void feedback(e, m.id, 'not_suitable')} title="Not suitable"><X className="h-3.5 w-3.5" /></button>
                   </td>
                 </tr>
               ))}
