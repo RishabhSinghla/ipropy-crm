@@ -4,10 +4,12 @@
   macOS (launchd) daily backup for local/dev iPropy databases.
 
   Install:
-    cp scripts/launchd/com.ipropy.backup.plist ~/Library/LaunchAgents/
-    launchctl load ~/Library/LaunchAgents/com.ipropy.backup.plist
+    bash scripts/launchd/install.sh
 
-  Adjust the ProgramArguments path to this repo. Runs daily at 02:00.
+  __REPO_ROOT__ is a placeholder. The installer fills in the real path to this
+  checkout, which is why this file must not be copied into ~/Library/LaunchAgents
+  by hand: an absolute path written here works on exactly one machine, and when it
+  is wrong launchd reports exit 127 and backs up nothing. Runs daily at 02:00.
 -->
 <plist version="1.0">
 <dict>
@@ -17,7 +19,7 @@
   <array>
     <string>/usr/bin/env</string>
     <string>bash</string>
-    <string>/Users/rishabhsinghla/Downloads/iPropy-crm/scripts/db-backup.sh</string>
+    <string>__REPO_ROOT__/scripts/db-backup.sh</string>
   </array>
   <key>StartCalendarInterval</key>
   <dict>

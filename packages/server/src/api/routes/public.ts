@@ -1,6 +1,6 @@
 /**
  * Public, unauthenticated read API for the customer-facing property website
- * (a separate app — see /Users/rishabhsinghla/Downloads/ipropy-website).
+ * (a separate app — see the sibling `ipropy-website` checkout).
  *
  * Deliberately NOT built on recordService/the metadata engine: this router
  * hand-picks an explicit column whitelist per query so that a field added to

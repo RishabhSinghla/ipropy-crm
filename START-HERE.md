@@ -163,6 +163,45 @@ Commits are the only undo in this project, so a day of unsaved work is a day you
 
 ---
 
+## What you can do that you may not realise
+
+Your account has the same rights on this project as Rishabh's, so a few things
+that look like they need him do not.
+
+You can run the jobs on GitHub yourself, under the Actions tab. There are 13 of
+them, and they exist so that things needing production access can be done without
+production access. Setting an admin password, resetting your own password, creating
+an API key, checking what is live, and publishing to the live site (the one called
+"Deploy now"). Ask Claude which one you want and it will tell you.
+
+You can see and change the project's stored secrets, under Settings, then Secrets
+and variables. Eight are stored. You will rarely touch them, but not being able to
+would have blocked you.
+
+Publishing to the live site is the one to be careful with rather than the one you
+cannot do. See the next section.
+
+## Optional: nightly backup of your own database
+
+Not needed on day one. If you want the database on your laptop backed up every
+night:
+
+```bash
+bash scripts/launchd/install.sh
+```
+
+It tests itself and tells you the result. On a project kept inside Downloads,
+macOS blocks background jobs from reading the folder, so it will fail and explain
+the two ways round it. Either way, backing up by hand always works and takes a
+second:
+
+```bash
+npm run db:backup
+```
+
+This is your own laptop's copy of the data, which is demo data. The real database
+is backed up separately and is not your responsibility.
+
 ## Four things not to do
 
 **Do not publish to the live CRM.** Pushing your changes to GitHub can send them to the real site

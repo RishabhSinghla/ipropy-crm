@@ -20,7 +20,7 @@ step()   { printf '\n\033[1m== %s\033[0m\n' "$1"; }
 FAILED=0
 note_fail() { red "   $1"; FAILED=1; }
 
-step "1 of 8  Checking the basics"
+step "1 of 9  Checking the basics"
 
 if ! command -v brew >/dev/null 2>&1; then
   yellow "   Homebrew is missing. Installing it now (it will ask for your Mac password)."
@@ -69,7 +69,7 @@ if [ "$FAILED" -eq 1 ]; then
   exit 1
 fi
 
-step "2 of 8  Starting Docker"
+step "2 of 9  Starting Docker"
 if docker info >/dev/null 2>&1; then
   green "   Docker is already running."
 else
@@ -88,7 +88,7 @@ else
   fi
 fi
 
-step "3 of 8  Your settings file (.env)"
+step "3 of 9  Your settings file (.env)"
 if [ -f .env ]; then
   green "   .env is here."
 else
@@ -111,7 +111,7 @@ else
   fi
 fi
 
-step "4 of 8  Starting the database"
+step "4 of 9  Starting the database"
 docker compose up -d db || { red "   The database would not start."; exit 1; }
 printf '   waiting for it to answer'
 for i in $(seq 1 60); do
@@ -126,15 +126,28 @@ else
   exit 1
 fi
 
-step "5 of 8  Installing the app's parts (a few minutes)"
+step "5 of 9  Installing the app's parts (a few minutes)"
 npm install || { red "   npm install failed. Run it again, it is usually a slow network."; exit 1; }
 
-step "6 of 8  Building and filling the database"
+step "6 of 9  Building and filling the database"
 npm run build:deps || { red "   Build failed."; exit 1; }
 npm run db:migrate || { red "   Setting up the database tables failed."; exit 1; }
 npm run db:seed    || { red "   Loading the starting data failed."; exit 1; }
 
-step "7 of 8  Checking it actually runs"
+step "7 of 9  Installing the browser the tests drive"
+# `npm test` needs nothing extra, but `npm run test:e2e` drives a real browser
+# that Playwright downloads separately. Without this, asking Claude to "run the
+# tests" dead-ends on an error about a missing executable that reads like a
+# broken project rather than a missing download.
+if npx playwright install chromium 2>&1 | tail -3; then
+  green "   Test browser ready."
+else
+  yellow "   Could not download the test browser. Everything else still works;"
+  yellow "   only 'npm run test:e2e' needs it. Retry later with:"
+  yellow "       npx playwright install chromium"
+fi
+
+step "8 of 9  Checking it actually runs"
 green "   Starting the CRM for 40 seconds to make sure it answers."
 env -u ANTHROPIC_API_KEY API_PORT=4000 npm run dev >/tmp/ipropy-first-run.log 2>&1 &
 DEV_PID=$!
@@ -152,7 +165,7 @@ case "$HEALTH" in
      yellow "   Look at /tmp/ipropy-first-run.log, or ask Claude Code to read it for you." ;;
 esac
 
-step "8 of 8  Done"
+step "9 of 9  Done"
 cat <<'DONE_EOF'
 
    To use the CRM from now on, two commands:

@@ -548,7 +548,7 @@ export async function seedIntegrations(conn: Tx): Promise<void> {
 
 /**
  * Webform used by the public property website's enquiry forms (a separate
- * app — see /Users/rishabhsinghla/Downloads/ipropy-website). A fixed
+ * app — see the sibling `ipropy-website` checkout). A fixed
  * public_key means the website's server-side proxy (app/api/enquiry/route.ts
  * there) can point at it out of the box with no manual admin-panel setup.
  * Submissions land as real Leads via the existing POST /api/webhooks/forms/:publicKey

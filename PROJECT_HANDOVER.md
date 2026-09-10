@@ -5,13 +5,17 @@
 remaining go-live gates are deployment-owned: persistent media storage, Neon backups, always-on
 hosting, real user accounts, phone alerts, provider credentials and a real site visit. Security
 audits, CI checks and the production Docker build run before Render deploys `main`.
-**Location:** `/Users/rishabhsinghla/Downloads/iPropy-Projects/iPropy-crm`
-**Git:** `main` at `https://github.com/RishabhSinghla/ipropy-crm` — **private**, single owner, no
+**Location:** anywhere. The checkout is `iPropy-crm`, with the website repo `ipropy-website` as
+its sibling in the same parent folder, which is the arrangement `.claude/launch.json` and the
+handover scripts expect. On the first machine that parent is `~/Downloads/iPropy-Projects`.
+**Git:** `main` at `https://github.com/RishabhSinghla/ipropy-crm` — **public** since September 2026,
+on the owner's deliberate decision, so treat everything committed here as world readable. Two
+accounts have admin, no
 branch protection. Push straight to `main`; Render holds the deploy until CI on that commit is
 green (`autoDeployTrigger: checksPass`).
 
 > Reference implementation: the original Vtiger PHP source sits at
-> `/Users/rishabhsinghla/Downloads/vtigercrm`. It was used as an **architecture
+> `../vtigercrm`, on the first machine only. It was used as an **architecture
 > reference only** — no Vtiger code was copied. iPropy is written from scratch.
 
 ---
@@ -548,7 +552,7 @@ session — the sole real bug is gone.)
 ### First-time setup
 
 ```bash
-cd /Users/rishabhsinghla/Downloads/iPropy-crm
+cd /path/to/iPropy-crm            # wherever you cloned it
 cp .env.example .env          # only if .env is missing
 docker compose up -d db       # Postgres 16 on :5432
 npm install
@@ -782,7 +786,7 @@ packages/web/src/components/FieldRenderer.tsx      how metadata becomes UI
 ## 14. Public property website (new sibling repo)
 
 A separate, customer-facing property showcase site lives at
-`/Users/rishabhsinghla/Downloads/ipropy-website` — **not** part of this monorepo, its own git repo,
+`../ipropy-website`, the sibling of this checkout — **not** part of this monorepo, its own git repo,
 built with Next.js (App Router) + TypeScript + Tailwind. It shows live Projects/Properties pulled
 from this CRM's own database, plus a CarWale-style deep comparison tool.
 
