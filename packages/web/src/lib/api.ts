@@ -5,7 +5,7 @@
  * server error envelopes into thrown ApiError objects the UI can render.
  */
 import type {
-  AuthUser, BuyerMatch, CustomView, Dashboard, FieldMeta, ListQuery, ListResult, ModuleMeta,
+  AuthUser, BuyerMatch, CustomView, Dashboard, FieldMeta, FilterGroup, ListQuery, ListResult, ModuleMeta,
   PropertyMatch, RecordEnvelope, TimelineEntry,
 } from '@ipropy/shared';
 
@@ -755,6 +755,10 @@ export const api = {
     `/api/records/${module}/export${qs({ ...query, filter: query.filter, access_token: tokenStore.get() })}`,
   exportRecords: (module: string, data: Record<string, unknown>) =>
     request<Response>(`/api/records/${module}/export`, { method: 'POST', body: data, raw: true }),
+  exportTemplates: (module: string) => get<{ id: string; name: string; columns: { fieldId: string; header?: string }[]; filter: FilterGroup | null; isDefault: boolean }[]>(`/api/records/${module}/export/templates`),
+  createExportTemplate: (module: string, data: Record<string, unknown>) => post<{ id: string }>(`/api/records/${module}/export/templates`, data),
+  updateExportTemplate: (module: string, id: string, data: Record<string, unknown>) => patch(`/api/records/${module}/export/templates/${id}`, data),
+  deleteExportTemplate: (module: string, id: string) => del(`/api/records/${module}/export/templates/${id}`),
 
   // --- views --------------------------------------------------------------
   views: (module: string, withCounts = false, includeInactive = false) =>

@@ -256,6 +256,33 @@ recordsRouter.post('/:module/export/templates', asyncHandler(async (req, res) =>
   res.status(201).json({ id: row!.id });
 }));
 
+recordsRouter.patch('/:module/export/templates/:id', asyncHandler(async (req, res) => {
+  const user = getUser(req); const module = await registry.requireModule(req.params.module);
+  if (!(await getModulePermission(user, module.name)).export) throw new ForbiddenError('You do not have permission to export this module');
+  const input = z.object({ name: z.string().min(1).max(120).optional(), columns: z.array(z.object({ fieldId: z.string().regex(/^fld_[A-Za-z0-9]+$/), header: z.string().max(120).optional() })).min(1).max(200).optional(), filter: filterSchema.optional(), isDefault: z.boolean().optional() }).parse(req.body ?? {});
+  if (input.columns && resolveExportColumns(module, input.columns).length !== input.columns.length) throw new BadRequestError('One or more selected fields are no longer available to export.');
+  await transaction(async (tx) => {
+    const template = await tx.queryOne<{ id: string }>(`SELECT id FROM ipy_export_template WHERE id = $1 AND module_id = $2`, [req.params.id, module.id]);
+    if (!template) throw new NotFoundError('Export template not found');
+    if (input.isDefault) await tx.query(`UPDATE ipy_export_template SET is_default = false WHERE module_id = $1`, [module.id]);
+    const sets: string[] = ['updated_at = now()']; const params: unknown[] = [req.params.id];
+    if (input.name !== undefined) { params.push(input.name); sets.push(`name = $${params.length}`); }
+    if (input.columns !== undefined) { params.push(JSON.stringify(input.columns)); sets.push(`columns = $${params.length}`); }
+    if (input.filter !== undefined) { params.push(JSON.stringify(input.filter)); sets.push(`filter = $${params.length}`); }
+    if (input.isDefault !== undefined) { params.push(input.isDefault); sets.push(`is_default = $${params.length}`); }
+    await tx.query(`UPDATE ipy_export_template SET ${sets.join(', ')} WHERE id = $1`, params);
+  });
+  res.json({ ok: true });
+}));
+
+recordsRouter.delete('/:module/export/templates/:id', asyncHandler(async (req, res) => {
+  const user = getUser(req); const module = await registry.requireModule(req.params.module);
+  if (!(await getModulePermission(user, module.name)).export) throw new ForbiddenError('You do not have permission to export this module');
+  const result = await db.query(`DELETE FROM ipy_export_template WHERE id = $1 AND module_id = $2`, [req.params.id, module.id]);
+  if (!result.rowCount) throw new NotFoundError('Export template not found');
+  res.status(204).end();
+}));
+
 // ---------------------------------------------------------------------------
 // Create
 // ---------------------------------------------------------------------------

@@ -1699,6 +1699,9 @@ function ExportWizard({ open, onClose, module, fields, filter, selectedIds }: {
   const [selected, setSelected] = useState<string[]>([]);
   const [format, setFormat] = useState<'xlsx' | 'csv'>('xlsx');
   const [busy, setBusy] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [activeTemplate, setActiveTemplate] = useState('');
+  const { data: templates, refetch: refetchTemplates } = useQuery({ queryKey: ['export-templates', module], queryFn: () => api.exportTemplates(module) });
   useEffect(() => { if (open) setSelected(available.map((f) => f.internalId)); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   const run = async (): Promise<void> => {
     setBusy(true);
@@ -1708,10 +1711,17 @@ function ExportWizard({ open, onClose, module, fields, filter, selectedIds }: {
       link.href = url; link.download = `${module}-export.${format}`; link.click(); URL.revokeObjectURL(url); onClose();
     } catch (err) { toast.error('Export failed', (err as Error).message); } finally { setBusy(false); }
   };
+  const saveTemplate = async (): Promise<void> => {
+    if (!templateName.trim()) { toast.error('Enter a template name'); return; }
+    try { await api.createExportTemplate(module, { name: templateName.trim(), columns: available.filter((f) => selected.includes(f.internalId)).map((f) => ({ fieldId: f.internalId })), filter }); setTemplateName(''); await refetchTemplates(); toast.success('Export template saved'); }
+    catch (err) { toast.error('Could not save template', (err as Error).message); }
+  };
   return <Modal open={open} onClose={onClose} title="Export records" size="md" footer={<><button className="btn-secondary" onClick={onClose}>Cancel</button><button className="btn-primary" disabled={!selected.length || busy} onClick={() => void run()}>{busy && <Spinner />} Export {format.toUpperCase()}</button></>}>
     <p className="mb-3 text-sm text-muted">{selectedIds?.length ? `${selectedIds.length} selected record(s)` : 'Current filtered results'} · choose fields and format.</p>
+    {templates?.length ? <Select value={activeTemplate} onChange={(id) => { setActiveTemplate(id); const t = templates.find((x) => x.id === id); if (t) setSelected(t.columns.map((c) => c.fieldId)); }} placeholder="Use a saved template" options={templates.map((t) => ({ value: t.id, label: `${t.name}${t.isDefault ? ' (default)' : ''}` }))} /> : null}
     <div className="mb-3 flex gap-2"><button className={cn('btn-secondary btn-sm', format === 'xlsx' && 'border-brand-500')} onClick={() => setFormat('xlsx')}>Excel (.xlsx)</button><button className={cn('btn-secondary btn-sm', format === 'csv' && 'border-brand-500')} onClick={() => setFormat('csv')}>CSV (.csv)</button></div>
     <div className="max-h-64 space-y-1 overflow-y-auto rounded border p-2">{available.map((f) => <label key={f.internalId} className="flex items-center gap-2 rounded px-1 py-1 text-sm hover:bg-slate-50 dark:hover:bg-slate-800"><input type="checkbox" checked={selected.includes(f.internalId)} onChange={(e) => setSelected((old) => e.target.checked ? [...old, f.internalId] : old.filter((id) => id !== f.internalId))} />{f.label}</label>)}</div>
+    <div className="mt-3 flex gap-2"><input className="input h-8 flex-1 text-sm" placeholder="Save this selection as…" value={templateName} onChange={(e) => setTemplateName(e.target.value)} /><button className="btn-secondary btn-sm" onClick={() => void saveTemplate()}>Save template</button></div>
   </Modal>;
 }
 
