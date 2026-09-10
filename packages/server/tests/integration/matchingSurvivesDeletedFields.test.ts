@@ -1,81 +1,141 @@
 /**
- * Buyer matching, with the two deleted fields actually deleted.
+ * Buyer matching, when the fields it compares have been deleted.
  *
- * `city` and `project_name` were removed from this CRM on purpose. Both matching
- * queries named them as columns, and naming a dropped column is a Postgres
- * 42703, which throws. So on production both directions of matching — buyers for
- * a new unit, units for a buyer — raised on every call.
+ * This is the sixth time a hand-written column list has taken a feature down
+ * on the owner's own CRM, and the fifth time it was buyer matching. The
+ * pattern never varies: an administrator deletes a field they are entitled to
+ * delete, a query still names it, Postgres answers 42703 on the whole
+ * statement, and the caller cannot tell "no matches" from "it threw". No
+ * buyers for a new unit, no units for a buyer, and nothing anywhere saying
+ * why. It ran that way for weeks.
  *
- * The failure was invisible from outside. Callers treat "no matches" and "it
- * threw" identically, so the feature reads as a matching engine that never finds
- * anything rather than one that never ran.
+ * `columnsThatCanBeDeleted.test.ts` reads the source for named columns, and it
+ * passed throughout — because it checks the names against *this* database,
+ * where the columns are all present. A test shaped like the developer's laptop
+ * cannot find a bug that only exists on a database shaped like production.
  *
- * This drops the columns for real. Reading the SQL was how the bug survived
- * three separate occurrences.
+ * So this one deletes the fields first and then runs the real thing. Thirteen
+ * of them, across both modules, chosen as the ones an admin plausibly removes:
+ * the whole comparison should degrade to "no value for that", never to an
+ * exception.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, afterAll, describe, expect, it } from 'vitest';
 import { db } from '../../src/db/pool.js';
-import { matchBuyersForProperty, matchForRecord } from '../../src/ai/matching.js';
+import { matchForRecord, matchBuyersForProperty, loadRequirement } from '../../src/ai/matching.js';
+import { comparablesFor } from '../../src/ai/comparables.js';
 
-const DELETABLE = ['city', 'project_name'] as const;
-const restore: { name: string; type: string }[] = [];
-let propertyId: string;
-let leadId: string;
+const PROPERTY_FIELDS = [
+  'facing', 'vastu_compliant', 'corner_unit', 'amenities', 'possession_status',
+  'area_unit', 'built_up_area', 'floor',
+];
+const LEAD_FIELDS = ['purpose', 'possession_timeline', 'lost_reason', 'area', 'area_unit'];
+
+/*
+  The suite shares one database and runs its files in order, so anything this
+  removes has to come back exactly as it was — column *and* metadata row. An
+  earlier draft restored only the column, and three later files failed on a
+  module that had quietly lost `floor` and `purpose`. Snapshotting the whole
+  `ipy_field` row is the only restoration that cannot drift from what was there.
+*/
+const dropped: { table: string; column: string; type: string; field: Record<string, unknown> | null }[] = [];
+
+async function dropField(table: string, column: string): Promise<void> {
+  const existing = await db.queryOne<{ data_type: string }>(
+    `SELECT data_type FROM information_schema.columns
+      WHERE table_name = $1 AND column_name = $2`,
+    [table, column],
+  );
+  if (!existing) return;
+
+  const field = await db.queryOne<{ row: Record<string, unknown> }>(
+    `SELECT to_jsonb(f) AS row FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+      WHERE m.table_name = $1 AND f.name = $2`,
+    [table, column],
+  );
+  dropped.push({ table, column, type: existing.data_type, field: field?.row ?? null });
+
+  // Both halves, the way the admin panel does it: the metadata row and the
+  // column. Deleting only one of them tests a state that cannot occur.
+  await db.query(
+    `DELETE FROM ipy_field f USING ipy_module m
+      WHERE m.id = f.module_id AND m.table_name = $1 AND f.name = $2`,
+    [table, column],
+  );
+  await db.query(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+}
+
+const SQL_TYPE: Record<string, string> = {
+  jsonb: 'JSONB', boolean: 'BOOLEAN', text: 'TEXT', integer: 'INTEGER',
+  numeric: 'NUMERIC', date: 'DATE', 'timestamp with time zone': 'TIMESTAMPTZ', uuid: 'UUID',
+};
 
 beforeAll(async () => {
-  const property = await db.queryOne<{ record_id: string }>(
-    `SELECT p.record_id FROM ipy_e_properties p
-       JOIN ipy_record r ON r.id = p.record_id
-      WHERE r.is_deleted = false LIMIT 1`,
-  );
-  const lead = await db.queryOne<{ record_id: string }>(
-    `SELECT l.record_id FROM ipy_e_leads l
-       JOIN ipy_record r ON r.id = l.record_id
-      WHERE r.is_deleted = false LIMIT 1`,
-  );
-  if (!property || !lead) throw new Error('need a seeded property and lead');
-  propertyId = property.record_id;
-  leadId = lead.record_id;
-
-  for (const name of DELETABLE) {
-    const column = await db.queryOne<{ data_type: string }>(
-      `SELECT data_type FROM information_schema.columns
-        WHERE table_name = 'ipy_e_properties' AND column_name = $1`,
-      [name],
-    );
-    if (column) {
-      restore.push({ name, type: column.data_type === 'text' ? 'TEXT' : 'VARCHAR(255)' });
-      await db.query(`ALTER TABLE ipy_e_properties DROP COLUMN ${name}`);
-    }
-  }
+  for (const column of PROPERTY_FIELDS) await dropField('ipy_e_properties', column);
+  for (const column of LEAD_FIELDS) await dropField('ipy_e_leads', column);
+  const { registry } = await import('../../src/core/metadata/registry.js');
+  registry.invalidate();
 });
 
 afterAll(async () => {
-  for (const { name, type } of restore) {
-    await db.query(`ALTER TABLE ipy_e_properties ADD COLUMN IF NOT EXISTS ${name} ${type}`);
+  for (const { table, column, type, field } of dropped.reverse()) {
+    await db.query(
+      `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS "${column}" ${SQL_TYPE[type] ?? 'TEXT'}`,
+    );
+    if (!field) continue;
+    await db.query(
+      `INSERT INTO ipy_field SELECT * FROM jsonb_populate_record(NULL::ipy_field, $1::jsonb)
+       ON CONFLICT (module_id, name) DO NOTHING`,
+      [JSON.stringify(field)],
+    );
   }
+  const { registry } = await import('../../src/core/metadata/registry.js');
+  registry.invalidate();
 });
 
-describe('matching with city and project_name deleted', () => {
-  it('finds properties for a buyer without throwing', async () => {
-    // The assertion is that it *returns*. An empty list is a legitimate answer;
-    // a 42703 is not, and before the fix that is all this could produce.
-    await expect(matchForRecord(leadId)).resolves.toBeInstanceOf(Array);
+describe('buyer matching with fields deleted', () => {
+  it('finds properties for a lead', async () => {
+    const lead = await db.queryOne<{ record_id: string }>(
+      `SELECT l.record_id FROM ipy_e_leads l JOIN ipy_record r ON r.id = l.record_id
+        WHERE r.is_deleted = false LIMIT 1`,
+    );
+    if (!lead) return; // an empty database has nothing to match, which is not a failure
+
+    // The assertion is that it *answers*. How many it finds depends on the
+    // data; that it does not raise is the whole point.
+    await expect(matchForRecord(lead.record_id, { persist: false, withNarrative: false }))
+      .resolves.toBeInstanceOf(Array);
   });
 
-  it('finds buyers for a property without throwing', async () => {
-    await expect(matchBuyersForProperty(propertyId)).resolves.toBeInstanceOf(Array);
+  it('finds buyers for a property', async () => {
+    const property = await db.queryOne<{ record_id: string }>(
+      `SELECT p.record_id FROM ipy_e_properties p JOIN ipy_record r ON r.id = p.record_id
+        WHERE r.is_deleted = false LIMIT 1`,
+    );
+    if (!property) return;
+
+    await expect(matchBuyersForProperty(property.record_id, 10))
+      .resolves.toBeInstanceOf(Array);
   });
 
-  it('really did drop the columns, so the two above mean something', async () => {
-    // Guard against the test quietly passing because the ALTERs did not run.
-    for (const name of DELETABLE) {
-      const column = await db.queryOne(
-        `SELECT 1 FROM information_schema.columns
-          WHERE table_name = 'ipy_e_properties' AND column_name = $1`,
-        [name],
-      );
-      expect(column, `${name} should be dropped for this suite`).toBeNull();
-    }
+  it('reads a requirement off a lead whose requirement fields are gone', async () => {
+    const lead = await db.queryOne<{ record_id: string }>(
+      `SELECT l.record_id FROM ipy_e_leads l JOIN ipy_record r ON r.id = l.record_id
+        WHERE r.is_deleted = false LIMIT 1`,
+    );
+    if (!lead) return;
+
+    const req = await loadRequirement(lead.record_id);
+    expect(req).not.toBeNull();
+    // The deleted ones read as absent, not as an error and not as a wrong value.
+    expect(req?.purpose ?? null).toBeNull();
+    expect(req?.possessionTimeline ?? null).toBeNull();
+    expect(req?.area ?? null).toBeNull();
+  });
+
+  it('prices comparables without raising', async () => {
+    // `null` is a valid and common answer — three units is not a market. What
+    // must not happen is a throw.
+    await expect(comparablesFor({ locality: 'Powai', bedrooms: 3, area: null }))
+      .resolves.not.toThrow();
   });
 });

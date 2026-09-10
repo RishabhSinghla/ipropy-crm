@@ -264,6 +264,40 @@ export default function PicklistManager(): JSX.Element {
               <Pencil className="h-3.5 w-3.5" />
             </button>
             <div className="ml-auto flex shrink-0 items-center gap-2">
+              {/*
+                Off means this dropdown reads A–Z everywhere in the CRM; on
+                keeps the order below. On belongs to a pipeline, a scale or a
+                ranking — New → Contacted → Qualified, Hot → Warm → Cold — where
+                the sequence is the information. Everything else is a list to
+                find one entry in, and alphabetical is the only order somebody
+                can navigate without being told what it is.
+              */}
+              <label
+                className="flex cursor-pointer items-center gap-1.5 text-2xs text-muted"
+                title="On: this list keeps the order below wherever it appears. Off: it is sorted A–Z everywhere."
+              >
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 rounded border-slate-300"
+                  checked={Boolean(current?.isOrdered)}
+                  disabled={!current}
+                  onChange={async (e) => {
+                    try {
+                      await api.setPicklistOrdered(selected, e.target.checked);
+                      toast.success(
+                        e.target.checked ? 'Order kept' : 'Sorted A–Z',
+                        e.target.checked
+                          ? 'This dropdown keeps the order below wherever it appears.'
+                          : 'This dropdown now reads alphabetically everywhere in the CRM.',
+                      );
+                      void queryClient.invalidateQueries({ queryKey: ['picklist-catalogue'] });
+                    } catch (err) {
+                      toast.error('Could not change the order', (err as Error).message);
+                    }
+                  }}
+                />
+                Keep my order
+              </label>
               <label className="flex cursor-pointer items-center gap-1.5 text-2xs text-muted">
                 <input
                   type="checkbox"

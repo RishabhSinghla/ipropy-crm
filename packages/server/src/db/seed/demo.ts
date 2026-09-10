@@ -201,7 +201,7 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
           project_name: p.name, status, property_type: config === 'Commercial' ? 'Office Space' : 'Apartment',
           tower: `Tower ${tower}`, floor, unit_number: unitNo,
           facing: pick(facings, u), corner_unit: u % 7 === 0, vastu_compliant: u % 3 !== 0,
-          carpet_area: carpet, built_up_area: Math.round(carpet * 1.18),
+          area: carpet, built_up_area: Math.round(carpet * 1.18),
           super_built_up_area: Math.round(carpet * 1.42), balcony_area: Math.round(carpet * 0.08),
           area_unit: 'sqft',
           bedrooms: config.startsWith('1') ? 1 : config.startsWith('2') ? 2 : config.startsWith('3') ? 3 : config === 'Commercial' ? 0 : 4,
@@ -218,7 +218,7 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
           city: p.city, locality: p.locality, latitude: p.lat, longitude: p.lng,
           amenities: p.amenities.slice(0, 6),
           blocked_until: status === 'Held' || status === 'Blocked' ? daysAhead(randInt(unitSeed, 1, 9)) : null,
-          description: `${config} in ${p.name}, Tower ${tower} on floor ${floor}. ${pick(facings, u)} facing with ${carpet} sq.ft carpet area.`,
+          description: `${config} in ${p.name}, Tower ${tower} on floor ${floor}. ${pick(facings, u)} facing, ${carpet} sq.ft.`,
         },
       });
       propertyIds.push({ id, projectIdx: pi, price: total, config, status });

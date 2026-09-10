@@ -10,14 +10,14 @@ import { upsertPicklist, type PicklistDef } from './helpers.js';
 
 /** Every dropdown in the CRM, seeded once and then fully admin-editable. */
 export const PICKLISTS: PicklistDef[] = [
-  { name: 'lead_status', label: 'Lead Status', values: LEAD_STATUSES.map((s) => ({ ...s, isDefault: s.value === 'New' })) },
+  { name: 'lead_status', ordered: true, label: 'Lead Status', values: LEAD_STATUSES.map((s) => ({ ...s, isDefault: s.value === 'New' })) },
   { name: 'lead_source', label: 'Lead Source', values: [...LEAD_SOURCES] },
   { name: 'lead_sub_source', label: 'Lead Sub Source', values: ['Organic', 'Paid', 'Retargeting', 'Email Blast', 'SMS Blast', 'Broker Network', 'Existing Customer', 'Employee Referral'] },
   {
-    name: 'deal_stage', label: 'Deal Stage',
+    name: 'deal_stage', ordered: true, label: 'Deal Stage',
     values: DEAL_STAGES.map((s) => ({ value: s.value, label: s.label, color: s.color, isDefault: s.value === 'Enquiry', meta: { probability: s.probability, isWon: s.value === 'Booked', isLost: s.value === 'Lost' } })),
   },
-  { name: 'property_status', label: 'Property Status', values: PROPERTY_STATUSES.map((s) => ({ ...s, isDefault: s.value === 'Available' })) },
+  { name: 'property_status', ordered: true, label: 'Property Status', values: PROPERTY_STATUSES.map((s) => ({ ...s, isDefault: s.value === 'Available' })) },
   { name: 'property_type', label: 'Property Type', values: [...PROPERTY_TYPES] },
   // Kept for the Contacts side — what BHK(s) a buyer wants. The name stays
   // 'configuration' (buyer matching reads it by that key; see
@@ -27,42 +27,42 @@ export const PICKLISTS: PicklistDef[] = [
   { name: 'configuration', label: 'Bedroom Type', values: [...CONFIGURATIONS] },
   { name: 'facing', label: 'Facing', values: [...FACING_OPTIONS] },
   { name: 'furnishing', label: 'Furnishing', values: [...FURNISHING] },
-  { name: 'possession_status', label: 'Possession Status', values: [...POSSESSION_STATUS] },
-  { name: 'project_status', label: 'Project Status', values: PROJECT_STATUS.map((s) => ({ ...s })) },
+  { name: 'possession_status', ordered: true, label: 'Possession Status', values: [...POSSESSION_STATUS] },
+  { name: 'project_status', ordered: true, label: 'Project Status', values: PROJECT_STATUS.map((s) => ({ ...s })) },
   { name: 'project_type', label: 'Project Type', values: ['Residential', 'Commercial', 'Mixed Use', 'Plotted Development', 'Township', 'Industrial', 'Hospitality'] },
   { name: 'purpose', label: 'Purpose', values: [...PURPOSE] },
   // The unit half of an Area field. A picklist rather than free text so it
   // groups, filters and reports — but rendered inside the area control, not as
   // a dropdown of its own.
-  { name: 'area_unit', label: 'Area Unit', values: [
+  { name: 'area_unit', ordered: true, label: 'Area Unit', values: [
     { value: 'sqft', label: 'Sq.ft.', isDefault: true },
     { value: 'sqyd', label: 'Sq.yd.' },
   ] },
   // The qualifier half of a Budget/Demand field: is the price per Sq.ft., per
   // Sq.yd., or the whole thing? Same shape as `area_unit` — rendered inside
   // the price control, not a dropdown of its own.
-  { name: 'price_unit', label: 'Price Unit', values: [
+  { name: 'price_unit', ordered: true, label: 'Price Unit', values: [
     { value: 'sqft', label: 'Sq. ft.', isDefault: true },
     { value: 'sqyd', label: 'Sq. yd.' },
     { value: 'total', label: 'Total' },
   ] },
-  { name: 'budget_band', label: 'Budget Band', values: [...BUDGET_BANDS] },
-  { name: 'purchase_timeline', label: 'Purchase Timeline', values: [...TIMELINE_OPTIONS] },
+  { name: 'budget_band', ordered: true, label: 'Budget Band', values: [...BUDGET_BANDS] },
+  { name: 'purchase_timeline', ordered: true, label: 'Purchase Timeline', values: [...TIMELINE_OPTIONS] },
   { name: 'funding_type', label: 'Funding Type', values: [...FUNDING_TYPE] },
-  { name: 'site_visit_status', label: 'Site Visit Status', values: SITE_VISIT_STATUS.map((s) => ({ ...s, isDefault: s.value === 'Scheduled' })) },
+  { name: 'site_visit_status', ordered: true, label: 'Site Visit Status', values: SITE_VISIT_STATUS.map((s) => ({ ...s, isDefault: s.value === 'Scheduled' })) },
   { name: 'site_visit_type', label: 'Site Visit Type', values: ['First Visit', 'Revisit', 'Virtual Tour', 'Sample Flat', 'Site Walkthrough', 'Possession Visit'] },
-  { name: 'interest_level', label: 'Interest Level', values: [
+  { name: 'interest_level', ordered: true, label: 'Interest Level', values: [
     { value: 'Very High', label: 'Very High', color: '#22c55e' },
     { value: 'High', label: 'High', color: '#84cc16' },
     { value: 'Medium', label: 'Medium', color: '#f59e0b' },
     { value: 'Low', label: 'Low', color: '#f97316' },
     { value: 'Not Interested', label: 'Not Interested', color: '#ef4444' },
   ] },
-  { name: 'booking_status', label: 'Booking Status', values: BOOKING_STATUS.map((s) => ({ ...s })) },
-  { name: 'payment_status', label: 'Payment Status', values: PAYMENT_STATUS.map((s) => ({ ...s, isDefault: s.value === 'Pending' })) },
+  { name: 'booking_status', ordered: true, label: 'Booking Status', values: BOOKING_STATUS.map((s) => ({ ...s })) },
+  { name: 'payment_status', ordered: true, label: 'Payment Status', values: PAYMENT_STATUS.map((s) => ({ ...s, isDefault: s.value === 'Pending' })) },
   { name: 'payment_mode', label: 'Payment Mode', values: [...PAYMENT_MODES] },
   { name: 'payment_plan', label: 'Payment Plan', values: ['Construction Linked Plan (CLP)', 'Down Payment Plan', 'Flexi Payment Plan', 'Subvention Scheme', 'Possession Linked Plan', 'Time Linked Plan', 'Custom'] },
-  { name: 'loan_status', label: 'Loan Status', values: [
+  { name: 'loan_status', ordered: true, label: 'Loan Status', values: [
     { value: 'Not Applied', label: 'Not Applied', color: '#94a3b8' },
     { value: 'Applied', label: 'Applied', color: '#0ea5e9' },
     { value: 'Under Process', label: 'Under Process', color: '#f59e0b' },
@@ -72,21 +72,21 @@ export const PICKLISTS: PicklistDef[] = [
   ] },
   { name: 'amenities', label: 'Amenities', values: [...AMENITIES] },
   { name: 'activity_type', label: 'Activity Type', values: ACTIVITY_TYPES.map((s) => ({ ...s })) },
-  { name: 'activity_status', label: 'Activity Status', values: [
+  { name: 'activity_status', ordered: true, label: 'Activity Status', values: [
     { value: 'Not Started', label: 'Not Started', color: '#94a3b8', isDefault: true },
     { value: 'In Progress', label: 'In Progress', color: '#0ea5e9' },
     { value: 'Completed', label: 'Completed', color: '#22c55e' },
     { value: 'Deferred', label: 'Deferred', color: '#f59e0b' },
     { value: 'Cancelled', label: 'Cancelled', color: '#ef4444' },
   ] },
-  { name: 'priority', label: 'Priority', values: [
+  { name: 'priority', ordered: true, label: 'Priority', values: [
     { value: 'Urgent', label: 'Urgent', color: '#dc2626' },
     { value: 'High', label: 'High', color: '#f97316' },
     { value: 'Medium', label: 'Medium', color: '#0ea5e9', isDefault: true },
     { value: 'Low', label: 'Low', color: '#94a3b8' },
   ] },
   { name: 'call_disposition', label: 'Call Disposition', values: [...CALL_DISPOSITIONS] },
-  { name: 'rating', label: 'Rating', values: [
+  { name: 'rating', ordered: true, label: 'Rating', values: [
     { value: 'Hot', label: 'Hot', color: '#ef4444' },
     { value: 'Warm', label: 'Warm', color: '#f59e0b' },
     { value: 'Cold', label: 'Cold', color: '#3b82f6' },
@@ -113,13 +113,13 @@ export const PICKLISTS: PicklistDef[] = [
   { name: 'contact_type', label: 'Contact Type', values: ['Buyer', 'Seller', 'Tenant', 'Landlord', 'Investor', 'Broker', 'Consultant', 'Vendor', 'Other'].map((value) => ({ value, isDefault: value === 'Buyer' })) },
   { name: 'org_type', label: 'Organisation Type', values: ['Developer', 'Builder', 'Corporate Client', 'Investor Group', 'Financial Institution', 'Vendor', 'Contractor', 'Law Firm', 'Marketing Agency'] },
   { name: 'channel_partner_type', label: 'Channel Partner Type', values: [...CHANNEL_PARTNER_TYPES] },
-  { name: 'partner_status', label: 'Partner Status', values: [
+  { name: 'partner_status', ordered: true, label: 'Partner Status', values: [
     { value: 'Active', label: 'Active', color: '#22c55e', isDefault: true },
     { value: 'Onboarding', label: 'Onboarding', color: '#0ea5e9' },
     { value: 'Inactive', label: 'Inactive', color: '#94a3b8' },
     { value: 'Blacklisted', label: 'Blacklisted', color: '#ef4444' },
   ] },
-  { name: 'partner_tier', label: 'Partner Tier', values: [
+  { name: 'partner_tier', ordered: true, label: 'Partner Tier', values: [
     { value: 'Platinum', label: 'Platinum', color: '#8b5cf6' },
     { value: 'Gold', label: 'Gold', color: '#f59e0b' },
     { value: 'Silver', label: 'Silver', color: '#94a3b8' },
@@ -131,7 +131,7 @@ export const PICKLISTS: PicklistDef[] = [
     'KYC — PAN', 'KYC — Aadhaar', 'KYC — Passport', 'Bank Statement', 'Salary Slip',
     'Loan Sanction Letter', 'Payment Receipt', 'NOC', 'Possession Letter', 'Other',
   ] },
-  { name: 'kyc_status', label: 'KYC Status', values: [
+  { name: 'kyc_status', ordered: true, label: 'KYC Status', values: [
     { value: 'Not Started', label: 'Not Started', color: '#94a3b8', isDefault: true },
     { value: 'Documents Requested', label: 'Documents Requested', color: '#0ea5e9' },
     { value: 'Partially Submitted', label: 'Partially Submitted', color: '#f59e0b' },
@@ -155,7 +155,7 @@ export const PICKLISTS: PicklistDef[] = [
   },
   { name: 'micro_market', label: 'Micro Market', values: ['Prime', 'Emerging', 'Established', 'Peripheral', 'CBD', 'Suburban', 'IT Corridor', 'Industrial Belt'] },
   { name: 'occupation', label: 'Occupation', values: ['Salaried — IT', 'Salaried — Non IT', 'Business Owner', 'Self Employed Professional', 'Doctor', 'Chartered Accountant', 'Lawyer', 'Government Service', 'Defence', 'Retired', 'NRI Professional', 'Student', 'Homemaker'] },
-  { name: 'commission_status', label: 'Commission Status', values: [
+  { name: 'commission_status', ordered: true, label: 'Commission Status', values: [
     { value: 'Not Due', label: 'Not Due', color: '#94a3b8', isDefault: true },
     { value: 'Due', label: 'Due', color: '#f59e0b' },
     { value: 'Invoice Raised', label: 'Invoice Raised', color: '#0ea5e9' },

@@ -35,7 +35,9 @@ import { invalidateWorkflows } from '../../core/workflow/engine.js';
 import { runSchedulerNow } from '../../core/workflow/scheduler.js';
 import { TASK_TYPES } from '../../core/workflow/tasks.js';
 import { mergeRecords } from '../../core/entity/conversion.js';
-import { parseCsv } from '../../utils/csv.js';
+import { readImportFile } from '../../core/import/readFile.js';
+import { growPicklists, growableFields } from '../../core/import/picklistGrowth.js';
+import { reconcileColumns } from '../../db/seed/reconcileColumns.js';
 import {
   pendingDuplicates, resolve as resolveDuplicate, resolveAll, resultCsv,
   type Resolution, type Section,
@@ -964,7 +966,12 @@ miscRouter.post('/import/:module/preview', upload.single('file'), asyncHandler(a
   const file = (req as unknown as { file?: Express.Multer.File }).file;
   if (!file) throw new BadRequestError('No file uploaded');
 
-  const { headers, rows } = parseCsv(file.buffer.toString('utf8'));
+  const { headers, rows } = readImportFile(file.buffer, file.originalname);
+  if (!headers.length) {
+    throw new BadRequestError(
+      `“${file.originalname}” has no readable header row. The first row must name the columns.`,
+    );
+  }
   const module = await registry.requireModule(req.params.module);
 
   // Suggest a mapping by matching CSV headers against field names and labels.
@@ -1004,8 +1011,41 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
   // row-by-row crawl while each one was evaluated. Off by default now; the
   // import form opts in explicitly.
   const runWorkflows = String(req.body.runWorkflows ?? 'false') === 'true';
+  // On by default, because the alternative is values that import and are then
+  // invisible to every filter and view. Off is for an import into a list whose
+  // options are a deliberate, closed set.
+  const createOptions = String(req.body.createOptions ?? 'true') !== 'false';
   const module = await registry.requireModule(req.params.module);
-  const { rows } = parseCsv(file.buffer.toString('utf8'));
+  const { rows } = readImportFile(file.buffer, file.originalname);
+  if (!rows.length) throw new BadRequestError(`“${file.originalname}” has a header row and no data rows.`);
+
+  /*
+    Before a single row is written.
+
+    Both of these used to surface as the same thing: every row failing with a
+    raw Postgres sentence. "column \"configuration\" of relation
+    \"ipy_e_properties\" does not exist", ten times over, is not something an
+    admin can act on — and in that case the fix was not in the file at all.
+
+    1. A field whose metadata says it is a column, on a table that has not got
+       that column. `reconcileColumns` puts it back; see its file for the three
+       ways the two drift apart. Doing it here rather than only at boot means
+       the import that discovered the problem is also the import that fixes it.
+    2. A mapped field that is not on this module at all — a mapping saved
+       before somebody deleted the field. Named, and refused, rather than
+       failing per row.
+  */
+  await transaction((tx) => reconcileColumns(tx));
+  registry.invalidate();
+  const live = await registry.requireModule(req.params.module);
+  const unknown = [...new Set(Object.values(mapping).filter(Boolean))]
+    .filter((name) => !live.fields.some((f) => f.name === name));
+  if (unknown.length) {
+    throw new BadRequestError(
+      `${module.label} has no field named ${unknown.map((u) => `“${u}”`).join(', ')} any more. `
+      + 'Re-check the column mapping — the field was probably deleted after this mapping was saved.',
+    );
+  }
 
   const job = await db.queryOne<{ id: string }>(
     `INSERT INTO ipy_import_job (module_id, user_id, file_name, mapping, duplicate_handling, status, total_rows)
@@ -1019,11 +1059,72 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
   void (async () => {
     let created = 0; let skipped = 0; let failed = 0; let duplicates = 0;
     const errors: { row: number; error: string }[] = [];
+
+    /*
+      Grow the dropdowns before writing anything.
+
+      A picklist value is a plain string on the record, not a foreign key, so
+      an unknown one saves happily and is then invisible to every filter, view
+      and report — the value is there and nothing offers it. Adding the options
+      up front means the whole file lands as real, selectable values, and the
+      first row is judged against the same list as the last.
+
+      `canonical` carries the spelling corrections back: "sector 21" in the
+      file becomes "Sector 21" if that option already existed, so one locality
+      does not arrive as three.
+    */
+    let optionsAdded: string[] = [];
+    let optionsSkipped: string[] = [];
+    let canonical = new Map<string, Map<string, string>>();
+    /** The fields whose cell holds a list rather than one value. */
+    const multiValued = new Set(
+      live.fields.filter((f) => f.uitype === 'multipicklist' || f.uitype === 'tags').map((f) => f.name),
+    );
+    if (createOptions) {
+      try {
+        const seen = new Map<string, Set<string>>();
+        const growable = new Set(growableFields(live.fields).map((f) => f.name));
+        /*
+          Only a multi-select cell is split.
+
+          A multi-select holds several values and the template separates them
+          with a semicolon, which people also write as a comma. A single
+          dropdown holds exactly one — and Faridabad localities are written
+          "Ballabgarh, Sector 64". Splitting those would add two options where
+          there is one place, and store a value matching neither.
+        */
+        const multi = multiValued;
+        for (const raw of rows) {
+          for (const [header, fieldName] of Object.entries(mapping)) {
+            if (!fieldName || !growable.has(fieldName)) continue;
+            const cell = raw[header];
+            if (cell === undefined || cell === '') continue;
+            const bucket = seen.get(fieldName) ?? new Set<string>();
+            const parts = multi.has(fieldName) ? String(cell).split(/[;,]/) : [String(cell)];
+            for (const part of parts) {
+              const v = part.trim();
+              if (v) bucket.add(v);
+            }
+            seen.set(fieldName, bucket);
+          }
+        }
+        const grown = await transaction((tx) => growPicklists(live.fields, seen, tx));
+        optionsAdded = grown.result.added;
+        optionsSkipped = grown.result.skippedTombstoned;
+        canonical = grown.canonical;
+        if (optionsAdded.length) registry.invalidate();
+      } catch (err) {
+        // A dropdown that could not grow is not a reason to abandon the file.
+        // The values still import; they are simply not offered afterwards.
+        logger.warn({ err }, 'could not add dropdown options for this import');
+      }
+    }
     // What the counts are made of, shown when a number is clicked in the UI.
     // Bounded: a five-figure import does not need five-figure lists in one
     // jsonb cell, so each list stops at 300 and the UI says so.
     const CAP = 300;
-    const details: { created: string[]; skipped: string[] } = { created: [], skipped: [] };
+    const details: { created: string[]; skipped: string[]; optionsAdded: string[]; optionsSkipped: string[] } =
+      { created: [], skipped: [], optionsAdded, optionsSkipped };
     let cancelled = false;
 
     for (const [i, raw] of rows.entries()) {
@@ -1031,7 +1132,16 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
       for (const [header, fieldName] of Object.entries(mapping)) {
         if (!fieldName) continue;
         const v = raw[header];
-        if (v !== undefined && v !== '') values[fieldName] = v;
+        if (v === undefined || v === '') continue;
+        const fix = canonical.get(fieldName);
+        if (!fix) { values[fieldName] = v; continue; }
+        // Corrected to the option's own spelling, so "neharpar" and "NEHARPAR"
+        // do not become two localities. Multi-select cells value by value; a
+        // single dropdown is one lookup and is never split — see `multi` above.
+        values[fieldName] = multiValued.has(fieldName)
+          ? String(v).split(/[;,]/).map((part) => fix.get(part.trim()) ?? part.trim())
+            .filter(Boolean).join('; ')
+          : (fix.get(String(v).trim()) ?? v);
       }
       if (!Object.keys(values).length) {
         skipped++;
@@ -1110,9 +1220,14 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
       userId: user.id,
       kind: 'import',
       title: cancelled ? 'Import cancelled' : 'Import complete',
-      body: duplicates > 0
-        ? `${created} created, ${skipped} skipped, ${failed} failed — ${duplicates} need a decision.`
-        : `${created} created, ${skipped} skipped, ${failed} failed.`,
+      body: [
+        duplicates > 0
+          ? `${created} created, ${skipped} skipped, ${failed} failed — ${duplicates} need a decision.`
+          : `${created} created, ${skipped} skipped, ${failed} failed.`,
+        optionsAdded.length
+          ? `${optionsAdded.length} new dropdown option${optionsAdded.length === 1 ? '' : 's'} added.`
+          : '',
+      ].filter(Boolean).join(' '),
     });
   })().catch((err) => logger.error({ err }, 'import job failed'));
 }));

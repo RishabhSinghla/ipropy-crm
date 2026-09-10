@@ -85,6 +85,13 @@ export interface PicklistDef {
   name: string;
   label: string;
   global?: boolean;
+  /**
+   * The sequence below is the meaning — a pipeline, a scale, a ranking — and
+   * must not be sorted A–Z. Everything else is alphabetised on the way out of
+   * the registry (migration 114). Written on insert only, like every other
+   * admin control here: Admin → Dropdowns is where it is changed afterwards.
+   */
+  ordered?: boolean;
   values: (string | { value: string; label?: string; color?: string; isDefault?: boolean; meta?: Record<string, unknown> })[];
 }
 
@@ -112,11 +119,11 @@ export async function upsertPicklist(conn: Tx, def: PicklistDef): Promise<string
   if (tombstones.has('')) return null;
 
   const row = await conn.queryOne<{ id: string }>(
-    `INSERT INTO ipy_picklist (name, label, is_global, is_system)
-     VALUES ($1,$2,$3,true)
+    `INSERT INTO ipy_picklist (name, label, is_global, is_system, is_ordered)
+     VALUES ($1,$2,$3,true,$4)
      ON CONFLICT (name) DO UPDATE SET label = EXCLUDED.label
      RETURNING id`,
-    [def.name, def.label, def.global ?? true],
+    [def.name, def.label, def.global ?? true, def.ordered ?? false],
   );
   const picklistId = row!.id;
 

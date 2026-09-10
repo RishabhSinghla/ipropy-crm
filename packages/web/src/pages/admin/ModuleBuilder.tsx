@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { type FieldMeta, type FilterGroup, type FilterOperator, NULLARY_OPERATORS, UITYPE_LIST } from '@ipropy/shared';
 import { ChevronDown, ChevronUp, Edit3, Eye, EyeOff, GripVertical, Plus, Trash2 } from 'lucide-react';
-import { api } from '../../lib/api';
+import { api, ApiError } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
 import { cn } from '../../lib/utils';
 import { Badge, ConfirmDialog, Modal, Select, Skeleton, Spinner, Toggle } from '../../components/ui';
@@ -61,8 +61,17 @@ export default function ModuleBuilder(): JSX.Element {
     void queryClient.invalidateQueries({ queryKey: ['field-modules'] });
   };
 
+  /*
+    A field one of the CRM's own features reads by name warns rather than
+    refuses. The server answers 400 with `needsConfirmation`, this catches it
+    and asks the second question — which is the difference between "you may
+    not do this" and "here is what it costs".
+  */
+  const [pendingForce, setPendingForce] = useState<{ id: string; label: string; message: string } | null>(null);
+
   const deleteMutation = useMutation({
-    mutationFn: ({ id, permanent }: { id: string; permanent: boolean }) => api.deleteField(id, permanent),
+    mutationFn: ({ id, permanent, confirm }: { id: string; permanent: boolean; confirm?: boolean }) =>
+      api.deleteField(id, permanent, confirm),
     onSuccess: (result) => {
       const r = result as { deactivated?: boolean; hadValues?: number };
       toast.success(
@@ -75,7 +84,14 @@ export default function ModuleBuilder(): JSX.Element {
       );
       invalidateModule();
     },
-    onError: (err: Error) => toast.error('Could not remove the field', err.message),
+    onError: (err: Error, vars) => {
+      const details = (err as ApiError).details as { needsConfirmation?: boolean } | undefined;
+      if (details?.needsConfirmation && !vars.confirm) {
+        setPendingForce({ id: vars.id, label: pendingRemoval?.field.label ?? 'this field', message: err.message });
+        return;
+      }
+      toast.error('Could not remove the field', err.message);
+    },
   });
 
   const sectionMutation = useMutation({
@@ -515,6 +531,16 @@ export default function ModuleBuilder(): JSX.Element {
         confirmLabel={pendingRemoval?.mode === 'delete' ? 'Delete permanently' : 'Hide'}
         danger
       />
+
+      <ConfirmDialog
+        open={Boolean(pendingForce)}
+        onClose={() => setPendingForce(null)}
+        onConfirm={() => deleteMutation.mutateAsync({ id: pendingForce!.id, permanent: true, confirm: true })}
+        title={`Delete “${pendingForce?.label}” anyway?`}
+        body={pendingForce?.message ?? ''}
+        confirmLabel="Delete it anyway"
+        danger
+      />
     </div>
   );
 }
@@ -772,6 +798,7 @@ function FieldEditor({
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const [saving, setSaving] = useState(false);
+  const [typeChange, setTypeChange] = useState<{ message: string; payload: Record<string, unknown> } | null>(null);
 
   const { data: picklists } = useQuery({ queryKey: ['picklists'], queryFn: () => api.picklists() });
   const { data: picklistCatalogue } = useQuery({
@@ -899,10 +926,43 @@ function FieldEditor({
         (payload.config as Record<string, unknown>).picklist = setName;
       }
 
-      if (isEdit) await api.updateField(field!.id, payload);
-      else await api.createField(module.name, payload);
+      if (isEdit) {
+        /*
+          Changing the type of a column-backed field is a real ALTER TABLE now,
+          not a refusal — see core/metadata/convertColumn.ts. Where the change
+          would clear values (a multi-select becoming a single dropdown keeps
+          the first choice; text becoming a date drops what was never a date)
+          the server answers 400 with the count, and this asks before sending
+          the same request again with the answer.
+        */
+        try {
+          await api.updateField(field!.id, payload);
+        } catch (err) {
+          const details = (err as ApiError).details as { needsConfirmation?: boolean } | undefined;
+          if (!details?.needsConfirmation) throw err;
+          setSaving(false);
+          setTypeChange({ message: (err as Error).message, payload });
+          return;
+        }
+      } else await api.createField(module.name, payload);
 
       toast.success(isEdit ? 'Field updated' : 'Field created');
+      onSaved();
+    } catch (err) {
+      toast.error('Could not save the field', (err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /** Send the refused change back with `confirmDataLoss`, once the admin has read the count. */
+  const confirmTypeChange = async (): Promise<void> => {
+    if (!typeChange) return;
+    setSaving(true);
+    try {
+      await api.updateField(field!.id, { ...typeChange.payload, confirmDataLoss: true });
+      toast.success('Field updated', 'The type changed and the values were converted.');
+      setTypeChange(null);
       onSaved();
     } catch (err) {
       toast.error('Could not save the field', (err as Error).message);
@@ -1311,6 +1371,16 @@ function FieldEditor({
           <Toggle checked={searchable} onChange={setSearchable} label="Include in search" />
         </div>
       </div>
+
+      <ConfirmDialog
+        open={Boolean(typeChange)}
+        onClose={() => setTypeChange(null)}
+        onConfirm={confirmTypeChange}
+        title="Change the type anyway?"
+        body={typeChange?.message ?? ''}
+        confirmLabel="Change it"
+        danger
+      />
     </Modal>
   );
 }

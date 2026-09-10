@@ -91,9 +91,18 @@ describe('a lead field somebody removed', () => {
 });
 
 describe('the fields the engine reads', () => {
-  it('refuses to delete one, and says what to do instead', async () => {
-    // The hole this suite exists because of. Renaming these was already
-    // refused; deleting one was not, and deleting is the worse of the two.
+  /*
+    This used to be a flat refusal, and the reason was real: deleting one of
+    these had taken buyer matching down silently, because every query named its
+    columns and a missing column is a 42703 that fails the whole statement.
+
+    That cause is gone — matching reads through `to_jsonb(row)` now, which the
+    suite above pins — so the refusal became the product telling its owner he
+    may not reshape his own CRM. It warns instead: the first attempt says what
+    stops working and does nothing, and the same request with `confirm=true`
+    goes through.
+  */
+  it('warns before deleting one, and does nothing until confirmed', async () => {
     const field = await db.queryOne<{ id: string }>(
       `SELECT f.id FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
         WHERE m.name = 'leads' AND f.name = 'budget'`,
@@ -105,12 +114,52 @@ describe('the fields the engine reads', () => {
       .set('Authorization', `Bearer ${adminToken}`);
 
     expect(res.status).toBe(400);
-    expect(res.body.message).toMatch(/reads it directly/i);
-    // And it tells them the thing that does work, rather than just saying no.
+    // Names the feature that degrades, and offers the softer option.
+    expect(res.body.message).toMatch(/buyer matching/i);
     expect(res.body.message).toMatch(/hide it instead/i);
+    expect(res.body.details?.needsConfirmation).toBe(true);
 
+    // Untouched, because the question was not answered.
     const survived = await db.queryOne(`SELECT 1 FROM ipy_field WHERE id = $1`, [field!.id]);
     expect(survived).toBeTruthy();
+  });
+
+  it('goes through once the admin has confirmed', async () => {
+    // On a throwaway field carrying the same warning, so the rest of the suite
+    // keeps its Budget. `possession_timeline` is on the list for the same
+    // reason budget is: buyer matching reads it by name.
+    const field = await db.queryOne<{ row: Record<string, unknown>; id: string }>(
+      `SELECT f.id, to_jsonb(f) AS row FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+        WHERE m.name = 'leads' AND f.name = 'possession_timeline'`,
+    );
+    expect(field).toBeTruthy();
+
+    try {
+      await request(app)
+        .delete(`/api/meta/fields/${field!.id}?permanent=true&confirm=true`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+
+      expect(await db.queryOne(`SELECT 1 FROM ipy_field WHERE id = $1`, [field!.id])).toBeNull();
+      // And matching still answers with the field gone, which is what makes
+      // allowing the delete defensible in the first place.
+      const lead = await db.queryOne<{ record_id: string }>(
+        `SELECT l.record_id FROM ipy_e_leads l JOIN ipy_record r ON r.id = l.record_id
+          WHERE r.is_deleted = false LIMIT 1`,
+      );
+      if (lead) expect(await loadRequirement(lead.record_id)).not.toBeNull();
+    } finally {
+      await db.query(`ALTER TABLE ipy_e_leads ADD COLUMN IF NOT EXISTS possession_timeline TEXT`);
+      await db.query(
+        `INSERT INTO ipy_field SELECT * FROM jsonb_populate_record(NULL::ipy_field, $1::jsonb)
+         ON CONFLICT (module_id, name) DO NOTHING`,
+        [JSON.stringify(field!.row)],
+      );
+      await db.query(
+        `DELETE FROM ipy_field_tombstone WHERE module_name = 'leads' AND field_name = 'possession_timeline'`,
+      );
+      registry.invalidate();
+    }
   });
 
 });

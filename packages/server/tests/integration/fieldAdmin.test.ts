@@ -178,15 +178,53 @@ describe('changing a field type', () => {
     }
   });
 
-  it('refuses a swap the column cannot hold, and names what would work', async () => {
+  /*
+    A type change the column cannot absorb is an ALTER TABLE now, not a
+    refusal — the old behaviour told the admin to build a second field and
+    delete the first, which loses every value and every reference to the name.
+
+    What survives from that refusal is the honest half: a conversion that would
+    clear values says how many first, and does nothing until the caller has
+    answered. Date → Text loses nothing, so it goes straight through; the
+    reverse would empty every row that was never a date, so it is refused until
+    `confirmDataLoss` comes back.
+  */
+  it('changes a column-backed type outright when nothing is lost', async () => {
     const meta = await describeLeads();
     const dob = meta.fields.find((f) => f.name === 'date_of_birth');
-    const res = await request(app)
-      .patch(`/api/meta/fields/${dob!.id}`)
+    try {
+      const res = await request(app)
+        .patch(`/api/meta/fields/${dob!.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ uitype: 'string' })
+        .expect(200);
+      expect(res.body.uitype).toBe('string');
+      expect(res.body.converted).toMatchObject({ from: 'date', to: 'string', cleared: 0 });
+    } finally {
+      await request(app)
+        .patch(`/api/meta/fields/${dob!.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ uitype: 'date', confirmDataLoss: true });
+    }
+  });
+
+  it('asks before a type change that would clear values, then does it', async () => {
+    const meta = await describeLeads();
+    const name = meta.fields.find((f) => f.name === 'full_name');
+
+    // Full Name is text on every record and none of it is a date, so the
+    // count is the whole table — exactly the case the admin must see first.
+    const refused = await request(app)
+      .patch(`/api/meta/fields/${name!.id}`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ uitype: 'string' })
+      .send({ uitype: 'date' })
       .expect(400);
-    expect(res.body.message).toMatch(/can only become/i);
+    expect(refused.body.message).toMatch(/clears the value on \d+ record/i);
+    expect(refused.body.details?.needsConfirmation).toBe(true);
+
+    // Not sent again without the answer: the field is untouched.
+    const after = await describeLeads();
+    expect(after.fields.find((f) => f.name === 'full_name')?.uitype).toBe('string');
   });
 
   it('lets an admin-created field become anything, since it is stored as a document', async () => {

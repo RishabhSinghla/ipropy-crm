@@ -23,7 +23,7 @@ interface JobRow {
   skipped_rows: number; failed_rows: number; created_at: string;
   duplicate_rows: number; pending_rows: number; updated_rows: number;
   errors: { row: number; error: string }[];
-  details: { created: string[]; skipped: string[] };
+  details: { created: string[]; skipped: string[]; optionsAdded?: string[]; optionsSkipped?: string[] };
 }
 
 export default function ImportAdmin(): JSX.Element {
@@ -43,6 +43,8 @@ export default function ImportAdmin(): JSX.Element {
   // the failure this checkbox exists to prevent. Automations stay one tick
   // away for the day they are wanted.
   const [runWorkflows, setRunWorkflows] = useState(false);
+  // On by default — see the tooltip beside it, and core/import/picklistGrowth.ts.
+  const [createOptions, setCreateOptions] = useState(true);
   const [busy, setBusy] = useState(false);
   const [openJob, setOpenJob] = useState<JobRow | null>(null);
   const [reviewJob, setReviewJob] = useState<JobRow | null>(null);
@@ -86,7 +88,7 @@ export default function ImportAdmin(): JSX.Element {
     if (!file) return;
     setBusy(true);
     try {
-      const result = await api.runImport(moduleName, file, mapping, duplicateHandling, runWorkflows);
+      const result = await api.runImport(moduleName, file, mapping, duplicateHandling, runWorkflows, createOptions);
       toast.success('Import started', `${result.totalRows} rows queued — progress appears below.`);
       setFile(null);
       setPreview(null);
@@ -107,7 +109,8 @@ export default function ImportAdmin(): JSX.Element {
       <div className="mb-4">
         <h1 className="text-lg font-semibold tracking-tight">Import Data</h1>
         <p className="text-sm text-muted">
-          Bring existing contacts or inventory in from a CSV. Columns are matched to fields automatically.
+          Bring existing contacts or inventory in from Excel or a CSV. Columns are matched to fields
+          automatically, and any dropdown value the file has and the CRM does not is added for you.
         </p>
       </div>
 
@@ -125,10 +128,10 @@ export default function ImportAdmin(): JSX.Element {
 
           <label className="btn-secondary cursor-pointer">
             {busy && !preview ? <Spinner /> : <FileUp className="h-4 w-4" />}
-            {file ? file.name : 'Choose CSV file'}
+            {file ? file.name : 'Choose Excel or CSV file'}
             <input
               type="file"
-              accept=".csv,text/csv"
+              accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) void analyse(f); e.target.value = ''; }}
             />
@@ -138,9 +141,9 @@ export default function ImportAdmin(): JSX.Element {
             className="btn-secondary btn-sm"
             href={authedFileUrl(`/api/import/${moduleName}/template`)}
             download
-            title="A ready-made sheet with the right columns and one example row"
+            title="A ready-made sheet with the right columns and one example row. Opens in Excel."
           >
-            <Download className="h-4 w-4" /> Template CSV
+            <Download className="h-4 w-4" /> Template
           </a>
 
           {preview && (
@@ -167,6 +170,23 @@ export default function ImportAdmin(): JSX.Element {
                 className="h-4 w-4 rounded border-slate-300"
               />
               <span className="text-sm">Run automations (greeting queue, scoring, tasks)</span>
+            </label>
+          )}
+
+          {preview && (
+            <label className="flex cursor-pointer items-center gap-2 pb-0.5">
+              <input
+                type="checkbox"
+                checked={createOptions}
+                onChange={(e) => setCreateOptions(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              {/* On, because the alternative is values that import and are then
+                  invisible to every filter, view and report — a dropdown value
+                  is a plain string on the record, not a link to the list. */}
+              <span className="text-sm" title="A locality or status in the file that the CRM does not have yet is added to that dropdown. Options somebody deliberately deleted are never brought back.">
+                Add new dropdown options found in the file
+              </span>
             </label>
           )}
 
@@ -402,24 +422,34 @@ function CountButton({ count, onClick, tone }: {
 }
 
 function JobDetailsModal({ job, onClose }: { job: JobRow; onClose: () => void }): JSX.Element {
-  const [section, setSection] = useState<'created' | 'skipped' | 'failed'>(
+  const [section, setSection] = useState<'created' | 'skipped' | 'failed' | 'options'>(
     job.failed_rows > 0 ? 'failed' : job.skipped_rows > 0 ? 'skipped' : 'created',
   );
+  // What the file taught the CRM: dropdown options it did not have, and the
+  // ones it deliberately does not want back. Worth showing rather than only
+  // counting — a typo in a spreadsheet becomes a permanent option otherwise,
+  // and this is where somebody spots it.
+  const optionsAdded = job.details?.optionsAdded ?? [];
+  const optionsSkipped = job.details?.optionsSkipped ?? [];
   const lists = {
     created: job.details?.created ?? [],
     skipped: job.details?.skipped ?? [],
     failed: (job.errors ?? []).map((e) => (e.row ? `row ${e.row} — ${e.error}` : e.error)),
+    options: [
+      ...optionsAdded.map((o) => `Added  ${o}`),
+      ...optionsSkipped.map((o) => `Left out (deleted on purpose)  ${o}`),
+    ],
   };
   const CAP = 300;
   const items = lists[section];
   const total = section === 'created' ? job.created_rows
     : section === 'skipped' ? job.skipped_rows
-    : job.failed_rows;
+      : section === 'failed' ? job.failed_rows : lists.options.length;
 
   return (
     <Modal open title={`Import — ${job.file_name}`} onClose={onClose} size="lg">
       <div className="mb-3 flex gap-1.5">
-        {(['created', 'skipped', 'failed'] as const).map((key) => (
+        {(['created', 'skipped', 'failed', ...(lists.options.length ? ['options' as const] : [])] as const).map((key) => (
           <button
             key={key}
             onClick={() => setSection(key)}
@@ -428,7 +458,10 @@ function JobDetailsModal({ job, onClose }: { job: JobRow; onClose: () => void })
               section === key ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
             )}
           >
-            {key} ({key === 'created' ? job.created_rows : key === 'skipped' ? job.skipped_rows : job.failed_rows})
+            {key === 'options' ? 'new options' : key}{' '}
+            ({key === 'created' ? job.created_rows
+              : key === 'skipped' ? job.skipped_rows
+                : key === 'failed' ? job.failed_rows : lists.options.length})
           </button>
         ))}
       </div>

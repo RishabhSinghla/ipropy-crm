@@ -1,8 +1,7 @@
 import { type JSX, useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link2, Plus, Save, Trash2 } from 'lucide-react';
-import { api } from '../../lib/api';
-import type { MatchingFieldPair } from '../../lib/api';
+import { api, type MatchingFieldPair } from '../../lib/api';
 import { toast } from '../../lib/store';
 import { Select, Skeleton, Spinner } from '../../components/ui';
 

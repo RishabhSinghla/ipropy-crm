@@ -1180,23 +1180,55 @@ export function mergeFilters(a: FilterGroup | undefined, b: FilterGroup | undefi
 // Bulk helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * The same edit applied to many records.
+ *
+ * Automations are **off by default**, and that is the whole difference between
+ * this working and this "not working out well". Setting Lead Status to New
+ * across a desk's whole list is a tidy-up, not five hundred new leads arriving
+ * — but every one of those saves fires the new-lead rules through the workflow
+ * engine, which queues a WhatsApp greeting each, re-scores each, and raises a
+ * first-call task each. It is also where nearly all the time goes: the same
+ * hundred records take about a fifth as long with the engine out of the loop,
+ * which is the difference between a request that answers and one that is still
+ * running when the browser gives up.
+ *
+ * Exactly the contract the CSV import already uses, and for the same reason —
+ * see the `runWorkflows` flag on the import route. One tick turns them on for
+ * the day somebody wants them.
+ *
+ * A failure is per record and never stops the run: the ones that could be
+ * saved are saved, and every reason comes back so the caller can say what went
+ * wrong rather than only how many.
+ */
 export async function massUpdate(
   ctx: ServiceContext,
   moduleName: string,
   recordIds: string[],
   values: Record<string, unknown>,
-): Promise<{ updated: number; failed: { id: string; error: string }[] }> {
+  opts: { runWorkflows?: boolean } = {},
+): Promise<{ updated: number; failed: { id: string; error: string }[]; reasons: string[] }> {
   const failed: { id: string; error: string }[] = [];
   let updated = 0;
   for (const id of recordIds) {
     try {
-      await updateRecord(ctx, moduleName, id, values);
+      await updateRecord(ctx, moduleName, id, values, { skipWorkflow: !opts.runWorkflows });
       updated++;
     } catch (err) {
       failed.push({ id, error: err instanceof Error ? err.message : 'unknown error' });
     }
   }
-  return { updated, failed };
+  // Five hundred rows rejected for one reason is one sentence, not five
+  // hundred. The distinct reasons, commonest first, are what a person can act
+  // on — "Lead Status is required" says which record to look at and why.
+  const counts = new Map<string, number>();
+  for (const f of failed) counts.set(f.error, (counts.get(f.error) ?? 0) + 1);
+  const reasons = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([reason, n]) => (n > 1 ? `${reason} (${n} records)` : reason));
+
+  return { updated, failed, reasons };
 }
 
 /**
@@ -1235,10 +1267,11 @@ export async function massUpdateByQuery(
   moduleName: string,
   q: ListQuery,
   values: Record<string, unknown>,
+  opts: { runWorkflows?: boolean } = {},
   max = 5000,
-): Promise<{ updated: number; failed: { id: string; error: string }[]; matched: number; capped: boolean }> {
+): Promise<{ updated: number; failed: { id: string; error: string }[]; reasons: string[]; matched: number; capped: boolean }> {
   const ids = await idsForQuery(ctx, moduleName, q, max);
-  const result = await massUpdate(ctx, moduleName, ids, values);
+  const result = await massUpdate(ctx, moduleName, ids, values, opts);
   return { ...result, matched: ids.length, capped: ids.length >= max };
 }
 

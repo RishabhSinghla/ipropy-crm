@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { invalidatePublicFields } from './public.js';
 import { z } from 'zod';
 import { UITYPE_LIST, UITYPES } from '@ipropy/shared';
-import { db, transaction } from '../../db/pool.js';
+import { db, transaction, type Tx } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { blockApiKey, getUser, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, ConflictError, NotFoundError } from '../../utils/errors.js';
@@ -12,6 +12,7 @@ import {
   PICKLISTS_USED_IN_CODE, replaceValueInRecords, valueUsedInCode,
 } from '../../core/metadata/picklists.js';
 import { interchangeableTypes } from '../../core/metadata/fieldTypes.js';
+import { checkConversion, convertColumn } from '../../core/metadata/convertColumn.js';
 import { FIELDS_USED_IN_CODE, removeFieldEverywhere, renameFieldEverywhere } from '../../core/metadata/fieldRename.js';
 import { assertCapability, canAccessModule, getFieldPermissions, getModulePermission, hasCapability, invalidatePermissions } from '../../core/permissions/index.js';
 import { FORMULA_FUNCTIONS, validateFormula } from '../../core/entity/formula.js';
@@ -544,6 +545,15 @@ const fieldSchema = z.object({
   quickCreate: z.boolean().default(false),
   massEditable: z.boolean().default(true),
   searchable: z.boolean().default(false),
+  /*
+    Not a property of the field — an answer to a question this endpoint asks.
+
+    Changing a column-backed field's type can clear values (Text → Date empties
+    everything that was never a date). The first request is refused with the
+    count; the editor shows it and sends the same request again with this set.
+    Stripped before the UPDATE below, since there is no column for it.
+  */
+  confirmDataLoss: z.boolean().optional(),
 });
 
 /** Reject configurations that would produce a field the engine can't run. */
@@ -627,8 +637,9 @@ metadataRouter.patch('/fields/:id', asyncHandler(async (req, res) => {
   const current = await db.queryOne<{
     name: string; label: string; uitype: string; config: Record<string, unknown>;
     is_custom: boolean; storage: string; module_id: string; display_type: string;
+    column_name: string;
   }>(
-    `SELECT name, label, uitype, config, is_custom, storage, module_id, display_type
+    `SELECT name, label, uitype, config, is_custom, storage, module_id, display_type, column_name
        FROM ipy_field WHERE id = $1`,
     [req.params.id],
   );
@@ -647,17 +658,50 @@ metadataRouter.patch('/fields/:id', asyncHandler(async (req, res) => {
    * a real type. Email → Text is free; Date → Text is a write that fails on the
    * row rather than on the form.
    */
+  /*
+    A change of type that the storage cannot absorb is a real ALTER TABLE now,
+    not a refusal.
+
+    The old behaviour told the admin to add a second field and delete the
+    first, which is a worse outcome than the one it was protecting against: the
+    replacement has a different API name, so every saved view, filter, workflow
+    and integration naming the old field has to be rebuilt by hand, and none of
+    the values come across. What was worth protecting is the part this keeps —
+    a conversion that would clear values says how many, and refuses until the
+    caller has said yes to that number.
+  */
+  let converted: { from: string; to: string; cleared: number; note: string | null } | null = null;
   if (input.uitype && input.uitype !== current.uitype && current.storage === 'column') {
     const allowed = interchangeableTypes(current.uitype);
     if (!allowed.includes(input.uitype)) {
-      const names = allowed
-        .filter((u) => u !== current.uitype)
-        .map((u) => UITYPES[u as keyof typeof UITYPES]?.label ?? u);
-      throw new BadRequestError(
-        `“${current.label}” is stored as ${current.uitype}, so it can only become ${
-          names.length ? names.join(', ') : 'the same type'
-        }. To make it ${input.uitype}, add a new field of that type and delete this one.`,
+      const check = await checkConversion(
+        db, module.tableName, current.column_name, current.uitype, input.uitype,
       );
+      if (!check) {
+        const names = allowed
+          .filter((u) => u !== current.uitype)
+          .map((u) => UITYPES[u as keyof typeof UITYPES]?.label ?? u);
+        throw new BadRequestError(
+          `There is no safe way to turn “${current.label}” from ${current.uitype} into ${input.uitype}.`
+          + (names.length ? ` It can become ${names.join(', ')}.` : '')
+          + ` To make it ${input.uitype}, add a new field of that type and delete this one.`,
+        );
+      }
+      // `confirmDataLoss` is the admin having read the number and accepted it.
+      // Refusing by default is the point: nobody expects changing a dropdown
+      // to a date to empty four hundred records.
+      if (check.lossyRows > 0 && !input.confirmDataLoss) {
+        throw new BadRequestError(
+          `Changing “${current.label}” to ${input.uitype} clears the value on ${check.lossyRows} `
+          + `record${check.lossyRows === 1 ? '' : 's'}${check.plan.note ? ` — ${check.plan.note}` : ''} `
+          + 'Confirm to go ahead.',
+          { needsConfirmation: true, lossyRows: check.lossyRows, note: check.plan.note },
+        );
+      }
+      await transaction((tx) => convertColumn(tx, module.tableName, current.column_name, current.uitype, input.uitype!));
+      converted = {
+        from: current.uitype, to: input.uitype, cleared: check.lossyRows, note: check.plan.note,
+      };
     }
   }
 
@@ -753,7 +797,7 @@ metadataRouter.patch('/fields/:id', asyncHandler(async (req, res) => {
   // The rename count goes back so the editor can say what moved with it —
   // "renamed, and 6 views, layouts and rules followed" is the difference
   // between a change somebody trusts and one they undo out of caution.
-  res.json(renamed ? { ...saved, renamed } : saved);
+  res.json({ ...saved, ...(renamed ? { renamed } : {}), ...(converted ? { converted } : {}) });
 }));
 
 /** Bulk reorder after a drag in the layout designer. */
@@ -799,6 +843,35 @@ async function structuralBlocker(
   return null;
 }
 
+
+/**
+ * Take one field's name out of every layout on a module — its sections and the
+ * header strip beside the record name.
+ *
+ * Shared by hiding and deleting, which is the point: they used to disagree,
+ * and the disagreement is what made a hidden field go on appearing in the
+ * Layout Designer after the admin had removed it from every screen.
+ */
+async function removeFieldFromLayouts(tx: Tx, moduleId: string, name: string): Promise<void> {
+  await tx.query(
+    `UPDATE ipy_layout SET config = jsonb_set(config, '{blocks}', COALESCE((
+       SELECT jsonb_agg(b || jsonb_build_object('fields', COALESCE((
+         SELECT jsonb_agg(f) FROM jsonb_array_elements_text(b->'fields') AS f WHERE f <> $2
+       ), '[]'::jsonb)))
+       FROM jsonb_array_elements(config->'blocks') AS b
+     ), '[]'::jsonb))
+     WHERE module_id = $1 AND config ? 'blocks'`,
+    [moduleId, name],
+  );
+  await tx.query(
+    `UPDATE ipy_layout SET config = jsonb_set(config, '{headerFields}', COALESCE((
+       SELECT jsonb_agg(f) FROM jsonb_array_elements_text(config->'headerFields') AS f WHERE f <> $2
+     ), '[]'::jsonb))
+     WHERE module_id = $1 AND config ? 'headerFields'`,
+    [moduleId, name],
+  );
+}
+
 metadataRouter.delete('/fields/:id', asyncHandler(async (req, res) => {
   const user = getUser(req);
   await assertCapability(user, 'admin.fields');
@@ -812,8 +885,19 @@ metadataRouter.delete('/fields/:id', asyncHandler(async (req, res) => {
   const module = await registry.getModuleById(field.module_id);
 
   // Hide: reversible, keeps the data, the default for a seeded field.
+  //
+  // It also comes off every layout. "Comes off every screen" is what the
+  // button promises and what the record pages already did — but the Layout
+  // Designer reads the layout, not the field's visibility, so a hidden field
+  // went on sitting in its section there. That is the "why does the CRM keep
+  // bringing back a field I removed" this answers: the field was never back,
+  // the layout had simply never been told. Restoring the field puts it in the
+  // Unplaced list, where it can be dropped back where it belongs.
   if (!field.is_custom && !permanent) {
-    await db.query(`UPDATE ipy_field SET is_active = false, display_type = 'hidden' WHERE id = $1`, [req.params.id]);
+    await transaction(async (tx) => {
+      await tx.query(`UPDATE ipy_field SET is_active = false, display_type = 'hidden' WHERE id = $1`, [req.params.id]);
+      await removeFieldFromLayouts(tx, field.module_id, field.name);
+    });
     invalidateAll();
     res.json({ ok: true, deactivated: true });
     return;
@@ -826,23 +910,33 @@ metadataRouter.delete('/fields/:id', asyncHandler(async (req, res) => {
     }
 
     /**
-     * The same list the rename above refuses on, applied to deleting.
+     * A field a feature reads by name: warned about, not refused.
      *
-     * Renaming one of these was already blocked and deleting one was not, which
-     * is the wider hole of the two: a rename at least leaves a column behind.
-     * Two of these had been deleted on his own CRM before anyone noticed, and
-     * property matching had been answering 400 on every lead since.
+     * This used to be a flat "cannot be deleted", and the reason was real —
+     * deleting one had taken buyer matching down silently, because the queries
+     * named their columns and a missing column is a 42703 that fails the whole
+     * statement. Two had been deleted on his own CRM before anyone noticed,
+     * and matching had been answering 400 on every lead since.
      *
-     * Hiding is offered rather than nothing, because it does what he actually
-     * wants — the field leaves every screen — while the column stays where the
-     * engine can still read it.
+     * That cause is gone. Matching, comparables and the reverse match now read
+     * every value out of `to_jsonb(row)`, so a deleted field arrives as
+     * `undefined` and is handled by the same default an empty one is — the
+     * feature loses that half of its comparison and keeps working. With the
+     * crash designed out, a permanent refusal is just the product telling its
+     * owner he may not reshape his own CRM, which is the opposite of the point.
+     *
+     * So: say exactly what stops working, and let him confirm. `structuralBlocker`
+     * above still refuses outright, and rightly — a module with no name field
+     * cannot render a record anywhere, and that is not a trade-off, it is a
+     * broken module.
      */
     const usedInCode = FIELDS_USED_IN_CODE[`${module.name}.${field.name}`];
-    if (usedInCode) {
+    if (usedInCode && req.query.confirm !== 'true') {
       throw new BadRequestError(
-        `“${field.label}” cannot be deleted because the CRM reads it directly: ${usedInCode}. `
-        + `Hide it instead and it disappears from every screen while the CRM can still use it. `
-        + `Its Label can be changed to anything you like.`,
+        `Deleting “${field.label}” will stop this working: ${usedInCode}. `
+        + `Nothing else breaks — the feature carries on without it. `
+        + `If you only want it off the screens, Hide it instead and the CRM keeps using it.`,
+        { needsConfirmation: true, feature: usedInCode, canHideInstead: true },
       );
     }
   }
@@ -900,16 +994,7 @@ metadataRouter.delete('/fields/:id', asyncHandler(async (req, res) => {
       await removeFieldEverywhere(field.module_id, module.name, field.name, tx);
     }
 
-    await tx.query(
-      `UPDATE ipy_layout SET config = jsonb_set(config, '{blocks}', COALESCE((
-         SELECT jsonb_agg(b || jsonb_build_object('fields', COALESCE((
-           SELECT jsonb_agg(f) FROM jsonb_array_elements_text(b->'fields') AS f WHERE f <> $2
-         ), '[]'::jsonb)))
-         FROM jsonb_array_elements(config->'blocks') AS b
-       ), '[]'::jsonb))
-       WHERE module_id = $1 AND config ? 'blocks'`,
-      [field.module_id, field.name],
-    );
+    await removeFieldFromLayouts(tx, field.module_id, field.name);
   });
 
   invalidateAll();
@@ -961,8 +1046,8 @@ const PICKLIST_NAME_RE = /^[a-z][a-z0-9_]{1,40}$/;
 /** Reads the catalogue, one entry per dropdown, for the admin editor. */
 metadataRouter.get('/picklist-catalogue', asyncHandler(async (req, res) => {
   await assertCapability(getUser(req), 'admin.picklists');
-  const rows = await db.query<{ name: string; label: string; is_system: boolean; allow_adhoc: boolean }>(
-    `SELECT name, label, is_system, allow_adhoc FROM ipy_picklist ORDER BY label`,
+  const rows = await db.query<{ name: string; label: string; is_system: boolean; allow_adhoc: boolean; is_ordered: boolean }>(
+    `SELECT name, label, is_system, allow_adhoc, is_ordered FROM ipy_picklist ORDER BY label`,
   );
   const all = await registry.getAllPicklists();
 
@@ -974,6 +1059,7 @@ metadataRouter.get('/picklist-catalogue', asyncHandler(async (req, res) => {
       label: row.label,
       isSystem: row.is_system,
       allowAdhoc: row.allow_adhoc,
+      isOrdered: row.is_ordered,
       // Each option carries what depends on it by name, so the editor can warn
       // the moment somebody types over one rather than after they save.
       values: (all[row.name] ?? []).map((v) => ({
@@ -1053,16 +1139,24 @@ metadataRouter.post('/picklists', asyncHandler(async (req, res) => {
 /** Rename a dropdown, or let non-admins add values to it on the fly. */
 metadataRouter.patch('/picklists/:name', asyncHandler(async (req, res) => {
   await assertCapability(getUser(req), 'admin.picklists');
-  const { label, allowAdhoc } = z.object({
+  const { label, allowAdhoc, isOrdered } = z.object({
     label: z.string().min(1).optional(),
     allowAdhoc: z.boolean().optional(),
+    /*
+      Off means A–Z everywhere this dropdown appears; on keeps the sequence
+      below. Only a pipeline, a scale or a ranking should be on — see
+      migration 114. Changing it takes effect on the next read, because the
+      registry invalidation at the end of this handler rebuilds the sort.
+    */
+    isOrdered: z.boolean().optional(),
   }).parse(req.body);
 
   const row = await db.queryOne<{ id: string }>(
     `UPDATE ipy_picklist
-        SET label = COALESCE($2, label), allow_adhoc = COALESCE($3, allow_adhoc)
+        SET label = COALESCE($2, label), allow_adhoc = COALESCE($3, allow_adhoc),
+            is_ordered = COALESCE($4, is_ordered)
       WHERE name = $1 RETURNING id`,
-    [req.params.name, label ?? null, allowAdhoc ?? null],
+    [req.params.name, label ?? null, allowAdhoc ?? null, isOrdered ?? null],
   );
   if (!row) throw new NotFoundError(`Unknown picklist '${req.params.name}'`);
   invalidateAll();

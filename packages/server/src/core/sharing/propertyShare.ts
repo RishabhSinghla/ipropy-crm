@@ -41,7 +41,7 @@ export const DEFAULT_PROPERTY_SHARE_FIELDS = [
   'property_type',
   'floor', 'facing', 'view_description', 'corner_unit', 'vastu_compliant',
   'bedrooms', 'bathrooms', 'balconies', 'parking_slots', 'furnishing',
-  'carpet_area', 'built_up_area', 'super_built_up_area', 'plot_area',
+  'area', 'built_up_area', 'super_built_up_area', 'plot_area',
   'balcony_area', 'terrace_area', 'area_unit',
   'total_price', 'monthly_rent', 'maintenance_monthly',
   'possession_status', 'possession_date', 'is_resale', 'age_of_property',

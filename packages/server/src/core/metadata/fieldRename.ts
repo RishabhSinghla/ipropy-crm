@@ -62,7 +62,7 @@ export const FIELDS_USED_IN_CODE: Record<string, string> = {
   'leads.description': 'the drafted first reply, and what lead capture writes the enquiry into',
   'properties.status': 'the public website catalogue, share links and buyer-match alerts',
   'properties.base_price': 'buyer matching, comparables and every price shown publicly',
-  'properties.carpet_area': 'buyer matching, comparables and the per-square-foot rate',
+  'properties.area': 'buyer matching, comparables and the per-square-foot rate',
   'properties.latitude': 'the map, and distance in comparables',
   'properties.longitude': 'the map, and distance in comparables',
   'properties.name': 'the property folder name in OneDrive and every processed file inside it',

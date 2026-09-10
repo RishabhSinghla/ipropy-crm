@@ -15,8 +15,8 @@ describe('comparables', () => {
   it('says nothing without a locality and a bedroom count', async () => {
     // Half a shape is not a comparison, and asking the database for one is a
     // query that can only return noise.
-    expect(await comparablesFor({ locality: null, bedrooms: 3, carpetArea: null })).toBeNull();
-    expect(await comparablesFor({ locality: 'Powai', bedrooms: null, carpetArea: null })).toBeNull();
+    expect(await comparablesFor({ locality: null, bedrooms: 3, area: null })).toBeNull();
+    expect(await comparablesFor({ locality: 'Powai', bedrooms: null, area: null })).toBeNull();
     expect(query).not.toHaveBeenCalled();
   });
 
@@ -24,14 +24,14 @@ describe('comparables', () => {
     // Four units is not a market. A median drawn from them is a number with
     // false authority, and somebody will price against it.
     query.mockResolvedValue({ rows: [unit(1e7), unit(1.1e7), unit(1.2e7), unit(1.3e7)] });
-    expect(await comparablesFor({ locality: 'Powai', bedrooms: 3, carpetArea: null })).toBeNull();
+    expect(await comparablesFor({ locality: 'Powai', bedrooms: 3, area: null })).toBeNull();
   });
 
   it('reports a range and a typical price once there are enough', async () => {
     query.mockResolvedValue({
       rows: [unit(2.0e7), unit(2.1e7), unit(2.2e7), unit(2.3e7), unit(2.4e7), unit(2.5e7)],
     });
-    const result = await comparablesFor({ locality: 'Powai', bedrooms: 3, carpetArea: null });
+    const result = await comparablesFor({ locality: 'Powai', bedrooms: 3, area: null });
     expect(result).not.toBeNull();
     expect(result!.count).toBe(6);
     expect(result!.summary).toContain('Your last 6 3-bedroom units in Powai');
@@ -42,13 +42,13 @@ describe('comparables', () => {
     query.mockResolvedValue({
       rows: [unit(2e7, 30), unit(2.1e7, 45), unit(2.2e7, 60), unit(2.3e7), unit(2.4e7), unit(2.5e7)],
     });
-    const withDays = await comparablesFor({ locality: 'Powai', bedrooms: 3, carpetArea: null });
+    const withDays = await comparablesFor({ locality: 'Powai', bedrooms: 3, area: null });
     expect(withDays!.summary).toContain('took about 45 days');
 
     query.mockResolvedValue({
       rows: [unit(2e7, 30), unit(2.1e7), unit(2.2e7), unit(2.3e7), unit(2.4e7), unit(2.5e7)],
     });
-    const withoutDays = await comparablesFor({ locality: 'Powai', bedrooms: 3, carpetArea: null });
+    const withoutDays = await comparablesFor({ locality: 'Powai', bedrooms: 3, area: null });
     expect(withoutDays!.summary).not.toContain('days');
     expect(withoutDays!.medianDaysToSell).toBeNull();
   });
@@ -57,7 +57,7 @@ describe('comparables', () => {
     // The person typing knows the floor, the view and how badly the builder
     // needs the money. Stating a number to charge would be pretending otherwise.
     query.mockResolvedValue({ rows: Array.from({ length: 8 }, (_, i) => unit(2e7 + i * 1e6)) });
-    const result = await comparablesFor({ locality: 'Powai', bedrooms: 3, carpetArea: null });
+    const result = await comparablesFor({ locality: 'Powai', bedrooms: 3, area: null });
     expect(result!.summary).not.toMatch(/should|recommend|price it/i);
   });
 });

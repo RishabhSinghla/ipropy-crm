@@ -30,6 +30,8 @@ import { resolveTemplate } from './templates/index.js';
 import { validateTemplate } from './templates/validate.js';
 import { seedPicklists, seedPicklistDependencies } from './picklists.js';
 import { seedDefaultLayouts, upsertModule, upsertRelations, upsertViews } from './helpers.js';
+import { reconcileColumns } from './reconcileColumns.js';
+import { pruneFieldRefs } from './pruneFieldRefs.js';
 import { seedGroups, seedProfiles, seedRoles, seedSharing, seedSystemUser, seedUsers, type SeededUser } from './rbac.js';
 import { seedDashboards } from './dashboards.js';
 import {
@@ -62,6 +64,12 @@ export async function seed(): Promise<void> {
     }
     logger.info(`  modules ✓ (${MODULES.length})`);
 
+    // Every column-backed field must have its column — including the ones no
+    // template mentions. See reconcileColumns.ts for why this cannot be left
+    // to the per-template walk inside upsertModule.
+    const { added } = await reconcileColumns(tx);
+    logger.info(`  columns ✓${added.length ? ` (restored ${added.length})` : ''}`);
+
     // Relations reference other modules, so they run after every module exists.
     for (const def of MODULES) {
       if (def.relations?.length) await upsertRelations(tx, def.name, def.relations);
@@ -69,6 +77,13 @@ export async function seed(): Promise<void> {
       await seedDefaultLayouts(tx, def);
     }
     logger.info('  relations, views and layouts ✓');
+
+    // Last, because it judges layouts and views against the fields as they
+    // now are — including the ones this run has just added or left tombstoned.
+    // See pruneFieldRefs.ts: this is what stops a deleted or hidden field
+    // reappearing in the Layout Designer, a saved view or a dependent dropdown.
+    const pruned = await pruneFieldRefs(tx);
+    if (pruned.removed.length) logger.info(`  stale field references cleared ✓ (${pruned.removed.length})`);
 
     await seedPicklistDependencies(tx);
   });
