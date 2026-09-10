@@ -17,6 +17,7 @@ import { assertCapability, canAccessModule, getFieldPermissions, getModulePermis
 import { FORMULA_FUNCTIONS, validateFormula } from '../../core/entity/formula.js';
 import { quoteIdent } from '../../core/query/builder.js';
 import { previewNumber } from '../../core/entity/numbering.js';
+import { convertFieldValue, type ConversionPlan } from '../../core/metadata/fieldConversion.js';
 
 export const metadataRouter = Router();
 metadataRouter.use(requireAuth);
@@ -814,6 +815,62 @@ metadataRouter.patch('/fields/:id', asyncHandler(async (req, res) => {
   // "renamed, and 6 views, layouts and rules followed" is the difference
   // between a change somebody trusts and one they undo out of caution.
   res.json(renamed ? { ...saved, renamed } : saved);
+}));
+
+const conversionSchema = z.object({
+  targetType: z.string(), valueMap: z.record(z.string()).optional(),
+  invalidStrategy: z.enum(['blank', 'default', 'keep']).default('blank'), defaultValue: z.unknown().optional(),
+});
+
+async function conversionField(id: string): Promise<{ id: string; internal_id: string; module_id: string; storage: string; column_name: string; uitype: string; config: Record<string, unknown> }> {
+  const field = await db.queryOne<{ id: string; internal_id: string; module_id: string; storage: string; column_name: string; uitype: string; config: Record<string, unknown> }>(
+    `SELECT id, internal_id, module_id, storage, column_name, uitype, config FROM ipy_field WHERE id = $1`, [id],
+  );
+  if (!field) throw new NotFoundError('Field not found');
+  return field;
+}
+
+/** Count and sample conversion outcomes before an administrator changes data. */
+metadataRouter.post('/fields/:id/type-conversion/preview', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.fields');
+  const input = conversionSchema.parse(req.body);
+  if (!UITYPES[input.targetType as keyof typeof UITYPES]) throw new BadRequestError('Unknown field type');
+  const field = await conversionField(req.params.id);
+  const module = await registry.getModuleById(field.module_id);
+  if (!module) throw new NotFoundError('Module not found');
+  if (field.storage !== 'json') throw new BadRequestError('This field is stored in a protected system column; create a replacement field for this conversion.');
+  const rows = await db.query<{ record_id: string; value: unknown }>(
+    `SELECT record_id, custom_fields -> $1 AS value FROM ${module.tableName} WHERE custom_fields ? $1`, [field.column_name],
+  );
+  const plan: ConversionPlan = { targetType: input.targetType as import('@ipropy/shared').UIType, valueMap: input.valueMap, invalidStrategy: input.invalidStrategy, defaultValue: input.defaultValue };
+  const invalid = rows.rows.filter((r) => !convertFieldValue(r.value, plan).ok);
+  res.json({ totalRecords: rows.rows.length, convertibleRecords: rows.rows.length - invalid.length,
+    invalidRecords: invalid.length, invalidSamples: invalid.slice(0, 20).map((r) => ({ recordId: r.record_id, value: r.value })) });
+}));
+
+/** Convert all custom-field values atomically; any error rolls back every row. */
+metadataRouter.post('/fields/:id/type-conversion', asyncHandler(async (req, res) => {
+  const user = getUser(req); await assertCapability(user, 'admin.fields');
+  const input = conversionSchema.parse(req.body);
+  if (!UITYPES[input.targetType as keyof typeof UITYPES]) throw new BadRequestError('Unknown field type');
+  const field = await conversionField(req.params.id);
+  const module = await registry.getModuleById(field.module_id);
+  if (!module) throw new NotFoundError('Module not found');
+  if (field.storage !== 'json') throw new BadRequestError('This field is stored in a protected system column; create a replacement field for this conversion.');
+  const plan: ConversionPlan = { targetType: input.targetType as import('@ipropy/shared').UIType, valueMap: input.valueMap, invalidStrategy: input.invalidStrategy, defaultValue: input.defaultValue };
+  const result = await transaction(async (tx) => {
+    const rows = await tx.query<{ record_id: string; value: unknown }>(`SELECT record_id, custom_fields -> $1 AS value FROM ${module.tableName} WHERE custom_fields ? $1 FOR UPDATE`, [field.column_name]);
+    let invalid = 0;
+    for (const row of rows.rows) {
+      const converted = convertFieldValue(row.value, plan);
+      const value = converted.ok ? converted.value : (invalid++, input.invalidStrategy === 'default' ? input.defaultValue : input.invalidStrategy === 'keep' ? row.value : null);
+      await tx.query(`UPDATE ${module.tableName} SET custom_fields = jsonb_set(custom_fields, ARRAY[$1], $2::jsonb, true) WHERE record_id = $3`, [field.column_name, JSON.stringify(value), row.record_id]);
+    }
+    await tx.query(`UPDATE ipy_field SET uitype = $2, config = $3, is_customised = true, updated_at = now() WHERE id = $1`, [field.id, input.targetType, JSON.stringify(field.config)]);
+    await tx.query(`INSERT INTO ipy_field_change (module_id, field_internal_id, action, before_value, after_value, user_id) VALUES ($1,$2,'type_changed',$3,$4,$5)`, [field.module_id, field.internal_id, JSON.stringify({ uitype: field.uitype }), JSON.stringify({ uitype: input.targetType, invalidRecords: invalid }), user.id]);
+    return { convertedRecords: rows.rows.length - invalid, invalidRecords: invalid };
+  });
+  invalidateAll(); res.json({ ok: true, ...result });
 }));
 
 /** Bulk reorder after a drag in the layout designer. */
