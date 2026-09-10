@@ -16,7 +16,7 @@
 import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { NotFoundError } from '../../utils/errors.js';
-import { notify } from '../notifications/index.js';
+import { notify, notifyMany } from '../notifications/index.js';
 import { complete } from '../../ai/client.js';
 import { untrustedRule, fenceId, fenced } from '../../ai/untrusted.js';
 import { makeSecretBox } from '../secretbox.js';
@@ -374,6 +374,25 @@ export async function submitFeedback(input: SubmitInput): Promise<string> {
   );
   if (!row) throw new Error('feedback insert failed');
   await logEvent(row.id, 'submitted', 'Report mil gayi — AI analyze kar raha hai, owner ko email bhej dega.');
+
+  // The owner hears the moment a report lands — a bell row now, a lock-screen
+  // push the moment he has subscribed a device (Settings → Alerts). This works
+  // with nothing configured anywhere: no SMTP, no keys, no third party. The
+  // email leg below is the fuller copy of the same news, when it is set up.
+  // The reporter is excluded — reporting your own bug should not ping you.
+  const admins = await db.query<{ id: string }>(
+    `SELECT id FROM ipy_user WHERE is_admin AND is_active AND id <> $1`,
+    [input.userId],
+  );
+  if (admins.rows.length) {
+    await notifyMany(admins.rows.map((u) => u.id), {
+      kind: 'feedback',
+      title: 'Naya report aaya hai',
+      body: input.text.length > 100 ? `${input.text.slice(0, 100)}…` : input.text,
+      link: '/feedback',
+      recordId: row.id,
+    });
+  }
 
   // Fire and forget: the reporter's request is done; AI analysis + email happen in background.
   void analyzeAndEmail(row.id).catch((err: Error) => {
