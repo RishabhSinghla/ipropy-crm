@@ -64,19 +64,52 @@ const publishClause = (alias: string) => `(
   AND EXISTS (SELECT 1 FROM ipy_record dr WHERE dr.id = ${alias}.record_id AND dr.is_deleted = false)
 )`;
 
-// Never build ORDER BY from raw query input — a fixed whitelist keeps it injection-safe.
-const PROJECT_SORTS: Record<string, string> = {
-  possession: 'MIN(u.possession_date) ASC NULLS LAST',
-  price_asc: 'MIN(u.total_price) ASC NULLS LAST',
-  price_desc: 'MAX(u.total_price) DESC NULLS LAST',
-  newest: 'MAX(u.created_at) DESC NULLS LAST',
+/*
+  Never build ORDER BY from raw query input — a fixed whitelist keeps it
+  injection-safe — and never name a column the model may have lost.
+
+  Each option says which columns it needs. `total_price` and `possession_date`
+  have both gone from production, and `price_asc` is the *default* sort for the
+  public property list, so every request to the public catalogue answered
+  `unknown_field`: the website showed no properties at all, which reads as
+  having no stock rather than as a field that moved. The SELECT list was
+  already guarded this way; the ORDER BY was not.
+*/
+interface SortOption { sql: string; needs: string[] }
+
+const PROJECT_SORTS: Record<string, SortOption> = {
+  possession: { sql: 'MIN(u.possession_date) ASC NULLS LAST', needs: ['possession_date'] },
+  price_asc: { sql: 'MIN(u.total_price) ASC NULLS LAST', needs: ['total_price'] },
+  price_desc: { sql: 'MAX(u.total_price) DESC NULLS LAST', needs: ['total_price'] },
+  // `created_at` lives on ipy_record, not on the payload table, so this one
+  // needs the join to be there. Declared rather than assumed, because it is a
+  // fallback and a fallback that raises is worse than no fallback at all.
+  newest: { sql: 'MAX(u.created_at) DESC NULLS LAST', needs: ['created_at'] },
 };
-const PROPERTY_SORTS: Record<string, string> = {
-  price_asc: 'u.total_price ASC NULLS LAST',
-  price_desc: 'u.total_price DESC NULLS LAST',
-  area_desc: 'u.carpet_area DESC NULLS LAST',
-  possession: 'u.possession_date ASC NULLS LAST',
+const PROPERTY_SORTS: Record<string, SortOption> = {
+  price_asc: { sql: 'u.total_price ASC NULLS LAST', needs: ['total_price'] },
+  price_desc: { sql: 'u.total_price DESC NULLS LAST', needs: ['total_price'] },
+  area_desc: { sql: 'u.carpet_area DESC NULLS LAST', needs: ['carpet_area'] },
+  possession: { sql: 'u.possession_date ASC NULLS LAST', needs: ['possession_date'] },
 };
+
+/**
+ * The requested sort if the model can still do it, then the first that it can,
+ * and `record_id` as the answer that always works. A catalogue in an arbitrary
+ * but stable order is a working catalogue; a 400 is not.
+ */
+async function resolveSort(
+  options: Record<string, SortOption>,
+  requested: string,
+  /* The order that always works. Grouped queries need an aggregate. */
+  lastResort = 'u.record_id',
+): Promise<string> {
+  const present = await propertyColumns();
+  const usable = (o: SortOption | undefined): boolean => Boolean(o) && o!.needs.every((c) => present.has(c));
+  if (usable(options[requested])) return options[requested]!.sql;
+  const fallback = Object.values(options).find(usable);
+  return fallback?.sql ?? lastResort;
+}
 
 /**
  * A "project" is now derived, not stored.
@@ -312,17 +345,17 @@ publicRouter.get('/projects', asyncHandler(async (req, res) => {
   // A filter on a field that no longer exists is skipped, not fatal. Narrowing
   // by something the model has dropped should return everything, not nothing.
   if (req.query.city && (await modelHas('city'))) push(`u.city = ?`, String(req.query.city));
-  if (req.query.locality) push(`u.locality = ?`, String(req.query.locality));
-  if (req.query.configuration) push(`u.configuration = ?`, String(req.query.configuration));
-  if (req.query.minPrice) push(`u.total_price >= ?`, Number(req.query.minPrice));
-  if (req.query.maxPrice) push(`u.total_price <= ?`, Number(req.query.maxPrice));
-  if (req.query.possessionBy) push(`u.possession_date <= ?`, String(req.query.possessionBy));
+  if (req.query.locality && (await modelHas('locality'))) push(`u.locality = ?`, String(req.query.locality));
+  if (req.query.configuration && (await modelHas('configuration'))) push(`u.configuration = ?`, String(req.query.configuration));
+  if (req.query.minPrice && (await modelHas('total_price'))) push(`u.total_price >= ?`, Number(req.query.minPrice));
+  if (req.query.maxPrice && (await modelHas('total_price'))) push(`u.total_price <= ?`, Number(req.query.maxPrice));
+  if (req.query.possessionBy && (await modelHas('possession_date'))) push(`u.possession_date <= ?`, String(req.query.possessionBy));
 
   const limit = Math.min(48, Number(req.query.limit) || 24);
   const offset = Math.max(0, Number(req.query.offset) || 0);
   params.push(limit, offset);
 
-  const sort = PROJECT_SORTS[String(req.query.sort)] ?? PROJECT_SORTS.possession;
+  const sort = await resolveSort(PROJECT_SORTS, String(req.query.sort), 'MIN(u.record_id::text)');
 
   const [rows, count] = await Promise.all([
     db.query(
@@ -414,16 +447,18 @@ publicRouter.get('/properties', asyncHandler(async (req, res) => {
   // A filter on a field that no longer exists is skipped, not fatal. Narrowing
   // by something the model has dropped should return everything, not nothing.
   if (req.query.city && (await modelHas('city'))) push(`u.city = ?`, String(req.query.city));
-  if (req.query.configuration) push(`u.configuration = ?`, String(req.query.configuration));
-  if (req.query.bedrooms) push(`u.bedrooms = ?`, Number(req.query.bedrooms));
-  if (req.query.minPrice) push(`u.total_price >= ?`, Number(req.query.minPrice));
-  if (req.query.maxPrice) push(`u.total_price <= ?`, Number(req.query.maxPrice));
+  // Same rule as the two filters above: narrowing by something the model has
+  // dropped returns everything rather than failing the request.
+  if (req.query.configuration && (await modelHas('configuration'))) push(`u.configuration = ?`, String(req.query.configuration));
+  if (req.query.bedrooms && (await modelHas('bedrooms'))) push(`u.bedrooms = ?`, Number(req.query.bedrooms));
+  if (req.query.minPrice && (await modelHas('total_price'))) push(`u.total_price >= ?`, Number(req.query.minPrice));
+  if (req.query.maxPrice && (await modelHas('total_price'))) push(`u.total_price <= ?`, Number(req.query.maxPrice));
 
   const limit = Math.min(48, Number(req.query.limit) || 24);
   const offset = Math.max(0, Number(req.query.offset) || 0);
   params.push(limit, offset);
 
-  const sort = PROPERTY_SORTS[String(req.query.sort)] ?? PROPERTY_SORTS.price_asc;
+  const sort = await resolveSort(PROPERTY_SORTS, String(req.query.sort));
 
   const [rows, count] = await Promise.all([
     db.query(

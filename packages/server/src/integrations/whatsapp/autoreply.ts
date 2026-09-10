@@ -232,8 +232,14 @@ async function mergeScope(recordId: string | null): Promise<Record<string, unkno
   const scope: Record<string, unknown> = { org_name: org?.value ?? 'iPropy', first_name: 'there' };
   if (!recordId) return scope;
 
+  // `first_name` was merged into `full_name` by migration 026 and the column is
+  // gone from production, so naming it raised 42703 and every auto-reply that
+  // greets somebody by name failed. Read through `to_jsonb`: a missing key is
+  // null, and the label's first word is already the fallback below.
   const lead = await db.queryOne<{ first_name: string | null; label: string }>(
-    `SELECT l.first_name, r.label FROM ipy_e_leads l JOIN ipy_record r ON r.id = l.record_id WHERE l.record_id = $1`,
+    `SELECT to_jsonb(l)->>'first_name' AS first_name, r.label
+       FROM ipy_e_leads l JOIN ipy_record r ON r.id = l.record_id
+      WHERE l.record_id = $1`,
     [recordId],
   );
   if (lead) {
