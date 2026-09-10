@@ -33,11 +33,32 @@ BEGIN
   END IF;
 END $carry$;
 
--- 3. `area_unit` on Properties was seeded as free text while the identical
---    field on Contacts is a dropdown. Both are TEXT columns, so this is a
---    metadata change only — no data moves, and anything already typed in
+-- 3. The unit that sits beside the size.
+--
+--    `area_unit` may not be there at all. On production it is one of the forty
+--    or so fields deleted permanently, and a permanent delete drops the column
+--    *and* tombstones the field so the seed cannot rebuild it. A statement
+--    naming a missing column fails when Postgres **parses** it, so no WHERE
+--    clause can save the UPDATE below — this migration died on exactly that,
+--    and it is the third time this file's family has made the mistake.
+--
+--    The column is therefore created first rather than guarded around. That is
+--    not the seed quietly undoing somebody's deletion: the owner asked for
+--    "Area/Size … input area unit Sq. ft./Sq. yd. dropdown right next to it",
+--    and the unit half of that control *is* this field. Asking for it back is
+--    what lifting the tombstone means here, and it is scoped to this one field
+--    on this one module.
+DELETE FROM ipy_field_tombstone
+ WHERE module_name = 'properties' AND field_name = 'area_unit';
+
+ALTER TABLE ipy_e_properties ADD COLUMN IF NOT EXISTS area_unit TEXT;
+
+--    Where the field does still exist it was seeded as free text, while the
+--    identical field on Contacts is a dropdown. Both are TEXT columns, so this
+--    is a metadata change only — no data moves, and anything already typed in
 --    survives (a stored value no option backs still renders; that rule is
---    older than this migration).
+--    older than this migration). Where the row is absent, the seed creates it
+--    from the template on the next boot.
 UPDATE ipy_field f
    SET uitype = 'picklist',
        config = COALESCE(f.config, '{}'::jsonb) || '{"picklist":"area_unit","colored":true}'::jsonb,
