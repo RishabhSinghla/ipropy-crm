@@ -287,6 +287,20 @@ metadataRouter.get('/uitypes', asyncHandler(async (_req, res) => {
   res.json({ uitypes: UITYPE_LIST, formulaFunctions: FORMULA_FUNCTIONS });
 }));
 
+/** Structural history stays with the Field ID, even after an API-name rename. */
+metadataRouter.get('/fields/:id/history', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.fields');
+  const field = await db.queryOne<{ internal_id: string }>(`SELECT internal_id FROM ipy_field WHERE id = $1`, [req.params.id]);
+  if (!field) throw new NotFoundError('Field not found');
+  const rows = await db.query(
+    `SELECT c.action, c.before_value AS "beforeValue", c.after_value AS "afterValue", c.created_at AS "createdAt",
+            u.name AS "userName"
+       FROM ipy_field_change c LEFT JOIN ipy_user u ON u.id = c.user_id
+      WHERE c.field_internal_id = $1 ORDER BY c.created_at DESC LIMIT 100`, [field.internal_id],
+  );
+  res.json(rows.rows);
+}));
+
 // ---------------------------------------------------------------------------
 // Module builder (admin)
 // ---------------------------------------------------------------------------

@@ -798,6 +798,9 @@ function FieldEditor({
     queryKey: ['picklist-catalogue'],
     queryFn: () => api.picklistCatalogue(),
   });
+  const { data: history } = useQuery({
+    queryKey: ['field-history', field?.id], queryFn: () => api.fieldHistory(field!.id), enabled: Boolean(field),
+  });
 
   const spec = UITYPE_LIST.find((u) => u.uitype === uitype);
   const needsPicklist = spec?.requiresConfig?.includes('picklist');
@@ -1363,6 +1366,14 @@ function FieldEditor({
           <Toggle checked={importable} onChange={setImportable} label="Allow import" />
           <Toggle checked={exportable} onChange={setExportable} label="Allow export" />
         </div>
+        {isEdit && history?.length ? (
+          <details className="rounded-lg border border-slate-200 p-3 text-xs dark:border-slate-700">
+            <summary className="cursor-pointer font-medium">Field change history ({history.length})</summary>
+            <div className="mt-2 space-y-1.5 text-muted">
+              {history.slice(0, 8).map((entry, i) => <p key={`${entry.createdAt}-${i}`}><span className="font-medium text-slate-700 dark:text-slate-200">{entry.action.replace(/_/g, ' ')}</span> · {new Date(entry.createdAt).toLocaleString('en-IN')} · {entry.userName ?? 'System'}</p>)}
+            </div>
+          </details>
+        ) : null}
       </div>
     </Modal>
   );

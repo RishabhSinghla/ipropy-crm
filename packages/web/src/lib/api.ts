@@ -648,6 +648,7 @@ export const api = {
   createField: (module: string, data: Record<string, unknown>) => post(`/api/meta/modules/${module}/fields`, data),
   updateField: (id: string, data: Record<string, unknown>) => patch(`/api/meta/fields/${id}`, data),
   duplicateField: (id: string) => post(`/api/meta/fields/${id}/duplicate`, {}),
+  fieldHistory: (id: string) => get<{ action: string; beforeValue: Record<string, unknown> | null; afterValue: Record<string, unknown> | null; createdAt: string; userName: string | null }[]>(`/api/meta/fields/${id}/history`),
   previewFieldConversion: (id: string, data: { targetType: string; invalidStrategy: 'blank' | 'default' | 'keep'; valueMap?: Record<string, string>; defaultValue?: unknown }) =>
     post<{ totalRecords: number; convertibleRecords: number; invalidRecords: number; invalidSamples: { recordId: string; value: unknown }[] }>(`/api/meta/fields/${id}/type-conversion/preview`, data),
   convertField: (id: string, data: { targetType: string; invalidStrategy: 'blank' | 'default' | 'keep'; valueMap?: Record<string, string>; defaultValue?: unknown }) =>
