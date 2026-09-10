@@ -190,6 +190,55 @@ function RoleCreator({
 // ---------------------------------------------------------------------------
 
 /**
+ * Plain-language names for the capability keys. Without this the admin is
+ * staring at raw strings like `records.transfer_ownership` and has no way to
+ * know that is the switch behind the Reassign button on list views — which is
+ * exactly the permission a Sales Manager needs and the one most often
+ * reported "missing".
+ */
+const CAPABILITY_INFO: Record<string, { label: string; hint: string }> = {
+  'records.transfer_ownership': {
+    label: 'Reassign records (change owner)',
+    hint: 'Lets the role use the "Reassign" button on list views to hand records to another user.',
+  },
+  'records.mass_edit': { label: 'Bulk edit records', hint: 'Edit a field across many selected records at once.' },
+  'records.mass_delete': { label: 'Bulk delete records', hint: 'Delete many selected records at once.' },
+  'records.export': { label: 'Export records', hint: 'Download records to a file.' },
+  'records.import': { label: 'Import records', hint: 'Bring records in from a file.' },
+  'records.view_all': { label: 'See all records', hint: 'See every record regardless of owner and role hierarchy.' },
+  'dashboards.share': { label: 'Share dashboards', hint: 'Publish dashboards to other users.' },
+  'ai.use': { label: 'Use AI features', hint: 'AI suggestions and summaries inside the CRM.' },
+  'ai.configure': { label: 'Configure AI', hint: 'Set up AI behaviour and prompts.' },
+  'telephony.call': { label: 'Click-to-call', hint: 'Place calls from the CRM.' },
+  'telephony.listen_recordings': { label: 'Listen to call recordings', hint: 'Play back recorded calls.' },
+  'whatsapp.send': { label: 'Send WhatsApp messages', hint: 'Message contacts over WhatsApp.' },
+  'whatsapp.templates': { label: 'Manage WhatsApp templates', hint: 'Create and edit message templates.' },
+  'inventory.block_unit': { label: 'Block inventory units', hint: 'Hold a property unit for a customer.' },
+  'inventory.change_price': { label: 'Change inventory prices', hint: 'Edit the price of a property unit.' },
+  'bookings.approve_discount': { label: 'Approve booking discounts', hint: 'Sign off discounts on bookings.' },
+  'admin.access': { label: 'Admin access', hint: 'Enter the admin area at all.' },
+  'admin.users': { label: 'Manage users', hint: 'Invite, deactivate and edit users.' },
+  'admin.roles': { label: 'Manage roles', hint: 'Create roles and set their permissions.' },
+  'admin.profiles': { label: 'Manage permission sets', hint: 'Edit the permission sets behind roles.' },
+  'admin.modules': { label: 'Manage modules', hint: 'Create and reshape modules.' },
+  'admin.fields': { label: 'Manage fields', hint: 'Add fields and change their types.' },
+  'admin.layouts': { label: 'Manage layouts', hint: 'Rearrange forms and detail pages.' },
+  'admin.picklists': { label: 'Manage picklists', hint: 'Edit dropdown options.' },
+  'admin.sharing': { label: 'Manage sharing rules', hint: 'Write rules that open records across roles.' },
+  'admin.workflows': { label: 'Manage workflows', hint: 'Build automation rules.' },
+  'admin.integrations': { label: 'Manage integrations', hint: 'Connect outside services.' },
+  'admin.templates': { label: 'Manage templates', hint: 'Edit document and email templates.' },
+  'admin.numbering': { label: 'Manage numbering', hint: 'Set auto-number formats for records.' },
+  'admin.audit': { label: 'View audit log', hint: 'See who changed what.' },
+};
+
+/** Capabilities shown first in the grid, in this order; everything else trails. */
+const CAP_ORDER = [
+  'records.transfer_ownership', 'records.mass_edit', 'records.mass_delete',
+  'records.export', 'records.import', 'records.view_all', 'dashboards.share',
+];
+
+/**
  * What one role may do. Everything edits the role's own linked profile — the
  * admin never sees the word "profile", because to them the role *is* its
  * permissions now.
@@ -400,15 +449,27 @@ function RolePermissions({ role }: { role: RoleNode }): JSX.Element {
       </div>
 
       <div className="card p-4">
-        <p className="mb-3 text-sm font-medium">Capabilities — extra powers beyond module access</p>
+        <p className="mb-1 text-sm font-medium">Capabilities — extra powers beyond module access</p>
+        <p className="mb-3 text-2xs text-muted">
+          These are on/off switches for whole features. &ldquo;Reassign records&rdquo; is the one behind the
+          Reassign button on list pages such as Contacts — without it, that button fails even when the
+          role can edit the records.
+        </p>
         <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
-          {allCapabilities.map((cap) => {
+          {[...allCapabilities].sort((a, b) => {
+            // The everyday data powers lead the list; admin plumbing sinks to the bottom.
+            const pa = CAP_ORDER.indexOf(a) === -1 ? 99 : CAP_ORDER.indexOf(a);
+            const pb = CAP_ORDER.indexOf(b) === -1 ? 99 : CAP_ORDER.indexOf(b);
+            return pa - pb;
+          }).map((cap) => {
             const active = capabilities.includes(cap);
+            const info = CAPABILITY_INFO[cap] ?? { label: cap, hint: '' };
             return (
               <label
                 key={cap}
+                title={info.hint || undefined}
                 className={cn(
-                  'flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs transition-colors',
+                  'flex cursor-pointer items-start gap-2 rounded-lg border px-2.5 py-1.5 text-xs transition-colors',
                   active
                     ? 'border-brand-300 bg-brand-50 dark:border-brand-800 dark:bg-brand-950/50'
                     : 'border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800',
@@ -416,14 +477,18 @@ function RolePermissions({ role }: { role: RoleNode }): JSX.Element {
               >
                 <input
                   type="checkbox"
-                  className="h-3.5 w-3.5 rounded border-slate-300"
+                  className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300"
                   checked={active}
                   onChange={() => {
                     setCapabilities(active ? capabilities.filter((c) => c !== cap) : [...capabilities, cap]);
                     setDirty(true);
                   }}
                 />
-                <span className="truncate font-mono">{cap}</span>
+                <span className="min-w-0">
+                  <span className="block font-medium leading-tight">{info.label}</span>
+                  {info.hint && <span className="block text-2xs leading-snug text-muted">{info.hint}</span>}
+                  <span className="block truncate font-mono text-2xs text-slate-400">{cap}</span>
+                </span>
               </label>
             );
           })}

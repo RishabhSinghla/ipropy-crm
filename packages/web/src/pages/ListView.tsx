@@ -1531,9 +1531,12 @@ function KanbanBoard({
  * arrows appear only when the strip actually overflows, and each one scrolls
  * by most of a screenful rather than a fixed pixel count.
  *
- * `scrollWidth > clientWidth` is re-measured on resize *and* when the view list
- * changes — a tab added by an admin can push it over the edge without the
- * window moving at all.
+ * `scrollWidth > clientWidth` is re-measured on scroll, on resize, on font
+ * load, and when the view list changes — a tab added by an admin can push it
+ * over the edge without the window moving at all. The arrow buttons always
+ * occupy their slot so the tab row never jumps sideways when overflow appears
+ * or disappears mid-session; each button dims and leaves the tab order when
+ * there is nothing to scroll to in its direction.
  */
 function ViewTabStrip({
   views, activeId, onPick,
@@ -1562,7 +1565,22 @@ function ViewTabStrip({
     if (!el) return undefined;
     const observer = new ResizeObserver(measure);
     observer.observe(el);
-    return () => observer.disconnect();
+    // The strip's own width tracks the window, but its scrollWidth also grows
+    // when webfonts swap in after first paint — without this the arrows can
+    // stay hidden on exactly the tab counts (8–10) where the fallback font
+    // happened to fit. One re-measure after fonts settle covers it, and the
+    // initial `measure()` already covers the font-blocked case.
+    let fontsDone = false;
+    if (typeof document !== 'undefined' && 'fonts' in document) {
+      document.fonts.ready.then(() => { if (!fontsDone) measure(); }).catch(() => undefined);
+    }
+    const onResize = (): void => measure();
+    window.addEventListener('resize', onResize);
+    return () => {
+      fontsDone = true;
+      observer.disconnect();
+      window.removeEventListener('resize', onResize);
+    };
   }, [views.length]);
 
   // Keep the selected tab in sight when the view changes from elsewhere — a
@@ -1582,14 +1600,27 @@ function ViewTabStrip({
 
   return (
     <div className="flex min-w-0 flex-1 items-center gap-0.5">
+      {/*
+        Always in the layout, never always active. Conditionally *removing*
+        the arrow buttons moved every tab a few pixels each time overflow
+        appeared or cleared — on Contacts the strip sits near that boundary,
+        so switching tabs visibly shoved the row sideways. `invisible` keeps
+        the slot; `aria-disabled` + `tabIndex={-1}` keeps it out of the tab
+        order and honest to assistive tech.
+      */}
       <button
         type="button"
         onClick={() => nudge(-1)}
-        // Hidden rather than disabled when there is nothing to scroll to: a
-        // permanently dead arrow reads as a broken control.
-        className={cn('shrink-0 rounded p-0.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800', !overflow.left && 'invisible')}
-        aria-label="Scroll views left"
+        disabled={!overflow.left}
+        aria-disabled={!overflow.left}
         tabIndex={overflow.left ? 0 : -1}
+        className={cn(
+          'shrink-0 rounded p-0.5 transition-opacity',
+          overflow.left
+            ? 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+            : 'invisible',
+        )}
+        aria-label="Scroll views left"
       >
         <ChevronLeft className="h-4 w-4" />
       </button>
@@ -1634,9 +1665,16 @@ function ViewTabStrip({
       <button
         type="button"
         onClick={() => nudge(1)}
-        className={cn('shrink-0 rounded p-0.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800', !overflow.right && 'invisible')}
-        aria-label="Scroll views right"
+        disabled={!overflow.right}
+        aria-disabled={!overflow.right}
         tabIndex={overflow.right ? 0 : -1}
+        className={cn(
+          'shrink-0 rounded p-0.5 transition-opacity',
+          overflow.right
+            ? 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+            : 'invisible',
+        )}
+        aria-label="Scroll views right"
       >
         <ChevronRight className="h-4 w-4" />
       </button>
