@@ -645,13 +645,24 @@ function OverviewTab({
 
             {!isCollapsed && (
               <dl className={cn(
-                'grid gap-x-6 gap-y-3 p-4',
+                'grid gap-3 p-4',
                 block.columns === 1 ? 'grid-cols-1' : block.columns === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2',
               )}>
                 {fields.map((field) => (
-                  <div key={field.name} className={cn(field.config.fullWidth && 'sm:col-span-2')}>
-                    <dt className="text-2xs font-medium uppercase tracking-wide text-muted">{field.label}</dt>
-                    <dd className="mt-0.5 text-sm">
+                  <div
+                    key={field.name}
+                    className={cn(
+                      // Boxed like a form field, not bare text — a rep coming off
+                      // Vtiger reads a label sitting directly over plain text as
+                      // one undifferentiated line. The border+fill gives every
+                      // field its own scannable shape, so label and value split
+                      // apart at a glance instead of on close reading.
+                      'rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 dark:border-slate-800 dark:bg-slate-800/40',
+                      field.config.fullWidth && 'sm:col-span-2',
+                    )}
+                  >
+                    <dt className="text-2xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{field.label}</dt>
+                    <dd className="mt-1 min-h-[1.25rem] text-sm font-medium text-slate-900 dark:text-slate-100">
                       {record.can?.edit && isInlineEditable(field) ? (
                         <EditableField
                           module={module}
