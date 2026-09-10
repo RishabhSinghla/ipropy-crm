@@ -19,10 +19,24 @@
 --    (the half is a study, not a bedroom); "4+ BHK" reads as 4; "Duplex" /
 --    "Plot" / "Commercial" have no bedroom count to carry and are left null.
 --    Never overwrites a bedroom count someone already entered by hand.
-UPDATE ipy_e_properties
-   SET bedrooms = FLOOR((regexp_match(configuration, '^([0-9.]+)'))[1]::numeric)::int
- WHERE bedrooms IS NULL
-   AND configuration ~ '^[0-9.]+\+?\s*(BHK|RK)';
+--    Guarded, because `bedrooms` is an ordinary field an admin may delete
+--    permanently — which drops the column — and on production it already has
+--    been. A statement naming a missing column fails when Postgres *parses*
+--    it, so no WHERE clause can save it; it has to be dynamic. Ungarded, this
+--    raised 42703, and since migrate runs ahead of the server under `set -e`
+--    the container never started at all.
+DO $carry$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+              WHERE table_name = 'ipy_e_properties' AND column_name = 'bedrooms') THEN
+    EXECUTE $sql$
+      UPDATE ipy_e_properties
+         SET bedrooms = FLOOR((regexp_match(configuration, '^([0-9.]+)'))[1]::numeric)::int
+       WHERE bedrooms IS NULL
+         AND configuration ~ '^[0-9.]+\+?\s*(BHK|RK)'
+    $sql$;
+  END IF;
+END $carry$;
 
 -- 1. Tombstone it, so the seed does not rebuild it.
 INSERT INTO ipy_field_tombstone (module_name, field_name, storage, column_name, had_values)
@@ -33,26 +47,44 @@ ON CONFLICT (module_name, field_name) DO NOTHING;
 -- 2. Saved views on Properties: columns, sort/group, and any filter naming it.
 --    "bedrooms" takes the column's place if the view does not already show
 --    it, so a list that showed "Configuration" does not just lose a column.
+--
+--    Every substitution from here down is conditional on bedrooms still
+--    existing. Putting a deleted field in a removed one's place just swaps
+--    one dangling reference for another, and a saved view naming a field
+--    that is not there is how a list ends up answering 400.
 UPDATE ipy_view
    SET columns = (
      SELECT COALESCE(jsonb_agg(c), '[]'::jsonb) FROM (
        SELECT c FROM jsonb_array_elements(columns) c WHERE c #>> '{}' <> 'configuration'
        UNION ALL
-       SELECT '"bedrooms"'::jsonb WHERE NOT (columns ? 'bedrooms')
+       SELECT '"bedrooms"'::jsonb
+        WHERE NOT (columns ? 'bedrooms')
+          AND EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_name = 'ipy_e_properties' AND column_name = 'bedrooms')
      ) x
    )
  WHERE module_id = (SELECT id FROM ipy_module WHERE name = 'properties')
    AND columns ? 'configuration';
 
-UPDATE ipy_view SET sort_by = 'bedrooms'
+UPDATE ipy_view
+   SET sort_by = CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns
+                                    WHERE table_name = 'ipy_e_properties'
+                                      AND column_name = 'bedrooms')
+                      THEN 'bedrooms' END
  WHERE module_id = (SELECT id FROM ipy_module WHERE name = 'properties') AND sort_by = 'configuration';
-UPDATE ipy_view SET group_by = 'bedrooms'
+UPDATE ipy_view
+   SET group_by = CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns
+                                     WHERE table_name = 'ipy_e_properties'
+                                       AND column_name = 'bedrooms')
+                       THEN 'bedrooms' END
  WHERE module_id = (SELECT id FROM ipy_module WHERE name = 'properties') AND group_by = 'configuration';
 
 UPDATE ipy_view
    SET filter = replace(filter::text, '"field":"configuration"', '"field":"bedrooms"')::jsonb
  WHERE module_id = (SELECT id FROM ipy_module WHERE name = 'properties')
-   AND filter IS NOT NULL AND filter::text LIKE '%"field":"configuration"%';
+   AND filter IS NOT NULL AND filter::text LIKE '%"field":"configuration"%'
+   AND EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'ipy_e_properties' AND column_name = 'bedrooms');
 
 -- 3. Layout blocks, dashboard tiles and workflows — properties-scoped only.
 UPDATE ipy_layout
@@ -70,12 +102,16 @@ UPDATE ipy_layout
 
 UPDATE ipy_dashboard_widget
    SET config = replace(config::text, '"configuration"', '"bedrooms"')::jsonb
- WHERE config->>'module' = 'properties' AND config::text LIKE '%configuration%';
+ WHERE config->>'module' = 'properties' AND config::text LIKE '%configuration%'
+   AND EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'ipy_e_properties' AND column_name = 'bedrooms');
 
 UPDATE ipy_workflow
    SET conditions = replace(conditions::text, '"field":"configuration"', '"field":"bedrooms"')::jsonb
  WHERE module_id = (SELECT id FROM ipy_module WHERE name = 'properties')
-   AND conditions IS NOT NULL AND conditions::text LIKE '%"field":"configuration"%';
+   AND conditions IS NOT NULL AND conditions::text LIKE '%"field":"configuration"%'
+   AND EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'ipy_e_properties' AND column_name = 'bedrooms');
 
 UPDATE ipy_workflow_task t
    SET config = t.config - 'writeTo'
@@ -90,7 +126,9 @@ UPDATE ipy_field
    SET config = replace(config::text, '"configuration"', '"bedrooms"')::jsonb
  WHERE module_id = (SELECT id FROM ipy_module WHERE name = 'properties')
    AND name <> 'configuration'
-   AND config::text LIKE '%configuration%';
+   AND config::text LIKE '%configuration%'
+   AND EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'ipy_e_properties' AND column_name = 'bedrooms');
 
 -- 4. The metadata row itself.
 DELETE FROM ipy_field
