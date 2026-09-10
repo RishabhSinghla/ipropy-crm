@@ -1,0 +1,38 @@
+# Print production's real table shape, on demand.
+#
+# Production's schema has drifted from what 002_entities.sql declares — an
+# applied migration never re-runs, so every column added to that file after
+# production first ran it is simply absent there. Two deploys were spent
+# discovering that one column at a time from Render's logs, which no local
+# gate can see. This reads the answer instead of guessing it.
+#
+# Read-only and deliberately narrow: column *names* and applied migration
+# names, never row data. workflow_dispatch only.
+name: Probe prod schema
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report schema drift
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          if [ -z "$PROD_DATABASE_URL" ]; then
+            echo "No PROD_DATABASE_URL secret configured." >&2
+            exit 1
+          fi
+          echo "=== last applied migrations ==="
+          psql "$PROD_DATABASE_URL" -tAc \
+            "SELECT name FROM ipy_migration ORDER BY name DESC LIMIT 12;"
+          echo
+          for t in ipy_e_properties ipy_e_leads; do
+            echo "=== $t columns ==="
+            psql "$PROD_DATABASE_URL" -tAc \
+              "SELECT string_agg(column_name, ', ' ORDER BY column_name)
+                 FROM information_schema.columns WHERE table_name = '$t';"
+            echo
+          done
