@@ -17,12 +17,16 @@
  */
 import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
+import { registry } from '../metadata/registry.js';
 
 export interface MatchFieldPair {
   /** A field on the leads (Contacts) module. */
   contactField: string;
   /** A field on the properties module. */
   propertyField: string;
+  /** Permanent field IDs persisted in the mapping table. */
+  contactFieldId?: string;
+  propertyFieldId?: string;
 }
 
 export interface MatchingConfig {
@@ -57,14 +61,42 @@ function isPair(v: unknown): v is MatchFieldPair {
 export async function matchingConfig(): Promise<MatchingConfig> {
   if (cached) return cached;
   try {
-    const rows = await db.query<{ key: string; value: unknown }>(
-      `SELECT key, value FROM ipy_setting WHERE key = ANY($1)`,
-      [['matching.field_map', 'matching.price_grace_percent']],
-    );
-    const map = new Map(rows.rows.map((r) => [r.key, r.value]));
+    const [leads, properties, settings, mappings] = await Promise.all([
+      registry.requireModule('leads'),
+      registry.requireModule('properties'),
+      db.query<{ key: string; value: unknown }>(
+        `SELECT key, value FROM ipy_setting WHERE key = ANY($1)`,
+        [['matching.field_map', 'matching.price_grace_percent']],
+      ),
+      db.query<{ source_field_internal_id: string; target_field_internal_id: string }>(
+        `SELECT fm.source_field_internal_id, fm.target_field_internal_id
+           FROM ipy_field_mapping fm
+           JOIN ipy_module sm ON sm.id = fm.source_module_id AND sm.name = 'leads'
+           JOIN ipy_module tm ON tm.id = fm.target_module_id AND tm.name = 'properties'
+          WHERE fm.purpose = 'matching' AND fm.is_active
+          ORDER BY fm.created_at`,
+      ),
+    ]);
+    const map = new Map(settings.rows.map((r) => [r.key, r.value]));
+    const leadById = new Map(leads.fields.map((f) => [f.internalId, f]));
+    const propertyById = new Map(properties.fields.map((f) => [f.internalId, f]));
+    const mapped = mappings.rows.flatMap((pair): MatchFieldPair[] => {
+      const contact = leadById.get(pair.source_field_internal_id);
+      const property = propertyById.get(pair.target_field_internal_id);
+      return contact && property ? [{
+        contactField: contact.name,
+        propertyField: property.name,
+        contactFieldId: contact.internalId,
+        propertyFieldId: property.internalId,
+      }] : [];
+    });
 
+    // Existing customers update in place: the migration imports their old
+    // name-based setting into ipy_field_mapping. Until then, retain the old
+    // setting as a safe compatibility fallback.
     const rawMap = map.get('matching.field_map');
-    const fieldMap = Array.isArray(rawMap) ? rawMap.filter(isPair) : [];
+    const legacyMap = Array.isArray(rawMap) ? rawMap.filter(isPair) : [];
+    const fieldMap = mapped.length ? mapped : legacyMap;
 
     const rawGrace = map.get('matching.price_grace_percent');
     const grace = typeof rawGrace === 'number' && Number.isFinite(rawGrace) && rawGrace >= 0 && rawGrace <= 100

@@ -37,10 +37,9 @@ export default function MatchingSetupAdmin(): JSX.Element {
   const save = async (): Promise<void> => {
     setSaving(true);
     try {
-      await api.saveSettings({
-        'matching.field_map': fieldMap.filter((p) => p.contactField && p.propertyField),
-        'matching.price_grace_percent': gracePercent,
-      });
+      await api.saveMatchingConfig(
+        fieldMap.filter((p) => p.contactFieldId && p.propertyFieldId), gracePercent,
+      );
       toast.success('Matching setup saved', 'The next match uses these mappings.');
       setDirty(false);
       void queryClient.invalidateQueries({ queryKey: ['matching-config'] });
@@ -64,8 +63,8 @@ export default function MatchingSetupAdmin(): JSX.Element {
     setDirty(true);
   };
 
-  const propertyUitype = (name: string): string | undefined =>
-    data?.propertyFields.find((f) => f.name === name)?.uitype;
+  const propertyUitype = (id: string | undefined): string | undefined =>
+    data?.propertyFields.find((f) => f.id === id)?.uitype;
 
   return (
     <div className="p-4 sm:p-6">
@@ -116,26 +115,26 @@ export default function MatchingSetupAdmin(): JSX.Element {
             </div>
             <div className="divide-y divide-slate-100 dark:divide-slate-800">
               {fieldMap.map((pair, i) => {
-                const uitype = propertyUitype(pair.propertyField);
+                const uitype = propertyUitype(pair.propertyFieldId);
                 const isPrice = uitype === 'currency';
                 const isBedrooms = pair.contactField === 'configuration';
                 return (
                   <div key={i} className="flex flex-wrap items-center gap-2 p-3">
                     <span className="w-20 shrink-0 text-xs font-medium text-muted">Contact</span>
                     <Select
-                      value={pair.contactField}
-                      onChange={(v) => setPair(i, { contactField: v })}
+                      value={pair.contactFieldId ?? ''}
+                      onChange={(id) => setPair(i, { contactFieldId: id, contactField: data.contactFields.find((f) => f.id === id)?.name ?? '' })}
                       placeholder="— Select a field —"
-                      options={data.contactFields.map((f) => ({ value: f.name, label: f.label }))}
+                      options={data.contactFields.map((f) => ({ value: f.id, label: f.label }))}
                       className="w-48 py-1.5 text-sm"
                     />
                     <span className="text-xs text-muted">maps to</span>
                     <span className="w-20 shrink-0 text-xs font-medium text-muted">Property</span>
                     <Select
-                      value={pair.propertyField}
-                      onChange={(v) => setPair(i, { propertyField: v })}
+                      value={pair.propertyFieldId ?? ''}
+                      onChange={(id) => setPair(i, { propertyFieldId: id, propertyField: data.propertyFields.find((f) => f.id === id)?.name ?? '' })}
                       placeholder="— Select a field —"
-                      options={data.propertyFields.map((f) => ({ value: f.name, label: f.label }))}
+                      options={data.propertyFields.map((f) => ({ value: f.id, label: f.label }))}
                       className="w-48 py-1.5 text-sm"
                     />
                     {isBedrooms && (

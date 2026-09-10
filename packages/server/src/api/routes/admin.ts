@@ -779,12 +779,53 @@ adminRouter.get('/matching-config', asyncHandler(async (req, res) => {
   ]);
   const shape = (fields: typeof leadsModule.fields) => fields
     .filter((f) => f.isActive)
-    .map((f) => ({ name: f.name, label: f.label, uitype: f.uitype }));
+    .map((f) => ({ id: f.internalId, name: f.name, label: f.label, uitype: f.uitype }));
   res.json({
     ...config,
     contactFields: shape(leadsModule.fields),
     propertyFields: shape(propertiesModule.fields),
   });
+}));
+
+/** Save matching rules by permanent Field ID, never by a renameable API name. */
+adminRouter.put('/matching-config', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'admin.access');
+  const input = z.object({
+    fieldMap: z.array(z.object({ contactFieldId: z.string().regex(/^fld_[A-Za-z0-9]+$/), propertyFieldId: z.string().regex(/^fld_[A-Za-z0-9]+$/) })),
+    priceGracePercent: z.number().min(0).max(100),
+  }).parse(req.body);
+  const [leads, properties] = await Promise.all([registry.requireModule('leads'), registry.requireModule('properties')]);
+  const leadIds = new Set(leads.fields.map((f) => f.internalId));
+  const propertyIds = new Set(properties.fields.map((f) => f.internalId));
+  for (const pair of input.fieldMap) {
+    if (!leadIds.has(pair.contactFieldId) || !propertyIds.has(pair.propertyFieldId)) {
+      throw new BadRequestError('Every matching rule must use an active Contact field and an active Property field.');
+    }
+  }
+  await transaction(async (tx) => {
+    await tx.query(
+      `DELETE FROM ipy_field_mapping
+        WHERE source_module_id = $1 AND target_module_id = $2 AND purpose = 'matching'`,
+      [leads.id, properties.id],
+    );
+    for (const pair of input.fieldMap) {
+      await tx.query(
+        `INSERT INTO ipy_field_mapping
+          (source_module_id, target_module_id, source_field_internal_id, target_field_internal_id, purpose, created_by)
+         VALUES ($1,$2,$3,$4,'matching',$5)`,
+        [leads.id, properties.id, pair.contactFieldId, pair.propertyFieldId, user.id],
+      );
+    }
+    await tx.query(
+      `INSERT INTO ipy_setting (key, value, updated_by, updated_at) VALUES ('matching.price_grace_percent',$1,$2,now())
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+      [JSON.stringify(input.priceGracePercent), user.id],
+    );
+  });
+  const { invalidateMatchingConfig } = await import('../../core/settings/matching.js');
+  invalidateMatchingConfig();
+  res.json({ ok: true });
 }));
 
 adminRouter.put('/settings', asyncHandler(async (req, res) => {

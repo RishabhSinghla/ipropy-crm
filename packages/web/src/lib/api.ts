@@ -267,13 +267,15 @@ export interface PropertyShareAdminConfig {
 export interface MatchingFieldPair {
   contactField: string;
   propertyField: string;
+  contactFieldId?: string;
+  propertyFieldId?: string;
 }
 
 export interface MatchingAdminConfig {
   fieldMap: MatchingFieldPair[];
   priceGracePercent: number;
-  contactFields: { name: string; label: string; uitype: string }[];
-  propertyFields: { name: string; label: string; uitype: string }[];
+  contactFields: { id: string; name: string; label: string; uitype: string }[];
+  propertyFields: { id: string; name: string; label: string; uitype: string }[];
 }
 
 /** A site visit — see server/src/core/capture/sessions.ts. */
@@ -793,6 +795,7 @@ export const api = {
   settings: (category?: string) => get<Record<string, unknown>[]>(`/api/admin/settings${qs({ category })}`),
   saveSettings: (settings: Record<string, unknown>) => put('/api/admin/settings', { settings }),
   matchingConfig: () => get<MatchingAdminConfig>('/api/admin/matching-config'),
+  saveMatchingConfig: (fieldMap: MatchingFieldPair[], priceGracePercent: number) => put('/api/admin/matching-config', { fieldMap, priceGracePercent }),
   auditLog: (params: Record<string, unknown> = {}) => get<Record<string, unknown>[]>(`/api/admin/audit${qs(params)}`),
   systemHealth: () => get<Record<string, unknown>>('/api/admin/health'),
   integrations: () => get<IntegrationSummary[]>('/api/admin/integrations'),

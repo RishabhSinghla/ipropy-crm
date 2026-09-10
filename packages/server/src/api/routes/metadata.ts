@@ -240,6 +240,47 @@ metadataRouter.get('/picklists/:name', asyncHandler(async (req, res) => {
   res.json(values);
 }));
 
+/** Shared master data for every area and budget/demand field. */
+metadataRouter.get('/masters/units/:kind', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.fields');
+  const kind = z.enum(['area', 'budget_demand']).parse(req.params.kind);
+  const rows = await db.query(
+    `SELECT id, kind, value, label, factor_sqft AS "factorSqft", sequence,
+            is_active AS "isActive", is_default AS "isDefault"
+       FROM ipy_unit_master WHERE kind = $1 ORDER BY sequence, label`,
+    [kind],
+  );
+  res.json(rows.rows);
+}));
+
+metadataRouter.put('/masters/units/:kind', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'admin.fields');
+  const kind = z.enum(['area', 'budget_demand']).parse(req.params.kind);
+  const units = z.array(z.object({
+    id: z.string().uuid().optional(),
+    value: z.string().regex(/^[a-z][a-z0-9_]{1,40}$/),
+    label: z.string().min(1).max(80),
+    factorSqft: z.number().positive().nullable().optional(),
+    isActive: z.boolean().default(true),
+    isDefault: z.boolean().default(false),
+  })).min(1).parse(req.body.units);
+  if (units.filter((u) => u.isDefault).length > 1) throw new BadRequestError('Choose only one default unit.');
+  await transaction(async (tx) => {
+    for (const [sequence, unit] of units.entries()) {
+      await tx.query(
+        `INSERT INTO ipy_unit_master (id, kind, value, label, factor_sqft, sequence, is_active, is_default, updated_at)
+         VALUES (COALESCE($1::uuid, gen_random_uuid()),$2,$3,$4,$5,$6,$7,$8,now())
+         ON CONFLICT (kind, value) DO UPDATE SET label = EXCLUDED.label, factor_sqft = EXCLUDED.factor_sqft,
+           sequence = EXCLUDED.sequence, is_active = EXCLUDED.is_active, is_default = EXCLUDED.is_default, updated_at = now()`,
+        [unit.id ?? null, kind, unit.value, unit.label, unit.factorSqft ?? null, sequence, unit.isActive, unit.isDefault],
+      );
+    }
+  });
+  invalidateAll();
+  res.json({ ok: true });
+}));
+
 /** Everything the field builder needs to render its type picker. */
 metadataRouter.get('/uitypes', asyncHandler(async (_req, res) => {
   res.json({ uitypes: UITYPE_LIST, formulaFunctions: FORMULA_FUNCTIONS });
@@ -591,13 +632,13 @@ metadataRouter.post('/modules/:name/fields', asyncHandler(async (req, res) => {
   const seq = input.sequence
     ?? (module.fields.filter((f) => f.blockId === blockId).length);
 
-  const row = await db.queryOne<{ id: string }>(
+  const row = await db.queryOne<{ id: string; internal_id: string }>(
     `INSERT INTO ipy_field
       (module_id, block_id, name, label, uitype, storage, column_name, sequence,
        is_mandatory, is_readonly, is_unique, is_custom, display_type, default_value,
        max_length, help_text, config, quick_create, mass_editable, searchable)
      VALUES ($1,$2,$3,$4,$5,'json',$3,$6,$7,$8,$9,true,$10,$11,$12,$13,$14,$15,$16,$17)
-     RETURNING id`,
+     RETURNING id, internal_id`,
     [
       module.id, blockId, input.name, input.label, input.uitype, seq,
       input.isMandatory, input.isReadonly, input.isUnique, input.displayType,
@@ -615,6 +656,11 @@ metadataRouter.post('/modules/:name/fields', asyncHandler(async (req, res) => {
      ON CONFLICT DO NOTHING`,
     [row!.id],
   );
+  await db.query(
+    `INSERT INTO ipy_field_change (module_id, field_internal_id, action, after_value, user_id)
+     VALUES ($1,$2,'created',$3,$4)`,
+    [module.id, row!.internal_id, JSON.stringify({ label: input.label, name: input.name, uitype: input.uitype }), getUser(req).id],
+  );
 
   invalidateAll();
   res.status(201).json(await registry.getField(module.name, input.name));
@@ -625,10 +671,10 @@ metadataRouter.patch('/fields/:id', asyncHandler(async (req, res) => {
   const input = fieldSchema.partial().parse(req.body);
 
   const current = await db.queryOne<{
-    name: string; label: string; uitype: string; config: Record<string, unknown>;
+    internal_id: string; name: string; label: string; uitype: string; config: Record<string, unknown>;
     is_custom: boolean; storage: string; module_id: string; display_type: string;
   }>(
-    `SELECT name, label, uitype, config, is_custom, storage, module_id, display_type
+    `SELECT internal_id, name, label, uitype, config, is_custom, storage, module_id, display_type
        FROM ipy_field WHERE id = $1`,
     [req.params.id],
   );
@@ -698,6 +744,11 @@ metadataRouter.patch('/fields/:id', asyncHandler(async (req, res) => {
     }
     const { references } = await transaction((tx) =>
       renameFieldEverywhere(current.module_id, module.name, current.name, input.name!, tx));
+    await db.query(
+      `INSERT INTO ipy_field_api_alias (module_id, field_internal_id, api_name)
+       VALUES ($1,$2,$3) ON CONFLICT (module_id, api_name) DO NOTHING`,
+      [current.module_id, current.internal_id, current.name],
+    );
     renamed = { from: current.name, to: input.name, references };
   }
 
@@ -745,6 +796,15 @@ metadataRouter.patch('/fields/:id', asyncHandler(async (req, res) => {
     // same contract ipy_layout.is_customised has (see seed/helpers.ts).
     sets.push('is_customised = true');
     await db.query(`UPDATE ipy_field SET ${sets.join(', ')}, updated_at = now() WHERE id = $1`, params);
+    const action = input.uitype && input.uitype !== current.uitype ? 'type_changed'
+      : input.name && input.name !== current.name ? 'renamed' : 'updated';
+    await db.query(
+      `INSERT INTO ipy_field_change (module_id, field_internal_id, action, before_value, after_value, user_id)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [current.module_id, current.internal_id, action,
+        JSON.stringify({ label: current.label, name: current.name, uitype: current.uitype, config: current.config }),
+        JSON.stringify({ ...input, config: nextConfig }), getUser(req).id],
+    );
   }
   invalidateAll();
 
@@ -804,8 +864,8 @@ metadataRouter.delete('/fields/:id', asyncHandler(async (req, res) => {
   await assertCapability(user, 'admin.fields');
   const permanent = req.query.permanent === 'true';
 
-  const field = await db.queryOne<{ name: string; label: string; is_custom: boolean; storage: string; column_name: string; module_id: string }>(
-    `SELECT name, label, is_custom, storage, column_name, module_id FROM ipy_field WHERE id = $1`, [req.params.id],
+  const field = await db.queryOne<{ internal_id: string; name: string; label: string; is_custom: boolean; storage: string; column_name: string; module_id: string }>(
+    `SELECT internal_id, name, label, is_custom, storage, column_name, module_id FROM ipy_field WHERE id = $1`, [req.params.id],
   );
   if (!field) throw new NotFoundError('Field not found');
 
@@ -877,6 +937,12 @@ metadataRouter.delete('/fields/:id', asyncHandler(async (req, res) => {
     }
 
     await tx.query(`DELETE FROM ipy_field WHERE id = $1`, [req.params.id]);
+    await tx.query(
+      `INSERT INTO ipy_field_change (module_id, field_internal_id, action, before_value, user_id)
+       VALUES ($1,$2,$3,$4,$5)`,
+      [field.module_id, field.internal_id, permanent ? 'permanently_deleted' : 'deleted',
+        JSON.stringify({ label: field.label, name: field.name }), user.id],
+    );
 
     if (module && field.storage === 'json') {
       // Reclaim the stored values so the JSONB doesn't accumulate dead keys.

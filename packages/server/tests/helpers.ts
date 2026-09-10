@@ -22,6 +22,7 @@ export interface FieldSpec {
 export function field(spec: FieldSpec, moduleName = 'leads'): FieldMeta {
   return {
     id: `f_${moduleName}_${spec.name}`,
+    internalId: `fld_test_${moduleName}_${spec.name}`,
     moduleId: `m_${moduleName}`,
     moduleName,
     blockId: null,

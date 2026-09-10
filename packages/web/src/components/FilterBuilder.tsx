@@ -15,7 +15,7 @@ const SYSTEM_FIELDS: FieldMeta[] = ([
   { name: 'created_by', label: 'Created By', uitype: 'user' },
 ] as const).map((f) => ({
   ...f,
-  id: `sys_${f.name}`, moduleId: '', moduleName: '', blockId: null,
+  id: `sys_${f.name}`, internalId: `sys_${f.name}`, moduleId: '', moduleName: '', blockId: null,
   storage: 'column' as const, columnName: f.name, sequence: 999,
   isMandatory: false, isReadonly: true, isUnique: false, isCustom: false, isActive: true,
   displayType: 'default' as const, defaultValue: null, maxLength: null, helpText: null,

@@ -446,6 +446,8 @@ export interface FieldConfig {
   unitField?: string;
   /** area/currency: units the `unitField` dropdown offers. */
   unitOptions?: { value: string; label: string }[];
+  /** Reusable Area or Budget / Demand Unit Master supplying `unitOptions`. */
+  unitMaster?: 'area' | 'budget_demand';
 
   [key: string]: unknown;
 }
@@ -453,6 +455,8 @@ export interface FieldConfig {
 /** Field metadata as returned by the API and consumed by the dynamic renderer. */
 export interface FieldMeta {
   id: string;
+  /** Immutable public identity (`fld_…`), used by mappings and templates. */
+  internalId: string;
   moduleId: string;
   moduleName: string;
   blockId: string | null;

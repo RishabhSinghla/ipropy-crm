@@ -26,6 +26,7 @@ interface RegistryCache {
   modulesById: Map<string, ModuleMeta>;
   picklists: Map<string, PicklistOption[]>; // by picklist name
   dependencies: Map<string, PicklistDependency[]>; // by module name
+  units: Map<string, { value: string; label: string }[]>;
   loadedAt: number;
 }
 
@@ -83,6 +84,7 @@ interface BlockRow {
 
 interface FieldRow {
   id: string;
+  internal_id: string;
   module_id: string;
   block_id: string | null;
   name: string;
@@ -125,7 +127,7 @@ interface RelationRow {
 // ---------------------------------------------------------------------------
 
 async function load(conn: Tx = db): Promise<RegistryCache> {
-  const [moduleRes, blockRes, fieldRes, relationRes, picklistRes, depRes] = await Promise.all([
+  const [moduleRes, blockRes, fieldRes, relationRes, picklistRes, depRes, unitRes] = await Promise.all([
     conn.query<ModuleRow>(`SELECT * FROM ipy_module ORDER BY sequence, label`),
     conn.query<BlockRow>(`SELECT * FROM ipy_block WHERE is_active ORDER BY sequence`),
     conn.query<FieldRow>(`SELECT * FROM ipy_field ORDER BY sequence`),
@@ -152,6 +154,9 @@ async function load(conn: Tx = db): Promise<RegistryCache> {
       JOIN ipy_module m ON m.id = d.module_id
       WHERE d.is_active
     `),
+    conn.query<{ kind: string; value: string; label: string }>(`
+      SELECT kind, value, label FROM ipy_unit_master WHERE is_active ORDER BY kind, sequence, label
+    `).catch(() => ({ rows: [] })),
   ]);
 
   // picklists
@@ -176,6 +181,13 @@ async function load(conn: Tx = db): Promise<RegistryCache> {
     const list = dependencies.get(row.module_name) ?? [];
     list.push({ sourceField: row.source_field, targetField: row.target_field, mapping: row.mapping });
     dependencies.set(row.module_name, list);
+  }
+
+  const units = new Map<string, { value: string; label: string }[]>();
+  for (const row of unitRes.rows) {
+    const list = units.get(row.kind) ?? [];
+    list.push({ value: row.value, label: row.label });
+    units.set(row.kind, list);
   }
 
   // group blocks + fields by module
@@ -205,6 +217,7 @@ async function load(conn: Tx = db): Promise<RegistryCache> {
     const rawFields = fieldsByModule.get(m.id) ?? [];
     const fields: FieldMeta[] = rawFields.map((f) => toFieldMeta(f, m.name, picklists));
     syncCountryCodes(fields);
+    syncUnitMasters(fields, units);
 
     const fieldsByBlock = new Map<string, FieldMeta[]>();
     for (const f of fields) {
@@ -302,7 +315,7 @@ async function load(conn: Tx = db): Promise<RegistryCache> {
     modulesById.set(m.id, meta);
   }
 
-  return { modules, modulesById, picklists, dependencies, loadedAt: Date.now() };
+  return { modules, modulesById, picklists, dependencies, units, loadedAt: Date.now() };
 }
 
 /**
@@ -337,10 +350,22 @@ function syncCountryCodes(fields: FieldMeta[]): void {
   }
 }
 
+/** Resolve every Area/Budget unit selector from the one reusable master. */
+function syncUnitMasters(fields: FieldMeta[], units: Map<string, { value: string; label: string }[]>): void {
+  for (const field of fields) {
+    const kind = field.config.unitMaster;
+    if (!kind) continue;
+    const options = units.get(kind);
+    if (!options?.length) continue;
+    field.config = { ...field.config, unitOptions: options };
+  }
+}
+
 function toFieldMeta(f: FieldRow, moduleName: string, picklists: Map<string, PicklistOption[]>): FieldMeta {
   const config = (f.config ?? {}) as FieldConfig;
   const meta: FieldMeta = {
     id: f.id,
+    internalId: f.internal_id,
     moduleId: f.module_id,
     moduleName,
     blockId: f.block_id,
@@ -437,7 +462,25 @@ export async function getModuleById(id: string): Promise<ModuleMeta | null> {
 export async function getField(moduleName: string, fieldName: string): Promise<FieldMeta | null> {
   const m = await getModule(moduleName);
   if (!m) return null;
-  return m.fields.find((f) => f.name === fieldName) ?? null;
+  const direct = m.fields.find((f) => f.name === fieldName);
+  if (direct) return direct;
+  // API aliases are deliberately only a compatibility fallback. Normal CRM
+  // code reads current names from metadata; an older import/webhook can still
+  // complete after an admin renames its field instead of silently losing data.
+  const alias = await db.queryOne<{ field_internal_id: string }>(
+    `SELECT field_internal_id FROM ipy_field_api_alias
+      WHERE module_id = $1 AND api_name = $2
+        AND (expires_at IS NULL OR expires_at > now())`,
+    [m.id, fieldName],
+  );
+  return alias ? m.fields.find((f) => f.internalId === alias.field_internal_id) ?? null : null;
+}
+
+/** Look up a field through its immutable public Field ID. */
+export async function getFieldByInternalId(moduleName: string, internalId: string): Promise<FieldMeta | null> {
+  const m = await getModule(moduleName);
+  if (!m) return null;
+  return m.fields.find((f) => f.internalId === internalId) ?? null;
 }
 
 export async function requireField(moduleName: string, fieldName: string): Promise<FieldMeta> {
