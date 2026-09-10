@@ -62,3 +62,38 @@ jobs:
                  FROM ipy_field_tombstone WHERE module_name = '$m';"
             echo
           done
+
+          # How full the matching-relevant columns are. Counts only — never a
+          # value — because this log is public. A field can exist, be mapped
+          # and still contribute nothing to a match because every row is null,
+          # which looks identical to "matching is bad" from the outside.
+          echo "=== fill rates on the columns matching reads ==="
+          psql "$PROD_DATABASE_URL" -tAc \
+            "SELECT 'properties: ' || string_agg(c || '=' || n, ', ')
+               FROM (
+                 SELECT 'carpet_area' AS c, count(carpet_area)::text AS n FROM ipy_e_properties
+                 UNION ALL SELECT 'configuration', count(configuration)::text FROM ipy_e_properties
+                 UNION ALL SELECT 'base_price', count(base_price)::text FROM ipy_e_properties
+                 UNION ALL SELECT 'locality', count(locality)::text FROM ipy_e_properties
+                 UNION ALL SELECT 'area_unit', count(area_unit)::text FROM ipy_e_properties
+                 UNION ALL SELECT 'status', count(status)::text FROM ipy_e_properties
+                 UNION ALL SELECT 'TOTAL_ROWS', count(*)::text FROM ipy_e_properties
+               ) t;"
+          psql "$PROD_DATABASE_URL" -tAc \
+            "SELECT 'leads: ' || string_agg(c || '=' || n, ', ')
+               FROM (
+                 SELECT 'budget' AS c, count(budget)::text AS n FROM ipy_e_leads
+                 UNION ALL SELECT 'configuration', count(configuration)::text FROM ipy_e_leads
+                 UNION ALL SELECT 'preferred_locations', count(preferred_locations)::text FROM ipy_e_leads
+                 UNION ALL SELECT 'area', count(area)::text FROM ipy_e_leads
+                 UNION ALL SELECT 'mobile', count(mobile)::text FROM ipy_e_leads
+                 UNION ALL SELECT 'TOTAL_ROWS', count(*)::text FROM ipy_e_leads
+               ) t;"
+          echo
+          echo "=== are the matching pairs actually configured? ==="
+          psql "$PROD_DATABASE_URL" -tAc \
+            "SELECT coalesce(string_agg(sf.name || ' -> ' || tf.name, ', '), '(none)')
+               FROM ipy_field_mapping fm
+               JOIN ipy_field sf ON sf.internal_id = fm.source_field_internal_id
+               JOIN ipy_field tf ON tf.internal_id = fm.target_field_internal_id
+              WHERE fm.purpose = 'matching' AND fm.is_active;"
