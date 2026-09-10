@@ -13,12 +13,12 @@
       "autoPort": false
     },
     {
-      "//": "Reads live from the CRM API, so start the `ipropy` configuration first or every page renders empty. PORT is pinned for the same reason as above \u2014 Next.js honours it, and the CRM's CORS/APP_URL expects the site on 3000.",
+      "//": "Reads live from the CRM API, so start the `ipropy` configuration first or every page renders empty. PORT is pinned because Next.js honours it and the CRM's CORS/APP_URL expects the site on 3000. The folder is found relative to the CRM checkout rather than written out, so this works on any machine and any username.",
       "name": "ipropy-website",
       "runtimeExecutable": "bash",
       "runtimeArgs": [
         "-c",
-        "cd /Users/rishabhsinghla/Downloads/iPropy-Projects/ipropy-website && PORT=3000 npm run dev"
+        "d=\"$(cd \"$(git rev-parse --show-toplevel 2>/dev/null || pwd)/..\" && pwd)/ipropy-website\"; if [ ! -d \"$d\" ]; then echo \"The website folder is not next to the CRM folder. Clone it: git clone https://github.com/RishabhSinghla/ipropy-website.git\"; exit 1; fi; cd \"$d\" && PORT=3000 npm run dev"
       ],
       "port": 3000,
       "autoPort": false

@@ -51,6 +51,8 @@ data.
 
 ## Quick start
 
+Setting up a machine for somebody who is not a developer? [`START-HERE.md`](START-HERE.md) is the same setup written without the jargon, plus `scripts/setup-new-laptop.sh`, which does all of the below and checks each step.
+
 ```bash
 cp .env.example .env
 docker compose up -d db
