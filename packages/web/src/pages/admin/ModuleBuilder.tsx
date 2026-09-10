@@ -801,6 +801,9 @@ function FieldEditor({
   const { data: history } = useQuery({
     queryKey: ['field-history', field?.id], queryFn: () => api.fieldHistory(field!.id), enabled: Boolean(field),
   });
+  const { data: impact } = useQuery({
+    queryKey: ['field-impact', field?.id], queryFn: () => api.fieldImpact(field!.id), enabled: Boolean(field),
+  });
 
   const spec = UITYPE_LIST.find((u) => u.uitype === uitype);
   const needsPicklist = spec?.requiresConfig?.includes('picklist');
@@ -1373,6 +1376,12 @@ function FieldEditor({
               {history.slice(0, 8).map((entry, i) => <p key={`${entry.createdAt}-${i}`}><span className="font-medium text-slate-700 dark:text-slate-200">{entry.action.replace(/_/g, ' ')}</span> · {new Date(entry.createdAt).toLocaleString('en-IN')} · {entry.userName ?? 'System'}</p>)}
             </div>
           </details>
+        ) : null}
+        {isEdit && impact && Object.values(impact).some(Boolean) ? (
+          <div className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+            <p className="font-medium">Impact before structural changes</p>
+            <p className="mt-1">Used in {Object.values(impact).reduce((sum, n) => sum + n, 0)} place(s): {Object.entries(impact).filter(([, n]) => n).map(([kind, n]) => `${n} ${kind.replace(/([A-Z])/g, ' $1').toLowerCase()}`).join(', ')}.</p>
+          </div>
         ) : null}
       </div>
     </Modal>

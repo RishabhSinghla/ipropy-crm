@@ -12,7 +12,7 @@ import {
   PICKLISTS_USED_IN_CODE, replaceValueInRecords, valueUsedInCode,
 } from '../../core/metadata/picklists.js';
 import { interchangeableTypes } from '../../core/metadata/fieldTypes.js';
-import { FIELDS_USED_IN_CODE, removeFieldEverywhere, renameFieldEverywhere } from '../../core/metadata/fieldRename.js';
+import { FIELDS_USED_IN_CODE, fieldImpact, removeFieldEverywhere, renameFieldEverywhere } from '../../core/metadata/fieldRename.js';
 import { assertCapability, canAccessModule, getFieldPermissions, getModulePermission, hasCapability, invalidatePermissions } from '../../core/permissions/index.js';
 import { FORMULA_FUNCTIONS, validateFormula } from '../../core/entity/formula.js';
 import { quoteIdent } from '../../core/query/builder.js';
@@ -299,6 +299,14 @@ metadataRouter.get('/fields/:id/history', asyncHandler(async (req, res) => {
       WHERE c.field_internal_id = $1 ORDER BY c.created_at DESC LIMIT 100`, [field.internal_id],
   );
   res.json(rows.rows);
+}));
+
+metadataRouter.get('/fields/:id/impact', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.fields');
+  const field = await db.queryOne<{ module_id: string; name: string; internal_id: string }>(`SELECT module_id, name, internal_id FROM ipy_field WHERE id = $1`, [req.params.id]);
+  if (!field) throw new NotFoundError('Field not found');
+  const module = await registry.getModuleById(field.module_id); if (!module) throw new NotFoundError('Module not found');
+  res.json(await fieldImpact(module.id, module.name, field.name, field.internal_id));
 }));
 
 // ---------------------------------------------------------------------------
