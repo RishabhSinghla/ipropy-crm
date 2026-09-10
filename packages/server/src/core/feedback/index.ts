@@ -717,7 +717,7 @@ export async function listFeedback(userId: string): Promise<unknown[]> {
                              ORDER BY e.created_at)
                FROM ipy_feedback_event e WHERE e.feedback_id = f.id) AS events,
             (SELECT jsonb_agg(jsonb_build_object('id', a.id, 'name', a.file_name, 'mime', a.mime_type))
-               FROM ipy_attachment a WHERE a.record_id = f.id) AS screenshots
+               FROM ipy_attachment a WHERE a.feedback_id = f.id) AS screenshots
        FROM ipy_feedback f
       WHERE f.user_id = $1
       ORDER BY f.created_at DESC

@@ -36,7 +36,7 @@ export async function analyzeAndEmail(feedbackId: string): Promise<void> {
 
     const atts = await db.query<{ id: string; storage_key: string; mime_type: string }>(
       `SELECT id, storage_key, mime_type FROM ipy_attachment
-        WHERE record_id = $1 AND mime_type LIKE 'image/%' ORDER BY created_at`,
+        WHERE feedback_id = $1 AND mime_type LIKE 'image/%' ORDER BY created_at`,
       [feedbackId],
     );
 

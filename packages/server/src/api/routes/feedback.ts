@@ -71,8 +71,8 @@ feedbackRouter.post('/', upload.array('screenshots', 4), asyncHandler(async (req
     const key = await buildStorageKey({ recordId: id, originalName: file.originalname, ext });
     await driver.save(key, file.buffer, file.mimetype);
     await db.query(
-      `INSERT INTO ipy_attachment (record_id, file_name, mime_type, size, storage_key, url, uploaded_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      `INSERT INTO ipy_attachment (record_id, feedback_id, file_name, mime_type, size, storage_key, url, uploaded_by)
+       VALUES (NULL, $1, $2, $3, $4, $5, $6, $7)`,
       [id, file.originalname, file.mimetype, file.size, key, `/api/files/${key}`, user.id],
     );
   }

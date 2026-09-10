@@ -127,11 +127,21 @@ export function ReportProblemModal({ onClose }: { onClose: () => void }): JSX.El
     speech.continuous = true;
     speech.interimResults = false;
     speech.onresult = (e) => {
-      // Get the final transcript from the last result in this batch.
-      // With interimResults=false only final results are returned.
-      const transcript = e.results[e.results.length - 1]?.[0]?.transcript ?? '';
-      if (!transcript.trim()) return;
-      setText((prev) => (prev ? `${prev} ${transcript.trim()}` : transcript.trim()));
+      // Append exactly the new results. resultIndex marks the first NEW one,
+      // and one batch can carry several: Chrome re-delivers accumulated
+      // results whenever its recognizer internally restarts, which happens
+      // on every pause in speech. Taking only the last result — the previous
+      // "fix" — threw away every chunk but the final one, so a spoken
+      // sentence left a 4-5-word tail in the box. The isFinal guard keeps
+      // this correct even if interimResults is ever switched on.
+      let chunk = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (!e.results[i].isFinal) continue;
+        const part = e.results[i][0]?.transcript?.trim();
+        if (part) chunk = chunk ? `${chunk} ${part}` : part;
+      }
+      if (!chunk) return;
+      setText((prev) => (prev ? `${prev} ${chunk}` : chunk));
     };
     speech.onend = () => setListening(false);
     speech.onerror = () => setListening(false);

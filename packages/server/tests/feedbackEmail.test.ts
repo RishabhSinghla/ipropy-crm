@@ -106,7 +106,15 @@ describe('the report email', () => {
     read.mockResolvedValue(png);
     complete.mockResolvedValue({ text: '## Summary\nSeen in the screenshot.' });
 
+    // The link is by feedback_id, never record_id: report shots are not record
+    // attachments, and record_id = <feedback id> violates ipy_attachment's
+    // foreign key — the bug that failed every screenshot report with "This
+    // record is referenced elsewhere".
     await analyzeAndEmail('fb-1');
+
+    const attsSql = String(query.mock.calls.find(([sql]) => /ipy_attachment/.test(String(sql)))?.[0]);
+    expect(attsSql).toContain('feedback_id = $1');
+    expect(attsSql).not.toContain('record_id = $1');
 
     const mail = sendEmail.mock.calls[0][0];
     expect(mail.attachments).toHaveLength(1);
