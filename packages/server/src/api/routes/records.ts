@@ -17,6 +17,7 @@ import { buildTimeline } from '../../core/entity/timeline.js';
 import { filterUnseen, markModuleSeen } from '../../core/entity/unseen.js';
 import { toCsv } from '../../utils/csv.js';
 import { notifyMany } from '../../core/notifications/index.js';
+import { buildExport, resolveExportColumns, type ExportColumn } from '../../core/export/engine.js';
 
 export const recordsRouter = Router();
 recordsRouter.use(requireAuth);
@@ -174,6 +175,48 @@ recordsRouter.get('/:module/export', asyncHandler(async (req, res) => {
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="${moduleName}-${new Date().toISOString().slice(0, 10)}.csv"`);
   res.send(csv);
+}));
+
+/**
+ * Export wizard endpoint. The legacy GET CSV link above remains for old list
+ * URLs; every new export comes through here with Field IDs and an explicit
+ * format. Records are always fetched through recordService, so filters and
+ * field-level permissions are identical to the list the user is looking at.
+ */
+recordsRouter.post('/:module/export', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const scope = getScope(req);
+  const moduleName = req.params.module;
+  const perm = await getModulePermission(user, moduleName);
+  if (!perm.export) throw new ForbiddenError('You do not have permission to export this module');
+  const input = z.object({
+    format: z.enum(['csv', 'xlsx']).default('xlsx'),
+    columns: z.array(z.object({ fieldId: z.string().regex(/^fld_[A-Za-z0-9]+$/), header: z.string().max(120).optional() })).max(200).optional(),
+    filter: filterSchema.optional(),
+    selectedIds: z.array(z.string().uuid()).max(5000).optional(),
+    sortBy: z.string().optional(),
+    sortDir: z.enum(['asc', 'desc']).optional(),
+  }).parse(req.body ?? {});
+  const module = await registry.requireModule(moduleName);
+  const columns = resolveExportColumns(module, input.columns as ExportColumn[] | undefined);
+  if (!columns.length) throw new BadRequestError('Choose at least one field to export.');
+  const result = await recordService.listRecords(scope, moduleName, {
+    filter: input.filter,
+    sortBy: input.sortBy,
+    sortDir: input.sortDir,
+    page: 1,
+    pageSize: 5000,
+  });
+  const selected = input.selectedIds?.length ? new Set(input.selectedIds) : null;
+  const rows = selected ? result.rows.filter((row) => selected.has(row.id)) : result.rows;
+  const file = await buildExport(input.format, columns, rows);
+  await recordService.writeAudit(db, {
+    recordId: null, module: moduleName, userId: user.id, action: 'export',
+    changes: [{ count: rows.length, format: input.format, fields: columns.map((c) => c.field.internalId) }], source: 'app',
+  });
+  res.setHeader('Content-Type', file.contentType);
+  res.setHeader('Content-Disposition', `attachment; filename="${moduleName}-${new Date().toISOString().slice(0, 10)}.${file.extension}"`);
+  res.send(file.content);
 }));
 
 // ---------------------------------------------------------------------------
