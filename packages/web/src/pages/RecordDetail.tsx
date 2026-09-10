@@ -800,6 +800,10 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
     // The AI narrative costs a model call — refresh is the button, not every visit.
     staleTime: 5 * 60_000,
   });
+  const { data: decisions, refetch: refetchDecisions } = useQuery({
+    queryKey: ['match-feedback', module, id], queryFn: () => api.matchFeedbackList(module, id), staleTime: 30_000,
+  });
+  const decisionsByTarget = useMemo(() => new Map((decisions ?? []).map((d) => [d.targetId, d.decision])), [decisions]);
 
   const matches = useMemo<{ id: string; label: string; score: number; primary: string; secondary: string; reason: string; caveat: string; status: string | null | undefined }[]>(() => {
     if (isContact) {
@@ -829,7 +833,7 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
   }, [data, isContact]);
   const feedback = async (event: MouseEvent, targetId: string, decision: 'shortlisted' | 'not_suitable' | 'follow_up'): Promise<void> => {
     event.stopPropagation();
-    try { await api.matchFeedback(module, id, targetId, decision); toast.success(decision === 'shortlisted' ? 'Match shortlisted' : decision === 'not_suitable' ? 'Marked not suitable' : 'Follow-up marked'); }
+    try { await api.matchFeedback(module, id, targetId, decision); await refetchDecisions(); toast.success(decision === 'shortlisted' ? 'Match shortlisted' : decision === 'not_suitable' ? 'Marked not suitable' : 'Follow-up marked'); }
     catch (err) { toast.error('Could not save match decision', (err as Error).message); }
   };
 
@@ -900,9 +904,9 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
                     {m.caveat && <span className="block truncate text-2xs text-amber-600 dark:text-amber-400">{m.caveat}</span>}
                   </td>
                   <td className="list-cell whitespace-nowrap">
-                    <button className="btn-ghost btn-sm px-1.5" onClick={(e) => void feedback(e, m.id, 'shortlisted')} title="Shortlist"><Star className="h-3.5 w-3.5" /></button>
-                    <button className="btn-ghost btn-sm px-1.5" onClick={(e) => void feedback(e, m.id, 'follow_up')} title="Follow-up"><Check className="h-3.5 w-3.5" /></button>
-                    <button className="btn-ghost btn-sm px-1.5 text-red-500" onClick={(e) => void feedback(e, m.id, 'not_suitable')} title="Not suitable"><X className="h-3.5 w-3.5" /></button>
+                    <button className={cn('btn-ghost btn-sm px-1.5', decisionsByTarget.get(m.id) === 'shortlisted' && 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300')} onClick={(e) => void feedback(e, m.id, 'shortlisted')} title="Shortlist"><Star className="h-3.5 w-3.5" /></button>
+                    <button className={cn('btn-ghost btn-sm px-1.5', decisionsByTarget.get(m.id) === 'follow_up' && 'bg-brand-100 text-brand-700 dark:bg-brand-900/40 dark:text-brand-300')} onClick={(e) => void feedback(e, m.id, 'follow_up')} title="Follow-up"><Check className="h-3.5 w-3.5" /></button>
+                    <button className={cn('btn-ghost btn-sm px-1.5 text-red-500', decisionsByTarget.get(m.id) === 'not_suitable' && 'bg-red-100 dark:bg-red-950/50')} onClick={(e) => void feedback(e, m.id, 'not_suitable')} title="Not suitable"><X className="h-3.5 w-3.5" /></button>
                   </td>
                 </tr>
               ))}

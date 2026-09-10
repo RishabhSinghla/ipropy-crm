@@ -219,6 +219,19 @@ recordsRouter.post('/:module/export', asyncHandler(async (req, res) => {
   res.send(file.content);
 }));
 
+/** Read the current user's decisions for a match list, so the actions remain
+ * meaningful after closing/reopening a record rather than disappearing. */
+recordsRouter.get('/:module/:id/matches/feedback', asyncHandler(async (req, res) => {
+  const user = getUser(req); const scope = getScope(req);
+  await assertModuleAccess(user, req.params.module, 'view');
+  if (!(await canAccessRecord(scope, req.params.module, req.params.id, 'view'))) throw new NotFoundError('Record not found');
+  const rows = await db.query<{ targetId: string; decision: 'shortlisted' | 'not_suitable' | 'follow_up' }>(
+    `SELECT target_record_id AS "targetId", decision FROM ipy_match_feedback
+      WHERE source_record_id = $1 AND decided_by = $2`, [req.params.id, user.id],
+  );
+  res.json(rows.rows);
+}));
+
 /** Store a salesperson's shortlist/follow-up/not-suitable decision on a match. */
 recordsRouter.post('/:module/:id/matches/:targetId/feedback', asyncHandler(async (req, res) => {
   const user = getUser(req); const scope = getScope(req);
