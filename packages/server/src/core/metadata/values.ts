@@ -177,7 +177,8 @@ export function coerceValue(field: FieldMeta, raw: unknown): unknown {
       return s;
     }
 
-    case 'picklist': {
+    case 'picklist':
+    case 'radio': {
       const s = String(raw).trim();
       if (field.options?.length) {
         const match = field.options.find((o) => o.value === s)
@@ -348,7 +349,8 @@ export function formatValue(field: FieldMeta, value: unknown, display?: string):
       const a = value as Record<string, unknown>;
       return [a.street, a.locality, a.city, a.state, a.pincode, a.country].filter(Boolean).join(', ');
     }
-    case 'picklist': {
+    case 'picklist':
+    case 'radio': {
       const opt = field.options?.find((o) => o.value === value);
       return opt?.label ?? String(value);
     }

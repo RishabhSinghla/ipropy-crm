@@ -41,7 +41,7 @@ export function defaultWidth(field: FieldMeta | undefined): number {
     case 'boolean': case 'integer': case 'percent': case 'score': return 96;
     case 'date': return 118;
     case 'datetime': return 150;
-    case 'picklist': case 'multipicklist': case 'tags': return 156;
+    case 'picklist': case 'radio': case 'multipicklist': case 'tags': return 156;
     case 'currency': case 'decimal': case 'area': return 132;
     case 'phone': return 152;
     case 'email': case 'url': return 220;

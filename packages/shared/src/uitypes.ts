@@ -34,6 +34,7 @@ export type UIType =
   | 'area' // sq.ft / sq.m — real-estate specific
   // --- choice -------------------------------------------------------------
   | 'picklist'
+  | 'radio'
   | 'multipicklist'
   | 'boolean'
   // --- temporal -----------------------------------------------------------
@@ -250,6 +251,11 @@ export const UITYPES: Record<UIType, UITypeSpec> = {
     listable: true, searchable: true, aggregatable: true,
     requiresConfig: ['picklist'], icon: 'chevron-down',
   },
+  radio: {
+    storage: 'text', label: 'Radio Buttons', group: 'Choice', operators: CHOICE_OPS,
+    listable: true, searchable: true, aggregatable: true,
+    requiresConfig: ['picklist'], icon: 'circle-dot',
+  },
   multipicklist: {
     storage: 'json', label: 'Multi Select', group: 'Choice',
     operators: ['has_any', 'has_all', 'is_empty', 'is_not_empty'],
@@ -346,7 +352,7 @@ export const UITYPE_LIST = Object.entries(UITYPES).map(([key, spec]) => ({
 
 /** Config bag attached to a field; shape depends on uitype. */
 export interface FieldConfig {
-  /** picklist / multipicklist: name of the picklist to bind to. */
+  /** picklist / radio / multipicklist: name of the picklist to bind to. */
   picklist?: string;
   /** reference / multireference: modules the lookup can point at. */
   referenceModules?: string[];

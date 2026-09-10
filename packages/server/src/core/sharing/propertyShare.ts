@@ -51,7 +51,7 @@ export const DEFAULT_PROPERTY_SHARE_FIELDS = [
 const SUPPORTED_TYPES = new Set<FieldMeta['uitype']>([
   'string', 'textarea', 'richtext', 'url',
   'integer', 'decimal', 'currency', 'percent', 'area',
-  'picklist', 'multipicklist', 'boolean',
+  'picklist', 'radio', 'multipicklist', 'boolean',
   'date', 'datetime', 'time', 'formula',
 ]);
 

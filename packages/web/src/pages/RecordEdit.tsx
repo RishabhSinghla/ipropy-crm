@@ -22,7 +22,7 @@ function defaultsFromMetadata(meta: ModuleMeta | undefined): Record<string, unkn
     if (!field.isActive || field.isReadonly) continue;
     if (field.defaultValue !== null && field.defaultValue !== undefined) {
       out[field.name] = field.defaultValue;
-    } else if (field.uitype === 'picklist') {
+    } else if (field.uitype === 'picklist' || field.uitype === 'radio') {
       const preset = field.options?.find((o) => o.isDefault);
       if (preset) out[field.name] = preset.value;
     }

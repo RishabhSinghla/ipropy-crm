@@ -923,7 +923,8 @@ miscRouter.get('/import/:module/template', asyncHandler(async (req, res) => {
 
   const sampleFor = (f: typeof module.fields[number]): string => {
     switch (f.uitype) {
-      case 'picklist': return f.options?.find((o) => o.isActive)?.value ?? '';
+      case 'picklist':
+      case 'radio': return f.options?.find((o) => o.isActive)?.value ?? '';
       case 'multipicklist':
       case 'tags': return (f.options ?? []).filter((o) => o.isActive).slice(0, 2).map((o) => o.value).join('; ');
       case 'boolean': return 'yes';

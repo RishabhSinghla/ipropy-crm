@@ -39,7 +39,7 @@ function fold(v: string): string {
 /** Fields on this module whose values come from a dropdown the import may grow. */
 export function growableFields(fields: FieldMeta[]): FieldMeta[] {
   return fields.filter(
-    (f) => (f.uitype === 'picklist' || f.uitype === 'multipicklist' || f.uitype === 'tags')
+    (f) => (f.uitype === 'picklist' || f.uitype === 'radio' || f.uitype === 'multipicklist' || f.uitype === 'tags')
       && typeof f.config.picklist === 'string',
   );
 }

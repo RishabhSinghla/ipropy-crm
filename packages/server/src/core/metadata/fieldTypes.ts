@@ -16,7 +16,7 @@ export const COLUMN_TYPES: Record<string, string> = {
   boolean: 'BOOLEAN', date: 'DATE', datetime: 'TIMESTAMPTZ',
   reference: 'UUID', owner: 'UUID', user: 'UUID',
   json: 'JSONB', address: 'JSONB', multipicklist: 'JSONB', multireference: 'JSONB', tags: 'JSONB',
-  picklist: 'TEXT',
+  picklist: 'TEXT', radio: 'TEXT',
 };
 
 /**

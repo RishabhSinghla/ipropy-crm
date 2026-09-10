@@ -928,7 +928,7 @@ async function prepareValues(
       if (!field.isActive || field.name in out.values) continue;
       if (field.defaultValue !== null && field.defaultValue !== undefined) {
         out.values[field.name] = coerceValue(field, field.defaultValue);
-      } else if (field.uitype === 'picklist' && field.options?.length) {
+      } else if ((field.uitype === 'picklist' || field.uitype === 'radio') && field.options?.length) {
         const def = field.options.find((o) => o.isDefault);
         if (def) out.values[field.name] = def.value;
       }

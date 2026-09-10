@@ -492,7 +492,7 @@ type EditorKind = 'picklist' | 'owner' | 'form' | 'control' | 'text';
 
 function editorKind(field: FieldMeta): EditorKind {
   switch (field.uitype) {
-    case 'picklist': return 'picklist';
+    case 'picklist': case 'radio': return 'picklist';
     case 'owner': case 'user': return 'owner';
     case 'address': case 'json': return 'form';
     case 'reference': case 'multipicklist': case 'tags': return 'control';

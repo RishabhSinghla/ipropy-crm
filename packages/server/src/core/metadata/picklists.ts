@@ -99,7 +99,7 @@ export async function fieldsUsingPicklist(name: string): Promise<PicklistFieldUs
   for (const module of modules) {
     for (const field of module.fields) {
       if (field.config?.picklist !== name) continue;
-      if (field.uitype !== 'picklist' && field.uitype !== 'multipicklist') continue;
+      if (field.uitype !== 'picklist' && field.uitype !== 'radio' && field.uitype !== 'multipicklist') continue;
       uses.push({
         module: module.name,
         moduleLabel: module.label,

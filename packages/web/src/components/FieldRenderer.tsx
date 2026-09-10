@@ -126,7 +126,8 @@ export function FieldValue({
         </a>
       );
 
-    case 'picklist': {
+    case 'picklist':
+    case 'radio': {
       const option = field.options?.find((o) => o.value === value);
       return <Badge color={option?.color}>{option?.label ?? String(value)}</Badge>;
     }
@@ -431,6 +432,21 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
             {opts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
           <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        </div>
+      );
+    }
+
+    case 'radio': {
+      const opts = optionsWithValue(options, value);
+      return (
+        <div className="flex flex-wrap gap-x-4 gap-y-2" role="radiogroup" aria-label={field.label}>
+          {opts.map((option) => (
+            <label key={option.value} className="inline-flex cursor-pointer items-center gap-1.5 text-sm">
+              <input type="radio" name={id} value={option.value} checked={String(value ?? '') === option.value}
+                onChange={() => onChange(option.value)} disabled={readOnly} autoFocus={autoFocus && String(value ?? '') === option.value} />
+              {option.label}
+            </label>
+          ))}
         </div>
       );
     }

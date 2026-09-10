@@ -409,7 +409,7 @@ function toFieldMeta(f: FieldRow, moduleName: string, picklists: Map<string, Pic
     massEditable: f.mass_editable,
     searchable: f.searchable,
   };
-  if ((f.uitype === 'picklist' || f.uitype === 'multipicklist') && config.picklist) {
+  if ((f.uitype === 'picklist' || f.uitype === 'radio' || f.uitype === 'multipicklist') && config.picklist) {
     meta.options = (picklists.get(config.picklist) ?? []).filter((o) => o.isActive);
   }
   return meta;
