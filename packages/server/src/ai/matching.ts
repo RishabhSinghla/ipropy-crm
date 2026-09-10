@@ -796,8 +796,21 @@ export async function matchBuyersForProperty(
          COALESCE(to_jsonb(l)->>'status', '') <> 'Lost'
            AND (ipy_try_numeric(to_jsonb(l)->>'budget') IS NULL
              OR to_jsonb(l)->>'budget_unit' NOT IN ('total') AND to_jsonb(l)->>'area' IS NOT NULL
-             OR (ipy_try_numeric(to_jsonb(l)->>'budget') >= ${priceP} * (1 - ${gracePP}::numeric)
-                 AND ipy_try_numeric(to_jsonb(l)->>'budget') <= ${priceP} * (1 + ${gracePP}::numeric)))
+             -- The inverse of the forward band, not the same band again.
+             --
+             -- Forward asks "is this price within ±grace of the budget", i.e.
+             -- price ∈ [b(1−g), b(1+g)]. Inverting that gives
+             -- budget ∈ [p/(1+g), p/(1−g)] — but this used to apply the
+             -- multiplicative band a second time, p(1±g), which is a different
+             -- interval. The two directions therefore disagreed at the edges,
+             -- and disagreed in the worse direction: a buyer whose budget
+             -- comfortably *exceeded* the asking price was excluded, so a
+             -- ₹2.6 Cr buyer never appeared against the ₹2.34 Cr flat that
+             -- scored 90 for them in the other direction. The person with more
+             -- money than the unit costs is the best buyer it has.
+             OR (ipy_try_numeric(to_jsonb(l)->>'budget') >= ${priceP} / (1 + ${gracePP}::numeric)
+                 AND ipy_try_numeric(to_jsonb(l)->>'budget')
+                     <= ${priceP} / NULLIF(1 - ${gracePP}::numeric, 0)))
          OR to_jsonb(l)->>'status' = 'Lost' AND to_jsonb(l)->>'lost_reason' IS NOT NULL
        )
        ${scopeSql}
