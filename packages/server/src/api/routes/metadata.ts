@@ -880,7 +880,8 @@ metadataRouter.patch('/fields/:id', asyncHandler(async (req, res) => {
     sets.push('is_customised = true');
     await db.query(`UPDATE ipy_field SET ${sets.join(', ')}, updated_at = now() WHERE id = $1`, params);
     const action = input.uitype && input.uitype !== current.uitype ? 'type_changed'
-      : input.name && input.name !== current.name ? 'renamed' : 'updated';
+      : input.name && input.name !== current.name ? 'renamed'
+        : input.isActive === true && current.display_type === 'hidden' ? 'restored' : 'updated';
     await db.query(
       `INSERT INTO ipy_field_change (module_id, field_internal_id, action, before_value, after_value, user_id)
        VALUES ($1,$2,$3,$4,$5,$6)`,
@@ -1085,7 +1086,7 @@ metadataRouter.delete('/fields/:id', asyncHandler(async (req, res) => {
 
   const module = await registry.getModuleById(field.module_id);
 
-  // Hide: reversible, keeps the data, the default for a seeded field.
+  // Hide: reversible, keeps the data, the default for every field.
   //
   // It also comes off every layout. "Comes off every screen" is what the
   // button promises and what the record pages already did — but the Layout
@@ -1094,10 +1095,15 @@ metadataRouter.delete('/fields/:id', asyncHandler(async (req, res) => {
   // bringing back a field I removed" this answers: the field was never back,
   // the layout had simply never been told. Restoring the field puts it in the
   // Unplaced list, where it can be dropped back where it belongs.
-  if (!field.is_custom && !permanent) {
+  if (!permanent) {
     await transaction(async (tx) => {
       await tx.query(`UPDATE ipy_field SET is_active = false, display_type = 'hidden' WHERE id = $1`, [req.params.id]);
       await removeFieldFromLayouts(tx, field.module_id, field.name);
+      await tx.query(
+        `INSERT INTO ipy_field_change (module_id, field_internal_id, action, before_value, user_id)
+         VALUES ($1,$2,'hidden',$3,$4)`,
+        [field.module_id, field.internal_id, JSON.stringify({ label: field.label, name: field.name }), user.id],
+      );
     });
     invalidateAll();
     res.json({ ok: true, deactivated: true });

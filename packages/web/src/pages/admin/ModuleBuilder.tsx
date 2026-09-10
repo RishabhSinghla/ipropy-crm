@@ -893,7 +893,7 @@ function FieldEditor({
         const note = preview.invalidRecords
           ? `\n\n${preview.invalidRecords} value(s) cannot convert and will be ${invalidStrategy === 'blank' ? 'cleared' : invalidStrategy === 'keep' ? 'kept as-is' : 'replaced with the default'}.`
           : '';
-        if (!window.confirm(`Convert ${preview.totalRecords} existing record value(s) from ${field.uitype} to ${uitype}?${note}\n\nThis is applied safely as one change.`)) {
+        if (!window.confirm(`Convert ${preview.totalRecords} existing record value(s) from ${field.uitype} to ${uitype}?\n\n${preview.convertibleRecords} can be converted.${note}\n\nThis is applied safely as one change.`)) {
           setSaving(false); return;
         }
         await api.convertField(field.id, { targetType: uitype, invalidStrategy });
