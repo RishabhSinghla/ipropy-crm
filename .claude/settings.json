@@ -1,0 +1,51 @@
+{
+  "//": "Shared Claude Code settings for this repo, committed on purpose so a second machine behaves the same as the first and nobody has to rebuild an allowlist by hand. Personal additions go in .claude/settings.local.json, which stays gitignored.",
+  "permissions": {
+    "//allow": "Routine and reversible. Approving them once here saves a prompt in every session.",
+    "allow": [
+      "Bash(npm run dev*)",
+      "Bash(npm run build*)",
+      "Bash(npm run typecheck*)",
+      "Bash(npm run test*)",
+      "Bash(npm run db:migrate*)",
+      "Bash(npm run db:seed*)",
+      "Bash(npm run db:backup*)",
+      "Bash(npm run check:prod*)",
+      "Bash(npm install*)",
+      "Bash(npm ci*)",
+      "Bash(docker compose up -d db)",
+      "Bash(docker compose ps*)",
+      "Bash(docker compose logs*)",
+      "Bash(docker compose exec -T db *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git branch*)",
+      "Bash(git show*)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git stash*)",
+      "Bash(git pull*)",
+      "Bash(gh pr view*)",
+      "Bash(gh pr list*)",
+      "Bash(gh run list*)",
+      "Bash(gh run view*)",
+      "Bash(gh issue list*)",
+      "Bash(curl -s -m 4 http://localhost:4000/api/health)",
+      "Bash(python3 scripts/check-deployed.py*)",
+      "Bash(bash scripts/verify-deploy.sh*)"
+    ],
+    "//deny": "Refused outright rather than asked about, because each one destroys something a session cannot put back and the right answer is a person doing it deliberately. db:reset and db:restore replace the local database; db:pull-prod overwrites local with a copy of production and is fine on purpose but never mid-task; the git entries throw away uncommitted work or rewrite the remote.",
+    "deny": [
+      "Bash(git push --force*)",
+      "Bash(git push -f *)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean -fd*)",
+      "Bash(docker compose down -v*)",
+      "Bash(docker volume rm*)",
+      "Bash(npm run db:reset*)",
+      "Bash(npm run db:restore*)",
+      "Bash(npm run db:pull-prod*)"
+    ]
+  }
+}
