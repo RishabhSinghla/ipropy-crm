@@ -560,6 +560,10 @@ export async function createRecord(
   const module = await registry.requireModule(moduleName);
   if (!ctx.system) await assertModuleAccess(ctx.user, moduleName, 'create');
 
+  // Same reason as updateRecord: a renamed Assigned To must reach the owner
+  // column, not the payload table, whatever the admin calls it.
+  input = canonicaliseRecordFields(module, input);
+
   const run = async (conn: Tx): Promise<RecordEnvelope> => {
     const payload = ctx.system ? { ...input } : await filterWritableFields(ctx.user, moduleName, input);
 
@@ -664,6 +668,10 @@ export async function updateRecord(
     await assertRecordAccess(ctx, moduleName, recordId, 'edit');
   }
 
+  // Before anything reads it: a record-level field an admin has renamed
+  // arrives under their name, and everything below is keyed on the column.
+  input = canonicaliseRecordFields(module, input);
+
   const run = async (conn: Tx): Promise<{ envelope: RecordEnvelope; changed: boolean }> => {
     const before = await getRecord({ ...ctx, system: true }, moduleName, recordId, { conn, withDisplay: false });
     const payload = ctx.system ? { ...input } : await filterWritableFields(ctx.user, moduleName, input);
@@ -683,6 +691,8 @@ export async function updateRecord(
       }
     }
 
+    // `input` came through canonicaliseRecordFields above, so a renamed
+    // Assigned To arrives as owner_id like any other caller's would.
     const ownerChanged = input.owner_id !== undefined && input.owner_id !== before.ownerId;
     if (changes.length === 0 && !ownerChanged) {
       // Nothing actually changed — skip the write, the audit row and the events.
@@ -836,9 +846,49 @@ interface PreparedValues {
   values: Record<string, unknown>;
   /** column name → db value, for the payload table */
   columns: Record<string, unknown>;
-  /** json key → value, merged into custom_fields */
+  
+/** json key → value, merged into custom_fields */
   json: Record<string, unknown>;
   recordNumber: string | null;
+}
+
+/**
+ * The name a record-level field is going by on this module.
+ *
+ * `owner_id` and its siblings do not live on the payload table — they are
+ * columns on `ipy_record`, marked with `config.__record`. Everything that
+ * writes them is keyed on the literal string 'owner_id', which is correct
+ * exactly until an administrator renames the field, and renaming is something
+ * this CRM promises they may do.
+ *
+ * On production the Assigned To field had been renamed from `owner_id` to
+ * `assigned_to`, and the consequences were precisely split: reads worked,
+ * because values are read out of the row by *column*, and every write failed,
+ * because the payload split then tried to set `ipy_e_leads.owner_id` — a
+ * column that is not there. The field showed the right owner and could not be
+ * changed, with no error a person could act on.
+ *
+ * So the input is translated before anything else looks at it: whatever the
+ * field is called, its value arrives under the column name the rest of the
+ * pipeline already understands.
+ */
+function canonicaliseRecordFields(
+  module: ModuleMeta,
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  const renamed = module.fields.filter(
+    (f) => f.config.__record === true && f.storage === 'column' && f.name !== f.columnName,
+  );
+  if (!renamed.length) return input;
+
+  const out = { ...input };
+  for (const field of renamed) {
+    if (!(field.name in out)) continue;
+    // The admin's name wins only as a way in; downstream reads the column.
+    out[field.columnName] = out[field.name];
+    delete out[field.name];
+  }
+  return out;
 }
 
 async function prepareValues(
@@ -848,6 +898,7 @@ async function prepareValues(
 ): Promise<PreparedValues> {
   const out: PreparedValues = { values: {}, columns: {}, json: {}, recordNumber: null };
   const fieldMap = new Map(module.fields.map((f) => [f.name, f]));
+  input = canonicaliseRecordFields(module, input);
 
   // 1. coerce everything the caller supplied
   for (const [key, raw] of Object.entries(input)) {

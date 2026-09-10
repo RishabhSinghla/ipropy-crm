@@ -45,8 +45,16 @@ export const RECORD_ALIAS = 'r';
  * behave like their column-stored siblings.
  */
 export function fieldExpr(field: FieldMeta, alias = ENTITY_ALIAS): string {
-  // A handful of fields live on ipy_record rather than the payload table.
-  const recordField = RECORD_FIELD_MAP[field.name];
+  /*
+    A handful of fields live on ipy_record rather than the payload table.
+
+    Keyed on the *column*, not the field's name. A rename changes the name and
+    never the column, so `RECORD_FIELD_MAP[field.name]` stopped matching the
+    moment somebody renamed Assigned To — and this then fell through to
+    `e.owner_id`, a column the payload table has not got, so every filter and
+    sort on that field raised 42703.
+  */
+  const recordField = RECORD_FIELD_MAP[field.columnName];
   if (recordField && field.storage === 'column' && field.config.__record === true) {
     return `${RECORD_ALIAS}.${recordField}`;
   }
