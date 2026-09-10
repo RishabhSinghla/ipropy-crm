@@ -97,3 +97,17 @@ jobs:
                JOIN ipy_field sf ON sf.internal_id = fm.source_field_internal_id
                JOIN ipy_field tf ON tf.internal_id = fm.target_field_internal_id
               WHERE fm.purpose = 'matching' AND fm.is_active;"
+          echo
+          echo "=== json-storage (admin-created) fields ==="
+          for m in properties leads; do
+            psql "$PROD_DATABASE_URL" -tAc \
+              "SELECT '$m: ' || coalesce(string_agg(f.name, ', ' ORDER BY f.name), '(none)')
+                 FROM ipy_field f JOIN ipy_module mo ON mo.id = f.module_id
+                WHERE mo.name = '$m' AND f.storage = 'json';"
+          done
+          echo
+          echo "=== values archived by a permanent delete (counts only) ==="
+          psql "$PROD_DATABASE_URL" -tAc \
+            "SELECT coalesce(string_agg(table_name || '.' || column_name || '=' || n, ', '), '(none)')
+               FROM (SELECT table_name, column_name, count(*)::text AS n
+                       FROM ipy_dropped_column GROUP BY 1,2) t;"
