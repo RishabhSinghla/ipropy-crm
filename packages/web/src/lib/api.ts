@@ -657,6 +657,11 @@ export const api = {
   duplicateField: (id: string) => post(`/api/meta/fields/${id}/duplicate`, {}),
   fieldHistory: (id: string) => get<{ action: string; beforeValue: Record<string, unknown> | null; afterValue: Record<string, unknown> | null; createdAt: string; userName: string | null }[]>(`/api/meta/fields/${id}/history`),
   fieldImpact: (id: string) => get<Record<string, number>>(`/api/meta/fields/${id}/impact`),
+  /** Values whose field is gone — swept by a migration, or archived by a permanent delete. */
+  archivedValues: (module: string) =>
+    get<{ column: string; count: number; droppedAt: string }[]>(`/api/meta/modules/${module}/archived-values`),
+  recoverArchivedValues: (fieldId: string, column: string, overwrite = false) =>
+    post<{ ok: boolean; restored: number }>(`/api/meta/fields/${fieldId}/recover-values`, { column, overwrite }),
   previewFieldConversion: (id: string, data: { targetType: string; invalidStrategy: 'blank' | 'default' | 'keep'; valueMap?: Record<string, string>; defaultValue?: unknown }) =>
     post<{ totalRecords: number; convertibleRecords: number; invalidRecords: number; invalidSamples: { recordId: string; value: unknown }[] }>(`/api/meta/fields/${id}/type-conversion/preview`, data),
   convertField: (id: string, data: { targetType: string; invalidStrategy: 'blank' | 'default' | 'keep'; valueMap?: Record<string, string>; defaultValue?: unknown }) =>

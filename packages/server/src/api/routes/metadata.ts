@@ -1116,6 +1116,134 @@ async function removeFieldFromLayouts(tx: Tx, moduleId: string, name: string): P
   );
 }
 
+/*
+  Values that outlived their field.
+
+  Two things put rows in `ipy_dropped_column`: the migration that sweeps
+  payload columns no field owns any more, and a permanent delete. Either way
+  the numbers are still there and nobody can see them, which is the same as
+  having lost them.
+
+  Production has twelve property areas sitting in that table right now while
+  the live Area / Size field holds one — swept when the old `area` column was
+  dropped, and never poured into the field that replaced it. This is the way
+  to get them back, and it is deliberately a two-step: look at what is there,
+  then choose the field to put it in.
+*/
+metadataRouter.get('/modules/:module/archived-values', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.fields');
+  const module = await registry.requireModule(req.params.module);
+  const rows = await db.query<{ column_name: string; count: string; droppedAt: string }>(
+    `SELECT column_name, COUNT(*)::text AS count, MAX(dropped_at) AS "droppedAt"
+       FROM ipy_dropped_column WHERE table_name = $1
+      GROUP BY column_name ORDER BY column_name`,
+    [module.tableName],
+  );
+  res.json(rows.rows.map((r) => ({ column: r.column_name, count: Number(r.count), droppedAt: r.droppedAt })));
+}));
+
+metadataRouter.post('/fields/:id/recover-values', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'admin.fields');
+  const { column, overwrite } = z.object({
+    column: z.string().min(1).max(120),
+    /** Off by default: a value somebody has since typed in outranks an old one. */
+    overwrite: z.boolean().default(false),
+  }).parse(req.body ?? {});
+
+  const field = await db.queryOne<{ internal_id: string; name: string; storage: string; column_name: string; module_id: string }>(
+    `SELECT internal_id, name, storage, column_name, module_id FROM ipy_field WHERE id = $1`, [req.params.id],
+  );
+  if (!field) throw new NotFoundError('Field not found');
+  const module = await registry.getModuleById(field.module_id);
+  if (!module) throw new NotFoundError('Module not found');
+
+  /*
+    The archive stores every value as text, and the column it is going back
+    into may be numeric, a date or a boolean. A plain assignment raises 22P02
+    on the first value that does not fit and takes the whole recovery with it,
+    so the cast goes through the `ipy_try_*` helpers this schema already has:
+    a value that cannot convert becomes NULL and is skipped, and the other
+    eleven still land.
+  */
+  const columnType = field.storage === 'column'
+    ? (await db.queryOne<{ data_type: string }>(
+        `SELECT data_type FROM information_schema.columns WHERE table_name = $1 AND column_name = $2`,
+        [module.tableName, field.column_name],
+      ))?.data_type ?? 'text'
+    : 'text';
+  const SAFE_CAST: Record<string, string> = {
+    numeric: 'ipy_try_numeric(d.value)',
+    'double precision': 'ipy_try_numeric(d.value)',
+    real: 'ipy_try_numeric(d.value)',
+    integer: 'ipy_try_int(d.value)',
+    bigint: 'ipy_try_int(d.value)',
+    smallint: 'ipy_try_int(d.value)',
+    boolean: 'ipy_try_bool(d.value)',
+    date: 'ipy_try_date(d.value)',
+    'timestamp with time zone': 'ipy_try_timestamptz(d.value)',
+    uuid: 'ipy_try_uuid(d.value)',
+    jsonb: 'to_jsonb(d.value)',
+    ARRAY: 'to_jsonb(d.value)',
+  };
+  const cast = SAFE_CAST[columnType] ?? 'd.value';
+
+  const restored = await transaction(async (tx) => {
+    const target = field.storage === 'column'
+      ? `${quoteIdent(field.column_name)} = ${cast}`
+      : null;
+    const guard = overwrite ? '' : (field.storage === 'column'
+      ? ` AND ${quoteIdent(field.column_name)} IS NULL`
+      : ` AND NOT (COALESCE(t.custom_fields, '{}'::jsonb) ? $3)`);
+
+    const result = field.storage === 'column'
+      ? await tx.query<{ id: string }>(
+          `UPDATE ${module.tableName} t SET ${target}
+             FROM ipy_dropped_column d
+            WHERE d.table_name = $1 AND d.column_name = $2
+              AND d.record_id = t.record_id AND d.value IS NOT NULL
+              AND ${cast} IS NOT NULL${guard}
+        RETURNING d.id`,
+          [module.tableName, column],
+        )
+      : await tx.query<{ id: string }>(
+          `UPDATE ${module.tableName} t
+              SET custom_fields = COALESCE(t.custom_fields, '{}'::jsonb)
+                                || jsonb_build_object($3::text, d.value)
+             FROM ipy_dropped_column d
+            WHERE d.table_name = $1 AND d.column_name = $2
+              AND d.record_id = t.record_id AND d.value IS NOT NULL${guard}
+        RETURNING d.id`,
+          [module.tableName, column, field.column_name],
+        );
+    const n = result.rowCount ?? 0;
+
+    /*
+      Only the rows that actually landed are consumed.
+
+      Leaving the whole archive in place meant the banner still offered twelve
+      values immediately after recovering twelve values, which reads as the
+      button having done nothing. Rows that were skipped — a record that
+      already had a value, a value that would not convert — stay, so the
+      remainder is still visible and can be dealt with deliberately.
+    */
+    if (n > 0) {
+      await tx.query(`DELETE FROM ipy_dropped_column WHERE id = ANY($1::bigint[])`,
+        [result.rows.map((r) => r.id)]);
+      await tx.query(
+        `INSERT INTO ipy_field_change (module_id, field_internal_id, action, after_value, user_id)
+         VALUES ($1,$2,'updated',$3,$4)`,
+        [field.module_id, field.internal_id, JSON.stringify({ recoveredFrom: column, rows: n }), user.id],
+      );
+    }
+    return n;
+  });
+
+  invalidateAll();
+  logger.info({ module: module.name, field: field.name, from: column, restored }, 'recovered archived values into a field');
+  res.json({ ok: true, restored });
+}));
+
 metadataRouter.delete('/fields/:id', asyncHandler(async (req, res) => {
   const user = getUser(req);
   await assertCapability(user, 'admin.fields');

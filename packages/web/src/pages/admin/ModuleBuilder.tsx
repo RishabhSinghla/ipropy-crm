@@ -40,10 +40,42 @@ export default function ModuleBuilder(): JSX.Element {
     queryFn: () => api.fieldImpact(pendingRemoval!.field.id),
     enabled: pendingRemoval?.mode === 'delete',
   });
+
+
   const requestedModule = searchParams.get('module');
   const selectedModule = requestedModule && fieldModules.some((m) => m.name === requestedModule)
     ? requestedModule
     : (fieldModules[0]?.name ?? '');
+
+  /*
+    Values whose field is gone.
+
+    A migration that sweeps a dead payload column, and a permanent delete, both
+    park the values in `ipy_dropped_column` rather than destroying them. Until
+    this panel existed nothing in the product could see that table, which made
+    an archive indistinguishable from a deletion — production is sitting on
+    twelve property areas right now while the field that replaced them holds
+    one.
+  */
+  const { data: archived = [] } = useQuery({
+    queryKey: ['archived-values', selectedModule],
+    queryFn: () => api.archivedValues(selectedModule),
+    enabled: Boolean(selectedModule),
+  });
+  const [recovering, setRecovering] = useState<{ column: string; count: number } | null>(null);
+  const recoverValues = useMutation({
+    mutationFn: ({ fieldId, column }: { fieldId: string; column: string }) =>
+      api.recoverArchivedValues(fieldId, column),
+    onSuccess: (res) => {
+      toast.success(
+        res.restored ? `Recovered ${res.restored} value${res.restored === 1 ? '' : 's'}` : 'Nothing to recover',
+        res.restored ? 'Records that already had a value were left alone.' : 'Every record already has a value here.',
+      );
+      setRecovering(null);
+      void queryClient.invalidateQueries({ queryKey: ['archived-values'] });
+    },
+    onError: (err: Error) => toast.error('Could not recover those values', err.message),
+  });
 
   const selectModule = (name: string): void => {
     const next = new URLSearchParams(searchParams);
@@ -84,7 +116,9 @@ export default function ModuleBuilder(): JSX.Element {
         r.deactivated
           ? 'It is off every screen but its data is intact — restore it any time.'
           : r.hadValues
-            ? `Removed along with ${r.hadValues} stored value(s).`
+            // Not "removed along with" any more: the values are archived on the
+            // way out, and creating a field with the same name pours them back.
+            ? `${r.hadValues} stored value(s) were archived — create a field with the same name to get them back, or use Recover values.`
             : undefined,
       );
       invalidateModule();
@@ -248,6 +282,36 @@ export default function ModuleBuilder(): JSX.Element {
             ))}
           </div>
         </div>
+
+        <div className="space-y-4">
+        {/*
+          Recoverable values. Only shown when there are some, because an empty
+          panel about a table nobody has heard of is noise on every other day.
+        */}
+        {archived.length > 0 && (
+          <div className="card border-amber-200 bg-amber-50/60 p-3 dark:border-amber-900 dark:bg-amber-950/30">
+            <p className="text-sm font-medium">Values without a field</p>
+            <p className="mt-0.5 text-xs text-muted">
+              Kept when a field was permanently deleted, or when an update removed a column nothing
+              owned. Put them into any field on this module — records that already have a value are
+              left alone.
+            </p>
+            <ul className="mt-2 space-y-1.5">
+              {archived.map((a) => (
+                <li key={a.column} className="flex flex-wrap items-center gap-2 text-sm">
+                  <code className="rounded bg-white px-1.5 py-0.5 text-xs dark:bg-slate-900">{a.column}</code>
+                  <span className="text-xs text-muted tnum">{a.count} value{a.count === 1 ? '' : 's'}</span>
+                  <button
+                    className="btn-secondary btn-sm ml-auto"
+                    onClick={() => setRecovering({ column: a.column, count: a.count })}
+                  >
+                    Recover values
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Fields */}
         <div className="card overflow-hidden">
@@ -471,7 +535,32 @@ export default function ModuleBuilder(): JSX.Element {
             </>
           )}
         </div>
+        </div>
       </div>
+
+      {/* Pick the field the archived values should land in. */}
+      {recovering && meta && (
+        <Modal open title="Recover values" onClose={() => setRecovering(null)}>
+          <p className="text-sm text-muted">
+            {recovering.count} value{recovering.count === 1 ? '' : 's'} kept from{' '}
+            <code className="rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-800">{recovering.column}</code>.
+            Choose the field they belong in.
+          </p>
+          <div className="mt-3 max-h-72 space-y-1 overflow-y-auto">
+            {meta.fields.filter((f) => f.isActive).map((f) => (
+              <button
+                key={f.id}
+                disabled={recoverValues.isPending}
+                onClick={() => recoverValues.mutate({ fieldId: f.id, column: recovering.column })}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm hover:bg-slate-50 disabled:opacity-50 dark:hover:bg-slate-800"
+              >
+                <span className="flex-1 truncate">{f.label}</span>
+                <span className="text-2xs text-muted">{f.uitype}</span>
+              </button>
+            ))}
+          </div>
+        </Modal>
+      )}
 
       {(creatingField || editingField) && meta && (
         <FieldEditor
