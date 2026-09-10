@@ -117,6 +117,36 @@ describe('a dashboard tile filtering on a field that is gone', () => {
     expect(row!.config.dateField).toBe('created_at');
   });
 
+  it('repairs a renamed column in a saved view instead of removing it', async () => {
+    /*
+      Same rule, the other document. A view saved before a rename still names
+      the old field, and dropping the column silently takes it off somebody's
+      list — which is the "the CRM keeps changing my columns" complaint rather
+      than a fix for it.
+    */
+    const renamed = await db.queryOne<{ name: string; column_name: string }>(
+      `SELECT f.name, f.column_name FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+        WHERE m.name = 'leads' AND f.name <> f.column_name AND f.storage = 'column' LIMIT 1`);
+    const view = await db.queryOne<{ id: string; columns: unknown }>(
+      `SELECT v.id, v.columns FROM ipy_view v JOIN ipy_module m ON m.id = v.module_id
+        WHERE m.name = 'leads' ORDER BY v.name LIMIT 1`);
+    if (!renamed || !view) return;
+
+    const original = view.columns;
+    try {
+      await db.query(`UPDATE ipy_view SET columns = $2::jsonb WHERE id = $1`,
+        [view.id, JSON.stringify(['full_name', renamed.column_name, 'qa_ghost_column'])]);
+      await transaction(async (tx) => { await pruneFieldRefs(tx); });
+
+      const after = await db.queryOne<{ columns: string[] }>(
+        `SELECT columns FROM ipy_view WHERE id = $1`, [view.id]);
+      expect(after!.columns).toEqual(['full_name', renamed.name]);
+    } finally {
+      await db.query(`UPDATE ipy_view SET columns = $2::jsonb WHERE id = $1`,
+        [view.id, JSON.stringify(original)]);
+    }
+  });
+
   it('every seeded tile on every dashboard answers', async () => {
     const dashboards = await db.query<{ id: string }>(`SELECT id FROM ipy_dashboard`);
     const failures: string[] = [];

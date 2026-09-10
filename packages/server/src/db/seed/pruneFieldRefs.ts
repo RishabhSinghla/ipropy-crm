@@ -50,6 +50,42 @@ export async function pruneFieldRefs(conn: Tx): Promise<PruneResult> {
       fields.rows.filter((f) => f.is_active && f.display_type !== 'hidden').map((f) => f.name),
     );
 
+    /*
+      A stale name is repaired before it is removed.
+
+      Most references that no longer match a field are not deletions at all —
+      they are renames. This CRM promises an admin may rename a field, and a
+      rename moves `ipy_field.name` while `column_name` stays exactly where it
+      was. So `owner_id` and `status` on a Contacts tile are not fields that
+      vanished: they are `assigned_to` and `lead_status` under the names their
+      owner chose.
+
+      Dropping them turned "My Open Leads" into a count of every lead in the
+      business — a tile that works, shows a number, and lies. Rewriting them
+      keeps what the tile meant. Only a name that no field owns by any route is
+      actually gone, and only that is removed.
+    */
+    const columnRows = await conn.query<{ name: string; column_name: string }>(
+      `SELECT name, column_name FROM ipy_field WHERE module_id = $1`, [module.id],
+    );
+    const byColumn = new Map<string, string>();
+    for (const f of columnRows.rows) {
+      if (!exists.has(f.column_name)) byColumn.set(f.column_name, f.name);
+    }
+    /**
+     * The field this name means today, against a given list, or null when
+     * nothing owns it. `onScreen` for a layout, `exists` for everything else —
+     * the same distinction the two sets already draw.
+     */
+    const resolveIn = (allowed: Set<string>) => (name: string): string | null => {
+      if (allowed.has(name)) return name;
+      const renamed = byColumn.get(name);
+      return renamed && allowed.has(renamed) ? renamed : null;
+    };
+    const resolve = resolveIn(exists);
+    const resolveOnScreen = resolveIn(onScreen);
+
+
     // --- layouts: sections and the header strip -----------------------------
     const layouts = await conn.query<{ id: string; config: Record<string, unknown> }>(
       `SELECT id, config FROM ipy_layout WHERE module_id = $1`, [module.id],
@@ -63,10 +99,12 @@ export async function pruneFieldRefs(conn: Tx): Promise<PruneResult> {
         blocks: blocks.map((b) => {
           const block = b as { fields?: unknown };
           if (!Array.isArray(block.fields)) return b;
-          return { ...block, fields: block.fields.filter((f) => onScreen.has(String(f))) };
+          // A renamed field is still on this layout under its new name; only a
+          // name nothing owns is actually off the screen.
+          return { ...block, fields: block.fields.map((f) => resolveOnScreen(String(f))).filter(Boolean) };
         }),
         ...(Array.isArray(config.headerFields)
-          ? { headerFields: config.headerFields.filter((f) => onScreen.has(String(f))) }
+          ? { headerFields: config.headerFields.map((f) => resolveOnScreen(String(f))).filter(Boolean) }
           : {}),
       };
       if (JSON.stringify(next) === before) continue;
@@ -85,7 +123,9 @@ export async function pruneFieldRefs(conn: Tx): Promise<PruneResult> {
     );
     for (const view of views.rows) {
       const cols = Array.isArray(view.columns) ? view.columns : [];
-      const kept = cols.filter((c) => exists.has(String(c)));
+      // Repaired, not dropped: a column saved before a rename still names the
+      // old field, and removing it silently takes a column off somebody's list.
+      const kept = cols.map((c) => resolve(String(c))).filter(Boolean);
       if (kept.length === cols.length) continue;
       // A view stripped to nothing shows no columns at all, which is a broken
       // screen; leaving it alone at least shows the old list. This has not
@@ -129,31 +169,6 @@ export async function pruneFieldRefs(conn: Tx): Promise<PruneResult> {
       "everything", which is honest — and the removal is logged either way so
       it is a visible decision rather than a silent one.
     */
-    /*
-      A stale name is repaired before it is removed.
-
-      Most references that no longer match a field are not deletions at all —
-      they are renames. This CRM promises an admin may rename a field, and a
-      rename moves `ipy_field.name` while `column_name` stays exactly where it
-      was. So `owner_id` and `status` on a Contacts tile are not fields that
-      vanished: they are `assigned_to` and `lead_status` under the names their
-      owner chose.
-
-      Dropping them turned "My Open Leads" into a count of every lead in the
-      business — a tile that works, shows a number, and lies. Rewriting them
-      keeps what the tile meant. Only a name that no field owns by any route is
-      actually gone, and only that is removed.
-    */
-    const byColumn = new Map<string, string>();
-    for (const f of await conn.query<{ name: string; column_name: string }>(
-      `SELECT name, column_name FROM ipy_field WHERE module_id = $1`, [module.id],
-    ).then((r) => r.rows)) {
-      if (!exists.has(f.column_name)) byColumn.set(f.column_name, f.name);
-    }
-    /** The field this name means today, or null when nothing owns it. */
-    const resolve = (name: string): string | null =>
-      exists.has(name) ? name : byColumn.get(name) ?? null;
-
     const widgets = await conn.query<{ id: string; title: string; config: Record<string, unknown> }>(
       `SELECT id, title, config FROM ipy_dashboard_widget
         WHERE config->>'module' = $1`, [module.name],
