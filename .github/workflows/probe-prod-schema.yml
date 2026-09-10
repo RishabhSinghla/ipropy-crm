@@ -36,3 +36,29 @@ jobs:
                  FROM information_schema.columns WHERE table_name = '$t';"
             echo
           done
+
+          # The metadata beside the schema, because the two disagreeing is the
+          # whole failure mode. A column with no field is dead storage; a field
+          # with no column is a 42703 waiting for the next query that names it;
+          # and a column that keeps coming back after a migration dropped it
+          # means something is recreating the field row. Names and flags only.
+          for m in properties leads; do
+            # `name -> column_name`, because the two differ the moment somebody
+            # renames a field: a rename changes the name and never the column.
+            # Reading only names is how a migration comes to delete the wrong
+            # row and leave the right column standing.
+            echo "=== $m: column-backed fields (name -> column) ==="
+            psql "$PROD_DATABASE_URL" -tAc \
+              "SELECT string_agg(f.name ||
+                                 CASE WHEN f.name = f.column_name THEN '' ELSE ' -> ' || f.column_name END ||
+                                 CASE WHEN f.is_active THEN '' ELSE '(hidden)' END,
+                                 ', ' ORDER BY f.name)
+                 FROM ipy_field f JOIN ipy_module mo ON mo.id = f.module_id
+                WHERE mo.name = '$m' AND f.storage = 'column';"
+            echo
+            echo "=== $m: tombstoned fields ==="
+            psql "$PROD_DATABASE_URL" -tAc \
+              "SELECT string_agg(field_name, ', ' ORDER BY field_name)
+                 FROM ipy_field_tombstone WHERE module_name = '$m';"
+            echo
+          done

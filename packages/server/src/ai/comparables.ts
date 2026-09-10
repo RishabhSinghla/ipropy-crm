@@ -62,32 +62,39 @@ interface Row {
 export async function comparablesFor(input: {
   locality: string | null;
   bedrooms: number | null;
-  carpetArea: number | null;
+  area: number | null;
   /** Excluded from its own comparison, when it exists. */
   excludeRecordId?: string | null;
 }): Promise<Comparables | null> {
   if (!input.locality || input.bedrooms == null) return null;
 
+  // Read through `to_jsonb(p)`, like buyer matching, and for the same reason:
+  // locality, bedrooms, status and every area field are fields an admin may
+  // delete, and naming a deleted one raises 42703 — which fails the statement
+  // rather than the row, and turns a price hint into a 400 on the record form.
   const rows = await db.query<Row>(
-    `SELECT COALESCE(p.total_price, p.base_price) AS price,
-            p.status,
-            CASE WHEN p.status IN ('Sold','Registered','Agreement Done','Booked')
+    `SELECT COALESCE(ipy_try_numeric(to_jsonb(p)->>'total_price'),
+                     ipy_try_numeric(to_jsonb(p)->>'base_price')) AS price,
+            to_jsonb(p)->>'status' AS status,
+            CASE WHEN to_jsonb(p)->>'status' IN ('Sold','Registered','Agreement Done','Booked')
                  THEN EXTRACT(DAY FROM (r.updated_at - r.created_at))::int
                  ELSE NULL END AS days_listed
      FROM ipy_e_properties p
      JOIN ipy_record r ON r.id = p.record_id
      WHERE r.is_deleted = false
-       AND p.locality = $1
-       AND p.bedrooms = $2
-       AND COALESCE(p.total_price, p.base_price) > 0
+       AND to_jsonb(p)->>'locality' = $1
+       AND ipy_try_numeric(to_jsonb(p)->>'bedrooms') = $2
+       AND COALESCE(ipy_try_numeric(to_jsonb(p)->>'total_price'),
+                    ipy_try_numeric(to_jsonb(p)->>'base_price')) > 0
        AND r.created_at > now() - ($3 || ' days')::interval
        AND ($4::uuid IS NULL OR p.record_id <> $4)
        -- Same size bracket, or no size recorded either side. A 700 sq ft and a
        -- 1,600 sq ft 3-bedroom unit are not the same product and averaging
        -- them produces a number describing neither.
-       AND ($5::numeric IS NULL OR p.carpet_area IS NULL
-            OR p.carpet_area BETWEEN $5 * ${1 - AREA_TOLERANCE} AND $5 * ${1 + AREA_TOLERANCE})`,
-    [input.locality, input.bedrooms, String(MAX_AGE_DAYS), input.excludeRecordId ?? null, input.carpetArea],
+       AND ($5::numeric IS NULL OR ipy_try_numeric(to_jsonb(p)->>'area') IS NULL
+            OR ipy_try_numeric(to_jsonb(p)->>'area')
+                 BETWEEN $5 * ${1 - AREA_TOLERANCE} AND $5 * ${1 + AREA_TOLERANCE})`,
+    [input.locality, input.bedrooms, String(MAX_AGE_DAYS), input.excludeRecordId ?? null, input.area],
   );
 
   if (rows.rows.length < MIN_COMPARABLES) return null;

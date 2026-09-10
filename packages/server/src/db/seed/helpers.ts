@@ -85,6 +85,13 @@ export interface PicklistDef {
   name: string;
   label: string;
   global?: boolean;
+  /**
+   * The sequence below is the meaning — a pipeline, a scale, a ranking — and
+   * must not be sorted A–Z. Everything else is alphabetised on the way out of
+   * the registry (migration 114). Written on insert only, like every other
+   * admin control here: Admin → Dropdowns is where it is changed afterwards.
+   */
+  ordered?: boolean;
   values: (string | { value: string; label?: string; color?: string; isDefault?: boolean; meta?: Record<string, unknown> })[];
 }
 
@@ -112,11 +119,11 @@ export async function upsertPicklist(conn: Tx, def: PicklistDef): Promise<string
   if (tombstones.has('')) return null;
 
   const row = await conn.queryOne<{ id: string }>(
-    `INSERT INTO ipy_picklist (name, label, is_global, is_system)
-     VALUES ($1,$2,$3,true)
+    `INSERT INTO ipy_picklist (name, label, is_global, is_system, is_ordered)
+     VALUES ($1,$2,$3,true,$4)
      ON CONFLICT (name) DO UPDATE SET label = EXCLUDED.label
      RETURNING id`,
-    [def.name, def.label, def.global ?? true],
+    [def.name, def.label, def.global ?? true, def.ordered ?? false],
   );
   const picklistId = row!.id;
 
@@ -216,7 +223,39 @@ async function upsertField(
   conn: Tx, def: ModuleDef, moduleId: string, blockId: string, f: FieldDef, fieldSeq: number,
 ): Promise<void> {
   const storage = f.storage ?? (f.column ? 'column' : 'json');
-  if (storage === 'column') await ensureColumn(conn, def.table, f.column ?? f.name, f);
+  const column = f.column ?? f.name;
+
+  /*
+    A field somebody renamed must not come back under its old name.
+
+    The upsert below conflicts on `(module_id, name)`, and a rename changes the
+    name while never touching `column_name` — records are stored under the
+    column. So a renamed field is invisible to that conflict, the template
+    inserts a *fresh* row with the original name, and the module ends up with
+    two fields writing the same column. Production has four such pairs on
+    Properties alone: full_name and name, assigned_to and owner_id, block_tower
+    and tower, demand and base_price. Whatever a rep types into one appears in
+    the other, and each edit overwrites the last.
+
+    This is the answer to "why does the CRM keep bringing those fields back
+    somewhere or the other" — they were never deleted, they were renamed, and
+    the seed put the old name back beside the new one on the next cold start.
+
+    So: if some other field on this module already owns the column, that field
+    *is* this one under a name the admin chose. Leave it alone entirely — its
+    label, type and rules are theirs, and `is_customised` would not protect it
+    because this would be an INSERT rather than an UPDATE.
+  */
+  if (storage === 'column') {
+    const claimed = await conn.queryOne<{ name: string }>(
+      `SELECT name FROM ipy_field
+        WHERE module_id = $1 AND column_name = $2 AND name <> $3 LIMIT 1`,
+      [moduleId, column, f.name],
+    );
+    if (claimed) return;
+  }
+
+  if (storage === 'column') await ensureColumn(conn, def.table, column, f);
   await conn.query(
     `INSERT INTO ipy_field AS f
       (module_id, block_id, name, label, uitype, storage, column_name, sequence,
@@ -250,7 +289,7 @@ async function upsertField(
        updated_at = now()`,
     [
       moduleId, blockId, f.name, f.label, f.uitype, storage,
-      f.column ?? f.name, fieldSeq,
+      column, fieldSeq,
       f.mandatory ?? false, f.readonly ?? false, f.unique ?? false,
       f.displayType ?? 'default',
       f.default !== undefined ? JSON.stringify(f.default) : null,

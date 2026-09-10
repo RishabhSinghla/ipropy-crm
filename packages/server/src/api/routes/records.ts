@@ -330,11 +330,14 @@ recordsRouter.post('/:module/check-duplicates', asyncHandler(async (req, res) =>
 recordsRouter.post('/:module/mass-update', asyncHandler(async (req, res) => {
   const user = getUser(req);
   await assertCapability(user, 'records.mass_edit');
-  const { ids, values } = z.object({
+  const { ids, values, runWorkflows } = z.object({
     ids: z.array(z.string().uuid()).min(1).max(500),
     values: z.record(z.unknown()),
+    // Off unless asked for. See recordService.massUpdate for why a bulk tidy-up
+    // that fires every new-lead automation is the failure, not the feature.
+    runWorkflows: z.boolean().default(false),
   }).parse(req.body);
-  res.json(await recordService.massUpdate(getScope(req), req.params.module, ids, values));
+  res.json(await recordService.massUpdate(getScope(req), req.params.module, ids, values, { runWorkflows }));
 }));
 
 /**
@@ -346,15 +349,17 @@ recordsRouter.post('/:module/mass-update-all', asyncHandler(async (req, res) => 
   const user = getUser(req);
   await assertCapability(user, 'records.mass_edit');
   await assertModuleAccess(user, req.params.module, 'edit');
-  const { query, values } = z.object({
+  const { query, values, runWorkflows } = z.object({
     query: z.object({
       view: z.string().uuid().optional(),
       filter: z.unknown().optional(),
       search: z.string().optional(),
     }).passthrough(),
     values: z.record(z.unknown()),
+    runWorkflows: z.boolean().default(false),
   }).parse(req.body);
-  res.json(await recordService.massUpdateByQuery(getScope(req), req.params.module, query as ListQuery, values));
+  res.json(await recordService.massUpdateByQuery(
+    getScope(req), req.params.module, query as ListQuery, values, { runWorkflows }));
 }));
 
 recordsRouter.post('/:module/mass-delete', asyncHandler(async (req, res) => {

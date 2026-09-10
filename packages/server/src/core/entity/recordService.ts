@@ -560,6 +560,10 @@ export async function createRecord(
   const module = await registry.requireModule(moduleName);
   if (!ctx.system) await assertModuleAccess(ctx.user, moduleName, 'create');
 
+  // Same reason as updateRecord: a renamed Assigned To must reach the owner
+  // column, not the payload table, whatever the admin calls it.
+  input = canonicaliseRecordFields(module, input);
+
   const run = async (conn: Tx): Promise<RecordEnvelope> => {
     const payload = ctx.system ? { ...input } : await filterWritableFields(ctx.user, moduleName, input);
 
@@ -664,6 +668,10 @@ export async function updateRecord(
     await assertRecordAccess(ctx, moduleName, recordId, 'edit');
   }
 
+  // Before anything reads it: a record-level field an admin has renamed
+  // arrives under their name, and everything below is keyed on the column.
+  input = canonicaliseRecordFields(module, input);
+
   const run = async (conn: Tx): Promise<{ envelope: RecordEnvelope; changed: boolean }> => {
     const before = await getRecord({ ...ctx, system: true }, moduleName, recordId, { conn, withDisplay: false });
     const payload = ctx.system ? { ...input } : await filterWritableFields(ctx.user, moduleName, input);
@@ -683,6 +691,8 @@ export async function updateRecord(
       }
     }
 
+    // `input` came through canonicaliseRecordFields above, so a renamed
+    // Assigned To arrives as owner_id like any other caller's would.
     const ownerChanged = input.owner_id !== undefined && input.owner_id !== before.ownerId;
     if (changes.length === 0 && !ownerChanged) {
       // Nothing actually changed — skip the write, the audit row and the events.
@@ -836,9 +846,49 @@ interface PreparedValues {
   values: Record<string, unknown>;
   /** column name → db value, for the payload table */
   columns: Record<string, unknown>;
-  /** json key → value, merged into custom_fields */
+  
+/** json key → value, merged into custom_fields */
   json: Record<string, unknown>;
   recordNumber: string | null;
+}
+
+/**
+ * The name a record-level field is going by on this module.
+ *
+ * `owner_id` and its siblings do not live on the payload table — they are
+ * columns on `ipy_record`, marked with `config.__record`. Everything that
+ * writes them is keyed on the literal string 'owner_id', which is correct
+ * exactly until an administrator renames the field, and renaming is something
+ * this CRM promises they may do.
+ *
+ * On production the Assigned To field had been renamed from `owner_id` to
+ * `assigned_to`, and the consequences were precisely split: reads worked,
+ * because values are read out of the row by *column*, and every write failed,
+ * because the payload split then tried to set `ipy_e_leads.owner_id` — a
+ * column that is not there. The field showed the right owner and could not be
+ * changed, with no error a person could act on.
+ *
+ * So the input is translated before anything else looks at it: whatever the
+ * field is called, its value arrives under the column name the rest of the
+ * pipeline already understands.
+ */
+function canonicaliseRecordFields(
+  module: ModuleMeta,
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  const renamed = module.fields.filter(
+    (f) => f.config.__record === true && f.storage === 'column' && f.name !== f.columnName,
+  );
+  if (!renamed.length) return input;
+
+  const out = { ...input };
+  for (const field of renamed) {
+    if (!(field.name in out)) continue;
+    // The admin's name wins only as a way in; downstream reads the column.
+    out[field.columnName] = out[field.name];
+    delete out[field.name];
+  }
+  return out;
 }
 
 async function prepareValues(
@@ -848,6 +898,7 @@ async function prepareValues(
 ): Promise<PreparedValues> {
   const out: PreparedValues = { values: {}, columns: {}, json: {}, recordNumber: null };
   const fieldMap = new Map(module.fields.map((f) => [f.name, f]));
+  input = canonicaliseRecordFields(module, input);
 
   // 1. coerce everything the caller supplied
   for (const [key, raw] of Object.entries(input)) {
@@ -1180,23 +1231,55 @@ export function mergeFilters(a: FilterGroup | undefined, b: FilterGroup | undefi
 // Bulk helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * The same edit applied to many records.
+ *
+ * Automations are **off by default**, and that is the whole difference between
+ * this working and this "not working out well". Setting Lead Status to New
+ * across a desk's whole list is a tidy-up, not five hundred new leads arriving
+ * — but every one of those saves fires the new-lead rules through the workflow
+ * engine, which queues a WhatsApp greeting each, re-scores each, and raises a
+ * first-call task each. It is also where nearly all the time goes: the same
+ * hundred records take about a fifth as long with the engine out of the loop,
+ * which is the difference between a request that answers and one that is still
+ * running when the browser gives up.
+ *
+ * Exactly the contract the CSV import already uses, and for the same reason —
+ * see the `runWorkflows` flag on the import route. One tick turns them on for
+ * the day somebody wants them.
+ *
+ * A failure is per record and never stops the run: the ones that could be
+ * saved are saved, and every reason comes back so the caller can say what went
+ * wrong rather than only how many.
+ */
 export async function massUpdate(
   ctx: ServiceContext,
   moduleName: string,
   recordIds: string[],
   values: Record<string, unknown>,
-): Promise<{ updated: number; failed: { id: string; error: string }[] }> {
+  opts: { runWorkflows?: boolean } = {},
+): Promise<{ updated: number; failed: { id: string; error: string }[]; reasons: string[] }> {
   const failed: { id: string; error: string }[] = [];
   let updated = 0;
   for (const id of recordIds) {
     try {
-      await updateRecord(ctx, moduleName, id, values);
+      await updateRecord(ctx, moduleName, id, values, { skipWorkflow: !opts.runWorkflows });
       updated++;
     } catch (err) {
       failed.push({ id, error: err instanceof Error ? err.message : 'unknown error' });
     }
   }
-  return { updated, failed };
+  // Five hundred rows rejected for one reason is one sentence, not five
+  // hundred. The distinct reasons, commonest first, are what a person can act
+  // on — "Lead Status is required" says which record to look at and why.
+  const counts = new Map<string, number>();
+  for (const f of failed) counts.set(f.error, (counts.get(f.error) ?? 0) + 1);
+  const reasons = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([reason, n]) => (n > 1 ? `${reason} (${n} records)` : reason));
+
+  return { updated, failed, reasons };
 }
 
 /**
@@ -1235,10 +1318,11 @@ export async function massUpdateByQuery(
   moduleName: string,
   q: ListQuery,
   values: Record<string, unknown>,
+  opts: { runWorkflows?: boolean } = {},
   max = 5000,
-): Promise<{ updated: number; failed: { id: string; error: string }[]; matched: number; capped: boolean }> {
+): Promise<{ updated: number; failed: { id: string; error: string }[]; reasons: string[]; matched: number; capped: boolean }> {
   const ids = await idsForQuery(ctx, moduleName, q, max);
-  const result = await massUpdate(ctx, moduleName, ids, values);
+  const result = await massUpdate(ctx, moduleName, ids, values, opts);
   return { ...result, matched: ids.length, capped: ids.length >= max };
 }
 

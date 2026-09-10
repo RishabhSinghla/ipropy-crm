@@ -413,13 +413,22 @@ const MODULES: ModuleDef[] = [
         name: 'areas',
         label: 'Areas',
         fields: [
-          F.area('carpet_area', 'Carpet Area', { quickCreate: true }),
+          // The unit lives beside the size, exactly as it does on Contacts —
+          // one control, a number and a Sq.ft./Sq.yd. dropdown. Faridabad
+          // quotes plots in gaj and flats in square feet, so a size stored
+          // without its unit compares wrongly against a buyer's requirement.
+          // Carpet Area used to be the field here and was removed outright
+          // (migration 113); its values became this one.
+          F.area('area', 'Area / Size', {
+            quickCreate: true,
+            config: { min: 0, unitField: 'area_unit', unitOptions: AREA_UNITS },
+          }),
           F.area('built_up_area', 'Built-up Area'),
           F.area('super_built_up_area', 'Super Built-up Area'),
           F.area('plot_area', 'Plot Area'),
           F.area('balcony_area', 'Balcony Area'),
           F.area('terrace_area', 'Terrace Area'),
-          F.text('area_unit', 'Area Unit', { default: 'sqft' }),
+          F.pick('area_unit', 'Area Unit', 'area_unit', { default: 'sqft', displayType: 'hidden' }),
         ],
       },
       {
@@ -543,8 +552,8 @@ const MODULES: ModuleDef[] = [
     relations: [
     ],
     views: [
-      { name: 'All Inventory', isDefault: true, columns: ['property_code', 'name', 'project_name', 'bedrooms', 'carpet_area', 'total_price', 'status', 'floor', 'facing'], sortBy: 'created_at' },
-      { name: 'Available Units', showMetrics: true, columns: ['name', 'project_name', 'bedrooms', 'carpet_area', 'total_price', 'floor', 'facing'], filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'equals', value: 'Available' }] }, sortBy: 'total_price', sortDir: 'asc' },
+      { name: 'All Inventory', isDefault: true, columns: ['property_code', 'name', 'project_name', 'bedrooms', 'area', 'total_price', 'status', 'floor', 'facing'], sortBy: 'created_at' },
+      { name: 'Available Units', showMetrics: true, columns: ['name', 'project_name', 'bedrooms', 'area', 'total_price', 'floor', 'facing'], filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'equals', value: 'Available' }] }, sortBy: 'total_price', sortDir: 'asc' },
       { name: 'By Status', displayMode: 'kanban', groupBy: 'status', columns: ['name', 'project_name', 'bedrooms', 'total_price'] },
       { name: 'Blocked Units', columns: ['name', 'project_name', 'blocked_until', 'blocked_for_lead_id', 'blocked_by'], filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'in', value: ['Held', 'Blocked'] }] } },
       { name: 'Premium Units', columns: ['name', 'project_name', 'bedrooms', 'total_price', 'facing', 'status'], filter: { logic: 'AND', conditions: [{ field: 'total_price', operator: 'greater_or_equal', value: 20000000 }] }, sortBy: 'total_price' },

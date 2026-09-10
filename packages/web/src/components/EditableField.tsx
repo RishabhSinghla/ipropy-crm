@@ -1,4 +1,4 @@
-import { type CSSProperties, type JSX, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, type JSX, type KeyboardEvent as ReactKeyboardEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 /**
  * Universal inline editing. Click any editable field's displayed value —
  * in a list table cell, a kanban card, or a record detail page — and change
@@ -351,10 +351,16 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
           className={cn(
             kind === 'text' && (field.uitype === 'textarea' || field.uitype === 'richtext'
               ? 'w-72'
-              // Two controls side by side (code + number, area + unit) need
-              // more than a bare text field's width.
-              : field.uitype === 'phone' || (field.uitype === 'area' && field.config.unitField)
+              // Two controls side by side need more than a bare text field's
+              // width. A phone is a country code and ten digits; an area is a
+              // number and a two-word unit, which is narrower — and the value
+              // box it opens over is narrower still now that the label sits
+              // outside it, so the panel should not overhang the next column
+              // any further than it must.
+              : field.uitype === 'phone'
                 ? 'w-64'
+                : field.uitype === 'area' && field.config.unitField
+                  ? 'w-52'
                 : compact ? 'w-40' : 'w-52'),
             kind === 'control' && (field.uitype === 'tags' ? 'w-56' : 'w-64'),
           )}
@@ -653,13 +659,56 @@ function PicklistPopover({
   restrictTo?: string[];
   onPick: (v: string | null) => void;
 }): JSX.Element {
+  const [search, setSearch] = useState('');
+  const [active, setActive] = useState(0);
+
   const options = useMemo(() => {
     const all = (field.options ?? []).filter((o) => o.isActive || o.value === value);
     const narrowed = restrictTo?.length ? all.filter((o) => restrictTo.includes(o.value)) : all;
     // A stored value the narrowed list no longer offers must still render,
     // or the popover shows no selection for a record that has one.
+    // Already in the right order: the registry sorts every picklist on the
+    // way out — A–Z, or the admin's sequence for the lists whose order is a
+    // pipeline or a scale (migration 114). Sorting again here would be a
+    // second opinion, and the two would drift.
     return optionsWithValue(narrowed, value);
-  }, [field.options, restrictTo, value]);
+  }, [field, restrictTo, value]);
+
+  /*
+    Typing filters, and it matches a prefix before it matches anywhere.
+
+    A native <select> jumps to the first option starting with the letter you
+    press; this list is a stack of buttons and did nothing at all, which is
+    what "I type P and it isn't working, it's buggy" is describing. On a
+    Locality list of a hundred and thirty options that turns picking a value
+    into scrolling for it.
+
+    Prefix first, then substring, because somebody typing "se" wants
+    "Sector 21" ahead of "New Selakui" — a plain `includes` buries the answer
+    they were reaching for under every incidental match.
+  */
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return options;
+    const starts = options.filter((o) => o.label.toLowerCase().startsWith(q));
+    const contains = options.filter(
+      (o) => !o.label.toLowerCase().startsWith(q) && o.label.toLowerCase().includes(q),
+    );
+    return [...starts, ...contains];
+  }, [options, search]);
+
+  useEffect(() => { setActive(0); }, [search]);
+
+  // Only worth a search box when there is enough to search. Below this a list
+  // is read at a glance and a box is one more thing between the click and the
+  // value.
+  const searchable = options.length > 7;
+
+  const keys = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActive((i) => Math.min(i + 1, filtered.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((i) => Math.max(i - 1, 0)); }
+    else if (e.key === 'Enter' && filtered[active]) { e.preventDefault(); onPick(filtered[active].value); }
+  };
 
   return (
     // `listbox`/`option` is what this actually is. A screen reader previously
@@ -667,19 +716,34 @@ function PicklistPopover({
     // the end of <body> — "the button that says New" no longer distinguishes an
     // option from a table cell showing the same value.
     <div
-      role="listbox"
-      aria-label={field.label}
-      className="w-max min-w-[12rem] max-w-xs animate-slide-up overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-float dark:border-slate-700 dark:bg-slate-900"
+      className="w-max min-w-[13rem] max-w-xs animate-slide-up overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-float dark:border-slate-700 dark:bg-slate-900"
+      onKeyDown={keys}
     >
-      <div className="max-h-72 overflow-y-auto">
-        {options.map((o) => (
+      {searchable && (
+        <div className="border-b border-slate-100 p-1.5 dark:border-slate-800">
+          <input
+            className="input py-1 text-xs"
+            placeholder={`Search ${field.label.toLowerCase()}…`}
+            value={search}
+            autoFocus
+            aria-label={`Search ${field.label}`}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+      )}
+      <div role="listbox" aria-label={field.label} className="max-h-72 overflow-y-auto">
+        {filtered.map((o, i) => (
           <button
             key={o.value}
             type="button"
             role="option"
             aria-selected={o.value === value}
             onClick={() => onPick(o.value)}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
+            onMouseEnter={() => setActive(i)}
+            className={cn(
+              'flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors',
+              i === active ? 'bg-slate-50 dark:bg-slate-800' : 'hover:bg-slate-50 dark:hover:bg-slate-800',
+            )}
           >
             {/* The option is shown as the chip it will become, not as a dot
                 beside plain text. Picking then changes nothing about how the
@@ -689,7 +753,11 @@ function PicklistPopover({
             {o.value === value && <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-brand-600" />}
           </button>
         ))}
-        {options.length === 0 && <p className="px-3 py-4 text-center text-xs text-muted">No options</p>}
+        {filtered.length === 0 && (
+          <p className="px-3 py-4 text-center text-xs text-muted">
+            {search ? `Nothing matches “${search}”` : 'No options'}
+          </p>
+        )}
       </div>
       {!field.isMandatory && (
         <>

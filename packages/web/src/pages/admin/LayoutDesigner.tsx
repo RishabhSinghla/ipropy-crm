@@ -20,7 +20,7 @@ import {
 import { api } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
 import { cn } from '../../lib/utils';
-import { Badge, Modal, Select, Skeleton, Spinner } from '../../components/ui';
+import { Badge, Dropdown, DropdownItem, Modal, Select, Skeleton, Spinner } from '../../components/ui';
 
 interface LayoutBlock {
   key: string;
@@ -78,6 +78,8 @@ export default function LayoutDesigner(): JSX.Element {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [dragging, setDragging] = useState<{ block: string; field: string } | null>(null);
+  /** Filters the Unplaced list. On a module with sixty fields, scrolling to find one is the whole problem. */
+  const [search, setSearch] = useState('');
 
   const { data: meta } = useQuery({
     queryKey: ['module', moduleName],
@@ -127,7 +129,15 @@ export default function LayoutDesigner(): JSX.Element {
 
   const placeable = (meta?.fields ?? []).filter((f) => f.isActive && f.displayType !== 'hidden');
   const usedFields = new Set(blocks.flatMap((b) => b.fields));
-  const availableFields = placeable.filter((f) => !usedFields.has(f.name));
+  // A–Z, because this is a list to find one name in, and metadata order is
+  // not an order anybody can navigate.
+  const availableFields = placeable
+    .filter((f) => !usedFields.has(f.name))
+    .slice()
+    .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
+  const unplaced = search.trim()
+    ? availableFields.filter((f) => f.label.toLowerCase().includes(search.trim().toLowerCase()))
+    : availableFields;
 
   const availableTabs = [
     ...BASE_TABS,
@@ -513,30 +523,79 @@ export default function LayoutDesigner(): JSX.Element {
             </button>
           </div>
 
-          {/* Available fields */}
-          <div className="card h-fit overflow-hidden">
-            <div className="border-b border-slate-100 px-3 py-2 dark:border-slate-800">
-              <p className="text-xs font-medium text-muted">
-                Unplaced fields ({availableFields.length})
-              </p>
-            </div>
-            <div className="max-h-[30rem] space-y-1 overflow-y-auto p-2">
-              {availableFields.map((field) => (
-                <div
-                  key={field.name}
-                  draggable
-                  onDragStart={() => setDragging({ block: '', field: field.name })}
-                  onDragEnd={() => setDragging(null)}
-                  className="flex cursor-grab items-center gap-1.5 rounded-lg border border-dashed border-slate-200 px-2 py-1.5 text-xs dark:border-slate-700"
-                >
-                  <GripVertical className="h-3 w-3 shrink-0 text-slate-300" />
-                  <span className="min-w-0 flex-1 truncate">{field.label}</span>
-                  <Badge>{field.uitype}</Badge>
-                </div>
-              ))}
-              {availableFields.length === 0 && (
-                <p className="py-6 text-center text-xs text-muted">Every field is placed</p>
-              )}
+          {/*
+            Unplaced fields.
+
+            `sticky`, searchable, and every row has a button as well as a drag
+            handle — three answers to the same complaint: "when I scroll down in
+            the field list it just remains on the top, how can I drag and put
+            somewhere". Dragging across a scrolling page is the wrong tool for a
+            module with sixty fields and ten sections; the panel follows the
+            scroll now so the target is always beside the source, and picking a
+            section from a menu does the same job without a drag at all.
+          */}
+          <div className="sticky top-4 h-fit self-start">
+            <div className="card overflow-hidden">
+              <div className="border-b border-slate-100 px-3 py-2 dark:border-slate-800">
+                <p className="text-xs font-medium text-muted">
+                  Unplaced fields ({unplaced.length}{search ? ` of ${availableFields.length}` : ''})
+                </p>
+              </div>
+              <div className="border-b border-slate-100 p-2 dark:border-slate-800">
+                <input
+                  className="input py-1 text-xs"
+                  placeholder="Search fields…"
+                  aria-label="Search unplaced fields"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+              <div className="max-h-[26rem] space-y-1 overflow-y-auto p-2">
+                {unplaced.map((field) => (
+                  <div
+                    key={field.name}
+                    draggable
+                    onDragStart={() => setDragging({ block: '', field: field.name })}
+                    onDragEnd={() => setDragging(null)}
+                    className="group flex cursor-grab items-center gap-1.5 rounded-lg border border-dashed border-slate-200 px-2 py-1.5 text-xs dark:border-slate-700"
+                  >
+                    <GripVertical className="h-3 w-3 shrink-0 text-slate-300" />
+                    <span className="min-w-0 flex-1 truncate" title={field.label}>{field.label}</span>
+                    <Badge>{field.uitype}</Badge>
+                    {/*
+                      The drag-free path. The section list is short and it is
+                      the same `move` the drop handler calls, so the two cannot
+                      disagree about where a field lands.
+                    */}
+                    <Dropdown
+                      trigger={
+                        <span
+                          className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600 dark:hover:bg-slate-700"
+                          title={`Add ${field.label} to a section`}
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </span>
+                      }
+                    >
+                      {blocks.map((b) => (
+                        <DropdownItem
+                          key={b.key}
+                          onClick={() => { move('', field.name, b.key, b.fields.length); }}
+                        >
+                          {b.label}
+                        </DropdownItem>
+                      ))}
+                      {blocks.length === 0 && <DropdownItem onClick={() => setNewSection(true)}>Add a section first…</DropdownItem>}
+                    </Dropdown>
+                  </div>
+                ))}
+                {availableFields.length === 0 && (
+                  <p className="py-6 text-center text-xs text-muted">Every field is placed</p>
+                )}
+                {availableFields.length > 0 && unplaced.length === 0 && (
+                  <p className="py-6 text-center text-xs text-muted">Nothing matches “{search}”</p>
+                )}
+              </div>
             </div>
           </div>
         </div>

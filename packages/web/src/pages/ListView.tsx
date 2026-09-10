@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FieldMeta, type FilterGroup, formatIndianPrice, formatPhoneWithCode, toInternational, type ListQuery, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
-  ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, CloudOff, Columns3, Compass, Download, Filter,
+  ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, Columns3, Compass, Download, Filter,
   LayoutGrid, List, MailCheck, MapPin, MessageCircle, Pencil, Phone, Plus, RefreshCw, Ruler, Save, Search, Settings2, Star, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { ApiError, api } from '../lib/api';
@@ -22,7 +22,7 @@ import RecordForm from '../components/RecordForm';
 import RecordPeek from '../components/RecordPeek';
 import { useSwipeActions, type SwipeSide } from '../lib/swipeActions';
 import { MAX_WIDTH, MIN_WIDTH, SELECT_COL_WIDTH, useColumnWidths } from '../lib/columnWidths';
-import { useOfflineList, useOfflineMeta } from '../lib/useOfflineList';
+import { useOfflineMeta } from '../lib/useOfflineList';
 
 const EMPTY_FILTER: FilterGroup = { logic: 'AND', conditions: [] };
 
@@ -251,18 +251,31 @@ export default function ListView(): JSX.Element {
     groupBy: groupByField,
   }), [activeView?.id, page, search, filter, sortBy, sortDir, columns, groupByField, displayMode]);
 
-  const { data, isLoading, isFetching, failureCount, refetch } = useQuery({
+  const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['records', moduleName, query],
     queryFn: () => api.list(moduleName!, query),
     enabled: Boolean(moduleName && meta),
     placeholderData: (prev) => prev,
   });
 
-    // `failureCount`, not `isError`: react-query retries three times with backoff
-  // before it calls a query failed, and somebody holding a phone in a basement
-  // should not watch a spinner for seven seconds first. The first failed
-  // attempt is enough to know the server is not answering.
-  const offline = useOfflineList(moduleName, query, data, user?.id, failureCount > 0);
+  /*
+    The list is what the server says it is, and nothing else.
+
+    There used to be a read-only fallback here: on a failed request the list
+    rendered the last copy held in IndexedDB behind an amber "Can't reach the
+    CRM — this is what was here at 09:14" banner. The owner asked for it gone,
+    and he is right about the trade. It fired on the first failed attempt — one
+    blip on a lift ride, one slow response — so the desk saw it constantly while
+    the CRM was in fact up, and a warning that is usually wrong is a warning
+    people stop reading. The danger of keeping the banner but not the caching
+    was worse still: yesterday's pipeline shown as today's.
+
+    So both halves go together. A request that fails now shows the ordinary
+    empty state and retries, which is the honest answer — nothing is being
+    passed off as current. `offlineCache` itself stays: site capture still
+    depends on it out on a site with no signal.
+  */
+  const rows = data?.rows ?? [];
 
   const deleteMutation = useMutation({
     mutationFn: (ids: string[]) => api.massDelete(moduleName!, ids),
@@ -400,7 +413,6 @@ export default function ListView(): JSX.Element {
   const visibleColumns = columns.length ? columns : defaultColumns(meta);
   const fieldMap = new Map(meta.fields.map((f) => [f.name, f]));
   const canCreate = meta.permissions.create;
-  const rows = offline.rows;
   // A fixed-layout table still shrinks its columns to fit a narrow container,
   // which would quietly undo a drag. Declaring the sum as a minimum makes the
   // body scroll instead.
@@ -453,9 +465,9 @@ export default function ListView(): JSX.Element {
 
           <div className="ml-auto flex shrink-0 items-center gap-2">
             <span className="hidden shrink-0 text-xs text-muted tnum xl:inline">
-              {isFetching && !data && !offline.stale
+              {isFetching && !data
                 ? 'Loading…'
-                : `${(data?.total ?? (offline.stale ? offline.rows.length : 0)).toLocaleString('en-IN')} records`}
+                : `${(data?.total ?? 0).toLocaleString('en-IN')} records`}
             </span>
 
             <div className="relative">
@@ -677,13 +689,6 @@ export default function ListView(): JSX.Element {
               </button>
             )}
           </div>
-        </div>
-      )}
-
-      {offline.stale && (
-        <div className="mx-4 mb-2 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 sm:mx-6 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-          <CloudOff className="h-3.5 w-3.5 shrink-0" />
-          <span>Can&rsquo;t reach the CRM — this is what was here at {offline.asOf}. Read only until it is back.</span>
         </div>
       )}
 
@@ -1818,6 +1823,11 @@ function BulkEditButton({
   const [open, setOpen] = useState(false);
   const [fieldName, setFieldName] = useState('');
   const [value, setValue] = useState<unknown>(null);
+  const [other, setOther] = useState<Record<string, unknown>>({});
+  // Off, like the import's. A bulk tidy-up is not five hundred new leads
+  // arriving, and running the automations on one used to queue a greeting for
+  // every record — see recordService.massUpdate.
+  const [runWorkflows, setRunWorkflows] = useState(false);
   const [busy, setBusy] = useState(false);
   const countLabel = allQuery ? allCount.toLocaleString('en-IN') : String(ids.length);
 
@@ -1857,16 +1867,32 @@ function BulkEditButton({
                 if (!field) return;
                 setBusy(true);
                 try {
-                  const payload = { [field.name]: value };
+                  // A field with its own unit (Budget, Area / Size) writes two
+                  // values, not one. `other` collects the second — without it
+                  // the unit dropdown quietly overwrote the number itself.
+                  const payload = { ...other, [field.name]: value };
                   const result = allQuery
-                    ? await api.massUpdateAll(module, allQuery as unknown as Record<string, unknown>, payload)
-                    : await api.massUpdate(module, ids, payload);
+                    ? await api.massUpdateAll(module, allQuery as unknown as Record<string, unknown>, payload, runWorkflows)
+                    : await api.massUpdate(module, ids, payload, runWorkflows);
                   const ok = result.updated ?? 0;
                   const failed = (result.failed as unknown[] | undefined)?.length ?? 0;
-                  toast.success(
-                    `${ok.toLocaleString('en-IN')} record${ok === 1 ? '' : 's'} updated`,
-                    failed ? `${failed} could not be updated — they were left unchanged.` : undefined,
-                  );
+                  const reasons = (result.reasons as string[] | undefined) ?? [];
+
+                  // Say *why*, not only how many. "83 could not be updated"
+                  // with no reason is the same as no answer at all — there is
+                  // nothing the person can do next.
+                  const notes = [
+                    failed ? `${failed} left unchanged${reasons.length ? `: ${reasons.join('; ')}` : '.'}` : '',
+                    result.capped ? `Only the first ${ok + failed} were edited — narrow the view and run it again.` : '',
+                  ].filter(Boolean).join(' ');
+
+                  if (ok === 0 && failed > 0) toast.error('Nothing was updated', notes);
+                  else {
+                    toast.success(
+                      `${ok.toLocaleString('en-IN')} record${ok === 1 ? '' : 's'} updated`,
+                      notes || undefined,
+                    );
+                  }
                   setOpen(false);
                   onDone();
                 } catch (err) {
@@ -1886,9 +1912,14 @@ function BulkEditButton({
             <label className="label">Field to change</label>
             <Select
               value={fieldName}
-              onChange={(v) => { setFieldName(v); setValue(emptyValue(fieldMap.get(v))); }}
+              onChange={(v) => { setFieldName(v); setValue(emptyValue(fieldMap.get(v))); setOther({}); }}
               placeholder="— Choose a field —"
-              options={editable.map((f) => ({ value: f.name, label: f.label }))}
+              // A–Z: this is a list of every editable field on the module, and
+              // metadata order means nothing to somebody looking for "Lead
+              // Status" in it.
+              options={[...editable]
+                .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }))
+                .map((f) => ({ value: f.name, label: f.label }))}
             />
           </div>
           {field && (
@@ -1898,14 +1929,27 @@ function BulkEditButton({
                 field={field}
                 value={value}
                 onChange={(v) => setValue(v)}
-                onChangeOther={(_, v) => setValue(v)}
-                formValues={{ [field.name]: value }}
+                onChangeOther={(name, v) => setOther((prev) => ({ ...prev, [name]: v }))}
+                formValues={{ [field.name]: value, ...other }}
                 moduleName={module}
               />
               <p className="mt-1 text-2xs text-muted">
                 Every selected record gets this value. Records where the field is
                 hidden or read-only for the acting user are left unchanged.
               </p>
+              <label className="mt-2 flex items-start gap-2 text-2xs text-muted">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-3 w-3 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                  checked={runWorkflows}
+                  onChange={(e) => setRunWorkflows(e.target.checked)}
+                />
+                <span>
+                  Run automations on every record. Off by default — setting Lead Status
+                  across a whole list would otherwise queue a greeting, a score and a
+                  follow-up task for each one.
+                </span>
+              </label>
             </div>
           )}
         </div>

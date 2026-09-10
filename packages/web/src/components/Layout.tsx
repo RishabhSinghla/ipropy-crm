@@ -316,16 +316,19 @@ function UserMenu(): JSX.Element {
               <Badge className="mt-1.5">{user.roleName}</Badge>
             )}
           </div>
-          <Link to="/settings" onClick={close}>
-            <DropdownItem icon={<Settings className="h-3.5 w-3.5" />}>Settings</DropdownItem>
-          </Link>
+          {/* Admin panel, then Settings, then Log out — the owner's order.
+              Admin is where he actually goes from here, and sign-out sits last
+              so a mis-click on the way to it lands on a page, not a logout. */}
           {user?.isAdmin && (
             <Link to="/admin" onClick={close}>
               <DropdownItem icon={<Shield className="h-3.5 w-3.5" />}>Admin panel</DropdownItem>
             </Link>
           )}
+          <Link to="/settings" onClick={close}>
+            <DropdownItem icon={<Settings className="h-3.5 w-3.5" />}>Settings</DropdownItem>
+          </Link>
           <DropdownItem icon={<LogOut className="h-3.5 w-3.5" />} danger onClick={() => void logout()}>
-            Sign out
+            Log out
           </DropdownItem>
         </>
       )}

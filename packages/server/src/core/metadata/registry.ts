@@ -141,12 +141,32 @@ async function load(conn: Tx = db): Promise<RegistryCache> {
       WHERE r.is_active
       ORDER BY r.sequence
     `),
+    /*
+      Alphabetical unless the order is the meaning.
+
+      `is_ordered` (migration 114) marks the lists whose sequence is a
+      pipeline, a scale or a ranking — New → Contacted → Qualified, Hot → Warm
+      → Cold — and those keep the order an admin arranged. Everything else
+      sorts A–Z, which is the only order a hundred-and-thirty-entry Locality
+      list can be read in.
+
+      Sorted here, in the one place every dropdown in the CRM is built from, so
+      forms, inline editors, filters, list views, the kanban, imports and
+      exports all follow at once rather than each sorting for itself.
+
+      `NULLS FIRST` on the collated sort is not needed — label is NOT NULL —
+      but the numeric-aware collation is: without it "10 BHK" sorts before
+      "2 BHK", which is the sort being wrong in the way people notice.
+    */
     conn.query<{ picklist_name: string; value: string; label: string; color: string | null; sequence: number; is_active: boolean; is_default: boolean; meta: Record<string, unknown> }>(`
       SELECT p.name AS picklist_name, v.value, v.label, v.color, v.sequence,
              v.is_active, v.is_default, v.meta
       FROM ipy_picklist p
       JOIN ipy_picklist_value v ON v.picklist_id = p.id
-      ORDER BY p.name, v.sequence, v.label
+      ORDER BY p.name,
+               CASE WHEN p.is_ordered THEN v.sequence END,
+               CASE WHEN p.is_ordered THEN NULL ELSE ipy_natural_key(v.label) END,
+               v.label
     `),
     conn.query<{ module_name: string; source_field: string; target_field: string; mapping: Record<string, string[]> }>(`
       SELECT m.name AS module_name, d.source_field, d.target_field, d.mapping

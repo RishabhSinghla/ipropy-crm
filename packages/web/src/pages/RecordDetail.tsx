@@ -645,21 +645,32 @@ function OverviewTab({
 
             {!isCollapsed && (
               <dl className={cn(
-                'grid gap-3 p-3 sm:p-4',
+                'grid gap-x-6 gap-y-1.5 p-3',
                 block.columns === 1 ? 'grid-cols-1' : block.columns === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2',
               )}>
                 {fields.map((field) => (
                   <div
                     key={field.name}
                     className={cn(
-                      // Label on the left, value on the right — scannable at a glance.
-                      // Smaller than the old stacked boxes: tighter padding, smaller label.
-                      'flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 dark:border-slate-800 dark:bg-slate-800/40',
+                      /*
+                        Label beside the value and *outside* the box, not inside it.
+
+                        #67 put the label on the left within the same bordered
+                        box, which is half the ask — his words were "keep key
+                        name in left side from the box… box is too big". Boxing
+                        the label with the value means the box is still as wide
+                        as both, so the section is no smaller. Here the label is
+                        plain text in its own column and only the value is
+                        boxed: the eye runs down one list of names and one
+                        column of answers, and a section of fourteen fields
+                        stops being a page of scrolling.
+                      */
+                      'flex min-w-0 items-baseline gap-2.5',
                       field.config.fullWidth && 'sm:col-span-2',
                     )}
                   >
-                    <dt className="shrink-0 text-2xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{field.label}</dt>
-                    <dd className="min-w-0 flex-1 min-h-[1.25rem] text-sm font-medium text-slate-900 dark:text-slate-100">
+                    <dt className="w-[38%] max-w-[10rem] shrink-0 truncate text-2xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400" title={field.label}>{field.label}</dt>
+                    <dd className="min-w-0 flex-1 rounded-md border border-slate-200 bg-slate-50/70 px-2 py-1 text-sm text-slate-900 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-100">
                       {record.can?.edit && isInlineEditable(field) ? (
                         <EditableField
                           module={module}
@@ -692,21 +703,31 @@ function OverviewTab({
   );
 }
 
+/**
+ * Three things happen on a record and belong in its history: somebody wrote a
+ * note, somebody sent a message, something about the record changed.
+ *
+ * Calls and Tasks came out at the owner's word — calls have their own tab
+ * beside this one and were being read twice, and a task is a thing still to be
+ * done rather than a thing that happened, so it belongs on a list, not in a
+ * history. "All" came out too: with three filters left it was a fourth button
+ * that showed what the other three showed together, and the tab opens on Notes
+ * now because a note is what the desk comes here to read and to write.
+ */
+const TIMELINE_FILTERS = [
+  { key: 'comment', label: 'Notes' },
+  { key: 'message', label: 'Messages' },
+  { key: 'audit', label: 'Changes' },
+] as const;
+
 function TimelineTab({ module, id }: { module: string; id: string }): JSX.Element {
-  const [filter, setFilter] = useState<string | null>(null);
+  const [filter, setFilter] = useState<string>('comment');
   const { data, isLoading } = useQuery({
     queryKey: ['timeline', module, id, filter],
-    queryFn: () => api.timeline(module, id, filter ? [filter] : undefined),
+    queryFn: () => api.timeline(module, id, [filter]),
   });
 
-  const filters = [
-    { key: null, label: 'All' },
-    { key: 'call', label: 'Calls' },
-    { key: 'message', label: 'Messages' },
-    { key: 'comment', label: 'Notes' },
-    { key: 'task', label: 'Tasks' },
-    { key: 'audit', label: 'Changes' },
-  ];
+  const filters = TIMELINE_FILTERS;
 
   return (
     <div className="card">
@@ -732,7 +753,15 @@ function TimelineTab({ module, id }: { module: string; id: string }): JSX.Elemen
           {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
         </div>
       ) : !data?.length ? (
-        <EmptyState icon={<Activity className="h-8 w-8" />} title="No activity yet" body="Calls, messages and changes will appear here." />
+        <EmptyState
+          icon={<Activity className="h-8 w-8" />}
+          title={filter === 'comment' ? 'No notes yet' : filter === 'message' ? 'No messages yet' : 'No changes yet'}
+          body={filter === 'comment'
+            ? 'Notes the team writes about this record appear here.'
+            : filter === 'message'
+              ? 'WhatsApp, SMS and email sent to this contact appear here.'
+              : 'Every edit to this record is recorded here.'}
+        />
       ) : (
         <div className="p-4">
           <ol className="relative space-y-4 border-l border-slate-200 pl-6 dark:border-slate-800">

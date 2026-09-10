@@ -27,6 +27,20 @@ function bedroomPropertyField(config: MatchingConfig): string {
   return pairFor(config, 'configuration')?.propertyField || 'bedrooms';
 }
 
+/**
+ * The property field an admin has mapped "how big" to — Admin → Matching
+ * Setup, defaulting to `area`, the field that carries a unit alongside it.
+ *
+ * This used to be the hardcoded `carpet_area`, which was then deleted from
+ * Properties outright (migration 113). Reading it through the same mapping the
+ * bedroom side uses means the admin decides which of the six area fields a
+ * requirement is compared against, and a field that has gone reads as "no
+ * value" rather than taking the whole query down.
+ */
+function areaPropertyField(config: MatchingConfig): string {
+  return pairFor(config, 'area')?.propertyField || 'area';
+}
+
 function parsedBedrooms(row: PropertyRow): number | null {
   if (row.matched_bedrooms_raw == null) return null;
   const n = Number(row.matched_bedrooms_raw);
@@ -51,33 +65,42 @@ export interface Requirement {
 }
 
 /*
-  `city` and `project_name` are read as JSON rather than named as columns.
+  Nothing here names a payload column.
 
-  Both were deliberately deleted from this CRM — one area, one kind of stock, so
-  a city filter and a project grouping were both noise. Naming a dropped column
-  in a SELECT is a Postgres 42703, which throws, so every one of these queries
-  raised and buyer matching stopped working entirely: no buyers for a new unit,
-  no units for a buyer. The failure was total and silent, because the callers
-  treat "no matches" and "it threw" the same way.
+  Every field on Properties and on Contacts is one an administrator is allowed
+  to delete, and deleting one turns a hand-written column list into
+  `column "…" does not exist`. Postgres answers 42703, the API turns that into
+  a 400, and buyer matching stops working on every lead and every unit in the
+  CRM at once. The failure is total and silent, because callers treat "no
+  matches" and "it threw" the same way — and this is the fifth time a list like
+  that has done it (configuration, locality, bedrooms, area_unit, city).
 
-  `to_jsonb(p)->>'…'` turns a missing column into a null, which is what a missing
-  value is. Only the two optional, deletable ones go through it; the rest are
-  structural and their absence should be loud.
+  So both queries select `to_jsonb(x)` and every value is read out of the JSON
+  in TypeScript. A missing column arrives as `undefined` and is handled by the
+  same `?? null` that already handles an empty one. There is no list left here
+  to go stale. `reconcileColumns` puts back a column the metadata still expects;
+  this covers the case where the metadata does not expect it either, because
+  the admin genuinely deleted the field.
+
+  The two columns that must exist for any of this to mean anything —
+  `record_id` on the payload table and `id`/`label` on ipy_record — are the
+  join itself, not fields, and are named directly.
 */
 interface PropertyRow {
   record_id: string;
   label: string;
-  name: string;
+  name: string | null;
   /** Whatever the admin-mapped bedroom field holds, read as text — see `bedroomPropertyField`. */
   matched_bedrooms_raw: string | null;
-  carpet_area: number | null;
+  /** Whatever the admin-mapped area field holds — see `areaPropertyField`. */
+  matched_area: number | null;
   area_unit: string | null;
   total_price: number | null;
   base_price: number | null;
   floor: number | null;
   facing: string | null;
   vastu_compliant: boolean | null;
-  status: string;
+  status: string | null;
   possession_date: string | null;
   possession_status: string | null;
   city: string | null;
@@ -86,6 +109,55 @@ interface PropertyRow {
   amenities: string[] | null;
   corner_unit: boolean;
   raw_values?: Record<string, unknown>;
+}
+
+/** A number out of JSON, or null — never NaN, never a throw. */
+function num(v: unknown): number | null {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function str(v: unknown): string | null {
+  return v === null || v === undefined || v === '' ? null : String(v);
+}
+
+/**
+ * One property row, assembled from `to_jsonb(p)`.
+ *
+ * The admin-mapped bedroom and area fields are resolved here rather than in
+ * SQL, which is what lets Matching Setup point them at any field on the module
+ * without a query being rewritten — and what makes a field that has since been
+ * deleted read as "no value" instead of raising.
+ */
+function toPropertyRow(
+  raw: Record<string, unknown>,
+  label: string,
+  bedroomField: string,
+  areaField: string,
+): PropertyRow {
+  return {
+    record_id: String(raw.record_id),
+    label,
+    name: str(raw.name),
+    matched_bedrooms_raw: str(raw[bedroomField]),
+    matched_area: num(raw[areaField]),
+    area_unit: str(raw.area_unit),
+    total_price: num(raw.total_price),
+    base_price: num(raw.base_price),
+    floor: num(raw.floor),
+    facing: str(raw.facing),
+    vastu_compliant: raw.vastu_compliant === true,
+    status: str(raw.status),
+    possession_date: str(raw.possession_date),
+    possession_status: str(raw.possession_status),
+    city: str(raw.city),
+    locality: str(raw.locality),
+    project_name: str(raw.project_name),
+    amenities: Array.isArray(raw.amenities) ? (raw.amenities as string[]) : null,
+    corner_unit: raw.corner_unit === true,
+    raw_values: raw,
+  };
 }
 
 /** Pull the requirement off a lead or contact record. */
@@ -183,20 +255,30 @@ async function queryInventory(req: Requirement, config: MatchingConfig, limit: n
     ? await (async () => { const f = await recordScopeSql(scope, 'properties', params, false); return f ? `AND ${f}` : ''; })()
     : '';
 
-  const res = await db.query<PropertyRow>(
-    `SELECT p.record_id, r.label, p.name, p.carpet_area, p.area_unit, p.total_price,
-            p.base_price, p.floor, p.facing, p.vastu_compliant, p.status,
-            p.possession_date, p.possession_status, p.locality,
-            p.amenities, p.corner_unit,
-            to_jsonb(p)->>'city'          AS city,
-            to_jsonb(p)->>'project_name'  AS project_name,
-            to_jsonb(p)->>${bedroomFieldP} AS matched_bedrooms_raw
+  const areaField = areaPropertyField(config);
+
+  /*
+    `ipy_try_numeric` rather than `::numeric`.
+
+    Price and bedroom counts are read out of JSON as text, and text that is not
+    a number raises 22P02 — which fails the statement, not the row. That can
+    happen for reasons an admin is entitled to cause: a field retyped from Text
+    to Currency leaves the values that were typed before it, and a mapping
+    pointed at a text field compares fine in TypeScript but not in a cast. The
+    helper answers NULL, which is what "no comparable value" means here.
+  */
+  const res = await db.query<{ record_id: string; label: string; row: Record<string, unknown> }>(
+    `SELECT p.record_id, r.label, to_jsonb(p) AS row
      FROM ipy_e_properties p
      JOIN ipy_record r ON r.id = p.record_id
      WHERE r.is_deleted = false
-       AND p.status = 'Available'
-       AND (${maxP}::numeric IS NULL OR COALESCE(p.total_price, p.base_price) <= ${maxP})
-       AND (${minP}::numeric IS NULL OR COALESCE(p.total_price, p.base_price) >= ${minP})
+       AND to_jsonb(p)->>'status' = 'Available'
+       AND (${maxP}::numeric IS NULL OR COALESCE(
+             ipy_try_numeric(to_jsonb(p)->>'total_price'),
+             ipy_try_numeric(to_jsonb(p)->>'base_price')) <= ${maxP})
+       AND (${minP}::numeric IS NULL OR COALESCE(
+             ipy_try_numeric(to_jsonb(p)->>'total_price'),
+             ipy_try_numeric(to_jsonb(p)->>'base_price')) >= ${minP})
        AND (${projectP}::text IS NULL OR to_jsonb(p)->>'project_name' ILIKE ${projectP})
        ${scopeSql}
      -- Relevance before price, for the same reason the reverse match orders by
@@ -206,13 +288,15 @@ async function queryInventory(req: Requirement, config: MatchingConfig, limit: n
      -- units in budget means a perfect 3 BHK in their preferred area loses to
      -- sixty cheap 1 BHKs somewhere else. Price still breaks the tie, because
      -- among equally suitable units the cheaper one is the better pitch.
-     ORDER BY ((to_jsonb(p)->>${bedroomFieldP})::numeric = ANY(${wantedBedroomsP}::numeric[])) DESC,
-              (p.locality = ANY(${locationP}::text[])) DESC,
-              COALESCE(p.total_price, p.base_price) ASC
+     ORDER BY (ipy_try_numeric(to_jsonb(p)->>${bedroomFieldP}) = ANY(${wantedBedroomsP}::numeric[])) DESC NULLS LAST,
+              (to_jsonb(p)->>'locality' = ANY(${locationP}::text[])) DESC NULLS LAST,
+              COALESCE(
+                ipy_try_numeric(to_jsonb(p)->>'total_price'),
+                ipy_try_numeric(to_jsonb(p)->>'base_price')) ASC NULLS LAST
      LIMIT ${limitP}`,
     params.all(),
   );
-  return res.rows;
+  return res.rows.map((r) => toPropertyRow(r.row, r.label, bedroomField, areaField));
 }
 
 interface ScoredProperty {
@@ -276,7 +360,7 @@ function scoreProperty(row: PropertyRow, req: Requirement, config: MatchingConfi
 
   // Area. The buyer states one figure, so it is read as "about this much":
   // 15% either side counts as a match, well under is a miss.
-  if (row.carpet_area && req.area) {
+  if (row.matched_area && req.area) {
     /*
       Both sides converted before dividing.
 
@@ -293,18 +377,18 @@ function scoreProperty(row: PropertyRow, req: Requirement, config: MatchingConfi
       figure they never typed.
     */
     const wanted = toSqFt(req.area, req.areaUnit);
-    const offered = toSqFt(row.carpet_area, row.area_unit);
+    const offered = toSqFt(row.matched_area, row.area_unit);
     const ratio = offered / wanted;
     if (ratio >= 0.85 && ratio <= 1.15) {
       score += 8;
       reasons.push(
-        `${formatArea(row.carpet_area, row.area_unit ?? 'sqft')} is about the `
+        `${formatArea(row.matched_area, row.area_unit ?? 'sqft')} is about the `
         + `${formatArea(req.area, req.areaUnit)} asked for`,
       );
     } else if (ratio < 0.85) {
       score -= 8;
       mismatches.push(
-        `${formatArea(row.carpet_area, row.area_unit ?? 'sqft')} is smaller than the `
+        `${formatArea(row.matched_area, row.area_unit ?? 'sqft')} is smaller than the `
         + `${formatArea(req.area, req.areaUnit)} asked for`,
       );
     } else {
@@ -408,7 +492,7 @@ export async function matchProperties(
 
   let matches: PropertyMatch[] = scored.map((s) => ({
     propertyId: s.row.record_id,
-    propertyLabel: s.row.label || s.row.name,
+    propertyLabel: s.row.label || s.row.name || 'Unnamed unit',
     score: s.score,
     reasons: s.reasons,
     mismatches: s.mismatches,
@@ -457,7 +541,7 @@ Here are the shortlisted units with their computed fit scores:
 
 ${scored.map((s, i) => `### ${i + 1}. ${s.row.label} (score ${s.score})
 - Project: ${s.row.project_name ?? '—'}
-- Bedrooms: ${parsedBedrooms(s.row) ?? '—'}, ${formatArea(s.row.carpet_area, s.row.area_unit ?? 'sqft')} carpet
+- Bedrooms: ${parsedBedrooms(s.row) ?? '—'}, ${formatArea(s.row.matched_area, s.row.area_unit ?? 'sqft')}
 - Price: ${formatIndianPrice(s.row.total_price ?? s.row.base_price ?? 0)}
 - Floor ${s.row.floor ?? '—'}, ${s.row.facing ?? '—'} facing${s.row.corner_unit ? ', corner unit' : ''}
 - Location: ${s.row.locality ?? '—'}, ${s.row.city ?? '—'}
@@ -488,7 +572,7 @@ Return JSON:
     const enriched = byIndex.get(i + 1);
     return {
       propertyId: s.row.record_id,
-      propertyLabel: s.row.label || s.row.name,
+      propertyLabel: s.row.label || s.row.name || 'Unnamed unit',
       score: s.score,
       reasons: enriched?.reasons?.length ? enriched.reasons : s.reasons,
       mismatches: enriched?.mismatches?.length ? enriched.mismatches : s.mismatches,
@@ -629,19 +713,15 @@ export async function matchBuyersForProperty(
 ): Promise<BuyerMatch[]> {
   const [{ matchFloor }, config] = await Promise.all([scoringThresholds(), matchingConfig()]);
   const bedroomField = bedroomPropertyField(config);
-  const property = await db.queryOne<PropertyRow>(
-    `SELECT p.record_id, r.label, p.name, p.carpet_area, p.area_unit, p.total_price, p.base_price,
-            p.floor, p.facing, p.vastu_compliant, p.status, p.possession_date, p.possession_status,
-            p.locality, p.amenities, p.corner_unit,
-            to_jsonb(p)->>'city'          AS city,
-            to_jsonb(p)->>'project_name'  AS project_name,
-            to_jsonb(p)->>$2               AS matched_bedrooms_raw,
-            to_jsonb(p)                    AS raw_values
+  const areaField = areaPropertyField(config);
+  const propertyRaw = await db.queryOne<{ record_id: string; label: string; row: Record<string, unknown> }>(
+    `SELECT p.record_id, r.label, to_jsonb(p) AS row
      FROM ipy_e_properties p JOIN ipy_record r ON r.id = p.record_id
      WHERE p.record_id = $1`,
-    [propertyId, bedroomField],
+    [propertyId],
   );
-  if (!property) return [];
+  if (!propertyRaw) return [];
+  const property = toPropertyRow(propertyRaw.row, propertyRaw.label, bedroomField, areaField);
 
   const price = property.total_price ?? property.base_price ?? 0;
 
@@ -655,7 +735,7 @@ export async function matchBuyersForProperty(
     ? await (async () => { const f = await recordScopeSql(scope, 'leads', params, false); return f ? `AND ${f}` : ''; })()
     : '';
 
-  const leads = await db.query<{ record_id: string; label: string; owner_id: string | null; budget: number | null; budget_unit: string | null; area: number | null; area_unit: string | null; configuration: string[] | null; preferred_locations: string[] | null; possession_timeline: string | null; purpose: string | null; status: string; lost_reason: string | null; raw_values: Record<string, unknown> }>(
+  const leads = await db.query<{ record_id: string; label: string; owner_id: string | null; row: Record<string, unknown> }>(
     // Lost leads are in scope now; Junk never is. A wrong number, a broker
     // fishing or a test entry does not become a buyer because a unit appeared,
     // and `revivalReason` is what decides which of the Lost are worth raising.
@@ -664,19 +744,22 @@ export async function matchBuyersForProperty(
     // number *before* saying no, and the whole point is that this unit may now
     // sit under it — filtering on the same ±band as a live lead would drop
     // exactly the ones worth reviving.
-    `SELECT l.record_id, r.label, r.owner_id, l.budget,
-            l.budget_unit, l.area, l.area_unit,
-            l.configuration, l.preferred_locations, l.possession_timeline, l.purpose,
-            l.status, l.lost_reason, to_jsonb(l) AS raw_values
+    // Same rule as the forward direction: no payload column is named. Every
+    // one of budget, area, configuration, possession_timeline, purpose and
+    // lost_reason is a field an admin may delete, and one deletion used to
+    // take the whole reverse match down with a 42703.
+    `SELECT l.record_id, r.label, r.owner_id, to_jsonb(l) AS row
      FROM ipy_e_leads l JOIN ipy_record r ON r.id = l.record_id
-     WHERE r.is_deleted = false AND l.is_converted = false
-       AND l.status <> 'Junk'
+     WHERE r.is_deleted = false
+       AND COALESCE((to_jsonb(l)->>'is_converted')::boolean, false) = false
+       AND COALESCE(to_jsonb(l)->>'status', '') <> 'Junk'
        AND (
-         l.status <> 'Lost'
-           AND (l.budget IS NULL
-             OR l.budget_unit IS NOT NULL AND l.budget_unit <> 'total' AND l.area IS NOT NULL
-             OR (l.budget >= ${priceP} * (1 - ${gracePP}::numeric) AND l.budget <= ${priceP} * (1 + ${gracePP}::numeric)))
-         OR l.status = 'Lost' AND l.lost_reason IS NOT NULL
+         COALESCE(to_jsonb(l)->>'status', '') <> 'Lost'
+           AND (ipy_try_numeric(to_jsonb(l)->>'budget') IS NULL
+             OR to_jsonb(l)->>'budget_unit' NOT IN ('total') AND to_jsonb(l)->>'area' IS NOT NULL
+             OR (ipy_try_numeric(to_jsonb(l)->>'budget') >= ${priceP} * (1 - ${gracePP}::numeric)
+                 AND ipy_try_numeric(to_jsonb(l)->>'budget') <= ${priceP} * (1 + ${gracePP}::numeric)))
+         OR to_jsonb(l)->>'status' = 'Lost' AND to_jsonb(l)->>'lost_reason' IS NOT NULL
        )
        ${scopeSql}
      -- Ordered by how likely this lead is to match *this unit*, not by how
@@ -695,39 +778,47 @@ export async function matchBuyersForProperty(
      -- Nothing is excluded that was not excluded before — the scorer still
      -- decides, and still forgives a location miss or an adjacent BHK count.
      -- This only makes the four hundred rows fetched the right four hundred.
-     ORDER BY (l.configuration ?| ${configP}::text[]) DESC,
-              (l.preferred_locations ? ${localityP}) DESC,
+     ORDER BY (COALESCE(to_jsonb(l)->'configuration', '[]'::jsonb) ?| ${configP}::text[]) DESC,
+              (COALESCE(to_jsonb(l)->'preferred_locations', '[]'::jsonb) ? ${localityP}) DESC,
               r.updated_at DESC
      LIMIT 400`,
     params.all(),
   );
 
   const buyers = leads.rows
-    .map((lead) => {
+    .map(({ row: raw, ...lead }) => {
+      // Every value is read out of `to_jsonb(l)`, so a deleted field is
+      // `undefined` here and falls through the same defaults an empty one does.
+      const status = str(raw.status);
+      const lostReason = str(raw.lost_reason);
+      const configuration = Array.isArray(raw.configuration) ? (raw.configuration as string[]) : [];
+      const preferredLocations = Array.isArray(raw.preferred_locations) ? (raw.preferred_locations as string[]) : [];
+      const leadArea = num(raw.area);
+
       // Same normalisation as loadRequirement: a per-unit budget with a stated
       // area becomes the absolute figure the scorer compares.
-      let budget: number | null = lead.budget;
-      const unit = lead.budget_unit ?? 'total';
-      if (budget != null && unit !== 'total' && lead.area != null) {
-        const sqft = toSqFt(lead.area, lead.area_unit ?? 'sqft');
+      let budget = num(raw.budget);
+      const unit = str(raw.budget_unit) ?? 'total';
+      if (budget != null && unit !== 'total' && leadArea != null) {
+        const sqft = toSqFt(leadArea, str(raw.area_unit) ?? 'sqft');
         const per = unit === 'sqft' ? budget : toSqFt(budget, 'sqyd');
         budget = Math.round(per * sqft);
       }
       const req: Requirement = {
         budget,
-        configurations: lead.configuration ?? [],
-        locations: lead.preferred_locations ?? [],
-        possessionTimeline: lead.possession_timeline,
-        purpose: lead.purpose,
-        rawValues: lead.raw_values,
+        configurations: configuration,
+        locations: preferredLocations,
+        possessionTimeline: str(raw.possession_timeline),
+        purpose: str(raw.purpose),
+        rawValues: raw,
       };
       const scored = scoreProperty(property, req, config);
-      const revival = lead.status === 'Lost'
-        ? revivalReason(lead.lost_reason, property, req)
+      const revival = status === 'Lost'
+        ? revivalReason(lostReason, property, req)
         : null;
 
       return {
-        wasLost: lead.status === 'Lost',
+        wasLost: status === 'Lost',
         match: {
           recordId: lead.record_id,
           label: lead.label,
@@ -742,12 +833,12 @@ export async function matchBuyersForProperty(
           // The columns the Matching contacts table shows — the requirement as
           // the buyer stated it, so the rep can weigh the fit themselves rather
           // than trusting a single number.
-          budget: lead.budget,
-          configuration: lead.configuration ?? [],
-          preferredLocations: lead.preferred_locations ?? [],
-          possessionTimeline: lead.possession_timeline,
-          purpose: lead.purpose,
-          status: lead.status,
+          budget: num(raw.budget),
+          configuration,
+          preferredLocations,
+          possessionTimeline: str(raw.possession_timeline),
+          purpose: str(raw.purpose),
+          status,
         } satisfies BuyerMatch,
       };
     })
@@ -785,7 +876,7 @@ async function addBuyerNarrative(property: PropertyRow, buyers: BuyerMatch[]): P
   const prompt = `A property is available:
 - Unit: ${property.label}
 - Project: ${property.project_name ?? '—'}
-- Bedrooms: ${parsedBedrooms(property) ?? '—'}, ${formatArea(property.carpet_area, property.area_unit ?? 'sqft')} carpet
+- Bedrooms: ${parsedBedrooms(property) ?? '—'}, ${formatArea(property.matched_area, property.area_unit ?? 'sqft')}
 - Price: ${formatIndianPrice(property.total_price ?? property.base_price ?? 0)}
 - Floor ${property.floor ?? '—'}, ${property.facing ?? '—'} facing${property.corner_unit ? ', corner unit' : ''}
 - Location: ${property.locality ?? '—'}

@@ -592,7 +592,7 @@ export const api = {
   picklists: () => get<Record<string, { value: string; label: string; color: string | null }[]>>('/api/meta/picklists'),
   picklist: (name: string) => get<{ value: string; label: string; color: string | null }[]>(`/api/meta/picklists/${name}`),
   picklistCatalogue: () => get<{
-    name: string; label: string; isSystem: boolean; allowAdhoc: boolean;
+    name: string; label: string; isSystem: boolean; allowAdhoc: boolean; isOrdered: boolean;
     values: {
       value: string; label: string; color: string | null;
       sequence: number; isActive: boolean; isDefault: boolean;
@@ -615,6 +615,12 @@ export const api = {
   createPicklist: (data: { name: string; label: string; values?: unknown[] }) =>
     post('/api/meta/picklists', data),
   renamePicklist: (name: string, label: string) => patch(`/api/meta/picklists/${name}`, { label }),
+  /**
+   * Whether this dropdown keeps the order below or is sorted A–Z everywhere it
+   * appears. On only for a pipeline, a scale or a ranking — see migration 114.
+   */
+  setPicklistOrdered: (name: string, isOrdered: boolean) =>
+    patch(`/api/meta/picklists/${name}`, { isOrdered }),
   deletePicklist: (name: string) => del(`/api/meta/picklists/${name}`),
   picklistValueUsage: (name: string, value: string) => get<{
     total: number;
@@ -654,10 +660,17 @@ export const api = {
     post<{ totalRecords: number; convertibleRecords: number; invalidRecords: number; invalidSamples: { recordId: string; value: unknown }[] }>(`/api/meta/fields/${id}/type-conversion/preview`, data),
   convertField: (id: string, data: { targetType: string; invalidStrategy: 'blank' | 'default' | 'keep'; valueMap?: Record<string, string>; defaultValue?: unknown }) =>
     post<{ ok: boolean; convertedRecords: number; invalidRecords: number }>(`/api/meta/fields/${id}/type-conversion`, data),
-  /** `permanent` drops the column and its data; otherwise the field is only hidden. */
-  deleteField: (id: string, permanent = false) =>
+  /**
+   * `permanent` drops the column and its data; `confirm` answers the warning
+   * the server raises for a field one of the CRM's own features reads by name.
+   * That warning is not a refusal any more — see the delete handler in
+   * api/routes/metadata.ts — so the editor asks a second question rather than
+   * telling the admin the field is off limits.
+   */
+  deleteField: (id: string, permanent = false, confirm = false) =>
     del<{ ok: boolean; deactivated?: boolean; deleted?: boolean; hadValues?: number }>(
-      `/api/meta/fields/${id}${permanent ? '?permanent=true' : ''}`,
+      `/api/meta/fields/${id}${[permanent && 'permanent=true', confirm && 'confirm=true']
+        .filter(Boolean).join('&') ? `?${[permanent && 'permanent=true', confirm && 'confirm=true'].filter(Boolean).join('&')}` : ''}`,
     ),
   reorderFields: (fields: { id: string; blockId: string; sequence: number }[]) =>
     post('/api/meta/fields/reorder', { fields }),
@@ -737,12 +750,19 @@ export const api = {
   audit: (module: string, id: string) => get<Record<string, unknown>[]>(`/api/records/${module}/${id}/audit`),
   checkDuplicates: (module: string, values: Record<string, unknown>, excludeId?: string) =>
     post<{ id: string; label: string; matchedOn: string[] }[]>(`/api/records/${module}/check-duplicates`, { values, excludeId }),
-  massUpdate: (module: string, ids: string[], values: Record<string, unknown>) =>
-    post<{ updated: number; failed: unknown[] }>(`/api/records/${module}/mass-update`, { ids, values }),
+  /**
+   * `runWorkflows` is off unless the caller says otherwise — a bulk edit that
+   * fires every automation is the failure this flag exists to prevent, and it
+   * is also where nearly all the time goes.
+   */
+  massUpdate: (module: string, ids: string[], values: Record<string, unknown>, runWorkflows = false) =>
+    post<{ updated: number; failed: unknown[]; reasons: string[]; capped?: boolean }>(
+      `/api/records/${module}/mass-update`, { ids, values, runWorkflows },
+    ),
   /** Gmail's "select all in this search": every record the view/filter matches. */
-  massUpdateAll: (module: string, query: Record<string, unknown>, values: Record<string, unknown>) =>
-    post<{ updated: number; matched: number; capped: boolean; failed: unknown[] }>(
-      `/api/records/${module}/mass-update-all`, { query, values },
+  massUpdateAll: (module: string, query: Record<string, unknown>, values: Record<string, unknown>, runWorkflows = false) =>
+    post<{ updated: number; matched: number; capped: boolean; failed: unknown[]; reasons: string[] }>(
+      `/api/records/${module}/mass-update-all`, { query, values, runWorkflows },
     ),
   massDelete: (module: string, ids: string[]) =>
     post<{ deleted: number }>(`/api/records/${module}/mass-delete`, { ids }),
@@ -916,7 +936,7 @@ export const api = {
     checks: { id: string; title: string; status: 'ok' | 'warn' | 'fail' | 'unknown'; detail: string; fix?: string }[];
   }>('/api/admin/readiness'),
   /** What your own comparable units were listed at — for the shape being typed. */
-  comparables: (input: { locality: string; bedrooms: number; carpetArea?: number; excludeRecordId?: string }) =>
+  comparables: (input: { locality: string; bedrooms: number; area?: number; excludeRecordId?: string }) =>
     get<{ comparables: { summary: string; count: number; medianPrice: number } | null }>(
       `/api/ai/comparables${qs(input)}`,
     ),
@@ -1034,12 +1054,16 @@ export const api = {
       `/api/import/${module}/preview`, { method: 'POST', body: form },
     );
   },
-  runImport: (module: string, file: File, mapping: Record<string, string>, duplicateHandling: string, runWorkflows = false) => {
+  runImport: (
+    module: string, file: File, mapping: Record<string, string>,
+    duplicateHandling: string, runWorkflows = false, createOptions = true,
+  ) => {
     const form = new FormData();
     form.append('file', file);
     form.append('mapping', JSON.stringify(mapping));
     form.append('duplicateHandling', duplicateHandling);
     form.append('runWorkflows', String(runWorkflows));
+    form.append('createOptions', String(createOptions));
     return request<{ jobId: string; totalRows: number }>(`/api/import/${module}`, { method: 'POST', body: form });
   },
   importJobs: () => get<Record<string, unknown>[]>('/api/import/jobs'),

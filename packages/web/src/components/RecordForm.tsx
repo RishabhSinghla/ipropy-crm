@@ -88,12 +88,12 @@ function ComparablesHint({
 }): JSX.Element | null {
   const locality = typeof values.locality === 'string' ? values.locality : '';
   const bedrooms = typeof values.bedrooms === 'number' ? values.bedrooms : undefined;
-  const carpetArea = typeof values.carpet_area === 'number' ? values.carpet_area : undefined;
+  const area = typeof values.area === 'number' ? values.area : undefined;
   const relevant = module === 'properties' && field === 'base_price' && Boolean(locality) && bedrooms != null;
 
   const { data } = useQuery({
-    queryKey: ['comparables', locality, bedrooms ?? null, carpetArea ?? null],
-    queryFn: () => api.comparables({ locality, bedrooms: bedrooms as number, carpetArea, excludeRecordId: recordId }),
+    queryKey: ['comparables', locality, bedrooms ?? null, area ?? null],
+    queryFn: () => api.comparables({ locality, bedrooms: bedrooms as number, area, excludeRecordId: recordId }),
     enabled: relevant,
     // Inventory does not move minute to minute, and this fires again on every
     // keystroke in the size field without it.

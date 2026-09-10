@@ -43,7 +43,7 @@ export const DEFAULT_MATCHING_CONFIG: MatchingConfig = {
     { contactField: 'budget', propertyField: 'base_price' },
     { contactField: 'configuration', propertyField: 'bedrooms' },
     { contactField: 'preferred_locations', propertyField: 'locality' },
-    { contactField: 'area', propertyField: 'carpet_area' },
+    { contactField: 'area', propertyField: 'area' },
   ],
   priceGracePercent: 10,
 };
