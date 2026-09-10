@@ -790,19 +790,22 @@ export default function ListView(): JSX.Element {
                 </th>
                 {visibleColumns.map((col) => {
                   const field = fieldMap.get(col);
+                  const canSort = field?.config.sortable !== false;
                   return (
                     <th key={col} className="list-head relative">
                       <button
-                        className="inline-flex max-w-full items-center gap-1 truncate hover:text-slate-700 dark:hover:text-slate-200"
+                        className="inline-flex max-w-full items-center gap-1 truncate hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:text-slate-200"
+                        disabled={!canSort}
+                        title={canSort ? `Sort by ${field?.label ?? col}` : 'Sorting is disabled for this field'}
                         onClick={() => {
                           if (sortBy === col) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
                           else { setSortBy(col); setSortDir('desc'); }
                         }}
                       >
                         <span className="truncate">{field?.label ?? col}</span>
-                        {sortBy === col
+                        {canSort && sortBy === col
                           ? <ChevronDown className={cn('h-3 w-3 shrink-0', sortDir === 'asc' && 'rotate-180')} />
-                          : <ArrowUpDown className="h-2.5 w-2.5 shrink-0 opacity-0 group-hover:opacity-40" />}
+                          : canSort ? <ArrowUpDown className="h-2.5 w-2.5 shrink-0 opacity-0 group-hover:opacity-40" /> : null}
                       </button>
                       {/* Drag to resize, double-click to put it back. `role` and
                           the arrow keys are here because a column width is a

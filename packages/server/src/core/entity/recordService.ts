@@ -227,6 +227,14 @@ export async function listRecords(
     }
   }
 
+  // Field availability is enforced by the data service as well as the list
+  // screen. A direct API call or an old saved view must not bypass an
+  // administrator's "Allow sorting" switch.
+  if (effectiveSortBy) {
+    const sortField = module.fields.find((field) => field.name === effectiveSortBy);
+    if (sortField?.config.sortable === false) effectiveSortBy = undefined;
+  }
+
   // A field this profile cannot see must not be usable to *ask questions about*
   // either. Stripping the value from the response but still honouring
   // `budget > 5000000` leaves a binary-search oracle: a dozen requests
