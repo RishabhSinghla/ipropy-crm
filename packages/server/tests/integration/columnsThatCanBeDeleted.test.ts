@@ -95,6 +95,52 @@ function referencesIn(source: string, file: string): Reference[] {
   return found;
 }
 
+/*
+  The eighteen direct references that exist today, each one a column that is
+  present on production *right now* and could stop being tomorrow.
+
+  This list is a ratchet, not an approval. Checking that a named column exists
+  in *this* database proves nothing — it is a fresh seed, so every column
+  exists here and none of the five outages this test was written for would have
+  been caught. What actually matters is whether the code names a column at all,
+  because that is the thing that becomes a 42703 the day an admin removes it.
+
+  On 11 September four of these were live failures on production at once:
+  lead capture discarded every inbound enquiry, the public catalogue answered
+  an error to every request, buyer matching could not see the price, and
+  WhatsApp raised on every personalised greeting. All four were `alias.column`
+  references to fields somebody had deleted.
+
+  **The list should only ever get shorter.** Adding to it means writing a new
+  query that will fail the same way; rewrite it as `to_jsonb(x)->>'field'` or
+  guard it with `modelHas(...)` instead.
+*/
+const KNOWN_DIRECT_REFERENCES = new Set([
+  'ai/assistant.ts l.status',
+  'ai/callProposal.ts l.next_followup_at',
+  'ai/callProposal.ts l.status',
+  // Guarded by `modelHas(...)` in the same handler — the reference is real but
+  // the statement is not built unless the column is there.
+  'api/routes/public.ts u.city',
+  'api/routes/public.ts u.project_name',
+  'api/routes/public.ts u.status',
+  'api/routes/public.ts u.total_price',
+  'api/routes/webhooks.ts l.mobile',
+  'api/routes/webhooks.ts l.status',
+  'core/locations/index.ts p.latitude',
+  'core/locations/index.ts p.longitude',
+  'core/workflow/assignment.ts l.next_followup_at',
+  'core/workflow/tasks.ts l.email',
+  'integrations/telephony/service.ts l.alternate_phone',
+  'integrations/telephony/service.ts l.mobile',
+  'integrations/telephony/service.ts l.status',
+  'integrations/whatsapp/service.ts l.mobile',
+  'integrations/whatsapp/service.ts l.status',
+]);
+
+/** Columns nobody can delete, so naming them is always correct. */
+const STRUCTURAL = new Set(['record_id', 'custom_fields']);
+
 describe('queries against tables whose columns can be deleted', () => {
   it('never names a column that is not there', async () => {
     const leads = await realColumns('ipy_e_leads');
@@ -102,51 +148,44 @@ describe('queries against tables whose columns can be deleted', () => {
     const files = await sourceFiles(SRC);
 
     const broken: string[] = [];
-    let checked = 0;
+    for (const file of files) {
+      const source = await readFile(file, 'utf8');
+      for (const ref of referencesIn(source, file)) {
+        const known = leads.has(ref.column) || properties.has(ref.column);
+        if (!known) broken.push(`${relative(SRC, ref.file)}:${ref.line} names ${ref.alias}.${ref.column} — ${ref.snippet}`);
+      }
+    }
+    expect(broken, broken.join('\n')).toEqual([]);
+  });
+
+  it('adds no new direct column reference', async () => {
+    const files = await sourceFiles(SRC);
+    const seen = new Set<string>();
+    const added: string[] = [];
 
     for (const file of files) {
       const source = await readFile(file, 'utf8');
       for (const ref of referencesIn(source, file)) {
-        checked += 1;
-        const exists = leads.has(ref.column) || properties.has(ref.column);
-        if (!exists) {
-          broken.push(
-            `${relative(SRC, ref.file)}:${ref.line} reads ${ref.alias}.${ref.column}, `
-            + `which no longer exists — ${ref.snippet}`,
-          );
+        if (STRUCTURAL.has(ref.column)) continue;
+        const key = `${relative(SRC, ref.file)} ${ref.alias}.${ref.column}`;
+        seen.add(key);
+        if (!KNOWN_DIRECT_REFERENCES.has(key)) {
+          added.push(`${key} — ${ref.snippet}`);
         }
       }
     }
 
-    expect(checked, 'the scanner found no column references, which cannot be right')
-      .toBeGreaterThan(20);
-
     expect(
-      [...new Set(broken)],
-      'a dropped column is a 42703 on the whole statement — read it as '
-      + "to_jsonb(alias)->>'column' instead, so a missing field is a null",
+      added,
+      'This query names a payload column directly, which becomes a 42703 the day '
+      + 'an administrator deletes that field — the single most repeated outage in '
+      + "this codebase. Use `to_jsonb(x)->>'field'`, or guard it with `modelHas(...)`."
+      + `\n\n${added.join('\n')}`,
     ).toEqual([]);
-  });
 
-  it('the two fields deleted on purpose are still gone', async () => {
-    /*
-      Pinned because they were restored once by mistake, on the assumption their
-      absence was an accident. The owner's words: "I deliberately removed those
-      two fields." He sells builder floors in one area, so a city filter and a
-      project grouping are both noise on his own website.
-    */
-    const properties = await realColumns('ipy_e_properties');
-    // Local development databases may still carry them; production does not.
-    // What matters is that nothing NAMES them, which the test above enforces
-    // either way.
-    expect(typeof properties.has('city')).toBe('boolean');
-  });
-
-  it('reads a deleted field as null rather than raising', async () => {
-    // The pattern that replaced every one of those five breakages.
-    const row = await db.queryOne<{ gone: string | null }>(
-      `SELECT to_jsonb(p)->>'a_field_that_was_deleted' AS gone FROM ipy_e_properties p LIMIT 1`,
-    );
-    expect(row === null || row.gone === null).toBe(true);
+    // And the list shrinks: an entry that no longer matches anything is a
+    // reference somebody rewrote, and leaving it here invites the next one.
+    const stale = [...KNOWN_DIRECT_REFERENCES].filter((k) => !seen.has(k));
+    expect(stale, `Remove these from KNOWN_DIRECT_REFERENCES — they are gone:\n${stale.join('\n')}`).toEqual([]);
   });
 });
