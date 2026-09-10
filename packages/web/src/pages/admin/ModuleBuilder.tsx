@@ -997,6 +997,7 @@ function FieldEditor({
                   : `Renaming moves no data — every value stays exactly where it is. Views, layouts, filters and automations that name “${field!.name}” are rewritten with it.`}
               </p>
             )}
+            {isEdit && <p className="mt-1 font-mono text-2xs text-muted">Permanent Field ID: {field!.internalId}</p>}
           </div>
         </div>
 
