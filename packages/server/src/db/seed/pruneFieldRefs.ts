@@ -129,6 +129,31 @@ export async function pruneFieldRefs(conn: Tx): Promise<PruneResult> {
       "everything", which is honest — and the removal is logged either way so
       it is a visible decision rather than a silent one.
     */
+    /*
+      A stale name is repaired before it is removed.
+
+      Most references that no longer match a field are not deletions at all —
+      they are renames. This CRM promises an admin may rename a field, and a
+      rename moves `ipy_field.name` while `column_name` stays exactly where it
+      was. So `owner_id` and `status` on a Contacts tile are not fields that
+      vanished: they are `assigned_to` and `lead_status` under the names their
+      owner chose.
+
+      Dropping them turned "My Open Leads" into a count of every lead in the
+      business — a tile that works, shows a number, and lies. Rewriting them
+      keeps what the tile meant. Only a name that no field owns by any route is
+      actually gone, and only that is removed.
+    */
+    const byColumn = new Map<string, string>();
+    for (const f of await conn.query<{ name: string; column_name: string }>(
+      `SELECT name, column_name FROM ipy_field WHERE module_id = $1`, [module.id],
+    ).then((r) => r.rows)) {
+      if (!exists.has(f.column_name)) byColumn.set(f.column_name, f.name);
+    }
+    /** The field this name means today, or null when nothing owns it. */
+    const resolve = (name: string): string | null =>
+      exists.has(name) ? name : byColumn.get(name) ?? null;
+
     const widgets = await conn.query<{ id: string; title: string; config: Record<string, unknown> }>(
       `SELECT id, title, config FROM ipy_dashboard_widget
         WHERE config->>'module' = $1`, [module.name],
@@ -138,27 +163,47 @@ export async function pruneFieldRefs(conn: Tx): Promise<PruneResult> {
       const filter = config.filter as { conditions?: { field?: string }[] } | undefined;
       const conditions = Array.isArray(filter?.conditions) ? filter!.conditions : null;
 
-      const named = new Set<string>();
-      for (const key of ['groupBy', 'sortBy', 'valueField', 'field', 'measureField']) {
-        const value = config[key];
-        if (typeof value === 'string' && value && !exists.has(value)) named.add(`${key}:${value}`);
-      }
-      const keptConditions = conditions?.filter((c) => !c.field || exists.has(c.field)) ?? null;
-      const droppedConditions = conditions ? conditions.length - (keptConditions?.length ?? 0) : 0;
-      if (!named.size && !droppedConditions) continue;
-
+      /*
+        `dateField` is deliberately not here. It usually holds `created_at` or
+        `updated_at`, which live on `ipy_record` and have no row in `ipy_field`
+        — so they read as "gone" against this module's field list and sweeping
+        them takes the bucketing off every trend chart. A tile pointing at a
+        record timestamp is correct, not stale.
+      */
+      const KEYS = ['groupBy', 'sortBy', 'valueField', 'field', 'measureField'];
       const next: Record<string, unknown> = { ...config };
-      for (const key of ['groupBy', 'sortBy', 'valueField', 'field', 'measureField']) {
+      const renamed: string[] = [];
+      const dropped: string[] = [];
+
+      for (const key of KEYS) {
         const value = next[key];
-        if (typeof value === 'string' && value && !exists.has(value)) delete next[key];
+        if (typeof value !== 'string' || !value || exists.has(value)) continue;
+        const target = resolve(value);
+        if (target) { next[key] = target; renamed.push(`${value}→${target}`); }
+        else { delete next[key]; dropped.push(`${key}:${value}`); }
       }
-      if (droppedConditions) next.filter = { ...filter, conditions: keptConditions };
+
+      let keptConditions = conditions;
+      if (conditions) {
+        keptConditions = conditions.flatMap((c) => {
+          if (!c.field || exists.has(c.field)) return [c];
+          const target = resolve(c.field);
+          if (target) { renamed.push(`${c.field}→${target}`); return [{ ...c, field: target }]; }
+          dropped.push(c.field);
+          return [];
+        });
+      }
+      if (!renamed.length && !dropped.length) continue;
+      if (conditions) next.filter = { ...filter, conditions: keptConditions };
+      const droppedConditions = dropped.length;
 
       await conn.query(`UPDATE ipy_dashboard_widget SET config = $2::jsonb WHERE id = $1`,
         [widget.id, JSON.stringify(next)]);
       logger.warn(
-        { module: module.name, widget: widget.title, droppedConditions, dropped: [...named] },
-        'a dashboard tile named a field that is gone — the reference was removed',
+        { module: module.name, widget: widget.title, renamed, dropped },
+        renamed.length && !dropped.length
+          ? 'a dashboard tile named a field by its old name — repointed at the renamed field'
+          : 'a dashboard tile named a field that is gone — the reference was removed',
       );
       removed.push(`${module.name} → dashboard tile "${widget.title}"`);
     }

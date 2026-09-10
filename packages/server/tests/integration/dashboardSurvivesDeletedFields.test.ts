@@ -74,6 +74,49 @@ describe('a dashboard tile filtering on a field that is gone', () => {
     expect(row!.config.filter.conditions.map((c) => c.field)).toEqual(['full_name']);
   });
 
+  it('repairs a reference to a field that was renamed, rather than dropping it', async () => {
+    /*
+      Most stale references are renames, not deletions. A rename moves
+      `ipy_field.name` and never `column_name`, so a tile saved before the
+      rename still says `owner_id` when the field is now `assigned_to`.
+
+      Dropping that condition turned "My Open Leads" into a count of every lead
+      in the business — a tile that works, shows a number, and lies. That is a
+      worse outcome than the 400 it replaced.
+    */
+    const renamed = await db.queryOne<{ id: string; name: string; column_name: string }>(
+      `SELECT f.id, f.name, f.column_name FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+        WHERE m.name = 'leads' AND f.name <> f.column_name AND f.storage = 'column' LIMIT 1`);
+    if (!renamed) return; // nothing renamed on this database
+
+    await db.query(
+      `UPDATE ipy_dashboard_widget SET config = jsonb_set(config, '{filter,conditions}', $2::jsonb) WHERE id = $1`,
+      [widgetId, JSON.stringify([{ field: renamed.column_name, operator: 'is_not_empty' }])],
+    );
+
+    await transaction(async (tx) => { await pruneFieldRefs(tx); });
+
+    const row = await db.queryOne<{ config: { filter: { conditions: { field: string }[] } } }>(
+      `SELECT config FROM ipy_dashboard_widget WHERE id = $1`, [widgetId]);
+    expect(
+      row!.config.filter.conditions.map((c) => c.field),
+      `the old name ${renamed.column_name} should have become ${renamed.name}, not disappeared`,
+    ).toEqual([renamed.name]);
+  });
+
+  it('leaves a record timestamp alone', async () => {
+    // `created_at` lives on ipy_record and has no row in ipy_field, so it reads
+    // as "gone" against a module's field list. Sweeping it takes the bucketing
+    // off every trend chart.
+    await db.query(
+      `UPDATE ipy_dashboard_widget SET config = config || '{"dateField":"created_at"}'::jsonb WHERE id = $1`,
+      [widgetId]);
+    await transaction(async (tx) => { await pruneFieldRefs(tx); });
+    const row = await db.queryOne<{ config: Record<string, unknown> }>(
+      `SELECT config FROM ipy_dashboard_widget WHERE id = $1`, [widgetId]);
+    expect(row!.config.dateField).toBe('created_at');
+  });
+
   it('every seeded tile on every dashboard answers', async () => {
     const dashboards = await db.query<{ id: string }>(`SELECT id FROM ipy_dashboard`);
     const failures: string[] = [];
