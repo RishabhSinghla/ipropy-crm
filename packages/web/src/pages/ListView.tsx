@@ -65,6 +65,7 @@ export default function ListView(): JSX.Element {
   const [showFilters, setShowFilters] = useState(false);
   const [showQuickCreate, setShowQuickCreate] = useState(false);
   const [showColumns, setShowColumns] = useState(false);
+  const [showExport, setShowExport] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const colWidths = useColumnWidths(moduleName);
 
@@ -536,7 +537,7 @@ export default function ListView(): JSX.Element {
                   {meta.permissions.export && (
                     <DropdownItem
                       icon={<Download className="h-3.5 w-3.5" />}
-                      onClick={() => { window.open(api.exportUrl(moduleName, query), '_blank'); close(); }}
+                      onClick={() => { setShowExport(true); close(); }}
                     >
                       Export CSV
                     </DropdownItem>
@@ -1024,6 +1025,15 @@ export default function ListView(): JSX.Element {
             })}
         </div>
       </Modal>
+
+      <ExportWizard
+        open={showExport}
+        onClose={() => setShowExport(false)}
+        module={moduleName}
+        fields={meta.fields}
+        filter={filter}
+        selectedIds={selected.size ? [...selected] : undefined}
+      />
 
       {showQuickCreate && (
         <Modal open onClose={() => setShowQuickCreate(false)} title={`New ${meta.singularLabel}`} size="lg">
@@ -1680,6 +1690,29 @@ function ViewTabStrip({
       </button>
     </div>
   );
+}
+
+function ExportWizard({ open, onClose, module, fields, filter, selectedIds }: {
+  open: boolean; onClose: () => void; module: string; fields: FieldMeta[]; filter: FilterGroup; selectedIds?: string[];
+}): JSX.Element {
+  const available = fields.filter((f) => f.isActive && f.displayType !== 'hidden' && f.config.exportable !== false);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [format, setFormat] = useState<'xlsx' | 'csv'>('xlsx');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (open) setSelected(available.map((f) => f.internalId)); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  const run = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      const response = await api.exportRecords(module, { format, columns: available.filter((f) => selected.includes(f.internalId)).map((f) => ({ fieldId: f.internalId })), filter, selectedIds });
+      const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement('a');
+      link.href = url; link.download = `${module}-export.${format}`; link.click(); URL.revokeObjectURL(url); onClose();
+    } catch (err) { toast.error('Export failed', (err as Error).message); } finally { setBusy(false); }
+  };
+  return <Modal open={open} onClose={onClose} title="Export records" size="md" footer={<><button className="btn-secondary" onClick={onClose}>Cancel</button><button className="btn-primary" disabled={!selected.length || busy} onClick={() => void run()}>{busy && <Spinner />} Export {format.toUpperCase()}</button></>}>
+    <p className="mb-3 text-sm text-muted">{selectedIds?.length ? `${selectedIds.length} selected record(s)` : 'Current filtered results'} · choose fields and format.</p>
+    <div className="mb-3 flex gap-2"><button className={cn('btn-secondary btn-sm', format === 'xlsx' && 'border-brand-500')} onClick={() => setFormat('xlsx')}>Excel (.xlsx)</button><button className={cn('btn-secondary btn-sm', format === 'csv' && 'border-brand-500')} onClick={() => setFormat('csv')}>CSV (.csv)</button></div>
+    <div className="max-h-64 space-y-1 overflow-y-auto rounded border p-2">{available.map((f) => <label key={f.internalId} className="flex items-center gap-2 rounded px-1 py-1 text-sm hover:bg-slate-50 dark:hover:bg-slate-800"><input type="checkbox" checked={selected.includes(f.internalId)} onChange={(e) => setSelected((old) => e.target.checked ? [...old, f.internalId] : old.filter((id) => id !== f.internalId))} />{f.label}</label>)}</div>
+  </Modal>;
 }
 
 function MassOwnerButton({

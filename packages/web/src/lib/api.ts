@@ -753,6 +753,8 @@ export const api = {
   setTags: (module: string, id: string, tags: string[]) => post(`/api/records/${module}/${id}/tags`, { tags }),
   exportUrl: (module: string, query: ListQuery) =>
     `/api/records/${module}/export${qs({ ...query, filter: query.filter, access_token: tokenStore.get() })}`,
+  exportRecords: (module: string, data: Record<string, unknown>) =>
+    request<Response>(`/api/records/${module}/export`, { method: 'POST', body: data, raw: true }),
 
   // --- views --------------------------------------------------------------
   views: (module: string, withCounts = false, includeInactive = false) =>
