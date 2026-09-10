@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FieldMeta, type FilterGroup, formatIndianPrice, formatPhoneWithCode, toInternational, type ListQuery, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
-  ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, Columns3, Compass, Download, Filter,
+  ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Columns3, Compass, Download, Filter,
   LayoutGrid, List, MailCheck, MapPin, MessageCircle, Pencil, Phone, Plus, RefreshCw, Ruler, Save, Search, Settings2, Star, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { ApiError, api } from '../lib/api';
@@ -1037,7 +1037,8 @@ export default function ListView(): JSX.Element {
         module={moduleName}
         fields={meta.fields}
         filter={filter}
-        selectedIds={selected.size ? [...selected] : undefined}
+        selectedIds={selectedAll ? undefined : selected.size ? [...selected] : undefined}
+        allSelected={selectedAll}
       />
 
       {showQuickCreate && (
@@ -1697,35 +1698,63 @@ function ViewTabStrip({
   );
 }
 
-function ExportWizard({ open, onClose, module, fields, filter, selectedIds }: {
-  open: boolean; onClose: () => void; module: string; fields: FieldMeta[]; filter: FilterGroup; selectedIds?: string[];
+function ExportWizard({ open, onClose, module, fields, filter, selectedIds, allSelected }: {
+  open: boolean; onClose: () => void; module: string; fields: FieldMeta[]; filter: FilterGroup; selectedIds?: string[]; allSelected: boolean;
 }): JSX.Element {
   const available = fields.filter((f) => f.isActive && f.displayType !== 'hidden' && f.config.exportable !== false);
-  const [selected, setSelected] = useState<string[]>([]);
+  type ExportChoice = { fieldId: string; header: string };
+  const [columns, setColumns] = useState<ExportChoice[]>([]);
   const [format, setFormat] = useState<'xlsx' | 'csv'>('xlsx');
   const [busy, setBusy] = useState(false);
   const [templateName, setTemplateName] = useState('');
   const [activeTemplate, setActiveTemplate] = useState('');
+  const [fieldSearch, setFieldSearch] = useState('');
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [scope, setScope] = useState<'selected' | 'filtered' | 'all'>(selectedIds?.length ? 'selected' : 'filtered');
   const { data: templates, refetch: refetchTemplates } = useQuery({ queryKey: ['export-templates', module], queryFn: () => api.exportTemplates(module) });
-  useEffect(() => { if (open) setSelected(available.map((f) => f.internalId)); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!open) return;
+    const defaultTemplate = templates?.find((t) => t.isDefault);
+    if (defaultTemplate) { setActiveTemplate(defaultTemplate.id); setColumns(defaultTemplate.columns.map((c) => ({ fieldId: c.fieldId, header: c.header ?? available.find((f) => f.internalId === c.fieldId)?.label ?? '' }))); }
+    else setColumns(available.map((f) => ({ fieldId: f.internalId, header: f.label })));
+    setScope(selectedIds?.length ? 'selected' : 'filtered');
+  }, [open, templates]); // eslint-disable-line react-hooks/exhaustive-deps
+  const move = (index: number, direction: -1 | 1): void => setColumns((old) => {
+    const next = [...old]; const other = index + direction;
+    if (other < 0 || other >= next.length) return old;
+    [next[index], next[other]] = [next[other], next[index]]; return next;
+  });
+  const setField = (field: FieldMeta, checked: boolean): void => setColumns((old) => checked
+    ? [...old, { fieldId: field.internalId, header: field.label }]
+    : old.filter((c) => c.fieldId !== field.internalId));
+  const exportColumns = columns.map(({ fieldId, header }) => ({ fieldId, ...(header.trim() ? { header: header.trim() } : {}) }));
   const run = async (): Promise<void> => {
     setBusy(true);
     try {
-      const response = await api.exportRecords(module, { format, columns: available.filter((f) => selected.includes(f.internalId)).map((f) => ({ fieldId: f.internalId })), filter, selectedIds });
+      const response = await api.exportRecords(module, { format, columns: exportColumns, filter: scope === 'all' ? EMPTY_FILTER : filter, selectedIds: scope === 'selected' ? selectedIds : undefined });
       const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement('a');
       link.href = url; link.download = `${module}-export.${format}`; link.click(); URL.revokeObjectURL(url); onClose();
     } catch (err) { toast.error('Export failed', (err as Error).message); } finally { setBusy(false); }
   };
   const saveTemplate = async (): Promise<void> => {
     if (!templateName.trim()) { toast.error('Enter a template name'); return; }
-    try { await api.createExportTemplate(module, { name: templateName.trim(), columns: available.filter((f) => selected.includes(f.internalId)).map((f) => ({ fieldId: f.internalId })), filter }); setTemplateName(''); await refetchTemplates(); toast.success('Export template saved'); }
+    try { await api.createExportTemplate(module, { name: templateName.trim(), columns: exportColumns, filter: scope === 'all' ? EMPTY_FILTER : filter }); setTemplateName(''); await refetchTemplates(); toast.success('Export template saved'); }
     catch (err) { toast.error('Could not save template', (err as Error).message); }
   };
-  return <Modal open={open} onClose={onClose} title="Export records" size="md" footer={<><button className="btn-secondary" onClick={onClose}>Cancel</button><button className="btn-primary" disabled={!selected.length || busy} onClick={() => void run()}>{busy && <Spinner />} Export {format.toUpperCase()}</button></>}>
-    <p className="mb-3 text-sm text-muted">{selectedIds?.length ? `${selectedIds.length} selected record(s)` : 'Current filtered results'} · choose fields and format.</p>
-    {templates?.length ? <Select value={activeTemplate} onChange={(id) => { setActiveTemplate(id); const t = templates.find((x) => x.id === id); if (t) setSelected(t.columns.map((c) => c.fieldId)); }} placeholder="Use a saved template" options={templates.map((t) => ({ value: t.id, label: `${t.name}${t.isDefault ? ' (default)' : ''}` }))} /> : null}
+  const active = templates?.find((t) => t.id === activeTemplate);
+  return <Modal open={open} onClose={onClose} title="Export records" size="lg" footer={<><button className="btn-secondary" onClick={onClose}>Cancel</button><button className="btn-primary" disabled={!columns.length || busy} onClick={() => void run()}>{busy && <Spinner />} Export {format.toUpperCase()}</button></>}>
+    <p className="mb-3 text-sm text-muted">Choose the records, fields and column names for this export.</p>
+    <div className="mb-3 flex flex-wrap gap-2">
+      {selectedIds?.length ? <button className={cn('btn-secondary btn-sm', scope === 'selected' && 'border-brand-500')} onClick={() => setScope('selected')}>{selectedIds.length} selected</button> : null}
+      <button className={cn('btn-secondary btn-sm', scope === 'filtered' && 'border-brand-500')} onClick={() => setScope('filtered')}>{allSelected ? 'Current filtered results' : 'Current results'}</button>
+      <button className={cn('btn-secondary btn-sm', scope === 'all' && 'border-brand-500')} onClick={() => setScope('all')}>All records</button>
+    </div>
+    {templates?.length ? <div className="mb-2 flex gap-2"><Select value={activeTemplate} onChange={(id) => { setActiveTemplate(id); const t = templates.find((x) => x.id === id); if (t) setColumns(t.columns.map((c) => ({ fieldId: c.fieldId, header: c.header ?? available.find((f) => f.internalId === c.fieldId)?.label ?? '' }))); }} placeholder="Use a saved template" options={templates.map((t) => ({ value: t.id, label: `${t.name}${t.isDefault ? ' (default)' : ''}` }))} />
+      {active ? <><button className="btn-secondary btn-sm" onClick={() => void api.updateExportTemplate(module, active.id, { columns: exportColumns, filter: scope === 'all' ? EMPTY_FILTER : filter }).then(() => refetchTemplates()).then(() => toast.success('Template updated')).catch((e: Error) => toast.error('Could not update template', e.message))}>Update</button><button className="btn-secondary btn-sm" onClick={() => { const name = window.prompt('New template name', active.name); if (name?.trim()) void api.updateExportTemplate(module, active.id, { name: name.trim() }).then(() => refetchTemplates()).then(() => toast.success('Template renamed')).catch((e: Error) => toast.error('Could not rename template', e.message)); }}>Rename</button><button className="btn-secondary btn-sm" onClick={() => void api.updateExportTemplate(module, active.id, { isDefault: !active.isDefault }).then(() => refetchTemplates()).then(() => toast.success(active.isDefault ? 'Default removed' : 'Set as default')).catch((e: Error) => toast.error('Could not set default', e.message))}>{active.isDefault ? 'Remove default' : 'Set default'}</button><button className="btn-secondary btn-sm" onClick={() => { if (window.confirm(`Delete “${active.name}”?`)) void api.deleteExportTemplate(module, active.id).then(() => { setActiveTemplate(''); void refetchTemplates(); toast.success('Template deleted'); }).catch((e: Error) => toast.error('Could not delete template', e.message)); }}>Delete</button></> : null}</div> : null}
     <div className="mb-3 flex gap-2"><button className={cn('btn-secondary btn-sm', format === 'xlsx' && 'border-brand-500')} onClick={() => setFormat('xlsx')}>Excel (.xlsx)</button><button className={cn('btn-secondary btn-sm', format === 'csv' && 'border-brand-500')} onClick={() => setFormat('csv')}>CSV (.csv)</button></div>
-    <div className="max-h-64 space-y-1 overflow-y-auto rounded border p-2">{available.map((f) => <label key={f.internalId} className="flex items-center gap-2 rounded px-1 py-1 text-sm hover:bg-slate-50 dark:hover:bg-slate-800"><input type="checkbox" checked={selected.includes(f.internalId)} onChange={(e) => setSelected((old) => e.target.checked ? [...old, f.internalId] : old.filter((id) => id !== f.internalId))} />{f.label}</label>)}</div>
+    <div className="mb-2 flex gap-2"><input className="input h-8 flex-1 text-sm" placeholder="Search fields…" value={fieldSearch} onChange={(e) => setFieldSearch(e.target.value)} /><button className="btn-secondary btn-sm" onClick={() => setColumns(available.map((f) => ({ fieldId: f.internalId, header: f.label })))}>Select all</button><button className="btn-secondary btn-sm" onClick={() => setColumns([])}>Clear all</button></div>
+    <div className="grid gap-3 md:grid-cols-2"><div className="max-h-64 space-y-1 overflow-y-auto rounded border p-2">{available.filter((f) => f.label.toLowerCase().includes(fieldSearch.toLowerCase())).map((f) => <label key={f.internalId} className="flex items-center gap-2 rounded px-1 py-1 text-sm hover:bg-slate-50 dark:hover:bg-slate-800"><input type="checkbox" checked={columns.some((c) => c.fieldId === f.internalId)} onChange={(e) => setField(f, e.target.checked)} />{f.label}</label>)}</div>
+      <div className="max-h-64 space-y-1 overflow-y-auto rounded border p-2">{columns.map((c, index) => <div key={c.fieldId} draggable onDragStart={() => setDragIndex(index)} onDragOver={(e) => e.preventDefault()} onDrop={() => { if (dragIndex == null || dragIndex === index) return; setColumns((old) => { const next = [...old]; const [moved] = next.splice(dragIndex, 1); next.splice(index, 0, moved); return next; }); setDragIndex(null); }} className="flex cursor-grab items-center gap-1 active:cursor-grabbing"><div className="w-5 text-center text-xs text-muted">{index + 1}</div><input className="input h-8 min-w-0 flex-1 text-sm" value={c.header} aria-label="Export column name" onChange={(e) => setColumns((old) => old.map((x) => x.fieldId === c.fieldId ? { ...x, header: e.target.value } : x))} /><button className="rounded p-1 hover:bg-slate-100 disabled:opacity-30 dark:hover:bg-slate-800" disabled={index === 0} onClick={() => move(index, -1)} aria-label="Move column up"><ChevronUp className="h-4 w-4" /></button><button className="rounded p-1 hover:bg-slate-100 disabled:opacity-30 dark:hover:bg-slate-800" disabled={index === columns.length - 1} onClick={() => move(index, 1)} aria-label="Move column down"><ChevronDown className="h-4 w-4" /></button></div>)}</div></div>
     <div className="mt-3 flex gap-2"><input className="input h-8 flex-1 text-sm" placeholder="Save this selection as…" value={templateName} onChange={(e) => setTemplateName(e.target.value)} /><button className="btn-secondary btn-sm" onClick={() => void saveTemplate()}>Save template</button></div>
   </Modal>;
 }
