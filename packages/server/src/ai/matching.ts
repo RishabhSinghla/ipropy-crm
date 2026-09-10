@@ -9,7 +9,7 @@
 import { formatArea, formatIndianPrice, type PropertyMatch, toSqFt } from '@ipropy/shared';
 import { recordScopeSql, type ScopeContext } from '../core/permissions/index.js';
 import { scoringThresholds } from '../core/settings/scoring.js';
-import { matchingConfig, pairFor, type MatchingConfig } from '../core/settings/matching.js';
+import { matchingConfig, pairFor, mappedValue, type MatchingConfig } from '../core/settings/matching.js';
 import { SqlParams } from '../core/query/builder.js';
 import { db } from '../db/pool.js';
 import { completeJson, isAiAvailable, saveInsight, REAL_ESTATE_SYSTEM } from './client.js';
@@ -24,7 +24,8 @@ import { completeJson, isAiAvailable, saveInsight, REAL_ESTATE_SYSTEM } from './
  * SQL-injection surface opening up.
  */
 function bedroomPropertyField(config: MatchingConfig): string {
-  return pairFor(config, 'configuration')?.propertyField || 'bedrooms';
+  const pair = pairFor(config, 'configuration');
+  return pair?.propertyColumn ?? pair?.propertyField ?? 'bedrooms';
 }
 
 /**
@@ -38,7 +39,8 @@ function bedroomPropertyField(config: MatchingConfig): string {
  * value" rather than taking the whole query down.
  */
 function areaPropertyField(config: MatchingConfig): string {
-  return pairFor(config, 'area')?.propertyField || 'area';
+  const pair = pairFor(config, 'area');
+  return pair?.propertyColumn ?? pair?.propertyField ?? 'area';
 }
 
 function parsedBedrooms(row: PropertyRow): number | null {
@@ -437,9 +439,10 @@ function scoreProperty(row: PropertyRow, req: Requirement, config: MatchingConfi
   // tolerance logic; all other configured fields get a transparent, modest
   // score contribution from exact/contained values.
   for (const pair of config.fieldMap) {
-    if (['budget', 'configuration', 'preferred_locations', 'area'].includes(pair.contactField)) continue;
-    const wanted = req.rawValues?.[pair.contactField];
-    const offered = row.raw_values?.[pair.propertyField];
+    const contactColumn = pair.contactColumn ?? pair.contactField;
+    if (['budget', 'configuration', 'preferred_locations', 'area'].includes(contactColumn)) continue;
+    const wanted = mappedValue(req.rawValues, contactColumn, pair.contactStorage);
+    const offered = mappedValue(row.raw_values, pair.propertyColumn ?? pair.propertyField, pair.propertyStorage);
     if (wanted === null || wanted === undefined || wanted === '' || offered === null || offered === undefined || offered === '') continue;
     const numericTypes = new Set(['integer', 'decimal', 'currency', 'percent', 'area', 'score']);
     const isNumeric = numericTypes.has(pair.contactUitype ?? '') || numericTypes.has(pair.propertyUitype ?? '');

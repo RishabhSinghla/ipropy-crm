@@ -200,15 +200,39 @@ recordsRouter.post('/:module/export', asyncHandler(async (req, res) => {
   const module = await registry.requireModule(moduleName);
   const columns = resolveExportColumns(module, input.columns as ExportColumn[] | undefined);
   if (!columns.length) throw new BadRequestError('Choose at least one field to export.');
-  const result = await recordService.listRecords(scope, moduleName, {
-    filter: input.filter,
-    sortBy: input.sortBy,
-    sortDir: input.sortDir,
-    page: 1,
-    pageSize: 5000,
-  });
+  /*
+    Fetched in pages until the list is exhausted, not in one capped read.
+
+    A single `pageSize: 5000` looks fine on today's data and silently drops the
+    rest the moment the business outgrows it — an export that quietly stops at
+    row 5,000 is indistinguishable from a complete one, and "export everything"
+    is precisely when nobody counts. `EXPORT_MAX_ROWS` is a real ceiling, and
+    when it bites the response says so instead of leaving it to be discovered
+    in the spreadsheet.
+  */
+  const EXPORT_PAGE = 1000;
+  const EXPORT_MAX_ROWS = 100_000;
   const selected = input.selectedIds?.length ? new Set(input.selectedIds) : null;
-  const rows = selected ? result.rows.filter((row) => selected.has(row.id)) : result.rows;
+  const rows: Awaited<ReturnType<typeof recordService.listRecords>>['rows'] = [];
+  let truncated = false;
+  for (let page = 1; ; page += 1) {
+    const result = await recordService.listRecords(scope, moduleName, {
+      filter: input.filter,
+      sortBy: input.sortBy,
+      sortDir: input.sortDir,
+      page,
+      pageSize: EXPORT_PAGE,
+    });
+    rows.push(...(selected ? result.rows.filter((row) => selected.has(row.id)) : result.rows));
+    if (result.rows.length < EXPORT_PAGE) break;
+    if (rows.length >= EXPORT_MAX_ROWS) { truncated = true; break; }
+    // Every wanted record is already in hand; no need to walk the rest.
+    if (selected && rows.length >= selected.size) break;
+  }
+  if (truncated) {
+    logger.warn({ module: moduleName, userId: user.id, rows: rows.length }, 'export hit the row ceiling and was truncated');
+    res.setHeader('X-Export-Truncated', String(EXPORT_MAX_ROWS));
+  }
   const file = await buildExport(input.format, columns, rows);
   await recordService.writeAudit(db, {
     recordId: null, module: moduleName, userId: user.id, action: 'export',

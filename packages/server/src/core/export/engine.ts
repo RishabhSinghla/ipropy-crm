@@ -71,7 +71,10 @@ export async function buildExport(
       const cell = added.getCell(index + 1);
       if (column.field.uitype === 'phone') cell.numFmt = '@';
       if (column.field.uitype === 'currency') cell.numFmt = '[$₹-en-IN]#,##0.00';
-      if (column.field.uitype === 'percent') cell.numFmt = '0.00%';
+      // A literal sign, not Excel's `%` format, which multiplies by a hundred.
+      // A percent is stored here as the number a person reads — GST is `5`, and
+      // `0.00%` would print that as 500.00%.
+      if (column.field.uitype === 'percent') cell.numFmt = '0.00"%"';
       if (column.field.uitype === 'date') cell.numFmt = 'dd-mmm-yyyy';
       if (column.field.uitype === 'datetime') cell.numFmt = 'dd-mmm-yyyy hh:mm';
     });

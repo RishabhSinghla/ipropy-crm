@@ -78,6 +78,13 @@ CREATE INDEX IF NOT EXISTS idx_field_mapping_lookup
   WHERE is_active;
 
 -- Keep current matching choices while moving their identity to Field IDs.
+--
+-- The old setting stored *column* names — it was written when matching named
+-- SQL columns directly, and `base_price`/`locality`/`carpet_area` are columns
+-- on production whose fields have since been renamed to `demand`,
+-- `preferred_locations` and `area_size`. So the column is matched first and
+-- the name only as a fallback, for a field whose value is stored in JSON and
+-- therefore has no column of its own to be named by.
 INSERT INTO ipy_field_mapping (
   source_module_id, target_module_id, source_field_internal_id,
   target_field_internal_id, purpose, config, is_active
@@ -88,7 +95,22 @@ SELECT sm.id, tm.id, sf.internal_id, tf.internal_id,
   JOIN ipy_module sm ON sm.name = 'leads'
   JOIN ipy_module tm ON tm.name = 'properties'
  CROSS JOIN LATERAL jsonb_array_elements(COALESCE(s.value, '[]'::jsonb)) entry
-  JOIN ipy_field sf ON sf.module_id = sm.id AND sf.name = entry->>'contactField'
-  JOIN ipy_field tf ON tf.module_id = tm.id AND tf.name = entry->>'propertyField'
+ -- One row each, column before name, so a CRM that happens to hold both a
+ -- field called `locality` and a different field stored in the `locality`
+ -- column resolves to the same one every time it is run.
+ CROSS JOIN LATERAL (
+   SELECT f.internal_id FROM ipy_field f
+    WHERE f.module_id = sm.id AND f.is_active
+      AND (f.column_name = entry->>'contactField' OR f.name = entry->>'contactField')
+    ORDER BY (f.column_name = entry->>'contactField') DESC
+    LIMIT 1
+ ) sf
+ CROSS JOIN LATERAL (
+   SELECT f.internal_id FROM ipy_field f
+    WHERE f.module_id = tm.id AND f.is_active
+      AND (f.column_name = entry->>'propertyField' OR f.name = entry->>'propertyField')
+    ORDER BY (f.column_name = entry->>'propertyField') DESC
+    LIMIT 1
+ ) tf
  WHERE s.key = 'matching.field_map'
 ON CONFLICT DO NOTHING;

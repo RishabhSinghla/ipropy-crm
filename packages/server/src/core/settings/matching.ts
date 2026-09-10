@@ -27,6 +27,20 @@ export interface MatchFieldPair {
   /** Permanent field IDs persisted in the mapping table. */
   contactFieldId?: string;
   propertyFieldId?: string;
+  /*
+    Where the value actually lives.
+
+    `contactField`/`propertyField` are field *names*, and a name is the one
+    thing on a field that changes — renaming is routine here. The payload row
+    is keyed by `column_name`, which never changes, so every read of a value
+    goes through these and never through the name. On a CRM where nobody has
+    renamed anything the two are identical, which is exactly why reading the
+    name appeared to work.
+  */
+  contactColumn?: string;
+  propertyColumn?: string;
+  contactStorage?: 'column' | 'json';
+  propertyStorage?: 'column' | 'json';
   contactLabel?: string;
   propertyLabel?: string;
   contactUitype?: string;
@@ -93,6 +107,10 @@ export async function matchingConfig(): Promise<MatchingConfig> {
       return contact && property ? [{
         contactField: contact.name,
         propertyField: property.name,
+        contactColumn: contact.columnName,
+        propertyColumn: property.columnName,
+        contactStorage: contact.storage,
+        propertyStorage: property.storage,
         contactFieldId: contact.internalId,
         propertyFieldId: property.internalId,
         contactLabel: contact.label,
@@ -130,7 +148,32 @@ export async function matchingConfig(): Promise<MatchingConfig> {
   }
 }
 
-/** The admin-configured pair for a given contact field, if there is one. */
-export function pairFor(config: MatchingConfig, contactField: string): MatchFieldPair | undefined {
-  return config.fieldMap.find((p) => p.contactField === contactField);
+/**
+ * The admin-configured pair for one of the built-in contact fields.
+ *
+ * Matched on the column rather than the name for the same reason the pair
+ * carries a column at all: `budget` the name can become `Client Budget`, and
+ * the built-in scoring must keep finding it. Legacy pairs, which predate the
+ * mapping table, stored the column in the name slot already.
+ */
+export function pairFor(config: MatchingConfig, contactColumn: string): MatchFieldPair | undefined {
+  return config.fieldMap.find((p) => (p.contactColumn ?? p.contactField) === contactColumn);
+}
+
+/**
+ * A mapped value out of a payload row, by the same rule the record service
+ * uses: column-backed fields sit on the row, JSON-backed fields sit inside
+ * `custom_fields`, and both are keyed by `column_name`.
+ */
+export function mappedValue(
+  raw: Record<string, unknown> | undefined,
+  column: string | undefined,
+  storage: 'column' | 'json' | undefined,
+): unknown {
+  if (!raw || !column) return undefined;
+  if (storage === 'json') {
+    const custom = (raw.custom_fields ?? {}) as Record<string, unknown>;
+    return custom[column];
+  }
+  return raw[column];
 }

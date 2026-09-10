@@ -1107,9 +1107,12 @@ metadataRouter.delete('/fields/:id', asyncHandler(async (req, res) => {
     await transaction(async (tx) => {
       await tx.query(`UPDATE ipy_field SET is_active = false, display_type = 'hidden' WHERE id = $1`, [req.params.id]);
       await removeFieldFromLayouts(tx, field.module_id, field.name);
+      // 'deleted', not 'hidden': the audit vocabulary pairs it with 'restored',
+      // and 'hidden' is not in the table's CHECK — which made every ordinary
+      // field deletion fail with a 500 after the row had already been updated.
       await tx.query(
         `INSERT INTO ipy_field_change (module_id, field_internal_id, action, before_value, user_id)
-         VALUES ($1,$2,'hidden',$3,$4)`,
+         VALUES ($1,$2,'deleted',$3,$4)`,
         [field.module_id, field.internal_id, JSON.stringify({ label: field.label, name: field.name }), user.id],
       );
     });

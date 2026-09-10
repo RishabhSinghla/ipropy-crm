@@ -218,11 +218,42 @@ describe('metadata field administration', () => {
         .expect(200);
       expect(withCustom.body.fields.some((f: { name: string }) => f.name === name)).toBe(true);
 
+      // An ordinary delete is a soft delete now, for a custom field as much as
+      // a built-in one: it goes to the recycle bin with its values intact and
+      // comes back whole. Removing it for good is a separate, explicit act.
       const removed = await request(app)
         .delete(`/api/meta/fields/${customId}`)
         .set('Authorization', `Bearer ${adminToken}`)
         .expect(200);
-      expect(removed.body.deleted).toBe(true);
+      expect(removed.body.deactivated).toBe(true);
+
+      const binned = await request(app)
+        .get('/api/meta/modules/leads?includeInactive=true')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(binned.body.fields.find((f: { name: string }) => f.name === name))
+        .toMatchObject({ isActive: false, displayType: 'hidden' });
+
+      await request(app)
+        .patch(`/api/meta/fields/${customId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ isActive: true })
+        .expect(200);
+      const restoredCustom = await request(app)
+        .get('/api/meta/modules/leads')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(restoredCustom.body.fields.some((f: { name: string }) => f.name === name)).toBe(true);
+
+      await request(app)
+        .delete(`/api/meta/fields/${customId}?permanent=true`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      const gone = await request(app)
+        .get('/api/meta/modules/leads?includeInactive=true')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(gone.body.fields.some((f: { name: string }) => f.name === name)).toBe(false);
       customId = undefined;
 
       const hidden = await request(app)
@@ -252,7 +283,7 @@ describe('metadata field administration', () => {
     } finally {
       if (customId) {
         await request(app)
-          .delete(`/api/meta/fields/${customId}`)
+          .delete(`/api/meta/fields/${customId}?permanent=true`)
           .set('Authorization', `Bearer ${adminToken}`);
       }
       if (builtIn) {
