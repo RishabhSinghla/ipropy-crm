@@ -3,6 +3,7 @@ import { invalidatePublicFields } from './public.js';
 import { z } from 'zod';
 import { UITYPE_LIST, UITYPES } from '@ipropy/shared';
 import { db, transaction, type Tx } from '../../db/pool.js';
+import { logger } from '../../utils/logger.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { blockApiKey, getUser, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, ConflictError, NotFoundError } from '../../utils/errors.js';
@@ -705,10 +706,43 @@ metadataRouter.post('/modules/:name/fields', asyncHandler(async (req, res) => {
      ON CONFLICT DO NOTHING`,
     [row!.id],
   );
+  /*
+    Re-creating a field that was permanently deleted brings its values back.
+
+    The delete archived them into `ipy_dropped_column` keyed on the table and
+    the column/JSON key. A new field created here is JSON-backed under its own
+    name, so an admin who deletes `demand` by mistake and creates `demand`
+    again gets the asking prices back rather than an empty column and a
+    tombstone saying how many there used to be. Restoring consumes the archive,
+    so it happens once and cannot resurrect stale values later.
+  */
+  let restored = 0;
+  const archived = await db.queryOne<{ count: string }>(
+    `SELECT COUNT(*)::text AS count FROM ipy_dropped_column WHERE table_name = $1 AND column_name = $2`,
+    [module.tableName, input.name],
+  ).catch(() => null);
+  if (Number(archived?.count ?? 0) > 0) {
+    restored = await transaction(async (tx) => {
+      const res = await tx.query(
+        `UPDATE ${module.tableName} t
+            SET custom_fields = COALESCE(t.custom_fields, '{}'::jsonb)
+                              || jsonb_build_object($2::text, d.value)
+           FROM ipy_dropped_column d
+          WHERE d.table_name = $1 AND d.column_name = $2
+            AND d.record_id = t.record_id AND d.value IS NOT NULL`,
+        [module.tableName, input.name],
+      );
+      await tx.query(`DELETE FROM ipy_dropped_column WHERE table_name = $1 AND column_name = $2`,
+        [module.tableName, input.name]);
+      return res.rowCount ?? 0;
+    });
+    logger.info({ module: module.name, field: input.name, restored }, 'restored values archived by a permanent delete');
+  }
+
   await db.query(
     `INSERT INTO ipy_field_change (module_id, field_internal_id, action, after_value, user_id)
      VALUES ($1,$2,'created',$3,$4)`,
-    [module.id, row!.internal_id, JSON.stringify({ label: input.label, name: input.name, uitype: input.uitype }), getUser(req).id],
+    [module.id, row!.internal_id, JSON.stringify({ label: input.label, name: input.name, uitype: input.uitype, restored }), getUser(req).id],
   );
 
   invalidateAll();
@@ -1195,6 +1229,30 @@ metadataRouter.delete('/fields/:id', asyncHandler(async (req, res) => {
       [field.module_id, field.internal_id, permanent ? 'permanently_deleted' : 'deleted',
         JSON.stringify({ label: field.label, name: field.name }), user.id],
     );
+
+    /*
+      Every value is copied out before it is destroyed.
+
+      A permanent delete is allowed to be permanent, but "permanent" should
+      mean the field is gone, not that the business has lost the numbers. This
+      path used to COUNT the values into `had_values` and then drop them, so a
+      mis-click on Properties → Demand took every asking price on the books
+      with it and left a tally of how many had been lost. `ipy_dropped_column`
+      already existed for the migration that sweeps dead columns; it is the
+      same archive, and re-creating a field on the same column pours them back.
+    */
+    if (module && hadValues > 0) {
+      await tx.query(
+        field.storage === 'json'
+          ? `INSERT INTO ipy_dropped_column (table_name, column_name, record_id, value)
+             SELECT $1, $2, record_id, custom_fields->>$2 FROM ${module.tableName}
+              WHERE custom_fields ? $2`
+          : `INSERT INTO ipy_dropped_column (table_name, column_name, record_id, value)
+             SELECT $1, $2, record_id, ${quoteIdent(field.column_name)}::text FROM ${module.tableName}
+              WHERE ${quoteIdent(field.column_name)} IS NOT NULL`,
+        [module.tableName, field.column_name],
+      );
+    }
 
     if (module && field.storage === 'json') {
       // Reclaim the stored values so the JSONB doesn't accumulate dead keys.
