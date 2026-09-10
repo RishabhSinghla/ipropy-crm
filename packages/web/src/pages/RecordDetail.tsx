@@ -644,7 +644,7 @@ function OverviewTab({
             </button>
 
             {!isCollapsed && (
-              <div className={cn(
+              <dl className={cn(
                 'grid gap-3 p-3 sm:p-4',
                 block.columns === 1 ? 'grid-cols-1' : block.columns === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2',
               )}>
@@ -685,7 +685,7 @@ function OverviewTab({
                     </div>
                   </div>
                 ))}
-              </div>
+              </dl>
             )}
           </div>
         );
