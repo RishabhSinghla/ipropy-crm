@@ -43,6 +43,39 @@ function areaPropertyField(config: MatchingConfig): string {
   return pair?.propertyColumn ?? pair?.propertyField ?? 'area';
 }
 
+/**
+ * Where the property's price lives, according to the Budget mapping.
+ *
+ * This used to be `total_price` and `base_price`, read from the top level of
+ * `to_jsonb(p)` and nowhere else. Both are built-in columns, and an admin who
+ * retires them and creates their own price field — `asking_price`, say — gets
+ * a field the record shows, the export contains, the mapping screen points
+ * Budget at, and matching cannot see. Worse than invisible: the SQL band is
+ * `COALESCE(total, base) <= :max`, and NULL fails that comparison, so *every*
+ * property drops out for any contact who stated a budget. Matching answers
+ * "nothing suitable" for the whole desk and looks like bad scoring.
+ *
+ * An admin-created field is JSON-backed, so its value is inside
+ * `custom_fields` rather than on the row — the same rule `recordService` uses.
+ */
+function pricePropertyField(config: MatchingConfig): { column: string; storage: 'column' | 'json' } {
+  const pair = pairFor(config, 'budget');
+  const column = pair?.propertyColumn ?? pair?.propertyField;
+  return column
+    ? { column, storage: pair?.propertyStorage === 'json' ? 'json' : 'column' }
+    : { column: 'base_price', storage: 'column' };
+}
+
+/** The SQL for that field, with the built-in columns as a fallback. */
+function priceSql(price: { column: string; storage: 'column' | 'json' }, columnParam: string): string {
+  const mapped = price.storage === 'json'
+    ? `ipy_try_numeric(to_jsonb(p)->'custom_fields'->>${columnParam})`
+    : `ipy_try_numeric(to_jsonb(p)->>${columnParam})`;
+  return `COALESCE(${mapped},
+             ipy_try_numeric(to_jsonb(p)->>'total_price'),
+             ipy_try_numeric(to_jsonb(p)->>'base_price'))`;
+}
+
 function parsedBedrooms(row: PropertyRow): number | null {
   if (row.matched_bedrooms_raw == null) return null;
   const n = Number(row.matched_bedrooms_raw);
@@ -99,6 +132,8 @@ interface PropertyRow {
   area_unit: string | null;
   total_price: number | null;
   base_price: number | null;
+  /** The field Budget is mapped to, wherever it is stored. */
+  matched_price: number | null;
   floor: number | null;
   facing: string | null;
   vastu_compliant: boolean | null;
@@ -137,7 +172,10 @@ function toPropertyRow(
   label: string,
   bedroomField: string,
   areaField: string,
+  price: { column: string; storage: 'column' | 'json' } = { column: 'base_price', storage: 'column' },
 ): PropertyRow {
+  const custom = (raw.custom_fields ?? {}) as Record<string, unknown>;
+  const mappedPrice = price.storage === 'json' ? custom[price.column] : raw[price.column];
   return {
     record_id: String(raw.record_id),
     label,
@@ -147,6 +185,7 @@ function toPropertyRow(
     area_unit: str(raw.area_unit),
     total_price: num(raw.total_price),
     base_price: num(raw.base_price),
+    matched_price: num(mappedPrice),
     floor: num(raw.floor),
     facing: str(raw.facing),
     vastu_compliant: raw.vastu_compliant === true,
@@ -260,6 +299,7 @@ async function queryInventory(req: Requirement, config: MatchingConfig, limit: n
   const maxPrice = req.budget ? req.budget * (1 + grace) : null;
   const minPrice = req.budget ? req.budget * (1 - grace) : null;
   const bedroomField = bedroomPropertyField(config);
+  const price = pricePropertyField(config);
   const wantedBedrooms = toList(req.configurations).map(bhkNumber).filter((n): n is number => n !== null);
 
   // One accumulator for the whole statement: the scope fragment appends its
@@ -273,6 +313,10 @@ async function queryInventory(req: Requirement, config: MatchingConfig, limit: n
   const wantedBedroomsP = params.add(wantedBedrooms.length ? wantedBedrooms : [-1]);
   const locations = toList(req.locations);
   const locationP = params.add(locations.length ? locations : ['']);
+  // Bound, not interpolated — the column comes from metadata, and the same
+  // contract the bedroom and area fields already have keeps it that way.
+  const priceColumnP = params.add(price.column);
+  const priceExpr = priceSql(price, priceColumnP);
   // The permission fragment for the candidate rows, or nothing when this
   // caller can see the whole table — a workflow or the scheduler has no user.
   const scopeSql = scope
@@ -297,12 +341,8 @@ async function queryInventory(req: Requirement, config: MatchingConfig, limit: n
      JOIN ipy_record r ON r.id = p.record_id
      WHERE r.is_deleted = false
        AND to_jsonb(p)->>'status' = 'Available'
-       AND (${maxP}::numeric IS NULL OR COALESCE(
-             ipy_try_numeric(to_jsonb(p)->>'total_price'),
-             ipy_try_numeric(to_jsonb(p)->>'base_price')) <= ${maxP})
-       AND (${minP}::numeric IS NULL OR COALESCE(
-             ipy_try_numeric(to_jsonb(p)->>'total_price'),
-             ipy_try_numeric(to_jsonb(p)->>'base_price')) >= ${minP})
+       AND (${maxP}::numeric IS NULL OR ${priceExpr} <= ${maxP})
+       AND (${minP}::numeric IS NULL OR ${priceExpr} >= ${minP})
        AND (${projectP}::text IS NULL OR to_jsonb(p)->>'project_name' ILIKE ${projectP})
        ${scopeSql}
      -- Relevance before price, for the same reason the reverse match orders by
@@ -314,13 +354,11 @@ async function queryInventory(req: Requirement, config: MatchingConfig, limit: n
      -- among equally suitable units the cheaper one is the better pitch.
      ORDER BY (ipy_try_numeric(to_jsonb(p)->>${bedroomFieldP}) = ANY(${wantedBedroomsP}::numeric[])) DESC NULLS LAST,
               (to_jsonb(p)->>'locality' = ANY(${locationP}::text[])) DESC NULLS LAST,
-              COALESCE(
-                ipy_try_numeric(to_jsonb(p)->>'total_price'),
-                ipy_try_numeric(to_jsonb(p)->>'base_price')) ASC NULLS LAST
+              ${priceExpr} ASC NULLS LAST
      LIMIT ${limitP}`,
     params.all(),
   );
-  return res.rows.map((r) => toPropertyRow(r.row, r.label, bedroomField, areaField));
+  return res.rows.map((r) => toPropertyRow(r.row, r.label, bedroomField, areaField, price));
 }
 
 interface ScoredProperty {
@@ -334,7 +372,7 @@ function scoreProperty(row: PropertyRow, req: Requirement, config: MatchingConfi
   let score = 50;
   const reasons: string[] = [];
   const mismatches: string[] = [];
-  const price = row.total_price ?? row.base_price ?? 0;
+  const price = row.matched_price ?? row.total_price ?? row.base_price ?? 0;
   // Admin-set (Admin → Matching Setup, default 10%). Replaces what used to be
   // three hardcoded numbers (0.9/1.05/0.7) scaled off a single fixed 10%.
   const grace = config.priceGracePercent / 100;
@@ -536,7 +574,7 @@ export async function matchProperties(
     reasons: s.reasons,
     mismatches: s.mismatches,
     projectName: s.row.project_name ?? undefined,
-    price: s.row.total_price ?? s.row.base_price ?? undefined,
+    price: s.row.matched_price ?? s.row.total_price ?? s.row.base_price ?? undefined,
     bedrooms: parsedBedrooms(s.row),
   }));
 
@@ -581,7 +619,7 @@ Here are the shortlisted units with their computed fit scores:
 ${scored.map((s, i) => `### ${i + 1}. ${s.row.label} (score ${s.score})
 - Project: ${s.row.project_name ?? '—'}
 - Bedrooms: ${parsedBedrooms(s.row) ?? '—'}, ${formatArea(s.row.matched_area, s.row.area_unit ?? 'sqft')}
-- Price: ${formatIndianPrice(s.row.total_price ?? s.row.base_price ?? 0)}
+- Price: ${formatIndianPrice(s.row.matched_price ?? s.row.total_price ?? s.row.base_price ?? 0)}
 - Floor ${s.row.floor ?? '—'}, ${s.row.facing ?? '—'} facing${s.row.corner_unit ? ', corner unit' : ''}
 - Location: ${s.row.locality ?? '—'}, ${s.row.city ?? '—'}
 - Possession: ${s.row.possession_status ?? '—'}${s.row.possession_date ? ` (${s.row.possession_date})` : ''}
@@ -616,7 +654,7 @@ Return JSON:
       reasons: enriched?.reasons?.length ? enriched.reasons : s.reasons,
       mismatches: enriched?.mismatches?.length ? enriched.mismatches : s.mismatches,
       projectName: s.row.project_name ?? undefined,
-      price: s.row.total_price ?? s.row.base_price ?? undefined,
+      price: s.row.matched_price ?? s.row.total_price ?? s.row.base_price ?? undefined,
       bedrooms: parsedBedrooms(s.row),
     };
   });
@@ -651,7 +689,7 @@ function revivalReason(
   req: Requirement,
 ): string | null {
   if (!lostReason) return null;
-  const price = property.total_price ?? property.base_price ?? 0;
+  const price = property.matched_price ?? property.total_price ?? property.base_price ?? 0;
   const inBudget = Boolean(req.budget && price && price <= req.budget);
 
   switch (lostReason) {
@@ -753,6 +791,7 @@ export async function matchBuyersForProperty(
   const [{ matchFloor }, config] = await Promise.all([scoringThresholds(), matchingConfig()]);
   const bedroomField = bedroomPropertyField(config);
   const areaField = areaPropertyField(config);
+  const priceField = pricePropertyField(config);
   const propertyRaw = await db.queryOne<{ record_id: string; label: string; row: Record<string, unknown> }>(
     `SELECT p.record_id, r.label, to_jsonb(p) AS row
      FROM ipy_e_properties p JOIN ipy_record r ON r.id = p.record_id
@@ -760,9 +799,9 @@ export async function matchBuyersForProperty(
     [propertyId],
   );
   if (!propertyRaw) return [];
-  const property = toPropertyRow(propertyRaw.row, propertyRaw.label, bedroomField, areaField);
+  const property = toPropertyRow(propertyRaw.row, propertyRaw.label, bedroomField, areaField, priceField);
 
-  const price = property.total_price ?? property.base_price ?? 0;
+  const price = property.matched_price ?? property.total_price ?? property.base_price ?? 0;
 
   // One accumulator: the scope fragment appends its own params after these.
   const params = new SqlParams();
