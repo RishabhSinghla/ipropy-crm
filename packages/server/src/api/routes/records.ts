@@ -219,6 +219,43 @@ recordsRouter.post('/:module/export', asyncHandler(async (req, res) => {
   res.send(file.content);
 }));
 
+/** Saved exports retain Field IDs, so a field rename never breaks a template. */
+recordsRouter.get('/:module/export/templates', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const module = await registry.requireModule(req.params.module);
+  const perm = await getModulePermission(user, module.name);
+  if (!perm.export) throw new ForbiddenError('You do not have permission to export this module');
+  const rows = await db.query(
+    `SELECT id, name, columns, filter, is_default AS "isDefault", created_at AS "createdAt", updated_at AS "updatedAt"
+       FROM ipy_export_template WHERE module_id = $1 ORDER BY is_default DESC, name`, [module.id],
+  );
+  res.json(rows.rows);
+}));
+
+recordsRouter.post('/:module/export/templates', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const module = await registry.requireModule(req.params.module);
+  const perm = await getModulePermission(user, module.name);
+  if (!perm.export) throw new ForbiddenError('You do not have permission to export this module');
+  const input = z.object({
+    name: z.string().min(1).max(120),
+    columns: z.array(z.object({ fieldId: z.string().regex(/^fld_[A-Za-z0-9]+$/), header: z.string().max(120).optional() })).min(1).max(200),
+    filter: filterSchema.optional(), isDefault: z.boolean().default(false),
+  }).parse(req.body ?? {});
+  if (resolveExportColumns(module, input.columns).length !== input.columns.length) {
+    throw new BadRequestError('One or more selected fields are no longer available to export.');
+  }
+  const row = await transaction(async (tx) => {
+    if (input.isDefault) await tx.query(`UPDATE ipy_export_template SET is_default = false WHERE module_id = $1`, [module.id]);
+    return tx.queryOne<{ id: string }>(
+      `INSERT INTO ipy_export_template (module_id, name, columns, filter, is_default, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+      [module.id, input.name, JSON.stringify(input.columns), input.filter ? JSON.stringify(input.filter) : null, input.isDefault, user.id],
+    );
+  });
+  res.status(201).json({ id: row!.id });
+}));
+
 // ---------------------------------------------------------------------------
 // Create
 // ---------------------------------------------------------------------------
