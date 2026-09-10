@@ -649,6 +649,22 @@ metadataRouter.post('/modules/:name/fields', asyncHandler(async (req, res) => {
     ],
   );
 
+  // An amount without its unit is ambiguous. Creating a field linked to either
+  // reusable unit master automatically creates the hidden companion value the
+  // combined control stores. It is still metadata (not a hardcoded module
+  // column), therefore Required Area, Terrace Area and any future field all
+  // work the same way.
+  const unitMaster = input.config.unitMaster;
+  const unitField = typeof input.config.unitField === 'string' ? input.config.unitField : null;
+  if ((unitMaster === 'area' || unitMaster === 'budget_demand') && unitField && !module.fields.some((f) => f.name === unitField)) {
+    await db.query(
+      `INSERT INTO ipy_field (module_id, block_id, name, label, uitype, storage, column_name, sequence,
+         is_custom, display_type, default_value, config, quick_create, mass_editable, searchable)
+       VALUES ($1,$2,$3,$4,'string','json',$3,$5,true,'hidden',$6,'{}',false,false,false)`,
+      [module.id, blockId, unitField, `${input.label} Unit`, seq + 1, JSON.stringify(unitMaster === 'area' ? 'sqft' : 'total')],
+    );
+  }
+
   // Custom fields start editable for the Administrator profile only; other
   // profiles opt in explicitly so nothing sensitive leaks by default.
   await db.query(

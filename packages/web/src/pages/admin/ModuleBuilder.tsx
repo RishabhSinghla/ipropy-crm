@@ -808,7 +808,7 @@ function FieldEditor({
    * editor offers a box for that code rather than a table of countries nobody
    * in this business dials.
    */
-  const supportsOptionList = uitype === 'area';
+  const supportsOptionList = false;
   /** Only a scalar can be compared to another field of the same kind. */
   const comparable = COMPARABLE.includes(uitype);
 
@@ -878,8 +878,15 @@ function FieldEditor({
         if (patternMessage) config.patternMessage = patternMessage; else clear('patternMessage');
       } else { clear('pattern'); clear('patternMessage'); }
 
-      if (supportsOptionList) {
-        if (listOptions.length) config.unitOptions = listOptions; else clear('unitOptions');
+      if (uitype === 'area') {
+        config.unitMaster = 'area';
+        config.unitField = String(config.unitField ?? `${name}_unit`);
+        clear('unitOptions');
+      }
+      if (uitype === 'currency') {
+        config.unitMaster = 'budget_demand';
+        config.unitField = String(config.unitField ?? `${name}_unit`);
+        clear('unitOptions');
       }
       if (uitype === 'phone') {
         if (codePrefix.trim()) config.codePrefix = codePrefix.trim(); else clear('codePrefix');
@@ -1296,18 +1303,11 @@ function FieldEditor({
                 </div>
               )}
 
-              {/* --- the unit / country-code list ------------------------ */}
-              {supportsOptionList && (
-                <OptionListEditor
-                  title={uitype === 'area' ? 'Units offered' : 'Country codes offered'}
-                  hint={uitype === 'area'
-                    ? 'The dropdown beside the number. First one is the default.'
-                    : 'The dropdown beside the mobile number. First one is the default.'}
-                  options={listOptions}
-                  onChange={setListOptions}
-                  valuePlaceholder={uitype === 'area' ? 'sqyd' : '+971'}
-                  labelPlaceholder={uitype === 'area' ? 'Sq.yd.' : 'UAE +971'}
-                />
+              {(uitype === 'area' || uitype === 'currency') && (
+                <div className="rounded-lg border border-slate-200 p-3 text-xs dark:border-slate-700">
+                  <p className="font-medium">Shared unit master</p>
+                  <p className="mt-1 text-muted">This field automatically uses the {uitype === 'area' ? 'Area / Size' : 'Budget / Demand'} Unit Master. Add or change units from Admin → Area & Pricing Units.</p>
+                </div>
               )}
 
               {codePicklist && (
