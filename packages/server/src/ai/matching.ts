@@ -441,10 +441,23 @@ function scoreProperty(row: PropertyRow, req: Requirement, config: MatchingConfi
     const wanted = req.rawValues?.[pair.contactField];
     const offered = row.raw_values?.[pair.propertyField];
     if (wanted === null || wanted === undefined || wanted === '' || offered === null || offered === undefined || offered === '') continue;
+    const numericTypes = new Set(['integer', 'decimal', 'currency', 'percent', 'area', 'score']);
+    const isNumeric = numericTypes.has(pair.contactUitype ?? '') || numericTypes.has(pair.propertyUitype ?? '');
     const want = (Array.isArray(wanted) ? wanted : [wanted]).map((v) => String(v).toLowerCase());
     const have = (Array.isArray(offered) ? offered : [offered]).map((v) => String(v).toLowerCase());
-    const matched = want.some((w) => have.some((h) => h === w || h.includes(w) || w.includes(h)));
     const label = pair.contactLabel ?? pair.contactField;
+    if (isNumeric) {
+      const wantedNumber = num(wanted);
+      const offeredNumber = num(offered);
+      if (wantedNumber == null || offeredNumber == null) continue;
+      const tolerance = (pair.contactUitype === 'area' || pair.propertyUitype === 'area'
+        ? config.areaGracePercent : config.priceGracePercent) / 100;
+      const variance = Math.abs(offeredNumber - wantedNumber) / Math.max(Math.abs(wantedNumber), 1);
+      if (variance <= tolerance) { score += 7; reasons.push(`${label} is within the configured tolerance`); }
+      else { score -= 4; mismatches.push(`${label} differs by ${Math.round(variance * 100)}%`); }
+      continue;
+    }
+    const matched = want.some((w) => have.some((h) => h === w || h.includes(w) || w.includes(h)));
     if (matched) { score += 7; reasons.push(`${label} matches`); }
     else { score -= 4; mismatches.push(`${label} does not match`); }
   }

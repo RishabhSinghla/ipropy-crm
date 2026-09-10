@@ -29,6 +29,8 @@ export interface MatchFieldPair {
   propertyFieldId?: string;
   contactLabel?: string;
   propertyLabel?: string;
+  contactUitype?: string;
+  propertyUitype?: string;
 }
 
 export interface MatchingConfig {
@@ -95,6 +97,8 @@ export async function matchingConfig(): Promise<MatchingConfig> {
         propertyFieldId: property.internalId,
         contactLabel: contact.label,
         propertyLabel: property.label,
+        contactUitype: contact.uitype,
+        propertyUitype: property.uitype,
       }] : [];
     });
 
