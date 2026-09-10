@@ -15,17 +15,21 @@ import type { IndustryTemplate } from './types.js';
  */
 
 /** The two units an Indian buyer's requirement is ever quoted in. */
-const AREA_UNITS = [
-  { value: 'sqft', label: 'Sq.ft.' },
-  { value: 'sqyd', label: 'Sq.yd.' },
-];
+/*
+  Area and price units live in `ipy_unit_master`, not here.
 
-/** What a price number is qualified by: per unit of area, or the whole thing. */
-const PRICE_UNITS = [
-  { value: 'sqft', label: 'Sq. ft.' },
-  { value: 'sqyd', label: 'Sq. yd.' },
-  { value: 'total', label: 'Total' },
-];
+  These used to be two literal arrays copied into every area and currency
+  field's `config.unitOptions`. The Area / Size Unit Master screen then edited
+  a different list, so an admin who added Bigha or Marla changed a table
+  nothing read — the form still offered Sq.ft. and Sq.yd., because each field
+  carried a frozen copy made when it was seeded.
+
+  Migration 118 tagged the fields with `unitMaster` to fix that, and the seed
+  undid it on the next cold start: `config` is replaced wholesale for any field
+  an admin has not customised, so the tag survived about an hour. Tagging them
+  here is what makes it stick. `registry.syncUnitMasters` fills `unitOptions`
+  from the master on every read, so the master is the only list.
+*/
 
 const MODULES: ModuleDef[] = [
   // =========================================================================
@@ -134,7 +138,7 @@ const MODULES: ModuleDef[] = [
           // The price box plus its qualifier — the same pair the area control
           // made. A budget is "₹8,500/sq.yd." or "₹1.5 Cr total"; the qualifier
           // changes what the number means, so it rides with it.
-          F.money('budget', 'Budget / Demand', { quickCreate: true, config: { min: 0, unitField: 'budget_unit', unitOptions: PRICE_UNITS } }),
+          F.money('budget', 'Budget / Demand', { quickCreate: true, config: { min: 0, unitField: 'budget_unit', unitMaster: 'budget_demand' } }),
           F.pick('budget_unit', 'Budget Unit', 'price_unit', { default: 'total', displayType: 'hidden' }),
           F.pick('budget_band', 'Budget Band', 'budget_band'),
           F.multipick('preferred_locations', 'Preferred Locations', 'locality'),
@@ -142,7 +146,7 @@ const MODULES: ModuleDef[] = [
           // 1200 sq.ft", not "between 1100 and 1300 carpet" — the range was two
           // fields collecting one answer, and neither carried the unit.
           F.area('area', 'Area', {
-            config: { min: 0, unitField: 'area_unit', unitOptions: AREA_UNITS },
+            config: { min: 0, unitField: 'area_unit', unitMaster: 'area' },
           }),
           F.pick('area_unit', 'Area Unit', 'area_unit', { default: 'sqft', displayType: 'hidden' }),
           F.pick('possession_timeline', 'Possession Timeline', 'purchase_timeline'),
@@ -421,7 +425,7 @@ const MODULES: ModuleDef[] = [
           // (migration 113); its values became this one.
           F.area('area', 'Area / Size', {
             quickCreate: true,
-            config: { min: 0, unitField: 'area_unit', unitOptions: AREA_UNITS },
+            config: { min: 0, unitField: 'area_unit', unitMaster: 'area' },
           }),
           F.area('built_up_area', 'Built-up Area'),
           F.area('super_built_up_area', 'Super Built-up Area'),
@@ -439,7 +443,7 @@ const MODULES: ModuleDef[] = [
           // budget/budget_unit pair on a contact, on the inventory side.
           F.money('demand', 'Demand', {
             quickCreate: true,
-            config: { min: 0, unitField: 'demand_unit', unitOptions: PRICE_UNITS },
+            config: { min: 0, unitField: 'demand_unit', unitMaster: 'budget_demand' },
           }),
           F.pick('demand_unit', 'Demand Unit', 'price_unit', { default: 'total', displayType: 'hidden' }),
           F.money('base_price', 'Base Price', { quickCreate: true }),
