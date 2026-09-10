@@ -264,6 +264,18 @@ export interface PropertyShareAdminConfig {
   showPhotos: boolean;
 }
 
+export interface MatchingFieldPair {
+  contactField: string;
+  propertyField: string;
+}
+
+export interface MatchingAdminConfig {
+  fieldMap: MatchingFieldPair[];
+  priceGracePercent: number;
+  contactFields: { name: string; label: string; uitype: string }[];
+  propertyFields: { name: string; label: string; uitype: string }[];
+}
+
 /** A site visit — see server/src/core/capture/sessions.ts. */
 export interface CaptureSession {
   /** Whether a gate recording exists and how far transcription got. */
@@ -763,7 +775,8 @@ export const api = {
     post(`/api/dashboards/${dashboardId}/layout`, { widgets }),
 
   // --- admin --------------------------------------------------------------
-  users: (includeInactive = false) => get<Record<string, unknown>[]>(`/api/admin/users${qs({ includeInactive })}`),
+  users: (includeInactive = false, adminOnly = false) =>
+    get<Record<string, unknown>[]>(`/api/admin/users${qs({ includeInactive, adminOnly })}`),
   createUser: (data: Record<string, unknown>) => post('/api/admin/users', data),
   updateUser: (id: string, data: Record<string, unknown>) => patch(`/api/admin/users/${id}`, data),
   roles: () => get<{ tree: Record<string, unknown>[]; flat: Record<string, unknown>[] }>('/api/admin/roles'),
@@ -779,6 +792,7 @@ export const api = {
     put<PropertyShareAdminConfig>('/api/admin/sharing/property-link', data),
   settings: (category?: string) => get<Record<string, unknown>[]>(`/api/admin/settings${qs({ category })}`),
   saveSettings: (settings: Record<string, unknown>) => put('/api/admin/settings', { settings }),
+  matchingConfig: () => get<MatchingAdminConfig>('/api/admin/matching-config'),
   auditLog: (params: Record<string, unknown> = {}) => get<Record<string, unknown>[]>(`/api/admin/audit${qs(params)}`),
   systemHealth: () => get<Record<string, unknown>>('/api/admin/health'),
   integrations: () => get<IntegrationSummary[]>('/api/admin/integrations'),
@@ -882,7 +896,7 @@ export const api = {
     checks: { id: string; title: string; status: 'ok' | 'warn' | 'fail' | 'unknown'; detail: string; fix?: string }[];
   }>('/api/admin/readiness'),
   /** What your own comparable units were listed at — for the shape being typed. */
-  comparables: (input: { locality: string; configuration: string; carpetArea?: number; excludeRecordId?: string }) =>
+  comparables: (input: { locality: string; bedrooms: number; carpetArea?: number; excludeRecordId?: string }) =>
     get<{ comparables: { summary: string; count: number; medianPrice: number } | null }>(
       `/api/ai/comparables${qs(input)}`,
     ),

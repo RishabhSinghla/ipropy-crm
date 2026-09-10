@@ -101,7 +101,7 @@ export function propertySummary(row: RecordEnvelope, opts: { full?: boolean } = 
 
   const core: [string, unknown][] = [
     ['Status', d.status ?? v.status],
-    ['Configuration', d.configuration ?? v.configuration],
+    ['Bedrooms', v.bedrooms],
     ['Price', indianPrice(v.total_price ?? v.base_price)],
     ['Carpet area', v.carpet_area ? `${v.carpet_area} sq ft` : null],
     ['Location', [v.locality, v.city].filter(Boolean).join(', ') || null],

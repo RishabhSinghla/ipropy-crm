@@ -1260,6 +1260,27 @@ export async function massDelete(
   return { deleted, failed };
 }
 
+/**
+ * Bulk reassignment may only hand records to an Administrator. A single
+ * reassign already goes through the normal owner-field picklist of users the
+ * caller can see; bulk moves an entire book of business in one click, with no
+ * per-record review, so it is scoped tighter on purpose — to the one role a
+ * departing or reorganising rep's records can always land on safely.
+ * Administrator is depth 0 in ipy_role.path (see rbac.ts), which is more
+ * robust to a role rename than matching on the name string.
+ */
+async function assertAdministratorRole(userId: string): Promise<void> {
+  const row = await db.queryOne<{ depth: number; is_admin: boolean }>(
+    `SELECT r.depth, u.is_admin
+       FROM ipy_user u LEFT JOIN ipy_role r ON r.id = u.role_id
+      WHERE u.id = $1`,
+    [userId],
+  );
+  if (!row || (row.depth !== 0 && !row.is_admin)) {
+    throw new ForbiddenError('Bulk reassignment can only be given to an Administrator');
+  }
+}
+
 export async function transferOwnership(
   ctx: ServiceContext,
   moduleName: string,
@@ -1267,6 +1288,9 @@ export async function transferOwnership(
   newOwnerId: string,
   ownerType: 'user' | 'group' = 'user',
 ): Promise<number> {
+  if (ownerType === 'user') {
+    await assertAdministratorRole(newOwnerId);
+  }
   let count = 0;
   for (const id of recordIds) {
     await updateRecord(ctx, moduleName, id, { owner_id: newOwnerId, owner_type: ownerType });

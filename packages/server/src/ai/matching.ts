@@ -9,9 +9,29 @@
 import { formatArea, formatIndianPrice, type PropertyMatch, toSqFt } from '@ipropy/shared';
 import { recordScopeSql, type ScopeContext } from '../core/permissions/index.js';
 import { scoringThresholds } from '../core/settings/scoring.js';
+import { matchingConfig, pairFor, type MatchingConfig } from '../core/settings/matching.js';
 import { SqlParams } from '../core/query/builder.js';
 import { db } from '../db/pool.js';
 import { completeJson, isAiAvailable, saveInsight, REAL_ESTATE_SYSTEM } from './client.js';
+
+/**
+ * The property field an admin has mapped "how many bedrooms" to — Admin →
+ * Matching Setup, defaulting to `bedrooms`. Read through `to_jsonb(p)->>…`
+ * with the key as a bound parameter rather than an identifier, so a
+ * mis-typed or since-deleted field name degrades to "no value" instead of a
+ * 42703 — the same contract `city`/`project_name` already get in this file —
+ * and so the admin can point this at any real column on Properties without a
+ * SQL-injection surface opening up.
+ */
+function bedroomPropertyField(config: MatchingConfig): string {
+  return pairFor(config, 'configuration')?.propertyField || 'bedrooms';
+}
+
+function parsedBedrooms(row: PropertyRow): number | null {
+  if (row.matched_bedrooms_raw == null) return null;
+  const n = Number(row.matched_bedrooms_raw);
+  return Number.isFinite(n) ? n : null;
+}
 
 export interface Requirement {
   /** One stated price. The old min/max pair folded into this single number. */
@@ -46,7 +66,8 @@ interface PropertyRow {
   record_id: string;
   label: string;
   name: string;
-  configuration: string | null;
+  /** Whatever the admin-mapped bedroom field holds, read as text — see `bedroomPropertyField`. */
+  matched_bedrooms_raw: string | null;
   carpet_area: number | null;
   area_unit: string | null;
   total_price: number | null;
@@ -62,7 +83,6 @@ interface PropertyRow {
   project_name: string | null;
   amenities: string[] | null;
   corner_unit: boolean;
-  bedrooms: number | null;
 }
 
 /** Pull the requirement off a lead or contact record. */
@@ -128,18 +148,20 @@ export async function loadRequirement(recordId: string): Promise<Requirement | n
  * Silence is the one answer that is never useful to somebody about to make a
  * call.
  */
-async function candidateInventory(req: Requirement, limit = 60, scope?: ScopeContext): Promise<PropertyRow[]> {
-  const withProject = await queryInventory(req, limit, scope);
+async function candidateInventory(req: Requirement, config: MatchingConfig, limit = 60, scope?: ScopeContext): Promise<PropertyRow[]> {
+  const withProject = await queryInventory(req, config, limit, scope);
   if (withProject.length || !req.projectName) return withProject;
-  return queryInventory({ ...req, projectName: null }, limit, scope);
+  return queryInventory({ ...req, projectName: null }, config, limit, scope);
 }
 
-async function queryInventory(req: Requirement, limit: number, scope?: ScopeContext): Promise<PropertyRow[]> {
-  // Allow 10% headroom over the stated number — buyers routinely stretch —
-  // and 20% underneath, where a smaller config of the same building still
-  // interests them.
-  const maxPrice = req.budget ? req.budget * 1.1 : null;
-  const minPrice = req.budget ? req.budget * 0.8 : null;
+async function queryInventory(req: Requirement, config: MatchingConfig, limit: number, scope?: ScopeContext): Promise<PropertyRow[]> {
+  // Grace is admin-set (Admin → Matching Setup, default 10%) and applied
+  // symmetrically — this used to be a hardcoded 10% over / 20% under.
+  const grace = config.priceGracePercent / 100;
+  const maxPrice = req.budget ? req.budget * (1 + grace) : null;
+  const minPrice = req.budget ? req.budget * (1 - grace) : null;
+  const bedroomField = bedroomPropertyField(config);
+  const wantedBedrooms = req.configurations?.map(bhkNumber).filter((n): n is number => n !== null) ?? [];
 
   // One accumulator for the whole statement: the scope fragment appends its
   // own params, so numbering by hand past it would collide.
@@ -148,7 +170,8 @@ async function queryInventory(req: Requirement, limit: number, scope?: ScopeCont
   const minP = params.add(minPrice);
   const projectP = params.add(req.projectName ?? null);
   const limitP = params.add(limit);
-  const configP = params.add(req.configurations?.length ? req.configurations : ['']);
+  const bedroomFieldP = params.add(bedroomField);
+  const wantedBedroomsP = params.add(wantedBedrooms.length ? wantedBedrooms : [-1]);
   const locationP = params.add(req.locations?.length ? req.locations : ['']);
   // The permission fragment for the candidate rows, or nothing when this
   // caller can see the whole table — a workflow or the scheduler has no user.
@@ -157,12 +180,13 @@ async function queryInventory(req: Requirement, limit: number, scope?: ScopeCont
     : '';
 
   const res = await db.query<PropertyRow>(
-    `SELECT p.record_id, r.label, p.name, p.configuration, p.carpet_area, p.area_unit, p.total_price,
+    `SELECT p.record_id, r.label, p.name, p.carpet_area, p.area_unit, p.total_price,
             p.base_price, p.floor, p.facing, p.vastu_compliant, p.status,
             p.possession_date, p.possession_status, p.locality,
-            p.amenities, p.corner_unit, p.bedrooms,
-            to_jsonb(p)->>'city'         AS city,
-            to_jsonb(p)->>'project_name' AS project_name
+            p.amenities, p.corner_unit,
+            to_jsonb(p)->>'city'          AS city,
+            to_jsonb(p)->>'project_name'  AS project_name,
+            to_jsonb(p)->>${bedroomFieldP} AS matched_bedrooms_raw
      FROM ipy_e_properties p
      JOIN ipy_record r ON r.id = p.record_id
      WHERE r.is_deleted = false
@@ -178,7 +202,7 @@ async function queryInventory(req: Requirement, limit: number, scope?: ScopeCont
      -- units in budget means a perfect 3 BHK in their preferred area loses to
      -- sixty cheap 1 BHKs somewhere else. Price still breaks the tie, because
      -- among equally suitable units the cheaper one is the better pitch.
-     ORDER BY (p.configuration = ANY(${configP}::text[])) DESC,
+     ORDER BY ((to_jsonb(p)->>${bedroomFieldP})::numeric = ANY(${wantedBedroomsP}::numeric[])) DESC,
               (p.locality = ANY(${locationP}::text[])) DESC,
               COALESCE(p.total_price, p.base_price) ASC
      LIMIT ${limitP}`,
@@ -194,41 +218,43 @@ interface ScoredProperty {
   mismatches: string[];
 }
 
-function scoreProperty(row: PropertyRow, req: Requirement): ScoredProperty {
+function scoreProperty(row: PropertyRow, req: Requirement, config: MatchingConfig): ScoredProperty {
   let score = 50;
   const reasons: string[] = [];
   const mismatches: string[] = [];
   const price = row.total_price ?? row.base_price ?? 0;
+  // Admin-set (Admin → Matching Setup, default 10%). Replaces what used to be
+  // three hardcoded numbers (0.9/1.05/0.7) scaled off a single fixed 10%.
+  const grace = config.priceGracePercent / 100;
 
   // Budget fit — the dominant factor.
   if (req.budget && price) {
     const ratio = price / req.budget;
-    if (ratio <= 0.9) { score += 22; reasons.push(`${formatIndianPrice(price)} sits comfortably under the ${formatIndianPrice(req.budget)} budget`); }
+    if (ratio <= 1 - grace / 2) { score += 22; reasons.push(`${formatIndianPrice(price)} sits comfortably under the ${formatIndianPrice(req.budget)} budget`); }
     else if (ratio <= 1.0) { score += 18; reasons.push(`${formatIndianPrice(price)} fits the stated budget`); }
-    else if (ratio <= 1.05) { score += 6; mismatches.push(`${Math.round((ratio - 1) * 100)}% above budget — negotiable`); }
+    else if (ratio <= 1 + grace) { score += 6; mismatches.push(`${Math.round((ratio - 1) * 100)}% above budget — negotiable`); }
     else { score -= 15; mismatches.push(`${formatIndianPrice(price)} exceeds the budget by ${Math.round((ratio - 1) * 100)}%`); }
   }
-  if (req.budget && price && price < req.budget * 0.7) {
+  if (req.budget && price && price < req.budget * (1 - grace * 1.5)) {
     score -= 8;
     mismatches.push('Well below the buyer\'s stated budget — may read as a downgrade');
   }
 
-  // Configuration.
-  if (req.configurations?.length && row.configuration) {
-    if (req.configurations.includes(row.configuration)) {
+  // Bedrooms — the field admin-mapped to the buyer's "configuration" wish
+  // list (Admin → Matching Setup, default `bedrooms`).
+  const actualBedrooms = parsedBedrooms(row);
+  const wantedBedrooms = req.configurations?.map(bhkNumber).filter((n): n is number => n !== null) ?? [];
+  if (wantedBedrooms.length && actualBedrooms !== null) {
+    if (wantedBedrooms.includes(actualBedrooms)) {
       score += 20;
-      reasons.push(`${row.configuration} matches the requirement`);
+      reasons.push(`${actualBedrooms} BHK matches the requirement`);
+    } else if (wantedBedrooms.some((w) => Math.abs(w - actualBedrooms) <= 1)) {
+      // Adjacent bedroom counts are a soft miss, not a hard one.
+      score += 5;
+      mismatches.push(`${actualBedrooms} BHK instead of ${req.configurations!.join('/')}`);
     } else {
-      // Adjacent configurations are a soft miss, not a hard one.
-      const wantedBhk = req.configurations.map(bhkNumber).filter((n): n is number => n !== null);
-      const actualBhk = bhkNumber(row.configuration);
-      if (actualBhk !== null && wantedBhk.some((w) => Math.abs(w - actualBhk) <= 0.5)) {
-        score += 5;
-        mismatches.push(`${row.configuration} instead of ${req.configurations.join('/')}`);
-      } else {
-        score -= 12;
-        mismatches.push(`${row.configuration} does not match the requested ${req.configurations.join('/')}`);
-      }
+      score -= 12;
+      mismatches.push(`${actualBedrooms} BHK does not match the requested ${req.configurations!.join('/')}`);
     }
   }
 
@@ -325,7 +351,7 @@ function scoreProperty(row: PropertyRow, req: Requirement): ScoredProperty {
   };
 }
 
-function bhkNumber(config: string): number | null {
+export function bhkNumber(config: string): number | null {
   const m = config.match(/^([\d.]+)\s*(BHK|RK)/i);
   return m ? Number(m[1]) : null;
 }
@@ -350,11 +376,12 @@ export async function matchProperties(
   req: Requirement,
   opts: MatchOptions = {},
 ): Promise<PropertyMatch[]> {
-  const candidates = await candidateInventory(req, 60, opts.scope);
+  const config = await matchingConfig();
+  const candidates = await candidateInventory(req, config, 60, opts.scope);
   if (!candidates.length) return [];
 
   const scored = candidates
-    .map((row) => scoreProperty(row, req))
+    .map((row) => scoreProperty(row, req, config))
     .sort((a, b) => b.score - a.score)
     .slice(0, opts.limit ?? 6);
 
@@ -366,7 +393,7 @@ export async function matchProperties(
     mismatches: s.mismatches,
     projectName: s.row.project_name ?? undefined,
     price: s.row.total_price ?? s.row.base_price ?? undefined,
-    configuration: s.row.configuration ?? undefined,
+    bedrooms: parsedBedrooms(s.row),
   }));
 
   if (opts.withNarrative && isAiAvailable() && matches.length) {
@@ -399,7 +426,7 @@ async function addNarrative(
 ): Promise<PropertyMatch[] | null> {
   const prompt = `A buyer has this requirement:
 - Budget: ${req.budget ? formatIndianPrice(req.budget) : '—'}
-- Configuration: ${req.configurations?.join(', ') || '—'}
+- Bedrooms wanted: ${req.configurations?.join(', ') || '—'}
 - Preferred locations: ${req.locations?.join(', ') || '—'}
 - Area: ${req.area ?? '—'} ${req.areaUnit ?? 'sqft'}
 - Timeline: ${req.possessionTimeline ?? '—'}
@@ -409,7 +436,7 @@ Here are the shortlisted units with their computed fit scores:
 
 ${scored.map((s, i) => `### ${i + 1}. ${s.row.label} (score ${s.score})
 - Project: ${s.row.project_name ?? '—'}
-- Configuration: ${s.row.configuration ?? '—'}, ${formatArea(s.row.carpet_area, s.row.area_unit ?? 'sqft')} carpet
+- Bedrooms: ${parsedBedrooms(s.row) ?? '—'}, ${formatArea(s.row.carpet_area, s.row.area_unit ?? 'sqft')} carpet
 - Price: ${formatIndianPrice(s.row.total_price ?? s.row.base_price ?? 0)}
 - Floor ${s.row.floor ?? '—'}, ${s.row.facing ?? '—'} facing${s.row.corner_unit ? ', corner unit' : ''}
 - Location: ${s.row.locality ?? '—'}, ${s.row.city ?? '—'}
@@ -446,7 +473,7 @@ Return JSON:
       mismatches: enriched?.mismatches?.length ? enriched.mismatches : s.mismatches,
       projectName: s.row.project_name ?? undefined,
       price: s.row.total_price ?? s.row.base_price ?? undefined,
-      configuration: s.row.configuration ?? undefined,
+      bedrooms: parsedBedrooms(s.row),
     };
   });
 }
@@ -535,16 +562,15 @@ function revivalReason(
  * ordering has to know about that too, or it would rank a genuine near-match
  * below an irrelevant lead with a high AI score.
  */
-function acceptableConfigurations(configuration: string | null): string[] {
-  if (!configuration) return [];
-  const wanted = bhkNumber(configuration);
-  if (wanted === null) return [configuration];
-  const out = new Set([configuration]);
-  for (const step of [-1, -0.5, 0.5, 1]) {
-    const near = wanted + step;
+function acceptableConfigurations(bedrooms: number | null): string[] {
+  if (bedrooms == null) return [];
+  const out = new Set<string>();
+  for (const step of [-1, -0.5, 0, 0.5, 1]) {
+    const near = bedrooms + step;
     if (near <= 0) continue;
     out.add(`${Number.isInteger(near) ? near : near.toFixed(1)} BHK`);
   }
+  if (bedrooms === 1) out.add('1 RK');
   return [...out];
 }
 
@@ -580,16 +606,18 @@ export async function matchBuyersForProperty(
   scope?: ScopeContext,
   opts: { withNarrative?: boolean } = {},
 ): Promise<BuyerMatch[]> {
-  const { matchFloor } = await scoringThresholds();
+  const [{ matchFloor }, config] = await Promise.all([scoringThresholds(), matchingConfig()]);
+  const bedroomField = bedroomPropertyField(config);
   const property = await db.queryOne<PropertyRow>(
-    `SELECT p.record_id, r.label, p.name, p.configuration, p.carpet_area, p.area_unit, p.total_price, p.base_price,
+    `SELECT p.record_id, r.label, p.name, p.carpet_area, p.area_unit, p.total_price, p.base_price,
             p.floor, p.facing, p.vastu_compliant, p.status, p.possession_date, p.possession_status,
-            p.locality, p.amenities, p.corner_unit, p.bedrooms,
-            to_jsonb(p)->>'city'         AS city,
-            to_jsonb(p)->>'project_name' AS project_name
+            p.locality, p.amenities, p.corner_unit,
+            to_jsonb(p)->>'city'          AS city,
+            to_jsonb(p)->>'project_name'  AS project_name,
+            to_jsonb(p)->>$2               AS matched_bedrooms_raw
      FROM ipy_e_properties p JOIN ipy_record r ON r.id = p.record_id
      WHERE p.record_id = $1`,
-    [propertyId],
+    [propertyId, bedroomField],
   );
   if (!property) return [];
 
@@ -598,7 +626,8 @@ export async function matchBuyersForProperty(
   // One accumulator: the scope fragment appends its own params after these.
   const params = new SqlParams();
   const priceP = params.add(price);
-  const configP = params.add(acceptableConfigurations(property.configuration));
+  const gracePP = params.add(config.priceGracePercent / 100);
+  const configP = params.add(acceptableConfigurations(parsedBedrooms(property)));
   const localityP = params.add(property.locality ?? '');
   const scopeSql = scope
     ? await (async () => { const f = await recordScopeSql(scope, 'leads', params, false); return f ? `AND ${f}` : ''; })()
@@ -624,7 +653,7 @@ export async function matchBuyersForProperty(
          l.status <> 'Lost'
            AND (l.budget IS NULL
              OR l.budget_unit IS NOT NULL AND l.budget_unit <> 'total' AND l.area IS NOT NULL
-             OR (l.budget >= ${priceP} * 0.85 AND l.budget <= ${priceP} * 1.2))
+             OR (l.budget >= ${priceP} * (1 - ${gracePP}::numeric) AND l.budget <= ${priceP} * (1 + ${gracePP}::numeric)))
          OR l.status = 'Lost' AND l.lost_reason IS NOT NULL
        )
        ${scopeSql}
@@ -669,7 +698,7 @@ export async function matchBuyersForProperty(
         possessionTimeline: lead.possession_timeline,
         purpose: lead.purpose,
       };
-      const scored = scoreProperty(property, req);
+      const scored = scoreProperty(property, req, config);
       const revival = lead.status === 'Lost'
         ? revivalReason(lead.lost_reason, property, req)
         : null;
@@ -733,7 +762,7 @@ async function addBuyerNarrative(property: PropertyRow, buyers: BuyerMatch[]): P
   const prompt = `A property is available:
 - Unit: ${property.label}
 - Project: ${property.project_name ?? '—'}
-- Configuration: ${property.configuration ?? '—'}, ${formatArea(property.carpet_area, property.area_unit ?? 'sqft')} carpet
+- Bedrooms: ${parsedBedrooms(property) ?? '—'}, ${formatArea(property.carpet_area, property.area_unit ?? 'sqft')} carpet
 - Price: ${formatIndianPrice(property.total_price ?? property.base_price ?? 0)}
 - Floor ${property.floor ?? '—'}, ${property.facing ?? '—'} facing${property.corner_unit ? ', corner unit' : ''}
 - Location: ${property.locality ?? '—'}

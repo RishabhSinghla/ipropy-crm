@@ -61,12 +61,12 @@ interface Row {
  */
 export async function comparablesFor(input: {
   locality: string | null;
-  configuration: string | null;
+  bedrooms: number | null;
   carpetArea: number | null;
   /** Excluded from its own comparison, when it exists. */
   excludeRecordId?: string | null;
 }): Promise<Comparables | null> {
-  if (!input.locality || !input.configuration) return null;
+  if (!input.locality || input.bedrooms == null) return null;
 
   const rows = await db.query<Row>(
     `SELECT COALESCE(p.total_price, p.base_price) AS price,
@@ -78,16 +78,16 @@ export async function comparablesFor(input: {
      JOIN ipy_record r ON r.id = p.record_id
      WHERE r.is_deleted = false
        AND p.locality = $1
-       AND p.configuration = $2
+       AND p.bedrooms = $2
        AND COALESCE(p.total_price, p.base_price) > 0
        AND r.created_at > now() - ($3 || ' days')::interval
        AND ($4::uuid IS NULL OR p.record_id <> $4)
        -- Same size bracket, or no size recorded either side. A 700 sq ft and a
-       -- 1,600 sq ft "3 BHK" are not the same product and averaging them
-       -- produces a number describing neither.
+       -- 1,600 sq ft 3-bedroom unit are not the same product and averaging
+       -- them produces a number describing neither.
        AND ($5::numeric IS NULL OR p.carpet_area IS NULL
             OR p.carpet_area BETWEEN $5 * ${1 - AREA_TOLERANCE} AND $5 * ${1 + AREA_TOLERANCE})`,
-    [input.locality, input.configuration, String(MAX_AGE_DAYS), input.excludeRecordId ?? null, input.carpetArea],
+    [input.locality, input.bedrooms, String(MAX_AGE_DAYS), input.excludeRecordId ?? null, input.carpetArea],
   );
 
   if (rows.rows.length < MIN_COMPARABLES) return null;
@@ -112,7 +112,7 @@ export async function comparablesFor(input: {
     summary: describe({
       count: rows.rows.length,
       locality: input.locality,
-      configuration: input.configuration,
+      bedrooms: input.bedrooms,
       low, high, median, medianDays,
     }),
   };
@@ -129,15 +129,15 @@ export async function comparablesFor(input: {
 function describe(input: {
   count: number;
   locality: string;
-  configuration: string;
+  bedrooms: number;
   low: number;
   high: number;
   median: number;
   medianDays: number | null;
 }): string {
-  const { count, locality, configuration, low, high, median, medianDays } = input;
+  const { count, locality, bedrooms, low, high, median, medianDays } = input;
   const range = `${formatIndianPrice(low)}–${formatIndianPrice(high)}`;
-  let line = `Your last ${count} ${configuration}s in ${locality} were listed at ${range}, typically ${formatIndianPrice(median)}.`;
+  let line = `Your last ${count} ${bedrooms}-bedroom units in ${locality} were listed at ${range}, typically ${formatIndianPrice(median)}.`;
   if (medianDays !== null) {
     line += ` The ones that sold took about ${medianDays} days.`;
   }

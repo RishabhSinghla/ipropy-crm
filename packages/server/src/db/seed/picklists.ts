@@ -19,7 +19,12 @@ export const PICKLISTS: PicklistDef[] = [
   },
   { name: 'property_status', label: 'Property Status', values: PROPERTY_STATUSES.map((s) => ({ ...s, isDefault: s.value === 'Available' })) },
   { name: 'property_type', label: 'Property Type', values: [...PROPERTY_TYPES] },
-  { name: 'configuration', label: 'Configuration', values: [...CONFIGURATIONS] },
+  // Kept for the Contacts side — what BHK(s) a buyer wants. The name stays
+  // 'configuration' (buyer matching reads it by that key; see
+  // FIELDS_USED_IN_CODE), but the label carries no trace of the word: this
+  // business calls it "Bedrooms Wanted" and there is no equivalent field left
+  // on Properties to disambiguate it from.
+  { name: 'configuration', label: 'Bedroom Type', values: [...CONFIGURATIONS] },
   { name: 'facing', label: 'Facing', values: [...FACING_OPTIONS] },
   { name: 'furnishing', label: 'Furnishing', values: [...FURNISHING] },
   { name: 'possession_status', label: 'Possession Status', values: [...POSSESSION_STATUS] },

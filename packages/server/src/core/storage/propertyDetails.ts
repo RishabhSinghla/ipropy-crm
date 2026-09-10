@@ -231,7 +231,7 @@ const FIELDS: { key: string; label: string; money?: boolean }[] = [
   { key: 'name', label: 'Unit' },
   { key: 'project_name', label: 'Project' },
   { key: 'property_type', label: 'Type' },
-  { key: 'configuration', label: 'Configuration' },
+  { key: 'bedrooms', label: 'Bedrooms' },
   { key: 'status', label: 'Status' },
   { key: 'tower_block', label: 'Tower / Block' },
   { key: 'floor', label: 'Floor' },

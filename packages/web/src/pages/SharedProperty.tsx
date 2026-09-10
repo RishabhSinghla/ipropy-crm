@@ -96,8 +96,9 @@ export default function SharedPropertyPage(): JSX.Element {
   }
 
   const p = data.property;
+  const bedrooms = num(p.bedrooms);
   const title = (str(p.project_name) ?? str(p.name)
-    ?? [str(p.configuration), str(p.property_type)].filter(Boolean).join(' ')) || 'Property';
+    ?? [bedrooms != null ? `${bedrooms} BHK` : null, str(p.property_type)].filter(Boolean).join(' ')) || 'Property';
   const unitName = str(p.name);
   const price = num(p.total_price);
   const place = [str(p.locality), str(p.city)].filter(Boolean).join(', ');

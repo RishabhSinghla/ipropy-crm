@@ -397,23 +397,25 @@ export async function buildStorageKey({ recordId, originalName, ext }: KeyReques
  */
 export async function propertyFolderKey(recordId: string): Promise<string | null> {
   const { db } = await import('../../db/pool.js');
+  const { matchingConfig, pairFor } = await import('../settings/matching.js');
+  const bedroomField = pairFor(await matchingConfig(), 'configuration')?.propertyField || 'bedrooms';
   const row = await db.queryOne<{
     label: string; is_deleted: boolean; module_name: string;
-    unit_number: string | null; configuration: string | null;
+    unit_number: string | null; bedrooms: string | null;
     plot_area: string | number | null; area_unit: string | null;
   }>(
     `SELECT r.label, r.is_deleted, r.module_name,
-            p.unit_number, p.configuration, p.plot_area, p.area_unit
+            p.unit_number, to_jsonb(p)->>$2 AS bedrooms, p.plot_area, p.area_unit
        FROM ipy_record r
        LEFT JOIN ipy_e_properties p ON p.record_id = r.id
       WHERE r.id = $1`,
-    [recordId],
+    [recordId, bedroomField],
   );
   if (!row || row.is_deleted || row.module_name !== 'properties') return null;
 
   return propertyFolderName({
     unit: row.unit_number?.trim() || row.label,
-    configuration: row.configuration,
+    configuration: row.bedrooms ? `${row.bedrooms} BHK` : null,
     plotArea: row.plot_area === null ? null : Number(row.plot_area),
     areaUnit: row.area_unit,
   });

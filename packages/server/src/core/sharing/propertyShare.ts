@@ -38,7 +38,7 @@ export interface SharedPropertyPayload {
  * available to an admin, but a fresh installation does not expose them.
  */
 export const DEFAULT_PROPERTY_SHARE_FIELDS = [
-  'property_type', 'configuration',
+  'property_type',
   'floor', 'facing', 'view_description', 'corner_unit', 'vastu_compliant',
   'bedrooms', 'bathrooms', 'balconies', 'parking_slots', 'furnishing',
   'carpet_area', 'built_up_area', 'super_built_up_area', 'plot_area',

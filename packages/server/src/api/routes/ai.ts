@@ -560,7 +560,7 @@ aiRouter.get('/comparables', asyncHandler(async (req, res) => {
   await assertModuleAccess(user, 'properties', 'view');
   const input = z.object({
     locality: z.string().min(1),
-    configuration: z.string().min(1),
+    bedrooms: z.coerce.number().int().min(0),
     carpetArea: z.coerce.number().positive().optional(),
     excludeRecordId: z.string().uuid().optional(),
   }).parse(req.query);
@@ -569,7 +569,7 @@ aiRouter.get('/comparables', asyncHandler(async (req, res) => {
   res.json({
     comparables: await comparablesFor({
       locality: input.locality,
-      configuration: input.configuration,
+      bedrooms: input.bedrooms,
       carpetArea: input.carpetArea ?? null,
       excludeRecordId: input.excludeRecordId ?? null,
     }),

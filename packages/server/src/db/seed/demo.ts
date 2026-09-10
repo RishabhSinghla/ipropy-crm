@@ -199,7 +199,7 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
         values: {
           name: `${p.name} — Tower ${tower}, Unit ${unitNo}`,
           project_name: p.name, status, property_type: config === 'Commercial' ? 'Office Space' : 'Apartment',
-          configuration: config, tower: `Tower ${tower}`, floor, unit_number: unitNo,
+          tower: `Tower ${tower}`, floor, unit_number: unitNo,
           facing: pick(facings, u), corner_unit: u % 7 === 0, vastu_compliant: u % 3 !== 0,
           carpet_area: carpet, built_up_area: Math.round(carpet * 1.18),
           super_built_up_area: Math.round(carpet * 1.42), balcony_area: Math.round(carpet * 0.08),

@@ -1694,7 +1694,10 @@ function MassOwnerButton({
 }): JSX.Element {
   const [open, setOpen] = useState(false);
   const [ownerId, setOwnerId] = useState('');
-  const { data: users } = useQuery({ queryKey: ['users'], queryFn: () => api.users() });
+  // Bulk reassignment can only ever be given to an Administrator — the
+  // server refuses anyone else (recordService's transferOwnership), so the
+  // picker only offers people the write will actually accept.
+  const { data: users } = useQuery({ queryKey: ['users', 'adminOnly'], queryFn: () => api.users(false, true) });
   const [busy, setBusy] = useState(false);
   const countLabel = allQuery ? allCount.toLocaleString('en-IN') : String(ids.length);
 

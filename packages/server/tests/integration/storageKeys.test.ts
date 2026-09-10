@@ -58,7 +58,7 @@ describe('storage keys', () => {
     // UNIT-RAW-UPLOADS, UNIT-SHAPES, UNIT-01.jpg. Nothing broke, because both
     // sides were wrong the same way. It just made the name useless.
     const created = await recordService.createRecord(ctx, 'properties', {
-      name: 'D404', configuration: '3 BHK',
+      name: 'D404', bedrooms: 3,
     });
     const folder = await propertyFolderKey(created.id);
     expect(folder).toBe('D404-3bhk');

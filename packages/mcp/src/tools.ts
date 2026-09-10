@@ -146,13 +146,13 @@ const findProperties: ToolDef = {
   name: 'find_properties',
   title: 'Find units',
   description:
-    'Search inventory by budget, configuration, locality or project. Defaults to units that '
+    'Search inventory by budget, bedrooms, locality or project. Defaults to units that '
     + 'are actually available. Use this for "what do we have under 2 crore in Powai".',
   schema: {
     query: z.string().optional().describe('Unit name, project name or any text'),
     maxPrice: z.number().optional().describe('Highest price in rupees, e.g. 20000000 for ₹2 Cr'),
     minPrice: z.number().optional().describe('Lowest price in rupees'),
-    configuration: z.string().optional().describe('e.g. "3 BHK"'),
+    bedrooms: z.number().optional().describe('e.g. 3 for a 3 BHK'),
     locality: z.string().optional().describe('e.g. Powai'),
     includeUnavailable: z.boolean().default(false).describe('Include held, booked and sold units'),
     limit: z.number().int().min(1).max(50).default(10),
@@ -162,7 +162,7 @@ const findProperties: ToolDef = {
     if (!args.includeUnavailable) conditions.push({ field: 'status', operator: 'equals', value: 'Available' });
     if (typeof args.maxPrice === 'number') conditions.push({ field: 'base_price', operator: 'less_or_equal', value: args.maxPrice });
     if (typeof args.minPrice === 'number') conditions.push({ field: 'base_price', operator: 'greater_or_equal', value: args.minPrice });
-    if (args.configuration) conditions.push({ field: 'configuration', operator: 'equals', value: args.configuration });
+    if (typeof args.bedrooms === 'number') conditions.push({ field: 'bedrooms', operator: 'equals', value: args.bedrooms });
     if (args.locality) conditions.push({ field: 'locality', operator: 'equals', value: args.locality });
 
     const res = await crm.search<ListResponse>('/api/records/properties/search', {
@@ -218,7 +218,7 @@ const matchProperties: ToolDef = {
   name: 'match_properties_for_lead',
   title: 'What suits this buyer',
   description:
-    'Given a lead, rank the available units that fit their budget, configuration, area and '
+    'Given a lead, rank the available units that fit their budget, bedrooms, area and '
     + 'timeline, with the reasons. Use this before a call, or to answer "what can I send them".',
   schema: {
     leadId: z.string().describe('The lead id'),

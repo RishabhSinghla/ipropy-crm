@@ -583,7 +583,7 @@ export interface PropertyMatch {
   mismatches: string[];
   projectName?: string;
   price?: number;
-  configuration?: string;
+  bedrooms?: number | null;
 }
 
 /**

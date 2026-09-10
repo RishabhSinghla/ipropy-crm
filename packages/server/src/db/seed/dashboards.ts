@@ -143,9 +143,9 @@ export const DASHBOARDS: DashboardSeed[] = [
         config: { module: 'properties', groupBy: 'project_name', stackBy: 'status', limit: 10 },
       },
       {
-        type: 'pie', title: 'Availability by Configuration', x: 7, y: 2, w: 5, h: 6,
+        type: 'pie', title: 'Availability by Bedrooms', x: 7, y: 2, w: 5, h: 6,
         config: {
-          module: 'properties', groupBy: 'configuration', aggregate: 'count', drilldown: true,
+          module: 'properties', groupBy: 'bedrooms', aggregate: 'count', drilldown: true,
           filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'equals', value: 'Available' }] },
         },
       },
@@ -153,7 +153,7 @@ export const DASHBOARDS: DashboardSeed[] = [
         type: 'table', title: 'Blocked Units Expiring Soon', x: 0, y: 8, w: 12, h: 4,
         config: {
           module: 'properties', limit: 15, sortBy: 'blocked_until', sortDir: 'asc',
-          columns: ['name', 'project_name', 'configuration', 'total_price', 'blocked_until', 'blocked_for_lead_id'],
+          columns: ['name', 'project_name', 'bedrooms', 'total_price', 'blocked_until', 'blocked_for_lead_id'],
           filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'in', value: ['Held', 'Blocked'] }, { field: 'blocked_until', operator: 'next_n_days', value: 7 }] },
         },
       },

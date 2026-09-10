@@ -751,8 +751,8 @@ function TimelineTab({ module, id }: { module: string; id: string }): JSX.Elemen
  * Matching: the two-way bridge between Contacts and Properties.
  *
  * On a contact it lists the units from live inventory that fit the stated
- * requirement — budget with 10% headroom, configuration (adjacent BHK counts
- * forgiven as a soft miss), preferred areas, area, possession. On a property
+ * requirement — budget with admin-configured headroom, bedrooms (adjacent
+ * counts forgiven as a soft miss), preferred areas, area, possession. On a property
  * it runs the same engine in reverse and lists the contacts worth pitching.
  *
  * Both directions share one table: score, the record, the facts a rep weighs
@@ -782,7 +782,7 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
         id: m.propertyId,
         label: m.propertyLabel,
         score: m.score,
-        primary: m.configuration ?? '—',
+        primary: m.bedrooms != null ? `${m.bedrooms} BHK` : '—',
         secondary: m.price ? formatIndianPrice(m.price) : '—',
         reason: m.reasons[0] ?? '',
         caveat: m.mismatches[0] ?? '',
@@ -811,7 +811,7 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
         </span>
         <p className="hidden text-xs text-muted sm:block">
           {isContact
-            ? 'Live inventory against the stated requirement — 10% budget headroom, adjacent configurations forgiven'
+            ? 'Live inventory against the stated requirement — admin-configured budget headroom, adjacent bedroom counts forgiven'
             : 'Open contacts worth pitching this unit — same engine, reverse direction'}
         </p>
         <button
@@ -841,7 +841,7 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
               <tr>
                 <th className="list-head w-24">Fit</th>
                 <th className="list-head">{isContact ? 'Property' : 'Contact'}</th>
-                <th className="list-head hidden sm:table-cell">Configuration</th>
+                <th className="list-head hidden sm:table-cell">Bedrooms</th>
                 <th className="list-head hidden sm:table-cell">{isContact ? 'Price' : 'Budget'}</th>
                 {!isContact && <th className="list-head hidden md:table-cell">Status</th>}
                 <th className="list-head">Why it fits</th>

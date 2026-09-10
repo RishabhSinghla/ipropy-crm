@@ -175,7 +175,7 @@ export async function draftMessage(input: DraftInput): Promise<DraftResult | nul
     const matches = await matchForRecord(input.recordId, { limit: 3, persist: false, scope: input.scope });
     if (matches.length) {
       propertyBlock = `\n## Matching inventory you may reference (do not invent others)\n${matches
-        .map((m) => `- ${m.propertyLabel} — ${m.configuration ?? ''} — ${m.price ? formatIndianPrice(m.price) : ''}${
+        .map((m) => `- ${m.propertyLabel} — ${m.bedrooms != null ? `${m.bedrooms} BHK` : ''} — ${m.price ? formatIndianPrice(m.price) : ''}${
           m.reasons.length ? ` (${m.reasons[0]})` : ''}`)
         .join('\n')}`;
     }

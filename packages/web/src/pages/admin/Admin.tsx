@@ -2,7 +2,7 @@ import SettingsAdmin from './SettingsAdmin';
 import { type JSX, lazy, Suspense } from 'react';
 import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {
-  Activity, AppWindow, Blocks, Database, KeyRound, LayoutTemplate, MapPin,
+  Activity, AppWindow, Blocks, Database, KeyRound, LayoutTemplate, Link2, MapPin,
   Columns3, ListTree, Plug, Settings2, Shield,  Sparkles, ToggleLeft, Users, Workflow,
   SlidersHorizontal,
 } from 'lucide-react';
@@ -25,6 +25,7 @@ const ImportAdmin = lazy(() => import('./ImportAdmin'));
 const BrandAdmin = lazy(() => import('./BrandAdmin'));
 const HeaderTabsAdmin = lazy(() => import('./HeaderTabsAdmin'));
 const ViewsAdmin = lazy(() => import('./ViewsAdmin'));
+const MatchingSetupAdmin = lazy(() => import('./MatchingSetupAdmin'));
 
 /*
   Every section names the capability that opens it.
@@ -66,6 +67,7 @@ const SECTIONS = [
     items: [
       { path: 'workflows', capability: 'admin.workflows', label: 'Workflows', icon: Workflow, element: <WorkflowAdmin /> },
       { path: 'import', capability: 'records.import', label: 'Import Data', icon: Database, element: <ImportAdmin /> },
+      { path: 'matching', capability: 'admin.access', label: 'Matching Setup', icon: Link2, element: <MatchingSetupAdmin /> },
     ],
   },
   {

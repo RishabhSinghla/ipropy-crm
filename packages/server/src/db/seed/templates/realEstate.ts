@@ -125,7 +125,11 @@ const MODULES: ModuleDef[] = [
           // it survives as free text rather than as a second record to create.
           F.text('interested_project', 'Interested In', { quickCreate: true, searchable: true }),
           F.pick('property_type', 'Property Type', 'property_type'),
-          F.multipick('configuration', 'Configuration', 'configuration'),
+          // Label carries no trace of "Configuration" — this business only
+          // ever means bedroom count by it. The field's API name stays
+          // 'configuration' (buyer matching reads it by that key; renaming it
+          // is refused by FIELDS_USED_IN_CODE) but nobody sees that name.
+          F.multipick('configuration', 'Bedrooms Wanted', 'configuration'),
           F.pick('purpose', 'Purpose', 'purpose'),
           // The price box plus its qualifier — the same pair the area control
           // made. A budget is "₹8,500/sq.yd." or "₹1.5 Cr total"; the qualifier
@@ -376,7 +380,10 @@ const MODULES: ModuleDef[] = [
           F.text('project_name', 'Project', { quickCreate: true, searchable: true }),
           F.pick('status', 'Status', 'property_status', { mandatory: true, quickCreate: true }),
           F.pick('property_type', 'Property Type', 'property_type', { quickCreate: true }),
-          F.pick('configuration', 'Configuration', 'configuration', { quickCreate: true }),
+          // Configuration (the "2 BHK" picklist) is deleted — this business
+          // only ever used it to mean bedroom count, and Bedrooms (below, now
+          // quick-create) already says that as a plain number. See migration
+          // 111.
           F.owner(),
         ],
       },
@@ -392,7 +399,10 @@ const MODULES: ModuleDef[] = [
           F.text('view_description', 'View'),
           F.bool('corner_unit', 'Corner Unit'),
           F.bool('vastu_compliant', 'Vastu Compliant'),
-          F.num('bedrooms', 'Bedrooms'),
+          // Quick-create, taking over from the deleted Configuration picklist
+          // — this business only ever used "configuration" to mean bedroom
+          // count, so the plain number is the whole field now.
+          F.num('bedrooms', 'Bedrooms', { quickCreate: true }),
           F.num('bathrooms', 'Bathrooms'),
           F.num('balconies', 'Balconies'),
           F.num('parking_slots', 'Parking Slots'),
@@ -533,11 +543,11 @@ const MODULES: ModuleDef[] = [
     relations: [
     ],
     views: [
-      { name: 'All Inventory', isDefault: true, columns: ['property_code', 'name', 'project_name', 'configuration', 'carpet_area', 'total_price', 'status', 'floor', 'facing'], sortBy: 'created_at' },
-      { name: 'Available Units', showMetrics: true, columns: ['name', 'project_name', 'configuration', 'carpet_area', 'total_price', 'floor', 'facing'], filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'equals', value: 'Available' }] }, sortBy: 'total_price', sortDir: 'asc' },
-      { name: 'By Status', displayMode: 'kanban', groupBy: 'status', columns: ['name', 'project_name', 'configuration', 'total_price'] },
+      { name: 'All Inventory', isDefault: true, columns: ['property_code', 'name', 'project_name', 'bedrooms', 'carpet_area', 'total_price', 'status', 'floor', 'facing'], sortBy: 'created_at' },
+      { name: 'Available Units', showMetrics: true, columns: ['name', 'project_name', 'bedrooms', 'carpet_area', 'total_price', 'floor', 'facing'], filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'equals', value: 'Available' }] }, sortBy: 'total_price', sortDir: 'asc' },
+      { name: 'By Status', displayMode: 'kanban', groupBy: 'status', columns: ['name', 'project_name', 'bedrooms', 'total_price'] },
       { name: 'Blocked Units', columns: ['name', 'project_name', 'blocked_until', 'blocked_for_lead_id', 'blocked_by'], filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'in', value: ['Held', 'Blocked'] }] } },
-      { name: 'Premium Units', columns: ['name', 'project_name', 'configuration', 'total_price', 'facing', 'status'], filter: { logic: 'AND', conditions: [{ field: 'total_price', operator: 'greater_or_equal', value: 20000000 }] }, sortBy: 'total_price' },
+      { name: 'Premium Units', columns: ['name', 'project_name', 'bedrooms', 'total_price', 'facing', 'status'], filter: { logic: 'AND', conditions: [{ field: 'total_price', operator: 'greater_or_equal', value: 20000000 }] }, sortBy: 'total_price' },
     ],
   },
 

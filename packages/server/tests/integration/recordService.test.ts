@@ -267,18 +267,29 @@ describe('bulk operations', () => {
     }
   });
 
-  it('reassigns ownership in bulk', async () => {
-    const target = await contextFor(SEEDED.executiveB);
+  it('reassigns ownership in bulk to an Administrator', async () => {
+    // Bulk moves a whole book of business with no per-record review, so it is
+    // scoped tighter than a single reassign: only an Administrator can be the
+    // target. `admin` (adminContext()) is the one seeded user that qualifies.
     const ids = [
       (await createRecord(admin, 'leads', leadInput())).id,
       (await createRecord(admin, 'leads', leadInput())).id,
     ];
 
-    await transferOwnership(admin, 'leads', ids, target.user.id);
+    await transferOwnership(admin, 'leads', ids, admin.user.id);
 
     for (const id of ids) {
-      expect((await getRecord(admin, 'leads', id))?.ownerId).toBe(target.user.id);
+      expect((await getRecord(admin, 'leads', id))?.ownerId).toBe(admin.user.id);
     }
+  });
+
+  it('refuses bulk reassignment to anyone below Administrator', async () => {
+    const target = await contextFor(SEEDED.executiveB);
+    const ids = [(await createRecord(admin, 'leads', leadInput())).id];
+
+    await expect(transferOwnership(admin, 'leads', ids, target.user.id)).rejects.toThrow(
+      /Administrator/,
+    );
   });
 });
 

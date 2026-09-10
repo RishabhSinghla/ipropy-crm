@@ -76,23 +76,25 @@ const PLACEHOLDERS = new Set(['none', 'n/a', 'na', 'nil', 'null', '-', '--', 'tb
  */
 export async function propertyNamePrefix(recordId: string): Promise<string> {
   const { slug } = await import('../../core/storage/keys.js');
+  const { matchingConfig, pairFor } = await import('../../core/settings/matching.js');
+  const bedroomField = pairFor(await matchingConfig(), 'configuration')?.propertyField || 'bedrooms';
   const row = await db.queryOne<{
-    label: string; project_name: string | null; configuration: string | null;
+    label: string; project_name: string | null; bedrooms: string | null;
     locality: string | null; plot_area: string | null; area_unit: string | null;
   }>(
     `SELECT r.label,
             to_jsonb(p)->>'project_name'  AS project_name,
-            to_jsonb(p)->>'configuration' AS configuration,
+            to_jsonb(p)->>$2              AS bedrooms,
             to_jsonb(p)->>'locality'      AS locality,
             to_jsonb(p)->>'plot_area'     AS plot_area,
             to_jsonb(p)->>'area_unit'     AS area_unit
        FROM ipy_record r JOIN ipy_e_properties p ON p.record_id = r.id
       WHERE r.id = $1`,
-    [recordId],
+    [recordId, bedroomField],
   );
   if (!row) return 'property';
 
-  const parts = [row.label, row.project_name, row.locality, row.configuration,
+  const parts = [row.label, row.project_name, row.locality, row.bedrooms ? `${row.bedrooms} BHK` : null,
     row.plot_area ? `${row.plot_area} ${row.area_unit ?? ''}` : null]
     .filter((v): v is string => Boolean(v && String(v).trim()))
     .filter((v) => !PLACEHOLDERS.has(String(v).trim().toLowerCase()))

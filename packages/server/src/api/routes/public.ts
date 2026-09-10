@@ -125,8 +125,8 @@ const PROJECT_FIELD_LIST: { sql: string; needs: string[]; missing: string }[] = 
   { sql: `MAX(u.total_price) AS price_max`, needs: ['total_price'], missing: `NULL::numeric AS price_max` },
   { sql: `AVG(u.rate_per_sqft) AS rate_per_sqft`, needs: ['rate_per_sqft'], missing: `NULL::numeric AS rate_per_sqft` },
   {
-    sql: `COALESCE(jsonb_agg(DISTINCT u.configuration) FILTER (WHERE u.configuration IS NOT NULL), '[]'::jsonb) AS configurations`,
-    needs: ['configuration'],
+    sql: `COALESCE(jsonb_agg(DISTINCT u.bedrooms) FILTER (WHERE u.bedrooms IS NOT NULL), '[]'::jsonb) AS configurations`,
+    needs: ['bedrooms'],
     missing: `'[]'::jsonb AS configurations`,
   },
   { sql: `NULL::date AS launch_date`, needs: [], missing: `NULL::date AS launch_date` },
@@ -222,7 +222,7 @@ const PROPERTY_FIELD_LIST: { sql: string; needs: string[] }[] = [
   },
   ...[
     'project_name',
-    'status', 'property_type', 'configuration',
+    'status', 'property_type',
     'tower', 'wing', 'floor', 'facing', 'view_description', 'corner_unit', 'vastu_compliant',
     'carpet_area', 'built_up_area', 'super_built_up_area', 'plot_area', 'balcony_area',
     'terrace_area', 'area_unit',
@@ -516,10 +516,10 @@ publicRouter.get('/filters', asyncHandler(async (_req, res) => {
     `SELECT pl.name, plv.value, plv.label
      FROM ipy_picklist_value plv
      JOIN ipy_picklist pl ON pl.id = plv.picklist_id
-     WHERE pl.name IN ('city', 'locality', 'configuration', 'amenities') AND plv.is_active
+     WHERE pl.name IN ('city', 'locality', 'amenities') AND plv.is_active
      ORDER BY plv.sequence`,
   );
-  const grouped: Record<string, { value: string; label: string }[]> = { city: [], locality: [], configuration: [], amenities: [] };
+  const grouped: Record<string, { value: string; label: string }[]> = { city: [], locality: [], amenities: [] };
   for (const r of rows.rows) grouped[r.name]?.push({ value: r.value, label: r.label });
   res.json(grouped);
 }));

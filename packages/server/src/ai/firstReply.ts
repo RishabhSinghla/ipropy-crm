@@ -51,6 +51,12 @@ function asList(value: unknown): string {
 async function matchingUnits(lead: Lead): Promise<string[]> {
   const configurations = Array.isArray(lead.configuration) ? lead.configuration.map(String) : [];
   const localities = Array.isArray(lead.preferred_locations) ? lead.preferred_locations.map(String) : [];
+  const { matchingConfig, pairFor } = await import('../core/settings/matching.js');
+  const { bhkNumber } = await import('./matching.js');
+  const config = await matchingConfig();
+  const bedroomField = pairFor(config, 'configuration')?.propertyField || 'bedrooms';
+  const wantedBedrooms = configurations.map(bhkNumber).filter((n): n is number => n !== null);
+  const grace = 1 + config.priceGracePercent / 100;
 
   /*
     Every property field here is read as JSON, and `updated_at` comes off the
@@ -63,27 +69,30 @@ async function matchingUnits(lead: Lead): Promise<string[]> {
     WhatsApp at all**, silently, rather than one without a unit list.
 
     The rest go through `to_jsonb` for the reason written five lines above this
-    one: configuration, locality and base_price are all fields an admin may
+    one: bedrooms, locality and base_price are all fields an admin may
     delete, and the lead query was hardened against exactly that while this one
-    was left naming columns.
+    was left naming columns. The bedroom field name itself is admin-configured
+    (Admin → Matching Setup, default `bedrooms`) and passed as a bound value,
+    not an identifier — a JSON key lookup needs no quoting the way a column
+    reference would.
   */
-  const { rows } = await db.query<{ label: string; configuration: string | null; locality: string | null; base_price: number | null }>(
+  const { rows } = await db.query<{ label: string; bedrooms: string | null; locality: string | null; base_price: number | null }>(
     `SELECT r.label,
-            to_jsonb(p)->>'configuration' AS configuration,
-            to_jsonb(p)->>'locality'      AS locality,
+            to_jsonb(p)->>$4               AS bedrooms,
+            to_jsonb(p)->>'locality'       AS locality,
             (to_jsonb(p)->>'base_price')::numeric AS base_price
        FROM ipy_e_properties p
        JOIN ipy_record r ON r.id = p.record_id
       WHERE r.is_deleted = false
         AND to_jsonb(p)->>'status' = 'Available'
-        AND ($1::text[] = '{}' OR to_jsonb(p)->>'configuration' = ANY($1::text[]))
+        AND ($1::numeric[] = '{}' OR (to_jsonb(p)->>$4)::numeric = ANY($1::numeric[]))
         AND ($2::text[] = '{}' OR to_jsonb(p)->>'locality' = ANY($2::text[]))
-        AND ($3::numeric IS NULL OR (to_jsonb(p)->>'base_price')::numeric <= $3 * 1.15)
+        AND ($3::numeric IS NULL OR (to_jsonb(p)->>'base_price')::numeric <= $3 * ${grace})
       ORDER BY r.updated_at DESC
       LIMIT 2`,
-    [configurations, localities, lead.budget],
+    [wantedBedrooms, localities, lead.budget, bedroomField],
   );
-  return rows.map((r) => [r.label, r.configuration, r.locality].filter(Boolean).join(' '));
+  return rows.map((r) => [r.label, r.bedrooms != null ? `${r.bedrooms} BHK` : null, r.locality].filter(Boolean).join(' '));
 }
 
 /**

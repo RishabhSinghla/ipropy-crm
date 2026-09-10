@@ -60,7 +60,7 @@ describe('the import template', () => {
     const module = await registry.requireModule('leads');
     const configuration = module.fields.find((f) => f.name === 'configuration');
     if (configuration?.options?.length) {
-      const i = headers.findIndex((h) => h.includes('Configuration'));
+      const i = headers.findIndex((h) => h.includes(configuration.label));
       expect(i).toBeGreaterThanOrEqual(0);
       // The sample cell carries two options joined the way the importer
       // splits lists ("A; B"); every element must be one of the dropdown's

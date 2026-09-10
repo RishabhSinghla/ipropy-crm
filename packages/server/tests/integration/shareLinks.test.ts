@@ -182,19 +182,19 @@ describe('opening a link', () => {
     try {
       const config = await request(app).put('/api/admin/sharing/property-link')
         .set('Authorization', `Bearer ${token}`)
-        .send({ visibleFields: ['name', 'configuration'], showPhotos: false })
+        .send({ visibleFields: ['name', 'bedrooms'], showPhotos: false })
         .expect(200);
       expect(config.body.fields.find((field: { name: string }) => field.name === 'name').visible).toBe(true);
       expect(config.body.fields.some((field: { name: string }) => field.name === 'owner_contact_id')).toBe(false);
 
       const { id, attachmentId } = await propertyWithPhoto('Admin Controlled Floor', {
-        configuration: '4 BHK', unit_number: 'SECRET-1204', locality: 'Whitefield',
+        bedrooms: 4, unit_number: 'SECRET-1204', locality: 'Whitefield',
       });
       const { body } = await share(id).expect(201);
       const publicView = await request(app).get(`/api/public/share/${body.token}`).expect(200);
 
-      expect(publicView.body.property).toEqual({ name: 'Admin Controlled Floor', configuration: '4 BHK' });
-      expect(publicView.body.fields.map((field: { name: string }) => field.name)).toEqual(['name', 'configuration']);
+      expect(publicView.body.property).toEqual({ name: 'Admin Controlled Floor', bedrooms: 4 });
+      expect(publicView.body.fields.map((field: { name: string }) => field.name)).toEqual(['name', 'bedrooms']);
       expect(publicView.body.photos).toEqual([]);
       expect(JSON.stringify(publicView.body)).not.toContain('SECRET-1204');
       expect(JSON.stringify(publicView.body)).not.toContain('Whitefield');

@@ -32,6 +32,10 @@ adminRouter.get('/users', asyncHandler(async (req, res) => {
   // Open to everyone, because owner pickers and @mentions need the directory.
   // What each caller receives depends on who they are — see below.
   const includeInactive = req.query.includeInactive === 'true';
+  // Bulk reassignment offers only Administrators as a target (recordService's
+  // transferOwnership enforces the same rule server-side; this just keeps the
+  // picker from offering someone the write will refuse).
+  const adminOnly = req.query.adminOnly === 'true';
   const rows = await db.query(
     `SELECT u.id, u.email, u.first_name, u.last_name, u.avatar_url, u.phone,
             u.is_admin, u.is_active, u.role_id, u.profile_id, u.last_login_at,
@@ -41,6 +45,7 @@ adminRouter.get('/users', asyncHandler(async (req, res) => {
      LEFT JOIN ipy_role r ON r.id = u.role_id
      LEFT JOIN ipy_profile p ON p.id = u.profile_id
      WHERE u.deleted_at IS NULL ${includeInactive ? '' : 'AND u.is_active = true'}
+       ${adminOnly ? 'AND (u.is_admin = true OR r.depth = 0)' : ''}
      ORDER BY u.first_name, u.last_name`,
   );
   /*
@@ -758,6 +763,30 @@ adminRouter.get('/team/locations/:userId', asyncHandler(async (req, res) => {
   res.json({ trail: await trail(getUser(req), req.params.userId, hours) });
 }));
 
+/**
+ * What the Matching Setup admin page needs: the current field map and price
+ * grace, plus every field on each module it can be built from. Reading is
+ * separate from `GET /settings` so the page can offer real field pickers
+ * instead of an admin typing a field's API name from memory.
+ */
+adminRouter.get('/matching-config', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.access');
+  const { matchingConfig } = await import('../../core/settings/matching.js');
+  const [leadsModule, propertiesModule, config] = await Promise.all([
+    registry.requireModule('leads'),
+    registry.requireModule('properties'),
+    matchingConfig(),
+  ]);
+  const shape = (fields: typeof leadsModule.fields) => fields
+    .filter((f) => f.isActive)
+    .map((f) => ({ name: f.name, label: f.label, uitype: f.uitype }));
+  res.json({
+    ...config,
+    contactFields: shape(leadsModule.fields),
+    propertyFields: shape(propertiesModule.fields),
+  });
+}));
+
 adminRouter.put('/settings', asyncHandler(async (req, res) => {
   const user = getUser(req);
   await assertCapability(user, 'admin.access');
@@ -796,12 +825,14 @@ adminRouter.put('/settings', asyncHandler(async (req, res) => {
   const { invalidateLocationSettings } = await import('../../core/locations/index.js');
   const { invalidateUiSettings } = await import('../../core/settings/ui.js');
   const { invalidateGreeting } = await import('../../integrations/whatsapp/greetNewLead.js');
+  const { invalidateMatchingConfig } = await import('../../core/settings/matching.js');
   invalidateGreeting();
   invalidateLocationSettings();
   invalidateUiSettings();
   invalidateAiModels();
   invalidateHouseStyle();
   invalidateAiFeatures();
+  invalidateMatchingConfig();
   res.json({ ok: true });
 }));
 
