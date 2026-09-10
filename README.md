@@ -394,3 +394,4 @@ Honest scope notes:
 * **The workflow builder is fully editable in the UI.** Workflows are seeded declaratively; the admin screen lists, inspects, enables, deletes and composes new ones visually.
 * **No LLM provider ships configured.** Every AI feature pairs a deterministic rule engine with an optional model pass and runs on the fallback until a key is added in Admin → Integrations. That includes shoot descriptions — with no key, a capture group shows its thumbnails and times and nothing else. Gemini, Groq and OpenRouter all have free tiers; any OpenAI-compatible endpoint or a local Ollama works too.
 * **Capture has not been used on a real site visit.** It is verified in a browser at 390px and against a stand-in provider. Sunlight, one hand, no signal and EXIF offsets from a real camera are the assumptions it is built on, and none of them have been tested where they actually apply.
+# PR verification
