@@ -658,6 +658,8 @@ export const api = {
     ),
   reorderFields: (fields: { id: string; blockId: string; sequence: number }[]) =>
     post('/api/meta/fields/reorder', { fields }),
+  unitMaster: (kind: 'area' | 'budget_demand') => get<{ id: string; value: string; label: string; factorSqft: number | null; isActive: boolean; isDefault: boolean }[]>(`/api/meta/masters/units/${kind}`),
+  saveUnitMaster: (kind: 'area' | 'budget_demand', units: unknown[]) => put(`/api/meta/masters/units/${kind}`, { units }),
   createBlock: (module: string, data: Record<string, unknown>) =>
     post<{ id: string }>(`/api/meta/modules/${module}/blocks`, data),
   updateBlock: (id: string, data: Record<string, unknown>) => patch(`/api/meta/blocks/${id}`, data),

@@ -3,7 +3,7 @@ import { type JSX, lazy, Suspense } from 'react';
 import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {
   Activity, AppWindow, Blocks, Database, KeyRound, LayoutTemplate, Link2, MapPin,
-  Columns3, ListTree, Plug, Settings2, Shield,  Sparkles, ToggleLeft, Users, Workflow,
+  Columns3, ListTree, Plug, Ruler, Settings2, Shield,  Sparkles, ToggleLeft, Users, Workflow,
   SlidersHorizontal,
 } from 'lucide-react';
 import { Spinner } from '../../components/ui';
@@ -26,6 +26,7 @@ const BrandAdmin = lazy(() => import('./BrandAdmin'));
 const HeaderTabsAdmin = lazy(() => import('./HeaderTabsAdmin'));
 const ViewsAdmin = lazy(() => import('./ViewsAdmin'));
 const MatchingSetupAdmin = lazy(() => import('./MatchingSetupAdmin'));
+const UnitMasterAdmin = lazy(() => import('./UnitMasterAdmin'));
 
 /*
   Every section names the capability that opens it.
@@ -68,6 +69,7 @@ const SECTIONS = [
       { path: 'workflows', capability: 'admin.workflows', label: 'Workflows', icon: Workflow, element: <WorkflowAdmin /> },
       { path: 'import', capability: 'records.import', label: 'Import Data', icon: Database, element: <ImportAdmin /> },
       { path: 'matching', capability: 'admin.access', label: 'Matching Setup', icon: Link2, element: <MatchingSetupAdmin /> },
+      { path: 'units', capability: 'admin.fields', label: 'Area & Pricing Units', icon: Ruler, element: <UnitMasterAdmin /> },
     ],
   },
   {
