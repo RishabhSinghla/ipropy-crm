@@ -939,9 +939,9 @@ const conversionSchema = z.object({
   invalidStrategy: z.enum(['blank', 'default', 'keep']).default('blank'), defaultValue: z.unknown().optional(),
 });
 
-async function conversionField(id: string): Promise<{ id: string; internal_id: string; module_id: string; storage: string; column_name: string; uitype: string; config: Record<string, unknown> }> {
-  const field = await db.queryOne<{ id: string; internal_id: string; module_id: string; storage: string; column_name: string; uitype: string; config: Record<string, unknown> }>(
-    `SELECT id, internal_id, module_id, storage, column_name, uitype, config FROM ipy_field WHERE id = $1`, [id],
+async function conversionField(id: string): Promise<{ id: string; internal_id: string; module_id: string; name: string; label: string; storage: string; column_name: string; uitype: string; config: Record<string, unknown> }> {
+  const field = await db.queryOne<{ id: string; internal_id: string; module_id: string; name: string; label: string; storage: string; column_name: string; uitype: string; config: Record<string, unknown> }>(
+    `SELECT id, internal_id, module_id, name, label, storage, column_name, uitype, config FROM ipy_field WHERE id = $1`, [id],
   );
   if (!field) throw new NotFoundError('Field not found');
   return field;
@@ -1014,7 +1014,57 @@ metadataRouter.post('/fields/:id/type-conversion', asyncHandler(async (req, res)
         await tx.query(`UPDATE ${quoteIdent(module.tableName)} SET ${quoteIdent(field.column_name)} = $1 WHERE ${quoteIdent(field.column_name)} IS NULL`, [input.defaultValue]);
       }
     }
-    await tx.query(`UPDATE ipy_field SET uitype = $2, config = $3, is_customised = true, updated_at = now() WHERE id = $1`, [field.id, input.targetType, JSON.stringify(field.config)]);
+    /*
+      Becoming a dropdown means having a list to choose from.
+
+      Converting Text → Dropdown kept every value and attached no picklist, so
+      the field arrived as a select with nothing in it: the stored "3 BHK" was
+      still on the record, was not offered in the control, and could not be
+      chosen again on the next record. The values were technically preserved
+      and the field was unusable, which is the worst of both.
+
+      So the distinct values that survived the conversion become the list. It
+      is a real picklist like any other from that point — Admin → Dropdowns can
+      rename, reorder, colour or retire the options, which is what the brief
+      asks for in the first place. An admin who wants an existing shared list
+      instead passes `config.picklist` and this steps aside.
+    */
+    const nextConfig: Record<string, unknown> = { ...(field.config ?? {}) };
+    const wantsList = input.targetType === 'picklist' || input.targetType === 'multipicklist';
+    if (wantsList && !nextConfig.picklist) {
+      const key = `${module.name}_${field.name}`.slice(0, 60);
+      const picklist = await tx.queryOne<{ id: string }>(
+        `INSERT INTO ipy_picklist (name, label, module_id, allow_adhoc)
+         VALUES ($1, $2, $3, true)
+         ON CONFLICT (name) DO UPDATE SET label = EXCLUDED.label
+         RETURNING id`,
+        [key, field.label, field.module_id],
+      );
+      // Built from what the records actually hold, in the order a person would
+      // expect to read them, and only from values that survived the conversion.
+      const distinct = await tx.query<{ value: string }>(
+        field.storage === 'json'
+          ? `SELECT DISTINCT jsonb_array_elements_text(
+                   CASE WHEN jsonb_typeof(custom_fields -> $1) = 'array'
+                        THEN custom_fields -> $1 ELSE jsonb_build_array(custom_fields -> $1) END) AS value
+               FROM ${module.tableName}
+              WHERE custom_fields ? $1 AND custom_fields -> $1 <> 'null'::jsonb`
+          : `SELECT DISTINCT ${quoteIdent(field.column_name)}::text AS value
+               FROM ${module.tableName} WHERE ${quoteIdent(field.column_name)} IS NOT NULL`,
+        field.storage === 'json' ? [field.column_name] : [],
+      );
+      const options = distinct.rows.map((r) => r.value).filter((v) => v !== null && v !== '').sort();
+      for (const [i, value] of options.entries()) {
+        await tx.query(
+          `INSERT INTO ipy_picklist_value (picklist_id, value, label, sequence)
+           VALUES ($1,$2,$2,$3) ON CONFLICT DO NOTHING`,
+          [picklist!.id, value, (i + 1) * 10],
+        );
+      }
+      nextConfig.picklist = key;
+    }
+
+    await tx.query(`UPDATE ipy_field SET uitype = $2, config = $3, is_customised = true, updated_at = now() WHERE id = $1`, [field.id, input.targetType, JSON.stringify(nextConfig)]);
     await tx.query(`INSERT INTO ipy_field_change (module_id, field_internal_id, action, before_value, after_value, user_id) VALUES ($1,$2,'type_changed',$3,$4,$5)`, [field.module_id, field.internal_id, JSON.stringify({ uitype: field.uitype }), JSON.stringify({ uitype: input.targetType, invalidRecords: invalid }), user.id]);
     return { convertedRecords: rows.rows.length - invalid, invalidRecords: invalid };
   });
