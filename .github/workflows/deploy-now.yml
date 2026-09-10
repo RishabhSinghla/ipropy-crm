@@ -1,0 +1,29 @@
+# Trigger a Render deploy of the latest commit on main, by hand.
+#
+# Render's dashboard auto-deploy setting has drifted to Off twice (see the
+# "Deploying is his click" note in memory) — a green CI run alone does not
+# ship this project when that happens, and nothing in this repo can flip the
+# dashboard switch. The owner handed over a deploy hook for exactly this: a
+# same-mechanism way to ship without dashboard access. This calls it once,
+# on demand, from a workflow_dispatch — never automatically on push, since
+# the hook bypasses checksPass and will happily deploy a broken commit.
+name: Deploy now
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render deploy hook
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK" ]; then
+            echo "No RENDER_DEPLOY_HOOK secret configured." >&2
+            exit 1
+          fi
+          curl -fsS -X POST "$RENDER_DEPLOY_HOOK"
+          echo ""
+          echo "Deploy triggered. Watch it land: https://dashboard.render.com"
