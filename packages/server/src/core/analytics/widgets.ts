@@ -27,6 +27,8 @@ export interface WidgetResult {
   series?: { key: string; label: string; value: number; color?: string | null; secondary?: number }[];
   /** multi-series (stacked) */
   stacked?: { key: string; label: string; segments: { key: string; label: string; value: number; color?: string | null }[] }[];
+  /** Why this tile has nothing to show, when that is a state rather than a fault. */
+  note?: string;
   /** table/list widgets */
   rows?: Record<string, unknown>[];
   columns?: string[];
@@ -476,7 +478,19 @@ async function runTable(ctx: ScopeContext, config: WidgetConfig, conn: Tx, type:
 /** Grouped counts split by a second dimension — inventory by project × status. */
 async function runStacked(ctx: ScopeContext, config: WidgetConfig, conn: Tx): Promise<WidgetResult> {
   const stackBy = (config.stackBy as string) ?? 'status';
-  if (!config.module || !config.groupBy) throw new BadRequestError('stacked widget needs module and groupBy');
+  /*
+    A tile that groups by a field the model no longer has is an empty shelf,
+    not a broken dashboard.
+
+    "Stock by Project" groups by `project_name`, which this business removed on
+    purpose — it sells builder floors in one area, so a project grouping is
+    noise. The tile then answered 400 on every dashboard load, which reads as
+    the CRM being broken rather than as a grouping that no longer means
+    anything. Same judgement `/api/public/projects` already makes.
+  */
+  if (!config.module || !config.groupBy) {
+    return { type: 'inventory_status', stacked: [], note: 'This tile groups by a field that no longer exists.' };
+  }
 
   const module = await registry.requireModule(config.module);
   const joins = new Map<string, string>();

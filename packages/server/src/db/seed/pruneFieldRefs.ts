@@ -111,6 +111,58 @@ export async function pruneFieldRefs(conn: Tx): Promise<PruneResult> {
     );
     if (orders.rowCount) removed.push(`${module.name} → view sort/group (${orders.rowCount})`);
 
+    /*
+      --- dashboard tiles ---------------------------------------------------
+
+      The comment at the top of this file has always listed dashboard tiles as
+      part of the class, and this is the first version that actually sweeps
+      them. Seven of the twenty-one seeded widgets were answering 400 on
+      production — `Unknown field 'is_converted' on leads`, `project_name`,
+      `blocked_until`, and `status` on Contacts, whose field is now called
+      `lead_status` after a rename. A third of the dashboard, on the first
+      screen anybody opens.
+
+      A tile's whole filter is not dropped when one condition goes: a metric
+      that counted "my open leads" still counts "my leads", which is a
+      narrower claim than the title makes but a working tile and a real number.
+      A tile left with no conditions at all keeps its group — the count is then
+      "everything", which is honest — and the removal is logged either way so
+      it is a visible decision rather than a silent one.
+    */
+    const widgets = await conn.query<{ id: string; title: string; config: Record<string, unknown> }>(
+      `SELECT id, title, config FROM ipy_dashboard_widget
+        WHERE config->>'module' = $1`, [module.name],
+    );
+    for (const widget of widgets.rows) {
+      const config = widget.config ?? {};
+      const filter = config.filter as { conditions?: { field?: string }[] } | undefined;
+      const conditions = Array.isArray(filter?.conditions) ? filter!.conditions : null;
+
+      const named = new Set<string>();
+      for (const key of ['groupBy', 'sortBy', 'valueField', 'field', 'measureField']) {
+        const value = config[key];
+        if (typeof value === 'string' && value && !exists.has(value)) named.add(`${key}:${value}`);
+      }
+      const keptConditions = conditions?.filter((c) => !c.field || exists.has(c.field)) ?? null;
+      const droppedConditions = conditions ? conditions.length - (keptConditions?.length ?? 0) : 0;
+      if (!named.size && !droppedConditions) continue;
+
+      const next: Record<string, unknown> = { ...config };
+      for (const key of ['groupBy', 'sortBy', 'valueField', 'field', 'measureField']) {
+        const value = next[key];
+        if (typeof value === 'string' && value && !exists.has(value)) delete next[key];
+      }
+      if (droppedConditions) next.filter = { ...filter, conditions: keptConditions };
+
+      await conn.query(`UPDATE ipy_dashboard_widget SET config = $2::jsonb WHERE id = $1`,
+        [widget.id, JSON.stringify(next)]);
+      logger.warn(
+        { module: module.name, widget: widget.title, droppedConditions, dropped: [...named] },
+        'a dashboard tile named a field that is gone — the reference was removed',
+      );
+      removed.push(`${module.name} → dashboard tile "${widget.title}"`);
+    }
+
     // --- dependent dropdowns ------------------------------------------------
     //
     // A City → Locality map whose source field has been deleted narrows every
