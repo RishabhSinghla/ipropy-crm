@@ -67,28 +67,29 @@ jobs:
           # value — because this log is public. A field can exist, be mapped
           # and still contribute nothing to a match because every row is null,
           # which looks identical to "matching is bad" from the outside.
-          echo "=== fill rates on the columns matching reads ==="
+          # Read through `to_jsonb`, not by naming columns: this probe exists
+          # because production loses columns, and naming one that has gone
+          # aborts the step (`shell: bash -e`) and hides everything after it.
+          # That is the same lesson the query code already learned.
+          echo "=== fill rates on the columns matching reads (counts only) ==="
           psql "$PROD_DATABASE_URL" -tAc \
-            "SELECT 'properties: ' || string_agg(c || '=' || n, ', ')
-               FROM (
-                 SELECT 'carpet_area' AS c, count(carpet_area)::text AS n FROM ipy_e_properties
-                 UNION ALL SELECT 'configuration', count(configuration)::text FROM ipy_e_properties
-                 UNION ALL SELECT 'base_price', count(base_price)::text FROM ipy_e_properties
-                 UNION ALL SELECT 'locality', count(locality)::text FROM ipy_e_properties
-                 UNION ALL SELECT 'area_unit', count(area_unit)::text FROM ipy_e_properties
-                 UNION ALL SELECT 'status', count(status)::text FROM ipy_e_properties
-                 UNION ALL SELECT 'TOTAL_ROWS', count(*)::text FROM ipy_e_properties
-               ) t;"
+            "SELECT 'properties rows=' || count(*)
+                 || ', carpet_area=' || count(to_jsonb(p)->>'carpet_area')
+                 || ', configuration=' || count(to_jsonb(p)->>'configuration')
+                 || ', base_price=' || count(to_jsonb(p)->>'base_price')
+                 || ', total_price=' || count(to_jsonb(p)->>'total_price')
+                 || ', demand=' || count(to_jsonb(p)->>'demand')
+                 || ', locality=' || count(to_jsonb(p)->>'locality')
+                 || ', status=' || count(to_jsonb(p)->>'status')
+               FROM ipy_e_properties p;"
           psql "$PROD_DATABASE_URL" -tAc \
-            "SELECT 'leads: ' || string_agg(c || '=' || n, ', ')
-               FROM (
-                 SELECT 'budget' AS c, count(budget)::text AS n FROM ipy_e_leads
-                 UNION ALL SELECT 'configuration', count(configuration)::text FROM ipy_e_leads
-                 UNION ALL SELECT 'preferred_locations', count(preferred_locations)::text FROM ipy_e_leads
-                 UNION ALL SELECT 'area', count(area)::text FROM ipy_e_leads
-                 UNION ALL SELECT 'mobile', count(mobile)::text FROM ipy_e_leads
-                 UNION ALL SELECT 'TOTAL_ROWS', count(*)::text FROM ipy_e_leads
-               ) t;"
+            "SELECT 'leads rows=' || count(*)
+                 || ', budget=' || count(to_jsonb(l)->>'budget')
+                 || ', configuration=' || count(to_jsonb(l)->>'configuration')
+                 || ', preferred_locations=' || count(to_jsonb(l)->>'preferred_locations')
+                 || ', area=' || count(to_jsonb(l)->>'area')
+                 || ', mobile=' || count(to_jsonb(l)->>'mobile')
+               FROM ipy_e_leads l;"
           echo
           echo "=== are the matching pairs actually configured? ==="
           psql "$PROD_DATABASE_URL" -tAc \
