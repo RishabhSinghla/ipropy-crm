@@ -35,6 +35,8 @@ export interface MatchingConfig {
   fieldMap: MatchFieldPair[];
   /** Applied only to pairs where the property field is a currency field. */
   priceGracePercent: number;
+  /** Size tolerance for mapped area fields; independent from pricing. */
+  areaGracePercent: number;
 }
 
 /** What the engine compared before any of this was editable. */
@@ -46,6 +48,7 @@ export const DEFAULT_MATCHING_CONFIG: MatchingConfig = {
     { contactField: 'area', propertyField: 'area' },
   ],
   priceGracePercent: 10,
+  areaGracePercent: 15,
 };
 
 let cached: MatchingConfig | null = null;
@@ -68,7 +71,7 @@ export async function matchingConfig(): Promise<MatchingConfig> {
       registry.requireModule('properties'),
       db.query<{ key: string; value: unknown }>(
         `SELECT key, value FROM ipy_setting WHERE key = ANY($1)`,
-        [['matching.field_map', 'matching.price_grace_percent']],
+        [['matching.field_map', 'matching.price_grace_percent', 'matching.area_grace_percent']],
       ),
       db.query<{ source_field_internal_id: string; target_field_internal_id: string }>(
         `SELECT fm.source_field_internal_id, fm.target_field_internal_id
@@ -106,10 +109,14 @@ export async function matchingConfig(): Promise<MatchingConfig> {
     const grace = typeof rawGrace === 'number' && Number.isFinite(rawGrace) && rawGrace >= 0 && rawGrace <= 100
       ? rawGrace
       : DEFAULT_MATCHING_CONFIG.priceGracePercent;
+    const rawAreaGrace = map.get('matching.area_grace_percent');
+    const areaGrace = typeof rawAreaGrace === 'number' && Number.isFinite(rawAreaGrace) && rawAreaGrace >= 0 && rawAreaGrace <= 100
+      ? rawAreaGrace : DEFAULT_MATCHING_CONFIG.areaGracePercent;
 
     cached = {
       fieldMap: fieldMap.length ? fieldMap : DEFAULT_MATCHING_CONFIG.fieldMap,
       priceGracePercent: grace,
+      areaGracePercent: areaGrace,
     };
     return cached;
   } catch (err) {

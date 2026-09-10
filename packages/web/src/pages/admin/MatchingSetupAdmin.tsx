@@ -21,6 +21,7 @@ export default function MatchingSetupAdmin(): JSX.Element {
   const queryClient = useQueryClient();
   const [fieldMap, setFieldMap] = useState<MatchingFieldPair[]>([]);
   const [gracePercent, setGracePercent] = useState(10);
+  const [areaGracePercent, setAreaGracePercent] = useState(15);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -30,6 +31,7 @@ export default function MatchingSetupAdmin(): JSX.Element {
     if (!data) return;
     setFieldMap(data.fieldMap);
     setGracePercent(data.priceGracePercent);
+    setAreaGracePercent(data.areaGracePercent);
     setDirty(false);
   }, [data]);
 
@@ -37,7 +39,7 @@ export default function MatchingSetupAdmin(): JSX.Element {
     setSaving(true);
     try {
       await api.saveMatchingConfig(
-        fieldMap.filter((p) => p.contactFieldId && p.propertyFieldId), gracePercent,
+        fieldMap.filter((p) => p.contactFieldId && p.propertyFieldId), gracePercent, areaGracePercent,
       );
       toast.success('Matching setup saved', 'The next match uses these mappings.');
       setDirty(false);
@@ -101,6 +103,12 @@ export default function MatchingSetupAdmin(): JSX.Element {
                 A property up to {gracePercent}% above a buyer's stated budget still counts as a fit.
                 Applies to whichever pair below maps to a price/currency field.
               </span>
+            </div>
+            <label className="label mt-4" htmlFor="matching-area-grace">Area / size tolerance</label>
+            <div className="mt-1 flex items-center gap-3">
+              <input id="matching-area-grace" type="number" min={0} max={100} value={areaGracePercent} onChange={(e) => { setAreaGracePercent(Math.max(0, Math.min(100, Number(e.target.value) || 0))); setDirty(true); }} className="input w-24" />
+              <span className="text-sm text-muted">%</span>
+              <span className="text-xs text-muted">A property within ±{areaGracePercent}% of the requested area counts as a fit.</span>
             </div>
           </div>
 

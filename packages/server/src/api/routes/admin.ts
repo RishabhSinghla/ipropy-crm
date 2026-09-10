@@ -794,6 +794,7 @@ adminRouter.put('/matching-config', asyncHandler(async (req, res) => {
   const input = z.object({
     fieldMap: z.array(z.object({ contactFieldId: z.string().regex(/^fld_[A-Za-z0-9]+$/), propertyFieldId: z.string().regex(/^fld_[A-Za-z0-9]+$/) })),
     priceGracePercent: z.number().min(0).max(100),
+    areaGracePercent: z.number().min(0).max(100),
   }).parse(req.body);
   const [leads, properties] = await Promise.all([registry.requireModule('leads'), registry.requireModule('properties')]);
   const leadIds = new Set(leads.fields.map((f) => f.internalId));
@@ -821,6 +822,11 @@ adminRouter.put('/matching-config', asyncHandler(async (req, res) => {
       `INSERT INTO ipy_setting (key, value, updated_by, updated_at) VALUES ('matching.price_grace_percent',$1,$2,now())
        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`,
       [JSON.stringify(input.priceGracePercent), user.id],
+    );
+    await tx.query(
+      `INSERT INTO ipy_setting (key, value, updated_by, updated_at) VALUES ('matching.area_grace_percent',$1,$2,now())
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+      [JSON.stringify(input.areaGracePercent), user.id],
     );
   });
   const { invalidateMatchingConfig } = await import('../../core/settings/matching.js');

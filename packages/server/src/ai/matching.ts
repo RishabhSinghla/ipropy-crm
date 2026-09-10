@@ -358,8 +358,8 @@ function scoreProperty(row: PropertyRow, req: Requirement, config: MatchingConfi
     else { score -= 10; mismatches.push(`${row.locality ?? row.city ?? 'Location'} is outside the preferred areas`); }
   }
 
-  // Area. The buyer states one figure, so it is read as "about this much":
-  // 15% either side counts as a match, well under is a miss.
+  // Area. The buyer states one figure, so it is read as "about this much";
+  // the administrator sets this tolerance independently from budget pricing.
   if (row.matched_area && req.area) {
     /*
       Both sides converted before dividing.
@@ -379,13 +379,14 @@ function scoreProperty(row: PropertyRow, req: Requirement, config: MatchingConfi
     const wanted = toSqFt(req.area, req.areaUnit);
     const offered = toSqFt(row.matched_area, row.area_unit);
     const ratio = offered / wanted;
-    if (ratio >= 0.85 && ratio <= 1.15) {
+    const areaGrace = config.areaGracePercent / 100;
+    if (ratio >= 1 - areaGrace && ratio <= 1 + areaGrace) {
       score += 8;
       reasons.push(
         `${formatArea(row.matched_area, row.area_unit ?? 'sqft')} is about the `
         + `${formatArea(req.area, req.areaUnit)} asked for`,
       );
-    } else if (ratio < 0.85) {
+    } else if (ratio < 1 - areaGrace) {
       score -= 8;
       mismatches.push(
         `${formatArea(row.matched_area, row.area_unit ?? 'sqft')} is smaller than the `
