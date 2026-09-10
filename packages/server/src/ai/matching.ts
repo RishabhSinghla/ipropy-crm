@@ -46,6 +46,8 @@ export interface Requirement {
   purpose?: string | null;
   facing?: string[];
   vastuRequired?: boolean;
+  /** Source values used by administrator-created mapping rules. */
+  rawValues?: Record<string, unknown>;
 }
 
 /*
@@ -83,6 +85,7 @@ interface PropertyRow {
   project_name: string | null;
   amenities: string[] | null;
   corner_unit: boolean;
+  raw_values?: Record<string, unknown>;
 }
 
 /** Pull the requirement off a lead or contact record. */
@@ -129,6 +132,7 @@ export async function loadRequirement(recordId: string): Promise<Requirement | n
       possessionTimeline: lead.possession_timeline as string | null,
       projectName: lead.interested_project as string | null,
       purpose: lead.purpose as string | null,
+      rawValues: lead,
     };
   }
 
@@ -341,6 +345,23 @@ function scoreProperty(row: PropertyRow, req: Requirement, config: MatchingConfi
       score += 6;
       reasons.push('Early-stage pricing suits an investment purpose');
     }
+  }
+
+  // Extra administrator-created mappings are evaluated without a code change.
+  // The familiar budget/BHK/location/area pairs above keep their specialised
+  // tolerance logic; all other configured fields get a transparent, modest
+  // score contribution from exact/contained values.
+  for (const pair of config.fieldMap) {
+    if (['budget', 'configuration', 'preferred_locations', 'area'].includes(pair.contactField)) continue;
+    const wanted = req.rawValues?.[pair.contactField];
+    const offered = row.raw_values?.[pair.propertyField];
+    if (wanted === null || wanted === undefined || wanted === '' || offered === null || offered === undefined || offered === '') continue;
+    const want = (Array.isArray(wanted) ? wanted : [wanted]).map((v) => String(v).toLowerCase());
+    const have = (Array.isArray(offered) ? offered : [offered]).map((v) => String(v).toLowerCase());
+    const matched = want.some((w) => have.some((h) => h === w || h.includes(w) || w.includes(h)));
+    const label = pair.contactLabel ?? pair.contactField;
+    if (matched) { score += 7; reasons.push(`${label} matches`); }
+    else { score -= 4; mismatches.push(`${label} does not match`); }
   }
 
   return {
@@ -614,7 +635,8 @@ export async function matchBuyersForProperty(
             p.locality, p.amenities, p.corner_unit,
             to_jsonb(p)->>'city'          AS city,
             to_jsonb(p)->>'project_name'  AS project_name,
-            to_jsonb(p)->>$2               AS matched_bedrooms_raw
+            to_jsonb(p)->>$2               AS matched_bedrooms_raw,
+            to_jsonb(p)                    AS raw_values
      FROM ipy_e_properties p JOIN ipy_record r ON r.id = p.record_id
      WHERE p.record_id = $1`,
     [propertyId, bedroomField],
@@ -633,7 +655,7 @@ export async function matchBuyersForProperty(
     ? await (async () => { const f = await recordScopeSql(scope, 'leads', params, false); return f ? `AND ${f}` : ''; })()
     : '';
 
-  const leads = await db.query<{ record_id: string; label: string; owner_id: string | null; budget: number | null; budget_unit: string | null; area: number | null; area_unit: string | null; configuration: string[] | null; preferred_locations: string[] | null; possession_timeline: string | null; purpose: string | null; status: string; lost_reason: string | null }>(
+  const leads = await db.query<{ record_id: string; label: string; owner_id: string | null; budget: number | null; budget_unit: string | null; area: number | null; area_unit: string | null; configuration: string[] | null; preferred_locations: string[] | null; possession_timeline: string | null; purpose: string | null; status: string; lost_reason: string | null; raw_values: Record<string, unknown> }>(
     // Lost leads are in scope now; Junk never is. A wrong number, a broker
     // fishing or a test entry does not become a buyer because a unit appeared,
     // and `revivalReason` is what decides which of the Lost are worth raising.
@@ -645,7 +667,7 @@ export async function matchBuyersForProperty(
     `SELECT l.record_id, r.label, r.owner_id, l.budget,
             l.budget_unit, l.area, l.area_unit,
             l.configuration, l.preferred_locations, l.possession_timeline, l.purpose,
-            l.status, l.lost_reason
+            l.status, l.lost_reason, to_jsonb(l) AS raw_values
      FROM ipy_e_leads l JOIN ipy_record r ON r.id = l.record_id
      WHERE r.is_deleted = false AND l.is_converted = false
        AND l.status <> 'Junk'
@@ -697,6 +719,7 @@ export async function matchBuyersForProperty(
         locations: lead.preferred_locations ?? [],
         possessionTimeline: lead.possession_timeline,
         purpose: lead.purpose,
+        rawValues: lead.raw_values,
       };
       const scored = scoreProperty(property, req, config);
       const revival = lead.status === 'Lost'

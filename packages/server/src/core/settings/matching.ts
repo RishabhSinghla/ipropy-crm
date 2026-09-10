@@ -27,6 +27,8 @@ export interface MatchFieldPair {
   /** Permanent field IDs persisted in the mapping table. */
   contactFieldId?: string;
   propertyFieldId?: string;
+  contactLabel?: string;
+  propertyLabel?: string;
 }
 
 export interface MatchingConfig {
@@ -88,6 +90,8 @@ export async function matchingConfig(): Promise<MatchingConfig> {
         propertyField: property.name,
         contactFieldId: contact.internalId,
         propertyFieldId: property.internalId,
+        contactLabel: contact.label,
+        propertyLabel: property.label,
       }] : [];
     });
 
