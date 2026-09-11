@@ -174,9 +174,39 @@ authRouter.post('/refresh', asyncHandler(async (req, res) => {
 authRouter.post('/logout', requireAuth, asyncHandler(async (req, res) => {
   const token = readRefreshToken(req);
   clearRefreshCookie(res);
-  if (token) {
-    await db.query(`UPDATE ipy_session SET revoked_at = now() WHERE token_hash = $1`, [hashRefreshToken(token)]);
-  } else {
+
+  /*
+    The whole chain, not the one link that was handed over.
+
+    Rotation gives every exchange a new row and points the old one at it
+    through `replaced_by`. Logging out revoked only the row whose hash matched,
+    so a tab holding a token another tab had already rotated revoked something
+    already superseded — and answered `{ ok: true }` while the session carried
+    happily on.
+
+    That is not an edge case here. Two tabs hitting a 401 together is the
+    normal case the grace window exists for, so the token in the tab somebody
+    presses Log out in is *routinely* a link or two behind. Measured before
+    fixing: tab A refreshes, tab B logs out, tab A keeps working.
+
+    Forward through `replaced_by` from whatever was presented, so every
+    descendant dies with it.
+  */
+  const revoked = token ? await db.query(
+    `WITH RECURSIVE family AS (
+       SELECT id, replaced_by FROM ipy_session WHERE token_hash = $1
+       UNION ALL
+       SELECT s.id, s.replaced_by FROM ipy_session s JOIN family f ON s.id = f.replaced_by
+     )
+     UPDATE ipy_session SET revoked_at = now()
+      WHERE id IN (SELECT id FROM family) AND revoked_at IS NULL`,
+    [hashRefreshToken(token)],
+  ) : null;
+
+  // No token, or one this user's sessions do not know: they asked to be logged
+  // out and we know who they are, so end all of it rather than answering "ok"
+  // to somebody who is still signed in.
+  if (!revoked || revoked.rowCount === 0) {
     await db.query(`UPDATE ipy_session SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, [getUser(req).id]);
   }
   res.json({ ok: true });
