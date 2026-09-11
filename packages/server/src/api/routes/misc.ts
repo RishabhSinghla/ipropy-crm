@@ -1587,6 +1587,63 @@ miscRouter.post('/import/jobs/:id/cancel', asyncHandler(async (req, res) => {
   res.json({ ok: true });
 }));
 
+/**
+ * Undo an import.
+ *
+ * What this can honestly do is remove the records the import *created*. An
+ * update overwrote values that were never kept anywhere, so there is nothing
+ * to put back — and a button that says "Undo" and silently leaves half the
+ * damage is worse than no button. The response says exactly what it did, and
+ * the screen repeats it before asking.
+ *
+ * Records are deleted the normal way, through `recordService`, so the audit
+ * trail, the workflows and the recycle bin all behave as they do for a person
+ * deleting a record — and anything already deleted, or since merged away, is
+ * counted as gone rather than treated as a failure.
+ */
+miscRouter.post('/import/jobs/:id/rollback', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const scope = getScope(req);
+  await assertCapability(user, 'records.import');
+
+  const job = await db.queryOne<{ id: string; module: string; status: string; user_id: string }>(
+    `SELECT j.id, m.name AS module, j.status, j.user_id
+       FROM ipy_import_job j JOIN ipy_module m ON m.id = j.module_id
+      WHERE j.id = $1`, [req.params.id]);
+  if (!job) throw new NotFoundError('No import with that id');
+  // Somebody else's import is somebody else's decision. An admin who needs to
+  // undo one can delete the records; this button is not the place to let one
+  // person reverse another's work without their knowing.
+  if (job.user_id !== user.id) throw new ForbiddenError('That import was run by somebody else');
+  if (job.status === 'running' || job.status === 'cancelling') {
+    throw new BadRequestError('Cancel the import first — it is still adding rows');
+  }
+
+  const created = await db.query<{ record_id: string }>(
+    `SELECT record_id FROM ipy_import_row
+      WHERE job_id = $1 AND outcome = 'created' AND record_id IS NOT NULL`, [job.id]);
+
+  let deleted = 0;
+  let gone = 0;
+  const failures: string[] = [];
+  for (const row of created.rows) {
+    try {
+      await recordService.deleteRecord(scope, job.module, row.record_id);
+      deleted += 1;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'unknown error';
+      if (err instanceof NotFoundError) { gone += 1; continue; }
+      if (failures.length < 20) failures.push(message);
+    }
+  }
+
+  const updated = await db.queryOne<{ n: string }>(
+    `SELECT count(*)::text AS n FROM ipy_import_row WHERE job_id = $1 AND outcome = 'updated'`, [job.id]);
+
+  logger.info({ jobId: job.id, deleted, gone, failed: failures.length }, 'import rolled back');
+  res.json({ deleted, gone, failed: failures.length, failures, keptUpdates: Number(updated?.n ?? 0) });
+}));
+
 miscRouter.get('/import/jobs', asyncHandler(async (req, res) => {
   const rows = await db.query(
     `SELECT j.*, m.name AS module, m.label AS module_label

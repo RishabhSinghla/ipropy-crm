@@ -1102,6 +1102,9 @@ export const api = {
       optionsAdded: string[]; optionsSkipped: string[];
     }>(`/api/import/${module}/dry-run`, { method: 'POST', body: form });
   },
+  rollbackImport: (id: string) => request<{
+    deleted: number; gone: number; failed: number; failures: string[]; keptUpdates: number;
+  }>(`/api/import/jobs/${id}/rollback`, { method: 'POST' }),
   importJobs: () => get<Record<string, unknown>[]>('/api/import/jobs'),
   cancelImport: (jobId: string) => post<{ ok: boolean }>(`/api/import/jobs/${jobId}/cancel`),
   /** The collisions this import parked, each beside the record it hit. */

@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatIndianPrice, relativeTime } from '@ipropy/shared';
 import {
-  AlertTriangle, ArrowLeft, Check, Database, Download, FileUp, Upload, X,
+  AlertTriangle, ArrowLeft, Check, Database, Download, FileUp, Undo2, Upload, X,
 } from 'lucide-react';
 import { api, authedFileUrl, type ImportSection } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
@@ -120,6 +120,7 @@ export default function ImportAdmin(): JSX.Element {
   const [dryRun, setDryRun] = useState<DryRun | null>(null);
   const [openJob, setOpenJob] = useState<JobRow | null>(null);
   const [reviewJob, setReviewJob] = useState<JobRow | null>(null);
+  const [undoJob, setUndoJob] = useState<JobRow | null>(null);
 
   const { data: jobs } = useQuery({
     queryKey: ['import-jobs'],
@@ -163,6 +164,36 @@ export default function ImportAdmin(): JSX.Element {
       setStep('rules');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const undo = async (job: JobRow): Promise<void> => {
+    setUndoJob(null);
+    try {
+      const r = await api.rollbackImport(job.id);
+      const kept = r.keptUpdates > 0
+        ? ` ${r.keptUpdates} row${r.keptUpdates === 1 ? '' : 's'} updated a record that was already here — those changes stay.`
+        : '';
+      // Nothing removed and nothing left to remove are the same number and
+      // not the same sentence. Saying "in the recycle bin" after removing
+      // none of them is how a person concludes the button is broken.
+      if (r.deleted === 0 && r.gone > 0) {
+        toast.success('Already undone', `Those ${r.gone} records had gone already.${kept}`);
+      } else {
+        toast.success(
+          `${r.deleted} record${r.deleted === 1 ? '' : 's'} removed`,
+          `They are in the recycle bin, so nothing is destroyed.${kept}`,
+        );
+      }
+      if (r.failed > 0) {
+        toast.error(
+          `${r.failed} could not be removed`,
+          r.failures[0] ?? 'Open the record and delete it by hand.',
+        );
+      }
+      void queryClient.invalidateQueries({ queryKey: ['import-jobs'] });
+    } catch (err) {
+      toast.error('Could not undo the import', (err as Error).message);
     }
   };
 
@@ -705,7 +736,18 @@ export default function ImportAdmin(): JSX.Element {
                           Cancel
                         </button>
                       ) : (
-                        <ResultDownload job={job} />
+                        <span className="flex items-center justify-end gap-1.5">
+                          <ResultDownload job={job} />
+                          {job.created_rows > 0 && (
+                            <button
+                              onClick={() => setUndoJob(job)}
+                              className="btn-secondary btn-sm"
+                              title="Remove the records this file added"
+                            >
+                              <Undo2 className="h-3.5 w-3.5" /> Undo
+                            </button>
+                          )}
+                        </span>
                       )}
                     </td>
                   </tr>
@@ -717,6 +759,32 @@ export default function ImportAdmin(): JSX.Element {
       </div>
 
       {openJob && <JobDetailsModal job={openJob} onClose={() => setOpenJob(null)} />}
+      {undoJob && (
+        <Modal open title="Undo this import?" onClose={() => setUndoJob(null)} size="sm">
+          <p className="text-sm">
+            This removes the {undoJob.created_rows} record{undoJob.created_rows === 1 ? '' : 's'}{' '}
+            <span className="font-medium">{undoJob.file_name}</span> added. They go to the recycle
+            bin, so nothing is destroyed.
+          </p>
+          {/* Said before the click, not discovered after it. An update
+              overwrote values that were never kept anywhere, so there is
+              nothing to put back — and a button that says Undo and quietly
+              leaves half the change is worse than no button. */}
+          {undoJob.updated_rows > 0 && (
+            <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+              {undoJob.updated_rows} row{undoJob.updated_rows === 1 ? '' : 's'} in this file updated a
+              record that already existed. Those changes cannot be undone — the old values were not
+              kept anywhere.
+            </p>
+          )}
+          <div className="mt-4 flex justify-end gap-2">
+            <button onClick={() => setUndoJob(null)} className="btn-secondary">Keep them</button>
+            <button onClick={() => void undo(undoJob)} className="btn-primary">
+              <Undo2 className="h-4 w-4" /> Remove {undoJob.created_rows}
+            </button>
+          </div>
+        </Modal>
+      )}
       {reviewJob && (
         <ImportDuplicateReview
           jobId={reviewJob.id}
