@@ -26,6 +26,7 @@ import {} from '../components/Layout';
 import DocumentViewer, { isPreviewable, type ViewableFile } from '../components/DocumentViewer';
 import ComposeModal from '../components/ComposeModal';
 import { PeekLink } from '../components/PeekLink';
+import { CallButton, CallDispositionProvider } from '../components/CallDisposition';
 
 export default function RecordDetail(): JSX.Element {
   const { module: moduleName, id } = useParams<{ module: string; id: string }>();
@@ -260,7 +261,7 @@ export default function RecordDetail(): JSX.Element {
   // Calls belong to people. The companion app syncs the whole team's call log
   // against whichever lead the number matches, so this is where "did anyone
   // ring them back?" gets answered — no separate call-centre module.
-  const supportsCalls = moduleName === 'leads';
+  const supportsCalls = meta.fields.some((field) => field.uitype === 'phone');
 
   const availableTabs = [
     { key: 'overview', label: 'Overview', icon: <LayoutDashboard className="h-3.5 w-3.5" /> },
@@ -299,6 +300,7 @@ export default function RecordDetail(): JSX.Element {
   const activeTab = tabs.some((t) => t.key === tab) ? tab : tabs[0]!.key;
 
   return (
+    <CallDispositionProvider recordId={record.id} module={moduleName!} recordLabel={record.label}>
     <div className="mx-auto max-w-[1600px] p-4 sm:p-6">
       {/* Header */}
       <div className="card mb-4 overflow-hidden">
@@ -353,7 +355,7 @@ export default function RecordDetail(): JSX.Element {
 
               {phone && (
                 <>
-                  <CallButton to={phone} recordId={record.id} module={moduleName!} />
+                  <CallButton to={phone} />
                   <button onClick={() => setCompose('whatsapp')} className="btn-secondary btn-sm" title="WhatsApp">
                     <MessageCircle className="h-3.5 w-3.5 text-positive" />
                     <span className="hidden sm:inline">WhatsApp</span>
@@ -639,6 +641,7 @@ export default function RecordDetail(): JSX.Element {
         />
       )}
     </div>
+    </CallDispositionProvider>
   );
 }
 
@@ -2805,126 +2808,6 @@ function MentionTextarea({
   );
 }
 
-function CallButton({ to, recordId, module }: { to: string; recordId: string; module: string }): JSX.Element {
-  const [busy, setBusy] = useState(false);
-  const [startedAt, setStartedAt] = useState<number | null>(null);
-  const [logOpen, setLogOpen] = useState(false);
-  const [durationMinutes, setDurationMinutes] = useState(1);
-  const [disposition, setDisposition] = useState('Call Back Later');
-  const [notes, setNotes] = useState('');
-  const { telephonyAvailable } = useApp();
-
-  useEffect(() => {
-    if (!startedAt) return;
-    const offerLog = (): void => {
-      if (document.visibilityState !== 'visible') return;
-      const elapsed = Math.max(1, Math.round((Date.now() - startedAt) / 60_000));
-      setDurationMinutes(elapsed);
-      setLogOpen(true);
-    };
-    const timer = window.setTimeout(offerLog, 1500);
-    window.addEventListener('focus', offerLog);
-    document.addEventListener('visibilitychange', offerLog);
-    return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener('focus', offerLog);
-      document.removeEventListener('visibilitychange', offerLog);
-    };
-  }, [startedAt]);
-
-  const call = async (): Promise<void> => {
-    if (!telephonyAvailable) {
-      setStartedAt(Date.now());
-      window.location.href = `tel:${to.replace(/[^\d+]/g, '')}`;
-      return;
-    }
-    setBusy(true);
-    try {
-      await api.call(to, recordId, module);
-      toast.success('Calling…', `Your phone will ring first, then we connect ${to}`);
-    } catch (err) {
-      toast.error('Could not place the call', (err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const saveManual = async (): Promise<void> => {
-    setBusy(true);
-    try {
-      const connected = !['No Answer', 'Busy', 'Switched Off', 'Not Reachable'].includes(disposition);
-      await api.logCall({
-        to, recordId, module, direction: 'outbound',
-        durationSeconds: connected ? Math.max(1, durationMinutes) * 60 : 0,
-        disposition,
-        notes: notes || undefined,
-      });
-      toast.success('Call logged');
-      setLogOpen(false);
-      setStartedAt(null);
-      setNotes('');
-    } catch (err) {
-      toast.error('Could not log the call', (err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <>
-      <button
-        className="btn-secondary btn-sm"
-        disabled={busy}
-        title={telephonyAvailable ? `Call ${to}` : `Call ${to} using this phone`}
-        onClick={() => void call()}
-      >
-        {busy ? <Spinner className="h-3.5 w-3.5" /> : <Phone className="h-3.5 w-3.5 text-blue-600" />}
-        <span className="hidden sm:inline">Call</span>
-      </button>
-
-      <Modal
-        open={logOpen}
-        onClose={() => { setLogOpen(false); setStartedAt(null); }}
-        title={`Log call with ${to}`}
-        size="sm"
-        footer={(
-          <>
-            <button className="btn-secondary" onClick={() => { setLogOpen(false); setStartedAt(null); }}>Did not call</button>
-            <button className="btn-primary" disabled={busy} onClick={() => void saveManual()}>
-              {busy && <Spinner className="h-3.5 w-3.5" />} Save call
-            </button>
-          </>
-        )}
-      >
-        <div className="space-y-3">
-          <div>
-            <label className="label">Outcome</label>
-            <select className="input" value={disposition} onChange={(e) => setDisposition(e.target.value)}>
-              {CALL_DISPOSITIONS.map((value) => <option key={value} value={value}>{value}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="label">Approximate duration (minutes)</label>
-            <input
-              className="input tnum"
-              type="number"
-              min={0}
-              max={600}
-              value={durationMinutes}
-              onChange={(e) => setDurationMinutes(Math.max(0, Number(e.target.value) || 0))}
-            />
-          </div>
-          <div>
-            <label className="label">Notes (optional)</label>
-            <textarea className="input" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />
-          </div>
-          <p className="text-2xs text-muted">The Android companion fills the number, time and duration automatically when paired.</p>
-        </div>
-      </Modal>
-    </>
-  );
-}
-
 /**
  * Every call with this person, from any source.
  *
@@ -2935,6 +2818,21 @@ function CallButton({ to, recordId, module }: { to: string; recordId: string; mo
  * answer.
  */
 function CallsTab({ recordId }: { recordId: string }): JSX.Element {
+  const queryClient = useQueryClient();
+  const currentUser = useApp((state) => state.user);
+  const [editing, setEditing] = useState<CallListItem | null>(null);
+  const [draftDisposition, setDraftDisposition] = useState('');
+  const [draftNotes, setDraftNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState<string | null>(null);
+  const editVoice = useVoiceCapture(async (audio) => {
+    try {
+      const { note } = await api.voiceNote(audio);
+      setDraftNotes((current) => current.trim() ? `${current.trim()}\n${note}` : note);
+    } catch (err) {
+      toast.error('Could not write the call note', (err as Error).message);
+    }
+  });
   const { data, isLoading } = useQuery({
     queryKey: ['record-calls', recordId],
     queryFn: () => api.calls({ recordId, limit: 50 }),
@@ -2944,11 +2842,31 @@ function CallsTab({ recordId }: { recordId: string }): JSX.Element {
     return <div className="card space-y-2 p-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12" />)}</div>;
   }
 
-  const calls = (data ?? []) as unknown as {
-    id: string; direction: string; status: string; duration_seconds: number;
-    disposition: string | null; notes: string | null; recording_url: string | null;
-    started_at: string; agent_name: string | null;
-  }[];
+  const calls = (data ?? []) as unknown as CallListItem[];
+
+  const openEdit = (call: CallListItem): void => {
+    setEditing(call);
+    setDraftDisposition(call.disposition ?? 'Call Back Later');
+    setDraftNotes(call.notes ?? '');
+  };
+
+  const saveEdit = async (): Promise<void> => {
+    if (!editing) return;
+    setSaving(true);
+    try {
+      await api.updateCall(editing.id, { disposition: draftDisposition, notes: draftNotes });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['record-calls', recordId] }),
+        queryClient.invalidateQueries({ queryKey: ['call-history', editing.id] }),
+      ]);
+      toast.success('Call note updated');
+      setEditing(null);
+    } catch (err) {
+      toast.error('Could not update the call note', (err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   if (!calls.length) {
     return (
@@ -2979,6 +2897,11 @@ function CallsTab({ recordId }: { recordId: string }): JSX.Element {
             )}
             {call.disposition && <Badge color="#0891b2">{call.disposition}</Badge>}
             <span className="ml-auto text-2xs text-muted">{relativeTime(call.started_at)}</span>
+            {(currentUser?.isAdmin || call.user_id === currentUser?.id) && (
+              <button type="button" className="btn-ghost p-1" onClick={() => openEdit(call)} title="Edit disposition note">
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
 
           {call.notes && <p className="mt-1.5 text-sm text-muted">{call.notes}</p>}
@@ -2992,9 +2915,106 @@ function CallsTab({ recordId }: { recordId: string }): JSX.Element {
             />
           )}
 
-          {call.agent_name && <p className="mt-1 text-2xs text-muted">{call.agent_name}</p>}
+          <div className="mt-1 flex items-center gap-2 text-2xs text-muted">
+            {call.agent_name && <span>{call.agent_name}</span>}
+            <button type="button" className="hover:text-brand-600 hover:underline" onClick={() => setHistoryOpen(call.id)}>
+              See edit history
+            </button>
+          </div>
         </div>
       ))}
+
+      <Modal
+        open={Boolean(editing)}
+        onClose={() => setEditing(null)}
+        title="Edit call disposition"
+        size="sm"
+        footer={(
+          <>
+            <button className="btn-secondary" onClick={() => setEditing(null)} disabled={saving}>Cancel</button>
+            <button className="btn-primary" onClick={() => void saveEdit()} disabled={saving}>
+              {saving && <Spinner className="h-3.5 w-3.5" />} Save changes
+            </button>
+          </>
+        )}
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="label">Outcome</label>
+            <select className="input" value={draftDisposition} onChange={(event) => setDraftDisposition(event.target.value)}>
+              {CALL_DISPOSITIONS.map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </div>
+          <div>
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <label className="label mb-0">Disposition notes</label>
+              <button
+                type="button" className={cn('btn-ghost btn-sm', editVoice.recording && 'text-red-600')}
+                onClick={editVoice.toggle} disabled={!editVoice.supported || editVoice.busy}
+              >
+                {editVoice.busy ? <Spinner className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
+                {editVoice.recording ? 'Stop' : editVoice.busy ? 'Writing…' : 'Speak'}
+              </button>
+            </div>
+            <textarea className="input" rows={5} value={draftNotes} onChange={(event) => setDraftNotes(event.target.value)} />
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={Boolean(historyOpen)} onClose={() => setHistoryOpen(null)} title="Call note edit history" size="md">
+        {historyOpen && <CallEditHistory callId={historyOpen} />}
+      </Modal>
     </div>
+  );
+}
+
+interface CallListItem {
+  id: string;
+  user_id: string | null;
+  direction: string;
+  status: string;
+  duration_seconds: number;
+  disposition: string | null;
+  notes: string | null;
+  recording_url: string | null;
+  started_at: string;
+  agent_name: string | null;
+}
+
+function CallEditHistory({ callId }: { callId: string }): JSX.Element {
+  const { data, isLoading } = useQuery({
+    queryKey: ['call-history', callId],
+    queryFn: () => api.callHistory(callId),
+  });
+  if (isLoading) return <div className="space-y-2">{[1, 2].map((key) => <Skeleton key={key} className="h-16" />)}</div>;
+  if (!data?.length) return <EmptyState title="No edits yet" body="The original call note has not been changed." />;
+  return (
+    <ol className="space-y-3">
+      {data.map((raw) => {
+        const item = raw as {
+          id: string; previous_disposition: string | null; previous_notes: string | null;
+          new_disposition: string | null; new_notes: string | null; created_at: string;
+          edited_by_name: string | null;
+        };
+        return (
+          <li key={item.id} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+              <span>{item.edited_by_name || 'System'}</span>
+              <span>·</span>
+              <span>{relativeTime(item.created_at)}</span>
+            </div>
+            {item.previous_disposition !== item.new_disposition && (
+              <p className="mt-1 text-sm">Outcome: {item.previous_disposition || '—'} → {item.new_disposition || '—'}</p>
+            )}
+            {item.previous_notes !== item.new_notes && (
+              <div className="mt-2 grid gap-2 text-sm sm:grid-cols-2">
+                <div><p className="text-2xs font-medium text-muted">Before</p><p className="whitespace-pre-wrap">{item.previous_notes || '—'}</p></div>
+                <div><p className="text-2xs font-medium text-muted">After</p><p className="whitespace-pre-wrap">{item.new_notes || '—'}</p></div>
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ol>
   );
 }

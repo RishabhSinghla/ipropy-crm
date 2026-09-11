@@ -558,6 +558,24 @@ describe('Android companion API', () => {
       .expect(200);
     const call = calls.body.find((c: { id: string }) => c.id === logged.body.callId);
     expect(call).toMatchObject({ source: 'manual', duration_seconds: 60 });
+
+    await request(app)
+      .patch(`/api/telephony/calls/${logged.body.callId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ disposition: 'Interested', notes: 'Site visit requested for Saturday' })
+      .expect(200);
+
+    const history = await request(app)
+      .get(`/api/telephony/calls/${logged.body.callId}/history`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(history.body).toHaveLength(1);
+    expect(history.body[0]).toMatchObject({
+      previous_disposition: 'Call Back Later',
+      previous_notes: null,
+      new_disposition: 'Interested',
+      new_notes: 'Site visit requested for Saturday',
+    });
   });
 });
 
