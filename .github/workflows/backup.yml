@@ -58,14 +58,39 @@ jobs:
         run: |
           docker run -d --name verify -e POSTGRES_PASSWORD=verify -p 5433:5432 pgvector/pgvector:pg18
           for i in $(seq 1 30); do docker exec verify pg_isready -U postgres >/dev/null 2>&1 && break; sleep 2; done
-          PGPASSWORD=verify pg_restore --no-owner --no-acl -h localhost -p 5433 -U postgres -d postgres "ipropy-$STAMP.dump" || true
-          TABLES=$(PGPASSWORD=verify psql -h localhost -p 5433 -U postgres -d postgres -tAc \
-            "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name LIKE 'ipy_%';")
+          # `|| true` because pg_restore warns about extensions it cannot own and
+          # exits non-zero for that alone. The exit code is reported rather than
+          # swallowed, and what the database actually contains is checked below
+          # — which is the part that decides whether this dump is any good.
+          set +e
+          PGPASSWORD=verify pg_restore --no-owner --no-acl -h localhost -p 5433 -U postgres -d postgres "ipropy-$STAMP.dump"
+          RESTORE_CODE=$?
+          set -e
+          [ "$RESTORE_CODE" = "0" ] || echo "::warning::pg_restore exited $RESTORE_CODE (usually extension ownership; the checks below decide)"
+
+          q() { PGPASSWORD=verify psql -h localhost -p 5433 -U postgres -d postgres -tAc "$1"; }
+
+          TABLES=$(q "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name LIKE 'ipy_%';")
           echo "restored $TABLES iPropy tables"
-          test "$TABLES" -ge 40 || { echo "Too few tables restored — this dump is not trustworthy"; exit 1; }
-          RECORDS=$(PGPASSWORD=verify psql -h localhost -p 5433 -U postgres -d postgres -tAc \
-            "SELECT count(*) FROM ipy_record;")
+          test "$TABLES" -ge 40 || { echo "::error::Too few tables restored — this dump is not trustworthy"; exit 1; }
+
+          # The rows, not just the shape. This counted them and printed the
+          # number without ever testing it, so a dump holding every table and
+          # no data at all passed — which is exactly what a schema-only dump or
+          # a dump of the wrong database looks like, and the whole point of
+          # restoring it here was to catch that.
+          RECORDS=$(q "SELECT count(*) FROM ipy_record;")
           echo "restored $RECORDS records"
+          test "$RECORDS" -ge 1 || { echo "::error::The dump restored no records at all. Not a backup."; exit 1; }
+
+          # A restore with no users cannot be signed into, and one with no
+          # fields has no data model — both are structurally fine and useless.
+          for check in "ipy_user:1" "ipy_module:1" "ipy_field:10"; do
+            table="${check%%:*}"; floor="${check#*:}"
+            got=$(q "SELECT count(*) FROM $table;")
+            echo "  $table: $got"
+            test "$got" -ge "$floor" || { echo "::error::$table restored $got rows, expected at least $floor."; exit 1; }
+          done
 
       - name: Upload to R2
         env:
