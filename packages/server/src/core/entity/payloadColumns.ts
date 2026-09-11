@@ -129,3 +129,38 @@ export async function setIfPresent(
   );
   return true;
 }
+
+/*
+  Reading a field that may have been deleted, without serialising the row.
+
+  `to_jsonb(l)->>'status'` is the pattern this codebase adopted so that a query
+  naming a field an admin has retired answers NULL instead of 42703. It is the
+  right idea and it is expensive in exactly the wrong place: `to_jsonb(l)`
+  builds a JSON object out of all 73 columns of every row considered, to read
+  three of them.
+
+  Measured on 60,000 contacts, the reverse matching query:
+
+      to_jsonb(l)->>'…'                777 ms
+      to_jsonb(l.col)#>>'{}'            26 ms
+
+  Thirty times, for the same answer. `#>>'{}'` rather than `::text` because the
+  two disagree on timestamps — `to_jsonb(row)->>'col'` gives a JSON date and
+  `col::text` gives Postgres's own format — and this has to be exactly what it
+  replaces, not nearly.
+
+  The column name is only ever emitted after being found in the set that came
+  from `information_schema`, so it cannot carry anything a user wrote.
+*/
+
+/** The text of a field, or NULL where the field has been deleted. */
+export function fieldText(present: Set<string>, alias: string, column: string): string {
+  if (!present.has(column)) return 'NULL::text';
+  return `to_jsonb(${alias}."${column}")#>>'{}'`;
+}
+
+/** The same as jsonb, for a list field a query asks `?|` or `?` of. */
+export function fieldJson(present: Set<string>, alias: string, column: string): string {
+  if (!present.has(column)) return `'null'::jsonb`;
+  return `to_jsonb(${alias}."${column}")`;
+}
