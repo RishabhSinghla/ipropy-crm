@@ -147,6 +147,41 @@ describe('a dashboard tile filtering on a field that is gone', () => {
     }
   });
 
+  it('switches a workflow off rather than letting it act on everybody', async () => {
+    /*
+      The one place in this sweep where removing a stale reference is the wrong
+      answer. Every workflow condition *narrows*, so dropping one widens what
+      the workflow acts on — "Nurture cold leads" without `is_converted` would
+      message customers who have already bought. Real messages, to real people,
+      because a field was tidied away.
+
+      It was failing on every tick anyway: a scheduled workflow pushes its
+      conditions into SQL, and an unknown field is a 400. Switching it off loses
+      nothing and says so.
+    */
+    const module = await db.queryOne<{ id: string }>(`SELECT id FROM ipy_module WHERE name = 'leads'`);
+    const made = await db.queryOne<{ id: string }>(
+      `INSERT INTO ipy_workflow (module_id, name, trigger, conditions, is_active, sequence)
+       VALUES ($1, 'QA ghost-condition workflow', 'scheduled', $2::jsonb, true, 99)
+       RETURNING id`,
+      [module!.id, JSON.stringify({ logic: 'AND', conditions: [
+        { field: 'full_name', operator: 'is_not_empty' },
+        { field: 'qa_field_that_never_existed', operator: 'is_false' },
+      ] })],
+    );
+    try {
+      await transaction(async (tx) => { await pruneFieldRefs(tx); });
+      const after = await db.queryOne<{ is_active: boolean; conditions: { conditions: { field: string }[] } }>(
+        `SELECT is_active, conditions FROM ipy_workflow WHERE id = $1`, [made!.id]);
+      expect(after!.is_active, 'it must not keep running against a condition it cannot apply').toBe(false);
+      // And the condition is left in place, so an admin can see what to repoint.
+      expect(after!.conditions.conditions.map((c) => c.field))
+        .toEqual(['full_name', 'qa_field_that_never_existed']);
+    } finally {
+      await db.query(`DELETE FROM ipy_workflow WHERE id = $1`, [made!.id]);
+    }
+  });
+
   it('every seeded tile on every dashboard answers', async () => {
     const dashboards = await db.query<{ id: string }>(`SELECT id FROM ipy_dashboard`);
     const failures: string[] = [];

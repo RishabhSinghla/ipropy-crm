@@ -26,6 +26,7 @@
  */
 import type { Tx } from '../pool.js';
 import { logger } from '../../utils/logger.js';
+import { SYSTEM_FIELDS } from '../../core/query/builder.js';
 
 export interface PruneResult {
   /** `module.field → where` for each reference removed. */
@@ -45,7 +46,18 @@ export async function pruneFieldRefs(conn: Tx): Promise<PruneResult> {
     const fields = await conn.query<{ name: string; is_active: boolean; display_type: string }>(
       `SELECT name, is_active, display_type FROM ipy_field WHERE module_id = $1`, [module.id],
     );
-    const exists = new Set(fields.rows.map((f) => f.name));
+    /*
+      The pseudo-fields every module has, alongside its own.
+
+      `created_at`, `owner_id`, `record_number` and the rest live on
+      `ipy_record` and have no row in `ipy_field`, so a name-only check reads
+      them as deleted — and this sweep would then strip a perfectly valid
+      `created_at` off a trend chart, or switch off a workflow for narrowing on
+      the date a lead arrived. The filter builder accepts them, so this must
+      too; `SYSTEM_FIELDS` is where it keeps that list, and taking it from there
+      means the two cannot drift.
+    */
+    const exists = new Set([...fields.rows.map((f) => f.name), ...Object.keys(SYSTEM_FIELDS)]);
     const onScreen = new Set(
       fields.rows.filter((f) => f.is_active && f.display_type !== 'hidden').map((f) => f.name),
     );
@@ -221,6 +233,63 @@ export async function pruneFieldRefs(conn: Tx): Promise<PruneResult> {
           : 'a dashboard tile named a field that is gone — the reference was removed',
       );
       removed.push(`${module.name} → dashboard tile "${widget.title}"`);
+    }
+
+    /*
+      --- workflows -----------------------------------------------------------
+
+      Seven of them had conditions naming a field that is gone, and a scheduled
+      workflow pushes its conditions into SQL, so each one raised
+      `Unknown field` on every tick and did nothing. "Birthday greeting" dying
+      nightly is the same story told once before.
+
+      A rename is repaired, which revives the workflow. A field that is
+      genuinely gone is **not** dropped, and this is the one place in this file
+      where removing the reference is the wrong answer: every condition here
+      narrows, so deleting one widens what the workflow acts on. "Nurture cold
+      leads" without `is_converted` and `last_activity_at` would message
+      customers who have already bought and leads somebody rang yesterday —
+      real messages, to real people, because a field was tidied away.
+
+      So it is switched off instead, loudly. That is not a loss: it was failing
+      on every run already. The difference is that it now says so, and an admin
+      can point the condition at whatever replaced the field and switch it back
+      on.
+    */
+    const workflows = await conn.query<{ id: string; name: string; conditions: { conditions?: { field?: string }[] } | null; is_active: boolean }>(
+      `SELECT id, name, conditions, is_active FROM ipy_workflow WHERE module_id = $1`, [module.id],
+    );
+    for (const workflow of workflows.rows) {
+      const conditions = Array.isArray(workflow.conditions?.conditions) ? workflow.conditions!.conditions! : null;
+      if (!conditions?.length) continue;
+
+      const renamed: string[] = [];
+      const unresolved: string[] = [];
+      const next = conditions.map((c) => {
+        if (!c.field || exists.has(c.field)) return c;
+        const target = resolve(c.field);
+        if (target) { renamed.push(`${c.field}→${target}`); return { ...c, field: target }; }
+        unresolved.push(c.field);
+        return c;
+      });
+
+      if (!renamed.length && !unresolved.length) continue;
+
+      if (renamed.length) {
+        await conn.query(`UPDATE ipy_workflow SET conditions = $2::jsonb WHERE id = $1`,
+          [workflow.id, JSON.stringify({ ...workflow.conditions, conditions: next })]);
+      }
+      if (unresolved.length && workflow.is_active) {
+        await conn.query(`UPDATE ipy_workflow SET is_active = false WHERE id = $1`, [workflow.id]);
+      }
+      logger.warn(
+        { module: module.name, workflow: workflow.name, renamed, unresolved,
+          switchedOff: Boolean(unresolved.length && workflow.is_active) },
+        unresolved.length
+          ? 'a workflow narrows on a field that is gone — switched off rather than let it act on everybody'
+          : 'a workflow named a field by its old name — repointed at the renamed field',
+      );
+      removed.push(`${module.name} → workflow "${workflow.name}"`);
     }
 
     // --- dependent dropdowns ------------------------------------------------
