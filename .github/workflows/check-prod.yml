@@ -136,13 +136,21 @@ jobs:
           # The decisive one: a workflow that is off should have stopped
           # logging. Days-with-activity says whether it stopped or is still
           # going, which no single timestamp can.
+          # Days-active only means something next to the cadence the workflow
+          # was actually given. One day in fourteen is alarming for a daily
+          # schedule and correct for a fortnightly one, and nothing above says
+          # which this is.
           psql "$PROD_DATABASE_URL" -P pager=off -c \
             "SELECT w.name, w.is_active,
-                    count(DISTINCT date_trunc('day', l.created_at)) AS days_active_14d,
+                    coalesce(w.schedule #>> '{}', '(none)') AS schedule,
+                    count(DISTINCT date_trunc('day', l.created_at)) AS days_14d,
                     to_char(max(l.created_at), 'MM-DD HH24:MI') AS newest
-               FROM ipy_workflow w JOIN ipy_workflow_log l ON l.workflow_id = w.id
-              WHERE w.trigger = 'scheduled' AND l.created_at > now() - interval '14 days'
-              GROUP BY w.id, w.name, w.is_active ORDER BY w.is_active DESC, w.name;"
+               FROM ipy_workflow w
+               LEFT JOIN ipy_workflow_log l
+                 ON l.workflow_id = w.id AND l.created_at > now() - interval '14 days'
+              WHERE w.trigger = 'scheduled'
+              GROUP BY w.id, w.name, w.is_active, w.schedule
+              ORDER BY w.is_active DESC, w.name;"
           echo
           echo "--- which AI model does each job use, and is the key there? ---"
           # Semantic search has been inert since it was built: `ipy_embedding`
