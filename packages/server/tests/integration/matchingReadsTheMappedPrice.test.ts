@@ -31,8 +31,6 @@ const BUDGET = 20_000_000;
 const PRICE = 19_500_000;
 let leadId = '';
 let propertyId = '';
-let previousBudget: string | null = null;
-let previousRequirement: { configuration: unknown; preferred_locations: unknown } | null = null;
 /** The Budget pair this test re-points, so later files see the CRM it expects. */
 let displacedMappings: Record<string, unknown>[] = [];
 
@@ -52,14 +50,7 @@ afterAll(async () => {
   if (fieldId) await request(app).delete(`/api/meta/fields/${fieldId}?permanent=true&confirm=true`)
     .set('Authorization', `Bearer ${token}`);
   await db.query(`DELETE FROM ipy_dropped_column WHERE column_name = $1`, [PRICE_FIELD]);
-  if (leadId) {
-    await db.query(
-      `UPDATE ipy_e_leads SET budget = $2, configuration = $3, preferred_locations = $4 WHERE record_id = $1`,
-      [leadId, previousBudget,
-        JSON.stringify(previousRequirement?.configuration ?? []),
-        JSON.stringify(previousRequirement?.preferred_locations ?? [])],
-    );
-  }
+  if (leadId) await db.query(`DELETE FROM ipy_record WHERE id = $1`, [leadId]);
   for (const row of displacedMappings) {
     await db.query(
       `INSERT INTO ipy_field_mapping SELECT * FROM jsonb_populate_record(NULL::ipy_field_mapping, $1::jsonb)
@@ -92,30 +83,26 @@ describe('matching when the price lives in an admin-created field', () => {
     await db.query(
       `UPDATE ipy_e_properties SET total_price = NULL, base_price = NULL WHERE record_id = $1`, [propertyId]);
 
-    const lead = await db.queryOne<{ record_id: string; budget: string | null }>(
-      `SELECT l.record_id, to_jsonb(l)->>'budget' AS budget FROM ipy_e_leads l JOIN ipy_record r ON r.id = l.record_id
-        WHERE r.is_deleted = false
-          AND COALESCE((to_jsonb(l)->>'is_converted')::boolean, false) = false
-          AND COALESCE(to_jsonb(l)->>'status','') NOT IN ('Junk','Lost')
-        ORDER BY l.record_id LIMIT 1`);
-    leadId = lead!.record_id; previousBudget = lead!.budget;
     /*
-      Budget is the only requirement for the duration.
+      A lead made for this test, wanting nothing but a budget.
 
-      This test is about *where the price is read from*, not about scoring. A
-      lead that also wants 3 BHK in Kharadi drags the score under the match
-      floor on an arbitrary property, so the unit is a genuine candidate and
-      still absent from the answer — which fails the test for a reason that has
-      nothing to do with the bug. Both values go back in `afterAll`.
+      It used to borrow whichever seeded lead had the lowest record id and
+      blank two of its requirement fields. That left the rest — area,
+      possession timeline — saying whatever the demo data happened to say, and
+      those mismatches drag the score under the match floor: the unit is a
+      genuine candidate, is scored, and is still absent from the answer. Since
+      the seed generates fresh UUIDs on every run, which lead got borrowed
+      changed run to run, and the test failed about five runs in eight on a
+      completely healthy tree.
+
+      This test is about *where the price is read from*, not about scoring, so
+      it now states the one requirement it means and nothing else.
     */
-    const req = await db.queryOne<{ configuration: unknown; preferred_locations: unknown }>(
-      `SELECT to_jsonb(l)->'configuration' AS configuration,
-              to_jsonb(l)->'preferred_locations' AS preferred_locations
-         FROM ipy_e_leads l WHERE l.record_id = $1`, [leadId]);
-    previousRequirement = req ?? null;
-    await db.query(
-      `UPDATE ipy_e_leads SET budget = $2, configuration = '[]'::jsonb, preferred_locations = '[]'::jsonb
-        WHERE record_id = $1`, [leadId, BUDGET]);
+    const created_lead = await request(app).post('/api/records/leads')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ full_name: `QA mapped price ${PRICE_FIELD}`, mobile: '9811500077', budget: BUDGET })
+      .expect(201);
+    leadId = created_lead.body.id;
 
     // Point Budget at the new field, the way Admin → Matching Setup does —
     // which replaces the existing pair rather than adding a second one.
