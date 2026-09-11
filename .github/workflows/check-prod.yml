@@ -108,7 +108,8 @@ jobs:
             "SELECT w.name, w.trigger, w.is_active,
                     coalesce(to_char(w.last_run_at, 'MM-DD HH24:MI'), 'never') AS last_run,
                     (SELECT count(*) FROM ipy_workflow_log l
-                      WHERE l.workflow_id = w.id AND l.created_at > now() - interval '7 days') AS runs_7d
+                      WHERE l.workflow_id = w.id AND l.created_at > now() - interval '7 days') AS rows_7d,
+                    to_char(w.updated_at, 'MM-DD HH24:MI') AS changed
                FROM ipy_workflow w ORDER BY w.is_active DESC, w.name;"
           echo
           echo "--- which AI model does each job use, and is the key there? ---"
