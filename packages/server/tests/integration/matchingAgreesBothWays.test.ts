@@ -21,8 +21,21 @@ import { db } from '../../src/db/pool.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import { matchForRecord, matchBuyersForProperty } from '../../src/ai/matching.js';
 import { scoringThresholds } from '../../src/core/settings/scoring.js';
+import { invalidateMatchingConfig } from '../../src/core/settings/matching.js';
 
-beforeAll(async () => { await registry.warmup(); });
+beforeAll(async () => {
+  await registry.warmup();
+  /*
+    Both caches, deliberately.
+
+    `matchingConfig` holds field *internal ids*, and earlier files in this
+    suite delete and re-create `ipy_field` rows — so a cache warmed before them
+    resolves none of its pairs, the mapped price falls back to the built-in
+    column, and this file fails for a reason that has nothing to do with it.
+  */
+  registry.invalidate();
+  invalidateMatchingConfig();
+});
 
 describe('forward and reverse matching', () => {
   it('a property a contact matches must list that contact back', async () => {

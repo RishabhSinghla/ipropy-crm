@@ -372,12 +372,25 @@ function syncCountryCodes(fields: FieldMeta[]): void {
 
 /** Resolve every Area/Budget unit selector from the one reusable master. */
 function syncUnitMasters(fields: FieldMeta[], units: Map<string, { value: string; label: string }[]>): void {
+  const byName = new Map(fields.map((f) => [f.name, f]));
   for (const field of fields) {
     const kind = field.config.unitMaster;
     if (!kind) continue;
     const options = units.get(kind);
     if (!options?.length) continue;
     field.config = { ...field.config, unitOptions: options };
+
+    /*
+      The companion picklist gets the list too.
+
+      `area` carries the options and `area_unit` stores the choice, and only the
+      first was being told what the master holds. Everything that reads the
+      unit field on its own — the list view's Area Unit column, a filter, a
+      report, and the importer deciding whether "Sq Yard" is a unit it knows —
+      saw the two-value picklist the template shipped with instead.
+    */
+    const companion = typeof field.config.unitField === 'string' ? byName.get(field.config.unitField) : null;
+    if (companion) companion.config = { ...companion.config, unitMaster: kind, unitOptions: options };
   }
 }
 

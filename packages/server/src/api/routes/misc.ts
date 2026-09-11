@@ -36,6 +36,10 @@ import { runSchedulerNow } from '../../core/workflow/scheduler.js';
 import { TASK_TYPES } from '../../core/workflow/tasks.js';
 import { mergeRecords } from '../../core/entity/conversion.js';
 import { readImportFile } from '../../core/import/readFile.js';
+import {
+  DEFAULT_CONTEXT, detectDateOrder, normaliseForField,
+  type DateOrder, type NormaliseContext,
+} from '../../core/import/normalise.js';
 import { growPicklists, growableFields } from '../../core/import/picklistGrowth.js';
 import { reconcileColumns } from '../../db/seed/reconcileColumns.js';
 import {
@@ -1120,6 +1124,33 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
         logger.warn({ err }, 'could not add dropdown options for this import');
       }
     }
+    /*
+      How this file writes its dates, decided once for the whole import.
+
+      `03/04/2026` is the third of April to everyone who will use this CRM and
+      the fourth of March to `new Date()`, which is what the importer used to
+      call. Reading it per row means a column can be interpreted two ways in
+      one file; reading it per column, from evidence, means a single
+      unambiguous row settles it for the rest. An admin can override it, and
+      when nothing in the column proves either way that choice is what stands.
+    */
+    const dateColumns = live.fields
+      .filter((f) => f.uitype === 'date' || f.uitype === 'datetime')
+      .map((f) => f.name);
+    const dateSamples: unknown[] = [];
+    for (const [header, fieldName] of Object.entries(mapping)) {
+      if (!fieldName || !dateColumns.includes(fieldName)) continue;
+      for (const row of rows.slice(0, 200)) dateSamples.push(row[header]);
+    }
+    const detected = detectDateOrder(dateSamples);
+    const requestedOrder = String(req.body.dateOrder ?? '').trim();
+    const dateOrder: DateOrder = (['dmy', 'mdy', 'ymd'].includes(requestedOrder)
+      ? requestedOrder
+      : detected.order ?? 'dmy') as DateOrder;
+    const normaliseCtx: NormaliseContext = { ...DEFAULT_CONTEXT, dateOrder };
+    logger.info({ dateOrder, certain: detected.certain, requested: requestedOrder || null },
+      'import: date order for this file');
+
     // What the counts are made of, shown when a number is clicked in the UI.
     // Bounded: a five-figure import does not need five-figure lists in one
     // jsonb cell, so each list stops at 300 and the UI says so.
@@ -1130,19 +1161,47 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
 
     for (const [i, raw] of rows.entries()) {
       const values: Record<string, unknown> = {};
+      /** Cells this row could not read — the row fails with these, not with a Postgres sentence. */
+      const unreadable: string[] = [];
       for (const [header, fieldName] of Object.entries(mapping)) {
         if (!fieldName) continue;
         const v = raw[header];
         if (v === undefined || v === '') continue;
+
+        /*
+          Presentation is corrected before the value is validated.
+
+          A leading zero on a mobile, `₹` and commas on a price, `Sq Yard` for
+          the unit, `15-03-2026` for the date: all of these are how somebody
+          typed the value, not what it means. The record API is strict for good
+          reasons and stays strict; this is the one place that is lenient, and
+          a cell it genuinely cannot read fails the row with a sentence naming
+          the column rather than a raw database error.
+        */
+        const fieldMeta = live.fields.find((f) => f.name === fieldName);
+        let cell: unknown = v;
+        if (fieldMeta) {
+          const read = normaliseForField(fieldMeta, v, normaliseCtx);
+          if (read.problem) { unreadable.push(`${header}: ${read.problem}`); continue; }
+          if (read.value !== null && read.value !== undefined) cell = read.value;
+        }
+
         const fix = canonical.get(fieldName);
-        if (!fix) { values[fieldName] = v; continue; }
+        if (!fix) { values[fieldName] = cell; continue; }
         // Corrected to the option's own spelling, so "neharpar" and "NEHARPAR"
         // do not become two localities. Multi-select cells value by value; a
         // single dropdown is one lookup and is never split — see `multi` above.
         values[fieldName] = multiValued.has(fieldName)
-          ? String(v).split(/[;,]/).map((part) => fix.get(part.trim()) ?? part.trim())
+          ? String(cell).split(/[;,]/).map((part) => fix.get(part.trim()) ?? part.trim())
             .filter(Boolean).join('; ')
-          : (fix.get(String(v).trim()) ?? v);
+          : (fix.get(String(cell).trim()) ?? cell);
+      }
+      if (unreadable.length) {
+        failed++;
+        const why = unreadable.join('; ');
+        if (errors.length < 100) errors.push({ row: i + 2, error: why });
+        await logRow(job!.id, i + 2, 'failed', values, { message: why });
+        continue;
       }
       if (!Object.keys(values).length) {
         skipped++;

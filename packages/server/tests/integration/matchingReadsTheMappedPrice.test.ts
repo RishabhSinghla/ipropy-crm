@@ -38,6 +38,8 @@ let displacedMappings: Record<string, unknown>[] = [];
 
 beforeAll(async () => {
   await registry.warmup();
+  registry.invalidate();
+  invalidateMatchingConfig();
   app = createApp();
   const admin = await db.queryOne<{ email: string }>(
     `SELECT email FROM ipy_user WHERE is_admin = true AND password_hash IS NOT NULL ORDER BY created_at LIMIT 1`);
