@@ -115,7 +115,7 @@ jobs:
           # only tells you the CRM is broken in ways production is not.
           for m in properties leads; do
             psql "$PROD_DATABASE_URL" -tAc \
-              "SELECT '$m|' || f.name || '|' || f.uitype || '|' || f.label
+              "SELECT '$m|' || f.name || '|' || f.column_name || '|' || f.uitype || '|' || f.label
                       || '|' || coalesce(f.config::text, '{}')
                       || '|' || (CASE WHEN f.is_active THEN 'active' ELSE 'hidden' END)
                  FROM ipy_field f JOIN ipy_module mo ON mo.id = f.module_id
