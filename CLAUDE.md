@@ -609,8 +609,30 @@ DATABASE_URL='postgresql://ipropy:ipropy@localhost:5432/ipropy_scale' npm run db
 docker exec -i ipropy-db psql -U ipropy -d ipropy_scale < scripts/load-test-data.sql
 ```
 
-Measured at that size, all well indexed: lists 59ms, deep paging 73ms, text search 42ms,
-matching 33ms, comparables 8ms, dashboard 4ms.
+Measured at that size, 11 September 2026: lists 32ms, deep paging 71ms, text search 37ms,
+record detail 8ms, dashboard 4ms, **matching 28ms one way and 150ms the other**.
+
+Two things to know about that line, because it was wrong for a while and nobody could
+tell:
+
+* **`scripts/load-test-data.sql` had stopped working** and the figures could not be
+  reproduced by anybody who tried. It named `country_code`, `lifecycle_stage`,
+  `budget_min`, `budget_max`, `ai_score`, `name`, `configuration` and `carpet_area`,
+  none of which the model still has, so it errored after inserting 60,000 `ipy_record`
+  rows and left the database half built. Fixed; if it breaks again the symptom is a
+  loader that exits non-zero with leads loaded and properties empty.
+* **`to_jsonb(row)` is what makes a query slow here.** It is the pattern that keeps a
+  query safe when an admin deletes a field — a dropped column answers NULL instead of
+  raising 42703 — and it builds a JSON object out of *every* column of *every* row
+  considered. Reverse matching was 2043ms, the caller lookup the phone app makes was
+  1556ms, and the duplicate check on every inbound lead was 1511ms. Reading one column
+  at a time through `fieldText`/`fieldJson` in `core/entity/payloadColumns.ts` keeps the
+  same protection and the same answer: 150ms, 35ms and 52ms.
+
+  Use those helpers rather than `to_jsonb(x)->>'…'` in anything that filters or sorts.
+  `#>>'{}'` and not `::text`, because the two disagree on timestamps. And watch rule 8
+  on the way: dropping a `to_jsonb` read often drops the last reference to a bound
+  parameter, and Postgres refuses a statement with a parameter it never names.
 
 **The shape to watch for**, which has now been found four times in this codebase: a
 bounded slice, ordered by something unrelated to what is done with it afterwards.
