@@ -1143,7 +1143,7 @@ miscRouter.post('/import/:module/dry-run', upload.single('file'), asyncHandler(a
   const importMode = String(req.body.importMode ?? 'create');
   const createOptions = String(req.body.createOptions ?? 'true') !== 'false';
   const module = await registry.requireModule(req.params.module);
-  const { rows } = readImportFile(file.buffer, file.originalname);
+  const { headers, rows, widths } = readImportFile(file.buffer, file.originalname);
 
   const dateColumns = module.fields
     .filter((f) => f.uitype === 'date' || f.uitype === 'datetime').map((f) => f.name);
@@ -1165,7 +1165,10 @@ miscRouter.post('/import/:module/dry-run', upload.single('file'), asyncHandler(a
   if (createOptions) {
     const seen = new Map<string, Set<string>>();
     const growable = new Set(growableFields(module.fields).map((f) => f.name));
-    for (const raw of rows) {
+    for (const [ri, raw] of rows.entries()) {
+      // A misaligned line teaches the CRM nonsense — "000" as a locality —
+      // and it is about to be refused anyway.
+      if ((widths?.[ri] ?? 0) > headers.length) continue;
       for (const [header, fieldName] of Object.entries(mapping)) {
         if (!fieldName || !growable.has(fieldName)) continue;
         const cell = raw[header];
@@ -1210,6 +1213,21 @@ miscRouter.post('/import/:module/dry-run', upload.single('file'), asyncHandler(a
       mapping, fields: module.fields, canonical, multiValued, ctx, people, valueMap,
     });
     const sheetRow = i + 2;
+    /*
+      A line with more values than the heading row is not a row, it is a
+      mistake — and the dangerous kind, because the values after the offending
+      cell all shift one column left. `₹75,00,000` typed without quotes puts
+      "000" in the locality and imports looking perfectly healthy.
+    */
+    const width = widths?.[i];
+    if (width !== undefined && width > headers.length) {
+      preview.push({
+        row: sheetRow, outcome: 'failed', matched: null, values,
+        problems: [`this line has ${width} values where the heading row has ${headers.length}`
+          + ' — a comma inside a value needs quotes around it'],
+      });
+      continue;
+    }
     if (unreadable.length) {
       preview.push({ row: sheetRow, outcome: 'failed', matched: null, values, problems: unreadable });
       continue;
@@ -1319,7 +1337,7 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
   // options are a deliberate, closed set.
   const createOptions = String(req.body.createOptions ?? 'true') !== 'false';
   const module = await registry.requireModule(req.params.module);
-  const { rows } = readImportFile(file.buffer, file.originalname);
+  const { headers: fileHeaders, rows, widths } = readImportFile(file.buffer, file.originalname);
   if (!rows.length) throw new BadRequestError(`“${file.originalname}” has a header row and no data rows.`);
 
   /*
@@ -1397,7 +1415,8 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
           there is one place, and store a value matching neither.
         */
         const multi = multiValued;
-        for (const raw of rows) {
+        for (const [ri, raw] of rows.entries()) {
+          if ((widths?.[ri] ?? 0) > fileHeaders.length) continue;
           for (const [header, fieldName] of Object.entries(mapping)) {
             if (!fieldName || !growable.has(fieldName)) continue;
             const cell = raw[header];
@@ -1466,6 +1485,18 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
       const { values, unreadable } = prepareRow(raw, {
         mapping, fields: live.fields, canonical, multiValued, ctx: normaliseCtx, people, valueMap,
       });
+      // See the same check in the rehearsal above: a line wider than the
+      // heading row has every value after the unquoted comma in the wrong
+      // column, and importing it is worse than refusing it.
+      const width = widths?.[i];
+      if (width !== undefined && width > fileHeaders.length) {
+        failed++;
+        const why = `this line has ${width} values where the heading row has ${fileHeaders.length}`
+          + ' — a comma inside a value needs quotes around it';
+        if (errors.length < 100) errors.push({ row: i + 2, error: why });
+        await logRow(job!.id, i + 2, 'failed', values, { message: why });
+        continue;
+      }
       if (unreadable.length) {
         failed++;
         const why = unreadable.join('; ');

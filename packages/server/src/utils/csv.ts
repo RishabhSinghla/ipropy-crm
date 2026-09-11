@@ -26,7 +26,21 @@ function escapeCell(value: unknown): string {
   return s;
 }
 
-export function parseCsv(text: string): { headers: string[]; rows: Record<string, string>[] } {
+export function parseCsv(text: string): {
+  headers: string[];
+  rows: Record<string, string>[];
+  /**
+   * How many values each row actually had.
+   *
+   * The row objects are keyed by heading, so a line with more values than
+   * headings silently loses the extras *and* shifts everything after the
+   * offending cell — a budget lands in the locality column and the file
+   * imports looking fine. That happens whenever somebody hand-edits a CSV and
+   * leaves a comma inside a value unquoted, which is often. Kept here so the
+   * importer can say so.
+   */
+  widths: number[];
+} {
   // eslint-disable-next-line no-irregular-whitespace -- matching the BOM we wrote
   const clean = text.replace(/^﻿/, '');
   const records: string[][] = [];
@@ -54,11 +68,22 @@ export function parseCsv(text: string): { headers: string[]; rows: Record<string
   if (cell.length || row.length) { row.push(cell); records.push(row); }
 
   const nonEmpty = records.filter((r) => r.some((v) => v.trim() !== ''));
-  if (!nonEmpty.length) return { headers: [], rows: [] };
+  if (!nonEmpty.length) return { headers: [], rows: [], widths: [] };
 
   const headers = nonEmpty[0].map((h) => h.trim());
-  const rows = nonEmpty.slice(1).map((r) =>
+  const body = nonEmpty.slice(1);
+  const rows = body.map((r) =>
     Object.fromEntries(headers.map((h, i) => [h, (r[i] ?? '').trim()])),
   );
-  return { headers, rows };
+  /*
+    Counted whole, including a trailing empty cell.
+
+    Trimming trailing blanks first looks reasonable and hides the exact case
+    worth catching: `Ballabgarh, Sector 64` unquoted makes an eight-value line
+    whose last value — the real trailing empty — trims away, leaving seven and
+    a row that reads as perfectly aligned while every value after the comma
+    sits one column to the left.
+  */
+  const widths = body.map((r) => r.length);
+  return { headers, rows, widths };
 }

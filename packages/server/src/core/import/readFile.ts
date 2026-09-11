@@ -13,6 +13,8 @@ import { BadRequestError } from '../../utils/errors.js';
 export interface Sheet {
   headers: string[];
   rows: Record<string, string>[];
+  /** How many values each row held; longer than the heading row means it is misaligned. */
+  widths?: number[];
 }
 
 export function readImportFile(buffer: Buffer, filename: string): Sheet {
