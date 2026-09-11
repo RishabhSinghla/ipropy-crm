@@ -419,8 +419,10 @@ export default function ImportAdmin(): JSX.Element {
         </p>
       </div>
 
+      {/* The chips wrap rather than clip: on a phone the fourth step fell off
+          the right edge, which reads as a three-step wizard ending at Rules. */}
       {preview && (
-        <div className="mb-4 flex items-center gap-2">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
           {STEPS.map((s, i) => {
             const done = STEPS.findIndex((x) => x.key === step) > i;
             return (
@@ -494,7 +496,8 @@ export default function ImportAdmin(): JSX.Element {
             <div>
               <p className="text-sm font-medium">What each column is</p>
               <p className="text-xs text-muted">
-                {mappedCount} of {preview.headers.length} matched · {preview.totalRows} rows in {file?.name}
+                {mappedCount} of {preview.headers.length} matched ·{' '}
+                {preview.totalRows} {preview.totalRows === 1 ? 'row' : 'rows'} in {file?.name}
               </p>
             </div>
             {hasDates && (
