@@ -106,10 +106,18 @@ jobs:
           # key, so the next person can check an id against OpenRouter's own
           # catalogue instead of guessing at replacements.
           psql "$PROD_DATABASE_URL" -P pager=off -c \
-            "SELECT key, value #>> '{}' AS model
-               FROM ipy_setting WHERE key LIKE 'ai.model%' ORDER BY key;"
+            "SELECT key, left(value #>> '{}', 46) AS model
+               FROM ipy_setting
+              WHERE key ~ 'model' AND category IN ('ai','ai_models')
+              ORDER BY key;"
+          # Was reported as inert for weeks — `ipy_embedding` empty because
+          # indexing needs the embed model, failing silently as ordinary
+          # keyword search. Print what is actually in there.
           psql "$PROD_DATABASE_URL" -tAc \
-            "SELECT 'embeddings stored: ' || count(*) FROM ipy_embedding;"
+            "SELECT 'embeddings: ' || count(*)
+                 || ' rows, over ' || count(DISTINCT record_module) || ' module(s)'
+                 || ', newest ' || coalesce(to_char(max(created_at), 'YYYY-MM-DD HH24:MI'), 'never')
+               FROM ipy_embedding;"
           psql "$PROD_DATABASE_URL" -tAc \
             "SELECT provider || ': active=' || is_active || ', key=' || (credentials ? 'apiKey')
                FROM ipy_integration WHERE provider LIKE 'ai_%' ORDER BY provider;"
