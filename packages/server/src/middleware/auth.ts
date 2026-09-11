@@ -155,12 +155,42 @@ function extractToken(req: Request): string | null {
  * nowhere. Returns null when there is no key header at all, so callers can
  * treat "no key" and "bad key" differently.
  */
+/**
+ * What a scoped key is allowed to reach.
+ *
+ * `ipy_api_key.scopes` has existed since the table did and nothing read it, so
+ * every key carried its owner's whole access — which is what made a key
+ * published by accident as bad as it was. An entry is `METHOD /path/prefix`,
+ * or a bare `/path/prefix` for any method:
+ *
+ *     ["POST /api/files"]        the n8n media pipeline, and nothing else
+ *     ["/api/records/leads"]     read and write contacts, nothing else
+ *
+ * **Empty means unrestricted**, exactly as before. A key written before this
+ * existed has `[]` and keeps working unchanged; narrowing one is a deliberate
+ * act. Anything else would have silently cut off every integration the moment
+ * this shipped.
+ */
+function scopeAllows(scopes: string[], method: string, path: string): boolean {
+  if (scopes.length === 0) return true;
+  return scopes.some((raw) => {
+    const scope = raw.trim();
+    if (!scope) return false;
+    const spaced = scope.indexOf(' ');
+    if (spaced === -1) return path === scope || path.startsWith(`${scope}/`);
+    const wanted = scope.slice(0, spaced).toUpperCase();
+    const prefix = scope.slice(spaced + 1).trim();
+    if (wanted !== method.toUpperCase()) return false;
+    return path === prefix || path.startsWith(`${prefix}/`);
+  });
+}
+
 async function userFromApiKey(req: Request): Promise<AuthUser | null> {
   const key = req.headers['x-api-key'];
   if (typeof key !== 'string' || !key) return null;
 
-  const rows = await db.query<{ id: string; key_hash: string; user_id: string | null; expires_at: string | null; revoked_at: string | null }>(
-    `SELECT id, key_hash, user_id, expires_at, revoked_at FROM ipy_api_key WHERE key_prefix = $1`,
+  const rows = await db.query<{ id: string; key_hash: string; user_id: string | null; expires_at: string | null; revoked_at: string | null; scopes: unknown }>(
+    `SELECT id, key_hash, user_id, expires_at, revoked_at, scopes FROM ipy_api_key WHERE key_prefix = $1`,
     [key.slice(0, 8)],
   );
   for (const row of rows.rows) {
@@ -168,6 +198,15 @@ async function userFromApiKey(req: Request): Promise<AuthUser | null> {
     if (row.expires_at && new Date(row.expires_at) < new Date()) continue;
     if (!(await bcrypt.compare(key, row.key_hash))) continue;
     if (!row.user_id) throw new UnauthorizedError('API key is not bound to a user');
+
+    // Checked before the user is loaded and before `last_used_at` moves: a call
+    // this key may not make should not read as the key having been used.
+    const scopes = Array.isArray(row.scopes) ? row.scopes.filter((s): s is string => typeof s === 'string') : [];
+    const path = req.originalUrl.split('?')[0] ?? req.path;
+    if (!scopeAllows(scopes, req.method, path)) {
+      throw new UnauthorizedError('This API key is not allowed to reach that endpoint.');
+    }
+
     const user = await loadUser(row.user_id);
     if (!user) throw new UnauthorizedError('API key user no longer exists');
     if (!user.isActive) throw new UnauthorizedError('Account is deactivated');
@@ -176,6 +215,8 @@ async function userFromApiKey(req: Request): Promise<AuthUser | null> {
   }
   throw new UnauthorizedError('Invalid API key');
 }
+
+export const __testing = { scopeAllows };
 
 /**
  * Require a signed-in user; attaches req.user and req.scope.

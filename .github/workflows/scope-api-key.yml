@@ -1,0 +1,76 @@
+# Narrow what an existing API key is allowed to reach.
+#
+# `ipy_api_key.scopes` existed from the start and nothing read it, so every key
+# carried its owner's whole access. That is what made the key published into
+# this repository's public Actions log on 18 August 2026 as serious as it was:
+# it could read every contact and property and create and update records.
+#
+# The n8n media pipeline that holds that key makes exactly one call with it —
+# `POST /api/files`, to hand finished photos back. Narrowing it to that leaves
+# the pipeline working and makes the leaked value close to useless, which is
+# worth doing *before* the slower job of rotating it.
+#
+#   name:   n8n media pipeline
+#   scopes: POST /api/files
+#
+# Empty scopes mean unrestricted, so passing a blank list widens a key again.
+# Prints no secret: the key's value is not needed to change what it may do.
+name: Scope API key
+
+on:
+  workflow_dispatch:
+    inputs:
+      name:
+        description: "The key's name, exactly as 'Check production' lists it"
+        required: true
+        default: "n8n media pipeline"
+      scopes:
+        description: "Comma-separated, e.g. 'POST /api/files'. Blank means unrestricted."
+        required: false
+        default: "POST /api/files"
+
+jobs:
+  scope:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install psql 18
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: Set the scopes
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          KEY_NAME: ${{ inputs.name }}
+          SCOPES: ${{ inputs.scopes }}
+        run: |
+          set -euo pipefail
+
+          COUNT="$(psql "$DATABASE_URL" -tAc \
+            "SELECT count(*) FROM ipy_api_key WHERE name = '${KEY_NAME}' AND revoked_at IS NULL")"
+          if [ "$COUNT" != "1" ]; then
+            echo "::error::Expected exactly one live key called '${KEY_NAME}', found ${COUNT}."
+            exit 1
+          fi
+
+          # Built as a JSON array in node rather than by string-bashing, so a
+          # scope containing a quote cannot end the literal early.
+          node -e '
+            const raw = process.env.SCOPES || "";
+            const list = raw.split(",").map((s) => s.trim()).filter(Boolean);
+            require("fs").writeFileSync("/tmp/scopes.json", JSON.stringify(list));
+          '
+          SCOPES_JSON="$(cat /tmp/scopes.json)"
+
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v name="$KEY_NAME" -v scopes="$SCOPES_JSON" <<'SQL'
+          UPDATE ipy_api_key SET scopes = :'scopes'::jsonb WHERE name = :'name' AND revoked_at IS NULL;
+          SQL
+
+          if [ -z "${SCOPES:-}" ]; then
+            echo "::warning::'${KEY_NAME}' is now UNRESTRICTED — it can do anything its owner can."
+          else
+            echo "::notice::'${KEY_NAME}' may now reach only: ${SCOPES}"
+          fi
+          echo "::notice::Takes effect on the next request; nothing needs restarting."
