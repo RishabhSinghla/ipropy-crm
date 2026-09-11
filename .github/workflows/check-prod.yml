@@ -98,6 +98,20 @@ jobs:
           # no phone field was flagged searchable and nothing reached the index.
           # Reported as a permissions problem; it was not one. Migration 098
           # backfilled it, and this is the line that says whether it held.
+          echo "--- API keys, and whether anything is using them ---"
+          # Name and dates only: no prefix, no hash. Enough to decide whether a
+          # key can be revoked without stopping the automation that holds it,
+          # which is the question after one leaked into a public Actions log on
+          # 18 August 2026.
+          psql "$PROD_DATABASE_URL" -P pager=off -c \
+            "SELECT k.name,
+                    to_char(k.created_at, 'YYYY-MM-DD') AS created,
+                    coalesce(to_char(k.last_used_at, 'YYYY-MM-DD'), 'never') AS last_used,
+                    k.is_active,
+                    u.email
+               FROM ipy_api_key k LEFT JOIN ipy_user u ON u.id = k.user_id
+              ORDER BY k.created_at;"
+          echo
           echo "--- can a lead be found by its number ---"
           psql "$PROD_DATABASE_URL" -P pager=off -tAc "
             SELECT 'leads with a mobile: ' || count(*)
