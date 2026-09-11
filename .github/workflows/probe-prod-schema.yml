@@ -180,13 +180,9 @@ jobs:
                 WHERE coalesce(t.custom_fields ->> 'area_unit', '') <> ''
                   AND NOT (t.custom_fields ->> 'area_unit' ~ '^[0-9]+(\\.[0-9]+)?$')
              ), u AS (
-               SELECT lower(trim(value ->> 'value')) AS label
-                 FROM ipy_unit_master um, jsonb_array_elements(um.units) value
-                WHERE um.name = 'area'
+               SELECT lower(trim(um.value)) AS label FROM ipy_unit_master um WHERE um.kind = 'area'
                UNION
-               SELECT lower(trim(value ->> 'label'))
-                 FROM ipy_unit_master um, jsonb_array_elements(um.units) value
-                WHERE um.name = 'area'
+               SELECT lower(trim(um.label)) FROM ipy_unit_master um WHERE um.kind = 'area'
              )
              SELECT 'non-numeric=' || (SELECT count(*) FROM v)
                  || ', distinct=' || (SELECT count(DISTINCT raw) FROM v)
