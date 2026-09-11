@@ -1,0 +1,84 @@
+# Replace an API key's value, given a hash computed somewhere else.
+#
+# The other two ways round both fail on a public repository. Minting the key
+# here means printing it to reach the machine that needs it, and that is how one
+# ended up in a public Actions log on 18 August 2026. Minting it on the machine
+# and sending it here means putting the raw key in a workflow input, which is
+# recorded with the run.
+#
+# So the raw key never leaves the machine that will use it. Only its bcrypt
+# hash and its eight-character prefix come here, and neither can be turned back
+# into the key — the hash is a one-way digest and the prefix is already stored
+# in the clear so a key can be identified without its value.
+#
+#   node -e 'const c=require("crypto"),b=require("bcryptjs");
+#            const raw="ipy_"+c.randomBytes(24).toString("base64url");
+#            console.log(raw);                      // onto the machine, once
+#            console.log(raw.slice(0,8));           // prefix input
+#            console.log(b.hashSync(raw,12));'      // hash input
+#
+# The old value stops working the moment this finishes.
+name: Rotate API key
+
+on:
+  workflow_dispatch:
+    inputs:
+      name:
+        description: "The key's name, exactly as 'Check production' lists it"
+        required: true
+        default: "n8n media pipeline"
+      prefix:
+        description: "First 8 characters of the new key"
+        required: true
+      hash:
+        description: "bcrypt hash of the new key"
+        required: true
+
+jobs:
+  rotate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install psql 18
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: Swap the value
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          KEY_NAME: ${{ inputs.name }}
+          NEW_PREFIX: ${{ inputs.prefix }}
+          NEW_HASH: ${{ inputs.hash }}
+        run: |
+          set -euo pipefail
+
+          case "$NEW_HASH" in
+            '$2a$'*|'$2b$'*|'$2y$'*) ;;
+            *) echo "::error::That is not a bcrypt hash. Expected it to start with \$2b\$."; exit 1 ;;
+          esac
+          if [ "${#NEW_PREFIX}" != "8" ]; then
+            echo "::error::The prefix must be exactly the first 8 characters of the key."
+            exit 1
+          fi
+
+          COUNT="$(psql "$DATABASE_URL" -tAc \
+            "SELECT count(*) FROM ipy_api_key WHERE name = '${KEY_NAME}' AND revoked_at IS NULL")"
+          if [ "$COUNT" != "1" ]; then
+            echo "::error::Expected exactly one live key called '${KEY_NAME}', found ${COUNT}."
+            exit 1
+          fi
+
+          # On stdin with -v, never interpolated: a bcrypt hash is full of `$`
+          # and a shell expands those the moment it sees them. That trap is
+          # already written down in `create-api-key.yml`; it applies here too.
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -v name="$KEY_NAME" -v prefix="$NEW_PREFIX" -v hash="$NEW_HASH" <<'SQL'
+          UPDATE ipy_api_key
+             SET key_prefix = :'prefix', key_hash = :'hash', last_used_at = NULL
+           WHERE name = :'name' AND revoked_at IS NULL;
+          SQL
+
+          echo "::notice::'${KEY_NAME}' now answers to the new value only. The old one is dead."
+          echo "::notice::Its scopes are unchanged — 'Check production' shows what it may reach."
