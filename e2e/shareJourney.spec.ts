@@ -49,9 +49,9 @@ test.afterAll(async () => {
 
 test('a rep puts a property on the system and mints a link for a buyer', async () => {
   const res = await api('POST', '/api/records/properties', {
-    // A unique floor each run: the duplicate key is locality + name + floor,
-    // so a fixed name would collide with the previous run's leftovers.
-    name: `Journey Heights ${Date.now()}`,
+    // A unique mobile is the Property identity, while Unit Number may repeat.
+    full_name: `Journey Heights ${Date.now()}`,
+    mobile: `98${String(Date.now()).slice(-8)}`,
     locality: 'Powai',
     floor: 7,
     property_type: 'Builder Floor',

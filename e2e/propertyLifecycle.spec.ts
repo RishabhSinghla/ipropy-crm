@@ -17,6 +17,7 @@ import { expect, test } from '@playwright/test';
 test.describe.configure({ mode: 'serial' });
 
 const name = `Lifecycle Floor ${Date.now()}`;
+const mobile = `98${String(Date.now()).slice(-8)}`;
 let recordUrl = '';
 
 test('a rep adds a floor they have just taken on', async ({ page }) => {
@@ -29,7 +30,8 @@ test('a rep adds a floor they have just taken on', async ({ page }) => {
     owner deleted in production (city, project_name), so a label regex that
     tries to enumerate them breaks differently on each side.
   */
-  await page.locator('#f_name').fill(name);
+  await page.locator('#f_full_name').fill(name);
+  await page.locator('#f_mobile').fill(mobile);
 
   // Whatever the layout offers — the point is that a rep can complete the form,
   // not that this database is arranged one particular way today.

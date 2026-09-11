@@ -37,7 +37,7 @@ test('drags a photo to the front and the new cover survives a reload', async ({ 
     const created = await fetch('/api/records/properties', {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: propertyName }),
+      body: JSON.stringify({ full_name: propertyName, mobile: `98${String(Date.now()).slice(-8)}` }),
     }).then((r) => r.json());
 
     // A one-pixel PNG in two different colours. Two distinct files rather than
