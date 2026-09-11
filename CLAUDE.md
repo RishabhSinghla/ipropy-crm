@@ -219,6 +219,26 @@ six days. Both looked healthy from every angle a test can see.
 python3 scripts/check-deployed.py   # live n8n + media container vs this repo
 ```
 
+**Two walkers, and they check different promises.** `definition-of-done.mjs`
+walks what the product promises an *administrator* — create a field and it is
+everywhere, rename it and nothing breaks, delete and restore it and the data
+comes back. `daily-paths.mjs` walks what it promises a *rep*: add the person
+you just spoke to, change their status, leave a note, run your list, send a
+unit to a buyer, and let the phone file the calls you made.
+
+```bash
+API=http://localhost:4000 node scripts/definition-of-done.mjs   # 20 checks
+API=http://localhost:4000 node scripts/daily-paths.mjs          # 19 checks
+```
+
+Neither may be pointed at production — both create records. The second exists
+because four of those paths were broken on production at once on 11 September
+2026 (logging a call, the device call sync, the WhatsApp send, lead scoring),
+each failing quietly in its own way, with every unit and integration test green.
+**Run both against a database mirrored to production's shape**
+(`scripts/mirror-prod-shape.sh`), not a fresh seed — on a fresh seed every one
+of those four passes.
+
 It compares node by node and file by file, and fails when a workflow is switched **off** —
 which `n8n import:workflow` does every time it runs, in a line that is easy to miss. Always
 follow an import with `n8n update:workflow --id=<id> --active=true` and `docker restart n8n`.
