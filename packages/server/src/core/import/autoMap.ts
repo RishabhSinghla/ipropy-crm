@@ -124,21 +124,31 @@ export function suggestMapping(
 
   const out: Suggestion[] = [];
   const taken = new Set<string>();
+  const settled = new Set<string>();
+
+  /*
+    Every column named after a field is settled before any guessing starts.
+
+    Walking the headers once, in order, let a guess claim a field that a later
+    column matched outright: on a property sheet, `Unit` reached `status`
+    through a synonym and the column actually headed `Status` was left with
+    `facing`. Nothing a person types in the heading row is a stronger signal
+    than the field's own name.
+  */
+  for (const header of headers) {
+    const exact = byExact.get(squash(header));
+    if (!exact || taken.has(exact.name)) continue;
+    taken.add(exact.name);
+    settled.add(header);
+    out.push({ header, field: exact.name, confidence: 'certain', reason: 'the column is named after this field' });
+  }
 
   for (const header of headers) {
     const key = squash(header);
-    if (!key) continue;
+    if (!key || settled.has(header)) continue;
     const shape = looksLike(rows.map((r) => r[header]));
 
-    // 1. The header is the field.
-    const exact = byExact.get(key);
-    if (exact && !taken.has(exact.name)) {
-      taken.add(exact.name);
-      out.push({ header, field: exact.name, confidence: 'certain', reason: 'the column is named after this field' });
-      continue;
-    }
-
-    // 2. The header is a phrase for it.
+    // The header is a phrase for it.
     const concept = SYNONYMS.find((c) => c.words.includes(key));
     /*
       Named first, typed second.

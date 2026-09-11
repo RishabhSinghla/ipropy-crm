@@ -88,14 +88,20 @@ SQL
 # 3b. Production has these two fields; a local seed does not create them,
 #     because the template's originals were deleted here long ago.
 psql -v ON_ERROR_STOP=1 <<'SQL'
-INSERT INTO ipy_field (module_id, block_id, name, label, uitype, storage, column_name, sequence, is_customised)
+--     The config matters as much as the row. An `area` field with no
+--     `unitMaster` has no Sq Ft / Sq Yd list, its companion `area_unit` is not
+--     offered to the importer, and the mirror quietly tells you the CRM is
+--     broken in a way production is not.
+INSERT INTO ipy_field (module_id, block_id, name, label, uitype, storage, column_name, sequence, is_customised, config)
 SELECT m.id,
        (SELECT id FROM ipy_block WHERE module_id = m.id ORDER BY sequence LIMIT 1),
-       v.name, v.label, v.uitype, 'column', v.col, 900 + v.seq, true
+       v.name, v.label, v.uitype, 'column', v.col, 900 + v.seq, true, v.config::jsonb
   FROM ipy_module m
- CROSS JOIN (VALUES ('area_size','Area / Size','area','carpet_area',1),
-                    ('bedrooms','Bedrooms','picklist','configuration',2))
-              AS v(name, label, uitype, col, seq)
+ CROSS JOIN (VALUES ('area_size','Area / Size','area','carpet_area',1,
+                       '{"min":0,"unit":"sqft","unitField":"area_unit","unitMaster":"area"}'),
+                    ('bedrooms','Bedrooms','picklist','configuration',2,
+                       '{"picklist":"bedrooms"}'))
+              AS v(name, label, uitype, col, seq, config)
  WHERE m.name = 'properties'
    AND NOT EXISTS (SELECT 1 FROM ipy_field f WHERE f.module_id = m.id AND f.column_name = v.col);
 DELETE FROM ipy_field_tombstone WHERE module_name='properties' AND field_name IN ('area_size');

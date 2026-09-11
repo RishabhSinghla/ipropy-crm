@@ -293,8 +293,8 @@ export async function renameFieldEverywhere(
   /*
     A field's `config` names other fields — `dependsOn`, a formula's operands,
     a conditional-visibility rule — so it has to be rewritten with the rest. But
-    it also names its **picklist**, and a picklist is a separate thing that
-    merely happens to share the field's name.
+    some of its keys hold things that are not field names at all and merely
+    happen to look like one.
 
     Rewriting that pointer broke the field it was renaming: `funding_type`
     became `funding_readiness`, its config started pointing at a picklist called
@@ -302,16 +302,29 @@ export async function renameFieldEverywhere(
     kept its stored values, and offered **zero options**. Silently — nothing
     errors, the dropdown is simply empty.
 
-    So the pointers are captured first and put back afterwards. Restoring is
-    used rather than a cleverer replace because `config` has no fixed shape: any
-    future key holding a field name still gets renamed for free, and only this
-    one known exception is undone.
+    `picklist` was the first: `funding_type` became `funding_readiness`, its
+    config started pointing at a picklist called `funding_readiness`, no such
+    picklist exists, and the field offered zero options — silently, because
+    nothing errors and the dropdown is simply empty.
+
+    `unitMaster` is the second, and it bites harder. It holds a *kind* —
+    'area' or 'budget_demand' — so renaming Area to Area / Size wrote
+    `unitMaster: 'area_size'`, which matches no master, and the Sq Ft / Sq Yd /
+    Bigha list the field is supposed to offer comes back empty. That rename has
+    happened on production.
+
+    So these keys are captured first and put back afterwards. Restoring is used
+    rather than a cleverer replace because `config` has no fixed shape: any
+    future key holding a field name still gets renamed for free, and only the
+    known exceptions are undone.
   */
-  const picklistPointers = await conn.query<{ id: string; picklist: string }>(
-    `SELECT id, config->>'picklist' AS picklist
-       FROM ipy_field
-      WHERE module_id = $1 AND config->>'picklist' IS NOT NULL`,
-    [moduleId],
+  const NOT_FIELD_NAMES = ['picklist', 'unitMaster'] as const;
+  const pointers = await conn.query<{ id: string; key: string; value: string }>(
+    `SELECT f.id, k.key, f.config->>k.key AS value
+       FROM ipy_field f
+       CROSS JOIN LATERAL unnest($2::text[]) AS k(key)
+      WHERE f.module_id = $1 AND f.config->>k.key IS NOT NULL`,
+    [moduleId, [...NOT_FIELD_NAMES]],
   );
 
   for (const { table, columns, key } of MODULE_SCOPED) {
@@ -328,13 +341,13 @@ export async function renameFieldEverywhere(
     }
   }
 
-  // Put every dropdown back where it was pointing.
-  for (const row of picklistPointers.rows) {
+  // Put each of them back where it was pointing.
+  for (const row of pointers.rows) {
     await conn.query(
       `UPDATE ipy_field
-          SET config = jsonb_set(config, '{picklist}', to_jsonb($2::text))
-        WHERE id = $1 AND config->>'picklist' IS DISTINCT FROM $2`,
-      [row.id, row.picklist],
+          SET config = jsonb_set(config, ARRAY[$2::text], to_jsonb($3::text))
+        WHERE id = $1 AND config->>$2 IS DISTINCT FROM $3`,
+      [row.id, row.key, row.value],
     );
   }
 
