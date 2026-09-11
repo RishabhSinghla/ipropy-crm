@@ -1053,7 +1053,7 @@ export const api = {
     const form = new FormData();
     form.append('file', file);
     if (sheetName) form.append('sheetName', sheetName);
-    return request<{ sheets: string[]; selectedSheet: string | null; headers: string[]; sample: Record<string, string>[]; totalRows: number; suggestedMapping: Record<string, string>; mappingSuggestions: Record<string, { field: string; confidence: 'high' | 'possible' }>; fields: Record<string, unknown>[] }>(
+    return request<{ sheets: string[]; selectedSheet: string | null; headers: string[]; sample: Record<string, string>[]; totalRows: number; suggestedMapping: Record<string, string>; mappingSuggestions: Record<string, { field: string; confidence: 'high' | 'possible' }>; templateMatches: { id: string; name: string; mapping: Record<string, string>; config: Record<string, unknown>; confidence: number }[]; fields: Record<string, unknown>[] }>(
       `/api/import/${module}/preview`, { method: 'POST', body: form },
     );
   },
@@ -1070,6 +1070,10 @@ export const api = {
     if (sheetName) form.append('sheetName', sheetName);
     return request<{ jobId: string; totalRows: number }>(`/api/import/${module}`, { method: 'POST', body: form });
   },
+  importTemplates: (module: string) => get<{ id: string; name: string; mapping: Record<string, { fieldId: string }>; config: Record<string, unknown> }[]>(`/api/import/${module}/templates`),
+  createImportTemplate: (module: string, data: { name: string; mapping: Record<string, { fieldId: string }>; config?: Record<string, unknown> }) =>
+    post<{ id: string }>(`/api/import/${module}/templates`, data),
+  deleteImportTemplate: (module: string, id: string) => del<void>(`/api/import/${module}/templates/${id}`),
   importJobs: () => get<Record<string, unknown>[]>('/api/import/jobs'),
   cancelImport: (jobId: string) => post<{ ok: boolean }>(`/api/import/jobs/${jobId}/cancel`),
   /** The collisions this import parked, each beside the record it hit. */

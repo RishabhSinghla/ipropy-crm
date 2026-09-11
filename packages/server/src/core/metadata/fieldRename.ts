@@ -31,7 +31,7 @@ export async function fieldImpact(moduleId: string, moduleName: string, fieldNam
     return Number(row?.count ?? 0);
   };
   const needle = `%"${fieldName}"%`;
-  const [views, layouts, workflows, rules, widgets, tasks, exports, mappings] = await Promise.all([
+  const [views, layouts, workflows, rules, widgets, tasks, exports, imports, mappings] = await Promise.all([
     count(`SELECT COUNT(*)::text AS count FROM ipy_view WHERE module_id = $1 AND (columns::text LIKE $2 OR filter::text LIKE $2)`, [moduleId, needle]),
     count(`SELECT COUNT(*)::text AS count FROM ipy_layout WHERE module_id = $1 AND config::text LIKE $2`, [moduleId, needle]),
     count(`SELECT COUNT(*)::text AS count FROM ipy_workflow WHERE module_id = $1 AND (watch_fields::text LIKE $2 OR conditions::text LIKE $2)`, [moduleId, needle]),
@@ -39,9 +39,10 @@ export async function fieldImpact(moduleId: string, moduleName: string, fieldNam
     count(`SELECT COUNT(*)::text AS count FROM ipy_dashboard_widget WHERE config->>'module' = $1 AND config::text LIKE $2`, [moduleName, needle]),
     count(`SELECT COUNT(*)::text AS count FROM ipy_workflow_task t JOIN ipy_workflow w ON w.id = t.workflow_id WHERE w.module_id = $1 AND t.config::text LIKE $2`, [moduleId, needle]),
     count(`SELECT COUNT(*)::text AS count FROM ipy_export_template WHERE module_id = $1 AND columns::text LIKE $2`, [moduleId, `%${internalId}%`]),
+    count(`SELECT COUNT(*)::text AS count FROM ipy_import_template WHERE module_id = $1 AND mapping::text LIKE $2`, [moduleId, `%${internalId}%`]),
     count(`SELECT COUNT(*)::text AS count FROM ipy_field_mapping WHERE source_field_internal_id = $1 OR target_field_internal_id = $1`, [internalId]),
   ]);
-  return { views, layouts, workflows, assignmentRules: rules, dashboardWidgets: widgets, workflowTasks: tasks, exportTemplates: exports, matchingRules: mappings };
+  return { views, layouts, workflows, assignmentRules: rules, dashboardWidgets: widgets, workflowTasks: tasks, exportTemplates: exports, importTemplates: imports, matchingRules: mappings };
 }
 
 /**

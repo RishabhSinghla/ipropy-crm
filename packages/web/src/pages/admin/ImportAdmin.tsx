@@ -2,7 +2,7 @@ import { type JSX, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
-import { AlertTriangle, Database, Download, FileUp, Upload } from 'lucide-react';
+import { AlertTriangle, Database, Download, FileUp, Save, Upload } from 'lucide-react';
 import { api, authedFileUrl, type ImportSection } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
 import { cn } from '../../lib/utils';
@@ -17,7 +17,8 @@ interface Preview {
   totalRows: number;
   suggestedMapping: Record<string, string>;
   mappingSuggestions: Record<string, { field: string; confidence: 'high' | 'possible' }>;
-  fields: { name: string; label: string; uitype: string; mandatory: boolean }[];
+  templateMatches: { id: string; name: string; mapping: Record<string, string>; config: Record<string, unknown>; confidence: number }[];
+  fields: { name: string; internalId: string; label: string; uitype: string; mandatory: boolean }[];
 }
 
 interface JobRow {
@@ -50,6 +51,7 @@ export default function ImportAdmin(): JSX.Element {
   // On by default — see the tooltip beside it, and core/import/picklistGrowth.ts.
   const [createOptions, setCreateOptions] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [templateName, setTemplateName] = useState('');
   const [openJob, setOpenJob] = useState<JobRow | null>(null);
   const [reviewJob, setReviewJob] = useState<JobRow | null>(null);
 
@@ -108,6 +110,25 @@ export default function ImportAdmin(): JSX.Element {
   const mappedCount = Object.values(mapping).filter(Boolean).length;
   const unmappedMandatory = (preview?.fields ?? [])
     .filter((f) => f.mandatory && !Object.values(mapping).includes(f.name));
+  const templateMatches = preview?.templateMatches ?? [];
+
+  const saveTemplate = async (): Promise<void> => {
+    if (!preview || !templateName.trim()) return;
+    const fieldsByName = new Map(preview.fields.map((field) => [field.name, field]));
+    const saved: Record<string, { fieldId: string }> = {};
+    for (const [header, fieldName] of Object.entries(mapping)) {
+      const fieldId = fieldsByName.get(fieldName)?.internalId;
+      if (fieldId) saved[header] = { fieldId };
+    }
+    if (!Object.keys(saved).length) return;
+    try {
+      await api.createImportTemplate(moduleName, { name: templateName.trim(), mapping: saved, config: { duplicateHandling } });
+      setTemplateName('');
+      toast.success('Import template saved', 'Use it next time this kind of file arrives.');
+    } catch (err) {
+      toast.error('Could not save template', (err as Error).message);
+    }
+  };
 
   return (
     <div className="p-4 sm:p-6">
@@ -224,15 +245,51 @@ export default function ImportAdmin(): JSX.Element {
             Map a column to these required fields first: {unmappedMandatory.map((f) => f.label).join(', ')}
           </p>
         )}
+
+        {templateMatches.length > 0 && (
+          <div className="mt-3 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-900 dark:border-brand-900 dark:bg-brand-950/30 dark:text-brand-100">
+            <span className="font-medium">Possible saved template:</span>{' '}
+            {templateMatches.slice(0, 3).map((template, index) => (
+              <button
+                key={template.id}
+                className="underline decoration-dotted underline-offset-2 hover:opacity-75"
+                onClick={() => {
+                  setMapping((current) => ({ ...current, ...template.mapping }));
+                  const handling = template.config.duplicateHandling;
+                  if (handling === 'skip' || handling === 'create' || handling === 'review') setDuplicateHandling(handling);
+                  toast.success('Template applied', `${template.name} is ready for review.`);
+                }}
+              >
+                {index > 0 ? ' · ' : ''}{template.name} ({template.confidence}% match)
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {preview && (
         <div className="card mb-4 overflow-hidden">
           <div className="border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
-            <p className="text-sm font-medium">Column mapping</p>
-            <p className="text-xs text-muted">
-              {mappedCount} of {preview.headers.length} columns mapped. Unmapped columns are ignored.
-            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <div>
+                <p className="text-sm font-medium">Column mapping</p>
+                <p className="text-xs text-muted">
+                  {mappedCount} of {preview.headers.length} columns mapped. Unmapped columns are ignored.
+                </p>
+              </div>
+              <div className="ml-auto flex items-center gap-2">
+                <input
+                  className="input h-8 w-48 text-xs"
+                  value={templateName}
+                  onChange={(event) => setTemplateName(event.target.value)}
+                  placeholder="Save mapping as…"
+                  maxLength={120}
+                />
+                <button className="btn-secondary btn-sm" disabled={!templateName.trim() || mappedCount === 0} onClick={() => void saveTemplate()}>
+                  <Save className="h-3.5 w-3.5" /> Save mapping
+                </button>
+              </div>
+            </div>
           </div>
 
           <div className="divide-y divide-slate-100 dark:divide-slate-800">

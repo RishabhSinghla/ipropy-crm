@@ -983,6 +983,77 @@ function headingGroup(value: string): string | null {
   return Object.entries(IMPORT_HEADING_GROUPS).find(([, aliases]) => aliases.includes(heading))?.[0] ?? null;
 }
 
+type SavedImportMapping = Record<string, { fieldId: string }>;
+
+const savedImportMappingSchema = z.record(z.object({
+  fieldId: z.string().regex(/^fld_[A-Za-z0-9]+$/),
+}));
+
+const savedImportTemplateSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  mapping: savedImportMappingSchema,
+  config: z.object({
+    duplicateHandling: z.enum(['skip', 'create', 'review']).optional(),
+    defaults: z.record(z.unknown()).optional(),
+    valueMappings: z.record(z.record(z.string())).optional(),
+    dateFormat: z.enum(['dd-mm-yyyy', 'dd/mm/yyyy', 'yyyy-mm-dd', 'mm/dd/yyyy']).optional(),
+    multiValueSeparator: z.string().max(20).optional(),
+  }).passthrough().default({}),
+});
+
+/** Resolve a rename-safe template to current field names at its one boundary. */
+function resolveSavedImportMapping(module: Awaited<ReturnType<typeof registry.requireModule>>, mapping: SavedImportMapping): Record<string, string> {
+  const byId = new Map(module.fields.map((field) => [field.internalId, field]));
+  const resolved: Record<string, string> = {};
+  for (const [header, item] of Object.entries(mapping)) {
+    const field = byId.get(item.fieldId);
+    if (!field || !field.isActive || field.isReadonly || field.displayType === 'hidden' || field.config.importable === false) continue;
+    resolved[header] = field.name;
+  }
+  return resolved;
+}
+
+/** Mapping templates are reusable by every import source, and field renames do not break them. */
+miscRouter.get('/import/:module/templates', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'records.import');
+  const module = await registry.requireModule(req.params.module);
+  const rows = await db.query<{ id: string; name: string; mapping: SavedImportMapping; config: Record<string, unknown>; created_at: string; updated_at: string }>(
+    `SELECT id, name, mapping, config, created_at, updated_at
+       FROM ipy_import_template WHERE module_id = $1 ORDER BY name`, [module.id],
+  );
+  res.json(rows.rows.map((row) => ({
+    id: row.id, name: row.name, mapping: row.mapping, config: row.config,
+    createdAt: row.created_at, updatedAt: row.updated_at,
+  })));
+}));
+
+miscRouter.post('/import/:module/templates', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'records.import');
+  const module = await registry.requireModule(req.params.module);
+  const input = savedImportTemplateSchema.parse(req.body ?? {});
+  const resolved = resolveSavedImportMapping(module, input.mapping);
+  if (Object.keys(resolved).length !== Object.keys(input.mapping).length) {
+    throw new BadRequestError('One or more selected fields are no longer available for import. Refresh the mapping and try again.');
+  }
+  const row = await db.queryOne<{ id: string }>(
+    `INSERT INTO ipy_import_template (module_id, name, mapping, config, created_by)
+     VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+    [module.id, input.name, JSON.stringify(input.mapping), JSON.stringify(input.config), user.id],
+  );
+  res.status(201).json({ id: row!.id });
+}));
+
+miscRouter.delete('/import/:module/templates/:id', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'records.import');
+  const module = await registry.requireModule(req.params.module);
+  const result = await db.query(`DELETE FROM ipy_import_template WHERE id = $1 AND module_id = $2`, [req.params.id, module.id]);
+  if (!result.rowCount) throw new NotFoundError('Import template not found');
+  res.status(204).end();
+}));
+
 miscRouter.post('/import/:module/preview', upload.single('file'), asyncHandler(async (req, res) => {
   const user = getUser(req);
   await assertCapability(user, 'records.import');
@@ -1018,6 +1089,23 @@ miscRouter.post('/import/:module/preview', upload.single('file'), asyncHandler(a
     }
   }
 
+  // A template is suggested, never silently applied. A familiar-looking file
+  // can still have a changed column meaning, and the person importing remains
+  // the final authority.
+  const templates = await db.query<{ id: string; name: string; mapping: SavedImportMapping; config: Record<string, unknown> }>(
+    `SELECT id, name, mapping, config FROM ipy_import_template WHERE module_id = $1 ORDER BY name`, [module.id],
+  );
+  const incoming = new Set(headers.map(normaliseImportHeading));
+  const templateMatches = templates.rows.map((template) => {
+    const savedHeaders = Object.keys(template.mapping);
+    const matched = savedHeaders.filter((header) => incoming.has(normaliseImportHeading(header))).length;
+    return {
+      id: template.id, name: template.name, mapping: resolveSavedImportMapping(module, template.mapping),
+      config: template.config,
+      confidence: savedHeaders.length ? Math.round((matched / savedHeaders.length) * 100) : 0,
+    };
+  }).filter((template) => template.confidence >= 50).sort((a, b) => b.confidence - a.confidence);
+
   res.json({
     sheets: importSheetNames(file.buffer, file.originalname),
     selectedSheet: sheetName ?? importSheetNames(file.buffer, file.originalname)[0] ?? null,
@@ -1026,9 +1114,10 @@ miscRouter.post('/import/:module/preview', upload.single('file'), asyncHandler(a
     totalRows: rows.length,
     suggestedMapping: suggestions,
     mappingSuggestions,
+    templateMatches,
     fields: module.fields
       .filter((f) => f.isActive && !f.isReadonly && f.displayType !== 'hidden' && f.config.importable !== false)
-      .map((f) => ({ name: f.name, label: f.label, uitype: f.uitype, mandatory: f.isMandatory })),
+      .map((f) => ({ name: f.name, internalId: f.internalId, label: f.label, uitype: f.uitype, mandatory: f.isMandatory })),
   });
 }));
 
