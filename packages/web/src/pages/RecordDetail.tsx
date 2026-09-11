@@ -83,6 +83,8 @@ export default function RecordDetail(): JSX.Element {
       relatedLists?: string[];
       defaultTab?: string;
       showRecordNumber?: boolean;
+      headerTitleField?: string;
+      showPipelineField?: boolean;
       tabs?: { key: string; label: string; icon?: string }[];
     }),
     [meta],
@@ -306,7 +308,11 @@ export default function RecordDetail(): JSX.Element {
 
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="min-w-0 max-w-full truncate text-lg font-semibold tracking-tight sm:text-xl">{record.label}</h1>
+                  <h1 className="min-w-0 max-w-full truncate text-lg font-semibold tracking-tight sm:text-xl">
+                    {layoutConfig.headerTitleField && record.values[layoutConfig.headerTitleField] != null && record.values[layoutConfig.headerTitleField] !== ''
+                      ? String(record.display?.[layoutConfig.headerTitleField] ?? record.values[layoutConfig.headerTitleField])
+                      : record.label}
+                  </h1>
                   {/* Off unless an admin asks for it in Admin → Layout Designer.
                       The auto-number is an internal key; the header is for the
                       person, not the row id. */}
@@ -315,7 +321,7 @@ export default function RecordDetail(): JSX.Element {
                       {record.recordNumber}
                     </span>
                   )}
-                  {meta.pipelineField && record.values[meta.pipelineField] != null && (
+                  {layoutConfig.showPipelineField !== false && meta.pipelineField && record.values[meta.pipelineField] != null && (
                     record.can?.edit && isInlineEditable(fieldMap.get(meta.pipelineField)!) ? (
                       <EditableField
                         module={moduleName!}

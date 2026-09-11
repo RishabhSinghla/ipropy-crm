@@ -35,6 +35,8 @@ interface DesignerConfig {
   headerFields: string[];
   defaultTab: string;
   showRecordNumber?: boolean;
+  headerTitleField?: string;
+  showPipelineField?: boolean;
   tabs?: DetailTabConfig[];
   capture?: CapturePanelConfig;
 }
@@ -72,6 +74,8 @@ export default function LayoutDesigner(): JSX.Element {
   const [headerFields, setHeaderFields] = useState<string[]>([]);
   const [defaultTab, setDefaultTab] = useState('overview');
   const [showRecordNumber, setShowRecordNumber] = useState(false);
+  const [headerTitleField, setHeaderTitleField] = useState('');
+  const [showPipelineField, setShowPipelineField] = useState(true);
   const [detailTabs, setDetailTabs] = useState<DetailTabConfig[]>([]);
   const [capturePanel, setCapturePanel] = useState<CapturePanelConfig>(DEFAULT_CAPTURE_PANEL);
   const [layoutId, setLayoutId] = useState<string | null>(null);
@@ -103,6 +107,8 @@ export default function LayoutDesigner(): JSX.Element {
       setHeaderFields(layout.config.headerFields ?? []);
       setDefaultTab(layout.config.defaultTab ?? 'overview');
       setShowRecordNumber(layout.config.showRecordNumber ?? false);
+      setHeaderTitleField(layout.config.headerTitleField ?? '');
+      setShowPipelineField(layout.config.showPipelineField ?? true);
       setDetailTabs(layout.config.tabs ?? []);
       setCapturePanel({ ...DEFAULT_CAPTURE_PANEL, ...(layout.config.capture ?? {}) });
     } else if (meta) {
@@ -116,6 +122,8 @@ export default function LayoutDesigner(): JSX.Element {
       setHeaderFields(meta.blocks[0]?.fields.slice(0, 4).map((f) => f.name) ?? []);
       setDefaultTab('overview');
       setShowRecordNumber(false);
+      setHeaderTitleField('');
+      setShowPipelineField(true);
       setDetailTabs([]);
       setCapturePanel(DEFAULT_CAPTURE_PANEL);
     }
@@ -245,7 +253,7 @@ export default function LayoutDesigner(): JSX.Element {
         // Only the detail view has a header strip and tabs; keeping them off the
         // edit/quick-create configs avoids writing keys nothing will read.
         ...(layoutType === 'detail'
-          ? { headerFields, defaultTab, showRecordNumber, tabs: detailTabOptions }
+          ? { headerFields, defaultTab, showRecordNumber, headerTitleField: headerTitleField || undefined, showPipelineField, tabs: detailTabOptions }
           : {}),
         ...(layoutType === 'quick_create' && moduleName === 'properties'
           ? { capture: capturePanel }
@@ -377,7 +385,11 @@ export default function LayoutDesigner(): JSX.Element {
                 tabs={detailTabOptions}
                 availableTabs={availableTabs}
                 showRecordNumber={showRecordNumber}
+                headerTitleField={headerTitleField}
+                showPipelineField={showPipelineField}
                 onChange={(next) => { setHeaderFields(next); touch(); }}
+                onHeaderTitleFieldChange={(next) => { setHeaderTitleField(next); touch(); }}
+                onShowPipelineFieldChange={(next) => { setShowPipelineField(next); touch(); }}
                 onShowRecordNumberChange={(next) => { setShowRecordNumber(next); touch(); }}
                 onDefaultTabChange={(next) => { setDefaultTab(next); touch(); }}
                 onTabsChange={(next) => {
@@ -613,8 +625,8 @@ export default function LayoutDesigner(): JSX.Element {
  * land there.
  */
 function HeaderStripEditor({
-  value, options, defaultTab, tabOptions, tabs, availableTabs, showRecordNumber,
-  onChange, onDefaultTabChange, onTabsChange, onShowRecordNumberChange,
+  value, options, defaultTab, tabOptions, tabs, availableTabs, showRecordNumber, headerTitleField, showPipelineField,
+  onChange, onDefaultTabChange, onTabsChange, onShowRecordNumberChange, onHeaderTitleFieldChange, onShowPipelineFieldChange,
 }: {
   value: string[];
   options: { value: string; label: string }[];
@@ -623,10 +635,14 @@ function HeaderStripEditor({
   tabs: DetailTabConfig[];
   availableTabs: { value: string; label: string }[];
   showRecordNumber: boolean;
+  headerTitleField: string;
+  showPipelineField: boolean;
   onChange: (next: string[]) => void;
   onDefaultTabChange: (next: string) => void;
   onTabsChange: (next: DetailTabConfig[]) => void;
   onShowRecordNumberChange: (next: boolean) => void;
+  onHeaderTitleFieldChange: (next: string) => void;
+  onShowPipelineFieldChange: (next: boolean) => void;
 }): JSX.Element {
   const labelOf = (name: string): string => options.find((o) => o.value === name)?.label ?? name;
   const unused = options.filter((o) => !value.includes(o.value));
@@ -639,6 +655,11 @@ function HeaderStripEditor({
       </div>
 
       <div className="space-y-3 p-3">
+        <div>
+          <label className="label">Main heading</label>
+          <p className="mb-1.5 text-2xs text-muted">Choose which field appears as the large name at the top. Leave it as “Record name” to use the module’s normal label.</p>
+          <Select value={headerTitleField} onChange={onHeaderTitleFieldChange} placeholder="Record name" options={options} className="w-56 py-1.5 text-xs" />
+        </div>
         <div>
           <label className="label">Summary fields</label>
           <p className="mb-1.5 text-2xs text-muted">
@@ -690,6 +711,19 @@ function HeaderStripEditor({
               />
             </div>
           )}
+        </div>
+
+        <div>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={showPipelineField}
+              onChange={(event) => onShowPipelineFieldChange(event.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+            />
+            Show the status chip beside the name
+          </label>
+          <p className="mt-1 text-2xs text-muted">For Properties this controls the “Available” chip. It never changes the stored status.</p>
         </div>
 
         <div>
