@@ -536,11 +536,18 @@ aiRouter.post('/voice-note', modelLimiter, assistantAudioUpload.single('audio'),
   }
   if (!transcript.trim()) throw new BadRequestError('Nothing was said, or the recording was silent.');
 
-  const { modelFor } = await import('../../core/settings/aiModels.js');
-  const { houseStyle } = await import('../../core/settings/houseStyle.js');
-  const style = await houseStyle();
-
-  const tidied = await complete({
+  // Notes used to wait for a second language-model request after speech had
+  // already been transcribed. On a live sales call that made a ten-second note
+  // feel broken. The browser asks for the fast path: return the accurate
+  // transcript immediately, with script normalisation but no second network
+  // round trip. The slower tidying path remains available to API callers.
+  const fast = req.query.fast === 'true';
+  let tidied: Awaited<ReturnType<typeof complete>> = null;
+  if (!fast) {
+    const { modelFor } = await import('../../core/settings/aiModels.js');
+    const { houseStyle } = await import('../../core/settings/houseStyle.js');
+    const style = await houseStyle();
+    tidied = await complete({
     feature: 'voice_note',
     model: await modelFor('copy'),
     system: 'You tidy spoken notes into written ones for a property CRM. You never add a fact that '
@@ -563,7 +570,8 @@ aiRouter.post('/voice-note', modelLimiter, assistantAudioUpload.single('audio'),
     maxTokens: 900,
     temperature: 0.1,
     userId: getUser(req).id,
-  });
+    });
+  }
 
   /*
     Latin script is guaranteed here, not hoped for.

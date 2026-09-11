@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { recordConsent } from '../../core/consent/index.js';
-import { db } from '../../db/pool.js';
+import { db, transaction } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { ForbiddenError, NotFoundError } from '../../utils/errors.js';
@@ -107,7 +107,7 @@ telephonyRouter.get('/calls', asyncHandler(async (req, res) => {
     `SELECT c.id, c.direction, c.from_number, c.to_number, c.status, c.duration_seconds,
             c.recording_url, c.disposition, c.notes, c.ai_summary, c.ai_sentiment,
             c.ai_next_actions, c.ai_objections, c.ai_score, c.ai_talk_ratio,
-            c.started_at, c.ended_at, c.source, c.device_id,
+            c.started_at, c.ended_at, c.source, c.device_id, c.user_id,
             -- The call happened and stays on the log; the link to a deleted
             -- lead does not, or the row offers a button that 404s. Nulled
             -- together so the UI falls back to the phone number it already has.
@@ -161,8 +161,10 @@ telephonyRouter.patch('/calls/:id', asyncHandler(async (req, res) => {
     message: 'The record module is required when linking a call',
   }).parse(req.body);
 
-  const existing = await db.queryOne<{ user_id: string | null }>(
-    `SELECT user_id FROM ipy_call WHERE id = $1`, [req.params.id],
+  const existing = await db.queryOne<{
+    user_id: string | null; disposition: string | null; notes: string | null;
+  }>(
+    `SELECT user_id, disposition, notes FROM ipy_call WHERE id = $1`, [req.params.id],
   );
   if (!existing) throw new NotFoundError('Call not found');
   if (existing.user_id !== user.id && !user.isAdmin) throw new ForbiddenError('You can only update your own calls');
@@ -184,8 +186,44 @@ telephonyRouter.patch('/calls/:id', asyncHandler(async (req, res) => {
   }
   if (!sets.length) { res.json({ ok: true }); return; }
 
-  await db.query(`UPDATE ipy_call SET ${sets.join(', ')} WHERE id = $1`, params);
+  await transaction(async (tx) => {
+    const nextDisposition = input.disposition ?? existing.disposition;
+    const nextNotes = input.notes ?? existing.notes;
+    const changedNarrative = nextDisposition !== existing.disposition || nextNotes !== existing.notes;
+    if (changedNarrative) {
+      await tx.query(
+        `INSERT INTO ipy_call_revision
+           (call_id, edited_by, previous_disposition, previous_notes, new_disposition, new_notes)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [req.params.id, user.id, existing.disposition, existing.notes, nextDisposition, nextNotes],
+      );
+    }
+    await tx.query(`UPDATE ipy_call SET ${sets.join(', ')} WHERE id = $1`, params);
+  });
   res.json({ ok: true });
+}));
+
+/** Previous versions of an edited call note/outcome. */
+telephonyRouter.get('/calls/:id/history', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const call = await db.queryOne<{ user_id: string | null }>(
+    `SELECT user_id FROM ipy_call WHERE id = $1`, [req.params.id],
+  );
+  if (!call) throw new NotFoundError('Call not found');
+  const canSeeAll = user.isAdmin || await hasCapability(user, 'telephony.listen_recordings');
+  if (call.user_id !== user.id && !canSeeAll) throw new ForbiddenError('You can only view your own calls');
+
+  const rows = await db.query(
+    `SELECT r.id, r.previous_disposition, r.previous_notes,
+            r.new_disposition, r.new_notes, r.created_at,
+            trim(u.first_name || ' ' || u.last_name) AS edited_by_name
+       FROM ipy_call_revision r
+       LEFT JOIN ipy_user u ON u.id = r.edited_by
+      WHERE r.call_id = $1
+      ORDER BY r.created_at DESC`,
+    [req.params.id],
+  );
+  res.json(rows.rows);
 }));
 
 // ---------------------------------------------------------------------------

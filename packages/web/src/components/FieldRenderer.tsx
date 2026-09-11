@@ -20,6 +20,7 @@ import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
 import { Avatar, Badge, ScoreChip } from './ui';
 import { PeekLink } from './PeekLink';
+import { useCallDisposition } from './CallDisposition';
 
 /**
  * A plain <img src> can't carry the app's Authorization header, and
@@ -51,6 +52,7 @@ export function FieldValue({
   /** module of a reference target, for building a link */
   linkTo?: string;
 }): JSX.Element {
+  const callDisposition = useCallDisposition();
   const empty = value === null || value === undefined || value === ''
     || (Array.isArray(value) && value.length === 0);
 
@@ -104,7 +106,17 @@ export function FieldValue({
       // Plain text colour, like the name beside it. The number used to sit in
       // the brand blue, which read as decoration on something reps dial from.
       // Still a link, still underlines on hover, no longer shouting.
-      return (
+      return callDisposition ? (
+        <button
+          type="button"
+          onClick={(event) => { event.stopPropagation(); void callDisposition.startCall(String(value)); }}
+          className="inline-flex items-center gap-1 text-left text-slate-900 hover:underline dark:text-slate-100 tnum"
+          title={`Call ${shown}`}
+        >
+          {!compact && <Phone className="h-3 w-3" />}
+          {shown}
+        </button>
+      ) : (
         <a
           href={`tel:${shown.replace(/[^\d+]/g, '') || value}`}
           className="inline-flex items-center gap-1 text-slate-900 hover:underline dark:text-slate-100 tnum"

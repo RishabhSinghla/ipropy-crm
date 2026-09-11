@@ -1,21 +1,22 @@
 import { type JSX, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime, type HeaderTab } from '@ipropy/shared';
 import {
   AtSign, Bell, Cake, Check, Facebook, Flame, Globe, Instagram, Linkedin, Lock, LogOut, Menu,
   MessageCircle, Moon, Search, Settings, Shield, Sparkles, Sun, Twitter, Upload, X, Youtube,
   LayoutDashboard, MapPin, Building2, Plus, ChevronDown,
 } from 'lucide-react';
-import { applyBrandColour, useApp } from '../lib/store';
+import { applyBrandColour, toast, useApp } from '../lib/store';
 import { api, authedFileUrl, type ModuleSummary, type SearchHit } from '../lib/api';
 import { useRealtime } from '../lib/realtime';
 import { cn } from '../lib/utils';
 import { resolveIcon } from '../lib/icons';
 import { ErrorBoundary } from './ErrorBoundary';
-import { Avatar, Badge, Dropdown, DropdownItem, Spinner } from './ui';
+import { Avatar, Badge, Dropdown, DropdownItem, Modal, Spinner } from './ui';
 import AiAssistant from './AiAssistant';
 import { PeekLink, PeekProvider } from './PeekLink';
+import RecordForm from './RecordForm';
 
 /** Resolve a lucide icon by its kebab-case metadata name (see lib/icons.ts for why this is a registry, not a namespace lookup). */
 export function ModuleIcon({ name, className }: { name: string; className?: string }): JSX.Element {
@@ -277,25 +278,58 @@ export default function Layout(): JSX.Element {
  */
 function NewRecordButton({ modules }: { modules: ModuleSummary[] }): JSX.Element | null {
   const creatable = modules.filter((m) => m.permissions.create);
+  const [creating, setCreating] = useState<ModuleSummary | null>(null);
+  const queryClient = useQueryClient();
+  const user = useApp((state) => state.user);
+  const { data: createMeta, isLoading } = useQuery({
+    queryKey: ['module', creating?.name],
+    queryFn: () => api.module(creating!.name),
+    enabled: Boolean(creating),
+  });
   if (!creatable.length) return null;
+
+  const createModal = creating ? (
+    <Modal open onClose={() => setCreating(null)} title={`New ${creating.singularLabel}`} size="lg">
+      {isLoading || !createMeta ? (
+        <div className="flex min-h-40 items-center justify-center"><Spinner className="h-5 w-5" /></div>
+      ) : (
+        <RecordForm
+          module={createMeta}
+          mode="quick_create"
+          initialValues={user ? { owner_id: user.id } : undefined}
+          onSaved={(record) => {
+            setCreating(null);
+            toast.success(`${creating.singularLabel} created`, record.label);
+            void queryClient.invalidateQueries({ queryKey: ['records', creating.name] });
+          }}
+          onCancel={() => setCreating(null)}
+        />
+      )}
+    </Modal>
+  ) : null;
 
   // One creatable module is a button, not a menu: a dropdown with a single
   // entry is a click spent on confirming there was no choice to make.
   if (creatable.length === 1) {
     const only = creatable[0]!;
     return (
-      <Link
-        to={`/${only.name}/new`}
-        className="btn-primary btn-sm shrink-0 gap-1"
-        title={`New ${only.singularLabel}`}
-      >
-        <Plus className="h-3.5 w-3.5" />
-        <span className="hidden sm:inline">New</span>
-      </Link>
+      <>
+        <button
+          type="button"
+          onClick={() => setCreating(only)}
+          className="btn-primary btn-sm shrink-0 gap-1"
+          title={`New ${only.singularLabel}`}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">New</span>
+        </button>
+        {createModal}
+      </>
     );
   }
 
   return (
+    <>
     <Dropdown
       align="right"
       trigger={(
@@ -313,15 +347,19 @@ function NewRecordButton({ modules }: { modules: ModuleSummary[] }): JSX.Element
       {(close) => (
         <>
           {creatable.map((m) => (
-            <Link key={m.name} to={`/${m.name}/new`} onClick={close}>
-              <DropdownItem icon={<ModuleIcon name={m.icon} className="h-3.5 w-3.5" />}>
-                New {m.singularLabel}
-              </DropdownItem>
-            </Link>
+            <DropdownItem
+              key={m.name}
+              icon={<ModuleIcon name={m.icon} className="h-3.5 w-3.5" />}
+              onClick={() => { close(); setCreating(m); }}
+            >
+              New {m.singularLabel}
+            </DropdownItem>
           ))}
         </>
       )}
     </Dropdown>
+    {createModal}
+    </>
   );
 }
 

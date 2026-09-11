@@ -929,6 +929,7 @@ export const api = {
   calls: (params: Record<string, unknown> = {}) => get<Record<string, unknown>[]>(`/api/telephony/calls${qs(params)}`),
   callDetail: (id: string) => get<Record<string, unknown>>(`/api/telephony/calls/${id}`),
   updateCall: (id: string, data: Record<string, unknown>) => patch(`/api/telephony/calls/${id}`, data),
+  callHistory: (id: string) => get<Record<string, unknown>[]>(`/api/telephony/calls/${id}/history`),
 
   // --- AI -----------------------------------------------------------------
   aiStatus: () => get<{ available: boolean; message: string }>('/api/ai/status'),
@@ -981,9 +982,13 @@ export const api = {
    */
   voiceNote: (audio: Blob) => {
     const form = new FormData();
-    form.append('audio', audio, 'note.webm');
+    // The extension must agree with the bytes. Safari records MP4/M4A; naming
+    // that file .webm made the speech provider spend time probing it and then
+    // reject it on some accounts.
+    const extension = audio.type.includes('ogg') ? 'ogg' : audio.type.includes('mp4') ? 'm4a' : 'webm';
+    form.append('audio', audio, `note.${extension}`);
     return request<{ transcript: string; note: string; tidied: boolean }>(
-      '/api/ai/voice-note', { method: 'POST', body: form },
+      '/api/ai/voice-note?fast=true', { method: 'POST', body: form },
     );
   },
   transcribeAiAudio: (audio: Blob) => {
