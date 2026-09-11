@@ -13,7 +13,7 @@
  * The rest — accuracy, battery, which property somebody is standing at — is
  * detail. These two are the feature.
  */
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, afterAll } from 'vitest';
 import {
   currentPolicy, invalidateLocationSettings, locationSettings, metresBetween,
   pruneOldLocations, recordFixes, teamPositions, trail,
@@ -49,6 +49,22 @@ beforeAll(async () => {
   executiveB = await contextFor(SEEDED.executiveB);
   adminUser = await authUser('admin@ipropy.com').catch(() => admin.user);
   executiveAUser = await authUser(SEEDED.executiveA);
+});
+
+/*
+  Put the switch back.
+
+  `team_location.enabled` is a single global setting and it ships off — a CRM
+  does not start tracking where its staff are because somebody installed it.
+  This file turns it on to exercise the rules and left it on, so every spec
+  that ran afterwards saw a CRM that tracks locations, and the device-policy
+  assertion in `androidCallCompanion.test.ts` failed in CI while passing alone.
+
+  That is the same shape as the share-link setting a neighbouring test used to
+  leave behind: a global an admin owns, changed by a test, never restored.
+*/
+afterAll(async () => {
+  await setEnabled(false);
 });
 
 beforeEach(async () => {
