@@ -136,10 +136,14 @@ jobs:
           # The decisive one: a workflow that is off should have stopped
           # logging. Days-with-activity says whether it stopped or is still
           # going, which no single timestamp can.
-          # Days-active only means something next to the cadence the workflow
-          # was actually given. One day in fourteen is alarming for a daily
-          # schedule and correct for a fortnightly one, and nothing above says
-          # which this is.
+          # `ipy_workflow_log` counts *matches*, not ticks: a record that does
+          # not match is written to `ipy_workflow_state` and skipped before any
+          # log row exists (`engine.ts`, "if (!matched || !shouldRun)"). So an
+          # hourly workflow with two logged days ran 336 times and found
+          # something twice — which reads as a dead scheduler and is not one.
+          #
+          # `ipy_workflow_state.last_run_at` is the honest signal, because it
+          # moves on every evaluation whether anything matched or not.
           psql "$PROD_DATABASE_URL" -P pager=off -c \
             "SELECT w.name, w.is_active,
                     coalesce(w.schedule #>> '{}', '(none)') AS schedule,
@@ -151,6 +155,11 @@ jobs:
               WHERE w.trigger = 'scheduled'
               GROUP BY w.id, w.name, w.is_active, w.schedule
               ORDER BY w.is_active DESC, w.name;"
+          psql "$PROD_DATABASE_URL" -tAc \
+            "SELECT 'scheduler last evaluated a record: '
+                 || coalesce(to_char(max(last_run_at), 'MM-DD HH24:MI'), 'never')
+                 || ' (' || coalesce(date_trunc('minute', now() - max(last_run_at))::text, '-') || ' ago)'
+               FROM ipy_workflow_state;"
           echo
           echo "--- which AI model does each job use, and is the key there? ---"
           # Semantic search has been inert since it was built: `ipy_embedding`
