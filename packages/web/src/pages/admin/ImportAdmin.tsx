@@ -693,10 +693,23 @@ export default function ImportAdmin(): JSX.Element {
             <button onClick={reset} className="btn-secondary">
               <ArrowLeft className="h-4 w-4" /> Choose another file
             </button>
+            {/* A file the CRM already knows needs no second opinion on its
+                rules — they came with the template. One click to the
+                rehearsal, which is the screen worth keeping either way. */}
+            {template && (
+              <button
+                onClick={() => void check()}
+                disabled={mappedCount === 0 || unmappedMandatory.length > 0 || busy}
+                className="btn-secondary ml-auto"
+              >
+                {busy ? <Spinner /> : <Check className="h-4 w-4" />}
+                Straight to what will happen
+              </button>
+            )}
             <button
               onClick={() => setStep('rules')}
               disabled={mappedCount === 0 || unmappedMandatory.length > 0}
-              className="btn-primary ml-auto"
+              className={cn('btn-primary', !template && 'ml-auto')}
             >
               Continue
             </button>
