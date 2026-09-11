@@ -166,6 +166,33 @@ jobs:
                   AND f.uitype IN ('area','currency','number','decimal','integer','double');"
           done
           echo
+          echo "=== are those non-numeric area values just unit labels? (counts only) ==="
+          # The repair depends on what they are. If every one is a value from
+          # the `area` unit master — Sq Ft, Sq Yd, Gaj — then a field named
+          # `area_unit` was renamed to `area_size` and retyped as an area
+          # without its values being converted, and the fix is mechanical: the
+          # label belongs under the companion unit key, not the area key.
+          # Anything else is somebody's typed-in note and must not be touched.
+          # Counts and distinct counts only — no value is printed.
+          psql "$PROD_DATABASE_URL" -tAc \
+            "WITH v AS (
+               SELECT t.custom_fields ->> 'area_unit' AS raw FROM ipy_e_leads t
+                WHERE coalesce(t.custom_fields ->> 'area_unit', '') <> ''
+                  AND NOT (t.custom_fields ->> 'area_unit' ~ '^[0-9]+(\\.[0-9]+)?$')
+             ), u AS (
+               SELECT lower(trim(value ->> 'value')) AS label
+                 FROM ipy_unit_master um, jsonb_array_elements(um.units) value
+                WHERE um.name = 'area'
+               UNION
+               SELECT lower(trim(value ->> 'label'))
+                 FROM ipy_unit_master um, jsonb_array_elements(um.units) value
+                WHERE um.name = 'area'
+             )
+             SELECT 'non-numeric=' || (SELECT count(*) FROM v)
+                 || ', distinct=' || (SELECT count(DISTINCT raw) FROM v)
+                 || ', recognised as an area unit=' ||
+                    (SELECT count(*) FROM v WHERE lower(trim(v.raw)) IN (SELECT label FROM u));"
+          echo
           echo "=== values archived by a permanent delete (counts only) ==="
           psql "$PROD_DATABASE_URL" -tAc \
             "SELECT coalesce(string_agg(table_name || '.' || column_name || '=' || n, ', '), '(none)')
