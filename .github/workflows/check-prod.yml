@@ -114,9 +114,10 @@ jobs:
           # indexing needs the embed model, failing silently as ordinary
           # keyword search. Print what is actually in there.
           psql "$PROD_DATABASE_URL" -tAc \
-            "SELECT 'embeddings: ' || count(*)
-                 || ' rows, over ' || count(DISTINCT record_module) || ' module(s)'
-                 || ', newest ' || coalesce(to_char(max(created_at), 'YYYY-MM-DD HH24:MI'), 'never')
+            "SELECT 'embeddings: ' || count(*) || ' rows'
+                 || ', modules: ' || coalesce(string_agg(DISTINCT module_name, '/'), 'none')
+                 || ', model: ' || coalesce(max(model), 'none')
+                 || ', newest ' || coalesce(to_char(max(updated_at), 'YYYY-MM-DD HH24:MI'), 'never')
                FROM ipy_embedding;"
           psql "$PROD_DATABASE_URL" -tAc \
             "SELECT provider || ': active=' || is_active || ', key=' || (credentials ? 'apiKey')
