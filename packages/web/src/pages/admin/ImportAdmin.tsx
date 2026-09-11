@@ -1,7 +1,7 @@
 import { type JSX, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { formatIndianPrice, relativeTime } from '@ipropy/shared';
+import { formatIndianPrice, relativeTime, UITYPES, type UIType } from '@ipropy/shared';
 import {
   AlertTriangle, ArrowLeft, Check, Database, Download, FileUp, Save, Undo2, Upload, X,
 } from 'lucide-react';
@@ -99,6 +99,19 @@ const CONFIDENCE: Record<Suggestion['confidence'], { label: string; colour: stri
   possible: { label: 'Check this', colour: '#f59e0b' },
 };
 
+/**
+ * The kinds a column can be, taken from the one vocabulary.
+ *
+ * Written out by hand it drifts: "checkbox" was offered here and the API
+ * rejected it, because the type is called `boolean`. Narrowed to what a
+ * spreadsheet column can actually hold — a formula, a rollup or a file is not
+ * something a CSV carries.
+ */
+const NEW_FIELD_TYPES: UIType[] = [
+  'string', 'textarea', 'picklist', 'multipicklist', 'currency', 'decimal',
+  'integer', 'percent', 'area', 'date', 'datetime', 'phone', 'email', 'url', 'boolean',
+];
+
 const DATE_ORDERS = [
   { value: 'dmy', label: 'Day / Month / Year  — 05/03/2026 is 5 March' },
   { value: 'mdy', label: 'Month / Day / Year  — 05/03/2026 is 3 May' },
@@ -143,6 +156,8 @@ export default function ImportAdmin(): JSX.Element {
   /** field → file value → the CRM's value, or '' for "leave this cell empty". */
   const [valueMap, setValueMap] = useState<Record<string, Record<string, string>>>({});
   const [openValues, setOpenValues] = useState<string | null>(null);
+  /** The column somebody is making a field for. */
+  const [newField, setNewField] = useState<{ header: string; label: string; uitype: string } | null>(null);
   const [openJob, setOpenJob] = useState<JobRow | null>(null);
   const [reviewJob, setReviewJob] = useState<JobRow | null>(null);
   const [undoJob, setUndoJob] = useState<JobRow | null>(null);
@@ -219,6 +234,43 @@ export default function ImportAdmin(): JSX.Element {
       void queryClient.invalidateQueries({ queryKey: ['import-jobs'] });
     } catch (err) {
       toast.error('Could not undo the import', (err as Error).message);
+    }
+  };
+
+  /*
+    A column the CRM has no home for.
+
+    The alternative is leaving the wizard, finding Modules & Fields, creating
+    the field, coming back and starting the import again — at which point the
+    column gets ignored instead, and the information in it is lost for good.
+  */
+  const createFieldFor = async (): Promise<void> => {
+    if (!newField) return;
+    try {
+      const meta = await api.module(moduleName, { includeInactive: true }) as unknown as
+        { blocks: { id: string }[] };
+      const created = await api.createField(moduleName, {
+        // The machine name, which the API asks for and no admin should have to
+        // think about — it is the label with the punctuation taken out.
+        name: newField.label.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_')
+          .replace(/^_+|_+$/g, '') || `column_${Date.now().toString(36)}`,
+        label: newField.label.trim(),
+        uitype: newField.uitype,
+        blockId: meta.blocks[0]?.id,
+        config: {},
+      }) as unknown as { name: string; label: string; uitype: string };
+      setPreview((p) => (p ? {
+        ...p,
+        fields: [...p.fields, {
+          name: created.name, label: created.label, uitype: created.uitype,
+          mandatory: false, options: [],
+        }],
+      } : p));
+      setMapping((m) => ({ ...m, [newField.header]: created.name }));
+      setNewField(null);
+      toast.success('Field created', `“${created.label}” is on this module now, and the column maps to it.`);
+    } catch (err) {
+      toast.error('Could not create the field', (err as Error).message);
     }
   };
 
@@ -493,12 +545,21 @@ export default function ImportAdmin(): JSX.Element {
                   <span className="text-slate-300">→</span>
                   <Select
                     value={chosen}
-                    onChange={(v) => setMapping({ ...mapping, [header]: v })}
+                    onChange={(v) => {
+                      if (v === '__create') {
+                        setNewField({ header, label: header, uitype: guessType(preview.sample.map((r) => r[header])) });
+                        return;
+                      }
+                      setMapping({ ...mapping, [header]: v });
+                    }}
                     placeholder="— Ignore this column —"
-                    options={preview.fields.map((f) => ({
-                      value: f.name,
-                      label: `${f.label}${f.mandatory ? ' *' : ''}`,
-                    }))}
+                    options={[
+                      ...preview.fields.map((f) => ({
+                        value: f.name,
+                        label: `${f.label}${f.mandatory ? ' *' : ''}`,
+                      })),
+                      { value: '__create', label: '+ Create a field for this column' },
+                    ]}
                     className="max-w-xs py-1.5 text-sm"
                   />
                   {column && (
@@ -930,6 +991,33 @@ export default function ImportAdmin(): JSX.Element {
       </div>
 
       {openJob && <JobDetailsModal job={openJob} onClose={() => setOpenJob(null)} />}
+      {newField && (
+        <Modal open title="Create a field for this column" onClose={() => setNewField(null)} size="sm">
+          <label className="label">Call it</label>
+          <input
+            className="input"
+            autoFocus
+            value={newField.label}
+            onChange={(e) => setNewField({ ...newField, label: e.target.value })}
+          />
+          <label className="label mt-3">What kind of value is it</label>
+          <Select
+            value={newField.uitype}
+            onChange={(v) => setNewField({ ...newField, uitype: v })}
+            options={NEW_FIELD_TYPES.map((t) => ({ value: t, label: UITYPES[t].label }))}
+          />
+          <p className="mt-2 text-2xs text-muted">
+            Guessed from what is in the column — {preview?.sample[0]?.[newField.header] || 'no sample'}.
+            It goes on this module straight away, so it is there for every record, not only this file.
+          </p>
+          <div className="mt-4 flex justify-end gap-2">
+            <button onClick={() => setNewField(null)} className="btn-secondary">Cancel</button>
+            <button onClick={() => void createFieldFor()} disabled={!newField.label.trim()} className="btn-primary">
+              Create it
+            </button>
+          </div>
+        </Modal>
+      )}
       {saveAs !== null && preview && (
         <Modal open title="Save this mapping" onClose={() => setSaveAs(null)} size="sm">
           <p className="mb-3 text-sm text-muted">
@@ -990,6 +1078,32 @@ export default function ImportAdmin(): JSX.Element {
       )}
     </div>
   );
+}
+
+/**
+ * What kind of value a column holds, from the few rows we have.
+ *
+ * A guess in a box somebody can change, not a decision: the only cost of
+ * getting it wrong is one click, and the cost of asking with no default is
+ * that everybody picks Text and loses the arithmetic.
+ */
+function guessType(samples: (string | undefined)[]): string {
+  const seen = samples.map((s) => String(s ?? '').trim()).filter(Boolean);
+  if (!seen.length) return 'string';
+  const every = (test: (v: string) => boolean): boolean => seen.every(test);
+  if (every((v) => /@/.test(v))) return 'email';
+  if (every((v) => /^[+\d][\d\s()-]{6,}$/.test(v))) return 'phone';
+  if (every((v) => /^(https?:\/\/|www\.)/i.test(v))) return 'url';
+  if (every((v) => /(cr|crore|lac|lakh|₹)/i.test(v) || /^[\d,]+(\.\d+)?$/.test(v))) {
+    return every((v) => /(cr|crore|lac|lakh|₹)/i.test(v)) ? 'currency' : 'decimal';
+  }
+  if (every((v) => /^\d{1,4}[/\-.]\d{1,2}[/\-.]\d{1,4}$/.test(v))) return 'date';
+  if (every((v) => /^(yes|no|true|false|y|n)$/i.test(v))) return 'boolean';
+  // A short vocabulary repeated down the column is a dropdown, not free text.
+  if (seen.length > 2 && new Set(seen.map((v) => v.toLowerCase())).size <= Math.max(2, seen.length / 2)) {
+    return 'picklist';
+  }
+  return 'string';
 }
 
 /**
