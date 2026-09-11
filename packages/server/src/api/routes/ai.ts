@@ -109,7 +109,11 @@ aiRouter.get('/match/:module/:id', modelLimiter, asyncHandler(async (req, res) =
   if (!(await canAccessRecord(scope, module, id, 'view'))) throw new NotFoundError();
 
   const matches = await matchForRecord(id, {
-    limit: Math.min(20, Number(req.query.limit) || 6),
+    // Up to 50, because the tab now lets a rep widen the list and work it
+    // themselves rather than trusting the top handful. The scorer reads a
+    // fixed candidate pool either way, so this only changes how much of the
+    // ranking is returned.
+    limit: Math.min(50, Number(req.query.limit) || 6),
     withNarrative: req.query.narrative !== 'false',
     persist: true,
     // Matched units are properties: the caller must see the rows the scorer
@@ -148,7 +152,7 @@ aiRouter.get('/buyers-for/:propertyId', modelLimiter, asyncHandler(async (req, r
   if (!(await canAccessRecord(scope, 'properties', req.params.propertyId, 'view'))) throw new NotFoundError();
   // The buyer list is a leads list by another name — names, budgets and
   // owners — so it is scoped like one.
-  const limit = Math.min(25, Number(req.query.limit) || 10);
+  const limit = Math.min(50, Number(req.query.limit) || 10);
   const buyers = await matchBuyersForProperty(req.params.propertyId, limit, scope, {
     withNarrative: req.query.narrative !== 'false',
   });

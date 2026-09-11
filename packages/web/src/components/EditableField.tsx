@@ -235,6 +235,11 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
         // Address/JSON are compound, explicit-save values — a stray outside
         // click shouldn't half-commit a partial edit.
         if (field.uitype === 'address' || field.uitype === 'json') closeWithoutSaving();
+        // Clicking away is a dismissal, not a save. A mandatory field that is
+        // still empty refuses to commit, and refusing to *close* on top of
+        // that left the panel stuck open over the page with no way out but
+        // Escape — which is not something anybody guesses.
+        else if (field.isMandatory && isEmptyValue(draft)) closeWithoutSaving();
         else closeAndCommitIfChanged();
       }
     };
@@ -370,7 +375,7 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
           ) : kind === 'owner' ? (
             <OwnerPopover value={draft as string | null} mandatory={field.isMandatory} onPick={pickAndClose} />
           ) : kind === 'form' ? (
-            <div className="w-80 animate-slide-up space-y-2 rounded-xl border border-slate-200 bg-white p-3 shadow-float dark:border-slate-700 dark:bg-slate-900">
+            <div className="w-80 animate-fade-in space-y-2 rounded-xl border border-slate-200 bg-white p-3 shadow-float dark:border-slate-700 dark:bg-slate-900">
               <FieldInput field={field} value={draft} onChange={setDraft} autoFocus error={mandatoryError} />
               {mandatoryError && <p className="text-2xs text-negative">{mandatoryError}</p>}
               <div className="flex justify-end gap-1.5 pt-0.5">
@@ -464,12 +469,19 @@ function FloatingEditor({
       }
       top = Math.max(MARGIN, Math.min(top, window.innerHeight - panel.height - MARGIN));
 
-      setStyle({ position: 'fixed', top, left, zIndex: 50, opacity: 1 });
+      setStyle((prev) => (
+        prev.top === top && prev.left === left && prev.opacity === 1
+          ? prev
+          : { position: 'fixed', top, left, zIndex: 50, opacity: 1 }
+      ));
     };
 
     place();
     // The panel's own content can settle a frame late (an async options list, a
-    // focused input growing), so measure once more after paint.
+    // focused input growing), so measure once more after paint — but only move
+    // if that second measurement actually disagrees. Re-setting the same
+    // position unconditionally re-ran the open animation, which is the small
+    // jump you could see on every field you clicked.
     const raf = requestAnimationFrame(place);
     window.addEventListener('resize', place);
     window.addEventListener('scroll', place, true);
@@ -716,7 +728,7 @@ function PicklistPopover({
     // the end of <body> — "the button that says New" no longer distinguishes an
     // option from a table cell showing the same value.
     <div
-      className="w-max min-w-[13rem] max-w-xs animate-slide-up overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-float dark:border-slate-700 dark:bg-slate-900"
+      className="w-max min-w-[13rem] max-w-xs animate-fade-in overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-float dark:border-slate-700 dark:bg-slate-900"
       onKeyDown={keys}
     >
       {searchable && (
@@ -791,14 +803,14 @@ function OwnerPopover({
   const [users, setUsers] = useState<{ id: string; fullName: string }[]>([]);
 
   useEffect(() => {
-    void api.users().then((rows) => setUsers(rows as never)).catch(() => undefined);
+    void api.users(false, false, true).then((rows) => setUsers(rows as never)).catch(() => undefined);
   }, []);
 
   const q = search.trim().toLowerCase();
   const filteredUsers = users.filter((u) => !q || u.fullName.toLowerCase().includes(q));
 
   return (
-    <div className="w-64 animate-slide-up overflow-hidden rounded-xl border border-slate-200 bg-white shadow-float dark:border-slate-700 dark:bg-slate-900">
+    <div className="w-64 animate-fade-in overflow-hidden rounded-xl border border-slate-200 bg-white shadow-float dark:border-slate-700 dark:bg-slate-900">
       <div className="border-b border-slate-100 p-2 dark:border-slate-800">
         <input
           className="input py-1 text-xs"
@@ -809,15 +821,6 @@ function OwnerPopover({
         />
       </div>
       <div className="max-h-64 overflow-y-auto py-1">
-        {!mandatory && (
-          <button
-            type="button"
-            onClick={() => onPick(null)}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-muted hover:bg-slate-50 dark:hover:bg-slate-800"
-          >
-            Unassigned
-          </button>
-        )}
         {filteredUsers.map((u) => (
           <button
             key={u.id}
@@ -836,6 +839,21 @@ function OwnerPopover({
           <p className="px-3 py-4 text-center text-xs text-muted">No matches</p>
         )}
       </div>
+      {/* Bottom, under a rule — the same place and the same gesture as every
+          other dropdown's Clear, so it is one habit rather than six. */}
+      {!mandatory && (
+        <>
+          <div className="border-t border-slate-100 dark:border-slate-800" />
+          <button
+            type="button"
+            onClick={() => onPick(null)}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-muted transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
+          >
+            <span className="h-2 w-2 shrink-0 rounded-full border border-dashed border-slate-300 dark:border-slate-600" />
+            Clear — leave unassigned
+          </button>
+        </>
+      )}
     </div>
   );
 }

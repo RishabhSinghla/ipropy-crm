@@ -980,6 +980,20 @@ export function MultiSelect({
             </button>
           ))}
           {filtered.length === 0 && <p className="px-3 py-4 text-center text-xs text-muted">No matches</p>}
+          {/* Same place as every other dropdown's Clear. Taking six chips off
+              one at a time is the alternative. */}
+          {value.length > 0 && (
+            <div className="sticky bottom-0 border-t border-slate-100 bg-white dark:border-slate-800 dark:bg-slate-900">
+              <button
+                type="button"
+                onClick={() => onChange([])}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-muted transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
+              >
+                <span className="h-2 w-2 shrink-0 rounded-full border border-dashed border-slate-300 dark:border-slate-600" />
+                Clear all
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1164,6 +1178,22 @@ export function ReferencePicker({
               </button>
             ))}
           </div>
+          {/* Where every other dropdown keeps Clear. The × on the closed
+              control only appears once something is chosen and is easy to
+              miss besides. */}
+          {value && (
+            <>
+              <div className="border-t border-slate-100 dark:border-slate-800" />
+              <button
+                type="button"
+                onClick={() => { onChange(null); setSelectedLabel(''); setOpen(false); setSearch(''); }}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-muted transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
+              >
+                <span className="h-2 w-2 shrink-0 rounded-full border border-dashed border-slate-300 dark:border-slate-600" />
+                Clear
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>

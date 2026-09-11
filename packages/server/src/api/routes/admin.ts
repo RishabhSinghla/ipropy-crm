@@ -5,7 +5,7 @@ import { db, transaction } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { blockApiKey, getUser, hashPassword, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, ConflictError, NotFoundError } from '../../utils/errors.js';
-import { assertCapability, invalidatePermissions } from '../../core/permissions/index.js';
+import { assertCapability, getSubordinateUserIds, invalidatePermissions } from '../../core/permissions/index.js';
 import { registry } from '../../core/metadata/registry.js';
 import {
   getSettings, getOneDriveProviderSettings, listIntegrations, getIntegrationSummary, saveIntegration, recordIntegrationResult,
@@ -32,10 +32,24 @@ adminRouter.get('/users', asyncHandler(async (req, res) => {
   // Open to everyone, because owner pickers and @mentions need the directory.
   // What each caller receives depends on who they are — see below.
   const includeInactive = req.query.includeInactive === 'true';
-  // Bulk reassignment offers only Administrators as a target (recordService's
-  // transferOwnership enforces the same rule server-side; this just keeps the
-  // picker from offering someone the write will refuse).
   const adminOnly = req.query.adminOnly === 'true';
+  /*
+    Who this caller may hand a record to.
+
+    Reassignment used to offer Administrators only, which is why a team of
+    several showed a picker of two. The rule now matches the hierarchy:
+    an administrator allocates anywhere, everyone else allocates within their
+    own branch — themselves or someone below them, never a peer or a manager.
+
+    Applied here as well as in recordService's transferOwnership on purpose:
+    the picker must offer exactly the people the write will accept, or the
+    first a rep hears of the rule is a red toast.
+  */
+  const assignableOnly = req.query.assignableOnly === 'true';
+  const caller = getUser(req);
+  const assignable = assignableOnly && !caller.isAdmin
+    ? [caller.id, ...await getSubordinateUserIds(caller)]
+    : null;
   const rows = await db.query(
     `SELECT u.id, u.email, u.first_name, u.last_name, u.avatar_url, u.phone,
             u.is_admin, u.is_active, u.role_id, u.profile_id, u.last_login_at,
@@ -46,7 +60,10 @@ adminRouter.get('/users', asyncHandler(async (req, res) => {
      LEFT JOIN ipy_profile p ON p.id = u.profile_id
      WHERE u.deleted_at IS NULL ${includeInactive ? '' : 'AND u.is_active = true'}
        ${adminOnly ? 'AND (u.is_admin = true OR r.depth = 0)' : ''}
+       ${assignable ? 'AND u.id = ANY($1::uuid[])' : ''}
      ORDER BY u.first_name, u.last_name`,
+    // Rule 8: bind exactly what the statement references, never a spare.
+    assignable ? [assignable] : [],
   );
   /*
     Two shapes: the directory everyone needs, and the record only an admin does.
@@ -60,7 +77,7 @@ adminRouter.get('/users', asyncHandler(async (req, res) => {
 
     Only Admin → Users reads the rest, and only an admin can open it.
   */
-  const isAdmin = getUser(req).isAdmin;
+  const isAdmin = caller.isAdmin;
   res.json(rows.rows.map((u) => {
     const directory = {
       id: u.id,

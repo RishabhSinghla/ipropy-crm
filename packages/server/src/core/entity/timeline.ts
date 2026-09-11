@@ -14,7 +14,7 @@
  * the current one belongs — one panel, always the latest, rather than a growing
  * pile of superseded copies in the history.
  */
-import type { TimelineEntry } from '@ipropy/shared';
+import { formatIndianPrice, type TimelineEntry } from '@ipropy/shared';
 import { db, type Tx } from '../../db/pool.js';
 
 export interface TimelineOptions {
@@ -102,34 +102,118 @@ export async function buildTimeline(
     ]);
 
   const entries: TimelineEntry[] = [];
-  // Audit values are stored faithfully as IDs. The timeline is for people,
-  // though, so resolve assignee changes before rendering them.
-  const assignmentIds = new Set<string>();
+
+  /*
+    Audit rows store values exactly as written, so a reference is a UUID. A
+    UUID tells a salesperson nothing, so every id in the feed is resolved to
+    the name behind it — user, group or record.
+
+    Deliberately not keyed on field names: those get renamed here constantly,
+    and a hand-listed set of "the id fields" is what breaks silently the next
+    time one moves. Anything shaped like a UUID is looked up instead, and a
+    value that matches nothing renders as it always did.
+  */
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const ids = new Set<string>();
+  const collect = (v: unknown): void => {
+    if (typeof v === 'string' && UUID.test(v)) ids.add(v);
+    else if (Array.isArray(v)) v.forEach(collect);
+  };
   for (const row of audit.rows) {
     for (const raw of Array.isArray(row.changes) ? row.changes : []) {
-      const change = raw as { field?: string; from?: unknown; to?: unknown };
-      if (change.field !== 'owner_id') continue;
-      if (typeof change.from === 'string') assignmentIds.add(change.from);
-      if (typeof change.to === 'string') assignmentIds.add(change.to);
+      const change = raw as { from?: unknown; to?: unknown };
+      collect(change.from);
+      collect(change.to);
     }
   }
-  const people = assignmentIds.size
-    ? await conn.query<{ id: string; name: string }>(
-        `SELECT id, trim(first_name || ' ' || last_name) AS name FROM ipy_user WHERE id = ANY($1::uuid[])`,
-        [[...assignmentIds]],
+  const list = [...ids];
+  const [users, groups, records] = list.length
+    ? await Promise.all([
+        conn.query<{ id: string; name: string }>(
+          `SELECT id, trim(first_name || ' ' || last_name) AS name FROM ipy_user WHERE id = ANY($1::uuid[])`, [list]),
+        conn.query<{ id: string; name: string }>(
+          `SELECT id, name FROM ipy_group WHERE id = ANY($1::uuid[])`, [list]),
+        conn.query<{ id: string; name: string }>(
+          `SELECT id, label AS name FROM ipy_record WHERE id = ANY($1::uuid[])`, [list]),
+      ])
+    : [{ rows: [] }, { rows: [] }, { rows: [] }] as { rows: { id: string; name: string }[] }[];
+  const nameById = new Map<string, string>();
+  for (const row of [...records.rows, ...groups.rows, ...users.rows]) {
+    if (row.name?.trim()) nameById.set(row.id, row.name.trim());
+  }
+  /*
+    An audit row keeps the label the field had when the edit happened, and
+    fields get renamed here constantly — so a feed read today is captioned
+    with words that are no longer on the screen anywhere ("Owner" for what
+    the record now calls "Assigned To"). Read the current label instead,
+    matched on either the field's name or its column, since audit rows are
+    written with the column.
+  */
+  const changedFields = new Set<string>();
+  for (const row of audit.rows) {
+    for (const raw of Array.isArray(row.changes) ? row.changes : []) {
+      const field = (raw as { field?: unknown }).field;
+      if (typeof field === 'string') changedFields.add(field);
+    }
+  }
+  const labels = changedFields.size
+    ? await conn.query<{ key: string; label: string; uitype: string }>(
+        `SELECT DISTINCT ON (key) key, f.label, f.uitype
+           FROM ipy_record r
+           JOIN ipy_module m ON m.name = r.module_name
+           JOIN ipy_field f ON f.module_id = m.id
+           CROSS JOIN LATERAL (VALUES (f.name), (f.column_name)) AS k(key)
+          WHERE r.id = $1 AND k.key = ANY($2::text[])`,
+        [recordId, [...changedFields]],
       )
-    : { rows: [] as { id: string; name: string }[] };
-  const personName = new Map(people.rows.map((person) => [person.id, person.name]));
+    : { rows: [] as { key: string; label: string; uitype: string }[] };
+  const labelByField = new Map(labels.rows.map((row) => [row.key, row.label]));
+  const uitypeByField = new Map(labels.rows.map((row) => [row.key, row.uitype]));
+
+  /*
+    A budget in the feed read `17500000 → 21000000`. That is the number the
+    column holds and nobody in this business thinks in it; the same value is
+    ₹1.75 Cr everywhere else on the screen. Money and dates are rendered the
+    way the rest of the CRM renders them.
+  */
+  const asTyped = (uitype: string | undefined, v: unknown): string | undefined => {
+    if (v === null || v === undefined || v === '') return undefined;
+    if (uitype === 'currency' && Number.isFinite(Number(v))) return formatIndianPrice(Number(v));
+    if ((uitype === 'date' || uitype === 'datetime') && typeof v === 'string') {
+      const when = new Date(v);
+      if (!Number.isNaN(when.getTime())) {
+        return when.toLocaleDateString('en-IN', {
+          day: 'numeric', month: 'short', year: 'numeric',
+          ...(uitype === 'datetime' ? { hour: '2-digit', minute: '2-digit' } : {}),
+        });
+      }
+    }
+    return undefined;
+  };
+
+  const named = (v: unknown): string | undefined => {
+    if (typeof v === 'string') return nameById.get(v);
+    if (Array.isArray(v)) {
+      const parts = v.map((x) => (typeof x === 'string' ? nameById.get(x) : undefined));
+      if (parts.some(Boolean)) return parts.map((part, i) => part ?? fmt(v[i])).join(', ');
+    }
+    return undefined;
+  };
 
   for (const r of audit.rows) {
     const changes = (Array.isArray(r.changes) ? r.changes : []).map((raw) => {
       const change = raw as Record<string, unknown>;
-      if (change.field !== 'owner_id') return change;
+      const key = typeof change.field === 'string' ? change.field : undefined;
+      const uitype = key ? uitypeByField.get(key) : undefined;
+      const fromDisplay = named(change.from) ?? asTyped(uitype, change.from);
+      const toDisplay = named(change.to) ?? asTyped(uitype, change.to);
+      const label = (key ? labelByField.get(key) : undefined) ?? change.label;
+      if (fromDisplay === undefined && toDisplay === undefined && label === change.label) return change;
       return {
         ...change,
-        label: 'Assigned to',
-        fromDisplay: typeof change.from === 'string' ? personName.get(change.from) ?? '—' : '—',
-        toDisplay: typeof change.to === 'string' ? personName.get(change.to) ?? '—' : '—',
+        label,
+        ...(fromDisplay === undefined ? {} : { fromDisplay }),
+        ...(toDisplay === undefined ? {} : { toDisplay }),
       };
     });
     // A create event lists every initial value — too noisy for a feed.

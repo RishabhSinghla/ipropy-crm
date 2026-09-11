@@ -16,6 +16,7 @@ import { cn, renderMarkdown, restrictionForField } from '../lib/utils';
 import { resolveIcon } from '../lib/icons';
 import { FieldValue } from '../components/FieldRenderer';
 import { EditableField, isInlineEditable } from '../components/EditableField';
+import { assignmentField, fieldByKey } from '../lib/fields';
 import { ShareLinksPanel } from '../components/ShareLinks';
 import {
   Avatar, Badge, ConfirmDialog, Dropdown, DropdownItem, EmptyState, Modal,
@@ -212,6 +213,9 @@ export default function RecordDetail(): JSX.Element {
   }
 
   const fieldMap = new Map(meta.fields.map((f) => [f.name, f]));
+  // Resolved by what they are, not by the names they happen to carry today.
+  const assignedField = assignmentField(meta.fields);
+  const typeField = fieldByKey(meta.fields, 'contact_type');
   const phone = String(record.values.mobile ?? record.values.phone ?? record.values.whatsapp_number ?? '');
   const email = String(record.values.email ?? '');
 
@@ -313,9 +317,9 @@ export default function RecordDetail(): JSX.Element {
                       ? String(record.display?.[layoutConfig.headerTitleField] ?? record.values[layoutConfig.headerTitleField])
                       : record.label}
                   </h1>
-                  {fieldMap.get('contact_type') && Boolean(record.values.contact_type) && (
+                  {typeField && Boolean(record.values[typeField.name]) && (
                     <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-700 dark:bg-brand-950/40 dark:text-brand-300">
-                      {record.display?.contact_type ?? String(record.values.contact_type)}
+                      {record.display?.[typeField.name] ?? String(record.values[typeField.name])}
                     </span>
                   )}
                   {/* Off unless an admin asks for it in Admin → Layout Designer.
@@ -413,24 +417,32 @@ export default function RecordDetail(): JSX.Element {
                       </span>
                     );
                   })}
-                  {!((layoutConfig.headerFields ?? []).includes('owner_id')) && <span className="inline-flex items-center gap-1.5">
-                    <span className="text-xs font-normal text-muted">Assigned to:</span>
-                    {fieldMap.get('owner_id') && record.can?.edit ? (
-                      <EditableField
-                        module={moduleName!}
-                        recordId={record.id}
-                        field={fieldMap.get('owner_id')!}
-                        value={record.values.owner_id}
-                        display={record.display?.owner_id}
-                        compact
-                        onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void queryClient.invalidateQueries({ queryKey: ['matching', moduleName, record.id] }); void refetch(); }}
-                      />
-                    ) : record.display?.owner_id ? (
-                      <span className="inline-flex items-center gap-1"><Avatar name={record.display.owner_id} size={16} />{record.display.owner_id}</span>
-                    ) : (
-                      <span className="text-muted">Unassigned</span>
-                    )}
-                  </span>}
+                  {/* The assignment field, under whatever name and label it
+                      currently carries. Found by uitype, never by name: it is
+                      called `assigned_to` today and `owner_id` is only its
+                      column, so looking it up by name silently found nothing
+                      and drew this chip read-only while every other header
+                      field edited in place. */}
+                  {assignedField && !(layoutConfig.headerFields ?? []).includes(assignedField.name) && (
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="text-xs font-normal text-muted">{assignedField.label}:</span>
+                      {record.can?.edit && isInlineEditable(assignedField) ? (
+                        <EditableField
+                          module={moduleName!}
+                          recordId={record.id}
+                          field={assignedField}
+                          value={record.values[assignedField.name]}
+                          display={record.display?.[assignedField.name]}
+                          compact
+                          onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void queryClient.invalidateQueries({ queryKey: ['matching', moduleName, record.id] }); void refetch(); }}
+                        />
+                      ) : record.display?.[assignedField.name] ? (
+                        <span className="inline-flex items-center gap-1"><Avatar name={record.display[assignedField.name]} size={16} />{record.display[assignedField.name]}</span>
+                      ) : (
+                        <span className="text-muted">Unassigned</span>
+                      )}
+                    </span>
+                  )}
                   <span className="shrink-0 text-xs font-normal text-muted">Updated {relativeTime(record.updatedAt)}</span>
                 </div>
               </div>
@@ -800,17 +812,48 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
   const isContact = module === 'leads';
   const [minimumScore, setMinimumScore] = useState(0);
   const [decisionFilter, setDecisionFilter] = useState<'all' | 'unmarked' | 'shortlisted' | 'follow_up' | 'not_suitable'>('all');
+  const [search, setSearch] = useState('');
+  // How deep into the ranking to look. The engine's top handful is the
+  // starting point, not the verdict — widening it is how a rep goes past what
+  // the score suggested and picks for this customer themselves.
+  const [howMany, setHowMany] = useState(10);
 
-  const { data, isLoading, refetch, isFetching } = useQuery({
-    queryKey: ['matching', module, id],
-    // Both directions answered by one query: the shape is a union narrowed by
-    // `isContact` in the useMemo below.
-    queryFn: (): Promise<{ matches?: PropertyMatch[]; buyers?: BuyerMatch[] }> => isContact
-      ? api.matchProperties(module, id, true)
-      : api.buyersForProperty(id, true),
-    // The AI narrative costs a model call — refresh is the button, not every visit.
+  const aiAvailable = useApp((st) => st.aiAvailable);
+
+  /*
+    Two requests, because they cost three orders of magnitude apart.
+
+    Scoring the inventory is a single indexed query — tens of milliseconds.
+    The pitch sentence beside each row is a model call, and asking for both in
+    one request made the whole tab wait on the model: the table sat empty for
+    seconds with every number in it already computed. So the scores are
+    fetched on their own and painted immediately, and the narrative arrives
+    after, filling in the reason column where it has something better to say.
+
+    The narrative request is skipped entirely when no model is configured —
+    the server would only degrade to the same deterministic reasons the fast
+    call already returned.
+  */
+  const fetchMatches = (narrative: boolean) => (): Promise<{ matches?: PropertyMatch[]; buyers?: BuyerMatch[] }> => (
+    isContact ? api.matchProperties(module, id, narrative, howMany) : api.buyersForProperty(id, narrative, howMany)
+  );
+
+  const { data: fast, isLoading, refetch, isFetching } = useQuery({
+    queryKey: ['matching', module, id, howMany],
+    queryFn: fetchMatches(false),
+    staleTime: 60_000,
+  });
+
+  const { data: narrated, refetch: refetchNarrative, isFetching: narrating } = useQuery({
+    queryKey: ['matching', module, id, howMany, 'narrative'],
+    queryFn: fetchMatches(true),
+    // Only once the fast answer is on screen, so the two never compete for the
+    // same connection on first paint.
+    enabled: aiAvailable && !isLoading,
     staleTime: 5 * 60_000,
   });
+
+  const data = narrated ?? fast;
   const { data: decisions, refetch: refetchDecisions } = useQuery({
     queryKey: ['match-feedback', module, id], queryFn: () => api.matchFeedbackList(module, id), staleTime: 30_000,
   });
@@ -842,6 +885,13 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
       status: b.status,
     }));
   }, [data, isContact]);
+  const term = search.trim().toLowerCase();
+  const visibleMatches = matches.filter((match) => (
+    match.score >= minimumScore
+    && (!term || match.label.toLowerCase().includes(term) || match.primary.toLowerCase().includes(term) || match.secondary.toLowerCase().includes(term))
+    && (decisionFilter === 'all' || (decisionFilter === 'unmarked' ? !decisionsByTarget.has(match.id) : decisionsByTarget.get(match.id) === decisionFilter))
+  ));
+
   const feedback = async (event: MouseEvent, targetId: string, decision: 'shortlisted' | 'not_suitable' | 'follow_up'): Promise<void> => {
     event.stopPropagation();
     try {
@@ -856,36 +906,64 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
     }
     catch (err) { toast.error('Could not save match decision', (err as Error).message); }
   };
-  const visibleMatches = matches.filter((match) => match.score >= minimumScore && (decisionFilter === 'all' || (decisionFilter === 'unmarked' ? !decisionsByTarget.has(match.id) : decisionsByTarget.get(match.id) === decisionFilter)));
 
   return (
     <div className="card overflow-hidden">
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 p-3 dark:border-slate-800">
         <Link2 className="h-4 w-4 text-brand-500" />
         <span className="text-sm font-medium">
-          {isContact ? 'Matching properties' : 'Matching contacts'} <span className="text-brand-600">({matches.length})</span>
+          {isContact ? 'Matching properties' : 'Matching contacts'}{' '}
+          {/* The count is the first question asked of this tab, so it is in
+              the heading rather than under the last row. It shows what the
+              filters left when they are narrowing anything. */}
+          <span className="tnum text-brand-600">
+            ({visibleMatches.length === matches.length ? matches.length : `${visibleMatches.length} of ${matches.length}`})
+          </span>
         </span>
-        <p className="hidden text-xs text-muted sm:block">
-          {isContact
-            ? 'Live inventory against the stated requirement — admin-configured budget headroom, adjacent bedroom counts forgiven'
-            : 'Open contacts worth pitching this unit — same engine, reverse direction'}
-        </p>
-        <label className="ml-auto flex items-center gap-1 text-xs text-muted">Minimum fit
-          <select className="input h-8 w-16 py-0 text-xs" value={minimumScore} onChange={(e) => setMinimumScore(Number(e.target.value))}>
-            {[0, 50, 70, 85].map((score) => <option key={score} value={score}>{score}%</option>)}
+        {narrating && <span className="text-2xs text-muted">writing reasons…</span>}
+
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <input
+            className="input h-8 w-40 py-0 text-xs"
+            placeholder={isContact ? 'Search these units…' : 'Search these contacts…'}
+            aria-label={isContact ? 'Search matching properties' : 'Search matching contacts'}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <label className="flex items-center gap-1 text-xs text-muted">Show
+            <select className="input h-8 w-16 py-0 text-xs" aria-label="How many matches to rank" value={howMany} onChange={(e) => setHowMany(Number(e.target.value))}>
+              {[10, 25, 50].map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
+          <label className="flex items-center gap-1 text-xs text-muted">Minimum fit
+            <select className="input h-8 w-[4.5rem] py-0 text-xs" value={minimumScore} onChange={(e) => setMinimumScore(Number(e.target.value))}>
+              {[0, 50, 70, 85].map((score) => <option key={score} value={score}>{score}%</option>)}
+            </select>
+          </label>
+          <select className="input h-8 w-32 py-0 text-xs" aria-label="Filter match actions" value={decisionFilter} onChange={(e) => setDecisionFilter(e.target.value as typeof decisionFilter)}>
+            <option value="all">All matches</option><option value="unmarked">Not marked</option><option value="shortlisted">Shortlisted</option><option value="follow_up">Follow-up</option><option value="not_suitable">Not suitable</option>
           </select>
-        </label>
-        <select className="input h-8 w-32 py-0 text-xs" aria-label="Filter match actions" value={decisionFilter} onChange={(e) => setDecisionFilter(e.target.value as typeof decisionFilter)}>
-          <option value="all">All matches</option><option value="unmarked">Not marked</option><option value="shortlisted">Shortlisted</option><option value="follow_up">Follow-up</option><option value="not_suitable">Not suitable</option>
-        </select>
-        <button
-          onClick={() => void refetch()}
-          disabled={isFetching}
-          aria-label="Refresh matches"
-          className="btn-ghost btn-sm ml-auto"
-        >
-          {isFetching ? <Spinner className="h-3 w-3" /> : <RefreshCw className="h-3 w-3" />}
-        </button>
+          {/* When the engine's shortlist isn't the answer, the whole inventory
+              with the filters the team already knows is one click away —
+              rather than a second, lesser filter builder living in here. */}
+          <Link
+            to={isContact ? '/properties' : '/leads'}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-ghost btn-sm"
+          >
+            <Search className="h-3 w-3" />
+            {isContact ? 'Browse all inventory' : 'Browse all contacts'}
+          </Link>
+          <button
+            onClick={() => { void refetch(); void refetchNarrative(); }}
+            disabled={isFetching}
+            aria-label="Refresh matches"
+            className="btn-ghost btn-sm"
+          >
+            {isFetching ? <Spinner className="h-3 w-3" /> : <RefreshCw className="h-3 w-3" />}
+          </button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -932,9 +1010,12 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
                     {m.caveat && <span className="block truncate text-2xs text-amber-600 dark:text-amber-400">{m.caveat}</span>}
                   </td>
                   <td className="list-cell whitespace-nowrap">
-                    <button className={cn('btn-ghost btn-sm px-1.5', decisionsByTarget.get(m.id) === 'shortlisted' && 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300')} onClick={(e) => void feedback(e, m.id, 'shortlisted')} title="Shortlist"><Star className="h-3.5 w-3.5" /></button>
-                    <button className={cn('btn-ghost btn-sm px-1.5', decisionsByTarget.get(m.id) === 'follow_up' && 'bg-brand-100 text-brand-700 dark:bg-brand-900/40 dark:text-brand-300')} onClick={(e) => void feedback(e, m.id, 'follow_up')} title="Follow-up"><Check className="h-3.5 w-3.5" /></button>
-                    <button className={cn('btn-ghost btn-sm px-1.5 text-red-500', decisionsByTarget.get(m.id) === 'not_suitable' && 'bg-red-100 dark:bg-red-950/50')} onClick={(e) => void feedback(e, m.id, 'not_suitable')} title="Not suitable"><X className="h-3.5 w-3.5" /></button>
+                    {/* Each is a toggle: clicking the one already set takes
+                        it back off, so a misclick is undone the same way it
+                        was made. `aria-pressed` is what says so out loud. */}
+                    <button aria-pressed={decisionsByTarget.get(m.id) === 'shortlisted'} className={cn('btn-ghost btn-sm px-1.5', decisionsByTarget.get(m.id) === 'shortlisted' && 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300')} onClick={(e) => void feedback(e, m.id, 'shortlisted')} title={decisionsByTarget.get(m.id) === 'shortlisted' ? 'Shortlisted — click to undo' : 'Shortlist'}><Star className={cn('h-3.5 w-3.5', decisionsByTarget.get(m.id) === 'shortlisted' && 'fill-current')} /></button>
+                    <button aria-pressed={decisionsByTarget.get(m.id) === 'follow_up'} className={cn('btn-ghost btn-sm px-1.5', decisionsByTarget.get(m.id) === 'follow_up' && 'bg-brand-100 text-brand-700 dark:bg-brand-900/40 dark:text-brand-300')} onClick={(e) => void feedback(e, m.id, 'follow_up')} title={decisionsByTarget.get(m.id) === 'follow_up' ? 'Follow-up marked — click to undo' : 'Follow-up'}><Check className="h-3.5 w-3.5" /></button>
+                    <button aria-pressed={decisionsByTarget.get(m.id) === 'not_suitable'} className={cn('btn-ghost btn-sm px-1.5 text-red-500', decisionsByTarget.get(m.id) === 'not_suitable' && 'bg-red-100 dark:bg-red-950/50')} onClick={(e) => void feedback(e, m.id, 'not_suitable')} title={decisionsByTarget.get(m.id) === 'not_suitable' ? 'Marked not suitable — click to undo' : 'Not suitable'}><X className="h-3.5 w-3.5" /></button>
                   </td>
                 </tr>
               ))}

@@ -728,10 +728,10 @@ function ForecastCard({ widget, data }: { widget: DashboardWidget; data: Record<
   if (!series.length) return <EmptyWidget title={widget.title} />;
 
   return (
-    <div className="card h-full p-4">
+    <div className="card flex h-full flex-col p-4">
       <p className="mb-3 text-sm font-medium">{widget.title}</p>
       <ChartFrame title={widget.title} series={series} format="currency">
-        <ResponsiveContainer width="100%" height={220}>
+        <ResponsiveContainer width="100%" height="100%">
           <BarChart data={series} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-slate-200 dark:text-slate-800" vertical={false} />
             <XAxis dataKey="label" tick={{ fontSize: 10 }} />
@@ -1024,8 +1024,8 @@ interface Series { key: string; label: string; value: number; color?: string | n
  * canvas.
  */
 function ChartFrame({
-  title, series, format, children,
-}: { title: string; series: Series[]; format?: string; children: ReactNode }): JSX.Element {
+  title, series, format, scroll, children,
+}: { title: string; series: Series[]; format?: string; scroll?: boolean; children: ReactNode }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null);
 
   // recharts puts tabindex="0" on its own layer groups and ignores a tabIndex
@@ -1058,7 +1058,10 @@ function ChartFrame({
           nothing useful. Clicking a segment to drill through is unaffected;
           it is a shortcut to a filtered list that is reachable from the nav
           anyway. */}
-      <div ref={ref} aria-hidden="true">{children}</div>
+      {/* The widget is resizable, so the chart takes the height left over
+          rather than a fixed one — a fixed box drew its axis and its last
+          weeks outside the card on any layout shorter than itself. */}
+      <div ref={ref} aria-hidden="true" className={cn('min-h-0 flex-1', scroll && 'overflow-y-auto')}>{children}</div>
       <p className="sr-only">
         {`${title}. ${series.map((s) => `${s.label}: ${formatValue(s.value, format)}`).join('. ')}`}
       </p>
@@ -1085,10 +1088,10 @@ function BarCard({
   };
 
   return (
-    <div className="card h-full p-4">
+    <div className="card flex h-full flex-col p-4">
       <p className="mb-3 text-sm font-medium">{widget.title}</p>
-      <ChartFrame title={widget.title} series={series} format={format}>
-        <ResponsiveContainer width="100%" height={horizontal ? Math.max(180, series.length * 32) : 220}>
+      <ChartFrame title={widget.title} series={series} format={format} scroll={horizontal}>
+        <ResponsiveContainer width="100%" height={horizontal ? Math.max(180, series.length * 32) : '100%'}>
           <BarChart data={series} layout={horizontal ? 'vertical' : 'horizontal'} margin={{ top: 4, right: 8, left: horizontal ? 8 : 0, bottom: 4 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-slate-200 dark:text-slate-800" vertical={!horizontal} horizontal={horizontal} />
             {horizontal ? (
@@ -1162,10 +1165,10 @@ function LineCard({
   );
 
   return (
-    <div className="card h-full p-4">
+    <div className="card flex h-full flex-col p-4">
       <p className="mb-3 text-sm font-medium">{widget.title}</p>
       <ChartFrame title={widget.title} series={series} format={format}>
-        <ResponsiveContainer width="100%" height={220}>
+        <ResponsiveContainer width="100%" height="100%">
           <Chart data={series} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-slate-200 dark:text-slate-800" />
             <XAxis dataKey="label" tick={{ fontSize: 10 }} />
@@ -1203,10 +1206,10 @@ function PieCard({
   };
 
   return (
-    <div className="card h-full p-4">
+    <div className="card flex h-full flex-col p-4">
       <p className="mb-2 text-sm font-medium">{widget.title}</p>
       <ChartFrame title={widget.title} series={series} format={widget.config.format as string | undefined}>
-        <ResponsiveContainer width="100%" height={220}>
+        <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie tabIndex={-1}
               data={series}
@@ -1214,8 +1217,8 @@ function PieCard({
               nameKey="label"
               cx="50%"
               cy="50%"
-              innerRadius={donut ? 45 : 0}
-              outerRadius={75}
+              innerRadius={donut ? '45%' : 0}
+              outerRadius="72%"
               paddingAngle={1}
               cursor={drillable ? 'pointer' : undefined}
               onClick={(_entry, index) => drill(index)}

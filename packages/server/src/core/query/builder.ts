@@ -106,7 +106,9 @@ const RECORD_FIELD_MAP: Record<string, string> = {
 /** Pseudo-fields that always exist on every entity module. */
 export const SYSTEM_FIELDS: Record<string, { uitype: FieldMeta['uitype']; label: string; column: string }> = {
   id: { uitype: 'reference', label: 'Record ID', column: 'id' },
-  owner_id: { uitype: 'owner', label: 'Owner', column: 'owner_id' },
+  // "Owner" is the old word for this; the module's own field calls it
+  // Assigned To and so does every screen. One name for one idea.
+  owner_id: { uitype: 'owner', label: 'Assigned To', column: 'owner_id' },
   created_by: { uitype: 'user', label: 'Created By', column: 'created_by' },
   modified_by: { uitype: 'user', label: 'Modified By', column: 'modified_by' },
   created_at: { uitype: 'datetime', label: 'Created At', column: 'created_at' },

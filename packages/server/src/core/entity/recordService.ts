@@ -22,6 +22,7 @@ import {
 import { db, onCommit, transaction, type Tx } from '../../db/pool.js';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../utils/errors.js';
 import { logger } from '../../utils/logger.js';
+import { isSystemAccount } from '../auth/systemAccounts.js';
 import { emit } from '../events/bus.js';
 import { registry } from '../metadata/registry.js';
 import {
@@ -732,7 +733,15 @@ export async function updateRecord(
         userId: ctx.user.id,
         action: 'update',
         changes: ownerChanged
-          ? [...changes, { field: 'owner_id', label: 'Owner', from: before.ownerId, to: input.owner_id }]
+          // The label the field carries right now, not the word this line
+          // was written with. The timeline re-resolves it on read anyway —
+          // this just stops new rows being stamped with a stale one.
+          ? [...changes, {
+            field: 'owner_id',
+            label: module.fields.find((f) => f.uitype === 'owner')?.label ?? 'Assigned To',
+            from: before.ownerId,
+            to: input.owner_id,
+          }]
           : changes,
         source: ctx.source ?? 'app',
       });
@@ -1396,11 +1405,17 @@ export async function transferOwnership(
   ownerType: 'user' | 'group' = 'user',
 ): Promise<number> {
   if (ownerType === 'user') {
-    const target = await db.queryOne<{ id: string }>(
-      `SELECT id FROM ipy_user WHERE id = $1 AND deleted_at IS NULL AND is_active = true`,
+    const target = await db.queryOne<{ id: string; email: string }>(
+      `SELECT id, email FROM ipy_user WHERE id = $1 AND deleted_at IS NULL AND is_active = true`,
       [newOwnerId],
     );
-    if (!target) throw new ValidationError('Choose an active team member');
+    // A system account is not somebody who works here — it is what workflow
+    // tasks, lead capture and telephony run as. A record parked on one is a
+    // record nobody is chasing, and no screen would ever hand it back, so it
+    // is refused outright rather than merely left out of the picker.
+    if (!target || isSystemAccount(target.email)) {
+      throw new ValidationError('Choose an active team member');
+    }
 
     // An administrator may allocate work across the organisation. Everyone
     // else can only allocate inside their own reporting branch: themselves or

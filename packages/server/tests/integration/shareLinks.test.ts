@@ -99,10 +99,15 @@ describe('creating a link', () => {
     // user is refused. Leads are `private`, which is where the guard can
     // actually be observed. The route is module-generic, so this is the same
     // check a property would get if someone tightened that sharing rule.
+    //
+    // Owned by a *peer* executive, which is what "cannot see" now means. It
+    // used to be the telecaller, and that stopped being invisible when
+    // Telecaller moved underneath Sales Executive in the reporting line —
+    // a record below you in the hierarchy is one you are meant to see.
     const lead = await recordService.createRecord(ctx, 'leads', leadInput());
     await db.query(
       `UPDATE ipy_record SET owner_id = (SELECT id FROM ipy_user WHERE email = $1) WHERE id = $2`,
-      [SEEDED.telecaller, lead.id],
+      [SEEDED.executiveA, lead.id],
     );
 
     const other = await login(SEEDED.executiveB);

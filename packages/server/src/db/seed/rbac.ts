@@ -27,7 +27,11 @@ const ROLE_TREE: RoleDef = {
   children: [
     {
       name: 'Sales Manager',
-      children: [{ name: 'Sales Executive' }, { name: 'Telecaller' }],
+      // Telecaller sits under Sales Executive, not beside it. The tree is the
+      // reporting line and it is what decides who can see and reassign whose
+      // records, so peers here would have meant an executive could neither see
+      // nor take back a lead they had passed to a telecaller.
+      children: [{ name: 'Sales Executive', children: [{ name: 'Telecaller' }] }],
     },
   ],
 };

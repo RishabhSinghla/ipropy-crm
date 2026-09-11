@@ -823,8 +823,9 @@ export const api = {
     post(`/api/dashboards/${dashboardId}/layout`, { widgets }),
 
   // --- admin --------------------------------------------------------------
-  users: (includeInactive = false, adminOnly = false) =>
-    get<Record<string, unknown>[]>(`/api/admin/users${qs({ includeInactive, adminOnly })}`),
+  /** `assignableOnly` narrows the directory to people this caller may hand a record to. */
+  users: (includeInactive = false, adminOnly = false, assignableOnly = false) =>
+    get<Record<string, unknown>[]>(`/api/admin/users${qs({ includeInactive, adminOnly, assignableOnly })}`),
   createUser: (data: Record<string, unknown>) => post('/api/admin/users', data),
   updateUser: (id: string, data: Record<string, unknown>) => patch(`/api/admin/users/${id}`, data),
   roles: () => get<{ tree: Record<string, unknown>[]; flat: Record<string, unknown>[] }>('/api/admin/roles'),
@@ -921,10 +922,10 @@ export const api = {
   aiStatus: () => get<{ available: boolean; message: string }>('/api/ai/status'),
   scoreLead: (id: string) => post<Record<string, unknown>>(`/api/ai/score-lead/${id}`),
   analyseDeal: (id: string) => post<Record<string, unknown>>(`/api/ai/analyse-deal/${id}`),
-  matchProperties: (module: string, id: string, narrative = false) =>
-    get<{ matches: PropertyMatch[]; requirement: Record<string, unknown> }>(`/api/ai/match/${module}/${id}${qs({ narrative, limit: 10 })}`),
-  buyersForProperty: (propertyId: string, narrative = false) =>
-    get<{ buyers: BuyerMatch[] }>(`/api/ai/buyers-for/${propertyId}${qs({ narrative, limit: 10 })}`),
+  matchProperties: (module: string, id: string, narrative = false, limit = 10) =>
+    get<{ matches: PropertyMatch[]; requirement: Record<string, unknown> }>(`/api/ai/match/${module}/${id}${qs({ narrative, limit })}`),
+  buyersForProperty: (propertyId: string, narrative = false, limit = 10) =>
+    get<{ buyers: BuyerMatch[] }>(`/api/ai/buyers-for/${propertyId}${qs({ narrative, limit })}`),
   draft: (data: Record<string, unknown>) => post<{ subject?: string; body: string }>('/api/ai/draft', data),
   summarise: (module: string, id: string) => post<{ summary: string }>(`/api/ai/summarise/${module}/${id}`),
   insights: (recordId: string) => get<Record<string, unknown>[]>(`/api/ai/insights/${recordId}`),

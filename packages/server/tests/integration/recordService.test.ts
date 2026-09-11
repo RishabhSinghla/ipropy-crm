@@ -267,29 +267,35 @@ describe('bulk operations', () => {
     }
   });
 
-  it('reassigns ownership in bulk to an Administrator', async () => {
-    // Bulk moves a whole book of business with no per-record review, so it is
-    // scoped tighter than a single reassign: only an Administrator can be the
-    // target. `admin` (adminContext()) is the one seeded user that qualifies.
+  it('reassigns ownership in bulk to anyone the caller may allocate to', async () => {
+    /*
+      Bulk reassignment used to accept an Administrator and nobody else, which
+      made the everyday act — handing a book of leads to the rep who will work
+      it — impossible, and left the picker offering a team of a dozen exactly
+      two names. It now follows the reporting line instead; an administrator
+      allocates anywhere. `assignmentFollowsTheHierarchy.test.ts` covers the
+      branch rule for everyone else.
+    */
+    const target = await contextFor(SEEDED.executiveB);
     const ids = [
       (await createRecord(admin, 'leads', leadInput())).id,
       (await createRecord(admin, 'leads', leadInput())).id,
     ];
 
-    await transferOwnership(admin, 'leads', ids, admin.user.id);
+    await transferOwnership(admin, 'leads', ids, target.user.id);
 
     for (const id of ids) {
-      expect((await getRecord(admin, 'leads', id))?.ownerId).toBe(admin.user.id);
+      expect((await getRecord(admin, 'leads', id))?.ownerId).toBe(target.user.id);
     }
   });
 
-  it('refuses bulk reassignment to anyone below Administrator', async () => {
-    const target = await contextFor(SEEDED.executiveB);
+  it('refuses bulk reassignment to somebody who is not on the team', async () => {
     const ids = [(await createRecord(admin, 'leads', leadInput())).id];
+    const nobody = '11111111-2222-3333-4444-555555555555';
 
-    await expect(transferOwnership(admin, 'leads', ids, target.user.id)).rejects.toThrow(
-      /Administrator/,
-    );
+    await expect(
+      transferOwnership(admin, 'leads', ids, nobody),
+    ).rejects.toThrow(/active team member/i);
   });
 });
 

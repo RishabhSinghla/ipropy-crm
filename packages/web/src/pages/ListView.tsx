@@ -13,6 +13,8 @@ import { saveListNav } from '../lib/listNav';
 import { cn, restrictionForField } from '../lib/utils';
 import { FieldInput, FieldValue } from '../components/FieldRenderer';
 import { EditableField, isInlineEditable } from '../components/EditableField';
+import { assignmentField } from '../lib/fields';
+import { DEFAULT_PAGE_SIZE, loadPageSize, PAGE_SIZE_OPTIONS, savePageSize } from '../lib/pageSize';
 import { FilterBuilder, countConditions } from '../components/FilterBuilder';
 import {
   Badge, ConfirmDialog, Dropdown, DropdownItem, EmptyState, Modal, Select, Skeleton, Spinner,
@@ -48,7 +50,16 @@ export default function ListView(): JSX.Element {
 
 
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(() => Number(searchParams.get('pageSize')) || 25);
+  // A link's own page size wins for the visit it opens; otherwise the size
+  // this user last chose for this module.
+  const [pageSize, setPageSizeState] = useState(
+    () => Number(searchParams.get('pageSize')) || loadPageSize(moduleName),
+  );
+  const setPageSize = (size: number): void => {
+    setPageSizeState(size);
+    savePageSize(moduleName, size);
+    setPage(1);
+  };
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [viewId, setViewId] = useState<string | undefined>(searchParams.get('view') ?? undefined);
@@ -123,6 +134,9 @@ export default function ListView(): JSX.Element {
     adoptedView.current = null;
     urlNamedSort.current = Boolean(restoredSort);
     setPage(Number(searchParams.get('page')) || 1);
+    // Same precedence as on first mount: the link's size if it names one,
+    // otherwise this user's remembered size for the module being opened.
+    setPageSizeState(Number(searchParams.get('pageSize')) || loadPageSize(moduleName));
     setSearch(restoredSearch);
     setSearchInput(restoredSearch);
     setFilter(seeded);
@@ -217,7 +231,7 @@ export default function ListView(): JSX.Element {
     if (sortBy) next.set('sort', sortBy);
     if (sortBy && sortDir !== 'desc') next.set('dir', sortDir);
     if (page > 1) next.set('page', String(page));
-    if (pageSize !== 25) next.set('pageSize', String(pageSize));
+    if (pageSize !== DEFAULT_PAGE_SIZE) next.set('pageSize', String(pageSize));
     if (countConditions(filter)) next.set('filter', JSON.stringify(filter));
 
     if (next.toString() !== searchParams.toString()) {
@@ -911,11 +925,11 @@ export default function ListView(): JSX.Element {
             {Math.min(data!.page * data!.pageSize, data!.total).toLocaleString('en-IN')} of {data!.total.toLocaleString('en-IN')}
           </p>
           <label className="flex items-center gap-1.5 text-xs text-muted">
-            Rows
+            Rows per page
             <Select
               value={String(pageSize)}
-              onChange={(value) => { setPageSize(Number(value)); setPage(1); }}
-              options={[25, 50, 100].map((size) => ({ value: String(size), label: String(size) }))}
+              onChange={(value) => setPageSize(Number(value))}
+              options={PAGE_SIZE_OPTIONS.map((size) => ({ value: String(size), label: String(size) }))}
             />
           </label>
           <div className="flex items-center gap-1">
@@ -1374,7 +1388,7 @@ function KanbanBoard({
   const queryClient = useQueryClient();
   const [dragging, setDragging] = useState<string | null>(null);
   const [overColumn, setOverColumn] = useState<string | null>(null);
-  const ownerField = module.fields.find((f) => f.name === 'owner_id');
+  const ownerField = assignmentField(module.fields);
 
   const field = module.fields.find((f) => f.name === groupBy);
   const columns = groups.length
@@ -1764,7 +1778,9 @@ function MassOwnerButton({
 }): JSX.Element {
   const [open, setOpen] = useState(false);
   const [ownerId, setOwnerId] = useState('');
-  const { data: users } = useQuery({ queryKey: ['users'], queryFn: () => api.users() });
+  // Exactly the people the server will accept as a target — see the
+  // assignableOnly note on GET /admin/users.
+  const { data: users } = useQuery({ queryKey: ['users', 'assignable'], queryFn: () => api.users(false, false, true) });
   const [busy, setBusy] = useState(false);
   const countLabel = allQuery ? allCount.toLocaleString('en-IN') : String(ids.length);
 
@@ -1857,7 +1873,10 @@ function BulkEditButton({
       && f.displayType !== 'readonly' && f.displayType !== 'create_only'
       && !f.isReadonly
       && f.massEditable
-      && f.name !== 'owner_id'),
+      // Reassignment has its own button, and that is the one that enforces
+      // who a record may be handed to. Offering it here as a plain field
+      // edit would route the same write around that check.
+      && f.uitype !== 'owner'),
     [fieldMap],
   );
   const field = fieldName ? fieldMap.get(fieldName) : undefined;
