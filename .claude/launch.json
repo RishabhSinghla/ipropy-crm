@@ -22,6 +22,17 @@
       ],
       "port": 3000,
       "autoPort": false
+    },
+    {
+      "//": "Vite alone, for when the API is already running in its own terminal (a session that started `npm run dev:server` by hand). Starting the full `ipropy` config then fails on the API port, which reads as a broken app rather than a port clash.",
+      "name": "ipropy-web",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "npm run dev -w @ipropy/web"
+      ],
+      "port": 5173,
+      "autoPort": false
     }
   ]
 }

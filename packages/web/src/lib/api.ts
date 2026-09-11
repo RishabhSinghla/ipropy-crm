@@ -1057,20 +1057,28 @@ export const api = {
   importPreview: (module: string, file: File) => {
     const form = new FormData();
     form.append('file', file);
-    return request<{ headers: string[]; sample: Record<string, string>[]; totalRows: number; suggestedMapping: Record<string, string>; fields: Record<string, unknown>[] }>(
+    return request<{ headers: string[]; sample: Record<string, string>[]; totalRows: number; suggestedMapping: Record<string, string>; suggestions: { header: string; field: string | null; confidence: string; reason: string }[]; dateOrder: { detected: string; certain: boolean }; fields: Record<string, unknown>[] }>(
       `/api/import/${module}/preview`, { method: 'POST', body: form },
     );
   },
-  runImport: (
-    module: string, file: File, mapping: Record<string, string>,
-    duplicateHandling: string, runWorkflows = false, createOptions = true,
-  ) => {
+  runImport: (module: string, file: File, opts: {
+    mapping: Record<string, string>;
+    duplicateHandling: string;
+    importMode?: string;
+    staticValues?: Record<string, string>;
+    dateOrder?: string;
+    runWorkflows?: boolean;
+    createOptions?: boolean;
+  }) => {
     const form = new FormData();
     form.append('file', file);
-    form.append('mapping', JSON.stringify(mapping));
-    form.append('duplicateHandling', duplicateHandling);
-    form.append('runWorkflows', String(runWorkflows));
-    form.append('createOptions', String(createOptions));
+    form.append('mapping', JSON.stringify(opts.mapping));
+    form.append('duplicateHandling', opts.duplicateHandling);
+    form.append('importMode', opts.importMode ?? 'create');
+    form.append('staticValues', JSON.stringify(opts.staticValues ?? {}));
+    if (opts.dateOrder) form.append('dateOrder', opts.dateOrder);
+    form.append('runWorkflows', String(opts.runWorkflows ?? false));
+    form.append('createOptions', String(opts.createOptions ?? true));
     return request<{ jobId: string; totalRows: number }>(`/api/import/${module}`, { method: 'POST', body: form });
   },
   importJobs: () => get<Record<string, unknown>[]>('/api/import/jobs'),

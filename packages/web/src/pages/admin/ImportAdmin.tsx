@@ -1,20 +1,32 @@
-import { type JSX, useState } from 'react';
+import { type JSX, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
-import { AlertTriangle, Database, Download, FileUp, Upload } from 'lucide-react';
+import {
+  AlertTriangle, ArrowLeft, Check, Database, Download, FileUp, Upload, X,
+} from 'lucide-react';
 import { api, authedFileUrl, type ImportSection } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
 import { cn } from '../../lib/utils';
 import { Badge, Dropdown, DropdownItem, EmptyState, Modal, Select, Spinner } from '../../components/ui';
 import { ImportDuplicateReview } from '../../components/ImportDuplicateReview';
 
+interface Suggestion {
+  header: string;
+  field: string | null;
+  confidence: 'certain' | 'likely' | 'possible';
+  reason: string;
+}
+
 interface Preview {
   headers: string[];
   sample: Record<string, string>[];
   totalRows: number;
   suggestedMapping: Record<string, string>;
-  fields: { name: string; label: string; uitype: string; mandatory: boolean }[];
+  suggestions: Suggestion[];
+  dateOrder: { detected: 'dmy' | 'mdy' | 'ymd'; certain: boolean };
+  fields: { name: string; label: string; uitype: string; mandatory: boolean;
+    options: { value: string; label: string }[] }[];
 }
 
 interface JobRow {
@@ -26,19 +38,66 @@ interface JobRow {
   details: { created: string[]; skipped: string[]; optionsAdded?: string[]; optionsSkipped?: string[] };
 }
 
+/**
+ * What this file is for, in the order somebody actually decides it.
+ *
+ * The old page put every switch on one row above the mapping table, so the
+ * first thing a person met was six settings about a file the CRM had not read
+ * yet. Three steps instead — the file, then its columns, then the rules — and
+ * each step only asks what it can answer: duplicate handling is a question
+ * about records, and it is not worth asking before the columns are agreed.
+ */
+const STEPS = [
+  { key: 'file', label: 'The file' },
+  { key: 'columns', label: 'The columns' },
+  { key: 'rules', label: 'The rules' },
+] as const;
+type Step = typeof STEPS[number]['key'];
+
+/**
+ * How sure the CRM is, in words rather than a percentage.
+ *
+ * A number invites arithmetic nobody can do — 0.82 against what? These three
+ * say what to do about it: leave it, glance at it, or look properly. Only
+ * `certain` is filled in without being asked (see `certainMapping` on the
+ * server); the rest arrive as suggestions beside an empty box.
+ */
+const CONFIDENCE: Record<Suggestion['confidence'], { label: string; colour: string }> = {
+  certain: { label: 'Certain', colour: '#22c55e' },
+  likely: { label: 'Likely', colour: '#0ea5e9' },
+  possible: { label: 'Check this', colour: '#f59e0b' },
+};
+
+const DATE_ORDERS = [
+  { value: 'dmy', label: 'Day / Month / Year  — 05/03/2026 is 5 March' },
+  { value: 'mdy', label: 'Month / Day / Year  — 05/03/2026 is 3 May' },
+  { value: 'ymd', label: 'Year / Month / Day  — 2026/05/03' },
+];
+
+const MODES = [
+  { value: 'create', title: 'Add as new', hint: 'Every row becomes a new record.' },
+  { value: 'upsert', title: 'Add or update', hint: 'Update the ones already here, add the rest. The usual answer for a refresh.' },
+  { value: 'update', title: 'Only update', hint: 'Change what is already here and never invent a record.' },
+  { value: 'skip_existing', title: 'Only add what is missing', hint: 'Leave every existing record exactly as it is.' },
+];
+
 export default function ImportAdmin(): JSX.Element {
   const queryClient = useQueryClient();
   const { modules } = useApp();
   const [searchParams] = useSearchParams();
   const [moduleName, setModuleName] = useState(searchParams.get('module') ?? 'leads');
+  const [step, setStep] = useState<Step>('file');
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [staticValues, setStaticValues] = useState<Record<string, string>>({});
+  const [dateOrder, setDateOrder] = useState('dmy');
   // Review by default. The other two answer a per-row question with a
   // file-wide rule, and both are wrong often enough to lose real data —
   // "skip" throws away the corrected spelling and the new budget, "create"
   // leaves the desk with two of the same person.
   const [duplicateHandling, setDuplicateHandling] = useState('review');
+  const [importMode, setImportMode] = useState('create');
   // Off on purpose: an import that queues five hundred WhatsApp greetings is
   // the failure this checkbox exists to prevent. Automations stay one tick
   // away for the day they are wanted.
@@ -69,13 +128,17 @@ export default function ImportAdmin(): JSX.Element {
     }
   };
 
+  const reset = (): void => { setFile(null); setPreview(null); setMapping({}); setStaticValues({}); setStep('file'); };
+
   const analyse = async (selected: File): Promise<void> => {
     setBusy(true);
     setFile(selected);
     try {
-      const result = await api.importPreview(moduleName, selected);
-      setPreview(result as unknown as Preview);
+      const result = await api.importPreview(moduleName, selected) as unknown as Preview;
+      setPreview(result);
       setMapping(result.suggestedMapping);
+      setDateOrder(result.dateOrder?.detected ?? 'dmy');
+      setStep('columns');
     } catch (err) {
       toast.error('Could not read the file', (err as Error).message);
       setFile(null);
@@ -88,10 +151,11 @@ export default function ImportAdmin(): JSX.Element {
     if (!file) return;
     setBusy(true);
     try {
-      const result = await api.runImport(moduleName, file, mapping, duplicateHandling, runWorkflows, createOptions);
+      const result = await api.runImport(moduleName, file, {
+        mapping, duplicateHandling, importMode, staticValues, dateOrder, runWorkflows, createOptions,
+      });
       toast.success('Import started', `${result.totalRows} rows queued — progress appears below.`);
-      setFile(null);
-      setPreview(null);
+      reset();
       void queryClient.invalidateQueries({ queryKey: ['import-jobs'] });
     } catch (err) {
       toast.error('Import failed', (err as Error).message);
@@ -100,9 +164,33 @@ export default function ImportAdmin(): JSX.Element {
     }
   };
 
+  const byHeader = useMemo(() => {
+    const map: Record<string, Suggestion> = {};
+    for (const s of preview?.suggestions ?? []) map[s.header] = s;
+    return map;
+  }, [preview]);
+
   const mappedCount = Object.values(mapping).filter(Boolean).length;
-  const unmappedMandatory = (preview?.fields ?? [])
-    .filter((f) => f.mandatory && !Object.values(mapping).includes(f.name));
+  /*
+    A required field is answered by a column *or* by a fixed value.
+
+    It used to count only columns, so a file with no Status column could not be
+    imported at all — including when the person had just told the CRM that
+    every row in it is New. That is the case fixed values exist for.
+  */
+  const unmappedMandatory = (preview?.fields ?? []).filter((f) => f.mandatory
+    && !Object.values(mapping).includes(f.name)
+    && !String(staticValues[f.name] ?? '').trim());
+  // A field the file has no column for is a candidate for one fixed value.
+  // Offering a field that is already mapped would mean two answers for one
+  // box, and the column has to win, so it is not offered at all.
+  const spareFields = (preview?.fields ?? [])
+    .filter((f) => !Object.values(mapping).includes(f.name) && !(f.name in staticValues));
+  const hasDates = (preview?.headers ?? []).some((h) => {
+    const target = mapping[h];
+    const field = preview?.fields.find((f) => f.name === target);
+    return field?.uitype === 'date' || field?.uitype === 'datetime';
+  });
 
   return (
     <div className="p-4 sm:p-6">
@@ -110,45 +198,237 @@ export default function ImportAdmin(): JSX.Element {
         <h1 className="text-lg font-semibold tracking-tight">Import Data</h1>
         <p className="text-sm text-muted">
           Bring existing contacts or inventory in from Excel or a CSV. Columns are matched to fields
-          automatically, and any dropdown value the file has and the CRM does not is added for you.
+          automatically, and nothing is written until you have seen what it will do.
         </p>
       </div>
 
-      <div className="card mb-4 p-4">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="w-56">
-            <label className="label">Import into</label>
-            <Select
-              value={moduleName}
-              onChange={(v) => { setModuleName(v); setPreview(null); setFile(null); }}
-              options={modules.filter((m) => m.isEntity && m.permissions.import)
-                .map((m) => ({ value: m.name, label: m.label }))}
-            />
+      {preview && (
+        <div className="mb-4 flex items-center gap-2">
+          {STEPS.map((s, i) => {
+            const done = STEPS.findIndex((x) => x.key === step) > i;
+            return (
+              <div key={s.key} className="flex items-center gap-2">
+                <button
+                  onClick={() => done && setStep(s.key)}
+                  disabled={!done}
+                  className={cn(
+                    'flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                    step === s.key ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                      : done ? 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                        : 'bg-slate-50 text-slate-400 dark:bg-slate-900 dark:text-slate-600',
+                  )}
+                >
+                  {done ? <Check className="h-3 w-3" /> : <span className="tnum">{i + 1}</span>}
+                  {s.label}
+                </button>
+                {i < STEPS.length - 1 && <span className="text-slate-300">›</span>}
+              </div>
+            );
+          })}
+          <button onClick={reset} className="ml-auto btn-secondary btn-sm">
+            <X className="h-3.5 w-3.5" /> Start again
+          </button>
+        </div>
+      )}
+
+      {step === 'file' && (
+        <div className="card mb-4 p-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="w-56">
+              <label className="label">Import into</label>
+              <Select
+                value={moduleName}
+                onChange={(v) => { setModuleName(v); reset(); }}
+                options={modules.filter((m) => m.isEntity && m.permissions.import)
+                  .map((m) => ({ value: m.name, label: m.label }))}
+              />
+            </div>
+
+            <label className="btn-primary cursor-pointer">
+              {busy ? <Spinner /> : <FileUp className="h-4 w-4" />}
+              {file ? file.name : 'Choose Excel or CSV file'}
+              <input
+                type="file"
+                accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) void analyse(f); e.target.value = ''; }}
+              />
+            </label>
+
+            <a
+              className="btn-secondary"
+              href={authedFileUrl(`/api/import/${moduleName}/template`)}
+              download
+              title="A ready-made sheet with the right columns and one example row. Opens in Excel."
+            >
+              <Download className="h-4 w-4" /> Template
+            </a>
+          </div>
+          <p className="mt-3 text-xs text-muted">
+            The first row must name the columns. Nothing is imported from this step — the next screen
+            shows what each column was understood to be.
+          </p>
+        </div>
+      )}
+
+      {step === 'columns' && preview && (
+        <div className="card mb-4 overflow-hidden">
+          <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
+            <div>
+              <p className="text-sm font-medium">What each column is</p>
+              <p className="text-xs text-muted">
+                {mappedCount} of {preview.headers.length} matched · {preview.totalRows} rows in {file?.name}
+              </p>
+            </div>
+            {hasDates && (
+              <div className="ml-auto w-72">
+                <label className="label">
+                  Dates in this file are written
+                  {!preview.dateOrder.certain && (
+                    <span className="ml-1 text-2xs text-amber-600">every date is before the 13th — please confirm</span>
+                  )}
+                </label>
+                <Select value={dateOrder} onChange={setDateOrder} options={DATE_ORDERS} className="py-1.5 text-sm" />
+              </div>
+            )}
           </div>
 
-          <label className="btn-secondary cursor-pointer">
-            {busy && !preview ? <Spinner /> : <FileUp className="h-4 w-4" />}
-            {file ? file.name : 'Choose Excel or CSV file'}
-            <input
-              type="file"
-              accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) void analyse(f); e.target.value = ''; }}
-            />
-          </label>
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {preview.headers.map((header) => {
+              const hint = byHeader[header];
+              const chosen = mapping[header] ?? '';
+              return (
+                <div key={header} className="flex flex-wrap items-center gap-3 px-4 py-2">
+                  <div className="w-52 shrink-0">
+                    <p className="truncate text-sm font-medium">{header}</p>
+                    <p className="truncate text-2xs text-muted">
+                      e.g. {preview.sample[0]?.[header] || '(empty)'}
+                    </p>
+                  </div>
+                  <span className="text-slate-300">→</span>
+                  <Select
+                    value={chosen}
+                    onChange={(v) => setMapping({ ...mapping, [header]: v })}
+                    placeholder="— Ignore this column —"
+                    options={preview.fields.map((f) => ({
+                      value: f.name,
+                      label: `${f.label}${f.mandatory ? ' *' : ''}`,
+                    }))}
+                    className="max-w-xs py-1.5 text-sm"
+                  />
+                  {hint?.field && (
+                    <span className="flex items-center gap-1.5" title={hint.reason}>
+                      <Badge color={CONFIDENCE[hint.confidence].colour}>
+                        {CONFIDENCE[hint.confidence].label}
+                      </Badge>
+                      {/* A guess the CRM did not dare fill in is one click away
+                          rather than a menu to hunt through. */}
+                      {chosen !== hint.field && (
+                        <button
+                          onClick={() => setMapping({ ...mapping, [header]: hint.field as string })}
+                          className="text-2xs underline decoration-dotted underline-offset-2 text-muted hover:opacity-80"
+                        >
+                          use {preview.fields.find((f) => f.name === hint.field)?.label ?? hint.field}
+                        </button>
+                      )}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
 
-          <a
-            className="btn-secondary btn-sm"
-            href={authedFileUrl(`/api/import/${moduleName}/template`)}
-            download
-            title="A ready-made sheet with the right columns and one example row. Opens in Excel."
-          >
-            <Download className="h-4 w-4" /> Template
-          </a>
+          <div className="border-t border-slate-100 px-4 py-3 dark:border-slate-800">
+            <p className="text-sm font-medium">Also set on every row</p>
+            <p className="mb-2 text-xs text-muted">
+              For what is true of the whole file and has no column in it — “these are all referrals”.
+              A column always wins over one of these.
+            </p>
+            <div className="space-y-2">
+              {Object.entries(staticValues).map(([name, value]) => (
+                <div key={name} className="flex items-center gap-2">
+                  <span className="w-52 shrink-0 truncate text-sm">
+                    {preview.fields.find((f) => f.name === name)?.label ?? name}
+                  </span>
+                  <FixedValueInput
+                    field={preview.fields.find((f) => f.name === name)}
+                    value={value}
+                    onChange={(v) => setStaticValues({ ...staticValues, [name]: v })}
+                  />
+                  <button
+                    onClick={() => {
+                      const next = { ...staticValues };
+                      delete next[name];
+                      setStaticValues(next);
+                    }}
+                    className="text-slate-400 hover:text-negative"
+                    title="Remove"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+              {spareFields.length > 0 && (
+                <Select
+                  value=""
+                  onChange={(v) => v && setStaticValues({ ...staticValues, [v]: '' })}
+                  placeholder="+ Add a fixed value"
+                  options={spareFields.map((f) => ({ value: f.name, label: f.label }))}
+                  className="max-w-xs py-1.5 text-sm"
+                />
+              )}
+            </div>
+          </div>
 
-          {preview && (
-            <div className="w-52">
-              <label className="label">Duplicate handling</label>
+          {unmappedMandatory.length > 0 && (
+            <p className="border-t border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+              These are required: {unmappedMandatory.map((f) => f.label).join(', ')}. Map a column to each,
+              or set one value for the whole file below.
+            </p>
+          )}
+
+          <div className="flex items-center gap-2 border-t border-slate-100 px-4 py-3 dark:border-slate-800">
+            <button onClick={reset} className="btn-secondary">
+              <ArrowLeft className="h-4 w-4" /> Choose another file
+            </button>
+            <button
+              onClick={() => setStep('rules')}
+              disabled={mappedCount === 0 || unmappedMandatory.length > 0}
+              className="btn-primary ml-auto"
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 'rules' && preview && (
+        <div className="card mb-4 overflow-hidden">
+          <div className="border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
+            <p className="text-sm font-medium">What to do with each row</p>
+          </div>
+
+          <div className="grid gap-2 p-4 sm:grid-cols-2">
+            {MODES.map((m) => (
+              <button
+                key={m.value}
+                onClick={() => setImportMode(m.value)}
+                className={cn(
+                  'rounded-lg border p-3 text-left transition-colors',
+                  importMode === m.value
+                    ? 'border-slate-900 bg-slate-50 dark:border-white dark:bg-slate-800'
+                    : 'border-slate-200 hover:border-slate-300 dark:border-slate-700',
+                )}
+              >
+                <p className="text-sm font-medium">{m.title}</p>
+                <p className="text-xs text-muted">{m.hint}</p>
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-end gap-4 border-t border-slate-100 px-4 py-3 dark:border-slate-800">
+            <div className="w-64">
+              <label className="label">When a row matches someone already here</label>
               <Select
                 value={duplicateHandling}
                 onChange={setDuplicateHandling}
@@ -157,12 +437,11 @@ export default function ImportAdmin(): JSX.Element {
                   { value: 'skip', label: 'Skip duplicates' },
                   { value: 'create', label: 'Create anyway' },
                 ]}
+                className="py-1.5 text-sm"
               />
             </div>
-          )}
 
-          {preview && (
-            <label className="flex cursor-pointer items-center gap-2 pb-0.5">
+            <label className="flex cursor-pointer items-center gap-2 pb-1.5">
               <input
                 type="checkbox"
                 checked={runWorkflows}
@@ -171,10 +450,8 @@ export default function ImportAdmin(): JSX.Element {
               />
               <span className="text-sm">Run automations (greeting queue, scoring, tasks)</span>
             </label>
-          )}
 
-          {preview && (
-            <label className="flex cursor-pointer items-center gap-2 pb-0.5">
+            <label className="flex cursor-pointer items-center gap-2 pb-1.5">
               <input
                 type="checkbox"
                 checked={createOptions}
@@ -188,66 +465,24 @@ export default function ImportAdmin(): JSX.Element {
                 Add new dropdown options found in the file
               </span>
             </label>
+          </div>
+
+          {duplicateHandling === 'review' && (
+            <p className="mx-4 mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300">
+              Rows that match a record already here — same mobile or email — are set aside rather than
+              imported or thrown away. When the file finishes you get them side by side and choose,
+              row by row, which values to keep.
+            </p>
           )}
 
-          {preview && (
-            <button
-              onClick={() => void run()}
-              disabled={busy || mappedCount === 0 || unmappedMandatory.length > 0}
-              className="btn-primary ml-auto"
-            >
+          <div className="flex items-center gap-2 border-t border-slate-100 px-4 py-3 dark:border-slate-800">
+            <button onClick={() => setStep('columns')} className="btn-secondary">
+              <ArrowLeft className="h-4 w-4" /> Back to columns
+            </button>
+            <button onClick={() => void run()} disabled={busy} className="btn-primary ml-auto">
               {busy ? <Spinner /> : <Upload className="h-4 w-4" />}
               Import {preview.totalRows} rows
             </button>
-          )}
-        </div>
-
-        {duplicateHandling === 'review' && preview && (
-          <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300">
-            Rows that match a record already here — same mobile or email — are set aside rather than
-            imported or thrown away. When the file finishes you get them side by side and choose,
-            row by row, which values to keep.
-          </p>
-        )}
-
-        {unmappedMandatory.length > 0 && (
-          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
-            Map a column to these required fields first: {unmappedMandatory.map((f) => f.label).join(', ')}
-          </p>
-        )}
-      </div>
-
-      {preview && (
-        <div className="card mb-4 overflow-hidden">
-          <div className="border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
-            <p className="text-sm font-medium">Column mapping</p>
-            <p className="text-xs text-muted">
-              {mappedCount} of {preview.headers.length} columns mapped. Unmapped columns are ignored.
-            </p>
-          </div>
-
-          <div className="divide-y divide-slate-100 dark:divide-slate-800">
-            {preview.headers.map((header) => (
-              <div key={header} className="flex items-center gap-3 px-4 py-2">
-                <div className="w-52 shrink-0">
-                  <p className="truncate text-sm font-medium">{header}</p>
-                  <p className="truncate text-2xs text-muted">
-                    e.g. {preview.sample[0]?.[header] || '(empty)'}
-                  </p>
-                </div>
-                <span className="text-slate-300">→</span>
-                <Select
-                  value={mapping[header] ?? ''}
-                  onChange={(v) => setMapping({ ...mapping, [header]: v })}
-                  placeholder="— Ignore this column —"
-                  options={preview.fields.map((f) => ({
-                    value: f.name,
-                    label: `${f.label}${f.mandatory ? ' *' : ''}`,
-                  }))}
-                  className="max-w-xs py-1.5 text-sm"
-                />
-              </div>
-            ))}
           </div>
         </div>
       )}
@@ -344,6 +579,40 @@ export default function ImportAdmin(): JSX.Element {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * One value for the whole file, in the field's own vocabulary.
+ *
+ * A dropdown gets its list. Typing "new" free-hand into a status writes a
+ * value that is stored, offered by nothing, and matched by no view — the same
+ * orphaning a renamed option causes, arrived at from the other end.
+ */
+function FixedValueInput({ field, value, onChange }: {
+  field?: { uitype: string; options: { value: string; label: string }[] };
+  value: string;
+  onChange: (v: string) => void;
+}): JSX.Element {
+  const list = field?.options ?? [];
+  if (list.length > 0) {
+    return (
+      <Select
+        value={value}
+        onChange={onChange}
+        placeholder="— Choose —"
+        options={list.map((o) => ({ value: o.value, label: o.label }))}
+        className="max-w-xs py-1.5 text-sm"
+      />
+    );
+  }
+  return (
+    <input
+      className="input max-w-xs py-1.5 text-sm"
+      type={field?.uitype === 'date' ? 'date' : 'text'}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    />
   );
 }
 

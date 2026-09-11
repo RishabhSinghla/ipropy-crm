@@ -1015,7 +1015,13 @@ miscRouter.post('/import/:module/preview', upload.single('file'), asyncHandler(a
       // a spreadsheet keeps `Area` and `Unit` in two columns.
       .filter((f) => f.isActive && !f.isReadonly && f.config.importable !== false
         && (f.displayType !== 'hidden' || Boolean(f.config.unitMaster)))
-      .map((f) => ({ name: f.name, label: f.label, uitype: f.uitype, mandatory: f.isMandatory })),
+      // The options travel with the field so the wizard can offer a dropdown's
+      // own list where it asks for one fixed value for the whole file. Typing
+      // "new" into a free-text box there writes a status no view matches.
+      .map((f) => ({
+        name: f.name, label: f.label, uitype: f.uitype, mandatory: f.isMandatory,
+        options: (f.options ?? []).map((o) => ({ value: o.value, label: o.label })),
+      })),
   });
 }));
 
