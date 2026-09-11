@@ -5,8 +5,21 @@
 # being at a keyboard, and the production database credentials live here rather
 # than on a laptop.
 #
-# The key is printed once and never stored. It is bound to an existing user, so
-# it inherits that user's permissions and can be revoked on its own.
+# The key is written into a repository secret and NEVER printed. It is bound to
+# an existing user, so it inherits that user's permissions and can be revoked on
+# its own.
+#
+# It used to `echo` the key into the job log. **This repository is public**, and
+# so are its Actions logs — so the run on 18 August 2026 published a working
+# production API key to the internet, where it sat for weeks. A key carries its
+# user's permissions: it can read every contact and property in the CRM and
+# create and update records. It cannot delete and cannot reach the admin
+# routes (`blockApiKey` in `middleware/auth.ts`), which is the only reason this
+# was not worse.
+#
+# `probe-prod-schema.yml` had this right all along — it prints counts and never
+# a value, "because this log is public". The same sentence needed to be true
+# here and was not.
 name: Create API key
 on:
   workflow_dispatch:
@@ -18,6 +31,13 @@ on:
         description: "Bind it to this user"
         required: true
         default: "rishabhsinghla2112@gmail.com"
+      secret_name:
+        description: "Repository secret to write the key into, e.g. N8N_IPROPY_API_KEY"
+        required: true
+
+permissions:
+  # `gh secret set` writes a repository secret; nothing here reads one back.
+  contents: read
 
 jobs:
   mint:
@@ -28,6 +48,8 @@ jobs:
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
           KEY_NAME: ${{ inputs.name }}
           USER_EMAIL: ${{ inputs.user_email }}
+          SECRET_NAME: ${{ inputs.secret_name }}
+          GH_TOKEN: ${{ secrets.SECRET_WRITE_TOKEN }}
         run: |
           set -euo pipefail
           npm i --silent --no-save bcryptjs@2 >/dev/null 2>&1
@@ -61,6 +83,23 @@ jobs:
           VALUES (:'name', :'prefix', :'hash', :'uid');
           SQL
 
-          echo "::notice::Key created for ${USER_EMAIL}. Copy it now — it is not stored anywhere."
-          echo "$RAW"
-          rm -f /tmp/hash /tmp/prefix
+          # Into a secret, never into the log. `gh secret set` reads the value
+          # from stdin, so the key never becomes an argument either — those show
+          # up in `ps` and in any command trace.
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::No SECRET_WRITE_TOKEN configured, and this workflow will not print a key to a public log."
+            echo "::error::Add a fine-grained PAT with 'Secrets: read and write' as the SECRET_WRITE_TOKEN secret, then run this again."
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v prefix="$PREFIX" <<'SQL'
+          DELETE FROM ipy_api_key WHERE key_prefix = :'prefix';
+          SQL
+            echo "::notice::The half-made key was removed again, so nothing is left behind."
+            rm -f /tmp/raw /tmp/hash /tmp/prefix
+            exit 1
+          fi
+
+          printf '%s' "$RAW" | gh secret set "$SECRET_NAME" --repo "$GITHUB_REPOSITORY" --body -
+
+          # The prefix is not a secret: it is stored in the clear in
+          # `ipy_api_key` so a key can be identified and revoked by name.
+          echo "::notice::Key created for ${USER_EMAIL} and written to the ${SECRET_NAME} secret. Prefix ${PREFIX}."
+          rm -f /tmp/raw /tmp/hash /tmp/prefix
