@@ -143,6 +143,29 @@ jobs:
                 WHERE mo.name = '$module' AND f.storage = 'json' AND f.is_active;"
           done
           echo
+          echo "=== do the numeric json fields actually hold numbers? (counts only) ==="
+          # A field's uitype and the shape of what is stored under its key can
+          # disagree, and nothing reports it. `leads.area_size` is an `area`
+          # field whose JSONB key is `area_unit` — the name its companion unit
+          # field would have — so a key full of the word "Sq Ft" would render
+          # as an area, export as an area, and be compared against a property's
+          # square footage by the matching engine, scoring every unit the same.
+          # Counts only: this says how many parse as a number, never what any
+          # of them say.
+          for spec in "ipy_e_properties:properties" "ipy_e_leads:leads"; do
+            table="${spec%%:*}"; module="${spec#*:}"
+            psql "$PROD_DATABASE_URL" -tAc \
+              "SELECT coalesce(string_agg(f.name || ' (key ' || f.column_name || '): ' ||
+                        (SELECT count(*) FROM $table t
+                          WHERE t.custom_fields ->> f.column_name ~ '^[0-9]+(\\.[0-9]+)?$') || ' numeric of ' ||
+                        (SELECT count(*) FROM $table t
+                          WHERE coalesce(t.custom_fields ->> f.column_name, '') <> ''), ', ' ORDER BY f.name),
+                        '(none)')
+                 FROM ipy_field f JOIN ipy_module mo ON mo.id = f.module_id
+                WHERE mo.name = '$module' AND f.storage = 'json' AND f.is_active
+                  AND f.uitype IN ('area','currency','number','decimal','integer','double');"
+          done
+          echo
           echo "=== values archived by a permanent delete (counts only) ==="
           psql "$PROD_DATABASE_URL" -tAc \
             "SELECT coalesce(string_agg(table_name || '.' || column_name || '=' || n, ', '), '(none)')
