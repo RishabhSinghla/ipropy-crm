@@ -15,8 +15,9 @@ import { db, transaction } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
+import type { AuthUser } from '@ipropy/shared';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../utils/errors.js';
-import { assertCapability, canAccessRecord } from '../../core/permissions/index.js';
+import { assertCapability, assertModuleAccess, canAccessRecord } from '../../core/permissions/index.js';
 import { getDriver, getStorageSettings } from '../../core/storage/index.js';
 import { buildStorageKey } from '../../core/storage/keys.js';
 import {
@@ -923,9 +924,23 @@ miscRouter.get('/lead-inbox', asyncHandler(async (req, res) => {
  * simply imports one obviously-sample row; fill it in and it imports yours.
  * Generated from live metadata, so it can never drift from the importer.
  */
+/**
+ * May this person import into this module?
+ *
+ * `records.import` says they may import at all; the profile's per-module
+ * permission says *where*. Only the first was ever checked here, so the module
+ * dropdown correctly hid Properties from somebody allowed only Contacts and
+ * the API happily took a file for it anyway — a permission that exists on the
+ * screen and nowhere else.
+ */
+async function assertCanImport(user: AuthUser, moduleName: string): Promise<void> {
+  await assertCapability(user, 'records.import');
+  await assertModuleAccess(user, moduleName, 'import');
+}
+
 miscRouter.get('/import/:module/template', asyncHandler(async (req, res) => {
   const user = getUser(req);
-  await assertCapability(user, 'records.import');
+  await assertCanImport(user, req.params.module);
   const module = await registry.requireModule(req.params.module);
 
   const fields = module.fields.filter(
@@ -974,7 +989,7 @@ miscRouter.get('/import/:module/template', asyncHandler(async (req, res) => {
 
 miscRouter.post('/import/:module/preview', upload.single('file'), asyncHandler(async (req, res) => {
   const user = getUser(req);
-  await assertCapability(user, 'records.import');
+  await assertCanImport(user, req.params.module);
   const file = (req as unknown as { file?: Express.Multer.File }).file;
   if (!file) throw new BadRequestError('No file uploaded');
 
@@ -1077,7 +1092,7 @@ miscRouter.post('/import/:module/preview', upload.single('file'), asyncHandler(a
  * the admin's, per value.
  */
 miscRouter.post('/import/:module/values', upload.single('file'), asyncHandler(async (req, res) => {
-  await assertCapability(getUser(req), 'records.import');
+  await assertCanImport(getUser(req), req.params.module);
   const file = (req as unknown as { file?: Express.Multer.File }).file;
   if (!file) throw new BadRequestError('No file uploaded');
   const mapping = JSON.parse(String(req.body.mapping ?? '{}')) as Record<string, string>;
@@ -1126,7 +1141,7 @@ miscRouter.post('/import/:module/values', upload.single('file'), asyncHandler(as
 
 miscRouter.post('/import/:module/dry-run', upload.single('file'), asyncHandler(async (req, res) => {
   const user = getUser(req);
-  await assertCapability(user, 'records.import');
+  await assertCanImport(user, req.params.module);
   const file = (req as unknown as { file?: Express.Multer.File }).file;
   if (!file) throw new BadRequestError('No file uploaded');
 
@@ -1311,7 +1326,7 @@ miscRouter.post('/import/:module/dry-run', upload.single('file'), asyncHandler(a
 miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (req, res) => {
   const user = getUser(req);
   const scope = getScope(req);
-  await assertCapability(user, 'records.import');
+  await assertCanImport(user, req.params.module);
   const file = (req as unknown as { file?: Express.Multer.File }).file;
   if (!file) throw new BadRequestError('No file uploaded');
 
@@ -1847,7 +1862,7 @@ miscRouter.post('/import/jobs/:id/rollback', asyncHandler(async (req, res) => {
 }));
 
 miscRouter.get('/import/:module/templates', asyncHandler(async (req, res) => {
-  await assertCapability(getUser(req), 'records.import');
+  await assertCanImport(getUser(req), req.params.module);
   const module = await registry.requireModule(req.params.module);
   const templates = await listTemplates(module.id);
   res.json(templates.map((t) => ({
@@ -1867,7 +1882,7 @@ miscRouter.get('/import/:module/templates', asyncHandler(async (req, res) => {
  */
 miscRouter.post('/import/:module/templates', asyncHandler(async (req, res) => {
   const user = getUser(req);
-  await assertCapability(user, 'records.import');
+  await assertCanImport(user, req.params.module);
   const module = await registry.requireModule(req.params.module);
   const body = z.object({
     name: z.string().trim().min(1).max(80),
@@ -1893,7 +1908,7 @@ miscRouter.post('/import/:module/templates', asyncHandler(async (req, res) => {
 }));
 
 miscRouter.delete('/import/:module/templates/:id', asyncHandler(async (req, res) => {
-  await assertCapability(getUser(req), 'records.import');
+  await assertCanImport(getUser(req), req.params.module);
   const done = await db.query(`DELETE FROM ipy_import_template WHERE id = $1 RETURNING id`,
     [req.params.id]);
   if (!done.rowCount) throw new NotFoundError('No template with that id');
