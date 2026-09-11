@@ -12,6 +12,7 @@
  * testing one.
  */
 import { expect, test } from '@playwright/test';
+import { waitForRecords } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -36,6 +37,11 @@ test('a rep adds a lead they just spoke to', async ({ page }) => {
 
 test('they open it from the list', async ({ page, context }) => {
   await page.goto('/leads');
+  // The search box renders before the list does, and typing into it while the
+  // rows are still coming filters nothing — in a full run, where a hundred
+  // specs share one account, that wait is long enough to spend the whole
+  // test timeout inside `fill`.
+  await waitForRecords(page);
   await page.getByTestId('list-search').fill(name);
   await page.waitForTimeout(1200);
 
