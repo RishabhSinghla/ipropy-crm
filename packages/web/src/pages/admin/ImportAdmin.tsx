@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatIndianPrice, relativeTime } from '@ipropy/shared';
 import {
-  AlertTriangle, ArrowLeft, Check, Database, Download, FileUp, Undo2, Upload, X,
+  AlertTriangle, ArrowLeft, Check, Database, Download, FileUp, Save, Undo2, Upload, X,
 } from 'lucide-react';
 import { api, authedFileUrl, type ImportSection } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
@@ -18,12 +18,22 @@ interface Suggestion {
   reason: string;
 }
 
+interface MatchedTemplate {
+  id: string;
+  name: string;
+  mapping: Record<string, string>;
+  missing: string[];
+  staticValues: Record<string, string>;
+  settings: { importMode?: string; duplicateHandling?: string; dateOrder?: string; createOptions?: boolean };
+}
+
 interface Preview {
   headers: string[];
   sample: Record<string, string>[];
   totalRows: number;
   suggestedMapping: Record<string, string>;
   suggestions: Suggestion[];
+  template: MatchedTemplate | null;
   dateOrder: { detected: 'dmy' | 'mdy' | 'ymd'; certain: boolean };
   fields: { name: string; label: string; uitype: string; mandatory: boolean;
     options: { value: string; label: string }[] }[];
@@ -118,6 +128,8 @@ export default function ImportAdmin(): JSX.Element {
   const [createOptions, setCreateOptions] = useState(true);
   const [busy, setBusy] = useState(false);
   const [dryRun, setDryRun] = useState<DryRun | null>(null);
+  const [template, setTemplate] = useState<MatchedTemplate | null>(null);
+  const [saveAs, setSaveAs] = useState<string | null>(null);
   const [openJob, setOpenJob] = useState<JobRow | null>(null);
   const [reviewJob, setReviewJob] = useState<JobRow | null>(null);
   const [undoJob, setUndoJob] = useState<JobRow | null>(null);
@@ -197,7 +209,25 @@ export default function ImportAdmin(): JSX.Element {
     }
   };
 
-  const reset = (): void => { setFile(null); setPreview(null); setMapping({}); setStaticValues({}); setDryRun(null); setStep('file'); };
+  const saveTemplate = async (): Promise<void> => {
+    if (!saveAs?.trim() || !preview) return;
+    try {
+      const saved = await api.saveImportTemplate(moduleName, {
+        name: saveAs.trim(),
+        headers: preview.headers,
+        mapping,
+        staticValues,
+        settings: { importMode, duplicateHandling, dateOrder, createOptions },
+      });
+      setTemplate({ id: saved.id, name: saved.name, mapping, missing: [], staticValues, settings: {} });
+      setSaveAs(null);
+      toast.success('Saved', `A file shaped like this one will use “${saved.name}” from now on.`);
+    } catch (err) {
+      toast.error('Could not save it', (err as Error).message);
+    }
+  };
+
+  const reset = (): void => { setFile(null); setPreview(null); setMapping({}); setStaticValues({}); setDryRun(null); setTemplate(null); setStep('file'); };
 
   const analyse = async (selected: File): Promise<void> => {
     setBusy(true);
@@ -207,6 +237,22 @@ export default function ImportAdmin(): JSX.Element {
       setPreview(result);
       setMapping(result.suggestedMapping);
       setDateOrder(result.dateOrder?.detected ?? 'dmy');
+      /*
+        A file the CRM has been taught before arrives with its answers already
+        filled in — mapping, the values set for the whole file, and the rules.
+        The person still walks the same three screens, because a template is a
+        starting point somebody chose once, not a decision made for them
+        forever.
+      */
+      setTemplate(result.template);
+      if (result.template) {
+        setStaticValues(result.template.staticValues ?? {});
+        const st = result.template.settings ?? {};
+        if (st.importMode) setImportMode(st.importMode);
+        if (st.duplicateHandling) setDuplicateHandling(st.duplicateHandling);
+        if (st.dateOrder) setDateOrder(st.dateOrder);
+        if (typeof st.createOptions === 'boolean') setCreateOptions(st.createOptions);
+      }
       setStep('columns');
     } catch (err) {
       toast.error('Could not read the file', (err as Error).message);
@@ -222,6 +268,7 @@ export default function ImportAdmin(): JSX.Element {
     try {
       const result = await api.runImport(moduleName, file, {
         mapping, duplicateHandling, importMode, staticValues, dateOrder, runWorkflows, createOptions,
+        templateId: template?.id,
       });
       toast.success('Import started', `${result.totalRows} rows queued — progress appears below.`);
       reset();
@@ -361,6 +408,28 @@ export default function ImportAdmin(): JSX.Element {
               </div>
             )}
           </div>
+
+          {template && (
+            <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50 px-4 py-2 text-xs dark:border-slate-800 dark:bg-slate-800/50">
+              <Check className="h-3.5 w-3.5 text-positive" />
+              <span>
+                This is the same shape as <span className="font-medium">{template.name}</span> — its
+                mapping and rules are filled in.
+              </span>
+              {/* A column the template used to fill and can no longer: the
+                  field was deleted since it was saved. Named, because the
+                  alternative is a column that silently stops importing. */}
+              {template.missing.length > 0 && (
+                <span className="text-amber-700 dark:text-amber-400">
+                  {template.missing.join(', ')} — that field no longer exists, so the column is ignored.
+                </span>
+              )}
+              <button onClick={() => { setTemplate(null); setMapping(preview.suggestedMapping); }}
+                className="ml-auto underline decoration-dotted underline-offset-2 text-muted hover:opacity-80">
+                Ignore it
+              </button>
+            </div>
+          )}
 
           <div className="divide-y divide-slate-100 dark:divide-slate-800">
             {preview.headers.map((header) => {
@@ -654,6 +723,13 @@ export default function ImportAdmin(): JSX.Element {
                 <button onClick={() => setStep('rules')} className="btn-secondary">
                   <ArrowLeft className="h-4 w-4" /> Change the rules
                 </button>
+                {/* Offered here rather than at the start: what is worth saving
+                    is the mapping that turned out to be right, and you only
+                    know that once you have seen what it does. */}
+                <button onClick={() => setSaveAs(template?.name ?? file?.name.replace(/\.(csv|xlsx)$/i, '') ?? '')}
+                  className="btn-secondary">
+                  <Save className="h-4 w-4" /> {template ? 'Update this template' : 'Save this mapping'}
+                </button>
                 <button onClick={() => void run()} disabled={busy} className="btn-primary ml-auto">
                   {busy ? <Spinner /> : <Upload className="h-4 w-4" />}
                   Import {dryRun.totalRows} {dryRun.totalRows === 1 ? 'row' : 'rows'}
@@ -759,6 +835,31 @@ export default function ImportAdmin(): JSX.Element {
       </div>
 
       {openJob && <JobDetailsModal job={openJob} onClose={() => setOpenJob(null)} />}
+      {saveAs !== null && preview && (
+        <Modal open title="Save this mapping" onClose={() => setSaveAs(null)} size="sm">
+          <p className="mb-3 text-sm text-muted">
+            The next file with these same column headings will arrive with all of this filled in.
+          </p>
+          <label className="label">Call it</label>
+          <input
+            className="input"
+            autoFocus
+            value={saveAs}
+            onChange={(e) => setSaveAs(e.target.value)}
+            placeholder="99acres export"
+          />
+          <div className="mt-4 flex justify-end gap-2">
+            <button onClick={() => setSaveAs(null)} className="btn-secondary">Cancel</button>
+            <button
+              onClick={() => void saveTemplate()}
+              disabled={!saveAs.trim()}
+              className="btn-primary"
+            >
+              <Save className="h-4 w-4" /> Save
+            </button>
+          </div>
+        </Modal>
+      )}
       {undoJob && (
         <Modal open title="Undo this import?" onClose={() => setUndoJob(null)} size="sm">
           <p className="text-sm">
@@ -824,12 +925,24 @@ function FixedValueInput({ field, value, onChange }: {
 }): JSX.Element {
   const list = field?.options ?? [];
   if (list.length > 0) {
+    /*
+      A value the list does not have is shown, not hidden.
+
+      A saved template can carry one — the option was renamed, or deleted, or
+      the template named something this CRM never offered. A <select> given a
+      value outside its options renders the placeholder, so the screen said
+      "nothing chosen" while the import was still going to write "Portal".
+    */
+    const known = list.some((o) => o.value === value);
+    const options = known || !value
+      ? list.map((o) => ({ value: o.value, label: o.label }))
+      : [{ value, label: `${value} — not in this list yet` }, ...list.map((o) => ({ value: o.value, label: o.label }))];
     return (
       <Select
         value={value}
         onChange={onChange}
         placeholder="— Choose —"
-        options={list.map((o) => ({ value: o.value, label: o.label }))}
+        options={options}
         className="max-w-xs py-1.5 text-sm"
       />
     );

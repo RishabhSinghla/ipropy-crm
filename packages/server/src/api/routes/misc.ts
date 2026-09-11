@@ -39,6 +39,9 @@ import { readImportFile } from '../../core/import/readFile.js';
 import { suggestMapping, certainMapping } from '../../core/import/autoMap.js';
 import { prepareRow, applyStaticValues } from '../../core/import/prepareRow.js';
 import {
+  detectTemplate, listTemplates, recordUse, resolveMapping, resolveValues, toFieldIds,
+} from '../../core/import/templates.js';
+import {
   DEFAULT_CONTEXT, detectDateOrder, normaliseForField,
   type DateOrder, type NormaliseContext,
 } from '../../core/import/normalise.js';
@@ -1004,11 +1007,30 @@ miscRouter.post('/import/:module/preview', upload.single('file'), asyncHandler(a
     && module.fields.some((f) => f.name === suggestions[h] && (f.uitype === 'date' || f.uitype === 'datetime')));
   const dateOrder = detectDateOrder(rows.flatMap((r) => dateHeaders.map((h) => r[h])));
 
+  /*
+    A file the CRM has seen before.
+
+    A saved mapping beats a guess every time — it is what a person decided
+    about this exact export — so when the header row matches one, it is offered
+    as the starting point and the suggestions stay available underneath.
+  */
+  const templates = await listTemplates(module.id);
+  const hit = detectTemplate(headers, templates);
+  const matched = hit && {
+    id: hit.template.id,
+    name: hit.template.name,
+    ...resolveMapping(hit.template.mapping, module.fields),
+    staticValues: resolveValues(hit.template.staticValues, module.fields),
+    settings: hit.template.settings,
+  };
+
   res.json({
     headers,
     sample: rows.slice(0, 5),
     totalRows: rows.length,
-    suggestedMapping: suggestions,
+    template: matched,
+    templates: templates.map((t) => ({ id: t.id, name: t.name, useCount: t.useCount })),
+    suggestedMapping: matched ? { ...suggestions, ...matched.mapping } : suggestions,
     suggestions: suggestionList,
     dateOrder: { detected: dateOrder.order, certain: dateOrder.certain },
     fields: module.fields
@@ -1194,6 +1216,10 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
   // row-by-row crawl while each one was evaluated. Off by default now; the
   // import form opts in explicitly.
   const runWorkflows = String(req.body.runWorkflows ?? 'false') === 'true';
+  // Which template this run came from, so the list can order by what the team
+  // actually uses rather than by when somebody first saved one.
+  const templateId = String(req.body.templateId ?? '').trim();
+  if (templateId) await recordUse(templateId).catch(() => undefined);
   // On by default, because the alternative is values that import and are then
   // invisible to every filter and view. Off is for an import into a list whose
   // options are a deliberate, closed set.
@@ -1642,6 +1668,60 @@ miscRouter.post('/import/jobs/:id/rollback', asyncHandler(async (req, res) => {
 
   logger.info({ jobId: job.id, deleted, gone, failed: failures.length }, 'import rolled back');
   res.json({ deleted, gone, failed: failures.length, failures, keptUpdates: Number(updated?.n ?? 0) });
+}));
+
+miscRouter.get('/import/:module/templates', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'records.import');
+  const module = await registry.requireModule(req.params.module);
+  const templates = await listTemplates(module.id);
+  res.json(templates.map((t) => ({
+    id: t.id, name: t.name, headers: t.headers, useCount: t.useCount, lastUsedAt: t.lastUsedAt,
+    ...resolveMapping(t.mapping, module.fields),
+    staticValues: resolveValues(t.staticValues, module.fields),
+    settings: t.settings,
+  })));
+}));
+
+/**
+ * Save this mapping under a name.
+ *
+ * Field *ids* are stored, not names — see core/import/templates.ts. Saving the
+ * same name twice overwrites, because "Save as 99acres export" said twice in a
+ * month means the export changed, not that the team wants two of them.
+ */
+miscRouter.post('/import/:module/templates', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'records.import');
+  const module = await registry.requireModule(req.params.module);
+  const body = z.object({
+    name: z.string().trim().min(1).max(80),
+    headers: z.array(z.string()).default([]),
+    mapping: z.record(z.string()).default({}),
+    staticValues: z.record(z.unknown()).default({}),
+    settings: z.record(z.unknown()).default({}),
+  }).parse(req.body);
+
+  const row = await db.queryOne<{ id: string }>(
+    `INSERT INTO ipy_import_template (module_id, name, headers, mapping, static_values, settings, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     ON CONFLICT (module_id, lower(name)) DO UPDATE
+       SET headers = EXCLUDED.headers, mapping = EXCLUDED.mapping,
+           static_values = EXCLUDED.static_values, settings = EXCLUDED.settings
+     RETURNING id`,
+    [module.id, body.name, body.headers,
+      JSON.stringify(toFieldIds(body.mapping, module.fields, 'value')),
+      JSON.stringify(toFieldIds(body.staticValues, module.fields, 'key')),
+      JSON.stringify(body.settings), user.id],
+  );
+  res.status(201).json({ id: row!.id, name: body.name });
+}));
+
+miscRouter.delete('/import/:module/templates/:id', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'records.import');
+  const done = await db.query(`DELETE FROM ipy_import_template WHERE id = $1 RETURNING id`,
+    [req.params.id]);
+  if (!done.rowCount) throw new NotFoundError('No template with that id');
+  res.json({ ok: true });
 }));
 
 miscRouter.get('/import/jobs', asyncHandler(async (req, res) => {

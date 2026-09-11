@@ -1069,6 +1069,7 @@ export const api = {
     dateOrder?: string;
     runWorkflows?: boolean;
     createOptions?: boolean;
+    templateId?: string;
   }) => {
     const form = new FormData();
     form.append('file', file);
@@ -1079,6 +1080,7 @@ export const api = {
     if (opts.dateOrder) form.append('dateOrder', opts.dateOrder);
     form.append('runWorkflows', String(opts.runWorkflows ?? false));
     form.append('createOptions', String(opts.createOptions ?? true));
+    if (opts.templateId) form.append('templateId', opts.templateId);
     return request<{ jobId: string; totalRows: number }>(`/api/import/${module}`, { method: 'POST', body: form });
   },
   importDryRun: (module: string, file: File, opts: {
@@ -1102,6 +1104,13 @@ export const api = {
       optionsAdded: string[]; optionsSkipped: string[];
     }>(`/api/import/${module}/dry-run`, { method: 'POST', body: form });
   },
+  saveImportTemplate: (module: string, body: {
+    name: string; headers: string[]; mapping: Record<string, string>;
+    staticValues: Record<string, string>; settings: Record<string, unknown>;
+  }) => request<{ id: string; name: string }>(`/api/import/${module}/templates`,
+    { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }),
+  deleteImportTemplate: (module: string, id: string) =>
+    request<{ ok: true }>(`/api/import/${module}/templates/${id}`, { method: 'DELETE' }),
   rollbackImport: (id: string) => request<{
     deleted: number; gone: number; failed: number; failures: string[]; keptUpdates: number;
   }>(`/api/import/jobs/${id}/rollback`, { method: 'POST' }),
