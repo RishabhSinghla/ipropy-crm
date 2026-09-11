@@ -33,7 +33,10 @@ interface MatchedTemplate {
   mapping: Record<string, string>;
   missing: string[];
   staticValues: Record<string, string>;
-  settings: { importMode?: string; duplicateHandling?: string; dateOrder?: string; createOptions?: boolean };
+  settings: {
+    importMode?: string; duplicateHandling?: string; dateOrder?: string; createOptions?: boolean;
+    rowFilters?: { header: string; op: string; value: string }[];
+  };
 }
 
 interface Preview {
@@ -57,6 +60,8 @@ interface DryRun {
   }[];
   optionsAdded: string[];
   optionsSkipped: string[];
+  filtered: number;
+  filteredBecause: string;
 }
 
 interface JobRow {
@@ -158,6 +163,8 @@ export default function ImportAdmin(): JSX.Element {
   const [openValues, setOpenValues] = useState<string | null>(null);
   /** The column somebody is making a field for. */
   const [newField, setNewField] = useState<{ header: string; label: string; uitype: string } | null>(null);
+  /** Which rows of the file are wanted. Read the file's own columns, not the CRM's fields. */
+  const [rowFilters, setRowFilters] = useState<{ header: string; op: string; value: string }[]>([]);
   const [openJob, setOpenJob] = useState<JobRow | null>(null);
   const [reviewJob, setReviewJob] = useState<JobRow | null>(null);
   const [undoJob, setUndoJob] = useState<JobRow | null>(null);
@@ -197,7 +204,7 @@ export default function ImportAdmin(): JSX.Element {
     setStep('check');
     try {
       setDryRun(await api.importDryRun(moduleName, file, {
-        mapping, importMode, staticValues, dateOrder, createOptions, valueMap,
+        mapping, importMode, staticValues, dateOrder, createOptions, valueMap, rowFilters,
       }) as unknown as DryRun);
     } catch (err) {
       toast.error('Could not work out what the file would do', (err as Error).message);
@@ -282,7 +289,7 @@ export default function ImportAdmin(): JSX.Element {
         headers: preview.headers,
         mapping,
         staticValues,
-        settings: { importMode, duplicateHandling, dateOrder, createOptions },
+        settings: { importMode, duplicateHandling, dateOrder, createOptions, rowFilters },
       });
       setTemplate({ id: saved.id, name: saved.name, mapping, missing: [], staticValues, settings: {} });
       setSaveAs(null);
@@ -292,7 +299,7 @@ export default function ImportAdmin(): JSX.Element {
     }
   };
 
-  const reset = (): void => { setFile(null); setPreview(null); setMapping({}); setStaticValues({}); setDryRun(null); setTemplate(null); setValueMap({}); setStep('file'); };
+  const reset = (): void => { setFile(null); setPreview(null); setMapping({}); setStaticValues({}); setDryRun(null); setTemplate(null); setValueMap({}); setRowFilters([]); setStep('file'); };
 
   const analyse = async (selected: File): Promise<void> => {
     setBusy(true);
@@ -317,6 +324,7 @@ export default function ImportAdmin(): JSX.Element {
         if (st.duplicateHandling) setDuplicateHandling(st.duplicateHandling);
         if (st.dateOrder) setDateOrder(st.dateOrder);
         if (typeof st.createOptions === 'boolean') setCreateOptions(st.createOptions);
+        if (Array.isArray(st.rowFilters)) setRowFilters(st.rowFilters);
       }
       setStep('columns');
     } catch (err) {
@@ -333,7 +341,7 @@ export default function ImportAdmin(): JSX.Element {
     try {
       const result = await api.runImport(moduleName, file, {
         mapping, duplicateHandling, importMode, staticValues, dateOrder, runWorkflows, createOptions,
-        templateId: template?.id, valueMap,
+        templateId: template?.id, valueMap, rowFilters,
       });
       toast.success('Import started', `${result.totalRows} rows queued — progress appears below.`);
       reset();
@@ -761,6 +769,64 @@ export default function ImportAdmin(): JSX.Element {
             </label>
           </div>
 
+          <div className="border-t border-slate-100 px-4 py-3 dark:border-slate-800">
+            <p className="text-sm font-medium">Only import some of the rows</p>
+            <p className="mb-2 text-xs text-muted">
+              A portal export holds everything the portal has. Leave this empty to import all
+              {preview.totalRows > 0 && ` ${preview.totalRows}`} of them.
+            </p>
+            <div className="space-y-2">
+              {rowFilters.map((f, i) => (
+                <div key={i} className="flex flex-wrap items-center gap-2">
+                  <Select
+                    value={f.header}
+                    onChange={(v) => setRowFilters(rowFilters.map((x, j) => (j === i ? { ...x, header: v } : x)))}
+                    placeholder="— Column —"
+                    options={preview.headers.map((h) => ({ value: h, label: h }))}
+                    className="max-w-[14rem] py-1.5 text-sm"
+                  />
+                  <Select
+                    value={f.op}
+                    onChange={(v) => setRowFilters(rowFilters.map((x, j) => (j === i ? { ...x, op: v } : x)))}
+                    options={[
+                      { value: 'is', label: 'is' },
+                      { value: 'is_not', label: 'is not' },
+                      { value: 'contains', label: 'contains' },
+                      { value: 'does_not_contain', label: 'does not contain' },
+                      { value: 'is_empty', label: 'is empty' },
+                      { value: 'is_not_empty', label: 'is not empty' },
+                    ]}
+                    className="max-w-[11rem] py-1.5 text-sm"
+                  />
+                  {/* An empty-or-not test has nothing to compare against, and a
+                      box there invites somebody to type into it and wonder why
+                      it changes nothing. */}
+                  {f.op !== 'is_empty' && f.op !== 'is_not_empty' && (
+                    <input
+                      className="input max-w-[12rem] py-1.5 text-sm"
+                      value={f.value}
+                      placeholder="Residential"
+                      onChange={(e) => setRowFilters(rowFilters.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))}
+                    />
+                  )}
+                  <button
+                    onClick={() => setRowFilters(rowFilters.filter((_, j) => j !== i))}
+                    className="text-slate-400 hover:text-negative"
+                    title="Remove"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+              <button
+                onClick={() => setRowFilters([...rowFilters, { header: preview.headers[0] ?? '', op: 'is', value: '' }])}
+                className="btn-secondary btn-sm"
+              >
+                + Add a condition
+              </button>
+            </div>
+          </div>
+
           {duplicateHandling === 'review' && (
             <p className="mx-4 mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300">
               Rows that match a record already here — same mobile or email — are set aside rather than
@@ -789,6 +855,9 @@ export default function ImportAdmin(): JSX.Element {
               <p className="text-xs text-muted">
                 {dryRun
                   ? `The first ${dryRun.shown} of ${dryRun.totalRows} rows, exactly as they would be saved. Nothing has been written.`
+                    + (dryRun.filtered > 0
+                      ? ` ${dryRun.filtered} row${dryRun.filtered === 1 ? '' : 's'} left out by your conditions — the first because ${dryRun.filteredBecause}.`
+                      : '')
                   : 'Working it out…'}
               </p>
             </div>
@@ -888,7 +957,11 @@ export default function ImportAdmin(): JSX.Element {
                 </button>
                 <button onClick={() => void run()} disabled={busy} className="btn-primary ml-auto">
                   {busy ? <Spinner /> : <Upload className="h-4 w-4" />}
-                  Import {dryRun.totalRows} {dryRun.totalRows === 1 ? 'row' : 'rows'}
+                  {/* What it will do, not how big the file is. A button
+                      offering to import 3 rows next to a screen saying one of
+                      them is left out is the wizard contradicting itself. */}
+                  Import {dryRun.totalRows - dryRun.filtered}{' '}
+                  {dryRun.totalRows - dryRun.filtered === 1 ? 'row' : 'rows'}
                 </button>
               </div>
             </>

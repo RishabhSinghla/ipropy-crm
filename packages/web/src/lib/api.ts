@@ -1071,11 +1071,13 @@ export const api = {
     createOptions?: boolean;
     templateId?: string;
     valueMap?: Record<string, Record<string, string>>;
+    rowFilters?: { header: string; op: string; value?: string }[];
   }) => {
     const form = new FormData();
     form.append('file', file);
     form.append('mapping', JSON.stringify(opts.mapping));
     form.append('valueMap', JSON.stringify(opts.valueMap ?? {}));
+    form.append('rowFilters', JSON.stringify(opts.rowFilters ?? []));
     form.append('duplicateHandling', opts.duplicateHandling);
     form.append('importMode', opts.importMode ?? 'create');
     form.append('staticValues', JSON.stringify(opts.staticValues ?? {}));
@@ -1102,17 +1104,19 @@ export const api = {
     dateOrder?: string;
     createOptions?: boolean;
     valueMap?: Record<string, Record<string, string>>;
+    rowFilters?: { header: string; op: string; value?: string }[];
   }) => {
     const form = new FormData();
     form.append('file', file);
     form.append('mapping', JSON.stringify(opts.mapping));
     form.append('valueMap', JSON.stringify(opts.valueMap ?? {}));
+    form.append('rowFilters', JSON.stringify(opts.rowFilters ?? []));
     form.append('importMode', opts.importMode ?? 'create');
     form.append('staticValues', JSON.stringify(opts.staticValues ?? {}));
     if (opts.dateOrder) form.append('dateOrder', opts.dateOrder);
     form.append('createOptions', String(opts.createOptions ?? true));
     return request<{
-      totalRows: number; shown: number; dateOrder: string;
+      totalRows: number; shown: number; dateOrder: string; filtered: number; filteredBecause: string;
       rows: { row: number; outcome: string; matched: string | null;
         values: Record<string, unknown>; problems: string[] }[];
       optionsAdded: string[]; optionsSkipped: string[];

@@ -39,6 +39,7 @@ import { readImportFile } from '../../core/import/readFile.js';
 import { suggestMapping, certainMapping } from '../../core/import/autoMap.js';
 import { prepareRow, applyStaticValues } from '../../core/import/prepareRow.js';
 import { loadPeople } from '../../core/import/people.js';
+import { keepRow, parseFilters } from '../../core/import/rowFilter.js';
 import {
   detectTemplate, listTemplates, recordUse, resolveMapping, resolveValues, toFieldIds,
 } from '../../core/import/templates.js';
@@ -1140,6 +1141,7 @@ miscRouter.post('/import/:module/dry-run', upload.single('file'), asyncHandler(a
     about.
   */
   const valueMap = JSON.parse(String(req.body.valueMap ?? '{}')) as Record<string, Record<string, string>>;
+  const rowFilters = parseFilters(JSON.parse(String(req.body.rowFilters ?? '[]')));
   const importMode = String(req.body.importMode ?? 'create');
   const createOptions = String(req.body.createOptions ?? 'true') !== 'false';
   const module = await registry.requireModule(req.params.module);
@@ -1208,11 +1210,29 @@ miscRouter.post('/import/:module/dry-run', upload.single('file'), asyncHandler(a
   }[] = [];
 
   const people = await loadPeople();
-  for (const [i, raw] of rows.slice(0, SHOWN).entries()) {
+  /*
+    Filtered rows are counted over the whole file and shown as a number, not
+    as rows.
+
+    Twenty rows of "left out" is a preview that tells nobody anything — and it
+    is what a filter matching the top of the file would otherwise produce. The
+    rows on screen are the first twenty that *survive*, which is what the
+    question "what will this do" is actually asking.
+  */
+  let filtered = 0;
+  let filteredBecause = '';
+  for (const [i, raw] of rows.entries()) {
+    if (preview.length >= SHOWN) break;
+    const sheetRow = i + 2;
+    const wanted = keepRow(raw, rowFilters, headers);
+    if (!wanted.keep) {
+      filtered += 1;
+      filteredBecause ||= wanted.because;
+      continue;
+    }
     const { values, unreadable } = prepareRow(raw, {
       mapping, fields: module.fields, canonical, multiValued, ctx, people, valueMap,
     });
-    const sheetRow = i + 2;
     /*
       A line with more values than the heading row is not a row, it is a
       mistake — and the dangerous kind, because the values after the offending
@@ -1272,9 +1292,19 @@ miscRouter.post('/import/:module/dry-run', upload.single('file'), asyncHandler(a
     preview.push({ row: sheetRow, outcome, matched, problems: [], values: display });
   }
 
+  // The tally of what is left out covers the whole file, not only the part
+  // walked to fill the screen.
+  if (rowFilters.length) {
+    for (const raw of rows.slice(Math.min(rows.length, preview.length + filtered))) {
+      const wanted = keepRow(raw, rowFilters, headers);
+      if (!wanted.keep) { filtered += 1; filteredBecause ||= wanted.because; }
+    }
+  }
+
   res.json({
     totalRows: rows.length, shown: preview.length, dateOrder,
     rows: preview, optionsAdded, optionsSkipped,
+    filtered, filteredBecause,
   });
 }));
 
@@ -1322,6 +1352,13 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
     about.
   */
   const valueMap = JSON.parse(String(req.body.valueMap ?? '{}')) as Record<string, Record<string, string>>;
+  /*
+    Which rows of the file are wanted.
+
+    A portal export holds everything the portal has. The answer otherwise is to
+    delete rows in Excel first, which loses the file somebody was sent.
+  */
+  const rowFilters = parseFilters(JSON.parse(String(req.body.rowFilters ?? '[]')));
   // Automations (instant greeting → the outreach queue, scoring, first-call
   // tasks) fire per record through the workflow engine. On a bulk import that
   // meant a queue of hundreds of WhatsApp greetings nobody asked for, and a
@@ -1482,6 +1519,15 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
 
     const people = await loadPeople();
     for (const [i, raw] of rows.entries()) {
+      // Asked before any work is done on the row: a file where four fifths of
+      // the rows are filtered out should cost a fifth of the time.
+      const wanted = keepRow(raw, rowFilters, fileHeaders);
+      if (!wanted.keep) {
+        skipped++;
+        if (details.skipped.length < CAP) details.skipped.push(`row ${i + 2} — left out, ${wanted.because}`);
+        await logRow(job!.id, i + 2, 'skipped', {}, { message: `left out — ${wanted.because}` });
+        continue;
+      }
       const { values, unreadable } = prepareRow(raw, {
         mapping, fields: live.fields, canonical, multiValued, ctx: normaliseCtx, people, valueMap,
       });
