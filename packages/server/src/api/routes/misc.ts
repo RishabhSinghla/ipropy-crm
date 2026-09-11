@@ -38,6 +38,7 @@ import { mergeRecords } from '../../core/entity/conversion.js';
 import { readImportFile } from '../../core/import/readFile.js';
 import { suggestMapping, certainMapping } from '../../core/import/autoMap.js';
 import { prepareRow, applyStaticValues } from '../../core/import/prepareRow.js';
+import { loadPeople } from '../../core/import/people.js';
 import {
   detectTemplate, listTemplates, recordUse, resolveMapping, resolveValues, toFieldIds,
 } from '../../core/import/templates.js';
@@ -1133,9 +1134,10 @@ miscRouter.post('/import/:module/dry-run', upload.single('file'), asyncHandler(a
     values: Record<string, unknown>; problems: string[];
   }[] = [];
 
+  const people = await loadPeople();
   for (const [i, raw] of rows.slice(0, SHOWN).entries()) {
     const { values, unreadable } = prepareRow(raw, {
-      mapping, fields: module.fields, canonical, multiValued, ctx,
+      mapping, fields: module.fields, canonical, multiValued, ctx, people,
     });
     const sheetRow = i + 2;
     if (unreadable.length) {
@@ -1166,7 +1168,20 @@ miscRouter.post('/import/:module/dry-run', upload.single('file'), asyncHandler(a
         outcome = 'skipped';
       }
     }
-    preview.push({ row: sheetRow, outcome, matched, problems: [], values });
+    /*
+      An owner reads as a person, not as a uuid.
+
+      Everywhere else this screen shows the stored value, because that is the
+      point of it. Here the stored value is a foreign key, and "the owner will
+      be 8f3c…" answers nobody's question about whether the file is right.
+    */
+    const display: Record<string, unknown> = { ...values };
+    for (const f of module.fields) {
+      if ((f.uitype === 'owner' || f.uitype === 'user') && typeof display[f.name] === 'string') {
+        display[f.name] = people.names.get(String(display[f.name])) ?? display[f.name];
+      }
+    }
+    preview.push({ row: sheetRow, outcome, matched, problems: [], values: display });
   }
 
   res.json({
@@ -1363,9 +1378,10 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
       { created: [], skipped: [], optionsAdded, optionsSkipped };
     let cancelled = false;
 
+    const people = await loadPeople();
     for (const [i, raw] of rows.entries()) {
       const { values, unreadable } = prepareRow(raw, {
-        mapping, fields: live.fields, canonical, multiValued, ctx: normaliseCtx,
+        mapping, fields: live.fields, canonical, multiValued, ctx: normaliseCtx, people,
       });
       if (unreadable.length) {
         failed++;

@@ -8,6 +8,7 @@
  */
 import type { FieldMeta } from '@ipropy/shared';
 import { normaliseForField, type NormaliseContext } from './normalise.js';
+import { resolvePerson, type People } from './people.js';
 
 export interface PreparedRow {
   values: Record<string, unknown>;
@@ -23,6 +24,8 @@ export interface PrepareOptions {
   /** Fields whose cell holds a list rather than one value. */
   multiValued: Set<string>;
   ctx: NormaliseContext;
+  /** Colleagues by name and email, for an Assigned To column. */
+  people?: People;
 }
 
 export function prepareRow(raw: Record<string, string>, opts: PrepareOptions): PreparedRow {
@@ -45,6 +48,22 @@ export function prepareRow(raw: Record<string, string>, opts: PrepareOptions): P
       rather than a raw database error.
     */
     const fieldMeta = opts.fields.find((f) => f.name === fieldName);
+
+    /*
+      An owner column holds a person's name, never their id.
+
+      The record API is right to insist on an id — it is a foreign key. But a
+      file saying "Rakesh" used to fail every single row with "Assigned To must
+      reference a valid record", which is true and useless. Resolved here, and
+      named here when it cannot be: "there is nobody here called Rakesh" is
+      something an admin can act on.
+    */
+    if (fieldMeta && (fieldMeta.uitype === 'owner' || fieldMeta.uitype === 'user') && opts.people) {
+      const who = resolvePerson(v, opts.people);
+      if (who.problem) { unreadable.push(`${header}: ${who.problem}`); continue; }
+      if (who.id) { values[fieldName] = who.id; continue; }
+    }
+
     let cell: unknown = v;
     if (fieldMeta) {
       const read = normaliseForField(fieldMeta, v, opts.ctx);
