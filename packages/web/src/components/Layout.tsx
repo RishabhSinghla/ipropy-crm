@@ -299,7 +299,11 @@ function NewRecordButton({ modules }: { modules: ModuleSummary[] }): JSX.Element
     <Dropdown
       align="right"
       trigger={(
-        <button className="btn-primary btn-sm shrink-0 gap-1" title="Create a new record" data-testid="global-create">
+        /* Named "New record", not "Create…". The word is hidden below `sm`, so
+           the accessible name falls back to this — and "Create a new record"
+           collided with every form's own Create button in the mobile suite,
+           which is the kind of failure a name chosen for prose causes. */
+        <button className="btn-primary btn-sm shrink-0 gap-1" title="New record" aria-label="New record" data-testid="global-create">
           <Plus className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">New</span>
           <ChevronDown className="h-3 w-3 opacity-80" />
