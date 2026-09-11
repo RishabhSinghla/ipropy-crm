@@ -1,0 +1,58 @@
+# Revoke a production API key, by name.
+#
+# Exists because one had to be revoked in a hurry and there was no way to do it
+# without a browser session: `create-api-key.yml` published a working key into
+# this repository's Actions log on 18 August 2026, and the repository is public.
+#
+# Revoking is a one-way door for that key — anything still using it stops
+# working immediately — so it names the key rather than taking an id, prints
+# what it is about to do, and refuses if the name matches more than one.
+#
+# Prints no secret. The prefix is stored in the clear in `ipy_api_key` precisely
+# so a key can be identified without its value, and even that is not printed
+# here; the name and the dates are enough to know which one you mean.
+name: Revoke API key
+
+on:
+  workflow_dispatch:
+    inputs:
+      name:
+        description: "The key's name, exactly as 'Check production' lists it"
+        required: true
+
+jobs:
+  revoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install psql 18
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: Revoke it
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          KEY_NAME: ${{ inputs.name }}
+        run: |
+          set -euo pipefail
+
+          COUNT="$(psql "$DATABASE_URL" -tAc \
+            "SELECT count(*) FROM ipy_api_key WHERE name = '${KEY_NAME}' AND revoked_at IS NULL")"
+
+          if [ "$COUNT" = "0" ]; then
+            echo "::error::No live key called '${KEY_NAME}'. 'Check production' lists the names."
+            exit 1
+          fi
+          if [ "$COUNT" != "1" ]; then
+            echo "::error::${COUNT} live keys share that name. Revoking the wrong one stops something working; refusing."
+            exit 1
+          fi
+
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v name="$KEY_NAME" <<'SQL'
+          UPDATE ipy_api_key SET revoked_at = now() WHERE name = :'name' AND revoked_at IS NULL;
+          SQL
+
+          echo "::notice::Revoked '${KEY_NAME}'. Anything still presenting it now gets a 401."
+          echo "::notice::Mint a replacement with 'Create API key' — it writes into a repository secret and prints nothing."
