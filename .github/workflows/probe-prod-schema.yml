@@ -189,6 +189,24 @@ jobs:
                  || ', recognised as an area unit=' ||
                     (SELECT count(*) FROM v WHERE lower(trim(v.raw)) IN (SELECT label FROM u));"
           echo
+          echo "=== why the public catalogue shows what it shows (counts only) ==="
+          # `/api/public/properties` is Available *and* published. Both halves
+          # are ordinary record data an admin edits, so an empty shelf is a
+          # true answer as often as it is a fault — and from the outside the
+          # two look identical. This says which.
+          psql "$PROD_DATABASE_URL" -tAc \
+            "SELECT 'properties=' || count(*)
+                 || ', status Available=' || count(*) FILTER (WHERE status = 'Available')
+                 || ', publish_to_web true=' || count(*) FILTER (WHERE custom_fields ->> 'publish_to_web' IN ('true','1','yes'))
+                 || ', publish_to_web set at all=' || count(*) FILTER (WHERE custom_fields ? 'publish_to_web')
+                 || ', both=' || count(*) FILTER (WHERE status = 'Available'
+                                              AND custom_fields ->> 'publish_to_web' IN ('true','1','yes'))
+               FROM ipy_e_properties;"
+          psql "$PROD_DATABASE_URL" -tAc \
+            "SELECT 'distinct publish_to_web values=' ||
+                    coalesce(string_agg(DISTINCT coalesce(custom_fields ->> 'publish_to_web', '(absent)'), ', '), '(none)')
+               FROM ipy_e_properties;"
+          echo
           echo "=== values archived by a permanent delete (counts only) ==="
           psql "$PROD_DATABASE_URL" -tAc \
             "SELECT coalesce(string_agg(table_name || '.' || column_name || '=' || n, ', '), '(none)')
