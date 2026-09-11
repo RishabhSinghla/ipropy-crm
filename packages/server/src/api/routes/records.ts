@@ -273,6 +273,18 @@ recordsRouter.post('/:module/:id/matches/:targetId/feedback', asyncHandler(async
   res.json({ ok: true, decision });
 }));
 
+/** A match action is a reversible working decision, not a permanent verdict. */
+recordsRouter.delete('/:module/:id/matches/:targetId/feedback', asyncHandler(async (req, res) => {
+  const user = getUser(req); const scope = getScope(req);
+  await assertModuleAccess(user, req.params.module, 'edit');
+  if (!(await canAccessRecord(scope, req.params.module, req.params.id, 'view'))) throw new NotFoundError('Record not found');
+  await db.query(
+    `DELETE FROM ipy_match_feedback WHERE source_record_id = $1 AND target_record_id = $2 AND decided_by = $3`,
+    [req.params.id, req.params.targetId, user.id],
+  );
+  res.json({ ok: true });
+}));
+
 /** Saved exports retain Field IDs, so a field rename never breaks a template. */
 recordsRouter.get('/:module/export/templates', asyncHandler(async (req, res) => {
   const user = getUser(req);

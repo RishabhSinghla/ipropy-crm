@@ -102,9 +102,36 @@ export async function buildTimeline(
     ]);
 
   const entries: TimelineEntry[] = [];
+  // Audit values are stored faithfully as IDs. The timeline is for people,
+  // though, so resolve assignee changes before rendering them.
+  const assignmentIds = new Set<string>();
+  for (const row of audit.rows) {
+    for (const raw of Array.isArray(row.changes) ? row.changes : []) {
+      const change = raw as { field?: string; from?: unknown; to?: unknown };
+      if (change.field !== 'owner_id') continue;
+      if (typeof change.from === 'string') assignmentIds.add(change.from);
+      if (typeof change.to === 'string') assignmentIds.add(change.to);
+    }
+  }
+  const people = assignmentIds.size
+    ? await conn.query<{ id: string; name: string }>(
+        `SELECT id, trim(first_name || ' ' || last_name) AS name FROM ipy_user WHERE id = ANY($1::uuid[])`,
+        [[...assignmentIds]],
+      )
+    : { rows: [] as { id: string; name: string }[] };
+  const personName = new Map(people.rows.map((person) => [person.id, person.name]));
 
   for (const r of audit.rows) {
-    const changes = Array.isArray(r.changes) ? r.changes : [];
+    const changes = (Array.isArray(r.changes) ? r.changes : []).map((raw) => {
+      const change = raw as Record<string, unknown>;
+      if (change.field !== 'owner_id') return change;
+      return {
+        ...change,
+        label: 'Assigned to',
+        fromDisplay: typeof change.from === 'string' ? personName.get(change.from) ?? '—' : '—',
+        toDisplay: typeof change.to === 'string' ? personName.get(change.to) ?? '—' : '—',
+      };
+    });
     // A create event lists every initial value — too noisy for a feed.
     /*
       Where a record came from belongs in its own history.

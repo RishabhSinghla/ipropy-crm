@@ -786,6 +786,8 @@ export const api = {
     request<Response>(`/api/records/${module}/export`, { method: 'POST', body: data, raw: true }),
   matchFeedback: (module: string, id: string, targetId: string, decision: 'shortlisted' | 'not_suitable' | 'follow_up') =>
     post(`/api/records/${module}/${id}/matches/${targetId}/feedback`, { decision }),
+  clearMatchFeedback: (module: string, id: string, targetId: string) =>
+    del(`/api/records/${module}/${id}/matches/${targetId}/feedback`),
   matchFeedbackList: (module: string, id: string) => get<{ targetId: string; decision: 'shortlisted' | 'not_suitable' | 'follow_up' }[]>(`/api/records/${module}/${id}/matches/feedback`),
   exportTemplates: (module: string) => get<{ id: string; name: string; columns: { fieldId: string; header?: string }[]; filter: FilterGroup | null; isDefault: boolean }[]>(`/api/records/${module}/export/templates`),
   createExportTemplate: (module: string, data: Record<string, unknown>) => post<{ id: string }>(`/api/records/${module}/export/templates`, data),

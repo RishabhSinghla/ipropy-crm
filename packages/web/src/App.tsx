@@ -85,7 +85,6 @@ export default function App(): JSX.Element {
               <Route path=":module" element={<ListView />} />
               <Route path=":module/new" element={<RecordEdit />} />
               <Route path=":module/:id" element={<RecordDetail />} />
-              <Route path=":module/:id/edit" element={<RecordEdit />} />
             </Route>
 
 

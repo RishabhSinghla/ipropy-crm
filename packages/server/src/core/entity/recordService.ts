@@ -47,6 +47,7 @@ import {
   assertRecordAccess,
   filterWritableFields,
   getFieldPermissions,
+  getSubordinateUserIds,
   recordScopeSql,
   type ScopeContext,
 } from '../permissions/index.js';
@@ -1387,27 +1388,6 @@ export async function massDelete(
   return { deleted, failed };
 }
 
-/**
- * Bulk reassignment may only hand records to an Administrator. A single
- * reassign already goes through the normal owner-field picklist of users the
- * caller can see; bulk moves an entire book of business in one click, with no
- * per-record review, so it is scoped tighter on purpose — to the one role a
- * departing or reorganising rep's records can always land on safely.
- * Administrator is depth 0 in ipy_role.path (see rbac.ts), which is more
- * robust to a role rename than matching on the name string.
- */
-async function assertAdministratorRole(userId: string): Promise<void> {
-  const row = await db.queryOne<{ depth: number; is_admin: boolean }>(
-    `SELECT r.depth, u.is_admin
-       FROM ipy_user u LEFT JOIN ipy_role r ON r.id = u.role_id
-      WHERE u.id = $1`,
-    [userId],
-  );
-  if (!row || (row.depth !== 0 && !row.is_admin)) {
-    throw new ForbiddenError('Bulk reassignment can only be given to an Administrator');
-  }
-}
-
 export async function transferOwnership(
   ctx: ServiceContext,
   moduleName: string,
@@ -1416,7 +1396,21 @@ export async function transferOwnership(
   ownerType: 'user' | 'group' = 'user',
 ): Promise<number> {
   if (ownerType === 'user') {
-    await assertAdministratorRole(newOwnerId);
+    const target = await db.queryOne<{ id: string }>(
+      `SELECT id FROM ipy_user WHERE id = $1 AND deleted_at IS NULL AND is_active = true`,
+      [newOwnerId],
+    );
+    if (!target) throw new ValidationError('Choose an active team member');
+
+    // An administrator may allocate work across the organisation. Everyone
+    // else can only allocate inside their own reporting branch: themselves or
+    // a role below them — never a peer or manager.
+    if (!ctx.user.isAdmin) {
+      const permitted = new Set([ctx.user.id, ...await getSubordinateUserIds(ctx.user)]);
+      if (!permitted.has(newOwnerId)) {
+        throw new ForbiddenError('You can only assign records to yourself or someone below you in the team hierarchy');
+      }
+    }
   }
   let count = 0;
   for (const id of recordIds) {

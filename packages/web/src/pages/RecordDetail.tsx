@@ -313,7 +313,7 @@ export default function RecordDetail(): JSX.Element {
                       ? String(record.display?.[layoutConfig.headerTitleField] ?? record.values[layoutConfig.headerTitleField])
                       : record.label}
                   </h1>
-                  {fieldMap.get('contact_type') && record.values.contact_type && (
+                  {fieldMap.get('contact_type') && Boolean(record.values.contact_type) && (
                     <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-700 dark:bg-brand-950/40 dark:text-brand-300">
                       {record.display?.contact_type ?? String(record.values.contact_type)}
                     </span>
@@ -791,8 +791,9 @@ function TimelineTab({ module, id }: { module: string; id: string }): JSX.Elemen
  * this tab, exactly where the user was.
  */
 function MatchingTab({ module, id, returnQuery }: { module: string; id: string; returnQuery: string }): JSX.Element {
-  const navigate = useNavigate();
   const isContact = module === 'leads';
+  const [minimumScore, setMinimumScore] = useState(0);
+  const [decisionFilter, setDecisionFilter] = useState<'all' | 'unmarked' | 'shortlisted' | 'follow_up' | 'not_suitable'>('all');
 
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['matching', module, id],
@@ -837,22 +838,40 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
   }, [data, isContact]);
   const feedback = async (event: MouseEvent, targetId: string, decision: 'shortlisted' | 'not_suitable' | 'follow_up'): Promise<void> => {
     event.stopPropagation();
-    try { await api.matchFeedback(module, id, targetId, decision); await refetchDecisions(); toast.success(decision === 'shortlisted' ? 'Match shortlisted' : decision === 'not_suitable' ? 'Marked not suitable' : 'Follow-up marked'); }
+    try {
+      if (decisionsByTarget.get(targetId) === decision) {
+        await api.clearMatchFeedback(module, id, targetId);
+        toast.success('Match action cleared');
+      } else {
+        await api.matchFeedback(module, id, targetId, decision);
+        toast.success(decision === 'shortlisted' ? 'Match shortlisted' : decision === 'not_suitable' ? 'Marked not suitable' : 'Follow-up marked');
+      }
+      await refetchDecisions();
+    }
     catch (err) { toast.error('Could not save match decision', (err as Error).message); }
   };
+  const visibleMatches = matches.filter((match) => match.score >= minimumScore && (decisionFilter === 'all' || (decisionFilter === 'unmarked' ? !decisionsByTarget.has(match.id) : decisionsByTarget.get(match.id) === decisionFilter)));
 
   return (
     <div className="card overflow-hidden">
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 p-3 dark:border-slate-800">
         <Link2 className="h-4 w-4 text-brand-500" />
         <span className="text-sm font-medium">
-          {isContact ? 'Matching properties' : 'Matching contacts'}
+          {isContact ? 'Matching properties' : 'Matching contacts'} <span className="text-brand-600">({matches.length})</span>
         </span>
         <p className="hidden text-xs text-muted sm:block">
           {isContact
             ? 'Live inventory against the stated requirement — admin-configured budget headroom, adjacent bedroom counts forgiven'
             : 'Open contacts worth pitching this unit — same engine, reverse direction'}
         </p>
+        <label className="ml-auto flex items-center gap-1 text-xs text-muted">Minimum fit
+          <select className="input h-8 w-16 py-0 text-xs" value={minimumScore} onChange={(e) => setMinimumScore(Number(e.target.value))}>
+            {[0, 50, 70, 85].map((score) => <option key={score} value={score}>{score}%</option>)}
+          </select>
+        </label>
+        <select className="input h-8 w-32 py-0 text-xs" aria-label="Filter match actions" value={decisionFilter} onChange={(e) => setDecisionFilter(e.target.value as typeof decisionFilter)}>
+          <option value="all">All matches</option><option value="unmarked">Not marked</option><option value="shortlisted">Shortlisted</option><option value="follow_up">Follow-up</option><option value="not_suitable">Not suitable</option>
+        </select>
         <button
           onClick={() => void refetch()}
           disabled={isFetching}
@@ -888,17 +907,16 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {matches.map((m) => (
+              {visibleMatches.map((m) => (
                 <tr
                   key={m.id}
-                  className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60"
-                  onClick={() => navigate(`/${isContact ? 'properties' : 'leads'}/${m.id}${returnQuery}`)}
+                  className="hover:bg-slate-50 dark:hover:bg-slate-800/60"
                 >
                   <td className="list-cell"><ScoreChip score={m.score} /></td>
                   <td className="list-cell min-w-40 max-w-56">
-                    <span className="block truncate font-medium text-brand-600 hover:underline dark:text-brand-400">
+                    <Link to={`/${isContact ? 'properties' : 'leads'}/${m.id}${returnQuery}`} target="_blank" rel="noopener noreferrer" className="block truncate font-medium text-brand-600 hover:underline dark:text-brand-400">
                       {m.label}
-                    </span>
+                    </Link>
                   </td>
                   <td className="list-cell hidden whitespace-nowrap tnum sm:table-cell">{m.primary}</td>
                   <td className="list-cell hidden whitespace-nowrap tnum sm:table-cell">{m.secondary}</td>

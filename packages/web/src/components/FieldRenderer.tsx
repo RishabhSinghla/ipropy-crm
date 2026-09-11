@@ -1213,6 +1213,16 @@ export function UserPicker({
           <Avatar name={selectedName} size={20} />
         </span>
       )}
+      {value && !disabled && (
+        <button
+          type="button"
+          className="absolute right-8 top-1/2 -translate-y-1/2 rounded px-1 text-xs text-muted hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+          onClick={() => onChange(null)}
+          aria-label={`Clear ${label ?? 'assignee'}`}
+        >
+          Clear
+        </button>
+      )}
       <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
       {selectedName && <style>{`select { padding-left: 2rem; }`}</style>}
     </div>
