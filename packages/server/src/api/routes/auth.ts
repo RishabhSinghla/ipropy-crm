@@ -2,7 +2,7 @@ import { Router } from 'express';
 import crypto from 'node:crypto';
 import { z } from 'zod';
 import { clearRefreshCookie, readRefreshToken, setRefreshCookie } from '../../core/auth/refreshCookie.js';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { db, queryOne } from '../../db/pool.js';
 import { config } from '../../config.js';
 import { logger } from '../../utils/logger.js';
@@ -17,13 +17,54 @@ import { clearPinDeviceCookie } from '../../core/auth/devicePin.js';
 
 export const authRouter = Router();
 
+/*
+  Two buckets, because one was locking out the wrong people.
+
+  This was keyed on the IP alone, which is how `express-rate-limit` behaves by
+  default, and the whole team shares an IP: an office, or a mobile network's
+  NAT. So twenty failed attempts on *one* account — somebody's password manager
+  filling the wrong entry, or an attacker picking any single name — locked out
+  every colleague behind that address for fifteen minutes, correct password and
+  all. Measured: a second account with the right password got a 429.
+
+  The tight bucket is therefore per account *and* address. An attacker working
+  one account is stopped exactly as before, and a colleague at the next desk is
+  not.
+
+  The loose one is still per address, and is what stops the other attack the
+  first bucket cannot see: spraying one password across a thousand names, where
+  every account has a bucket of its own and none of them fills. It is set high
+  enough that a busy office never meets it.
+
+  `skipSuccessfulRequests` on both: signing in correctly costs nothing, so a
+  working day of real logins cannot exhaust either.
+*/
+export const attemptedAccount = (req: { body?: unknown }): string => {
+  const body = (req.body ?? {}) as { identifier?: unknown; email?: unknown };
+  const raw = String(body.identifier ?? body.email ?? '').trim().toLowerCase();
+  // A phone typed three ways is one account; `phoneKey` is the same reduction
+  // the sign-in itself uses, so the bucket matches what is being attacked.
+  return phoneKey(raw) ?? raw ?? '';
+};
+
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: config.security.loginRateLimit,
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: true,
+  keyGenerator: (req) => `${ipKeyGenerator(req.ip ?? '')}|${attemptedAccount(req)}`,
   message: { error: 'rate_limited', message: 'Too many sign-in attempts. Try again in a few minutes.' },
+});
+
+/** The spray guard: many names, one address. Deliberately generous. */
+const loginSprayLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: config.security.loginRateLimit * 10,
+  standardHeaders: false,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: { error: 'rate_limited', message: 'Too many sign-in attempts from this connection. Try again in a few minutes.' },
 });
 
 const loginSchema = z.object({
@@ -46,7 +87,7 @@ function phoneKey(value: string): string | null {
   return digits.length >= 10 ? digits.slice(-10) : null;
 }
 
-authRouter.post('/login', loginLimiter, asyncHandler(async (req, res) => {
+authRouter.post('/login', loginSprayLimiter, loginLimiter, asyncHandler(async (req, res) => {
   const parsed = loginSchema.parse(req.body);
   const identifier = (parsed.identifier ?? parsed.email ?? '').trim();
   const { password } = parsed;
@@ -232,7 +273,7 @@ const passwordSchema = z.object({
  * an address can fill that person's inbox by submitting this form in a loop,
  * and every one of those emails costs against a small monthly allowance.
  */
-authRouter.post('/forgot-password', loginLimiter, asyncHandler(async (req, res) => {
+authRouter.post('/forgot-password', loginSprayLimiter, loginLimiter, asyncHandler(async (req, res) => {
   const { email } = z.object({ email: z.string().email().max(200) }).parse(req.body);
 
   // Said before anything else, and identically in every branch below.
@@ -309,7 +350,7 @@ function escapeHtml(value: string): string {
  * change-password exactly: sessions and device PINs die, because a reset is a
  * recovery from "somebody may have my account", not a convenience.
  */
-authRouter.post('/reset-password', loginLimiter, asyncHandler(async (req, res) => {
+authRouter.post('/reset-password', loginSprayLimiter, loginLimiter, asyncHandler(async (req, res) => {
   const { token, newPassword } = z.object({
     token: z.string().min(20).max(200),
     newPassword: z.string().min(8).max(200),
