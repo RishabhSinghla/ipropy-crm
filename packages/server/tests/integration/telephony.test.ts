@@ -210,9 +210,12 @@ describe('a call logged by hand', () => {
   });
 
   it('adds a disposition to an already-synced call instead of making a twin', async () => {
+    const admin = await adminContext();
+    const mobile = `96${String(Date.now()).slice(-8)}`;
+    const lead = await createRecord(admin, 'leads', leadInput({ full_name: 'Synced Call Lead', mobile }));
     const externalId = `synced-before-save-${Date.now()}`;
     await syncCalls(device, [{
-      externalId, number: MOBILE, type: 2,
+      externalId, number: mobile, type: 2,
       timestamp: Date.now() - 45_000, durationSeconds: 45, contactName: null,
     }]);
     const synced = await db.queryOne<{ id: string }>(
@@ -221,8 +224,8 @@ describe('a call logged by hand', () => {
     );
 
     const logged = await logManualCall({
-      userId: device.userId, recordId: leadId, module: 'leads',
-      toNumber: MOBILE, direction: 'outbound', durationSeconds: 60,
+      userId: device.userId, recordId: lead.id, module: 'leads',
+      toNumber: mobile, direction: 'outbound', durationSeconds: 60,
       disposition: 'Interested', notes: 'Asked for inventory details',
     });
     expect(logged.callId).toBe(synced!.id);
