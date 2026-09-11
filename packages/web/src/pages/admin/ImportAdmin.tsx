@@ -2,7 +2,7 @@ import { type JSX, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
-import { AlertTriangle, Database, Download, FileUp, Save, Upload } from 'lucide-react';
+import { AlertTriangle, Database, Download, FileUp, Plus, Save, Upload } from 'lucide-react';
 import { api, authedFileUrl, type ImportSection } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
 import { cn } from '../../lib/utils';
@@ -55,6 +55,7 @@ export default function ImportAdmin(): JSX.Element {
   const [templateName, setTemplateName] = useState('');
   const [openJob, setOpenJob] = useState<JobRow | null>(null);
   const [reviewJob, setReviewJob] = useState<JobRow | null>(null);
+  const [newFieldHeader, setNewFieldHeader] = useState<string | null>(null);
 
   const { data: jobs } = useQuery({
     queryKey: ['import-jobs'],
@@ -326,6 +327,9 @@ export default function ImportAdmin(): JSX.Element {
                   }))}
                   className="max-w-xs py-1.5 text-sm"
                 />
+                <button className="btn-secondary btn-sm" onClick={() => setNewFieldHeader(header)} title="Create a CRM field for this column">
+                  <Plus className="h-3.5 w-3.5" /> New field
+                </button>
               </div>
             ))}
           </div>
@@ -423,7 +427,61 @@ export default function ImportAdmin(): JSX.Element {
           onClose={() => setReviewJob(null)}
         />
       )}
+      {newFieldHeader && preview && (
+        <CreateImportField
+          module={moduleName}
+          header={newFieldHeader}
+          onClose={() => setNewFieldHeader(null)}
+          onCreated={(field) => {
+            setPreview((current) => current ? { ...current, fields: [...current.fields, field] } : current);
+            setMapping((current) => ({ ...current, [newFieldHeader]: field.name }));
+            setNewFieldHeader(null);
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+/** Create a metadata field without abandoning the import the admin is doing. */
+function CreateImportField({ module, header, onClose, onCreated }: {
+  module: string; header: string; onClose: () => void;
+  onCreated: (field: { name: string; internalId: string; label: string; uitype: string; mandatory: boolean }) => void;
+}): JSX.Element {
+  const [label, setLabel] = useState(header);
+  const [uitype, setUitype] = useState('string');
+  const [busy, setBusy] = useState(false);
+  const save = async (): Promise<void> => {
+    const cleanLabel = label.trim();
+    const name = cleanLabel.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60);
+    if (!cleanLabel || !name) { toast.error('Enter a field name'); return; }
+    setBusy(true);
+    try {
+      const field = await api.createField(module, {
+        name, label: cleanLabel, uitype, isMandatory: false, isReadonly: false, isUnique: false,
+        displayType: 'default', config: {}, quickCreate: true, massEditable: true, searchable: true,
+      }) as { name: string; internalId: string; label: string; uitype: string; isMandatory: boolean };
+      onCreated({ name: field.name, internalId: field.internalId, label: field.label, uitype: field.uitype, mandatory: field.isMandatory });
+      toast.success('Field created', `“${field.label}” is now mapped to ${header}.`);
+    } catch (err) {
+      toast.error('Could not create field', (err as Error).message);
+    } finally { setBusy(false); }
+  };
+  return (
+    <Modal open title={`Create field for “${header}”`} onClose={onClose} size="sm">
+      <p className="mb-3 text-sm text-muted">This adds the field through the CRM’s Universal Field Manager and maps this column to it immediately.</p>
+      <label className="label">Field label</label>
+      <input className="input mb-3" value={label} onChange={(event) => setLabel(event.target.value)} autoFocus />
+      <label className="label">Field type</label>
+      <Select value={uitype} onChange={setUitype} options={[
+        { value: 'string', label: 'Text' }, { value: 'textarea', label: 'Long text' },
+        { value: 'integer', label: 'Whole number' }, { value: 'decimal', label: 'Decimal number' },
+        { value: 'currency', label: 'Currency / Budget / Demand' }, { value: 'area', label: 'Area / Size' },
+        { value: 'date', label: 'Date' }, { value: 'phone', label: 'Phone' }, { value: 'email', label: 'Email' },
+        { value: 'picklist', label: 'Dropdown' }, { value: 'multipicklist', label: 'Multiple choice' },
+      ]} />
+      <div className="mt-5 flex justify-end gap-2"><button className="btn-secondary" onClick={onClose}>Cancel</button><button className="btn-primary" onClick={() => void save()} disabled={busy}>{busy && <Spinner />}Create & map</button></div>
+    </Modal>
   );
 }
 
