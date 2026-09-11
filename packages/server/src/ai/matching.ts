@@ -338,8 +338,21 @@ async function queryInventory(req: Requirement, config: MatchingConfig, limit: n
      JOIN ipy_record r ON r.id = p.record_id
      WHERE r.is_deleted = false
        AND to_jsonb(p)->>'status' = 'Available'
-       AND (${maxP}::numeric IS NULL OR ${priceExpr} <= ${maxP})
-       AND (${minP}::numeric IS NULL OR ${priceExpr} >= ${minP})
+       -- A unit with no price is unknown, not unaffordable.
+       --
+       -- NULL <= :max is NULL rather than true, so these two lines quietly
+       -- excluded every unpriced unit the moment a buyer stated a budget — 42
+       -- of production's 52. From a rep's seat that reads as having almost no
+       -- stock, and it contradicts scoreProperty, which skips the budget term
+       -- for exactly these units rather than dropping them. This is the same
+       -- NULL semantics core/settings/priceField.ts was written for, one
+       -- query along.
+       --
+       -- They rank below priced units in the ORDER BY, so a buyer still sees
+       -- what actually fits first, and scoreProperty says on each one that
+       -- there is no price on record.
+       AND (${maxP}::numeric IS NULL OR ${priceExpr} IS NULL OR ${priceExpr} <= ${maxP})
+       AND (${minP}::numeric IS NULL OR ${priceExpr} IS NULL OR ${priceExpr} >= ${minP})
        AND (${projectP}::text IS NULL OR to_jsonb(p)->>'project_name' ILIKE ${projectP})
        ${scopeSql}
      -- Relevance before price, for the same reason the reverse match orders by
@@ -354,6 +367,9 @@ async function queryInventory(req: Requirement, config: MatchingConfig, limit: n
                 OR lower(btrim(to_jsonb(p)->>${bedroomFieldP})) = ANY(${wantedLabelsP}::text[])
               ) DESC NULLS LAST,
               (to_jsonb(p)->>'locality' = ANY(${locationP}::text[])) DESC NULLS LAST,
+              -- Priced units first among equals: an unpriced one is a lead for
+              -- the rep to go and price, not the unit to pitch this morning.
+              (${priceExpr} IS NOT NULL) DESC,
               ${priceExpr} ASC NULLS LAST
      LIMIT ${limitP}`,
     params.all(),
@@ -378,6 +394,11 @@ function scoreProperty(row: PropertyRow, req: Requirement, config: MatchingConfi
   const grace = config.priceGracePercent / 100;
 
   // Budget fit — the dominant factor.
+  if (req.budget && !price) {
+    // Said plainly rather than left as a silent gap in the reasons: the unit is
+    // in the list on its other merits and nobody has priced it yet.
+    mismatches.push('No price on record — worth confirming before pitching it');
+  }
   if (req.budget && price) {
     const ratio = price / req.budget;
     if (ratio <= 1 - grace / 2) { score += 22; reasons.push(`${formatIndianPrice(price)} sits comfortably under the ${formatIndianPrice(req.budget)} budget`); }
@@ -700,6 +721,21 @@ function revivalReason(
 ): string | null {
   if (!lostReason) return null;
   const price = property.matched_price ?? property.total_price ?? property.base_price ?? 0;
+  /*
+    Null, not zero, for the budget band.
+
+    An unpriced unit fell back to 0 here, and the band below is
+    `budget ∈ [p/(1+g), p/(1−g)]` — which at p = 0 is `budget ∈ [0, 0]`, so the
+    only buyers who could match were those with no budget at all. The forward
+    direction now keeps unpriced units in the running and scores them on their
+    other merits, and this is the same statement from the other side: an
+    unknown price is not a price of nothing, and it cannot exclude anybody.
+
+    Without this the two directions disagree again, in the way
+    `definition-of-done.mjs` exists to catch — a unit that matched a buyer
+    going one way, and no buyers at all coming back.
+  */
+  const bandPrice = property.matched_price ?? property.total_price ?? property.base_price ?? null;
   const inBudget = Boolean(req.budget && price && price <= req.budget);
 
   switch (lostReason) {
@@ -812,10 +848,25 @@ export async function matchBuyersForProperty(
   const property = toPropertyRow(propertyRaw.row, propertyRaw.label, bedroomField, areaField, mappedPriceField);
 
   const price = property.matched_price ?? property.total_price ?? property.base_price ?? 0;
+  /*
+    Null, not zero, for the budget band.
+
+    An unpriced unit fell back to 0 here, and the band below is
+    `budget ∈ [p/(1+g), p/(1−g)]` — which at p = 0 is `budget ∈ [0, 0]`, so the
+    only buyers who could match were those with no budget at all. The forward
+    direction now keeps unpriced units in the running and scores them on their
+    other merits, and this is the same statement from the other side: an
+    unknown price is not a price of nothing, and it cannot exclude anybody.
+
+    Without this the two directions disagree again, in the way
+    `definition-of-done.mjs` exists to catch — a unit that matched a buyer
+    going one way, and no buyers at all coming back.
+  */
+  const bandPrice = property.matched_price ?? property.total_price ?? property.base_price ?? null;
 
   // One accumulator: the scope fragment appends its own params after these.
   const params = new SqlParams();
-  const priceP = params.add(price);
+  const priceP = params.add(bandPrice);
   const gracePP = params.add(config.priceGracePercent / 100);
   const configP = params.add(acceptableConfigurations(parsedBedrooms(property)));
   const localityP = params.add(property.locality ?? '');
@@ -857,6 +908,7 @@ export async function matchBuyersForProperty(
              -- ₹2.6 Cr buyer never appeared against the ₹2.34 Cr flat that
              -- scored 90 for them in the other direction. The person with more
              -- money than the unit costs is the best buyer it has.
+             OR ${priceP}::numeric IS NULL
              OR (ipy_try_numeric(to_jsonb(l)->>'budget') >= ${priceP} / (1 + ${gracePP}::numeric)
                  AND ipy_try_numeric(to_jsonb(l)->>'budget')
                      <= ${priceP} / NULLIF(1 - ${gracePP}::numeric, 0)))

@@ -147,9 +147,31 @@ async function main() {
   const matches = match.body?.matches;
   check('Contact → Find Matching Properties', match.status === 200 && Array.isArray(matches),
     `HTTP ${match.status} ${Array.isArray(matches) ? `${matches.length} matches` : JSON.stringify(match.body).slice(0, 120)}`);
+  /*
+    A buyer with a budget and an inventory with no prices correctly matches
+    nothing, and that is not the same fault as an engine that cannot match.
+    This check could not tell them apart: it reported a red that read as
+    "matching is broken" whenever the units simply had no price on them, which
+    is exactly what the probe's fill-rate step used to do with a dropped
+    column. So it asks the price side first and says which it is.
+
+    The price field is whichever one Budget is mapped to — the same answer the
+    engine uses — read off the matching setup rather than assumed to be a
+    column called `base_price`.
+  */
+  const pairs = (await call('GET', '/api/admin/matching-config')).body?.fieldMap ?? [];
+  const priceField = pairs.find((p) => /budget|price/i.test(String(p.contactField ?? '')))?.propertyField;
+  const priced = priceField
+    ? (await call('POST', '/api/records/properties/search', {
+        filter: { logic: 'AND', conditions: [{ field: priceField, operator: 'is_not_empty' }] }, pageSize: 1,
+      })).body?.total ?? 0
+    : null;
+  const canMatch = statedRequirement && priced !== 0;
   check('…and a contact with a stated budget gets at least one',
-    !statedRequirement || (Array.isArray(matches) && matches.length > 0),
-    statedRequirement ? '' : 'skipped — no lead in this database has a budget');
+    !canMatch || (Array.isArray(matches) && matches.length > 0),
+    !statedRequirement ? 'skipped — no lead in this database has a budget'
+      : priced === 0 ? `skipped — no unit has a price in "${priceField}", so nothing can match on budget`
+      : '');
 
   /*
     Asked about a unit somebody actually matches, not the first row in the
