@@ -447,10 +447,15 @@ Both were mine, both invisible, and both had been live for a day or more.
   one in Admin → Integrations" until a Groq key is pasted in. Base URL and model are already right.
 * **Music sends only parameters its model accepts.** `modalities` and `audio` were on the request
   and are on no music model's `supported_parameters`, so the whole call was refused in 0.0s.
-* **Semantic search is built and has never been switched on.** pgvector 0.8.6 is installed,
-  `ipy_embedding` exists, and it holds zero rows, because indexing needs the embed model above.
-  Searching by meaning across leads, notes, messages and calls is inert until that is fixed — and it
-  fails quietly, as ordinary keyword search.
+* **Semantic search is live.** Checked on production 11 September 2026: 355 rows in
+  `ipy_embedding` across both leads and properties, written by
+  `nvidia/nemotron-3-embed-1b:free` — the very id the note above records as failing — with the
+  newest that morning. Whatever was wrong account-side has been sorted; **do not go hunting for a
+  replacement id.** Rerank is still unverified, because it runs at query time and leaves nothing
+  behind to look at.
+
+  The model settings live in `ipy_setting` under `ai_models.*`, not `ai.model*`, and
+  `scripts/../.github/workflows/check-prod.yml` prints them along with the embedding count.
 * **Site capture now runs end to end and is proved.** A property finished in the CRM reaches n8n,
   the worker names, finishes, cuts every shape, watermarks, builds the reel and the walkthrough,
   and the finished pictures come back onto the record. Run 4733 is the reference. What has *still*
