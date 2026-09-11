@@ -72,24 +72,39 @@ jobs:
           # aborts the step (`shell: bash -e`) and hides everything after it.
           # That is the same lesson the query code already learned.
           echo "=== fill rates on the columns matching reads (counts only) ==="
-          psql "$PROD_DATABASE_URL" -tAc \
-            "SELECT 'properties rows=' || count(*)
-                 || ', carpet_area=' || count(to_jsonb(p)->>'carpet_area')
-                 || ', configuration=' || count(to_jsonb(p)->>'configuration')
-                 || ', base_price=' || count(to_jsonb(p)->>'base_price')
-                 || ', total_price=' || count(to_jsonb(p)->>'total_price')
-                 || ', demand=' || count(to_jsonb(p)->>'demand')
-                 || ', locality=' || count(to_jsonb(p)->>'locality')
-                 || ', status=' || count(to_jsonb(p)->>'status')
-               FROM ipy_e_properties p;"
-          psql "$PROD_DATABASE_URL" -tAc \
-            "SELECT 'leads rows=' || count(*)
-                 || ', budget=' || count(to_jsonb(l)->>'budget')
-                 || ', configuration=' || count(to_jsonb(l)->>'configuration')
-                 || ', preferred_locations=' || count(to_jsonb(l)->>'preferred_locations')
-                 || ', area=' || count(to_jsonb(l)->>'area')
-                 || ', mobile=' || count(to_jsonb(l)->>'mobile')
-               FROM ipy_e_leads l;"
+          # Counts only — never a value — because this log is public. A field
+          # can exist, be mapped and still contribute nothing to a match
+          # because every row is null, which looks identical to "matching is
+          # bad" from the outside.
+          #
+          # `count(to_jsonb(p)->>'col')` on a column production has dropped
+          # returns 0, not an error — so the honest answer "that column is
+          # gone" and the alarming one "every row is empty" printed the same
+          # digit. This asks information_schema which of them still exist and
+          # says `absent` for the rest, which is the fact worth knowing: a
+          # dropped column is a 42703 waiting for the next query that names it.
+          for spec in "ipy_e_properties:carpet_area,area_size,configuration,base_price,asking_price,total_price,demand,locality,preferred_locations,status" \
+                      "ipy_e_leads:budget,configuration,preferred_locations,area,area_size,mobile,status"; do
+            table="${spec%%:*}"; cols="${spec#*:}"
+            live=$(psql "$PROD_DATABASE_URL" -tAc \
+              "SELECT coalesce(string_agg(c, ', ' || chr(39)), '')
+                 FROM unnest(string_to_array('$cols', ',')) c
+                WHERE EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = '$table' AND column_name = c);")
+            gone=$(psql "$PROD_DATABASE_URL" -tAc \
+              "SELECT coalesce(string_agg(c, ', '), '(none)')
+                 FROM unnest(string_to_array('$cols', ',')) c
+                WHERE NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                   WHERE table_name = '$table' AND column_name = c);")
+            sel=$(psql "$PROD_DATABASE_URL" -tAc \
+              "SELECT coalesce(string_agg(format('%L || %L || count(to_jsonb(t)->>%L)', ', ' || c || '=', '', c), ' || '), )
+                 FROM unnest(string_to_array('$cols', ',')) c
+                WHERE EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = '$table' AND column_name = c);")
+            psql "$PROD_DATABASE_URL" -tAc \
+              "SELECT '$table rows=' || count(*) || $sel FROM $table t;"
+            echo "  absent from $table: $gone"
+          done
           echo
           echo "=== are the matching pairs actually configured? ==="
           psql "$PROD_DATABASE_URL" -tAc \
@@ -100,11 +115,18 @@ jobs:
               WHERE fm.purpose = 'matching' AND fm.is_active;"
           echo
           echo "=== json-storage (admin-created) fields ==="
+          # Name alone is not enough to reproduce one. A picklist without its
+          # `picklist` config has no list, and an area field without its
+          # `unitMaster` has no Sq Ft / Sq Yd — so a mirror built from names
+          # only tells you the CRM is broken in ways production is not.
           for m in properties leads; do
             psql "$PROD_DATABASE_URL" -tAc \
-              "SELECT '$m: ' || coalesce(string_agg(f.name, ', ' ORDER BY f.name), '(none)')
+              "SELECT '$m|' || f.name || '|' || f.uitype || '|' || f.label
+                      || '|' || coalesce(f.config::text, '{}')
+                      || '|' || (CASE WHEN f.is_active THEN 'active' ELSE 'hidden' END)
                  FROM ipy_field f JOIN ipy_module mo ON mo.id = f.module_id
-                WHERE mo.name = '$m' AND f.storage = 'json';"
+                WHERE mo.name = '$m' AND f.storage = 'json'
+                ORDER BY f.name;"
           done
           echo
           echo "=== values archived by a permanent delete (counts only) ==="
