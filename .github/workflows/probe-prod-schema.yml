@@ -206,6 +206,18 @@ jobs:
             "SELECT 'distinct publish_to_web values=' ||
                     coalesce(string_agg(DISTINCT coalesce(custom_fields ->> 'publish_to_web', '(absent)'), ', '), '(none)')
                FROM ipy_e_properties;"
+          # The exact predicate `publishClause` applies, soft-delete included.
+          # A deleted record stays in the payload table, so every count above
+          # can say two and the site still, correctly, show none.
+          psql "$PROD_DATABASE_URL" -tAc \
+            "SELECT 'published and not deleted=' || count(*) FILTER (
+                      WHERE p.custom_fields ->> 'publish_to_web' = 'true' AND r.is_deleted = false)
+                 || ', published but deleted=' || count(*) FILTER (
+                      WHERE p.custom_fields ->> 'publish_to_web' = 'true' AND r.is_deleted)
+                 || ', and Available too=' || count(*) FILTER (
+                      WHERE p.custom_fields ->> 'publish_to_web' = 'true' AND r.is_deleted = false
+                        AND p.status = 'Available')
+               FROM ipy_e_properties p JOIN ipy_record r ON r.id = p.record_id;"
           echo
           echo "=== values archived by a permanent delete (counts only) ==="
           psql "$PROD_DATABASE_URL" -tAc \
