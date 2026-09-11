@@ -15,9 +15,11 @@ import { db, transaction } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
-import type { AuthUser } from '@ipropy/shared';
+import type { AuthUser, FieldMeta } from '@ipropy/shared';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../utils/errors.js';
-import { assertCapability, assertModuleAccess, canAccessRecord } from '../../core/permissions/index.js';
+import {
+  assertCapability, assertModuleAccess, canAccessRecord, getFieldPermissions,
+} from '../../core/permissions/index.js';
 import { getDriver, getStorageSettings } from '../../core/storage/index.js';
 import { buildStorageKey } from '../../core/storage/keys.js';
 import {
@@ -938,6 +940,27 @@ async function assertCanImport(user: AuthUser, moduleName: string): Promise<void
   await assertModuleAccess(user, moduleName, 'import');
 }
 
+/**
+ * The fields this person may actually fill from a file.
+ *
+ * A hidden or read-only field is not an import target, and offering one is
+ * worse than useless: the record API refuses the value — correctly — so the
+ * column maps to something that quietly does nothing, and the screen has told
+ * somebody a field exists that their profile hides from them everywhere else.
+ */
+async function importableFields(user: AuthUser, moduleName: string): Promise<FieldMeta[]> {
+  const module = await registry.requireModule(moduleName);
+  const perms = await getFieldPermissions(user, moduleName);
+  return module.fields.filter((f) => {
+    const permission = perms.get(f.name);
+    if (permission === 'hidden' || permission === 'readonly') return false;
+    return f.isActive && !f.isReadonly && f.config.importable !== false
+      // Unit companions are hidden on the form and are still import targets —
+      // a spreadsheet keeps `Area` and `Unit` in two columns.
+      && (f.displayType !== 'hidden' || Boolean(f.config.unitMaster));
+  });
+}
+
 miscRouter.get('/import/:module/template', asyncHandler(async (req, res) => {
   const user = getUser(req);
   await assertCanImport(user, req.params.module);
@@ -1015,7 +1038,8 @@ miscRouter.post('/import/:module/preview', upload.single('file'), asyncHandler(a
     silently mis-mapped column writes mobile numbers into a budget field and
     nobody finds out until a report is wrong.
   */
-  const suggestionList = suggestMapping(module.fields, headers, rows);
+  const allowed = await importableFields(user, req.params.module);
+  const suggestionList = suggestMapping(allowed, headers, rows);
   const suggestions = certainMapping(suggestionList);
 
   // How this file writes its dates, so the wizard can show it and offer to
@@ -1050,11 +1074,7 @@ miscRouter.post('/import/:module/preview', upload.single('file'), asyncHandler(a
     suggestedMapping: matched ? { ...suggestions, ...matched.mapping } : suggestions,
     suggestions: suggestionList,
     dateOrder: { detected: dateOrder.order, certain: dateOrder.certain },
-    fields: module.fields
-      // Unit companions are hidden on the form and are still import targets —
-      // a spreadsheet keeps `Area` and `Unit` in two columns.
-      .filter((f) => f.isActive && !f.isReadonly && f.config.importable !== false
-        && (f.displayType !== 'hidden' || Boolean(f.config.unitMaster)))
+    fields: allowed
       // The options travel with the field so the wizard can offer a dropdown's
       // own list where it asks for one fixed value for the whole file. Typing
       // "new" into a free-text box there writes a status no view matches.
