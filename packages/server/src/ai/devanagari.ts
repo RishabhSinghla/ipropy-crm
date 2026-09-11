@@ -47,6 +47,22 @@ const DIGITS: Record<string, string> = {
   '५': '5', '६': '6', '७': '7', '८': '8', '९': '9',
 };
 
+// Whisper occasionally labels the same Hindi/Hinglish audio as Urdu and
+// returns Perso-Arabic script. This is deliberately phonetic rather than a
+// translation: it keeps the note's words while making them readable to the
+// team in the Latin script they use throughout the CRM.
+const URDU: Record<string, string> = {
+  'ا': 'a', 'آ': 'aa', 'ب': 'b', 'پ': 'p', 'ت': 't', 'ٹ': 't', 'ث': 's',
+  'ج': 'j', 'چ': 'ch', 'ح': 'h', 'خ': 'kh', 'د': 'd', 'ڈ': 'd', 'ذ': 'z',
+  'ر': 'r', 'ڑ': 'r', 'ز': 'z', 'ژ': 'zh', 'س': 's', 'ش': 'sh', 'ص': 's',
+  'ض': 'z', 'ط': 't', 'ظ': 'z', 'ع': 'a', 'غ': 'gh', 'ف': 'f', 'ق': 'q',
+  'ک': 'k', 'ك': 'k', 'گ': 'g', 'ل': 'l', 'م': 'm', 'ن': 'n', 'ں': 'n',
+  'و': 'o', 'ہ': 'h', 'ه': 'h', 'ھ': 'h', 'ء': '', 'ی': 'i', 'ي': 'i',
+  'ے': 'e', 'ئ': 'y', 'ؤ': 'o', 'ۂ': 'h', 'ۃ': 'h', '۔': '.', '،': ',',
+  '۰': '0', '۱': '1', '۲': '2', '۳': '3', '۴': '4',
+  '۵': '5', '۶': '6', '۷': '7', '۸': '8', '۹': '9',
+};
+
 const VIRAMA = '्';
 const ANUSVARA = 'ं';
 const CHANDRABINDU = 'ँ';
@@ -57,17 +73,25 @@ export function hasDevanagari(text: string): boolean {
   return /[ऀ-ॿ]/.test(text);
 }
 
+export function hasUrdu(text: string): boolean {
+  return /[\u0600-\u06ff]/.test(text);
+}
+
 /**
  * Transliterate every Devanagari run in `text`, leaving everything else — the
  * English half of a Hinglish sentence, the numbers, the names — untouched.
  */
 export function toLatin(text: string): string {
-  if (!hasDevanagari(text)) return text;
+  if (!hasDevanagari(text) && !hasUrdu(text)) return text;
 
   let out = '';
   let i = 0;
   while (i < text.length) {
     const ch = text[i]!;
+
+    if (URDU[ch] !== undefined) { out += URDU[ch]; i += 1; continue; }
+    // Arabic vowel marks and zero-width joiners carry no standalone sound.
+    if (/[\u064b-\u065f\u0670\u200c\u200d]/.test(ch)) { i += 1; continue; }
 
     if (DIGITS[ch]) { out += DIGITS[ch]; i += 1; continue; }
     if (VOWELS[ch]) { out += VOWELS[ch]; i += 1; continue; }

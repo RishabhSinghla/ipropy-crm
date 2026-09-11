@@ -102,6 +102,12 @@ export function Modal({
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
 }): JSX.Element | null {
   const panelRef = useRef<HTMLDivElement>(null);
+  // Callers naturally create `onClose` inline. Keeping it in a ref prevents
+  // every keystroke inside a controlled input from tearing down this effect,
+  // restoring focus to the Close button, and then focusing it again. That was
+  // why typing in Call Disposition appeared to throw the cursor out of Notes.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
@@ -122,7 +128,7 @@ export function Modal({
     queueMicrotask(() => (focusable()[0] ?? panelRef.current)?.focus());
 
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') { onClose(); return; }
+      if (e.key === 'Escape') { onCloseRef.current(); return; }
       if (e.key !== 'Tab') return;
 
       // Cycle focus within the dialog rather than letting it escape.
@@ -150,7 +156,7 @@ export function Modal({
       document.body.style.overflow = prev;
       opener?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

@@ -334,7 +334,7 @@ export default function LayoutDesigner(): JSX.Element {
             {layoutType === 'quick_create' && moduleName === 'properties' && (
               <div className="card p-4">
                 <div className="mb-3">
-                  <p className="text-sm font-semibold">Property capture panel</p>
+                  <p className="text-sm font-semibold">Inventory capture panel</p>
                   <p className="text-xs text-muted">
                     Drives the Site visit screen. The field order below is the order it asks for them; choose how many stay visible before "More details".
                   </p>

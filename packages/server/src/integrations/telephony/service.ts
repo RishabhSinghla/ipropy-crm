@@ -464,6 +464,38 @@ export async function logManualCall(input: {
   notes?: string;
 }): Promise<{ callId: string }> {
   const agent = await db.queryOne<{ phone: string | null }>(`SELECT phone FROM ipy_user WHERE id = $1`, [input.userId]);
+  const numberTail = input.toNumber.replace(/\D/g, '').slice(-10);
+  // A paired Android phone may finish syncing a call before the rep presses
+  // Save on the disposition popup. That row is the real call (exact time and
+  // duration), so add the outcome to it instead of creating a manual twin.
+  const synced = numberTail.length === 10 ? await db.queryOne<{ id: string }>(
+    `SELECT id
+       FROM ipy_call
+      WHERE user_id = $1
+        AND record_id IS NOT DISTINCT FROM $2
+        AND direction = $3
+        AND source = 'device'
+        AND ended_at > now() - interval '2 minutes'
+        AND abs(duration_seconds - $5::int) <= 120
+        AND right(regexp_replace(
+          CASE WHEN direction = 'outbound' THEN to_number ELSE from_number END,
+          '\\D', '', 'g'
+        ), 10) = $4
+      ORDER BY ended_at DESC NULLS LAST
+      LIMIT 1`,
+    [input.userId, input.recordId, input.direction, numberTail, input.durationSeconds],
+  ) : null;
+  if (synced) {
+    await db.query(
+      `UPDATE ipy_call
+          SET disposition = COALESCE($2, disposition),
+              notes = COALESCE($3, notes),
+              disposition_at = CASE WHEN $2::text IS NULL THEN disposition_at ELSE now() END
+        WHERE id = $1`,
+      [synced.id, input.disposition ?? null, input.notes ?? null],
+    );
+    return { callId: synced.id };
+  }
   // $7 is read twice, so it needs the same deduced type in both places. `$7 || ' seconds'`
   // made it text while duration_seconds made it integer, and Postgres rejected the whole
   // statement with "inconsistent types deduced for parameter $7" — every manual call log

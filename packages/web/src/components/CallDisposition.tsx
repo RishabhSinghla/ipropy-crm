@@ -1,4 +1,4 @@
-import { createContext, type JSX, type ReactNode, useContext, useState } from 'react';
+import { createContext, type JSX, type ReactNode, useContext, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { CALL_DISPOSITIONS } from '@ipropy/shared';
 import { Mic, Phone, Square } from 'lucide-react';
@@ -37,6 +37,8 @@ export function CallDispositionProvider({
   const [notes, setNotes] = useState('');
   const [placing, setPlacing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const placingRef = useRef(false);
+  const savingRef = useRef(false);
 
   const voice = useVoiceCapture(async (audio) => {
     try {
@@ -48,6 +50,7 @@ export function CallDispositionProvider({
   });
 
   const close = (): void => {
+    voice.cancel();
     setTarget(null);
     setProviderCallId(null);
     setStartedAt(null);
@@ -57,7 +60,8 @@ export function CallDispositionProvider({
   };
 
   const startCall = async (number: string): Promise<void> => {
-    if (placing) return;
+    if (placingRef.current || target) return;
+    placingRef.current = true;
     const clean = number.replace(/[^\d+]/g, '');
     setTarget(number);
     setStartedAt(Date.now());
@@ -76,12 +80,14 @@ export function CallDispositionProvider({
       toast.error('Could not place the call', (err as Error).message);
       close();
     } finally {
+      placingRef.current = false;
       setPlacing(false);
     }
   };
 
   const save = async (): Promise<void> => {
-    if (!target) return;
+    if (!target || savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     try {
       if (providerCallId) {
@@ -99,17 +105,18 @@ export function CallDispositionProvider({
           notes: notes.trim() || undefined,
         });
       }
-      // The visible Calls tab and the timeline must change in the same moment
-      // as the success toast; waiting for stale-time made a saved call look lost.
-      await Promise.all([
+      toast.success('Call logged');
+      // Close as soon as the write succeeds. Refetching the tabs is background
+      // work and must never hold the form on screen after Save.
+      close();
+      void Promise.all([
         queryClient.invalidateQueries({ queryKey: ['record-calls', recordId] }),
         queryClient.invalidateQueries({ queryKey: ['timeline', module, recordId] }),
       ]);
-      toast.success('Call logged');
-      close();
     } catch (err) {
       toast.error('Could not log the call', (err as Error).message);
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };

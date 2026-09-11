@@ -270,7 +270,7 @@ export default function RecordDetail(): JSX.Element {
       key: 'matching',
       // The owner asked for these two labels by name: on a contact, the units
       // that fit; on a property, the people who fit.
-      label: moduleName === 'leads' ? 'Matching property' : 'Matching contacts',
+      label: moduleName === 'leads' ? 'Matching inventory' : 'Matching leads',
       icon: <Link2 className="h-3.5 w-3.5" />,
     }] : []),
     ...meta.relations.map((r) => ({
@@ -952,7 +952,7 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 p-3 dark:border-slate-800">
         <Link2 className="h-4 w-4 text-brand-500" />
         <span className="text-sm font-medium">
-          {isContact ? 'Matching properties' : 'Matching contacts'}{' '}
+          {isContact ? 'Matching inventories' : 'Matching leads'}{' '}
           {/* The count is the first question asked of this tab, so it is in
               the heading rather than under the last row. It shows what the
               filters left when they are narrowing anything. */}
@@ -965,8 +965,8 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <input
             className="input h-8 w-40 py-0 text-xs"
-            placeholder={isContact ? 'Search these units…' : 'Search these contacts…'}
-            aria-label={isContact ? 'Search matching properties' : 'Search matching contacts'}
+            placeholder={isContact ? 'Search these units…' : 'Search these leads…'}
+            aria-label={isContact ? 'Search matching inventories' : 'Search matching leads'}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -993,7 +993,7 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
             className="btn-ghost btn-sm"
           >
             <Search className="h-3 w-3" />
-            {isContact ? 'Browse all inventory' : 'Browse all contacts'}
+            {isContact ? 'Browse all inventories' : 'Browse all leads'}
           </Link>
           <button
             onClick={() => { void refetch(); void refetchNarrative(); }}
@@ -1011,10 +1011,10 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
       ) : !matches.length ? (
         <EmptyState
           icon={<Link2 className="h-8 w-8" />}
-          title={isContact ? 'No matching inventory' : 'No matching contacts'}
+          title={isContact ? 'No matching inventory' : 'No matching leads'}
           body={isContact
             ? 'Nothing available fits the stated requirement right now. Add or reprice a unit, or widen the requirement.'
-            : 'No open contact fits this unit yet. It sells itself when one arrives — check back after the next enquiry.'}
+            : 'No open lead fits this unit yet. It sells itself when one arrives — check back after the next enquiry.'}
         />
       ) : (
         <div className="overflow-x-auto">
@@ -1022,7 +1022,7 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
             <thead>
               <tr>
                 <th className="list-head w-24">Fit</th>
-                <th className="list-head">{isContact ? 'Property' : 'Contact'}</th>
+                <th className="list-head">{isContact ? 'Inventory' : 'Lead'}</th>
                 <th className="list-head hidden sm:table-cell">Bedrooms</th>
                 <th className="list-head hidden sm:table-cell">{isContact ? 'Price' : 'Budget'}</th>
                 {!isContact && <th className="list-head hidden md:table-cell">Status</th>}

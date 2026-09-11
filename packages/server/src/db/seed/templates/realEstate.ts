@@ -40,8 +40,8 @@ const MODULES: ModuleDef[] = [
     // One party record for the whole journey: enquiry → prospect → customer.
     // Labelled the way the desk speaks — a second module for the "converted"
     // half would duplicate the person and split their timeline across two ids.
-    label: 'Contacts',
-    singular: 'Contact',
+    label: 'Leads',
+    singular: 'Lead',
     table: 'ipy_e_leads',
     icon: 'users',
     color: '#8b5cf6',
@@ -272,7 +272,7 @@ const MODULES: ModuleDef[] = [
     relations: [],
     views: [
       {
-        name: 'All Records', isDefault: true, showMetrics: true,
+        name: 'All Leads', isDefault: true, showMetrics: true,
         columns: ['lead_number', 'full_name', 'mobile', 'status', 'lead_source', 'rating', 'budget', 'owner_id'],
         sortBy: 'created_at',
       },
@@ -347,8 +347,8 @@ const MODULES: ModuleDef[] = [
   // =========================================================================
   {
     name: 'properties',
-    label: 'Properties',
-    singular: 'Property',
+    label: 'Inventories',
+    singular: 'Inventory',
     table: 'ipy_e_properties',
     icon: 'home',
     color: '#22c55e',
@@ -563,7 +563,7 @@ const MODULES: ModuleDef[] = [
     relations: [
     ],
     views: [
-      { name: 'All Inventory', isDefault: true, columns: ['property_code', 'full_name', 'project_name', 'bedrooms', 'area', 'total_price', 'status', 'floor', 'facing'], sortBy: 'created_at' },
+      { name: 'All Inventories', isDefault: true, columns: ['property_code', 'full_name', 'project_name', 'bedrooms', 'area', 'total_price', 'status', 'floor', 'facing'], sortBy: 'created_at' },
       { name: 'Available Units', showMetrics: true, columns: ['full_name', 'project_name', 'bedrooms', 'area', 'total_price', 'floor', 'facing'], filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'equals', value: 'Available' }] }, sortBy: 'total_price', sortDir: 'asc' },
       { name: 'By Status', displayMode: 'kanban', groupBy: 'status', columns: ['full_name', 'project_name', 'bedrooms', 'total_price'] },
       { name: 'Blocked Units', columns: ['full_name', 'project_name', 'blocked_until', 'blocked_for_lead_id', 'blocked_by'], filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'in', value: ['Held', 'Blocked'] }] } },

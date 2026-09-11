@@ -19,6 +19,8 @@ export interface VoiceCapture {
   supported: boolean;
   /** Start, or stop and hand the recording to `onRecorded`. */
   toggle: () => void;
+  /** Stop without submitting, used when its popup is dismissed. */
+  cancel: () => void;
 }
 
 export function useVoiceCapture(
@@ -29,6 +31,8 @@ export function useVoiceCapture(
   const recorder = useRef<MediaRecorder | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const chunks = useRef<Blob[]>([]);
+  const starting = useRef(false);
+  const discard = useRef(false);
   const handler = useRef(onRecorded);
   handler.current = onRecorded;
 
@@ -38,7 +42,18 @@ export function useVoiceCapture(
 
   // A microphone left live after the panel closes is a red dot in the browser
   // tab that nobody can explain and nothing turns off.
+  const cancel = useCallback(() => {
+    discard.current = true;
+    starting.current = false;
+    if (recorder.current?.state === 'recording') recorder.current.stop();
+    stream.current?.getTracks().forEach((track) => track.stop());
+    stream.current = null;
+    setRecording(false);
+    setBusy(false);
+  }, []);
+
   useEffect(() => () => {
+    discard.current = true;
     if (recorder.current?.state === 'recording') recorder.current.stop();
     stream.current?.getTracks().forEach((track) => track.stop());
   }, []);
@@ -48,12 +63,16 @@ export function useVoiceCapture(
       if (recorder.current?.state === 'recording') recorder.current.stop();
       return;
     }
+    if (starting.current) return;
     if (!supported) {
       toast.error('This browser cannot record audio');
       return;
     }
 
+    starting.current = true;
+    discard.current = false;
     void navigator.mediaDevices.getUserMedia({ audio: true }).then((live) => {
+      starting.current = false;
       stream.current = live;
       chunks.current = [];
       // Safari will not produce webm and Chrome prefers opus. Asking for the
@@ -70,17 +89,26 @@ export function useVoiceCapture(
         stream.current = null;
         recorder.current = null;
         setRecording(false);
+        if (discard.current) { discard.current = false; return; }
+        if (!audio.size) {
+          toast.error('Nothing was recorded', 'Please allow microphone access and try again.');
+          return;
+        }
         setBusy(true);
         void Promise.resolve(handler.current(audio)).finally(() => setBusy(false));
       };
-      rec.start();
+      rec.onerror = () => toast.error('Recording stopped unexpectedly', 'Please try the microphone again.');
+      // Regular chunks are more reliable than waiting for one final browser
+      // event, especially on Safari and when the phone briefly backgrounds.
+      rec.start(250);
       setRecording(true);
     }).catch((err: Error) => {
+      starting.current = false;
       stream.current?.getTracks().forEach((track) => track.stop());
       stream.current = null;
       toast.error('Microphone unavailable', err.message);
     });
   }, [recording, supported]);
 
-  return { recording, busy, supported, toggle };
+  return { recording, busy, supported, toggle, cancel };
 }

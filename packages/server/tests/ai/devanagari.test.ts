@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hasDevanagari, toLatin } from '../../src/ai/devanagari.js';
+import { hasDevanagari, hasUrdu, toLatin } from '../../src/ai/devanagari.js';
 
 /*
   The owner's rule for notes: English or Hinglish, always Latin script, never
@@ -31,5 +31,11 @@ describe('Devanagari notes are written the way the desk writes them', () => {
 
   it('ends a sentence with a full stop rather than a danda', () => {
     expect(toLatin('हाँ।')).toBe('haan.');
+  });
+
+  it('never leaves an Urdu-script note in the CRM', () => {
+    const written = toLatin('کلائنٹ سے بات ہوئی، بجٹ ۱.۵ Cr۔');
+    expect(hasUrdu(written)).toBe(false);
+    expect(written).toContain('1.5 Cr.');
   });
 });
