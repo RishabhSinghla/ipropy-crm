@@ -51,7 +51,7 @@ describe('live list attention and favourites', () => {
 
   it('returns per-user favourite state with every list row', async () => {
     const marker = `Gold favourite ${randomUUID()}`;
-    const created = await auth('post', '/api/records/properties').send({ name: marker }).expect(201);
+    const created = await auth('post', '/api/records/properties').send({ full_name: marker, mobile: `98${Math.floor(10_000_000 + Math.random() * 89_999_999)}` }).expect(201);
     const id = created.body.id as string;
     const list = () => auth('get', `/api/records/properties?search=${encodeURIComponent(marker)}&pageSize=5`);
 

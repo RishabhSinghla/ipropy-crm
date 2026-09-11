@@ -48,7 +48,7 @@ describe('entering a property that already exists', () => {
 
   it('refuses the same house number on the same floor in the same locality', async () => {
     await expect(addProperty({ full_name: 'A different Unit', floor: 9, mobile: '9810012345' }))
-      .rejects.toThrow(/already exists/i);
+      .rejects.toThrow(/must be unique/i);
   });
 
   it('accepts a different floor of the same building', async () => {
@@ -96,7 +96,7 @@ describe('the warning shown while typing', () => {
 
   it('stays quiet about a different floor', async () => {
     const hits = await findPossibleDuplicates('properties', {
-      mobile: '9810012346',
+      mobile: '9810012399',
     });
     expect(hits.length, 'warning about every floor in the block is noise').toBe(0);
   });
