@@ -225,7 +225,10 @@ const PROJECT_GROUP = `GROUP BY lower(regexp_replace(btrim(u.project_name), '[^a
  */
 const PROPERTY_FIELD_LIST: { sql: string; needs: string[] }[] = [
   { sql: 'u.record_id AS id', needs: ['record_id'] },
-  { sql: 'u.name', needs: ['name'] },
+  // Property identity lives in Full Name.  `name` was the retired Unit Name
+  // column; keeping it in this public query would make the website return
+  // blank titles after the database cleanup.
+  { sql: 'u.full_name', needs: ['full_name'] },
   {
     sql: `lower(regexp_replace(btrim(u.project_name), '[^a-zA-Z0-9]+', '-', 'g')) AS project_id`,
     needs: ['project_name'],

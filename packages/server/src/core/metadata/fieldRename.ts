@@ -85,7 +85,6 @@ export const FIELDS_USED_IN_CODE: Record<string, string> = {
   'properties.area': 'buyer matching, comparables and the per-square-foot rate',
   'properties.latitude': 'the map, and distance in comparables',
   'properties.longitude': 'the map, and distance in comparables',
-  'properties.name': 'the property folder name in OneDrive and every processed file inside it',
 };
 
 /**

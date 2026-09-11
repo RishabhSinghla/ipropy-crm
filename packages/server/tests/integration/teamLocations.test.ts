@@ -20,7 +20,7 @@ import {
 } from '../../src/core/locations/index.js';
 import { createRecord, type ServiceContext } from '../../src/core/entity/recordService.js';
 import { db } from '../../src/db/pool.js';
-import { adminContext, authUser, contextFor, SEEDED } from './fixtures.js';
+import { adminContext, authUser, contextFor, propertyInput, SEEDED } from './fixtures.js';
 import type { AuthUser } from '@ipropy/shared';
 
 let admin: ServiceContext;
@@ -152,11 +152,11 @@ describe('reading a position', () => {
   });
 
   it('says which property somebody is standing at', async () => {
-    const property = await createRecord(admin, 'properties', {
-      name: `Site ${unique()}`,
+    const property = await createRecord(admin, 'properties', propertyInput({
+      full_name: `Site ${unique()}`,
       latitude: SITE[0],
       longitude: SITE[1],
-    });
+    }));
     // 60 metres away, well inside the default 150 metre radius.
     await recordFixes(executiveAUser.id, null, [{
       latitude: SITE[0] + 0.00054, longitude: SITE[1], recordedAt: Date.now(),
@@ -171,9 +171,9 @@ describe('reading a position', () => {
   });
 
   it('claims nothing when the nearest property is far away', async () => {
-    await createRecord(admin, 'properties', {
-      name: `Far ${unique()}`, latitude: SITE[0], longitude: SITE[1],
-    });
+    await createRecord(admin, 'properties', propertyInput({
+      full_name: `Far ${unique()}`, latitude: SITE[0], longitude: SITE[1],
+    }));
     // About 5 km north.
     await recordFixes(executiveAUser.id, null, [{
       latitude: SITE[0] + 0.045, longitude: SITE[1], recordedAt: Date.now(),

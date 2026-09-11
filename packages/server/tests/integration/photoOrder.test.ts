@@ -14,7 +14,7 @@ import { db } from '../../src/db/pool.js';
 import { createApp } from '../../src/app.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import { createRecord } from '../../src/core/entity/recordService.js';
-import { adminContext } from './fixtures.js';
+import { adminContext, propertyInput } from './fixtures.js';
 
 let app: Express;
 let token = '';
@@ -48,10 +48,10 @@ beforeAll(async () => {
   token = login.body.token as string;
 
   const admin = await adminContext();
-  const property = await createRecord(admin, 'properties', {
-    name: `Photo Order ${Date.now()}`,
+  const property = await createRecord(admin, 'properties', propertyInput({
+    full_name: `Photo Order ${Date.now()}`,
     status: 'Available',
-  });
+  }));
   recordId = property.id;
 
   // Shot in this order; `ai_category` set so the old share-link ordering would

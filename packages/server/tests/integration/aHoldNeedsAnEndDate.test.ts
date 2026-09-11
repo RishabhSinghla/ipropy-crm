@@ -22,7 +22,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../src/db/pool.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import { recordService } from '../../src/core/entity/recordService.js';
-import { adminContext } from './fixtures.js';
+import { adminContext, propertyInput } from './fixtures.js';
 
 const made: string[] = [];
 let seq = 0;
@@ -34,10 +34,10 @@ afterAll(async () => {
 });
 
 async function addProperty(values: Record<string, unknown> = {}) {
-  const p = await recordService.createRecord(await adminContext(), 'properties', {
-    name: `Hold Test ${++seq}`, locality: 'Sector 78', floor: seq,
+  const p = await recordService.createRecord(await adminContext(), 'properties', propertyInput({
+    full_name: `Hold Test ${++seq}`, locality: 'Sector 78', floor: seq,
     status: 'Available', property_type: 'Builder Floor', ...values,
-  });
+  }));
   made.push(p.id);
   return p;
 }

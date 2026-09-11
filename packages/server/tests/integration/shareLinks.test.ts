@@ -18,7 +18,7 @@ import { registry } from '../../src/core/metadata/registry.js';
 import { db } from '../../src/db/pool.js';
 import { recordService, type ServiceContext } from '../../src/core/entity/recordService.js';
 import { mintToken } from '../../src/core/sharing/shareLinks.js';
-import { adminContext, leadInput, SEEDED } from './fixtures.js';
+import { adminContext, leadInput, propertyInput, SEEDED } from './fixtures.js';
 
 let app: Express;
 let token: string;
@@ -34,7 +34,7 @@ async function login(email: string): Promise<string> {
 async function propertyWithPhoto(name: string, values: Record<string, unknown> = {}): Promise<{
   id: string; attachmentId: string;
 }> {
-  const record = await recordService.createRecord(ctx, 'properties', { name, ...values });
+  const record = await recordService.createRecord(ctx, 'properties', propertyInput({ full_name: name, ...values }));
   const att = await db.queryOne<{ id: string }>(
     `INSERT INTO ipy_attachment (record_id, file_name, mime_type, size, storage_key)
      VALUES ($1,'IMG_1.jpg','image/jpeg',100,$2) RETURNING id`,
@@ -126,7 +126,7 @@ describe('opening a link', () => {
     const res = await request(app).get(`/api/public/share/${body.token}`).expect(200);
     expect(res.body.property.property_type).toBe('Builder Floor');
     // Exact identity is private by default even though the link itself works.
-    expect(res.body.property).not.toHaveProperty('name');
+    expect(res.body.property).not.toHaveProperty('full_name');
   });
 
   it('needs no authentication', async () => {
@@ -168,7 +168,7 @@ describe('opening a link', () => {
     // The payload is an explicit column whitelist, so this is a guard against
     // somebody widening it later rather than a claim about today's schema.
     for (const leak of [
-      'name', 'project_name', 'tower', 'wing', 'unit_number', 'city', 'locality',
+      'full_name', 'project_name', 'tower', 'wing', 'unit_number', 'city', 'locality',
       'owner_id', 'owner_name', 'owner_phone', 'custom_fields', 'commission',
     ]) {
       expect(Object.keys(res.body.property)).not.toContain(leak);
@@ -182,9 +182,9 @@ describe('opening a link', () => {
     try {
       const config = await request(app).put('/api/admin/sharing/property-link')
         .set('Authorization', `Bearer ${token}`)
-        .send({ visibleFields: ['name', 'bedrooms'], showPhotos: false })
+        .send({ visibleFields: ['full_name', 'bedrooms'], showPhotos: false })
         .expect(200);
-      expect(config.body.fields.find((field: { name: string }) => field.name === 'name').visible).toBe(true);
+      expect(config.body.fields.find((field: { name: string }) => field.name === 'full_name').visible).toBe(true);
       expect(config.body.fields.some((field: { name: string }) => field.name === 'owner_contact_id')).toBe(false);
 
       const { id, attachmentId } = await propertyWithPhoto('Admin Controlled Floor', {
@@ -193,8 +193,8 @@ describe('opening a link', () => {
       const { body } = await share(id).expect(201);
       const publicView = await request(app).get(`/api/public/share/${body.token}`).expect(200);
 
-      expect(publicView.body.property).toEqual({ name: 'Admin Controlled Floor', bedrooms: 4 });
-      expect(publicView.body.fields.map((field: { name: string }) => field.name)).toEqual(['name', 'bedrooms']);
+      expect(publicView.body.property).toEqual({ full_name: 'Admin Controlled Floor', bedrooms: 4 });
+      expect(publicView.body.fields.map((field: { name: string }) => field.name)).toEqual(['full_name', 'bedrooms']);
       expect(publicView.body.photos).toEqual([]);
       expect(JSON.stringify(publicView.body)).not.toContain('SECRET-1204');
       expect(JSON.stringify(publicView.body)).not.toContain('Whitefield');

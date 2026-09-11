@@ -354,7 +354,7 @@ const MODULES: ModuleDef[] = [
     color: '#22c55e',
     sequence: 50,
     menuGroup: 'Inventory',
-    labelFields: ['name'],
+    labelFields: ['full_name'],
     pipelineField: 'status',
     /*
       The duplicate check used to be ['property_code'] — an autonumber the system
@@ -370,7 +370,9 @@ const MODULES: ModuleDef[] = [
       `all` because these combine — two floors in one locality are not
       duplicates; the same house number on the same floor is.
     */
-    duplicateCheckFields: ['name', 'locality', 'floor'],
+    // One owner / contact number means one Property record in this CRM. Unit
+    // numbers can repeat across projects and are descriptive, not an identity.
+    duplicateCheckFields: ['mobile'],
     settings: { duplicateCheckMode: 'all' },
     blocks: [
       {
@@ -378,7 +380,12 @@ const MODULES: ModuleDef[] = [
         label: 'Property Information',
         fields: [
           F.autonum('property_code', 'Property Code', 'UNIT-'),
-          F.text('name', 'Unit Name', { mandatory: true, quickCreate: true, searchable: true, help: 'e.g. "Tower A — 1204"' }),
+          F.text('full_name', 'Full Name', { quickCreate: true, searchable: true }),
+          F.phone('mobile', 'Mobile', {
+            mandatory: true, unique: true, quickCreate: true, maxLength: 10,
+            config: { digits: 10, codePrefix: '+91' },
+            help: 'Required and unique — one mobile can belong to only one property record',
+          }),
           // Projects are no longer a module — a unit carries its development's
           // name itself. Plain text, so it needs no second record to exist.
           F.text('project_name', 'Project', { quickCreate: true, searchable: true }),
@@ -556,11 +563,11 @@ const MODULES: ModuleDef[] = [
     relations: [
     ],
     views: [
-      { name: 'All Inventory', isDefault: true, columns: ['property_code', 'name', 'project_name', 'bedrooms', 'area', 'total_price', 'status', 'floor', 'facing'], sortBy: 'created_at' },
-      { name: 'Available Units', showMetrics: true, columns: ['name', 'project_name', 'bedrooms', 'area', 'total_price', 'floor', 'facing'], filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'equals', value: 'Available' }] }, sortBy: 'total_price', sortDir: 'asc' },
-      { name: 'By Status', displayMode: 'kanban', groupBy: 'status', columns: ['name', 'project_name', 'bedrooms', 'total_price'] },
-      { name: 'Blocked Units', columns: ['name', 'project_name', 'blocked_until', 'blocked_for_lead_id', 'blocked_by'], filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'in', value: ['Held', 'Blocked'] }] } },
-      { name: 'Premium Units', columns: ['name', 'project_name', 'bedrooms', 'total_price', 'facing', 'status'], filter: { logic: 'AND', conditions: [{ field: 'total_price', operator: 'greater_or_equal', value: 20000000 }] }, sortBy: 'total_price' },
+      { name: 'All Inventory', isDefault: true, columns: ['property_code', 'full_name', 'project_name', 'bedrooms', 'area', 'total_price', 'status', 'floor', 'facing'], sortBy: 'created_at' },
+      { name: 'Available Units', showMetrics: true, columns: ['full_name', 'project_name', 'bedrooms', 'area', 'total_price', 'floor', 'facing'], filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'equals', value: 'Available' }] }, sortBy: 'total_price', sortDir: 'asc' },
+      { name: 'By Status', displayMode: 'kanban', groupBy: 'status', columns: ['full_name', 'project_name', 'bedrooms', 'total_price'] },
+      { name: 'Blocked Units', columns: ['full_name', 'project_name', 'blocked_until', 'blocked_for_lead_id', 'blocked_by'], filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'in', value: ['Held', 'Blocked'] }] } },
+      { name: 'Premium Units', columns: ['full_name', 'project_name', 'bedrooms', 'total_price', 'facing', 'status'], filter: { logic: 'AND', conditions: [{ field: 'total_price', operator: 'greater_or_equal', value: 20000000 }] }, sortBy: 'total_price' },
     ],
   },
 

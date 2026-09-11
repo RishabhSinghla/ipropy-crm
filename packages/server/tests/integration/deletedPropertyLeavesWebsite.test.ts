@@ -20,7 +20,7 @@ import { createApp } from '../../src/app.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import { db } from '../../src/db/pool.js';
 import { recordService } from '../../src/core/entity/recordService.js';
-import { adminContext } from './fixtures.js';
+import { adminContext, propertyInput } from './fixtures.js';
 
 let app: Express;
 let propertyId: string;
@@ -35,12 +35,12 @@ beforeAll(async () => {
   );
   const publicStatus = Array.isArray(statuses?.value) ? String(statuses!.value[0]) : 'Available';
 
-  const property = await recordService.createRecord(ctx, 'properties', {
-    name: `Delete Probe ${Date.now()}`,
+  const property = await recordService.createRecord(ctx, 'properties', propertyInput({
+    full_name: `Delete Probe ${Date.now()}`,
     status: publicStatus,
     base_price: 9500000,
     publish_to_web: true,
-  });
+  }));
   propertyId = property.id;
 });
 

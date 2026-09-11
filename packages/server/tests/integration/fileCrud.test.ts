@@ -7,7 +7,7 @@ import { db } from '../../src/db/pool.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import { recordService } from '../../src/core/entity/recordService.js';
 import { getDriver } from '../../src/core/storage/index.js';
-import { adminContext, SEEDED } from './fixtures.js';
+import { adminContext, propertyInput, SEEDED } from './fixtures.js';
 
 let app: Express;
 let adminToken: string;
@@ -31,7 +31,7 @@ describe('record files', () => {
   it('creates, opens, lists, renames, categorises and deletes a uniquely marked file', async () => {
     const ctx = await adminContext();
     const marker = `file-crud-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const record = await recordService.createRecord(ctx, 'properties', { name: `Property ${marker}` });
+    const record = await recordService.createRecord(ctx, 'properties', propertyInput({ full_name: `Property ${marker}` }));
     const originalBytes = Buffer.from(`original ${marker}`);
 
     const uploaded = await request(app).post('/api/files')

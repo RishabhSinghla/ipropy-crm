@@ -16,7 +16,7 @@ import {
 } from '../../src/core/entity/recordService.js';
 import { db } from '../../src/db/pool.js';
 import { registry } from '../../src/core/metadata/registry.js';
-import { adminContext, contextFor, leadInput, SEEDED } from './fixtures.js';
+import { adminContext, contextFor, leadInput, propertyInput, SEEDED } from './fixtures.js';
 
 let admin: ServiceContext;
 
@@ -151,11 +151,11 @@ describe('JSON-storage fields', () => {
   it('round-trips a value stored in custom_fields JSONB', async () => {
     // publish_to_web is storage:'json' on properties — the other half of the
     // column/JSON split the query builder has to resolve.
-    const unit = await createRecord(admin, 'properties', {
-      name: `Integration Unit ${Date.now()}`,
+    const unit = await createRecord(admin, 'properties', propertyInput({
+      full_name: `Integration Unit ${Date.now()}`,
       status: 'Available',
       publish_to_web: false,
-    });
+    }));
 
     const fetched = await getRecord(admin, 'properties', unit.id);
     expect(fetched?.values.publish_to_web).toBe(false);
@@ -167,8 +167,8 @@ describe('JSON-storage fields', () => {
 
   it('filters on a JSON-storage field through the SQL builder', async () => {
     const marker = `JsonFilter ${Date.now()}`;
-    await createRecord(admin, 'properties', { name: `${marker} A`, status: 'Available', publish_to_web: true });
-    await createRecord(admin, 'properties', { name: `${marker} B`, status: 'Available', publish_to_web: false });
+    await createRecord(admin, 'properties', propertyInput({ full_name: `${marker} A`, status: 'Available', publish_to_web: true }));
+    await createRecord(admin, 'properties', propertyInput({ full_name: `${marker} B`, status: 'Available', publish_to_web: false }));
 
     const result = await listRecords(admin, 'properties', {
       search: marker,

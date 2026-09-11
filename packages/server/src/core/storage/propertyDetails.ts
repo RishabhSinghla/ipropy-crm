@@ -228,7 +228,7 @@ interface Row {
 
 /** Only fields worth reading in a lift. Blank ones are left out entirely. */
 const FIELDS: { key: string; label: string; money?: boolean }[] = [
-  { key: 'name', label: 'Unit' },
+  { key: 'full_name', label: 'Full Name' },
   { key: 'project_name', label: 'Project' },
   { key: 'property_type', label: 'Type' },
   { key: 'bedrooms', label: 'Bedrooms' },

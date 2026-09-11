@@ -18,7 +18,7 @@ import { registry } from '../../src/core/metadata/registry.js';
 import {
   contentDisposition, countRecordMedia, safeName, writeRecordArchive, type ArchiveSet,
 } from '../../src/core/media/archive.js';
-import { adminContext } from './fixtures.js';
+import { adminContext, propertyInput } from './fixtures.js';
 
 /** Collect a stream into one Buffer, so the zip can be handed to a reader. */
 function collector(): { stream: Writable; done: Promise<Buffer> } {
@@ -58,7 +58,7 @@ function unzip(buf: Buffer): Promise<Map<string, string>> {
 
 /** A property record with attachments whose bytes really exist in storage. */
 async function propertyWithMedia(ctx: ServiceContext, name: string): Promise<string> {
-  const created = await recordService.createRecord(ctx, 'properties', { name });
+  const created = await recordService.createRecord(ctx, 'properties', propertyInput({ full_name: name }));
   const driver = await getDriver();
 
   // Two attachments deliberately sharing a file name, to prove the de-duping.
@@ -138,7 +138,7 @@ describe('per-record media archive', () => {
   });
 
   it('reports a storage key that has gone missing instead of failing the download', async () => {
-    const orphan = await recordService.createRecord(ctx, 'properties', { name: 'Orphan Floor' });
+    const orphan = await recordService.createRecord(ctx, 'properties', propertyInput({ full_name: 'Orphan Floor' }));
     await db.query(
       `INSERT INTO ipy_attachment (record_id, file_name, mime_type, size, storage_key)
        VALUES ($1,'gone.jpg','image/jpeg',10,'itest/definitely-not-there.jpg')`,
@@ -152,7 +152,7 @@ describe('per-record media archive', () => {
   });
 
   it('counts media so the route can refuse before it starts streaming', async () => {
-    const empty = await recordService.createRecord(ctx, 'properties', { name: 'No Media Yet' });
+    const empty = await recordService.createRecord(ctx, 'properties', propertyInput({ full_name: 'No Media Yet' }));
     expect(await countRecordMedia(empty.id)).toBe(0);
     expect(await countRecordMedia(recordId)).toBe(2);
   });

@@ -17,7 +17,7 @@ import { createApp } from '../../src/app.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import { db } from '../../src/db/pool.js';
 import { recordService, type ServiceContext } from '../../src/core/entity/recordService.js';
-import { adminContext } from './fixtures.js';
+import { adminContext, propertyInput } from './fixtures.js';
 
 let app: Express;
 let ctx: ServiceContext;
@@ -32,14 +32,14 @@ const made: string[] = [];
  * relying on a property reaching the public website without anybody saying so.
  */
 async function publish(name: string, extra: Record<string, unknown> = {}): Promise<string> {
-  const rec = await recordService.createRecord(ctx, 'properties', {
-    name,
+  const rec = await recordService.createRecord(ctx, 'properties', propertyInput({
+    full_name: name,
     status: 'Available',
     project_name: 'Catalogue Test Project',
     city: 'Faridabad',
     publish_to_web: true,
     ...extra,
-  });
+  }));
   made.push(rec.id);
   return rec.id;
 }
@@ -66,7 +66,7 @@ describe('the public property list', () => {
 
     // The assertion that would have caught the `=` vs `= ANY` bug: the list is
     // not merely well-formed, it actually contains the thing we just published.
-    const names = (res.body.items as { name: string }[]).map((i) => i.name);
+    const names = (res.body.items as { full_name: string }[]).map((i) => i.full_name);
     expect(names).toContain(name);
     expect(res.body.total).toBeGreaterThan(0);
   });
@@ -77,7 +77,7 @@ describe('the public property list', () => {
     await db.query(`UPDATE ipy_e_properties SET status = 'Booked' WHERE record_id = $1`, [id]);
 
     const res = await request(app).get('/api/public/properties?limit=50');
-    const names = (res.body.items as { name: string }[]).map((i) => i.name);
+    const names = (res.body.items as { full_name: string }[]).map((i) => i.full_name);
     expect(names).not.toContain(name);
   });
 
@@ -92,7 +92,7 @@ describe('the public property list', () => {
     );
 
     const res = await request(app).get('/api/public/properties?limit=50');
-    const names = (res.body.items as { name: string }[]).map((i) => i.name);
+    const names = (res.body.items as { full_name: string }[]).map((i) => i.full_name);
     expect(names).not.toContain(name);
   });
 
@@ -109,7 +109,7 @@ describe('the public property list', () => {
     const id = await publish(name);
 
     const before = await request(app).get('/api/public/properties?limit=50');
-    const beforeItem = (before.body.items as { name: string; gallery: string[] }[]).find((i) => i.name === name);
+    const beforeItem = (before.body.items as { full_name: string; gallery: string[] }[]).find((i) => i.full_name === name);
     expect(beforeItem?.gallery).toEqual([]);
 
     // Attach two images the way an upload does, in a deliberate order.
@@ -123,7 +123,7 @@ describe('the public property list', () => {
     }
 
     const after = await request(app).get('/api/public/properties?limit=50');
-    const item = (after.body.items as { name: string; gallery: string[] }[]).find((i) => i.name === name);
+    const item = (after.body.items as { full_name: string; gallery: string[] }[]).find((i) => i.full_name === name);
     expect(item?.gallery).toHaveLength(2);
 
     // And in the order the team set, because the cover photo leads the listing.
@@ -143,7 +143,7 @@ describe('the public property list', () => {
 
     const res = await request(app).get('/api/public/properties?city=Faridabad&limit=50');
     expect(res.status).toBe(200);
-    const names = (res.body.items as { name: string }[]).map((i) => i.name);
+    const names = (res.body.items as { full_name: string }[]).map((i) => i.full_name);
     expect(names).toContain(name);
   });
 });
@@ -198,7 +198,7 @@ describe('every public endpoint that reads the published statuses', () => {
     // the kind of thing that breaks quietly when a condition is made optional.
     const res = await request(app).get(`/api/public/projects/${project!.id}`);
     expect(res.status).toBe(200);
-    const units = (res.body.units as { name: string }[]).map((u) => u.name);
+    const units = (res.body.units as { full_name: string }[]).map((u) => u.full_name);
     expect(units).toContain(name);
     expect(Array.isArray(res.body.similar)).toBe(true);
   });

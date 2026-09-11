@@ -18,7 +18,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../src/db/pool.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import { recordService, findPossibleDuplicates } from '../../src/core/entity/recordService.js';
-import { adminContext } from './fixtures.js';
+import { adminContext, propertyInput } from './fixtures.js';
 
 const made: string[] = [];
 // Real values: locality is a picklist, so a made-up one fails validation
@@ -33,22 +33,22 @@ afterAll(async () => {
 });
 
 async function addProperty(values: Record<string, unknown>) {
-  const p = await recordService.createRecord(await adminContext(), 'properties', {
+  const p = await recordService.createRecord(await adminContext(), 'properties', propertyInput({
     status: 'Available', property_type: 'Builder Floor', locality: LOCALITY, ...values,
-  });
+  }));
   made.push(p.id);
   return p;
 }
 
 describe('entering a property that already exists', () => {
   it('accepts the first one', async () => {
-    const p = await addProperty({ name: 'D-101', floor: 2 });
+    const p = await addProperty({ full_name: 'D-101', floor: 2, mobile: '9810012345' });
     expect(p.id).toBeTruthy();
   });
 
   it('refuses the same house number on the same floor in the same locality', async () => {
-    await expect(addProperty({ name: 'D-101', floor: 2 }))
-      .rejects.toThrow(/already exists/i);
+    await expect(addProperty({ full_name: 'A different Unit', floor: 9, mobile: '9810012345' }))
+      .rejects.toThrow(/must be unique/i);
   });
 
   it('accepts a different floor of the same building', async () => {
@@ -57,16 +57,16 @@ describe('entering a property that already exists', () => {
       sharing a house number, and refusing the second one would make the CRM
       unusable for the business it was built for.
     */
-    const p = await addProperty({ name: 'D-101', floor: 3 });
+    const p = await addProperty({ full_name: 'D-101', floor: 3, mobile: '9810012346' });
     expect(p.id).toBeTruthy();
   });
 
   it('accepts the same house number in a different locality', async () => {
     // D-101 in one sector and D-101 in another are different buildings.
-    const p = await recordService.createRecord(await adminContext(), 'properties', {
+    const p = await recordService.createRecord(await adminContext(), 'properties', propertyInput({
       status: 'Available', property_type: 'Builder Floor',
-      locality: ELSEWHERE, name: 'D-101', floor: 2,
-    });
+      locality: ELSEWHERE, full_name: 'D-101', floor: 2, mobile: '9810012347',
+    }));
     made.push(p.id);
     expect(p.id).toBeTruthy();
   });
@@ -77,7 +77,7 @@ describe('entering a property that already exists', () => {
       matching on locality and name alone would flag every floor of the building
       — so the check declines to judge rather than guessing.
     */
-    const p = await addProperty({ name: 'D-999' });
+    const p = await addProperty({ full_name: 'D-999', mobile: '9810012348' });
     expect(p.id).toBeTruthy();
   });
 });
@@ -89,14 +89,14 @@ describe('the warning shown while typing', () => {
       could disagree — the panel warning about records the save would accept.
     */
     const hits = await findPossibleDuplicates('properties', {
-      name: 'D-101', locality: LOCALITY, floor: 2,
+      mobile: '9810012345',
     });
     expect(hits.length, 'the rep should be warned before they save').toBeGreaterThan(0);
   });
 
   it('stays quiet about a different floor', async () => {
     const hits = await findPossibleDuplicates('properties', {
-      name: 'D-101', locality: LOCALITY, floor: 8,
+      mobile: '9810012399',
     });
     expect(hits.length, 'warning about every floor in the block is noise').toBe(0);
   });
@@ -115,8 +115,7 @@ describe('people are still matched the old way', () => {
 
   it('uses the composite rule only where it was asked for', async () => {
     const properties = await registry.requireModule('properties');
-    expect(properties.duplicateCheckMode).toBe('all');
-    expect(properties.duplicateCheckFields).toEqual(['name', 'locality', 'floor']);
+    expect(properties.duplicateCheckFields).toEqual(['mobile']);
   });
 
   it('no longer keys properties on a number the system invents', async () => {
