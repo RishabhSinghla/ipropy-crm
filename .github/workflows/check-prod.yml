@@ -107,7 +107,7 @@ jobs:
             "SELECT k.name,
                     to_char(k.created_at, 'YYYY-MM-DD') AS created,
                     coalesce(to_char(k.last_used_at, 'YYYY-MM-DD'), 'never') AS last_used,
-                    k.is_active,
+                    coalesce(to_char(k.revoked_at, 'YYYY-MM-DD'), 'LIVE') AS revoked,
                     u.email
                FROM ipy_api_key k LEFT JOIN ipy_user u ON u.id = k.user_id
               ORDER BY k.created_at;"
