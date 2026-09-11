@@ -37,6 +37,7 @@ import { TASK_TYPES } from '../../core/workflow/tasks.js';
 import { mergeRecords } from '../../core/entity/conversion.js';
 import { readImportFile } from '../../core/import/readFile.js';
 import { suggestMapping, certainMapping } from '../../core/import/autoMap.js';
+import { prepareRow, applyStaticValues } from '../../core/import/prepareRow.js';
 import {
   DEFAULT_CONTEXT, detectDateOrder, normaliseForField,
   type DateOrder, type NormaliseContext,
@@ -1025,6 +1026,133 @@ miscRouter.post('/import/:module/preview', upload.single('file'), asyncHandler(a
   });
 }));
 
+/**
+ * What this file will do, before it does anything.
+ *
+ * The wizard's last screen says "nothing is written until you have seen what
+ * it will do", and this is what makes that true. It runs the *same*
+ * preparation the import runs — `prepareRow`, the same date order, the same
+ * spelling corrections — and then rolls the whole thing back, so the answer on
+ * screen is the answer, not a second implementation that agrees most of the
+ * time.
+ *
+ * The rollback is what lets it call `growPicklists` for real: the options a
+ * file would add are the ones it names, tombstoned values and all, rather than
+ * a guess at what that function decides.
+ */
+miscRouter.post('/import/:module/dry-run', upload.single('file'), asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'records.import');
+  const file = (req as unknown as { file?: Express.Multer.File }).file;
+  if (!file) throw new BadRequestError('No file uploaded');
+
+  const mapping = JSON.parse(String(req.body.mapping ?? '{}')) as Record<string, string>;
+  const staticValues = JSON.parse(String(req.body.staticValues ?? '{}')) as Record<string, unknown>;
+  const importMode = String(req.body.importMode ?? 'create');
+  const createOptions = String(req.body.createOptions ?? 'true') !== 'false';
+  const module = await registry.requireModule(req.params.module);
+  const { rows } = readImportFile(file.buffer, file.originalname);
+
+  const dateColumns = module.fields
+    .filter((f) => f.uitype === 'date' || f.uitype === 'datetime').map((f) => f.name);
+  const dateSamples: unknown[] = [];
+  for (const [header, fieldName] of Object.entries(mapping)) {
+    if (!fieldName || !dateColumns.includes(fieldName)) continue;
+    for (const row of rows.slice(0, 200)) dateSamples.push(row[header]);
+  }
+  const requested = String(req.body.dateOrder ?? '').trim();
+  const dateOrder = (['dmy', 'mdy', 'ymd'].includes(requested)
+    ? requested : detectDateOrder(dateSamples).order ?? 'dmy') as DateOrder;
+
+  const multiValued = new Set(module.fields
+    .filter((f) => f.uitype === 'multipicklist' || f.uitype === 'tags').map((f) => f.name));
+
+  let canonical = new Map<string, Map<string, string>>();
+  let optionsAdded: string[] = [];
+  let optionsSkipped: string[] = [];
+  if (createOptions) {
+    const seen = new Map<string, Set<string>>();
+    const growable = new Set(growableFields(module.fields).map((f) => f.name));
+    for (const raw of rows) {
+      for (const [header, fieldName] of Object.entries(mapping)) {
+        if (!fieldName || !growable.has(fieldName)) continue;
+        const cell = raw[header];
+        if (cell === undefined || cell === '') continue;
+        const bucket = seen.get(fieldName) ?? new Set<string>();
+        for (const part of (multiValued.has(fieldName) ? String(cell).split(/[;,]/) : [String(cell)])) {
+          const v = part.trim();
+          if (v) bucket.add(v);
+        }
+        seen.set(fieldName, bucket);
+      }
+    }
+    // A sentinel, not a failure: `transaction` rolls back on a throw, which is
+    // the only way to ask "what would this write?" of code that writes.
+    const ROLLBACK = Symbol('dry run');
+    try {
+      await transaction(async (tx) => {
+        const grown = await growPicklists(module.fields, seen, tx);
+        canonical = grown.canonical;
+        optionsAdded = grown.result.added;
+        optionsSkipped = grown.result.skippedTombstoned;
+        throw ROLLBACK;
+      });
+    } catch (err) {
+      if (err !== ROLLBACK) throw err;
+    }
+  }
+
+  const ctx: NormaliseContext = { ...DEFAULT_CONTEXT, dateOrder };
+  // Twenty rows. Enough to see the shape of the file and the first mistakes in
+  // it; a preview of four thousand is a second import nobody reads.
+  const SHOWN = 20;
+  const preview: {
+    row: number; outcome: string; matched: string | null;
+    values: Record<string, unknown>; problems: string[];
+  }[] = [];
+
+  for (const [i, raw] of rows.slice(0, SHOWN).entries()) {
+    const { values, unreadable } = prepareRow(raw, {
+      mapping, fields: module.fields, canonical, multiValued, ctx,
+    });
+    const sheetRow = i + 2;
+    if (unreadable.length) {
+      preview.push({ row: sheetRow, outcome: 'failed', matched: null, values, problems: unreadable });
+      continue;
+    }
+    if (!Object.keys(values).length) {
+      preview.push({
+        row: sheetRow, outcome: 'skipped', matched: null, values,
+        problems: ['Every mapped column is empty on this row'],
+      });
+      continue;
+    }
+    applyStaticValues(values, staticValues);
+
+    let outcome = 'created';
+    let matched: string | null = null;
+    if (importMode !== 'create') {
+      const existing = await recordService.findDuplicateRecord(module.name, values)
+        // Silence here is how an update becomes a second copy of somebody. The
+        // row still goes in — refusing the file because the lookup failed is
+        // worse — but it is never the quiet answer.
+        .catch((err: unknown) => { logger.warn({ err, module: module.name }, 'import: could not check for an existing record'); return null; });
+      if (existing) {
+        matched = existing.label;
+        outcome = importMode === 'skip_existing' ? 'skipped' : 'updated';
+      } else if (importMode === 'update') {
+        outcome = 'skipped';
+      }
+    }
+    preview.push({ row: sheetRow, outcome, matched, problems: [], values });
+  }
+
+  res.json({
+    totalRows: rows.length, shown: preview.length, dateOrder,
+    rows: preview, optionsAdded, optionsSkipped,
+  });
+}));
+
 miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (req, res) => {
   const user = getUser(req);
   const scope = getScope(req);
@@ -1210,42 +1338,9 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
     let cancelled = false;
 
     for (const [i, raw] of rows.entries()) {
-      const values: Record<string, unknown> = {};
-      /** Cells this row could not read — the row fails with these, not with a Postgres sentence. */
-      const unreadable: string[] = [];
-      for (const [header, fieldName] of Object.entries(mapping)) {
-        if (!fieldName) continue;
-        const v = raw[header];
-        if (v === undefined || v === '') continue;
-
-        /*
-          Presentation is corrected before the value is validated.
-
-          A leading zero on a mobile, `₹` and commas on a price, `Sq Yard` for
-          the unit, `15-03-2026` for the date: all of these are how somebody
-          typed the value, not what it means. The record API is strict for good
-          reasons and stays strict; this is the one place that is lenient, and
-          a cell it genuinely cannot read fails the row with a sentence naming
-          the column rather than a raw database error.
-        */
-        const fieldMeta = live.fields.find((f) => f.name === fieldName);
-        let cell: unknown = v;
-        if (fieldMeta) {
-          const read = normaliseForField(fieldMeta, v, normaliseCtx);
-          if (read.problem) { unreadable.push(`${header}: ${read.problem}`); continue; }
-          if (read.value !== null && read.value !== undefined) cell = read.value;
-        }
-
-        const fix = canonical.get(fieldName);
-        if (!fix) { values[fieldName] = cell; continue; }
-        // Corrected to the option's own spelling, so "neharpar" and "NEHARPAR"
-        // do not become two localities. Multi-select cells value by value; a
-        // single dropdown is one lookup and is never split — see `multi` above.
-        values[fieldName] = multiValued.has(fieldName)
-          ? String(cell).split(/[;,]/).map((part) => fix.get(part.trim()) ?? part.trim())
-            .filter(Boolean).join('; ')
-          : (fix.get(String(cell).trim()) ?? cell);
-      }
+      const { values, unreadable } = prepareRow(raw, {
+        mapping, fields: live.fields, canonical, multiValued, ctx: normaliseCtx,
+      });
       if (unreadable.length) {
         failed++;
         const why = unreadable.join('; ');
@@ -1263,13 +1358,14 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
       const sheetRow = i + 2;
       const rowName = String(values.full_name ?? values.name ?? Object.values(values)[0] ?? `row ${sheetRow}`);
 
-      // A column in the file always wins over a value set for the whole file.
-      for (const [name, value] of Object.entries(staticValues)) {
-        if (values[name] === undefined) values[name] = value;
-      }
+      applyStaticValues(values, staticValues);
 
       if (importMode !== 'create') {
-        const existing = await recordService.findDuplicateRecord(module.name, values).catch(() => null);
+        const existing = await recordService.findDuplicateRecord(module.name, values)
+        // Silence here is how an update becomes a second copy of somebody. The
+        // row still goes in — refusing the file because the lookup failed is
+        // worse — but it is never the quiet answer.
+        .catch((err: unknown) => { logger.warn({ err, module: module.name }, 'import: could not check for an existing record'); return null; });
         if (existing) {
           if (importMode === 'skip_existing') {
             skipped++;

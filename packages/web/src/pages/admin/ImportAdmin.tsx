@@ -1,7 +1,7 @@
 import { type JSX, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { relativeTime } from '@ipropy/shared';
+import { formatIndianPrice, relativeTime } from '@ipropy/shared';
 import {
   AlertTriangle, ArrowLeft, Check, Database, Download, FileUp, Upload, X,
 } from 'lucide-react';
@@ -29,6 +29,17 @@ interface Preview {
     options: { value: string; label: string }[] }[];
 }
 
+interface DryRun {
+  totalRows: number;
+  shown: number;
+  rows: {
+    row: number; outcome: string; matched: string | null;
+    values: Record<string, unknown>; problems: string[];
+  }[];
+  optionsAdded: string[];
+  optionsSkipped: string[];
+}
+
 interface JobRow {
   id: string; file_name: string; module: string; module_label: string; status: string;
   total_rows: number; processed_rows: number; created_rows: number;
@@ -51,6 +62,7 @@ const STEPS = [
   { key: 'file', label: 'The file' },
   { key: 'columns', label: 'The columns' },
   { key: 'rules', label: 'The rules' },
+  { key: 'check', label: 'What will happen' },
 ] as const;
 type Step = typeof STEPS[number]['key'];
 
@@ -105,6 +117,7 @@ export default function ImportAdmin(): JSX.Element {
   // On by default — see the tooltip beside it, and core/import/picklistGrowth.ts.
   const [createOptions, setCreateOptions] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [dryRun, setDryRun] = useState<DryRun | null>(null);
   const [openJob, setOpenJob] = useState<JobRow | null>(null);
   const [reviewJob, setReviewJob] = useState<JobRow | null>(null);
 
@@ -128,7 +141,32 @@ export default function ImportAdmin(): JSX.Element {
     }
   };
 
-  const reset = (): void => { setFile(null); setPreview(null); setMapping({}); setStaticValues({}); setStep('file'); };
+  /*
+    The rehearsal.
+
+    It runs the same preparation the import runs and rolls it back, so this
+    screen is the answer rather than a second implementation that agrees most
+    of the time. Re-run whenever a rule changes, because the outcome of a row
+    depends on the mode: the same person is "new" under Add as new and
+    "updates Amit Verma" under Add or update.
+  */
+  const check = async (): Promise<void> => {
+    if (!file) return;
+    setBusy(true);
+    setStep('check');
+    try {
+      setDryRun(await api.importDryRun(moduleName, file, {
+        mapping, importMode, staticValues, dateOrder, createOptions,
+      }) as unknown as DryRun);
+    } catch (err) {
+      toast.error('Could not work out what the file would do', (err as Error).message);
+      setStep('rules');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reset = (): void => { setFile(null); setPreview(null); setMapping({}); setStaticValues({}); setDryRun(null); setStep('file'); };
 
   const analyse = async (selected: File): Promise<void> => {
     setBusy(true);
@@ -479,11 +517,119 @@ export default function ImportAdmin(): JSX.Element {
             <button onClick={() => setStep('columns')} className="btn-secondary">
               <ArrowLeft className="h-4 w-4" /> Back to columns
             </button>
-            <button onClick={() => void run()} disabled={busy} className="btn-primary ml-auto">
-              {busy ? <Spinner /> : <Upload className="h-4 w-4" />}
-              Import {preview.totalRows} rows
+            <button onClick={() => void check()} disabled={busy} className="btn-primary ml-auto">
+              {busy ? <Spinner /> : <Check className="h-4 w-4" />}
+              Show me what this will do
             </button>
           </div>
+        </div>
+      )}
+
+      {step === 'check' && (
+        <div className="card mb-4 overflow-hidden">
+          <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
+            <div>
+              <p className="text-sm font-medium">What will happen</p>
+              <p className="text-xs text-muted">
+                {dryRun
+                  ? `The first ${dryRun.shown} of ${dryRun.totalRows} rows, exactly as they would be saved. Nothing has been written.`
+                  : 'Working it out…'}
+              </p>
+            </div>
+            {dryRun && (
+              <div className="ml-auto flex gap-3 text-xs">
+                {(['created', 'updated', 'skipped', 'failed'] as const).map((o) => {
+                  const n = dryRun.rows.filter((r) => r.outcome === o).length;
+                  return n > 0 ? (
+                    <span key={o} className="capitalize">
+                      <span className={cn('tnum font-semibold',
+                        o === 'failed' ? 'text-negative' : o === 'skipped' ? 'text-muted' : 'text-positive')}>{n}</span>{' '}
+                      {o}
+                    </span>
+                  ) : null;
+                })}
+              </div>
+            )}
+          </div>
+
+          {busy || !dryRun ? (
+            <div className="p-8 text-center"><Spinner /></div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr>
+                      {['Row', 'Will', 'Values'].map((h) => <th key={h} className="list-head">{h}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {dryRun.rows.map((r) => (
+                      <tr key={r.row}>
+                        <td className="list-cell tnum text-muted">{r.row}</td>
+                        <td className="list-cell whitespace-nowrap">
+                          <Badge color={
+                            r.outcome === 'failed' ? '#ef4444'
+                              : r.outcome === 'skipped' ? '#94a3b8'
+                                : r.outcome === 'updated' ? '#0ea5e9' : '#22c55e'
+                          }>
+                            {r.outcome === 'updated' ? 'update' : r.outcome === 'created' ? 'add' : r.outcome}
+                          </Badge>
+                          {r.matched && <span className="ml-1.5 text-2xs text-muted">{r.matched}</span>}
+                        </td>
+                        <td className="list-cell">
+                          {r.problems.length > 0 ? (
+                            <span className="text-xs text-negative">{r.problems.join(' · ')}</span>
+                          ) : (
+                            <span className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
+                              {Object.entries(r.values).map(([name, value]) => (
+                                <span key={name}>
+                                  <span className="text-muted">
+                                    {preview?.fields.find((f) => f.name === name)?.label ?? name}
+                                  </span>{' '}
+                                  {shown(value, preview?.fields.find((f) => f.name === name)?.uitype)}
+                                </span>
+                              ))}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {(dryRun.optionsAdded.length > 0 || dryRun.optionsSkipped.length > 0) && (
+                <div className="border-t border-slate-100 px-4 py-3 text-xs dark:border-slate-800">
+                  {dryRun.optionsAdded.length > 0 && (
+                    <p>
+                      <span className="font-medium">New dropdown options this file adds:</span>{' '}
+                      {dryRun.optionsAdded.join(', ')}
+                    </p>
+                  )}
+                  {/* Named rather than counted: a value somebody deleted on
+                      purpose is not coming back, and the rows carrying it are
+                      about to be saved with a value no list offers. */}
+                  {dryRun.optionsSkipped.length > 0 && (
+                    <p className="mt-1 text-amber-700 dark:text-amber-400">
+                      <span className="font-medium">Left out, because they were deleted on purpose:</span>{' '}
+                      {dryRun.optionsSkipped.join(', ')}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 border-t border-slate-100 px-4 py-3 dark:border-slate-800">
+                <button onClick={() => setStep('rules')} className="btn-secondary">
+                  <ArrowLeft className="h-4 w-4" /> Change the rules
+                </button>
+                <button onClick={() => void run()} disabled={busy} className="btn-primary ml-auto">
+                  {busy ? <Spinner /> : <Upload className="h-4 w-4" />}
+                  Import {dryRun.totalRows} {dryRun.totalRows === 1 ? 'row' : 'rows'}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -580,6 +726,20 @@ export default function ImportAdmin(): JSX.Element {
       )}
     </div>
   );
+}
+
+/**
+ * The value as it will be stored, written the way it is read.
+ *
+ * 35000000 is the number in the database and nobody checks it by counting
+ * zeros — which is exactly what this screen is for.
+ */
+function shown(value: unknown, uitype?: string): string {
+  if (value === null || value === undefined) return '';
+  if ((uitype === 'currency' || uitype === 'decimal') && Number.isFinite(Number(value))) {
+    return formatIndianPrice(Number(value));
+  }
+  return String(value);
 }
 
 /**

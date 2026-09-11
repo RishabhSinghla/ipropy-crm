@@ -1081,6 +1081,27 @@ export const api = {
     form.append('createOptions', String(opts.createOptions ?? true));
     return request<{ jobId: string; totalRows: number }>(`/api/import/${module}`, { method: 'POST', body: form });
   },
+  importDryRun: (module: string, file: File, opts: {
+    mapping: Record<string, string>;
+    importMode?: string;
+    staticValues?: Record<string, string>;
+    dateOrder?: string;
+    createOptions?: boolean;
+  }) => {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('mapping', JSON.stringify(opts.mapping));
+    form.append('importMode', opts.importMode ?? 'create');
+    form.append('staticValues', JSON.stringify(opts.staticValues ?? {}));
+    if (opts.dateOrder) form.append('dateOrder', opts.dateOrder);
+    form.append('createOptions', String(opts.createOptions ?? true));
+    return request<{
+      totalRows: number; shown: number; dateOrder: string;
+      rows: { row: number; outcome: string; matched: string | null;
+        values: Record<string, unknown>; problems: string[] }[];
+      optionsAdded: string[]; optionsSkipped: string[];
+    }>(`/api/import/${module}/dry-run`, { method: 'POST', body: form });
+  },
   importJobs: () => get<Record<string, unknown>[]>('/api/import/jobs'),
   cancelImport: (jobId: string) => post<{ ok: boolean }>(`/api/import/jobs/${jobId}/cancel`),
   /** The collisions this import parked, each beside the record it hit. */

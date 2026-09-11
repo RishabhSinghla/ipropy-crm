@@ -1085,7 +1085,24 @@ export async function findDuplicateRecord(
 ): Promise<{ id: string; label: string } | null> {
   const module = await registry.requireModule(moduleName);
   if (!module.duplicateCheckFields.length) return null;
-  const prepared = await prepareValues(module, values, { isCreate: true, conn: db });
+  /*
+    Only the fields that decide identity are prepared.
+
+    `prepareValues` validates everything it is given, so passing the whole row
+    meant one unknown locality — on a field that has nothing to do with who
+    this is — threw, the caller read the throw as "no match", and an import in
+    update mode quietly created a second copy of somebody instead. The mobile
+    was right there the whole time.
+  */
+  const identity: Record<string, unknown> = {};
+  for (const name of module.duplicateCheckFields) {
+    if (values[name] !== undefined) identity[name] = values[name];
+  }
+  if (!Object.keys(identity).length) return null;
+  // Not `isCreate`: a partial set of values is exactly what this is, and
+  // create-semantics demands every mandatory field before it will look at any
+  // of them — which turned the lookup into "Full Name is required".
+  const prepared = await prepareValues(module, identity, { isCreate: false, conn: db });
   return findDuplicate(db, module, prepared.values);
 }
 
