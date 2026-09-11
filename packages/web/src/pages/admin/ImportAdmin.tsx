@@ -1,4 +1,4 @@
-import { type JSX, useMemo, useState } from 'react';
+import { type JSX, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatIndianPrice, relativeTime } from '@ipropy/shared';
@@ -16,6 +16,15 @@ interface Suggestion {
   field: string | null;
   confidence: 'certain' | 'likely' | 'possible';
   reason: string;
+}
+
+interface ValueColumn {
+  field: string;
+  label: string;
+  header: string;
+  multi: boolean;
+  options: { value: string; label: string }[];
+  values: { raw: string; count: number; match: string | null }[];
 }
 
 interface MatchedTemplate {
@@ -130,6 +139,10 @@ export default function ImportAdmin(): JSX.Element {
   const [dryRun, setDryRun] = useState<DryRun | null>(null);
   const [template, setTemplate] = useState<MatchedTemplate | null>(null);
   const [saveAs, setSaveAs] = useState<string | null>(null);
+  const [valueColumns, setValueColumns] = useState<ValueColumn[]>([]);
+  /** field → file value → the CRM's value, or '' for "leave this cell empty". */
+  const [valueMap, setValueMap] = useState<Record<string, Record<string, string>>>({});
+  const [openValues, setOpenValues] = useState<string | null>(null);
   const [openJob, setOpenJob] = useState<JobRow | null>(null);
   const [reviewJob, setReviewJob] = useState<JobRow | null>(null);
   const [undoJob, setUndoJob] = useState<JobRow | null>(null);
@@ -169,7 +182,7 @@ export default function ImportAdmin(): JSX.Element {
     setStep('check');
     try {
       setDryRun(await api.importDryRun(moduleName, file, {
-        mapping, importMode, staticValues, dateOrder, createOptions,
+        mapping, importMode, staticValues, dateOrder, createOptions, valueMap,
       }) as unknown as DryRun);
     } catch (err) {
       toast.error('Could not work out what the file would do', (err as Error).message);
@@ -227,7 +240,7 @@ export default function ImportAdmin(): JSX.Element {
     }
   };
 
-  const reset = (): void => { setFile(null); setPreview(null); setMapping({}); setStaticValues({}); setDryRun(null); setTemplate(null); setStep('file'); };
+  const reset = (): void => { setFile(null); setPreview(null); setMapping({}); setStaticValues({}); setDryRun(null); setTemplate(null); setValueMap({}); setStep('file'); };
 
   const analyse = async (selected: File): Promise<void> => {
     setBusy(true);
@@ -268,7 +281,7 @@ export default function ImportAdmin(): JSX.Element {
     try {
       const result = await api.runImport(moduleName, file, {
         mapping, duplicateHandling, importMode, staticValues, dateOrder, runWorkflows, createOptions,
-        templateId: template?.id,
+        templateId: template?.id, valueMap,
       });
       toast.success('Import started', `${result.totalRows} rows queued — progress appears below.`);
       reset();
@@ -279,6 +292,34 @@ export default function ImportAdmin(): JSX.Element {
       setBusy(false);
     }
   };
+
+  /*
+    What is actually in the dropdown columns.
+
+    Asked of the whole file rather than the five-row sample, because the value
+    that matters is usually the one that appears twice in four thousand rows.
+    Re-asked when the mapping changes, keyed on the dropdown columns alone so
+    that mapping a name or a phone number does not re-read the file.
+  */
+  const listedColumns = useMemo(() => JSON.stringify(
+    Object.entries(mapping)
+      .filter(([, name]) => {
+        const f = preview?.fields.find((x) => x.name === name);
+        return f && (f.options?.length ?? 0) > 0;
+      })
+      .sort(),
+  ), [mapping, preview]);
+
+  useEffect(() => {
+    if (!file || !preview) { setValueColumns([]); return; }
+    let alive = true;
+    void api.importValues(moduleName, file, mapping)
+      .then((r) => { if (alive) setValueColumns(r.columns as ValueColumn[]); })
+      .catch(() => { if (alive) setValueColumns([]); });
+    return () => { alive = false; };
+    // `listedColumns` is the dependency that matters; mapping and file are read.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listedColumns, file, moduleName]);
 
   const byHeader = useMemo(() => {
     const map: Record<string, Suggestion> = {};
@@ -435,6 +476,12 @@ export default function ImportAdmin(): JSX.Element {
             {preview.headers.map((header) => {
               const hint = byHeader[header];
               const chosen = mapping[header] ?? '';
+              const column = valueColumns.find((c) => c.header === header);
+              // "New" means: the CRM has no such option and nobody has said
+              // what it should be — so it is about to become one.
+              const newHere = column
+                ? column.values.filter((v) => !v.match && valueMap[column.field]?.[v.raw] === undefined).length
+                : 0;
               return (
                 <div key={header} className="flex flex-wrap items-center gap-3 px-4 py-2">
                   <div className="w-52 shrink-0">
@@ -454,6 +501,16 @@ export default function ImportAdmin(): JSX.Element {
                     }))}
                     className="max-w-xs py-1.5 text-sm"
                   />
+                  {column && (
+                    <button
+                      onClick={() => setOpenValues(openValues === header ? null : header)}
+                      className="text-2xs underline decoration-dotted underline-offset-2 text-muted hover:opacity-80"
+                      title="Say what each value in this column means"
+                    >
+                      {column.values.length} value{column.values.length === 1 ? '' : 's'}
+                      {newHere > 0 && <span className="text-amber-600"> · {newHere} new</span>}
+                    </button>
+                  )}
                   {hint?.field && (
                     <span className="flex items-center gap-1.5" title={hint.reason}>
                       <Badge color={CONFIDENCE[hint.confidence].colour}>
@@ -470,6 +527,44 @@ export default function ImportAdmin(): JSX.Element {
                         </button>
                       )}
                     </span>
+                  )}
+                  {column && openValues === header && (
+                    <div className="w-full rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                      <p className="mb-2 text-2xs text-muted">
+                        What each value in <span className="font-medium">{header}</span> means. Anything
+                        left as “Add it to the list” becomes a new option in {column.label}.
+                      </p>
+                      <div className="space-y-1.5">
+                        {column.values.map((v) => (
+                          <div key={v.raw} className="flex items-center gap-2">
+                            <span className="w-44 shrink-0 truncate text-sm">
+                              {v.raw}
+                              <span className="ml-1 text-2xs text-muted tnum">×{v.count}</span>
+                            </span>
+                            <span className="text-slate-300">→</span>
+                            <Select
+                              value={valueMap[column.field]?.[v.raw] ?? (v.match ?? '__new')}
+                              onChange={(chosenValue) => {
+                                const forField = { ...(valueMap[column.field] ?? {}) };
+                                // "Add it to the list" is the absence of a
+                                // decision, not a decision to add — it leaves
+                                // the importer's own growth in charge, which is
+                                // what the Add new options switch governs.
+                                if (chosenValue === '__new') delete forField[v.raw];
+                                else forField[v.raw] = chosenValue;
+                                setValueMap({ ...valueMap, [column.field]: forField });
+                              }}
+                              options={[
+                                { value: '__new', label: v.match ? `Keep “${v.match}”` : 'Add it to the list' },
+                                { value: '', label: 'Leave this cell empty' },
+                                ...column.options.map((o) => ({ value: o.value, label: o.label })),
+                              ]}
+                              className="max-w-xs py-1 text-sm"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   )}
                 </div>
               );

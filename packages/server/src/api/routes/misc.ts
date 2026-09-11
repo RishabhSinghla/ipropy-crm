@@ -1063,6 +1063,66 @@ miscRouter.post('/import/:module/preview', upload.single('file'), asyncHandler(a
  * file would add are the ones it names, tombstoned values and all, rather than
  * a guess at what that function decides.
  */
+/**
+ * The distinct values in each dropdown column, and what they would become.
+ *
+ * Growing the list automatically is right for a locality — there are hundreds
+ * and the file knows them better than the CRM does. It is wrong for a status:
+ * a portal export saying "Hot" should become the "High Priority" this team
+ * already uses, not a second stage that no view, no report and no automation
+ * knows about.
+ *
+ * Both still happen from one screen. This says what is there; the choice is
+ * the admin's, per value.
+ */
+miscRouter.post('/import/:module/values', upload.single('file'), asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'records.import');
+  const file = (req as unknown as { file?: Express.Multer.File }).file;
+  if (!file) throw new BadRequestError('No file uploaded');
+  const mapping = JSON.parse(String(req.body.mapping ?? '{}')) as Record<string, string>;
+  const module = await registry.requireModule(req.params.module);
+  const { rows } = readImportFile(file.buffer, file.originalname);
+
+  const fold = (v: string): string => v.trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const out: {
+    field: string; label: string; header: string; multi: boolean;
+    options: { value: string; label: string }[];
+    values: { raw: string; count: number; match: string | null }[];
+  }[] = [];
+
+  for (const [header, fieldName] of Object.entries(mapping)) {
+    if (!fieldName) continue;
+    const field = module.fields.find((f) => f.name === fieldName);
+    if (!field) continue;
+    const listed = field.uitype === 'picklist' || field.uitype === 'radio'
+      || field.uitype === 'multipicklist' || field.uitype === 'tags';
+    if (!listed) continue;
+
+    const multi = field.uitype === 'multipicklist' || field.uitype === 'tags';
+    const options = (field.options ?? []).map((o) => ({ value: o.value, label: o.label }));
+    const byFold = new Map(options.map((o) => [fold(o.value), o.value]));
+
+    const counts = new Map<string, number>();
+    for (const row of rows) {
+      const cell = row[header];
+      if (cell === undefined || cell === '') continue;
+      for (const part of (multi ? String(cell).split(/[;,]/) : [String(cell)])) {
+        const v = part.trim();
+        if (v) counts.set(v, (counts.get(v) ?? 0) + 1);
+      }
+    }
+
+    out.push({
+      field: fieldName, label: field.label, header, multi, options,
+      values: [...counts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([raw, count]) => ({ raw, count, match: byFold.get(fold(raw)) ?? null })),
+    });
+  }
+
+  res.json({ columns: out });
+}));
+
 miscRouter.post('/import/:module/dry-run', upload.single('file'), asyncHandler(async (req, res) => {
   const user = getUser(req);
   await assertCapability(user, 'records.import');
@@ -1071,6 +1131,15 @@ miscRouter.post('/import/:module/dry-run', upload.single('file'), asyncHandler(a
 
   const mapping = JSON.parse(String(req.body.mapping ?? '{}')) as Record<string, string>;
   const staticValues = JSON.parse(String(req.body.staticValues ?? '{}')) as Record<string, unknown>;
+  /*
+    What a value in the file means, where somebody has said so.
+
+    Growing the list automatically is right for a locality and wrong for a
+    status: "Hot" from a portal export should become the stage this team
+    already works, not a second one that no view, report or automation knows
+    about.
+  */
+  const valueMap = JSON.parse(String(req.body.valueMap ?? '{}')) as Record<string, Record<string, string>>;
   const importMode = String(req.body.importMode ?? 'create');
   const createOptions = String(req.body.createOptions ?? 'true') !== 'false';
   const module = await registry.requireModule(req.params.module);
@@ -1104,7 +1173,8 @@ miscRouter.post('/import/:module/dry-run', upload.single('file'), asyncHandler(a
         const bucket = seen.get(fieldName) ?? new Set<string>();
         for (const part of (multiValued.has(fieldName) ? String(cell).split(/[;,]/) : [String(cell)])) {
           const v = part.trim();
-          if (v) bucket.add(v);
+          if (!v || valueMap[fieldName]?.[v] !== undefined) continue;
+          bucket.add(v);
         }
         seen.set(fieldName, bucket);
       }
@@ -1137,7 +1207,7 @@ miscRouter.post('/import/:module/dry-run', upload.single('file'), asyncHandler(a
   const people = await loadPeople();
   for (const [i, raw] of rows.slice(0, SHOWN).entries()) {
     const { values, unreadable } = prepareRow(raw, {
-      mapping, fields: module.fields, canonical, multiValued, ctx, people,
+      mapping, fields: module.fields, canonical, multiValued, ctx, people, valueMap,
     });
     const sheetRow = i + 2;
     if (unreadable.length) {
@@ -1225,6 +1295,15 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
     first is the kind of thing that makes people give up on an import.
   */
   const staticValues = JSON.parse(String(req.body.staticValues ?? '{}')) as Record<string, unknown>;
+  /*
+    What a value in the file means, where somebody has said so.
+
+    Growing the list automatically is right for a locality and wrong for a
+    status: "Hot" from a portal export should become the stage this team
+    already works, not a second one that no view, report or automation knows
+    about.
+  */
+  const valueMap = JSON.parse(String(req.body.valueMap ?? '{}')) as Record<string, Record<string, string>>;
   // Automations (instant greeting → the outreach queue, scoring, first-call
   // tasks) fire per record through the workflow engine. On a bulk import that
   // meant a queue of hundreds of WhatsApp greetings nobody asked for, and a
@@ -1327,7 +1406,11 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
             const parts = multi.has(fieldName) ? String(cell).split(/[;,]/) : [String(cell)];
             for (const part of parts) {
               const v = part.trim();
-              if (v) bucket.add(v);
+              // A value somebody has already answered for is not a new option.
+              // Adding "Hot" to the list *and* importing it as High Priority
+              // leaves a stage nothing uses sitting in the dropdown forever.
+              if (!v || valueMap[fieldName]?.[v] !== undefined) continue;
+              bucket.add(v);
             }
             seen.set(fieldName, bucket);
           }
@@ -1381,7 +1464,7 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
     const people = await loadPeople();
     for (const [i, raw] of rows.entries()) {
       const { values, unreadable } = prepareRow(raw, {
-        mapping, fields: live.fields, canonical, multiValued, ctx: normaliseCtx, people,
+        mapping, fields: live.fields, canonical, multiValued, ctx: normaliseCtx, people, valueMap,
       });
       if (unreadable.length) {
         failed++;

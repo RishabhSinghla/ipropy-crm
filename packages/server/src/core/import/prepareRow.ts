@@ -26,6 +26,11 @@ export interface PrepareOptions {
   ctx: NormaliseContext;
   /** Colleagues by name and email, for an Assigned To column. */
   people?: People;
+  /**
+   * What a value in the file means, decided per value: field → file value →
+   * the CRM's value, or '' to leave the cell empty.
+   */
+  valueMap?: Record<string, Record<string, string>>;
 }
 
 export function prepareRow(raw: Record<string, string>, opts: PrepareOptions): PreparedRow {
@@ -69,6 +74,34 @@ export function prepareRow(raw: Record<string, string>, opts: PrepareOptions): P
       const read = normaliseForField(fieldMeta, v, opts.ctx);
       if (read.problem) { unreadable.push(`${header}: ${read.problem}`); continue; }
       if (read.value !== null && read.value !== undefined) cell = read.value;
+    }
+
+    /*
+      A decision beats a correction.
+
+      `canonical` fixes spelling against options that exist. `valueMap` is a
+      person saying "Hot here means High Priority", including "and this one
+      means nothing — leave it empty", which no amount of spelling correction
+      would ever arrive at.
+    */
+    const chosen = opts.valueMap?.[fieldName];
+    if (chosen) {
+      const pick = (one: string): string | null => {
+        const answer = chosen[one];
+        if (answer === undefined) return one;
+        return answer === '' ? null : answer;
+      };
+      if (opts.multiValued.has(fieldName)) {
+        const parts = String(cell).split(/[;,]/).map((x) => pick(x.trim()))
+          .filter((x): x is string => Boolean(x));
+        if (!parts.length) continue;
+        values[fieldName] = parts.join('; ');
+      } else {
+        const answer = pick(String(cell).trim());
+        if (answer === null) continue;
+        values[fieldName] = answer;
+      }
+      continue;
     }
 
     const fix = opts.canonical.get(fieldName);

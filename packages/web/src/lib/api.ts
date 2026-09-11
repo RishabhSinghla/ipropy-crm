@@ -1070,10 +1070,12 @@ export const api = {
     runWorkflows?: boolean;
     createOptions?: boolean;
     templateId?: string;
+    valueMap?: Record<string, Record<string, string>>;
   }) => {
     const form = new FormData();
     form.append('file', file);
     form.append('mapping', JSON.stringify(opts.mapping));
+    form.append('valueMap', JSON.stringify(opts.valueMap ?? {}));
     form.append('duplicateHandling', opts.duplicateHandling);
     form.append('importMode', opts.importMode ?? 'create');
     form.append('staticValues', JSON.stringify(opts.staticValues ?? {}));
@@ -1083,16 +1085,28 @@ export const api = {
     if (opts.templateId) form.append('templateId', opts.templateId);
     return request<{ jobId: string; totalRows: number }>(`/api/import/${module}`, { method: 'POST', body: form });
   },
+  importValues: (module: string, file: File, mapping: Record<string, string>) => {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('mapping', JSON.stringify(mapping));
+    return request<{ columns: {
+      field: string; label: string; header: string; multi: boolean;
+      options: { value: string; label: string }[];
+      values: { raw: string; count: number; match: string | null }[];
+    }[] }>(`/api/import/${module}/values`, { method: 'POST', body: form });
+  },
   importDryRun: (module: string, file: File, opts: {
     mapping: Record<string, string>;
     importMode?: string;
     staticValues?: Record<string, string>;
     dateOrder?: string;
     createOptions?: boolean;
+    valueMap?: Record<string, Record<string, string>>;
   }) => {
     const form = new FormData();
     form.append('file', file);
     form.append('mapping', JSON.stringify(opts.mapping));
+    form.append('valueMap', JSON.stringify(opts.valueMap ?? {}));
     form.append('importMode', opts.importMode ?? 'create');
     form.append('staticValues', JSON.stringify(opts.staticValues ?? {}));
     if (opts.dateOrder) form.append('dateOrder', opts.dateOrder);
