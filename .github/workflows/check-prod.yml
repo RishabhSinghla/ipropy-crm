@@ -105,17 +105,27 @@ jobs:
           # and indistinguishable from a broken website. And a lead can be
           # accepted and then thrown away in validation, whose only trace is
           # `ipy_lead_inbox.status = 'failed'`.
+          # There are two doors and they are not the same. A hosted form —
+          # `/api/webhooks/forms/:publicKey`, which is what the website posts
+          # to — carries its own key in `ipy_webform`. The generic endpoint
+          # `/api/webhooks/leads/generic` is the other one, for a hand-rolled
+          # form, and it is deliberately refused while its key is the committed
+          # default, so that a published key cannot inject leads. The second
+          # being off is normal and is not the website being broken.
+          psql "$PROD_DATABASE_URL" -P pager=off -c \
+            "SELECT public_key, name, is_active, submission_count
+               FROM ipy_webform ORDER BY created_at;"
           psql "$PROD_DATABASE_URL" -tAc \
-            "SELECT 'webform key: ' ||
-                    CASE WHEN coalesce(config->>'key','') = '' THEN 'NOT SET — the form answers 503'
-                         WHEN config->>'key' = 'ipropy-public-webform' THEN 'the COMMITTED DEFAULT — the form answers 503'
-                         ELSE 'set (' || length(config->>'key') || ' chars)' END
+            "SELECT 'generic endpoint: ' ||
+                    CASE WHEN coalesce(config->>'key','') IN ('', 'ipropy-public-webform')
+                         THEN 'off (its key is unset or the committed default) — normal unless you hand-rolled a form'
+                         ELSE 'on' END
                FROM ipy_integration WHERE provider = 'webform';"
           psql "$PROD_DATABASE_URL" -tAc \
             "SELECT 'lead inbox: ' || coalesce(string_agg(status || '=' || n, ', '), '(nothing has ever arrived)')
                FROM (SELECT status, count(*)::text AS n FROM ipy_lead_inbox GROUP BY status) t;"
           psql "$PROD_DATABASE_URL" -tAc \
-            "SELECT 'most recent arrival: ' || coalesce(to_char(max(created_at), 'YYYY-MM-DD HH24:MI'), 'never')
+            "SELECT 'most recent arrival: ' || coalesce(to_char(max(received_at), 'YYYY-MM-DD HH24:MI'), 'never')
                FROM ipy_lead_inbox;"
           echo
           echo "--- API keys, and whether anything is using them ---"
