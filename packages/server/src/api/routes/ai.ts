@@ -510,11 +510,25 @@ aiRouter.post('/voice-note', modelLimiter, assistantAudioUpload.single('audio'),
   let transcript: string;
   try {
     transcript = await transcribeAudio(file.buffer, file.originalname || 'note.webm', settings, {
-      // A spelling hint, which is what makes it write "BHK" and "crore" rather
-      // than "B-H-K" and "crow". Worth more here than anywhere else, because a
-      // site-visit note is mostly numbers and jargon.
-      prompt: 'iPropy CRM, Faridabad, Greenfield Colony, property, builder floor, BHK, square yards, '
-        + 'crore, lakh, carpet area, possession, token, registry, site visit, follow-up, RERA',
+      /*
+        The prompt is a style sample, not just a word list.
+
+        Whisper conditions on it: given a plain list of jargon it writes the
+        jargon correctly and still decides a Hindi-English sentence is Hindi,
+        answering in Devanagari. Given a sentence in the register and the script
+        the answer should be in — Hinglish, Latin, our vocabulary — it tends to
+        continue in that register, which is exactly what the team writes. The
+        transliteration pass below is the floor under it when it does not.
+
+        No `language` is sent on purpose. Forcing `hi` produces Devanagari and
+        drops English words; forcing `en` makes it translate the Hindi half away
+        and invent words for what it cannot place. Auto-detection on a code-mixed
+        clip is the least wrong of the three.
+      */
+      prompt: 'Site visit note, iPropy CRM, Faridabad, Greenfield Colony. '
+        + 'Client ko 3 BHK builder floor dikhaya, park facing, carpet area 1450 square feet, '
+        + 'demand 1.45 crore, token next week, registry ke baad possession. '
+        + 'BHK, lakh, crore, square yards, RERA, follow-up.',
     });
   } catch (err) {
     if (err instanceof SttError) throw new BadRequestError(err.message);
@@ -531,11 +545,16 @@ aiRouter.post('/voice-note', modelLimiter, assistantAudioUpload.single('audio'),
     model: await modelFor('copy'),
     system: 'You tidy spoken notes into written ones for a property CRM. You never add a fact that '
       + 'was not said, never guess a number, and never invent a next step. If something was said '
-      + 'ambiguously, write it ambiguously.',
+      + 'ambiguously, write it ambiguously. You never translate: a note is written in the words the '
+      + 'person used, only in Latin script.',
     prompt: `Somebody spoke this note after dealing with a customer. It is a raw transcript, so it `
       + `rambles, repeats itself and has no punctuation.\n\n"${transcript.slice(0, 8_000)}"\n\n`
       + `Rewrite it as a note a colleague can scan in five seconds.\n\n`
-      + `- Keep the language it was spoken in. ${style.voiceLanguage}\n`
+      + `- Keep the words it was spoken in — do not translate it. ${style.voiceLanguage}\n`
+      + `- Latin script only. If any of it is written in Devanagari, transliterate it: `
+      + `"अभी क्लाइंट से बात हुई" becomes "abhi client se baat hui", not "just spoke to the client".\n`
+      + `- An English word said in a Hindi sentence stays the English word: client, site visit, `
+      + `budget, token, registry, booking.\n`
       + `- Short lines. Put an objection, a budget or a date on its own line.\n`
       + `- Keep every number, name and date exactly as said.\n`
       + `- Do not add a greeting, a heading, or anything about what to do next unless it was said.\n`
@@ -546,12 +565,31 @@ aiRouter.post('/voice-note', modelLimiter, assistantAudioUpload.single('audio'),
     userId: getUser(req).id,
   });
 
+  /*
+    Latin script is guaranteed here, not hoped for.
+
+    The house style already asks for Hinglish in Latin script and the prompt now
+    says it twice, and neither is a guarantee: the model may be unavailable (no
+    key, exhausted quota), and a model that does answer sometimes returns the
+    Devanagari it was handed. The team does not read Devanagari notes — they
+    write "abhi client se baat hui h" — so a mechanical transliteration runs over
+    whatever comes back. It is a no-op on a note that is already Latin, which is
+    almost all of them.
+  */
+  const { hasDevanagari, toLatin } = await import('../../ai/devanagari.js');
+  const written = tidied?.text.trim() || transcript.trim();
+  const note = toLatin(written);
+
   res.json({
-    transcript,
+    // The raw words, transliterated the same way, so what comes back can be
+    // checked against what was said without changing scripts halfway.
+    transcript: toLatin(transcript),
     // The tidied version when a model answered, and the raw words when none
     // did. A note in somebody's own rambling words still beats losing it.
-    note: tidied?.text.trim() || transcript.trim(),
+    note,
     tidied: Boolean(tidied?.text.trim()),
+    /** True when the script had to be corrected — useful when this is reported as "it wrote Hindi". */
+    transliterated: hasDevanagari(written),
   });
 }));
 

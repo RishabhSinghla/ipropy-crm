@@ -56,7 +56,10 @@ test.describe('phone', () => {
     // displayed, or the user gets a horizontally scrolling grid.
     await expect(page.locator('table')).toBeHidden();
     test.skip(!(await inlineEditOn(page)), 'inline editing is switched off');
-    await expect(page.locator('button[title="Click to edit"]:visible').first()).toBeVisible();
+    // The pencil, not the value: on a list the value opens the record and
+    // editing sits behind its own affordance, which on a touch screen has to be
+    // visible without a hover.
+    await expect(page.locator('button[title="Change"]:visible').first()).toBeVisible();
   });
 
   /**
@@ -213,7 +216,7 @@ test.describe('phone', () => {
     await waitForRecords(page);
 
     test.skip(!(await inlineEditOn(page)), 'inline editing is switched off');
-    const trigger = page.locator('button[title="Click to edit"]:visible').first();
+    const trigger = page.locator('button[title="Change"]:visible').first();
     await trigger.click();
 
     // Whatever editor opens, it must be an actual form control rather than the

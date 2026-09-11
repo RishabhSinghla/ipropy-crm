@@ -47,8 +47,33 @@ export interface MatchFieldPair {
   propertyUitype?: string;
 }
 
+/**
+ * A saved pair whose field no longer exists.
+ *
+ * These used to be dropped in silence, and that is how two of the four rules on
+ * production came to be comparing nothing at all for weeks: a field deleted and
+ * re-created gets a new internal id, the mapping row still names the old one,
+ * and `flatMap` quietly returned nothing for it. Bedrooms and size stopped
+ * being compared, every unit scored the same middling number, and the Matching
+ * Setup page simply showed fewer rules than had been saved. Carried out of here
+ * so the admin page can say which rule is broken (migration 129 repaired the
+ * ones that existed).
+ */
+export interface BrokenMatchPair {
+  contactField?: string;
+  contactLabel?: string;
+  propertyField?: string;
+  propertyLabel?: string;
+  contactFieldId: string;
+  propertyFieldId: string;
+  /** Which side no longer resolves. */
+  missing: 'contact' | 'property' | 'both';
+}
+
 export interface MatchingConfig {
   fieldMap: MatchFieldPair[];
+  /** Saved rules that point at a field that no longer exists. Never scored. */
+  broken?: BrokenMatchPair[];
   /** Applied only to pairs where the property field is a currency field. */
   priceGracePercent: number;
   /** Size tolerance for mapped area fields; independent from pricing. */
@@ -101,10 +126,34 @@ export async function matchingConfig(): Promise<MatchingConfig> {
     const map = new Map(settings.rows.map((r) => [r.key, r.value]));
     const leadById = new Map(leads.fields.map((f) => [f.internalId, f]));
     const propertyById = new Map(properties.fields.map((f) => [f.internalId, f]));
+    const broken: BrokenMatchPair[] = [];
     const mapped = mappings.rows.flatMap((pair): MatchFieldPair[] => {
       const contact = leadById.get(pair.source_field_internal_id);
       const property = propertyById.get(pair.target_field_internal_id);
-      return contact && property ? [{
+      if (!contact || !property) {
+        // Loud, not silent. A rule that scores nothing is indistinguishable
+        // from a rule nobody wrote unless something says so.
+        broken.push({
+          contactFieldId: pair.source_field_internal_id,
+          propertyFieldId: pair.target_field_internal_id,
+          contactField: contact?.name,
+          contactLabel: contact?.label,
+          propertyField: property?.name,
+          propertyLabel: property?.label,
+          missing: !contact && !property ? 'both' : !contact ? 'contact' : 'property',
+        });
+        logger.warn(
+          {
+            contactFieldId: pair.source_field_internal_id,
+            propertyFieldId: pair.target_field_internal_id,
+            contactField: contact?.name,
+            propertyField: property?.name,
+          },
+          'matching rule ignored — the field it names no longer exists',
+        );
+        return [];
+      }
+      return [{
         contactField: contact.name,
         propertyField: property.name,
         contactColumn: contact.columnName,
@@ -117,7 +166,7 @@ export async function matchingConfig(): Promise<MatchingConfig> {
         propertyLabel: property.label,
         contactUitype: contact.uitype,
         propertyUitype: property.uitype,
-      }] : [];
+      }];
     });
 
     // Existing customers update in place: the migration imports their old
@@ -137,6 +186,7 @@ export async function matchingConfig(): Promise<MatchingConfig> {
 
     cached = {
       fieldMap: fieldMap.length ? fieldMap : DEFAULT_MATCHING_CONFIG.fieldMap,
+      broken,
       priceGracePercent: grace,
       areaGracePercent: areaGrace,
     };

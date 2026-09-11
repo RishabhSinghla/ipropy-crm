@@ -271,8 +271,20 @@ export interface MatchingFieldPair {
   propertyFieldId?: string;
 }
 
+/** A saved rule whose field has since been deleted — see core/settings/matching.ts. */
+export interface BrokenMatchPair {
+  contactField?: string;
+  contactLabel?: string;
+  propertyField?: string;
+  propertyLabel?: string;
+  contactFieldId: string;
+  propertyFieldId: string;
+  missing: 'contact' | 'property' | 'both';
+}
+
 export interface MatchingAdminConfig {
   fieldMap: MatchingFieldPair[];
+  broken?: BrokenMatchPair[];
   priceGracePercent: number;
   areaGracePercent: number;
   contactFields: { id: string; name: string; label: string; uitype: string }[];

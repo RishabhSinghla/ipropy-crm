@@ -5,10 +5,10 @@ import { relativeTime, type HeaderTab } from '@ipropy/shared';
 import {
   AtSign, Bell, Cake, Check, Facebook, Flame, Globe, Instagram, Linkedin, Lock, LogOut, Menu,
   MessageCircle, Moon, Search, Settings, Shield, Sparkles, Sun, Twitter, Upload, X, Youtube,
-  LayoutDashboard, MapPin, Building2,
+  LayoutDashboard, MapPin, Building2, Plus, ChevronDown,
 } from 'lucide-react';
 import { applyBrandColour, useApp } from '../lib/store';
-import { api, authedFileUrl, type SearchHit } from '../lib/api';
+import { api, authedFileUrl, type ModuleSummary, type SearchHit } from '../lib/api';
 import { useRealtime } from '../lib/realtime';
 import { cn } from '../lib/utils';
 import { resolveIcon } from '../lib/icons';
@@ -202,6 +202,7 @@ export default function Layout(): JSX.Element {
 
           {/* Search sits beside the tabs, and shrinks before the tabs do. */}
           <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 lg:flex-none">
+            <NewRecordButton modules={menuModules} />
             <GlobalSearch />
 
             <div className="flex shrink-0 items-center gap-1">
@@ -256,6 +257,67 @@ export default function Layout(): JSX.Element {
         <AiAssistant open={aiOpen} onClose={() => setAiOpen(false)} />
       </div>
     </PeekProvider>
+  );
+}
+
+/**
+ * "New" wherever you are.
+ *
+ * Adding a contact used to mean going to Contacts first, and adding a property
+ * meant going to Properties — one tab-click of ceremony before the form that
+ * does the work, fifty times a day. This is the same Create the list page
+ * offers, hoisted into the shell beside the search box, so a number somebody
+ * just read out on the phone can be typed from the dashboard, from a record,
+ * from anywhere.
+ *
+ * The menu is built from the modules themselves, filtered by the caller's own
+ * create permission — nothing here names Contacts or Properties, so a module an
+ * admin adds later appears without a code change, and one a profile cannot
+ * create into never does.
+ */
+function NewRecordButton({ modules }: { modules: ModuleSummary[] }): JSX.Element | null {
+  const creatable = modules.filter((m) => m.permissions.create);
+  if (!creatable.length) return null;
+
+  // One creatable module is a button, not a menu: a dropdown with a single
+  // entry is a click spent on confirming there was no choice to make.
+  if (creatable.length === 1) {
+    const only = creatable[0]!;
+    return (
+      <Link
+        to={`/${only.name}/new`}
+        className="btn-primary btn-sm shrink-0 gap-1"
+        title={`New ${only.singularLabel}`}
+      >
+        <Plus className="h-3.5 w-3.5" />
+        <span className="hidden sm:inline">New</span>
+      </Link>
+    );
+  }
+
+  return (
+    <Dropdown
+      align="right"
+      trigger={(
+        <button className="btn-primary btn-sm shrink-0 gap-1" title="Create a new record" data-testid="global-create">
+          <Plus className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">New</span>
+          <ChevronDown className="h-3 w-3 opacity-80" />
+        </button>
+      )}
+    >
+      {(close) => (
+        <>
+          {creatable.map((m) => (
+            <Link key={m.name} to={`/${m.name}/new`} onClick={close}>
+              <DropdownItem icon={<ModuleIcon name={m.icon} className="h-3.5 w-3.5" />}>
+                New {m.singularLabel}
+              </DropdownItem>
+            </Link>
+          ))}
+        </>
+      )}
+    </Dropdown>
   );
 }
 

@@ -11,10 +11,14 @@
      slate-400, the previous muted colour, is 2.56:1 on white. */
   :root {
     --surface: #ffffff;
-    --surface-muted: #f8fafc;
+    --surface-muted: #fbfcff;
     --surface-raised: #ffffff;
-    --border: #e2e8f0;
+    --border: #e6ecf5;
     --text: #0f172a;
+    /* The page behind the cards. slate-50 is a grey ground and it made a
+       screen of white cards look dusty; this is the same value cooled and
+       lifted so the cards read as lit rather than laid on newsprint. */
+    --app-bg: #f6f9fe;
     --text-muted: #5b6b80;
     --text-positive: #047857;
     --text-negative: #c81e1e;
@@ -41,29 +45,34 @@
     /*
       List typography and row shading, in one place.
 
-      The team came off Vtiger and reads these lists all day, so the grid is
-      tuned to the metrics they already scan: 13px rows rather than 14, a
-      slightly darker body colour than the app's default, an 11px uppercase
-      header, and alternating row tints instead of a flat white sheet. Every
-      one of these is a variable because "a bit bigger" is a five-second
-      change here and a find-and-replace across four files otherwise.
+      The team came off Vtiger and reads these lists all day, and at 13px on a
+      7px row they said the grid strained their eyes and looked dull. So the
+      type is up to 14.5px, the row has 11px of air top and bottom, and the
+      header is a real 12px. Every one of these is a variable because "a bit
+      bigger" is a five-second change here and a find-and-replace across four
+      files otherwise.
     */
-    --list-font: 13px;
-    --list-head-font: 11px;
-    --list-line: 1.35;
-    --list-row-pad-y: 7px;
-    --list-row-pad-x: 12px;
-    --list-text: #1f2937;
+    --list-font: 14.5px;
+    --list-head-font: 12px;
+    --list-line: 1.45;
+    --list-row-pad-y: 11px;
+    --list-row-pad-x: 14px;
+    --list-text: #111827;
     --list-row: #ffffff;
-    --list-row-alt: #f4f6f8;
-    --list-row-hover: #e3edfb;
-    --list-row-selected: #d6e6fa;
-    --list-head-bg: #e8ecf1;
-    --list-head-text: #1e293b;
-    --list-head-border: #cbd5e1;
+    /* The stripe is a hint, not a band. At #f4f6f8 every second row read as
+       grey paper and the whole grid looked switched off; this is the same
+       stripe two thirds lighter and with a blue cast, so the sheet stays
+       white and the eye still tracks across a wide row. */
+    --list-row-alt: #f7faff;
+    --list-row-hover: #e8f1ff;
+    --list-row-selected: #d8e8ff;
+    --list-head-bg: #eef3fa;
+    --list-head-text: #0f172a;
+    --list-head-border: #d5deea;
   }
 
   .dark {
+    --app-bg: #0b1220;
     --surface: #0f172a;
     --surface-muted: #1e293b;
     --surface-raised: #1e293b;
@@ -86,7 +95,8 @@
   html, body, #root { height: 100%; }
 
   body {
-    @apply bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
+    @apply text-slate-900 antialiased dark:text-slate-100;
+    background-color: var(--app-bg);
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'tnum';
     /* Installed on iOS the app draws under the notch and home indicator
        (index.html sets viewport-fit=cover), so reserve those insets here
@@ -186,9 +196,9 @@
   */
   .badge {
     @apply inline-flex shrink-0 items-center gap-1 rounded font-semibold;
-    height: 20px;
-    padding: 0 8px;
-    font-size: 11.5px;
+    height: 22px;
+    padding: 0 9px;
+    font-size: 12px;
     line-height: 1;
     letter-spacing: 0.01em;
     white-space: nowrap;

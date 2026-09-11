@@ -44,9 +44,28 @@ function areaPropertyField(config: MatchingConfig): string {
   return pair?.propertyColumn ?? pair?.propertyField ?? 'area';
 }
 
-function parsedBedrooms(row: PropertyRow): number | null {
+/**
+ * How many bedrooms a unit has, from whatever the mapped field holds.
+ *
+ * The property side of this is a picklist and its options are "2 BHK", "3 BHK",
+ * "4+ BHK", "1 RK" — the same vocabulary the buyer's requirement uses, which is
+ * the whole reason the two are compared. `Number('3 BHK')` is NaN, so this
+ * returned null for every unit in the inventory and the bedroom rule — worth
+ * ±20 points, the largest single term in the score — never once fired. Every
+ * unit came back on facing and locality alone, which is why matching "worked"
+ * and was useless.
+ *
+ * `bhkNumber` is the parser the requirement side has always used; the two ends
+ * of a comparison must read the same vocabulary the same way. A bare number is
+ * still accepted, for a CRM whose bedroom field is numeric.
+ */
+export function parsedBedrooms(row: Pick<PropertyRow, 'matched_bedrooms_raw'>): number | null {
   if (row.matched_bedrooms_raw == null) return null;
-  const n = Number(row.matched_bedrooms_raw);
+  const raw = String(row.matched_bedrooms_raw).trim();
+  if (raw === '') return null;
+  const fromLabel = bhkNumber(raw);
+  if (fromLabel !== null) return fromLabel;
+  const n = Number(raw);
   return Number.isFinite(n) ? n : null;
 }
 
@@ -277,6 +296,18 @@ async function queryInventory(req: Requirement, config: MatchingConfig, limit: n
   const limitP = params.add(limit);
   const bedroomFieldP = params.add(bedroomField);
   const wantedBedroomsP = params.add(wantedBedrooms.length ? wantedBedrooms : [-1]);
+  /*
+    The bedroom field holds "3 BHK", not 3.
+
+    `ipy_try_numeric('3 BHK')` is NULL, so the bedroom half of this ORDER BY
+    matched nothing on any unit and the slice was in effect ordered by locality
+    and price alone — the bounded-slice-ordered-by-the-wrong-thing failure this
+    codebase has now hit five times. The requirement's own words are compared
+    against the unit's own words as well as the numbers, which is what makes
+    "3 BHK" find a 3 BHK.
+  */
+  const wantedLabels = toList(req.configurations).map((c) => c.trim().toLowerCase());
+  const wantedLabelsP = params.add(wantedLabels.length ? wantedLabels : ['']);
   const locations = toList(req.locations);
   const locationP = params.add(locations.length ? locations : ['']);
   // Bound, not interpolated — the column comes from metadata, and the same
@@ -318,7 +349,10 @@ async function queryInventory(req: Requirement, config: MatchingConfig, limit: n
      -- units in budget means a perfect 3 BHK in their preferred area loses to
      -- sixty cheap 1 BHKs somewhere else. Price still breaks the tie, because
      -- among equally suitable units the cheaper one is the better pitch.
-     ORDER BY (ipy_try_numeric(to_jsonb(p)->>${bedroomFieldP}) = ANY(${wantedBedroomsP}::numeric[])) DESC NULLS LAST,
+     ORDER BY (
+                ipy_try_numeric(to_jsonb(p)->>${bedroomFieldP}) = ANY(${wantedBedroomsP}::numeric[])
+                OR lower(btrim(to_jsonb(p)->>${bedroomFieldP})) = ANY(${wantedLabelsP}::text[])
+              ) DESC NULLS LAST,
               (to_jsonb(p)->>'locality' = ANY(${locationP}::text[])) DESC NULLS LAST,
               ${priceExpr} ASC NULLS LAST
      LIMIT ${limitP}`,
@@ -499,8 +533,18 @@ function scoreProperty(row: PropertyRow, req: Requirement, config: MatchingConfi
   };
 }
 
+/**
+ * "3 BHK" → 3, and "4+ BHK" → 4.
+ *
+ * The `+` form is a real option in the dropdown and the old pattern refused it,
+ * so a buyer asking for 4+ BHK and a unit listed as 4+ BHK were both read as
+ * "bedroom count unknown" and the rule that should have matched them perfectly
+ * scored nothing at all. Read as its lower bound, which is what the label
+ * means. "Duplex", "Plot" and "Commercial" are not bedroom counts and stay
+ * null — they are matched on, and should be matched on, by other terms.
+ */
 export function bhkNumber(config: string): number | null {
-  const m = config.match(/^([\d.]+)\s*(BHK|RK)/i);
+  const m = config.match(/^([\d.]+)\s*\+?\s*(BHK|RK)/i);
   return m ? Number(m[1]) : null;
 }
 

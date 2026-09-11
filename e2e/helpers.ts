@@ -96,7 +96,9 @@ export function editableCells(page: Page) {
   // and a desktop table (hidden md:table), so the DOM always contains two sets
   // of triggers and only one is displayed at any viewport. Without this the
   // first match is a display:none card button that can never be clicked.
-  return page.locator('button[title="Click to edit"]:visible');
+  // The list's own editors are behind a pencil titled "Change" — a cell's value
+  // opens the record. On a record page the value itself is still the trigger.
+  return page.locator('button[title="Change"]:visible, button[title="Click to edit"]:visible');
 }
 
 /**

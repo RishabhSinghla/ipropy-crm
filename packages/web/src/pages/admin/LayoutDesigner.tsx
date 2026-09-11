@@ -34,9 +34,7 @@ interface DesignerConfig {
   blocks: LayoutBlock[];
   headerFields: string[];
   defaultTab: string;
-  showRecordNumber?: boolean;
   headerTitleField?: string;
-  showPipelineField?: boolean;
   tabs?: DetailTabConfig[];
   capture?: CapturePanelConfig;
 }
@@ -73,9 +71,7 @@ export default function LayoutDesigner(): JSX.Element {
   const [newSection, setNewSection] = useState(false);
   const [headerFields, setHeaderFields] = useState<string[]>([]);
   const [defaultTab, setDefaultTab] = useState('overview');
-  const [showRecordNumber, setShowRecordNumber] = useState(false);
   const [headerTitleField, setHeaderTitleField] = useState('');
-  const [showPipelineField, setShowPipelineField] = useState(true);
   const [detailTabs, setDetailTabs] = useState<DetailTabConfig[]>([]);
   const [capturePanel, setCapturePanel] = useState<CapturePanelConfig>(DEFAULT_CAPTURE_PANEL);
   const [layoutId, setLayoutId] = useState<string | null>(null);
@@ -106,9 +102,7 @@ export default function LayoutDesigner(): JSX.Element {
       setBlocks(layout.config.blocks ?? []);
       setHeaderFields(layout.config.headerFields ?? []);
       setDefaultTab(layout.config.defaultTab ?? 'overview');
-      setShowRecordNumber(layout.config.showRecordNumber ?? false);
       setHeaderTitleField(layout.config.headerTitleField ?? '');
-      setShowPipelineField(layout.config.showPipelineField ?? true);
       setDetailTabs(layout.config.tabs ?? []);
       setCapturePanel({ ...DEFAULT_CAPTURE_PANEL, ...(layout.config.capture ?? {}) });
     } else if (meta) {
@@ -121,9 +115,7 @@ export default function LayoutDesigner(): JSX.Element {
       })));
       setHeaderFields(meta.blocks[0]?.fields.slice(0, 4).map((f) => f.name) ?? []);
       setDefaultTab('overview');
-      setShowRecordNumber(false);
       setHeaderTitleField('');
-      setShowPipelineField(true);
       setDetailTabs([]);
       setCapturePanel(DEFAULT_CAPTURE_PANEL);
     }
@@ -253,7 +245,7 @@ export default function LayoutDesigner(): JSX.Element {
         // Only the detail view has a header strip and tabs; keeping them off the
         // edit/quick-create configs avoids writing keys nothing will read.
         ...(layoutType === 'detail'
-          ? { headerFields, defaultTab, showRecordNumber, headerTitleField: headerTitleField || undefined, showPipelineField, tabs: detailTabOptions }
+          ? { headerFields, defaultTab, headerTitleField: headerTitleField || undefined, tabs: detailTabOptions }
           : {}),
         ...(layoutType === 'quick_create' && moduleName === 'properties'
           ? { capture: capturePanel }
@@ -317,7 +309,13 @@ export default function LayoutDesigner(): JSX.Element {
             onChange={(v) => setLayoutType(v as typeof layoutType)}
             options={[
               { value: 'detail', label: 'Detail view' },
-              { value: 'edit', label: 'Edit form' },
+              // Named for what it actually shapes. There is no edit *form*
+              // any more — a record is edited in place on its own page — but
+              // this layout is far from dead: it is the full-page form behind
+              // New Contact / New Property, which is why removing the entry
+              // rather than renaming it would have left that form unreachable
+              // from here.
+              { value: 'edit', label: 'New record form' },
               { value: 'quick_create', label: 'Quick create' },
             ]}
             className="w-36 py-1.5 text-sm"
@@ -384,13 +382,9 @@ export default function LayoutDesigner(): JSX.Element {
                 tabOptions={tabOptions}
                 tabs={detailTabOptions}
                 availableTabs={availableTabs}
-                showRecordNumber={showRecordNumber}
                 headerTitleField={headerTitleField}
-                showPipelineField={showPipelineField}
                 onChange={(next) => { setHeaderFields(next); touch(); }}
                 onHeaderTitleFieldChange={(next) => { setHeaderTitleField(next); touch(); }}
-                onShowPipelineFieldChange={(next) => { setShowPipelineField(next); touch(); }}
-                onShowRecordNumberChange={(next) => { setShowRecordNumber(next); touch(); }}
                 onDefaultTabChange={(next) => { setDefaultTab(next); touch(); }}
                 onTabsChange={(next) => {
                   setDetailTabs(next);
@@ -625,8 +619,8 @@ export default function LayoutDesigner(): JSX.Element {
  * land there.
  */
 function HeaderStripEditor({
-  value, options, defaultTab, tabOptions, tabs, availableTabs, showRecordNumber, headerTitleField, showPipelineField,
-  onChange, onDefaultTabChange, onTabsChange, onShowRecordNumberChange, onHeaderTitleFieldChange, onShowPipelineFieldChange,
+  value, options, defaultTab, tabOptions, tabs, availableTabs, headerTitleField,
+  onChange, onDefaultTabChange, onTabsChange, onHeaderTitleFieldChange,
 }: {
   value: string[];
   options: { value: string; label: string }[];
@@ -634,15 +628,11 @@ function HeaderStripEditor({
   tabOptions: { value: string; label: string }[];
   tabs: DetailTabConfig[];
   availableTabs: { value: string; label: string }[];
-  showRecordNumber: boolean;
   headerTitleField: string;
-  showPipelineField: boolean;
   onChange: (next: string[]) => void;
   onDefaultTabChange: (next: string) => void;
   onTabsChange: (next: DetailTabConfig[]) => void;
-  onShowRecordNumberChange: (next: boolean) => void;
   onHeaderTitleFieldChange: (next: string) => void;
-  onShowPipelineFieldChange: (next: boolean) => void;
 }): JSX.Element {
   const labelOf = (name: string): string => options.find((o) => o.value === name)?.label ?? name;
   const unused = options.filter((o) => !value.includes(o.value));
@@ -713,34 +703,14 @@ function HeaderStripEditor({
           )}
         </div>
 
-        <div>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={showPipelineField}
-              onChange={(event) => onShowPipelineFieldChange(event.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-            />
-            Show the status chip beside the name
-          </label>
-          <p className="mt-1 text-2xs text-muted">For Properties this controls the “Available” chip. It never changes the stored status.</p>
-        </div>
-
-        <div>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={showRecordNumber}
-              onChange={(event) => onShowRecordNumberChange(event.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-            />
-            Show the record number (LD-00003) beside the name
-          </label>
-          <p className="mt-1 text-2xs text-muted">
-            Off by default. The number is still on the record and still searchable — this
-            only controls whether it takes up space in the header.
-          </p>
-        </div>
+        {/*
+          Two switches were here — "show the status chip beside the name" and
+          "show the record number beside the name" — and both are gone on the
+          owner's instruction. The status chip is simply always drawn, and the
+          record number is never drawn; neither was a decision anyone wanted to
+          make per module, and a settings page is worth more for what it leaves
+          out.
+        */}
 
         <div>
           <label className="label">Detail tabs</label>

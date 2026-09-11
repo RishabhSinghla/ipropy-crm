@@ -301,12 +301,25 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
   // Bare dropdown panels have nothing to duplicate and hang below it instead.
   const coversValue = kind === 'text' || kind === 'control';
 
-  const readState = HAS_OWN_LINK.has(field.uitype) ? (
-    // FieldValue renders an <a> for these (mailto:/tel:/href, or a reference
-    // Link) — nesting that inside a <button> would be invalid,
-    // interactive-in-interactive HTML that silently breaks in browsers.
-    // Keep the link itself a plain click, and put editing behind its own
-    // small affordance instead of swallowing the click into it.
+  /*
+    On a list, the value is not the edit button.
+
+    A row opens the record when you click it, and wrapping every cell's value in
+    an edit trigger meant clicking a name opened a text box and clicking a status
+    dropped a dropdown — reported as a bug, and it is one: the first click anyone
+    makes on a list is "show me this person", not "change this person". So the
+    list keeps the value plain, lets the click through to the row underneath, and
+    puts inline editing behind the same small pencil the linked uitypes already
+    use. Nothing is lost — the pencil is one hover away — and the primary
+    gesture does the primary thing again.
+  */
+  const behindPencil = surface === 'list' || HAS_OWN_LINK.has(field.uitype);
+
+  const readState = behindPencil ? (
+    // For a linked uitype there is a second reason: FieldValue renders an <a>
+    // (mailto:/tel:/href, or a reference Link) and nesting that inside a
+    // <button> would be invalid, interactive-in-interactive HTML that silently
+    // breaks in browsers.
     <StatusRing key={flashKey} status={status}>
       <span className={cn('group/ef -mx-1 inline-flex items-center gap-1 rounded px-1 py-0.5', editing && coversValue && 'invisible')}>
         <FieldValue field={field} value={localValue} display={localDisplay} compact={compact} linkTo={linkTo} />
@@ -317,7 +330,11 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
             type="button"
             onClick={(e) => { e.stopPropagation(); openEdit(); }}
             title="Change"
-            className="shrink-0 rounded p-0.5 text-slate-300 opacity-0 transition-opacity hover:text-slate-500 group-hover/ef:opacity-100 dark:hover:text-slate-300"
+            /* Visible on a phone, hover-revealed on a desktop. A touch screen
+               has no hover, so an opacity-0 pencil is an affordance that does
+               not exist there — and the phone is where the list cards put the
+               editable value. Below `md` it simply sits there, quietly. */
+            className="shrink-0 rounded p-0.5 text-slate-400 opacity-60 transition-opacity hover:text-slate-600 md:opacity-0 md:group-hover/ef:opacity-100 dark:hover:text-slate-300"
           >
             <Pencil className="h-3 w-3" />
           </button>
@@ -373,7 +390,15 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
           {kind === 'picklist' ? (
             <PicklistPopover field={field} value={draft as string | null} restrictTo={restrictTo} onPick={pickAndClose} />
           ) : kind === 'owner' ? (
-            <OwnerPopover value={draft as string | null} mandatory={field.isMandatory} onPick={pickAndClose} />
+            // `owner` is the assignment field, and an assignment is never
+            // cleared — the server enforces the same rule, so offering Clear
+            // here would only be a menu item that silently does nothing. A
+            // plain `user` field is a different thing and keeps its Clear.
+            <OwnerPopover
+              value={draft as string | null}
+              mandatory={field.isMandatory || field.uitype === 'owner'}
+              onPick={pickAndClose}
+            />
           ) : kind === 'form' ? (
             <div className="w-80 animate-fade-in space-y-2 rounded-xl border border-slate-200 bg-white p-3 shadow-float dark:border-slate-700 dark:bg-slate-900">
               <FieldInput field={field} value={draft} onChange={setDraft} autoFocus error={mandatoryError} />

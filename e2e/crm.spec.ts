@@ -63,7 +63,15 @@ test('inline-edits a picklist in the list and the change survives a reload', asy
   const statusIndex = await columnIndex(page, 'Pipeline Status');
   const statusCell = page.locator('tbody tr').first().locator('td').nth(statusIndex);
   test.skip(!(await inlineEditOn(page)), 'inline editing is switched off');
-  const trigger = statusCell.locator('button[title="Click to edit"]');
+  /*
+    On a list the value is not the trigger — the pencil beside it is.
+
+    Clicking a cell opens the record, because that is what clicking a row has
+    always meant and swallowing it into an editor was reported as a bug: people
+    clicked a name to read a lead and got a text box over it. Inline editing is
+    still here, one deliberate click away.
+  */
+  const trigger = statusCell.locator('button[title="Change"]');
   const before = (await trigger.textContent())?.trim();
 
   await trigger.click();
@@ -90,9 +98,9 @@ test('inline-edits a text field on the record detail page', async ({ page, conte
   await page.goto('/leads');
   await waitForRecords(page);
   // No skip: a record page is always editable, whatever the list setting says.
-  // Click the Record # cell, not the row generally: most cells now hold an
-  // inline editor that stops propagation, so clicking one opens the editor
-  // instead of navigating. Record # is an autonumber, so it stays plain text.
+  // Any cell opens the record now — the inline editors on a list sit behind
+  // their own pencil and no longer swallow the click — but Record # is picked
+  // deliberately: it is an autonumber, so there is nothing else on it to hit.
   const popup = context.waitForEvent('page').catch(() => null);
   await page.locator('tbody tr').first().locator('td').nth(1).click();
 

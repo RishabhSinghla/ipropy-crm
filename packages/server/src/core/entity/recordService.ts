@@ -577,8 +577,10 @@ export async function createRecord(
   const run = async (conn: Tx): Promise<RecordEnvelope> => {
     const payload = ctx.system ? { ...input } : await filterWritableFields(ctx.user, moduleName, input);
 
-    // Owner: explicit, else the creating user.
-    const ownerId = (input.owner_id as string) ?? ctx.user.id;
+    // Owner: explicit, else the creating user — and an explicit *empty* owner
+    // is the creating user too. Nothing in this CRM is unassigned; see the
+    // same rule in updateRecord below.
+    const ownerId = (input.owner_id as string) || ctx.user.id;
     const ownerType = (input.owner_type as string) === 'group' ? 'group' : 'user';
 
     const prepared = await prepareValues(module, payload, { isCreate: true, conn });
@@ -699,6 +701,22 @@ export async function updateRecord(
           to,
         });
       }
+    }
+
+    /*
+      A record is never unassigned.
+
+      The owner's rule, and it is the right one for this desk: an unowned lead
+      is a lead nobody is chasing, and the CRM offered "Clear — leave
+      unassigned" as an ordinary menu item, one click from every record. So a
+      write that empties the assignment is not obeyed — it falls back to whoever
+      held the record, and to the person making the change when nothing did
+      (an imported row, a record created before this rule). Enforced here rather
+      than in the picker because the API, an import and a workflow can all set
+      it too, and a rule that only the UI knows is not a rule.
+    */
+    if ('owner_id' in input && (input.owner_id === null || input.owner_id === '')) {
+      input.owner_id = before.ownerId ?? ctx.user.id;
     }
 
     // `input` came through canonicaliseRecordFields above, so a renamed

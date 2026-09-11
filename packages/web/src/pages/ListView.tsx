@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FieldMeta, type FilterGroup, formatIndianPrice, formatPhoneWithCode, toInternational, type ListQuery, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
-  ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Columns3, Compass, Download, Filter,
+  ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Columns3, Compass, Download, Filter,
   LayoutGrid, List, MapPin, MessageCircle, Pencil, Phone, Plus, RefreshCw, Ruler, Save, Search, Settings2, Star, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { ApiError, api } from '../lib/api';
@@ -932,15 +932,32 @@ export default function ListView(): JSX.Element {
               options={PAGE_SIZE_OPTIONS.map((size) => ({ value: String(size), label: String(size) }))}
             />
           </label>
+          {/*
+            A page button has to look like a button.
+
+            These were bare ghost chevrons, so "there is another page" and
+            "there is not" differed only by opacity — reported as the Next
+            button not working when it was in fact enabled and un-obvious, and
+            as being stuck on the last page when the last page was genuinely the
+            end. Enabled now carries a border and the brand colour, disabled is
+            plainly greyed, and First/Last exist so the far end of 10 pages is
+            one click rather than nine.
+          */}
           <div className="flex items-center gap-1">
-            <button
-              className="btn-ghost p-1.5 disabled:opacity-30"
-              aria-label="Previous page"
+            <PageButton
+              label="First page"
               disabled={page <= 1}
-              onClick={() => setPage((p) => p - 1)}
+              onClick={() => setPage(1)}
+            >
+              <ChevronsLeft className="h-4 w-4" />
+            </PageButton>
+            <PageButton
+              label="Previous page"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
             >
               <ChevronLeft className="h-4 w-4" />
-            </button>
+            </PageButton>
             <label className="flex items-center gap-1 px-1 text-xs tnum text-muted">
               Page
               <input
@@ -957,14 +974,20 @@ export default function ListView(): JSX.Element {
               />
               <span>/ {data!.totalPages}</span>
             </label>
-            <button
-              className="btn-ghost p-1.5 disabled:opacity-30"
-              aria-label="Next page"
+            <PageButton
+              label="Next page"
               disabled={page >= (data?.totalPages ?? 1)}
-              onClick={() => setPage((p) => p + 1)}
+              onClick={() => setPage((p) => Math.min(data?.totalPages ?? p, p + 1))}
             >
               <ChevronRight className="h-4 w-4" />
-            </button>
+            </PageButton>
+            <PageButton
+              label="Last page"
+              disabled={page >= (data?.totalPages ?? 1)}
+              onClick={() => setPage(data?.totalPages ?? 1)}
+            >
+              <ChevronsRight className="h-4 w-4" />
+            </PageButton>
           </div>
         </div>
       )}
@@ -1109,6 +1132,29 @@ export default function ListView(): JSX.Element {
  * the views query failed and the fallback ran for real, which is the argument
  * for the fallback being decent rather than merely present.
  */
+/** One pager control: obviously live when there is somewhere to go, obviously not when there isn't. */
+function PageButton({ label, disabled, onClick, children }: {
+  label: string; disabled: boolean; onClick: () => void; children: JSX.Element;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        'inline-flex h-7 w-7 items-center justify-center rounded-md border transition-colors',
+        disabled
+          ? 'cursor-not-allowed border-slate-200 text-slate-300 dark:border-slate-800 dark:text-slate-700'
+          : 'border-slate-300 text-brand-600 hover:border-brand-400 hover:bg-brand-50 dark:border-slate-600 dark:text-brand-300 dark:hover:bg-slate-800',
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
 function defaultColumns(meta: {
   labelFields?: string[];
   fields: { name: string; isActive: boolean; displayType: string }[];

@@ -82,6 +82,40 @@ export default function MatchingSetupAdmin(): JSX.Element {
         </button>
       </div>
 
+      {/*
+        A rule that scores nothing must say so.
+
+        Two of the four saved rules on the owner's CRM pointed at property
+        fields that had been deleted and re-created, so they carried an id no
+        field held any more. They were dropped in silence: bedrooms and size
+        were not compared at all, every unit came back with the same middling
+        fit, and this page listed two rules where four had been saved. Migration
+        129 repaired those; this is what stops the next one being invisible.
+      */}
+      {(data?.broken?.length ?? 0) > 0 && (
+        <div className="card mb-4 border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/30">
+          <p className="font-medium text-amber-900 dark:text-amber-200">
+            {data!.broken!.length} saved rule{data!.broken!.length === 1 ? '' : 's'} point at a field that no longer exists,
+            and {data!.broken!.length === 1 ? 'it is' : 'they are'} not being used for matching.
+          </p>
+          <ul className="mt-1.5 space-y-0.5 text-xs text-amber-800 dark:text-amber-300">
+            {data!.broken!.map((b, i) => (
+              <li key={i}>
+                {b.contactLabel ?? 'a deleted Contact field'} → {b.propertyLabel ?? 'a deleted Property field'}
+                {' — '}
+                {b.missing === 'contact' ? 'the Contact field was deleted'
+                  : b.missing === 'property' ? 'the Property field was deleted'
+                  : 'both fields were deleted'}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-xs text-amber-800 dark:text-amber-300">
+            Add the mapping again below with the field that replaced it, then Save — saving rewrites the whole list,
+            so the broken row goes with it.
+          </p>
+        </div>
+      )}
+
       {isLoading || !data ? (
         <div className="card space-y-2 p-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12" />)}</div>
       ) : (

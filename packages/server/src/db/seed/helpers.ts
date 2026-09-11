@@ -411,44 +411,62 @@ export async function upsertViews(conn: Tx, moduleName: string, views: ViewDef[]
   const mod = await conn.queryOne<{ id: string }>(`SELECT id FROM ipy_module WHERE name = $1`, [moduleName]);
   if (!mod) return;
 
-  // Drop system views that a previous seed created but the current definition no
-  // longer includes (e.g. renamed), so re-seeding doesn't leave duplicates.
-  // Only touches is_system views — a user's saved views are never removed.
+  /*
+    A seeded tab is matched by `seed_key`, never by its name.
+
+    The name belongs to the admin the moment they rename it, and matching on it
+    meant a renamed tab looked to the seed like a template entry that had gone
+    — so it was deleted and the original re-inserted on the next cold start.
+    That is the "my list view tab changes revert" report, and since
+    `docker-entrypoint.sh` re-seeds on every cold start it happened within
+    hours. `seed_key` is the template's own name and never changes; migration
+    128 backfilled it from `name`, which is what this used to match on.
+  */
   const keep = views.map((v) => v.name);
   await conn.query(
-    `DELETE FROM ipy_view WHERE module_id = $1 AND is_system = true AND NOT (name = ANY($2::text[]))`,
+    `DELETE FROM ipy_view
+     WHERE module_id = $1 AND is_system = true
+       AND COALESCE(seed_key, name) <> ALL($2::text[])`,
     [mod.id, keep],
+  );
+
+  // A tab somebody deleted on purpose does not come back. Same device as the
+  // field (032), block (066) and picklist (049) tombstones, for the same
+  // reason: the seed rebuilds every module on every run.
+  const gone = new Set(
+    (await conn.query<{ seed_key: string }>(
+      `SELECT seed_key FROM ipy_view_tombstone WHERE module_id = $1`, [mod.id],
+    )).rows.map((r) => r.seed_key),
   );
 
   let seq = 0;
   for (const v of views) {
+    const sequence = seq++;
+    if (gone.has(v.name)) continue;
     const existing = await conn.queryOne<{ id: string }>(
-      `SELECT id FROM ipy_view WHERE module_id = $1 AND name = $2 AND is_system = true`,
+      `SELECT id FROM ipy_view WHERE module_id = $1 AND seed_key = $2`,
       [mod.id, v.name],
     );
-    const params = [
-      mod.id, v.name,
-      JSON.stringify(v.columns),
-      JSON.stringify(v.filter ?? { logic: 'AND', conditions: [] }),
-      v.sortBy ?? null, v.sortDir ?? 'desc',
-      v.isDefault ?? false, v.displayMode ?? 'table',
-      v.groupBy ?? null, v.showMetrics ?? false, seq++,
-    ];
-    if (existing) {
-      // Create-only. A system view's columns, filter, sort and display mode are
-      // all editable from the list view, so re-running the seed used to throw
-      // away whatever the admin had arranged. Views added to the template still
-      // appear; ones already in the database belong to the admin.
-      continue;
-    } else {
-      await conn.query(
-        `INSERT INTO ipy_view
-          (module_id, name, columns, filter, sort_by, sort_dir, is_default,
-           display_mode, group_by, show_metrics, sequence, is_public, is_system)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true,true)`,
-        params,
-      );
-    }
+    // Create-only. A system view's name, columns, filter, sort and display mode
+    // are all editable from the list view and from Admin → List view tabs, so
+    // re-running the seed must not throw away whatever the admin arranged.
+    // Views added to the template still appear; ones already in the database
+    // belong to the admin.
+    if (existing) continue;
+    await conn.query(
+      `INSERT INTO ipy_view
+        (module_id, name, seed_key, columns, filter, sort_by, sort_dir, is_default,
+         display_mode, group_by, show_metrics, sequence, is_public, is_system)
+       VALUES ($1,$2,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true,true)`,
+      [
+        mod.id, v.name,
+        JSON.stringify(v.columns),
+        JSON.stringify(v.filter ?? { logic: 'AND', conditions: [] }),
+        v.sortBy ?? null, v.sortDir ?? 'desc',
+        v.isDefault ?? false, v.displayMode ?? 'table',
+        v.groupBy ?? null, v.showMetrics ?? false, sequence,
+      ],
+    );
   }
 }
 

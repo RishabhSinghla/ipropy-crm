@@ -368,7 +368,12 @@ function isUnreachable(candidate: ResolvedSettings['ai']): boolean {
  * covers speech and Gemini's does not expose this endpoint at all.
  */
 const STT_CAPABLE: { provider: Exclude<AiProvider, 'none'>; baseUrl: string; model: string }[] = [
-  { provider: 'groq', baseUrl: 'https://api.groq.com/openai/v1', model: 'whisper-large-v3-turbo' },
+  // `whisper-large-v3`, not the turbo variant. Turbo is three times faster and
+  // measurably worse on exactly the audio this desk produces — Hindi-English
+  // code-mixing, Indian names, a number said in the middle of a sentence. A
+  // voice note is thirty seconds long and gets read for weeks, so the seconds
+  // are the cheapest thing in the exchange. Both are on Groq's free tier.
+  { provider: 'groq', baseUrl: 'https://api.groq.com/openai/v1', model: 'whisper-large-v3' },
   // Nemotron's streaming multilingual model costs $0.012 an hour of audio and
   // was trained on code-mixed speech, which is what a Faridabad sales call
   // actually sounds like. Below Groq only because Groq's free tier costs

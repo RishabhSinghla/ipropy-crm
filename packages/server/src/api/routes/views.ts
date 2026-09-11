@@ -83,6 +83,14 @@ viewsRouter.post('/:module', asyncHandler(async (req, res) => {
   // Only admins (or users with the capability) can publish a view to everyone.
   const isPublic = input.isPublic && (user.isAdmin || module.isCustom);
 
+  // Adding a tab back by the name of one that was deleted clears its
+  // tombstone: otherwise the seed's own copy could never return, and an admin
+  // who changed their mind would have no way to say so.
+  await db.query(
+    `DELETE FROM ipy_view_tombstone WHERE module_id = $1 AND seed_key = $2`,
+    [module.id, input.name],
+  );
+
   const row = await db.queryOne<{ id: string }>(
     `INSERT INTO ipy_view
       (module_id, name, description, owner_id, columns, filter, sort_by, sort_dir,
@@ -155,8 +163,8 @@ viewsRouter.post('/:module/:id/default', asyncHandler(async (req, res) => {
 
 viewsRouter.delete('/:module/:id', asyncHandler(async (req, res) => {
   const user = getUser(req);
-  const view = await db.queryOne<{ owner_id: string | null; is_system: boolean }>(
-    `SELECT owner_id, is_system FROM ipy_view WHERE id = $1`, [req.params.id],
+  const view = await db.queryOne<{ owner_id: string | null; is_system: boolean; module_id: string; seed_key: string | null; name: string }>(
+    `SELECT owner_id, is_system, module_id, seed_key, name FROM ipy_view WHERE id = $1`, [req.params.id],
   );
   if (!view) throw new NotFoundError('View not found');
   if (view.is_system && !user.isAdmin) {
@@ -166,7 +174,19 @@ viewsRouter.delete('/:module/:id', asyncHandler(async (req, res) => {
     throw new ForbiddenError('You can only delete views you created');
   }
 
-  await db.query(`DELETE FROM ipy_view WHERE id = $1`, [req.params.id]);
+  await transaction(async (tx) => {
+    await tx.query(`DELETE FROM ipy_view WHERE id = $1`, [req.params.id]);
+    // A seeded tab needs a tombstone or the next cold start makes it again —
+    // the seed rebuilds every module on every run. A tab somebody created
+    // themselves has no seed_key and needs none.
+    if (view.is_system) {
+      await tx.query(
+        `INSERT INTO ipy_view_tombstone (module_id, seed_key, deleted_by)
+         VALUES ($1,$2,$3) ON CONFLICT (module_id, seed_key) DO NOTHING`,
+        [view.module_id, view.seed_key ?? view.name, user.id],
+      );
+    }
+  });
   res.json({ ok: true });
 }));
 

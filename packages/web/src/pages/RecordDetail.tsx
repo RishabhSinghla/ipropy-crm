@@ -3,9 +3,9 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CALL_DISPOSITIONS, type BuyerMatch, type FieldMeta, formatIndianPrice, type ModuleMeta, type PropertyMatch, type RecordEnvelope, relativeTime, type TimelineEntry } from '@ipropy/shared';
 import {
-  Activity, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Edit3, ExternalLink, Eye, FileQuestion, FileText, FolderOpen, Images, LayoutDashboard, Link2, MessageCircle, Mic, MoreHorizontal, Paperclip, Pencil, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Trash2, Upload, X,
+  Activity, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Edit3, Eye, FileQuestion, FileText, Images, LayoutDashboard, Link2, MessageCircle, Mic, MoreHorizontal, Paperclip, Pencil, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Trash2, Upload, X,
 } from 'lucide-react';
-import { api, authedFileUrl, type PropertyStorageInfo } from '../lib/api';
+import { api, authedFileUrl } from '../lib/api';
 import { compressImage, formatBytes } from '../lib/compressImage';
 import { toast, useApp } from '../lib/store';
 import { useWatchRecord } from '../lib/realtime';
@@ -16,7 +16,7 @@ import { cn, renderMarkdown, restrictionForField } from '../lib/utils';
 import { resolveIcon } from '../lib/icons';
 import { FieldValue } from '../components/FieldRenderer';
 import { EditableField, isInlineEditable } from '../components/EditableField';
-import { assignmentField, fieldByKey } from '../lib/fields';
+import { assignmentField } from '../lib/fields';
 import { ShareLinksPanel } from '../components/ShareLinks';
 import {
   Avatar, Badge, ConfirmDialog, Dropdown, DropdownItem, EmptyState, Modal,
@@ -83,9 +83,7 @@ export default function RecordDetail(): JSX.Element {
       headerFields?: string[];
       relatedLists?: string[];
       defaultTab?: string;
-      showRecordNumber?: boolean;
       headerTitleField?: string;
-      showPipelineField?: boolean;
       tabs?: { key: string; label: string; icon?: string }[];
     }),
     [meta],
@@ -128,6 +126,28 @@ export default function RecordDetail(): JSX.Element {
     enabled: Boolean(moduleName && id) && navIndex === -1,
     staleTime: 30_000,
   });
+
+  /*
+    The match list is fetched while the record is still being read.
+
+    Scoring the inventory is a single indexed query — tens of milliseconds —
+    but it only started when somebody clicked the Matching tab, so the tab
+    always opened on skeletons and always felt slow, which is how it was
+    reported. Warming it on arrival costs one cheap request on a page that is
+    already making several, and the tab then paints from cache. Same key and
+    same default depth (10) as the tab's own query, or this would warm a cache
+    entry nothing reads.
+  */
+  useEffect(() => {
+    if (!moduleName || !id) return;
+    void queryClient.prefetchQuery({
+      queryKey: ['matching', moduleName, id, 10],
+      queryFn: (): Promise<{ matches?: PropertyMatch[]; buyers?: BuyerMatch[] }> => (moduleName === 'leads'
+        ? api.matchProperties(moduleName, id, false, 10)
+        : api.buyersForProperty(id, false, 10)),
+      staleTime: 60_000,
+    });
+  }, [moduleName, id]);
 
   const prevId = sessionPrev ?? (navIndex === -1 ? remote?.prevId ?? null : null);
   const nextId = sessionNext ?? (navIndex === -1 ? remote?.nextId ?? null : null);
@@ -215,7 +235,20 @@ export default function RecordDetail(): JSX.Element {
   const fieldMap = new Map(meta.fields.map((f) => [f.name, f]));
   // Resolved by what they are, not by the names they happen to carry today.
   const assignedField = assignmentField(meta.fields);
-  const typeField = fieldByKey(meta.fields, 'contact_type');
+  /*
+    "Updated 50 minutes ago" is part of the assignee chip, not a loose item.
+
+    Left loose in the header strip it wrapped onto a line of its own whenever
+    the fields ahead of it filled the width — there on one record, on the next
+    line on the next, which is what got reported. It is rendered immediately
+    after whichever chip carries the assignee, wherever that chip lands, and
+    only stands alone when the module has no assignment field at all.
+  */
+  const updatedChip = (
+    <span className="shrink-0 whitespace-nowrap text-xs font-normal text-muted">
+      · Updated {relativeTime(record.updatedAt)}
+    </span>
+  );
   const phone = String(record.values.mobile ?? record.values.phone ?? record.values.whatsapp_number ?? '');
   const email = String(record.values.email ?? '');
 
@@ -269,12 +302,15 @@ export default function RecordDetail(): JSX.Element {
     <div className="mx-auto max-w-[1600px] p-4 sm:p-6">
       {/* Header */}
       <div className="card mb-4 overflow-hidden">
-        {/* Mobile-first: navigation, identity and actions are three stacked
-            rows that each own the full width, collapsing to one row from `sm`.
-            The old single flex row could not shrink below the width of the
-            action buttons, so a narrow viewport scrolled sideways. */}
-        <div className="p-4 sm:p-5">
-          <div className="mb-3 flex items-center gap-2">
+        {/* Two rows, not three.
+
+            The nav row held nothing but a back arrow and a record counter and
+            still cost a whole line, while Star / Call / WhatsApp / Email sat on
+            their own line further down — a header box mostly made of air. The
+            actions ride up beside the back arrow now, and the identity block
+            below gets the full width for the fields somebody actually reads. */}
+        <div className="p-3 sm:p-4">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
             {/* Back to the list *as it was* — the filter, sort and page the
                 user had set — rather than a bare module URL that resets them. */}
             <button onClick={() => navigate(returnTo)} className="btn-ghost -ml-2 shrink-0 p-1.5" title="Back">
@@ -304,11 +340,74 @@ export default function RecordDetail(): JSX.Element {
                 </button>
               </div>
             )}
+
+            {/* Actions, right-aligned on the same line as the back arrow. */}
+            <div className="ml-auto flex flex-wrap items-center gap-1.5 sm:justify-end">
+              <button
+                onClick={() => starMutation.mutate(!record.starred)}
+                className="btn-ghost p-2"
+                title={record.starred ? 'Remove from starred' : 'Star this record'}
+              >
+                <Star className={cn('h-4 w-4', record.starred && 'fill-amber-400 text-amber-400')} />
+              </button>
+
+              {phone && (
+                <>
+                  <CallButton to={phone} recordId={record.id} module={moduleName!} />
+                  <button onClick={() => setCompose('whatsapp')} className="btn-secondary btn-sm" title="WhatsApp">
+                    <MessageCircle className="h-3.5 w-3.5 text-positive" />
+                    <span className="hidden sm:inline">WhatsApp</span>
+                  </button>
+                </>
+              )}
+              {email && (
+                <button onClick={() => setCompose('email')} className="btn-secondary btn-sm" title="Email">
+                  <Send className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Email</span>
+                </button>
+              )}
+
+              <Dropdown trigger={<button className="btn-ghost p-2" aria-label="More actions"><MoreHorizontal className="h-4 w-4" /></button>}>
+                {(close) => (
+                  <>
+                    <DropdownItem
+                      icon={summarising ? <Spinner className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
+                      onClick={() => {
+                        close();
+                        setSummarising(true);
+                        void api.summarise(moduleName!, id!)
+                          .then((result) => setAiSummary(result.summary))
+                          .catch((e: Error) => toast.error('Summary failed', e.message))
+                          .finally(() => setSummarising(false));
+                      }}
+                    >
+                      {summarising ? 'Summarising…' : 'Summarise with AI'}
+                    </DropdownItem>
+                    {moduleName === 'properties' && (
+                      <DropdownItem
+                        icon={<Link2 className="h-3.5 w-3.5" />}
+                        onClick={() => { setSharing(true); close(); }}
+                      >
+                        Send to a buyer
+                      </DropdownItem>
+                    )}
+                    {record.can?.delete && (
+                      <DropdownItem
+                        icon={<Trash2 className="h-3.5 w-3.5" />}
+                        danger
+                        onClick={() => { setConfirmDelete(true); close(); }}
+                      >
+                        Delete record
+                      </DropdownItem>
+                    )}
+                  </>
+                )}
+              </Dropdown>
+            </div>
           </div>
 
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
-            <div className="flex min-w-0 flex-1 items-start gap-3">
-              <Avatar name={record.label} size={48} />
+            <div className="flex min-w-0 items-start gap-3">
+              <Avatar name={record.label} size={44} />
 
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
@@ -317,20 +416,18 @@ export default function RecordDetail(): JSX.Element {
                       ? String(record.display?.[layoutConfig.headerTitleField] ?? record.values[layoutConfig.headerTitleField])
                       : record.label}
                   </h1>
-                  {typeField && Boolean(record.values[typeField.name]) && (
-                    <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-700 dark:bg-brand-950/40 dark:text-brand-300">
-                      {record.display?.[typeField.name] ?? String(record.values[typeField.name])}
-                    </span>
-                  )}
-                  {/* Off unless an admin asks for it in Admin → Layout Designer.
-                      The auto-number is an internal key; the header is for the
-                      person, not the row id. */}
-                  {layoutConfig.showRecordNumber && record.recordNumber && (
-                    <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-2xs text-muted dark:bg-slate-800">
-                      {record.recordNumber}
-                    </span>
-                  )}
-                  {layoutConfig.showPipelineField !== false && meta.pipelineField && record.values[meta.pipelineField] != null && (
+                  {/*
+                    No contact-type chip and no record number beside the name.
+
+                    Both were removed on the owner's instruction and the reason
+                    is the same for each: the header is for the person, and
+                    "Buyer" was already on the row he came from and in the
+                    fields below, while the auto-number is an internal key
+                    nobody dials. The Layout Designer switches that offered them
+                    went with them — a toggle for something nothing draws is a
+                    setting that lies.
+                  */}
+                  {meta.pipelineField && record.values[meta.pipelineField] != null && (
                     record.can?.edit && isInlineEditable(fieldMap.get(meta.pipelineField)!) ? (
                       <EditableField
                         module={moduleName!}
@@ -414,6 +511,7 @@ export default function RecordDetail(): JSX.Element {
                         ) : (
                           <FieldValue field={field} value={record.values[name]} display={record.display?.[name]} compact />
                         )}
+                        {name === assignedField?.name && updatedChip}
                       </span>
                     );
                   })}
@@ -441,79 +539,16 @@ export default function RecordDetail(): JSX.Element {
                       ) : (
                         <span className="text-muted">Unassigned</span>
                       )}
+                      {updatedChip}
                     </span>
                   )}
-                  <span className="shrink-0 text-xs font-normal text-muted">Updated {relativeTime(record.updatedAt)}</span>
+                  {/* Nothing to hang it on — a module with no assignment field. */}
+                  {!assignedField && updatedChip}
                 </div>
               </div>
             </div>
 
-            {/* Actions. Full width and wrapping below the identity block on a
-                phone; a right-aligned row from `sm` up. */}
-            <div className="flex flex-wrap items-center gap-1.5 sm:shrink-0 sm:justify-end">
-              <button
-                onClick={() => starMutation.mutate(!record.starred)}
-                className="btn-ghost p-2"
-                title={record.starred ? 'Remove from starred' : 'Star this record'}
-              >
-                <Star className={cn('h-4 w-4', record.starred && 'fill-amber-400 text-amber-400')} />
-              </button>
-
-              {phone && (
-                <>
-                  <CallButton to={phone} recordId={record.id} module={moduleName!} />
-                  <button onClick={() => setCompose('whatsapp')} className="btn-secondary btn-sm" title="WhatsApp">
-                    <MessageCircle className="h-3.5 w-3.5 text-positive" />
-                    <span className="hidden sm:inline">WhatsApp</span>
-                  </button>
-                </>
-              )}
-              {email && (
-                <button onClick={() => setCompose('email')} className="btn-secondary btn-sm" title="Email">
-                  <Send className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">Email</span>
-                </button>
-              )}
-
-              <Dropdown trigger={<button className="btn-ghost p-2" aria-label="More actions"><MoreHorizontal className="h-4 w-4" /></button>}>
-                {(close) => (
-                  <>
-                    <DropdownItem
-                      icon={summarising ? <Spinner className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
-                      onClick={() => {
-                        close();
-                        setSummarising(true);
-                        void api.summarise(moduleName!, id!)
-                          .then((result) => setAiSummary(result.summary))
-                          .catch((e: Error) => toast.error('Summary failed', e.message))
-                          .finally(() => setSummarising(false));
-                      }}
-                    >
-                      {summarising ? 'Summarising…' : 'Summarise with AI'}
-                    </DropdownItem>
-                    {moduleName === 'properties' && (
-                      <DropdownItem
-                        icon={<Link2 className="h-3.5 w-3.5" />}
-                        onClick={() => { setSharing(true); close(); }}
-                      >
-                        Send to a buyer
-                      </DropdownItem>
-                    )}
-                    {record.can?.delete && (
-                      <DropdownItem
-                        icon={<Trash2 className="h-3.5 w-3.5" />}
-                        danger
-                        onClick={() => { setConfirmDelete(true); close(); }}
-                      >
-                        Delete record
-                      </DropdownItem>
-                    )}
-                  </>
-                )}
-              </Dropdown>
-            </div>
-          </div>
-          </div>
+        </div>
 
         <Tabs tabs={tabs} active={activeTab} onChange={setTab} className="px-4 sm:px-5" />
       </div>
@@ -542,19 +577,21 @@ export default function RecordDetail(): JSX.Element {
           {activeTab === 'files' && <FilesTab module={moduleName!} id={id!} canEdit={Boolean(record.can?.edit)} />}
         </div>
 
-        {/* Notes first. A rep opening a lead needs the last thing a colleague
-            wrote before anything a model inferred, and the AI panel grows with
-            however many insights exist — below it, notes were often offscreen. */}
+        {/* Notes first, on every module.
+
+            A rep opening a record needs the last thing a colleague wrote before
+            anything a model inferred or a photo shows. On a contact that was
+            already true; on a property the notes box sat under the pictures and
+            the duplicate panels, far enough down that people stopped writing in
+            it. Same column, same order, both modules — photos come directly
+            below the notes they get discussed in. */}
         <div className="space-y-4">
+          <CommentsPanel module={moduleName!} id={id!} currentUser={user?.id ?? ''} />
           {moduleName === 'properties' && (
-            <>
-              <PropertyMediaHandoff recordId={id!} />
-              <PropertyPhotoCarousel recordId={id!} canEdit={Boolean(record.can?.edit)} />
-            </>
+            <PropertyPhotoCarousel recordId={id!} canEdit={Boolean(record.can?.edit)} />
           )}
           <DuplicateSuggestions module={moduleName!} id={id!} label={record.label} />
           <PendingProposals module={moduleName!} recordId={id!} />
-          <CommentsPanel module={moduleName!} id={id!} currentUser={user?.id ?? ''} />
           <AiPanel module={moduleName!} record={record} meta={meta} />
         </div>
       </div>
@@ -1701,149 +1738,15 @@ function EditFileModal({
 // Sidebar panels
 // ---------------------------------------------------------------------------
 
-/**
- * Where the originals go, and the button that says they are there.
- *
- * The whole media flow in one panel, because the flow itself is now three
- * steps: open the folder, drop the files in, press Finish. Everything after
- * that happens in n8n inside OneDrive — renaming, compressing, watermarking,
- * the social and website folders — and the CRM deliberately knows nothing
- * about it.
- */
-function PropertyMediaHandoff({ recordId }: { recordId: string }): JSX.Element | null {
-  const [finishing, setFinishing] = useState(false);
-  const { data } = useQuery({
-    queryKey: ['property-storage', recordId],
-    queryFn: () => api.propertyStorage(recordId),
-    // The folder is made by a background pass, so a property added seconds ago
-    // has none yet. Poll until it appears, then stop.
-    refetchInterval: (q) => ((q.state.data as { status?: string } | null)?.status === 'ready' ? false : 5000),
-  });
+/*
+  The "Photos and videos → open the folder → press Finish" panel was removed on
+  the owner's instruction: the team does not hand pictures over from this screen,
+  and a three-step instruction card sitting above the photos on every property
+  was cost with no reader. The API behind it (`/properties/:id/finish`,
+  `/properties/:id/storage`) is untouched, so site capture and n8n still trigger
+  processing the way they always did — only this card is gone.
+*/
 
-  if (!data) return null;
-
-  const ready = data.status === 'ready';
-
-  // The handover happens once.
-  //
-  // After photos have reached the record, the folder is the team's to
-  // reorganise however they like and the CRM is where the photos are managed —
-  // the panel below this one already does add, delete and reorder. Leaving
-  // Finish on screen forever invites somebody to press it and wonder why
-  // nothing changed, and pressing it does real work for no reason.
-  const handedOver = data.photosInCrm > 0;
-
-  const finish = async (): Promise<void> => {
-    setFinishing(true);
-    try {
-      const result = await api.finishProperty(recordId);
-      if (result.sent) {
-        toast.success('Sent for processing', 'The compressed, watermarked and social folders will appear in OneDrive shortly.');
-      } else {
-        // Never dressed up as success. Somebody who thinks their photos are
-        // being processed will not come back to check.
-        toast.error('Nothing is processing it yet', `${result.reason}. Your originals are safe in the folder — press Finish again once it is running.`);
-      }
-    } catch (err) {
-      toast.error('Could not send it', (err as Error).message);
-    } finally {
-      setFinishing(false);
-    }
-  };
-
-  return (
-    <div className="card p-4">
-      <p className="flex items-center gap-1.5 text-sm font-medium">
-        <FolderOpen className="h-3.5 w-3.5" /> Photos and videos
-      </p>
-
-      {!ready ? (
-        <p className="mt-2 text-xs text-muted">
-          {data.status === 'failed'
-            ? `The folder could not be created. ${data.lastError ?? ''}`
-            : 'Creating this property’s folder…'}
-        </p>
-      ) : (
-        <>
-          {handedOver ? (
-            <p className="mt-2 text-xs text-muted">
-              {data.photosInCrm} photo{data.photosInCrm === 1 ? '' : 's'} are on this property and
-              managed below. The folder is yours to arrange however you like — nothing here reads
-              it again.
-            </p>
-          ) : (
-            <ol className="mt-3 space-y-1.5 text-xs text-muted">
-              <li>1. Open the folder and put the originals in it.</li>
-              <li>2. Come back here and press Finish.</li>
-              <li>3. Everything else is done for you.</li>
-            </ol>
-          )}
-          <div className="mt-3 flex flex-wrap gap-2">
-            {data.externalUrl && (
-              <a href={data.externalUrl} target="_blank" rel="noreferrer" className="btn-secondary btn-sm">
-                Open the folder <ExternalLink className="h-3 w-3" />
-              </a>
-            )}
-            {!handedOver && (
-              <button className="btn-primary btn-sm" onClick={() => void finish()} disabled={finishing}>
-                {finishing ? <Spinner /> : <Check className="h-3.5 w-3.5" />} Finish
-              </button>
-            )}
-          </div>
-          {!handedOver && <MediaProgress data={data} />}
-          {!handedOver && (
-            <p className="mt-2 text-2xs text-muted">
-              The folder has a text file with this property’s details, so you can be sure it is the right one.
-            </p>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-/**
- * How far the processing has actually got.
- *
- * Without this the panel had one state — a Finish button — and everything after
- * pressing it was invisible. A property whose processing failed looked exactly
- * like one nobody had touched, so the only way to know was to open OneDrive and
- * count files. Worse, the honest answer to "did it work" was a shrug, and the
- * team's response to a shrug is to press Finish again.
- *
- * Deliberately three plain lines rather than a progress bar: the work happens on
- * somebody else's machine on a two-minute timer, so a bar would be inventing a
- * precision this cannot have.
- */
-function MediaProgress({ data }: { data: PropertyStorageInfo }): JSX.Element | null {
-  const requested = data.mediaRequestedAt ? new Date(data.mediaRequestedAt) : null;
-  const done = data.mediaDoneAt ? new Date(data.mediaDoneAt) : null;
-  if (!requested) return null;
-
-  // Done *before* it was last asked for means somebody pressed Finish again
-  // after adding more photos. That is a fresh run, not a finished one.
-  const finished = done !== null && done >= requested;
-  const waitedMinutes = Math.floor((Date.now() - requested.getTime()) / 60_000);
-  // The timer runs every two minutes, so anything past about five is not slow,
-  // it is stuck — usually the machine that does the work being asleep.
-  const stuck = !finished && waitedMinutes >= 5;
-
-  return (
-    <div className="mt-3 border-t border-slate-200 pt-2.5 dark:border-slate-800">
-      <p className="text-2xs font-semibold uppercase tracking-wider text-muted">Processing</p>
-      <p className={cn('mt-1 text-xs', finished ? 'text-positive' : stuck ? 'text-negative' : 'text-muted')}>
-        {finished
-          ? `Done ${done!.toLocaleString()}. The website copies are on this property.`
-          : stuck
-            ? `Asked for it ${waitedMinutes} minutes ago and nothing has come back. Is the machine that processes media switched on?`
-            : 'Working on it. The copies usually appear within a couple of minutes.'}
-      </p>
-      {data.lastError && (
-        <p className="mt-1 text-xs text-negative">{data.lastError}</p>
-      )}
-    </div>
-  );
-}
 
 function PropertyPhotoCarousel({
   recordId, canEdit,

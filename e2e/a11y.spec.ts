@@ -231,7 +231,9 @@ test.describe('keyboard operation', () => {
     // still there and still has to be operable without a mouse for whoever uses it.
     test.skip(!(await inlineEditOn(page)), 'inline editing is switched off');
 
-    const trigger = page.locator('button[title="Click to edit"]:visible').first();
+    // The list's editors sit behind a pencil now; it is still a real button in
+    // the tab order, which is the whole point of this test.
+    const trigger = page.locator('button[title="Change"]:visible').first();
     await trigger.focus();
     await page.keyboard.press('Enter');
 
