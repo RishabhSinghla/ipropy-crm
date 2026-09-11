@@ -179,7 +179,7 @@ describe('every public endpoint that reads the published statuses', () => {
 
     const res = await request(app).get('/api/public/projects');
     expect(res.status).toBe(200);
-    const names = (res.body.items as { full_name: string }[]).map((i) => i.full_name);
+    const names = (res.body.items as { name: string }[]).map((i) => i.name);
     expect(names).toContain('Catalogue Test Project');
   });
 
