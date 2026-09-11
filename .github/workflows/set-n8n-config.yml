@@ -19,7 +19,9 @@ on:
   workflow_dispatch:
     inputs:
       webhook_url:
-        description: "n8n webhook URL, or leave blank if n8n only polls"
+        description: "n8n webhook URL. Blank keeps whatever production already has."
+        required: false
+        default: ""
         required: false
         default: ""
 
@@ -57,7 +59,13 @@ jobs:
           UPDATE ipy_integration
              SET is_active = true,
                  status = 'connected',
-                 config = COALESCE(config,'{}'::jsonb) || jsonb_build_object('webhookUrl', '${WEBHOOK_URL}'),
+                 -- Blank leaves the existing URL alone rather than erasing it.
+                 -- This workflow is now the way the callback secret is rotated,
+                 -- and a rotation must not quietly take the webhook URL with it.
+                 config = COALESCE(config,'{}'::jsonb)
+                          || CASE WHEN '${WEBHOOK_URL}' = ''
+                                  THEN '{}'::jsonb
+                                  ELSE jsonb_build_object('webhookUrl', '${WEBHOOK_URL}') END,
                  credentials = COALESCE(credentials,'{}'::jsonb) || jsonb_build_object('callbackSecret', '${SECRET}')
            WHERE provider = 'n8n';
           SQL
