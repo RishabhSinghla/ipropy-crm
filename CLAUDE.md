@@ -216,8 +216,21 @@ that no longer exists, which made every picture correctly and delivered none of 
 six days. Both looked healthy from every angle a test can see.
 
 ```bash
-python3 scripts/check-deployed.py   # live n8n + media container vs this repo
+bash scripts/automation-up.sh       # start n8n + the media worker
+python3 scripts/check-deployed.py   # and check both against this repo
 ```
+
+**The automation's settings live outside this repo, in `~/.ipropy/automation.env`
+(chmod 600).** `automation-up.sh` recreates both containers from that file, so
+the containers are disposable and the settings are not. `MEDIA_`-prefixed names
+go to the media worker with the prefix stripped; the rest go to n8n — one file
+for two containers that both want a variable called `CRM_URL` and do not mean
+the same thing by it.
+
+That file is the only copy of the n8n API key. A key cannot be read back out of
+the CRM, only rotated (`Rotate API key`), and losing it stops media *delivery*
+while the polling still succeeds — so it fails silently. The container name
+matters too: n8n reaches the worker at `http://ipropy-media:8080`.
 
 **Two walkers, and they check different promises.** `definition-of-done.mjs`
 walks what the product promises an *administrator* — create a field and it is
