@@ -60,8 +60,10 @@ export default defineConfig({
       use: { ...devices['Pixel 7'], storageState: STORAGE_STATE },
       dependencies: ['setup'],
       // The journey walks every screen at phone size too — the phone is
-      // where the team actually lives.
-      testMatch: /mobile\.spec\.ts|journey\.spec\.ts/,
+      // where the team actually lives. `everyScreen` comes with it: an admin
+      // page that throws only at 412px wide is a page nobody would find until
+      // somebody opened it on a phone, which for this team is most of the time.
+      testMatch: /mobile\.spec\.ts|journey\.spec\.ts|everyScreen\.spec\.ts/,
     },
   ],
   webServer: [
