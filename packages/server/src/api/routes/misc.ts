@@ -36,6 +36,7 @@ import { runSchedulerNow } from '../../core/workflow/scheduler.js';
 import { TASK_TYPES } from '../../core/workflow/tasks.js';
 import { mergeRecords } from '../../core/entity/conversion.js';
 import { importSheetNames, readImportFile } from '../../core/import/readFile.js';
+import { normaliseImportRow, type ImportSettings } from '../../core/import/normalise.js';
 import { growPicklists, growableFields } from '../../core/import/picklistGrowth.js';
 import { reconcileColumns } from '../../db/seed/reconcileColumns.js';
 import {
@@ -1001,6 +1002,14 @@ const savedImportTemplateSchema = z.object({
   }).passthrough().default({}),
 });
 
+const importSettingsSchema = z.object({
+  valueMappings: z.record(z.record(z.string())).optional(),
+  multiValueSeparator: z.string().max(20).optional(),
+  dateFormat: z.enum(['dd-mm-yyyy', 'dd/mm/yyyy', 'yyyy-mm-dd', 'mm/dd/yyyy']).optional(),
+  normaliseIndianPhones: z.boolean().optional(),
+  defaults: z.record(z.unknown()).optional(),
+}).default({});
+
 /** Resolve a rename-safe template to current field names at its one boundary. */
 function resolveSavedImportMapping(module: Awaited<ReturnType<typeof registry.requireModule>>, mapping: SavedImportMapping): Record<string, string> {
   const byId = new Map(module.fields.map((field) => [field.internalId, field]));
@@ -1142,6 +1151,10 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
   // invisible to every filter and view. Off is for an import into a list whose
   // options are a deliberate, closed set.
   const createOptions = String(req.body.createOptions ?? 'true') !== 'false';
+  let settings: ImportSettings = {};
+  try { settings = importSettingsSchema.parse(JSON.parse(String(req.body.settings ?? '{}'))); } catch {
+    throw new BadRequestError('Import settings are invalid. Review advanced settings and try again.');
+  }
   const module = await registry.requireModule(req.params.module);
   const sheetName = typeof req.body.sheetName === 'string' && req.body.sheetName ? req.body.sheetName : undefined;
   const { rows } = readImportFile(file.buffer, file.originalname, sheetName);
@@ -1256,21 +1269,22 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
     let cancelled = false;
 
     for (const [i, raw] of rows.entries()) {
-      const values: Record<string, unknown> = {};
+      const canonicalSource: Record<string, string> = { ...raw };
       for (const [header, fieldName] of Object.entries(mapping)) {
         if (!fieldName) continue;
         const v = raw[header];
         if (v === undefined || v === '') continue;
         const fix = canonical.get(fieldName);
-        if (!fix) { values[fieldName] = v; continue; }
+        if (!fix) continue;
         // Corrected to the option's own spelling, so "neharpar" and "NEHARPAR"
         // do not become two localities. Multi-select cells value by value; a
         // single dropdown is one lookup and is never split — see `multi` above.
-        values[fieldName] = multiValued.has(fieldName)
+        canonicalSource[header] = multiValued.has(fieldName)
           ? String(v).split(/[;,]/).map((part) => fix.get(part.trim()) ?? part.trim())
             .filter(Boolean).join('; ')
           : (fix.get(String(v).trim()) ?? v);
       }
+      const values = normaliseImportRow(canonicalSource, mapping, live.fields, settings);
       if (!Object.keys(values).length) {
         skipped++;
         await logRow(job!.id, i + 2, 'skipped', {}, { message: 'Every mapped column was empty on this row' });

@@ -50,6 +50,7 @@ export default function ImportAdmin(): JSX.Element {
   const [runWorkflows, setRunWorkflows] = useState(false);
   // On by default — see the tooltip beside it, and core/import/picklistGrowth.ts.
   const [createOptions, setCreateOptions] = useState(true);
+  const [normaliseIndianPhones, setNormaliseIndianPhones] = useState(false);
   const [busy, setBusy] = useState(false);
   const [templateName, setTemplateName] = useState('');
   const [openJob, setOpenJob] = useState<JobRow | null>(null);
@@ -95,7 +96,7 @@ export default function ImportAdmin(): JSX.Element {
     if (!file) return;
     setBusy(true);
     try {
-      const result = await api.runImport(moduleName, file, mapping, duplicateHandling, runWorkflows, createOptions, sheetName);
+      const result = await api.runImport(moduleName, file, mapping, duplicateHandling, runWorkflows, createOptions, sheetName, { normaliseIndianPhones });
       toast.success('Import started', `${result.totalRows} rows queued — progress appears below.`);
       setFile(null);
       setPreview(null);
@@ -174,6 +175,18 @@ export default function ImportAdmin(): JSX.Element {
 
           {preview && (
             preview.sheets.length > 1 && <div className="w-56"><label className="label">Excel sheet</label><Select value={sheetName ?? ''} onChange={(sheet) => { if (file) void analyse(file, sheet); }} options={preview.sheets.map((sheet) => ({ value: sheet, label: sheet }))} /></div>
+          )}
+
+          {preview && preview.fields.some((field) => field.uitype === 'phone' && Object.values(mapping).includes(field.name)) && (
+            <label className="flex cursor-pointer items-center gap-2 pb-0.5">
+              <input
+                type="checkbox"
+                checked={normaliseIndianPhones}
+                onChange={(e) => setNormaliseIndianPhones(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              <span className="text-sm">Add +91 to bare 10-digit Indian mobile numbers</span>
+            </label>
           )}
 
           {preview && (

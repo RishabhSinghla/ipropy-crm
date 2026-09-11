@@ -1060,6 +1060,7 @@ export const api = {
   runImport: (
     module: string, file: File, mapping: Record<string, string>,
     duplicateHandling: string, runWorkflows = false, createOptions = true, sheetName?: string,
+    settings: Record<string, unknown> = {},
   ) => {
     const form = new FormData();
     form.append('file', file);
@@ -1067,6 +1068,7 @@ export const api = {
     form.append('duplicateHandling', duplicateHandling);
     form.append('runWorkflows', String(runWorkflows));
     form.append('createOptions', String(createOptions));
+    form.append('settings', JSON.stringify(settings));
     if (sheetName) form.append('sheetName', sheetName);
     return request<{ jobId: string; totalRows: number }>(`/api/import/${module}`, { method: 'POST', body: form });
   },
