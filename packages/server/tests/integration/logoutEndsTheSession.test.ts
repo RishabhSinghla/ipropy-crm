@@ -57,6 +57,23 @@ describe('logging out', () => {
     expect((await refresh(token)).status).toBe(401);
   });
 
+  it('does not sign you out everywhere when you log out twice', async () => {
+    /*
+      The revoke only touches live rows, so a second logout matched nothing —
+      which read as "a token no session has ever had" and sent the fallback
+      through to end every session this user had. Two clicks on a laptop, and
+      the phone is signed out too.
+    */
+    const laptop = await signIn();
+    const phone = await signIn();
+
+    expect((await logout(laptop.refresh, laptop.access)).status).toBe(200);
+    expect((await logout(laptop.refresh, laptop.access)).status).toBe(200);
+
+    expect((await refresh(phone.refresh)).status,
+      'logging out twice signed them out of their other device').toBe(200);
+  });
+
   it('leaves the other device signed in', async () => {
     const laptop = await signIn();
     const phone = await signIn();
