@@ -123,6 +123,26 @@ jobs:
                 ORDER BY f.name;"
           done
           echo
+          echo "=== fill rates on the admin-created (json) fields (counts only) ==="
+          # The column fill rates above cannot see these: an admin-created field
+          # lives in `custom_fields`, so a key that is simply absent and a field
+          # nobody has filled in look the same from the schema. It matters
+          # because matching reads two of them — price and size — and a mapping
+          # can be configured, resolve, and still contribute nothing to a score
+          # because every unit is missing the value. The screen shows a
+          # confident percentage either way.
+          for spec in "ipy_e_properties:properties" "ipy_e_leads:leads"; do
+            table="${spec%%:*}"; module="${spec#*:}"
+            psql "$PROD_DATABASE_URL" -tAc \
+              "SELECT '$table rows=' || (SELECT count(*) FROM $table) || ', ' ||
+                      coalesce(string_agg(f.name || '=' ||
+                        (SELECT count(*) FROM $table t
+                          WHERE t.custom_fields ? f.column_name
+                            AND t.custom_fields ->> f.column_name <> ''), ', ' ORDER BY f.name), '(no json fields)')
+                 FROM ipy_field f JOIN ipy_module mo ON mo.id = f.module_id
+                WHERE mo.name = '$module' AND f.storage = 'json' AND f.is_active;"
+          done
+          echo
           echo "=== values archived by a permanent delete (counts only) ==="
           psql "$PROD_DATABASE_URL" -tAc \
             "SELECT coalesce(string_agg(table_name || '.' || column_name || '=' || n, ', '), '(none)')

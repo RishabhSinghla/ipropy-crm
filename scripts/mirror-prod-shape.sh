@@ -105,40 +105,66 @@ SQL
 #     included: an \`area\` field without \`unitMaster\` offers no Sq Ft / Sq Yd
 #     and no companion unit field to the importer, and a picklist without
 #     \`picklist\` has no list at all.
+#
+#     The third column is the JSONB *key*, and it is not the name. A rename
+#     moves the name and never the key, so seven of these differ in production:
+#     \`leads.possession_status\` is stored under \`furnishing\`, \`leads.area_size\`
+#     under \`area_unit\`, \`properties.property_source\` under \`source\`. Assuming
+#     the two match writes values to a key production never reads, which hides
+#     precisely the bug class this mirror exists to expose.
 psql -v ON_ERROR_STOP=1 <<'SQL'
 INSERT INTO ipy_field (module_id, block_id, name, label, uitype, storage, column_name, sequence, is_customised, config)
 SELECT m.id,
        (SELECT id FROM ipy_block WHERE module_id = m.id ORDER BY sequence LIMIT 1),
-       v.name, v.label, v.uitype, 'json', NULL, 900 + v.seq, true, v.config::jsonb
+       v.name, v.label, v.uitype, 'json', v.key, 900 + v.seq, true, v.config::jsonb
   FROM (VALUES
-    ('properties','alternate_phone','Alternate Phone','phone',1,'{"codePrefix":"+91"}'),
-    ('properties','area_size','Area / Size','area',2,'{"sortable":true,"unitField":"area_size_unit","exportable":true,"filterable":true,"importable":true,"unitMaster":"area"}'),
-    ('properties','area_size_unit','Area / Size Unit','string',3,'{}'),
-    ('properties','asking_price','Asking Price','currency',4,'{"sortable":true,"unitField":"asking_price_unit","exportable":true,"filterable":true,"importable":true,"unitMaster":"budget_demand"}'),
-    ('properties','asking_price_unit','Asking Price Unit','string',5,'{}'),
-    ('properties','bathrooms','Bathrooms','picklist',6,'{"picklist":"bathroom"}'),
-    ('properties','category','Category','picklist',7,'{"picklist":"category"}'),
-    ('properties','contact_type','Contact Type','picklist',8,'{"picklist":"contact_type"}'),
-    ('properties','email','Email','email',9,'{"sortable":true,"exportable":true,"filterable":true,"importable":true}'),
-    ('properties','floor','Floor','picklist',10,'{"picklist":"floor"}'),
-    ('properties','lost_reason','Lost Reason','picklist',11,'{"picklist":"lost_reason"}'),
-    ('properties','next_follow_up','Next Follow Up','date',12,'{}'),
-    ('properties','portion_type','Portion','picklist',13,'{"picklist":"portion_type","sortable":true,"exportable":true,"filterable":true,"importable":true}'),
-    ('properties','property_source','Property Source','picklist',14,'{"picklist":"lead_source","sortable":true,"exportable":true,"filterable":true,"importable":true}'),
-    ('properties','publish_to_web','Show on Website','boolean',15,'{}'),
-    ('leads','area_size','Area / Size','area',16,'{"sortable":true,"unitField":"area_size_unit","exportable":true,"filterable":true,"importable":true,"unitMaster":"area"}'),
-    ('leads','area_size_unit','Area / Size Unit','string',17,'{"sortable":true,"exportable":true,"filterable":true,"importable":true}'),
-    ('leads','bathrooms','Bathrooms','picklist',18,'{"picklist":"bathroom","sortable":true,"exportable":true,"filterable":true,"importable":true}'),
-    ('leads','block_tower','Block / Tower','picklist',19,'{"picklist":"tower"}'),
-    ('leads','category','Category','picklist',20,'{"picklist":"category","sortable":true,"exportable":true,"filterable":true,"importable":true}'),
-    ('leads','facing','Facing','picklist',21,'{"picklist":"facing"}'),
-    ('leads','floor','Floor','picklist',22,'{"picklist":"floor","referenceModules":["properties"]}'),
-    ('leads','portion','Portion','picklist',23,'{"picklist":"portion_type"}'),
-    ('leads','possession_status','Possession Status','picklist',24,'{"picklist":"possession_status"}'),
-    ('leads','unit_no','Unit Number','string',25,'{"sortable":true,"exportable":true,"filterable":true,"importable":true}')
-  ) AS v(module_name, name, label, uitype, seq, config)
+    ('properties','alternate_phone','alternate_mobile','Alternate Phone','phone',1,'{"codePrefix":"+91"}'),
+    ('properties','area_size','area_size','Area / Size','area',2,'{"sortable":true,"unitField":"area_size_unit","exportable":true,"filterable":true,"importable":true,"unitMaster":"area"}'),
+    ('properties','area_size_unit','area_size_unit','Area / Size Unit','string',3,'{}'),
+    ('properties','asking_price','asking_price','Asking Price','currency',4,'{"sortable":true,"unitField":"asking_price_unit","exportable":true,"filterable":true,"importable":true,"unitMaster":"budget_demand"}'),
+    ('properties','asking_price_unit','asking_price_unit','Asking Price Unit','string',5,'{}'),
+    ('properties','bathrooms','bathrooms','Bathrooms','picklist',6,'{"picklist":"bathroom"}'),
+    ('properties','category','category','Category','picklist',7,'{"picklist":"category"}'),
+    ('properties','contact_type','contact_type','Contact Type','picklist',8,'{"picklist":"contact_type"}'),
+    ('properties','email','email','Email','email',9,'{"sortable":true,"exportable":true,"filterable":true,"importable":true}'),
+    ('properties','floor','floor','Floor','picklist',10,'{"picklist":"floor"}'),
+    ('properties','lost_reason','lost_reason','Lost Reason','picklist',11,'{"picklist":"lost_reason"}'),
+    ('properties','next_follow_up','next_follow_up','Next Follow Up','date',12,'{}'),
+    ('properties','portion_type','portion_type','Portion','picklist',13,'{"picklist":"portion_type","sortable":true,"exportable":true,"filterable":true,"importable":true}'),
+    ('properties','property_source','source','Property Source','picklist',14,'{"picklist":"lead_source","sortable":true,"exportable":true,"filterable":true,"importable":true}'),
+    ('properties','publish_to_web','publish_to_web','Show on Website','boolean',15,'{}'),
+    ('leads','area_size','area_unit','Area / Size','area',16,'{"sortable":true,"unitField":"area_size_unit","exportable":true,"filterable":true,"importable":true,"unitMaster":"area"}'),
+    ('leads','area_size_unit','area_unit_unit','Area / Size Unit','string',17,'{"sortable":true,"exportable":true,"filterable":true,"importable":true}'),
+    ('leads','bathrooms','bathroom','Bathrooms','picklist',18,'{"picklist":"bathroom","sortable":true,"exportable":true,"filterable":true,"importable":true}'),
+    ('leads','block_tower','block_tower','Block / Tower','picklist',19,'{"picklist":"tower"}'),
+    ('leads','category','category','Category','picklist',20,'{"picklist":"category","sortable":true,"exportable":true,"filterable":true,"importable":true}'),
+    ('leads','facing','facing','Facing','picklist',21,'{"picklist":"facing"}'),
+    ('leads','floor','floor','Floor','picklist',22,'{"picklist":"floor","referenceModules":["properties"]}'),
+    ('leads','portion','portion_type','Portion','picklist',23,'{"picklist":"portion_type"}'),
+    ('leads','possession_status','furnishing','Possession Status','picklist',24,'{"picklist":"possession_status"}'),
+    ('leads','unit_no','unit_no','Unit Number','string',25,'{"sortable":true,"exportable":true,"filterable":true,"importable":true}')
+  ) AS v(module_name, name, key, label, uitype, seq, config)
   JOIN ipy_module m ON m.name = v.module_name
  WHERE NOT EXISTS (SELECT 1 FROM ipy_field f WHERE f.module_id = m.id AND f.name = v.name);
+SQL
+
+# 3c. Production's `bedrooms` is a column-backed picklist reading
+#     `configuration`, and it exists there as a rename of a field this seed no
+#     longer creates at all — so the rename in step 2 has nothing to rename and
+#     the field is simply absent here. Created outright, because a properties
+#     module with no bedrooms field makes the matching pair
+#     `leads.configuration -> properties.bedrooms` unconfigurable, and the
+#     mirror would then prove matching broken for a reason production has not.
+psql -v ON_ERROR_STOP=1 <<'SQL'
+INSERT INTO ipy_field (module_id, block_id, name, label, uitype, storage, column_name, sequence, is_customised, config)
+SELECT m.id,
+       (SELECT id FROM ipy_block WHERE module_id = m.id ORDER BY sequence LIMIT 1),
+       'bedrooms', 'Bedrooms', 'picklist', 'column', 'configuration', 899, true,
+       '{"picklist":"bedrooms"}'::jsonb
+  FROM ipy_module m
+ WHERE m.name = 'properties'
+   AND NOT EXISTS (SELECT 1 FROM ipy_field f
+                    WHERE f.module_id = m.id AND f.column_name = 'configuration');
 SQL
 
 # 4. Drop the payload columns nothing owns any more, so a query that names one
@@ -158,6 +184,26 @@ for spec in "ipy_e_properties:$PROP_COLUMNS" "ipy_e_leads:$LEAD_COLUMNS"; do
     echo "   dropped $table.$col"
   done
 done
+
+# 5. Re-resolve the matching pairs against the field set that now exists.
+#    The seed writes them while the seeded shape is still in place, so every
+#    pair it can find points at a field this script then deletes, and the ones
+#    it could not find were never written at all — localhost ended up with one
+#    matching rule where production has five, and "matching returns nothing"
+#    read as a broken engine rather than a mirror artefact.
+#
+#    Cleared and re-seeded rather than inserted here, so this exercises the
+#    real `seedMatchingMappings` against production's field set instead of
+#    asserting an answer it was told. Local only — it would discard pairs an
+#    admin had mapped by hand.
+echo "→ re-resolving matching pairs against the mirrored fields"
+psql -q -c "DELETE FROM ipy_field_mapping WHERE purpose = 'matching'" </dev/null >/dev/null
+npm run --silent db:seed >/dev/null 2>&1 || echo "   (re-seed failed — run npm run db:seed by hand)"
+psql -tAc "SELECT '   matching: ' || coalesce(string_agg(sf.name || ' -> ' || tf.name, ', '), '(none)')
+             FROM ipy_field_mapping fm
+             JOIN ipy_field sf ON sf.internal_id = fm.source_field_internal_id
+             JOIN ipy_field tf ON tf.internal_id = fm.target_field_internal_id
+            WHERE fm.purpose = 'matching' AND fm.is_active" </dev/null
 
 echo "→ done. Field counts now:"
 psql -tAc "SELECT m.name || ': ' || count(*) || ' (' || count(*) FILTER (WHERE f.storage='json') || ' json)'
