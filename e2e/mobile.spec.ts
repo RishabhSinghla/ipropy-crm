@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
-import { inlineEditOn, unique, waitForRecords, fillRequiredFields } from './helpers';
+import { inlineEditOn, unique, waitForRecords, fillRequiredFields, dashboardWithRecordRows } from './helpers';
 
 /**
  * The critical path at phone size.
@@ -162,7 +162,7 @@ test.describe('phone', () => {
    * away in the wrong direction.
    */
   test('a dashboard row previews without leaving the dashboard', async ({ page }) => {
-    await page.goto('/dashboard');
+    await page.goto(await dashboardWithRecordRows(page));
 
     const row = page.locator('a[href^="/leads/"]:visible').first();
     await expect(row).toBeVisible({ timeout: 30_000 });
@@ -187,7 +187,7 @@ test.describe('phone', () => {
    * the same row. It is a timestamp for exactly this.
    */
   test('a tap still works after a preview was dismissed with Escape', async ({ page }) => {
-    await page.goto('/dashboard');
+    await page.goto(await dashboardWithRecordRows(page));
 
     const row = page.locator('a[href^="/leads/"]:visible').first();
     await expect(row).toBeVisible({ timeout: 30_000 });

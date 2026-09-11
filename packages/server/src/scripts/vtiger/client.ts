@@ -56,28 +56,50 @@ export class VtigerClient {
     this.endpoint = `${baseUrl.replace(/\/+$/, '')}/webservice.php`;
   }
 
+  /**
+   * Vtiger-cloud throttles this endpoint hard enough that a plain loop of
+   * more than a couple dozen requests trips it — and once tripped, it looks
+   * like a rolling window rather than a burst guard: several minutes of
+   * gentle backoff still came back 429 on every module. So this backs off
+   * per-request, but the real defence is upstream — callers must pace
+   * themselves between calls too, not rely on this alone.
+   */
   private async call<T>(
     operation: string,
     params: Record<string, string> = {},
     method: 'GET' | 'POST' = 'GET',
   ): Promise<T> {
     const query = new URLSearchParams({ operation, ...params });
-    const res = method === 'GET'
-      ? await fetch(`${this.endpoint}?${query.toString()}`)
-      : await fetch(this.endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: query.toString(),
-      });
+    const maxAttempts = 6;
 
-    if (!res.ok) {
-      throw new VtigerApiError(`HTTP ${res.status} ${res.statusText}`, operation);
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const res = method === 'GET'
+        ? await fetch(`${this.endpoint}?${query.toString()}`)
+        : await fetch(this.endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: query.toString(),
+        });
+
+      if (res.status === 429 && attempt < maxAttempts) {
+        const retryAfter = Number(res.headers.get('retry-after'));
+        const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
+          ? retryAfter * 1000
+          : 1000 * 2 ** attempt; // 2s, 4s, 8s, 16s, 32s
+        await new Promise((r) => setTimeout(r, waitMs));
+        continue;
+      }
+
+      if (!res.ok) {
+        throw new VtigerApiError(`HTTP ${res.status} ${res.statusText}`, operation);
+      }
+      const body = await res.json() as { success: boolean; result?: T; error?: { code: string; message: string } };
+      if (!body.success) {
+        throw new VtigerApiError(body.error?.message ?? 'unknown error', operation);
+      }
+      return body.result as T;
     }
-    const body = await res.json() as { success: boolean; result?: T; error?: { code: string; message: string } };
-    if (!body.success) {
-      throw new VtigerApiError(body.error?.message ?? 'unknown error', operation);
-    }
-    return body.result as T;
+    throw new VtigerApiError('rate-limited after repeated retries', operation);
   }
 
   /** Establishes a session. Call once before anything else. */

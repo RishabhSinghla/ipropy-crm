@@ -205,10 +205,54 @@ describe('opening a link', () => {
       expect(JSON.stringify(publicView.body)).not.toContain('Whitefield');
       await request(app).get(`/api/public/share/${body.token}/media/${attachmentId}`).expect(404);
     } finally {
-      await db.query(
-        `UPDATE ipy_setting SET value = $1::jsonb WHERE key = 'sharing.property_link'`,
-        [JSON.stringify(original!.value)],
-      );
+      // Restored by putting the row back the way it was found — including not
+      // at all. Since migration 132 the default lives in code and the row only
+      // exists once an admin has saved on the screen, so an UPDATE here
+      // matched nothing and the row this test wrote was left standing for
+      // every test after it.
+      if (original) {
+        await db.query(
+          `UPDATE ipy_setting SET value = $1::jsonb WHERE key = 'sharing.property_link'`,
+          [JSON.stringify(original.value)],
+        );
+      } else {
+        await db.query(`DELETE FROM ipy_setting WHERE key = 'sharing.property_link'`);
+      }
+    }
+  });
+
+  /**
+   * The bug this pins cost every share link its price.
+   *
+   * The buyer-facing field list was twenty-six names written into a row by
+   * migration 042, and the page read `total_price` directly. Production
+   * deleted both that column and twenty others and created `asking_price` in
+   * their place, so a link showed five details, no price and no size — and not
+   * even "Price on request", because the price line only renders when there is
+   * a number. Nothing failed; the link just looked empty.
+   *
+   * So this asserts the two halves that were wrong: the default reaches a
+   * field nobody could have listed in advance, and the price comes back
+   * resolved rather than read by name.
+   */
+  it('shows the price from the field Budget is mapped to, not one read by name', async () => {
+    // Priced through `base_price`, which is what Budget resolves to on a
+    // seeded database. The old page read `total_price` and would find nothing
+    // here — the same way it found nothing on production, where the field is
+    // `asking_price` and `total_price` has been deleted outright.
+    const { id } = await propertyWithPhoto('Priced Floor', { base_price: 9900000 });
+    const { body } = await share(id).expect(201);
+    const view = await request(app).get(`/api/public/share/${body.token}`).expect(200);
+
+    expect(view.body.priceShared).toBe(true);
+    expect(view.body.price).toBe(9900000);
+    // Shown once, in the header — not again in the facts list underneath.
+    expect(view.body.fields.some((f: { name: string }) => f.name === 'asking_price')).toBe(false);
+    // And the promise the default is making: identity and exact address stay
+    // off, and so does the state of the sale.
+    const names = view.body.fields.map((f: { name: string }) => f.name);
+    for (const withheld of ['full_name', 'unit_number', 'locality', 'lost_reason', 'next_follow_up']) {
+      expect(names).not.toContain(withheld);
     }
   });
 

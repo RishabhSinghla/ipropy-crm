@@ -22,7 +22,10 @@
     "tenant": "tsx src/control/cli.ts",
     "control": "tsx src/control/server.ts",
     "go-live:users": "tsx src/scripts/goLiveUsers.ts",
-    "vtiger:discover": "tsx src/scripts/vtiger/discover.ts"
+    "vtiger:discover": "tsx src/scripts/vtiger/discover.ts",
+    "vtiger:extract": "tsx src/scripts/vtiger/extract.ts",
+    "vtiger:load": "tsx src/scripts/vtiger/load.ts",
+    "vtiger:migrate": "tsx src/scripts/vtiger/migrate.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.123.0",

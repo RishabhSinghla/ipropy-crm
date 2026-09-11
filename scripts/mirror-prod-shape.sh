@@ -3,32 +3,42 @@
 #
 # `db-pull-prod.sh` is the real thing and copies the rows too, but it needs
 # PROD_DATABASE_URL. This is the half that can be done without a credential:
-# production's field set, its renames and its tombstones, applied to a local
-# database that was seeded from the template.
+# production's field set, its renames, its tombstones and its admin-created
+# fields, applied to a local database that was seeded from the template.
 #
 # Why it exists: a fresh seed gives leads and properties ~60 fields each whose
-# name and column are the same string. Production has 18 and 17, several
-# renamed, and the rest permanently deleted (which drops the column). Every
-# bug this project keeps rediscovering — 42703 on a deleted column, a mapping
-# keyed on a name that moved — is invisible on the seeded shape and obvious on
-# this one.
+# name and column are the same string, and not one field in JSONB storage.
+# Production has 15 and 16 real columns, several renamed, the rest permanently
+# deleted (which drops the column), and 25 admin-created fields that live in
+# `custom_fields`. Every bug this project keeps rediscovering — 42703 on a
+# deleted column, a mapping keyed on a name that moved, config keyed by a field
+# id that was re-created — is invisible on the seeded shape and obvious on this
+# one.
 #
-# The shape below is read from `.github/workflows/probe-prod-schema.yml`'s
-# output, which is read-only and prints field *names* only. Re-run that probe
-# and update these lists when production changes.
+# The shape below is read from the `Probe prod schema` workflow's output, which
+# is read-only. Re-run that probe and update these lists when production moves;
+# it prints every value this file needs, including each json field's uitype and
+# config, because a picklist with no `picklist` config has no list and an area
+# field with no `unitMaster` has no Sq Ft / Sq Yd — a mirror built from names
+# alone reports the CRM broken in ways production is not.
 #
 #   npm run db:seed && bash scripts/mirror-prod-shape.sh
+#
+# Last reconciled against production: 2026-09-11 (run 34620360371).
 set -euo pipefail
 
 DB_CONTAINER="${IPROPY_DB_CONTAINER:-ipropy-db}"
 DB_USER="${POSTGRES_USER:-ipropy}"
 DB_NAME="${POSTGRES_DB:-ipropy}"
 
-# Production's payload columns, verbatim from the probe.
-PROP_COLUMNS="amenities,area_unit,base_price,carpet_area,configuration,custom_fields,facing,floor_plan_url,latitude,locality,longitude,name,possession_status,property_code,record_id,status,tower,unit_number"
-PROP_TOMBSTONES="age_of_property,area,balconies,balcony_area,bathrooms,bedrooms,blocked_by,blocked_for_lead_id,blocked_until,built_up_area,carpet_area,category,city,club_membership,configuration,corner_unit,demand,demand_unit,description,floor,floor_rise_charge,furnishing,gallery,gst_percent,is_resale,locality,maintenance_deposit,maintenance_monthly,market_price,monthly_rent,offer_price,other_charges,owner_contact_id,parking_charge,parking_slots,plc_charge,plot_area,possession_date,price_compare,project_name,property_type,rate_per_sqft,registration_charge,security_deposit,stamp_duty_percent,super_built_up_area,terrace_area,total_price,vastu_compliant,video_url,view_description,virtual_tour_url,wing"
-LEAD_TOMBSTONES="aadhaar_masked,address,ai_grade,ai_score,ai_score_reasons,ai_scored_at,anniversary,annual_income,bedroom,bedrooms,budget_band,budget_max,budget_min,category,company,contact_attempts,converted_at,country_code,date_of_birth,description,designation,do_not_call,do_not_whatsapp,email_opt_out,engagement_score,fbclid,first_name,first_response_secs,funding_type,gclid,gender,interested_project,ip_address,is_converted,is_nri,junk_reason,kyc_status,landing_page,last_name,lead_status,lifecycle_stage,lifetime_value,loan_required,nationality,occupation,owner_id,pan,passport_number,portrait_url,possession_timeline,preferred_contact,preferred_language,property_type,purpose,qualification_notes,rating,referred_by,requirement,salutation,secondary_email,source,sub_source,utm_campaign,utm_content,utm_medium,utm_source,utm_term,whatsapp_number"
-LEAD_COLUMNS="alternate_phone,area,area_unit,budget,budget_unit,configuration,contact_type,custom_fields,email,full_name,last_contacted_at,lead_number,lead_source,lost_reason,mobile,next_followup_at,preferred_locations,record_id,status"
+# Production's payload columns, verbatim from the probe. `owner_id` is not here
+# and must not be: it lives on `ipy_record`, and creating a same-named column on
+# the payload table shadows the real one so every record reads as unassigned.
+PROP_COLUMNS="amenities,configuration,custom_fields,facing,floor_plan_url,full_name,latitude,locality,longitude,mobile,possession_status,property_code,record_id,status,tower,unit_number"
+LEAD_COLUMNS="alternate_phone,budget,configuration,contact_type,custom_fields,email,full_name,lead_number,lead_source,lost_reason,mobile,next_followup_at,preferred_locations,record_id,status"
+
+PROP_TOMBSTONES="age_of_property,area,area_size,area_unit,balconies,balcony_area,base_price,bathrooms,bedrooms,blocked_by,blocked_for_lead_id,blocked_until,built_up_area,carpet_area,category,city,club_membership,configuration,corner_unit,demand,demand_unit,description,floor,floor_rise_charge,furnishing,gallery,gst_percent,is_resale,locality,maintenance_deposit,maintenance_monthly,market_price,monthly_rent,name,offer_price,other_charges,owner_contact_id,parking_charge,parking_slots,plc_charge,plot_area,possession_date,price_compare,project_name,property_type,rate_per_sqft,registration_charge,security_deposit,stamp_duty_percent,super_built_up_area,terrace_area,total_price,vastu_compliant,video_url,view_description,virtual_tour_url,wing"
+LEAD_TOMBSTONES="aadhaar_masked,address,ai_grade,ai_score,ai_score_reasons,ai_scored_at,anniversary,annual_income,area,area_unit,bedroom,bedrooms,budget_band,budget_max,budget_min,budget_unit,category,company,contact_attempts,converted_at,country_code,date_of_birth,description,designation,do_not_call,do_not_whatsapp,email_opt_out,engagement_score,fbclid,first_name,first_response_secs,funding_type,gclid,gender,interested_project,ip_address,is_converted,is_nri,junk_reason,kyc_status,landing_page,last_contacted_at,last_name,lead_status,lifecycle_stage,lifetime_value,loan_required,nationality,occupation,owner_id,pan,passport_number,portrait_url,possession_timeline,preferred_contact,preferred_language,property_type,purpose,qualification_notes,rating,referred_by,requirement,salutation,secondary_email,source,sub_source,utm_campaign,utm_content,utm_medium,utm_source,utm_term,whatsapp_number"
 
 psql() { docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" "$@"; }
 
@@ -37,16 +47,17 @@ echo "→ mirroring production's field shape onto $DB_NAME"
 psql -v ON_ERROR_STOP=1 <<SQL
 BEGIN;
 
--- Production carries these two columns; a fresh seed does not.
-ALTER TABLE ipy_e_properties ADD COLUMN IF NOT EXISTS carpet_area NUMERIC;
+-- Production carries this column and a fresh seed does not; the field that
+-- reads it is renamed to \`bedrooms\` below.
 ALTER TABLE ipy_e_properties ADD COLUMN IF NOT EXISTS configuration TEXT;
 
 -- 1. Production's tombstone list, verbatim — not "whatever this database
 --    happens to be missing". A field the template still defines and this
 --    database has already lost has nothing here to tombstone, so the next
 --    seed puts it straight back and the mirror drifts on its first re-seed.
---    That is how `view_description` returned, and it is the same reason
---    production's own `bedrooms` survives: it is tombstoned there.
+--    That is how \`view_description\` returned, and it is the same reason
+--    production's own \`bedrooms\` survives: it is tombstoned there, and the
+--    live field of that name is a rename of \`configuration\`.
 INSERT INTO ipy_field_tombstone (module_name, field_name)
 SELECT 'properties', unnest(string_to_array('$PROP_TOMBSTONES', ','))
 ON CONFLICT DO NOTHING;
@@ -56,18 +67,17 @@ ON CONFLICT DO NOTHING;
 
 DELETE FROM ipy_field f USING ipy_module m
  WHERE m.id = f.module_id
+   AND f.storage = 'column'
    AND ((m.name = 'properties' AND f.column_name <> ALL (string_to_array('$PROP_COLUMNS', ',') || ARRAY['owner_id']))
      OR (m.name = 'leads'      AND f.column_name <> ALL (string_to_array('$LEAD_COLUMNS', ',') || ARRAY['owner_id'])));
 
--- 2. The renames. Name moves, column never does — that is the whole point.
+-- 2. The renames. Name moves, column never does — that is the whole point, and
+--    it is why code keyed on a field *name* breaks here and nowhere else.
 UPDATE ipy_field f SET name = v.new_name, is_customised = true
   FROM (VALUES
-    ('properties','base_price','demand'),
     ('properties','locality','preferred_locations'),
-    ('properties','carpet_area','area_size'),
     ('properties','configuration','bedrooms'),
     ('properties','tower','block_tower'),
-    ('properties','name','full_name'),
     ('properties','owner_id','assigned_to'),
     ('leads','status','lead_status'),
     ('leads','owner_id','assigned_to')
@@ -79,41 +89,88 @@ UPDATE ipy_field f SET name = v.new_name, is_customised = true
 UPDATE ipy_field f SET is_active = false, display_type = 'hidden'
   FROM ipy_module m
  WHERE m.id = f.module_id
-   AND ((m.name = 'properties' AND f.column_name IN ('amenities','latitude','longitude'))
-     OR (m.name = 'leads'      AND f.column_name IN ('last_contacted_at')));
+   AND m.name = 'properties'
+   AND f.column_name IN ('amenities','latitude','longitude');
 
 COMMIT;
 SQL
 
-# 3b. Production has these two fields; a local seed does not create them,
-#     because the template's originals were deleted here long ago.
+# 3b. Production's admin-created fields, which all live in \`custom_fields\`
+#     JSONB. A local seed creates none of them — it has no way to, since they
+#     were added through the UI — so localhost had *zero* json-storage fields
+#     while production has 25. That is the entire admin-created code path
+#     untested, on the field set the team actually uses every day.
+#
+#     uitype, label and config are copied verbatim from the probe, config
+#     included: an \`area\` field without \`unitMaster\` offers no Sq Ft / Sq Yd
+#     and no companion unit field to the importer, and a picklist without
+#     \`picklist\` has no list at all.
+#
+#     The third column is the JSONB *key*, and it is not the name. A rename
+#     moves the name and never the key, so seven of these differ in production:
+#     \`leads.possession_status\` is stored under \`furnishing\`, \`leads.area_size\`
+#     under \`area_unit\`, \`properties.property_source\` under \`source\`. Assuming
+#     the two match writes values to a key production never reads, which hides
+#     precisely the bug class this mirror exists to expose.
 psql -v ON_ERROR_STOP=1 <<'SQL'
---     The config matters as much as the row. An `area` field with no
---     `unitMaster` has no Sq Ft / Sq Yd list, its companion `area_unit` is not
---     offered to the importer, and the mirror quietly tells you the CRM is
---     broken in a way production is not.
 INSERT INTO ipy_field (module_id, block_id, name, label, uitype, storage, column_name, sequence, is_customised, config)
 SELECT m.id,
        (SELECT id FROM ipy_block WHERE module_id = m.id ORDER BY sequence LIMIT 1),
-       v.name, v.label, v.uitype, 'column', v.col, 900 + v.seq, true, v.config::jsonb
+       v.name, v.label, v.uitype, 'json', v.key, 900 + v.seq, true, v.config::jsonb
+  FROM (VALUES
+    ('properties','alternate_phone','alternate_mobile','Alternate Phone','phone',1,'{"codePrefix":"+91"}'),
+    ('properties','area_size','area_size','Area / Size','area',2,'{"sortable":true,"unitField":"area_size_unit","exportable":true,"filterable":true,"importable":true,"unitMaster":"area"}'),
+    ('properties','area_size_unit','area_size_unit','Area / Size Unit','string',3,'{}'),
+    ('properties','asking_price','asking_price','Asking Price','currency',4,'{"sortable":true,"unitField":"asking_price_unit","exportable":true,"filterable":true,"importable":true,"unitMaster":"budget_demand"}'),
+    ('properties','asking_price_unit','asking_price_unit','Asking Price Unit','string',5,'{}'),
+    ('properties','bathrooms','bathrooms','Bathrooms','picklist',6,'{"picklist":"bathroom"}'),
+    ('properties','category','category','Category','picklist',7,'{"picklist":"category"}'),
+    ('properties','contact_type','contact_type','Contact Type','picklist',8,'{"picklist":"contact_type"}'),
+    ('properties','email','email','Email','email',9,'{"sortable":true,"exportable":true,"filterable":true,"importable":true}'),
+    ('properties','floor','floor','Floor','picklist',10,'{"picklist":"floor"}'),
+    ('properties','lost_reason','lost_reason','Lost Reason','picklist',11,'{"picklist":"lost_reason"}'),
+    ('properties','next_follow_up','next_follow_up','Next Follow Up','date',12,'{}'),
+    ('properties','portion_type','portion_type','Portion','picklist',13,'{"picklist":"portion_type","sortable":true,"exportable":true,"filterable":true,"importable":true}'),
+    ('properties','property_source','source','Property Source','picklist',14,'{"picklist":"lead_source","sortable":true,"exportable":true,"filterable":true,"importable":true}'),
+    ('properties','publish_to_web','publish_to_web','Show on Website','boolean',15,'{}'),
+    ('leads','area_size','area_unit','Area / Size','area',16,'{"sortable":true,"unitField":"area_size_unit","exportable":true,"filterable":true,"importable":true,"unitMaster":"area"}'),
+    ('leads','area_size_unit','area_unit_unit','Area / Size Unit','string',17,'{"sortable":true,"exportable":true,"filterable":true,"importable":true}'),
+    ('leads','bathrooms','bathroom','Bathrooms','picklist',18,'{"picklist":"bathroom","sortable":true,"exportable":true,"filterable":true,"importable":true}'),
+    ('leads','block_tower','block_tower','Block / Tower','picklist',19,'{"picklist":"tower"}'),
+    ('leads','category','category','Category','picklist',20,'{"picklist":"category","sortable":true,"exportable":true,"filterable":true,"importable":true}'),
+    ('leads','facing','facing','Facing','picklist',21,'{"picklist":"facing"}'),
+    ('leads','floor','floor','Floor','picklist',22,'{"picklist":"floor","referenceModules":["properties"]}'),
+    ('leads','portion','portion_type','Portion','picklist',23,'{"picklist":"portion_type"}'),
+    ('leads','possession_status','furnishing','Possession Status','picklist',24,'{"picklist":"possession_status"}'),
+    ('leads','unit_no','unit_no','Unit Number','string',25,'{"sortable":true,"exportable":true,"filterable":true,"importable":true}')
+  ) AS v(module_name, name, key, label, uitype, seq, config)
+  JOIN ipy_module m ON m.name = v.module_name
+ WHERE NOT EXISTS (SELECT 1 FROM ipy_field f WHERE f.module_id = m.id AND f.name = v.name);
+SQL
+
+# 3c. Production's `bedrooms` is a column-backed picklist reading
+#     `configuration`, and it exists there as a rename of a field this seed no
+#     longer creates at all — so the rename in step 2 has nothing to rename and
+#     the field is simply absent here. Created outright, because a properties
+#     module with no bedrooms field makes the matching pair
+#     `leads.configuration -> properties.bedrooms` unconfigurable, and the
+#     mirror would then prove matching broken for a reason production has not.
+psql -v ON_ERROR_STOP=1 <<'SQL'
+INSERT INTO ipy_field (module_id, block_id, name, label, uitype, storage, column_name, sequence, is_customised, config)
+SELECT m.id,
+       (SELECT id FROM ipy_block WHERE module_id = m.id ORDER BY sequence LIMIT 1),
+       'bedrooms', 'Bedrooms', 'picklist', 'column', 'configuration', 899, true,
+       '{"picklist":"bedrooms"}'::jsonb
   FROM ipy_module m
- CROSS JOIN (VALUES ('area_size','Area / Size','area','carpet_area',1,
-                       '{"min":0,"unit":"sqft","unitField":"area_unit","unitMaster":"area"}'),
-                    ('bedrooms','Bedrooms','picklist','configuration',2,
-                       '{"picklist":"bedrooms"}'))
-              AS v(name, label, uitype, col, seq, config)
  WHERE m.name = 'properties'
-   AND NOT EXISTS (SELECT 1 FROM ipy_field f WHERE f.module_id = m.id AND f.column_name = v.col);
-DELETE FROM ipy_field_tombstone WHERE module_name='properties' AND field_name IN ('area_size');
+   AND NOT EXISTS (SELECT 1 FROM ipy_field f
+                    WHERE f.module_id = m.id AND f.column_name = 'configuration');
 SQL
 
 # 4. Drop the payload columns nothing owns any more, so a query that names one
 #    fails here exactly as it fails there.
 for spec in "ipy_e_properties:$PROP_COLUMNS" "ipy_e_leads:$LEAD_COLUMNS"; do
   table="${spec%%:*}"; keep="${spec#*:}"
-  # The list is read into an array first: `psql` inside a `while read` loop
-  # reads the loop's own stdin and swallows the remaining column names, so a
-  # pipeline here drops one column and silently skips the rest.
   # Collected up front rather than piped: `psql` inside a `while read` loop
   # reads the loop's own stdin and swallows the remaining names, so the
   # pipeline version dropped one column and silently skipped the rest. And
@@ -128,6 +185,27 @@ for spec in "ipy_e_properties:$PROP_COLUMNS" "ipy_e_leads:$LEAD_COLUMNS"; do
   done
 done
 
+# 5. Re-resolve the matching pairs against the field set that now exists.
+#    The seed writes them while the seeded shape is still in place, so every
+#    pair it can find points at a field this script then deletes, and the ones
+#    it could not find were never written at all — localhost ended up with one
+#    matching rule where production has five, and "matching returns nothing"
+#    read as a broken engine rather than a mirror artefact.
+#
+#    Cleared and re-seeded rather than inserted here, so this exercises the
+#    real `seedMatchingMappings` against production's field set instead of
+#    asserting an answer it was told. Local only — it would discard pairs an
+#    admin had mapped by hand.
+echo "→ re-resolving matching pairs against the mirrored fields"
+psql -q -c "DELETE FROM ipy_field_mapping WHERE purpose = 'matching'" </dev/null >/dev/null
+npm run --silent db:seed >/dev/null 2>&1 || echo "   (re-seed failed — run npm run db:seed by hand)"
+psql -tAc "SELECT '   matching: ' || coalesce(string_agg(sf.name || ' -> ' || tf.name, ', '), '(none)')
+             FROM ipy_field_mapping fm
+             JOIN ipy_field sf ON sf.internal_id = fm.source_field_internal_id
+             JOIN ipy_field tf ON tf.internal_id = fm.target_field_internal_id
+            WHERE fm.purpose = 'matching' AND fm.is_active" </dev/null
+
 echo "→ done. Field counts now:"
-psql -tAc "SELECT m.name || ': ' || count(*) FROM ipy_field f JOIN ipy_module m ON m.id=f.module_id
+psql -tAc "SELECT m.name || ': ' || count(*) || ' (' || count(*) FILTER (WHERE f.storage='json') || ' json)'
+             FROM ipy_field f JOIN ipy_module m ON m.id=f.module_id
             WHERE m.name IN ('leads','properties') GROUP BY m.name ORDER BY 1"

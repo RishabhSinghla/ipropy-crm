@@ -175,3 +175,39 @@ export async function openRecordTab(page: Page, name: string): Promise<void> {
   await expect(tab).toBeVisible({ timeout: 30_000 });
   await tab.click();
 }
+
+/**
+ * The dashboard that actually has a record row on it.
+ *
+ * The phone peek specs long-press a row that links to a contact, and used to
+ * assume `/dashboard` — the user's default — was that dashboard. Which one is
+ * default is admin configuration: on a CRM whose default is "Sales Command
+ * Centre" (four charts and no list) there is no row to press, and two specs
+ * failed for thirty seconds each reporting a working feature as broken.
+ *
+ * So it asks. Falls back to `/dashboard` so a CRM with no list widget at all
+ * still fails on the assertion that matters rather than in here.
+ */
+export async function dashboardWithRecordRows(page: Page): Promise<string> {
+  // Navigated first: `page.evaluate` on `about:blank` cannot resolve a relative
+  // URL, and the app keeps its token in localStorage rather than a cookie, so
+  // the fetch has to carry it by hand.
+  await page.goto('/dashboard');
+  const boards = await page.evaluate(async () => {
+    const token = localStorage.getItem('ipropy.token');
+    const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+    const res = await fetch('/api/dashboards', { headers });
+    if (!res.ok) return [] as string[];
+    const body = await res.json() as { id: string }[] | { rows: { id: string }[] };
+    const list = Array.isArray(body) ? body : body.rows ?? [];
+    const withRows: string[] = [];
+    for (const board of list) {
+      const one = await fetch(`/api/dashboards/${board.id}`, { headers });
+      if (!one.ok) continue;
+      const full = await one.json() as { widgets?: { type: string }[] };
+      if ((full.widgets ?? []).some((w) => w.type === 'list')) withRows.push(board.id);
+    }
+    return withRows;
+  });
+  return boards.length ? `/dashboard/${boards[0]}` : '/dashboard';
+}

@@ -257,6 +257,10 @@ export interface SharedProperty {
   fields: { name: string; label: string; uitype: string }[];
   photos: { id: string; url: string }[];
   sharedAt: string;
+  /** Resolved server-side — see `core/sharing/propertyShare.ts`. */
+  title: string | null;
+  price: number | null;
+  priceShared: boolean;
 }
 
 export interface PropertyShareAdminConfig {

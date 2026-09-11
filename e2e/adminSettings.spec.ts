@@ -17,6 +17,12 @@ import { test, expect } from '@playwright/test';
 test.beforeEach(async ({ page }) => {
   await page.goto('/admin/settings');
   await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible();
+  // The heading renders before the settings do. Typing into the search box
+  // while the list is still empty filters nothing and the assertion that
+  // follows fails against a page that was merely not ready — which is what
+  // made the search spec flaky in a full run, where a hundred specs share one
+  // account and occasionally meet the rate limit on the way in.
+  await expect(page.getByRole('button', { name: /Your business/ })).toBeVisible();
 });
 
 test('opens as a short list rather than a wall of settings', async ({ page }) => {

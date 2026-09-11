@@ -18,11 +18,61 @@
  */
 import type { Tx } from '../pool.js';
 
-const DEFAULT_PAIRS: { intent: string; source: string[]; target: string[] }[] = [
-  { intent: 'budget', source: ['budget'], target: ['base_price', 'demand', 'total_price'] },
-  { intent: 'bhk', source: ['configuration'], target: ['configuration', 'bedrooms'] },
-  { intent: 'location', source: ['preferred_locations'], target: ['locality', 'city'] },
-  { intent: 'size', source: ['area'], target: ['carpet_area', 'area', 'built_up_area'] },
+/**
+ * Candidates are tried best-first and the first that exists wins. The lists
+ * lead with what production holds *today* and keep the older names behind it,
+ * because this has to seed the same four intentions on a database of any age.
+ *
+ * They were wrong until 2026-09-11: price was looked for under `base_price`,
+ * `demand` and `total_price`, and size under `area`, `carpet_area` and
+ * `built_up_area` — production has permanently deleted all six. Its price is
+ * `asking_price` and its size `area_size`, both admin-created, so both live in
+ * `custom_fields` and their `column_name` is the JSONB key. A re-seed or a
+ * re-created field therefore mapped location and BHK and silently nothing
+ * else, which is the failure migration 129 was written for, one field set
+ * later.
+ *
+ * `types` is the guard that makes a wrong answer impossible rather than
+ * unlikely. An amount field carries a companion holding its unit — `area_size`
+ * is `area`, `area_size_unit` is `string` — and on production the size field's
+ * JSONB key is literally `area_unit`, which reads exactly like that companion.
+ * Matching size against a column of the word "Sq Ft" would score every unit
+ * identically and report a confident percentage while doing it.
+ */
+const DEFAULT_PAIRS: {
+  intent: string;
+  source: string[];
+  target: string[];
+  types: string[];
+}[] = [
+  {
+    intent: 'budget',
+    source: ['budget'],
+    target: ['asking_price', 'base_price', 'demand', 'total_price'],
+    types: ['currency', 'number', 'decimal', 'integer', 'double'],
+  },
+  {
+    intent: 'bhk',
+    source: ['configuration'],
+    target: ['configuration', 'bedrooms'],
+    // `multipicklist` is not a stray: the buyer side is genuinely multi — a
+    // family will take a 2 BHK or a 3 BHK — while a unit is exactly one. Its
+    // absence here is why BHK, the heaviest term in the score, resolved to
+    // nothing on production's field set.
+    types: ['picklist', 'multipicklist', 'string', 'text', 'integer', 'number'],
+  },
+  {
+    intent: 'location',
+    source: ['preferred_locations'],
+    target: ['locality', 'city'],
+    types: ['string', 'text', 'picklist', 'multipicklist'],
+  },
+  {
+    intent: 'size',
+    source: ['area_size', 'area', 'area_unit'],
+    target: ['area_size', 'carpet_area', 'area', 'built_up_area'],
+    types: ['area', 'number', 'decimal', 'integer', 'double'],
+  },
 ];
 
 export async function seedMatchingMappings(tx: Tx): Promise<number> {
@@ -47,16 +97,18 @@ export async function seedMatchingMappings(tx: Tx): Promise<number> {
         CROSS JOIN LATERAL (
           SELECT f.internal_id FROM ipy_field f
            WHERE f.module_id = sm.id AND f.is_active AND f.column_name = ANY ($1::text[])
+             AND f.uitype = ANY ($4::text[])
            ORDER BY array_position($1::text[], f.column_name) LIMIT 1
         ) sf
         CROSS JOIN LATERAL (
           SELECT f.internal_id FROM ipy_field f
            WHERE f.module_id = tm.id AND f.is_active AND f.column_name = ANY ($2::text[])
+             AND f.uitype = ANY ($4::text[])
            ORDER BY array_position($2::text[], f.column_name) LIMIT 1
         ) tf
         WHERE sm.name = 'leads'
        ON CONFLICT DO NOTHING`,
-      [pair.source, pair.target, pair.intent],
+      [pair.source, pair.target, pair.intent, pair.types],
     );
     created += res.rowCount ?? 0;
   }

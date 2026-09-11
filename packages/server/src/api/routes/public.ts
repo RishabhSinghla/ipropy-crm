@@ -747,6 +747,11 @@ publicRouter.get('/share/:token', asyncHandler(async (req, res) => {
       url: `/api/public/share/${link.token}/media/${p.id}`,
     })),
     sharedAt: link.createdAt,
+    // Resolved by `loadSharedProperty` rather than guessed at in the browser,
+    // which read `project_name` and `total_price` by name and found neither.
+    title: shared.title,
+    price: shared.price,
+    priceShared: shared.priceShared,
   });
 }));
 

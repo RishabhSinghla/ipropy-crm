@@ -72,24 +72,33 @@ jobs:
           # aborts the step (`shell: bash -e`) and hides everything after it.
           # That is the same lesson the query code already learned.
           echo "=== fill rates on the columns matching reads (counts only) ==="
-          psql "$PROD_DATABASE_URL" -tAc \
-            "SELECT 'properties rows=' || count(*)
-                 || ', carpet_area=' || count(to_jsonb(p)->>'carpet_area')
-                 || ', configuration=' || count(to_jsonb(p)->>'configuration')
-                 || ', base_price=' || count(to_jsonb(p)->>'base_price')
-                 || ', total_price=' || count(to_jsonb(p)->>'total_price')
-                 || ', demand=' || count(to_jsonb(p)->>'demand')
-                 || ', locality=' || count(to_jsonb(p)->>'locality')
-                 || ', status=' || count(to_jsonb(p)->>'status')
-               FROM ipy_e_properties p;"
-          psql "$PROD_DATABASE_URL" -tAc \
-            "SELECT 'leads rows=' || count(*)
-                 || ', budget=' || count(to_jsonb(l)->>'budget')
-                 || ', configuration=' || count(to_jsonb(l)->>'configuration')
-                 || ', preferred_locations=' || count(to_jsonb(l)->>'preferred_locations')
-                 || ', area=' || count(to_jsonb(l)->>'area')
-                 || ', mobile=' || count(to_jsonb(l)->>'mobile')
-               FROM ipy_e_leads l;"
+          # Counts only — never a value — because this log is public. A field
+          # can exist, be mapped and still contribute nothing to a match
+          # because every row is null, which looks identical to "matching is
+          # bad" from the outside.
+          #
+          # `count(to_jsonb(p)->>'col')` on a column production has dropped
+          # returns 0, not an error — so the honest answer "that column is
+          # gone" and the alarming one "every row is empty" printed the same
+          # digit. This asks information_schema which of them still exist and
+          # says `absent` for the rest, which is the fact worth knowing: a
+          # dropped column is a 42703 waiting for the next query that names it.
+          for spec in "ipy_e_properties:carpet_area,area_size,configuration,base_price,asking_price,total_price,demand,locality,preferred_locations,status" \
+                      "ipy_e_leads:budget,configuration,preferred_locations,area,area_size,mobile,status"; do
+            table="${spec%%:*}"
+            present=$(psql "$PROD_DATABASE_URL" -tAc \
+              "SELECT column_name FROM information_schema.columns WHERE table_name = '$table';")
+            sel=""; gone=""
+            for c in $(echo "${spec#*:}" | tr ',' ' '); do
+              if echo "$present" | grep -qx "$c"; then
+                sel="$sel || ', $c=' || count(to_jsonb(t)->>'$c')"
+              else
+                gone="$gone $c"
+              fi
+            done
+            psql "$PROD_DATABASE_URL" -tAc "SELECT '$table rows=' || count(*)$sel FROM $table t;"
+            echo "  absent from $table:${gone:- (none)}"
+          done
           echo
           echo "=== are the matching pairs actually configured? ==="
           psql "$PROD_DATABASE_URL" -tAc \
@@ -100,12 +109,85 @@ jobs:
               WHERE fm.purpose = 'matching' AND fm.is_active;"
           echo
           echo "=== json-storage (admin-created) fields ==="
+          # Name alone is not enough to reproduce one. A picklist without its
+          # `picklist` config has no list, and an area field without its
+          # `unitMaster` has no Sq Ft / Sq Yd — so a mirror built from names
+          # only tells you the CRM is broken in ways production is not.
           for m in properties leads; do
             psql "$PROD_DATABASE_URL" -tAc \
-              "SELECT '$m: ' || coalesce(string_agg(f.name, ', ' ORDER BY f.name), '(none)')
+              "SELECT '$m|' || f.name || '|' || f.column_name || '|' || f.uitype || '|' || f.label
+                      || '|' || coalesce(f.config::text, '{}')
+                      || '|' || (CASE WHEN f.is_active THEN 'active' ELSE 'hidden' END)
                  FROM ipy_field f JOIN ipy_module mo ON mo.id = f.module_id
-                WHERE mo.name = '$m' AND f.storage = 'json';"
+                WHERE mo.name = '$m' AND f.storage = 'json'
+                ORDER BY f.name;"
           done
+          echo
+          echo "=== fill rates on the admin-created (json) fields (counts only) ==="
+          # The column fill rates above cannot see these: an admin-created field
+          # lives in `custom_fields`, so a key that is simply absent and a field
+          # nobody has filled in look the same from the schema. It matters
+          # because matching reads two of them — price and size — and a mapping
+          # can be configured, resolve, and still contribute nothing to a score
+          # because every unit is missing the value. The screen shows a
+          # confident percentage either way.
+          for spec in "ipy_e_properties:properties" "ipy_e_leads:leads"; do
+            table="${spec%%:*}"; module="${spec#*:}"
+            psql "$PROD_DATABASE_URL" -tAc \
+              "SELECT '$table rows=' || (SELECT count(*) FROM $table) || ', ' ||
+                      coalesce(string_agg(f.name || '=' ||
+                        (SELECT count(*) FROM $table t
+                          WHERE t.custom_fields ? f.column_name
+                            AND t.custom_fields ->> f.column_name <> ''), ', ' ORDER BY f.name), '(no json fields)')
+                 FROM ipy_field f JOIN ipy_module mo ON mo.id = f.module_id
+                WHERE mo.name = '$module' AND f.storage = 'json' AND f.is_active;"
+          done
+          echo
+          echo "=== do the numeric json fields actually hold numbers? (counts only) ==="
+          # A field's uitype and the shape of what is stored under its key can
+          # disagree, and nothing reports it. `leads.area_size` is an `area`
+          # field whose JSONB key is `area_unit` — the name its companion unit
+          # field would have — so a key full of the word "Sq Ft" would render
+          # as an area, export as an area, and be compared against a property's
+          # square footage by the matching engine, scoring every unit the same.
+          # Counts only: this says how many parse as a number, never what any
+          # of them say.
+          for spec in "ipy_e_properties:properties" "ipy_e_leads:leads"; do
+            table="${spec%%:*}"; module="${spec#*:}"
+            psql "$PROD_DATABASE_URL" -tAc \
+              "SELECT coalesce(string_agg(f.name || ' (key ' || f.column_name || '): ' ||
+                        (SELECT count(*) FROM $table t
+                          WHERE t.custom_fields ->> f.column_name ~ '^[0-9]+(\\.[0-9]+)?$') || ' numeric of ' ||
+                        (SELECT count(*) FROM $table t
+                          WHERE coalesce(t.custom_fields ->> f.column_name, '') <> ''), ', ' ORDER BY f.name),
+                        '(none)')
+                 FROM ipy_field f JOIN ipy_module mo ON mo.id = f.module_id
+                WHERE mo.name = '$module' AND f.storage = 'json' AND f.is_active
+                  AND f.uitype IN ('area','currency','number','decimal','integer','double');"
+          done
+          echo
+          echo "=== are those non-numeric area values just unit labels? (counts only) ==="
+          # The repair depends on what they are. If every one is a value from
+          # the `area` unit master — Sq Ft, Sq Yd, Gaj — then a field named
+          # `area_unit` was renamed to `area_size` and retyped as an area
+          # without its values being converted, and the fix is mechanical: the
+          # label belongs under the companion unit key, not the area key.
+          # Anything else is somebody's typed-in note and must not be touched.
+          # Counts and distinct counts only — no value is printed.
+          psql "$PROD_DATABASE_URL" -tAc \
+            "WITH v AS (
+               SELECT t.custom_fields ->> 'area_unit' AS raw FROM ipy_e_leads t
+                WHERE coalesce(t.custom_fields ->> 'area_unit', '') <> ''
+                  AND NOT (t.custom_fields ->> 'area_unit' ~ '^[0-9]+(\\.[0-9]+)?$')
+             ), u AS (
+               SELECT lower(trim(um.value)) AS label FROM ipy_unit_master um WHERE um.kind = 'area'
+               UNION
+               SELECT lower(trim(um.label)) FROM ipy_unit_master um WHERE um.kind = 'area'
+             )
+             SELECT 'non-numeric=' || (SELECT count(*) FROM v)
+                 || ', distinct=' || (SELECT count(DISTINCT raw) FROM v)
+                 || ', recognised as an area unit=' ||
+                    (SELECT count(*) FROM v WHERE lower(trim(v.raw)) IN (SELECT label FROM u));"
           echo
           echo "=== values archived by a permanent delete (counts only) ==="
           psql "$PROD_DATABASE_URL" -tAc \

@@ -97,13 +97,26 @@ export default function SharedPropertyPage(): JSX.Element {
 
   const p = data.property;
   const bedrooms = num(p.bedrooms);
-  const title = (str(p.project_name) ?? str(p.name)
-    ?? [bedrooms != null ? `${bedrooms} BHK` : null, str(p.property_type)].filter(Boolean).join(' ')) || 'Property';
-  const unitName = str(p.name);
-  const price = num(p.total_price);
+  /*
+    Title and price come from the server now.
+
+    They were read here by name — `project_name`, then `name`, then
+    `total_price` — and production has permanently deleted all three. So every
+    shared link a rep sent a buyer was headed "Property" and showed no price at
+    all: the price line is only rendered when the number is present, so the
+    "Price on request" fallback never ran either. The server resolves the title
+    from the module's own `labelFields` and the price from whichever field the
+    admin mapped Budget to, which is the same answer matching and comparables
+    use.
+  */
+  const title = data.title
+    ?? ([bedrooms != null ? `${bedrooms} BHK` : null, str(p.property_type)].filter(Boolean).join(' ')
+        || 'Property');
+  const unitName = str(p.name) ?? str(p.full_name);
+  const price = data.price ?? null;
   const place = [str(p.locality), str(p.city)].filter(Boolean).join(', ');
 
-  const heroFields = new Set(['name', 'project_name', 'total_price', 'locality', 'city', 'description', 'amenities', 'area_unit']);
+  const heroFields = new Set(['name', 'full_name', 'project_name', 'total_price', 'locality', 'city', 'description', 'amenities', 'area_unit']);
   const facts = data.fields.flatMap((field) => {
     if (heroFields.has(field.name)) return [];
     const value = sharedValue(field, p[field.name], p);
@@ -123,8 +136,10 @@ export default function SharedPropertyPage(): JSX.Element {
           <header className="space-y-2">
             <h1 className="text-2xl font-semibold leading-tight">{title}</h1>
             {unitName && unitName !== title && <p className="text-muted">{unitName}</p>}
-            {price !== null && (
-              <p className="text-2xl font-semibold text-fg">{formatIndianPrice(price)}</p>
+            {data.priceShared && (
+              <p className="text-2xl font-semibold text-fg">
+                {price !== null ? formatIndianPrice(price) : 'Price on request'}
+              </p>
             )}
             {place && (
               <p className="flex items-center gap-1.5 text-sm text-muted">
