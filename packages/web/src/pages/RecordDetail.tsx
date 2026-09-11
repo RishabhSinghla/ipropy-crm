@@ -1,7 +1,7 @@
 import { type JSX, type MouseEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CALL_DISPOSITIONS, type BuyerMatch, type FieldMeta, formatIndianPrice, type ModuleMeta, type PropertyMatch, type RecordEnvelope, relativeTime, type TimelineEntry } from '@ipropy/shared';
+import { type BuyerMatch, type FieldMeta, formatIndianPrice, type ModuleMeta, type PropertyMatch, type RecordEnvelope, relativeTime, type TimelineEntry } from '@ipropy/shared';
 import {
   Activity, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Edit3, Eye, FileQuestion, FileText, Images, LayoutDashboard, Link2, MessageCircle, Mic, MoreHorizontal, Paperclip, Pencil, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Trash2, Upload, X,
 } from 'lucide-react';
@@ -10,6 +10,7 @@ import { compressImage, formatBytes } from '../lib/compressImage';
 import { toast, useApp } from '../lib/store';
 import { useWatchRecord } from '../lib/realtime';
 import { invalidateRecordQueries } from '../lib/invalidate';
+import { useCallDispositions } from '../lib/callDispositions';
 import { useVoiceCapture } from '../lib/useVoiceCapture';
 import { loadListNav } from '../lib/listNav';
 import { cn, renderMarkdown, restrictionForField } from '../lib/utils';
@@ -2823,6 +2824,9 @@ function CallsTab({ recordId }: { recordId: string }): JSX.Element {
   const [editing, setEditing] = useState<CallListItem | null>(null);
   const [draftDisposition, setDraftDisposition] = useState('');
   const [draftNotes, setDraftNotes] = useState('');
+  // The stored outcome stays selectable even if the admin has since removed it:
+  // opening an old call to fix its notes must not quietly rewrite its outcome.
+  const editDispositions = useCallDispositions(draftDisposition);
   const [saving, setSaving] = useState(false);
   const [historyOpen, setHistoryOpen] = useState<string | null>(null);
   const editVoice = useVoiceCapture(async (audio) => {
@@ -2942,7 +2946,7 @@ function CallsTab({ recordId }: { recordId: string }): JSX.Element {
           <div>
             <label className="label">Outcome</label>
             <select className="input" value={draftDisposition} onChange={(event) => setDraftDisposition(event.target.value)}>
-              {CALL_DISPOSITIONS.map((value) => <option key={value} value={value}>{value}</option>)}
+              {editDispositions.map((value) => <option key={value} value={value}>{value}</option>)}
             </select>
           </div>
           <div>

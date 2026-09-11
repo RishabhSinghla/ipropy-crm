@@ -1,8 +1,8 @@
 import { createContext, type JSX, type ReactNode, useContext, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { CALL_DISPOSITIONS } from '@ipropy/shared';
 import { Mic, Phone, Square } from 'lucide-react';
 import { api } from '../lib/api';
+import { useCallDispositions } from '../lib/callDispositions';
 import { toast, useApp } from '../lib/store';
 import { useVoiceCapture } from '../lib/useVoiceCapture';
 import { cn } from '../lib/utils';
@@ -37,6 +37,16 @@ export function CallDispositionProvider({
   const [notes, setNotes] = useState('');
   const [placing, setPlacing] = useState(false);
   const [saving, setSaving] = useState(false);
+  /*
+    The outcome the dialog opens on has to be one the list still offers.
+
+    "Call Back Later" is the sensible default and it is also just a string: an
+    admin who deletes that option leaves the dialog defaulting to a value the
+    server now refuses, and the rep sees a save fail on a dialog they never
+    touched. So the default is the first option when it is no longer there.
+  */
+  const dispositions = useCallDispositions();
+  const selected = dispositions.includes(disposition) ? disposition : (dispositions[0] ?? disposition);
 
   const voice = useVoiceCapture(async (audio) => {
     try {
@@ -86,16 +96,16 @@ export function CallDispositionProvider({
     try {
       if (providerCallId) {
         await api.setDisposition(providerCallId, {
-          disposition,
+          disposition: selected,
           notes: notes.trim() || undefined,
         });
       } else {
         const elapsed = startedAt ? Math.max(1, Math.round((Date.now() - startedAt) / 60_000)) : 1;
-        const connected = !['No Answer', 'Busy', 'Switched Off', 'Not Reachable'].includes(disposition);
+        const connected = !['No Answer', 'Busy', 'Switched Off', 'Not Reachable'].includes(selected);
         await api.logCall({
           to: target, recordId, module, direction: 'outbound',
           durationSeconds: connected ? Math.max(durationMinutes, elapsed) * 60 : 0,
-          disposition,
+          disposition: selected,
           notes: notes.trim() || undefined,
         });
       }
@@ -134,8 +144,8 @@ export function CallDispositionProvider({
         <div className="space-y-3">
           <div>
             <label className="label">Outcome</label>
-            <select className="input" value={disposition} onChange={(event) => setDisposition(event.target.value)}>
-              {CALL_DISPOSITIONS.map((value) => <option key={value} value={value}>{value}</option>)}
+            <select className="input" value={selected} onChange={(event) => setDisposition(event.target.value)}>
+              {dispositions.map((value) => <option key={value} value={value}>{value}</option>)}
             </select>
           </div>
           {!providerCallId && (

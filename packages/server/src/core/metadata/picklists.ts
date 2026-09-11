@@ -17,6 +17,7 @@
  * four cases and all four are handled here rather than in the route.
  */
 import { db, type Tx } from '../../db/pool.js';
+import { BadRequestError } from '../../utils/errors.js';
 import { quoteIdent } from '../query/builder.js';
 import * as registry from './registry.js';
 
@@ -293,4 +294,46 @@ async function renameInFilters(name: string, from: string, to: string, conn: Tx)
     changed += res.rowCount ?? 0;
   }
   return changed;
+}
+
+/**
+ * The options a dropdown currently offers, in the order the admin put them.
+ *
+ * Through the metadata registry rather than a query of its own: that cache is
+ * what `GET /api/meta/picklists/:name` answers from, so the list a rep sees in
+ * the dropdown and the list the server will accept are the same object. Two
+ * readers of the same table drift the moment one of them caches; one reader
+ * cannot. The registry is invalidated whenever an admin edits a picklist, so
+ * an option added in Settings is accepted by the next request.
+ */
+export async function activeValues(name: string): Promise<string[]> {
+  const options = await registry.getPicklist(name);
+  return options.filter((o) => o.isActive).map((o) => o.value);
+}
+
+/**
+ * Refuse a value the dropdown does not offer.
+ *
+ * Call dispositions were free text: the endpoint took `z.string().max(60)` and
+ * wrote whatever arrived. Nothing in the UI could produce a stray value, but
+ * anything holding an API key could, and production had three calls recorded
+ * against an outcome that exists in no list and appears in no report. A CRM
+ * whose reports are built by grouping on a column cannot let that column hold
+ * values nobody chose.
+ *
+ * An empty list means the picklist is missing or every option is switched off.
+ * That is a configuration problem, and blocking a rep from recording what
+ * happened on a call is the wrong way to report it — so an empty list accepts
+ * anything, exactly as before.
+ */
+export async function assertPicklistValue(
+  name: string,
+  value: string | null | undefined,
+): Promise<void> {
+  if (value === null || value === undefined || value === '') return;
+  const values = await activeValues(name);
+  if (!values.length || values.includes(value)) return;
+  throw new BadRequestError(
+    `"${value}" is not one of the ${name} options. Choose one of: ${values.join(', ')}`,
+  );
 }
