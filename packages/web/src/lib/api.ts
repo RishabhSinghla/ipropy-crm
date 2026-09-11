@@ -1049,16 +1049,17 @@ export const api = {
   /** The public read. Deliberately not authenticated — a buyer has no account. */
   sharedProperty: (token: string) => get<SharedProperty>(`/api/public/share/${token}`),
   tags: () => get<{ id: string; name: string; color: string; usage_count: number }[]>('/api/tags'),
-  importPreview: (module: string, file: File) => {
+  importPreview: (module: string, file: File, sheetName?: string) => {
     const form = new FormData();
     form.append('file', file);
-    return request<{ headers: string[]; sample: Record<string, string>[]; totalRows: number; suggestedMapping: Record<string, string>; fields: Record<string, unknown>[] }>(
+    if (sheetName) form.append('sheetName', sheetName);
+    return request<{ sheets: string[]; selectedSheet: string | null; headers: string[]; sample: Record<string, string>[]; totalRows: number; suggestedMapping: Record<string, string>; mappingSuggestions: Record<string, { field: string; confidence: 'high' | 'possible' }>; fields: Record<string, unknown>[] }>(
       `/api/import/${module}/preview`, { method: 'POST', body: form },
     );
   },
   runImport: (
     module: string, file: File, mapping: Record<string, string>,
-    duplicateHandling: string, runWorkflows = false, createOptions = true,
+    duplicateHandling: string, runWorkflows = false, createOptions = true, sheetName?: string,
   ) => {
     const form = new FormData();
     form.append('file', file);
@@ -1066,6 +1067,7 @@ export const api = {
     form.append('duplicateHandling', duplicateHandling);
     form.append('runWorkflows', String(runWorkflows));
     form.append('createOptions', String(createOptions));
+    if (sheetName) form.append('sheetName', sheetName);
     return request<{ jobId: string; totalRows: number }>(`/api/import/${module}`, { method: 'POST', body: form });
   },
   importJobs: () => get<Record<string, unknown>[]>('/api/import/jobs'),

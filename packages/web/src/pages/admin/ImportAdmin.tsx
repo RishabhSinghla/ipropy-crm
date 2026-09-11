@@ -10,10 +10,13 @@ import { Badge, Dropdown, DropdownItem, EmptyState, Modal, Select, Spinner } fro
 import { ImportDuplicateReview } from '../../components/ImportDuplicateReview';
 
 interface Preview {
+  sheets: string[];
+  selectedSheet: string | null;
   headers: string[];
   sample: Record<string, string>[];
   totalRows: number;
   suggestedMapping: Record<string, string>;
+  mappingSuggestions: Record<string, { field: string; confidence: 'high' | 'possible' }>;
   fields: { name: string; label: string; uitype: string; mandatory: boolean }[];
 }
 
@@ -34,6 +37,7 @@ export default function ImportAdmin(): JSX.Element {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [sheetName, setSheetName] = useState<string | undefined>();
   // Review by default. The other two answer a per-row question with a
   // file-wide rule, and both are wrong often enough to lose real data —
   // "skip" throws away the corrected spelling and the new budget, "create"
@@ -69,13 +73,14 @@ export default function ImportAdmin(): JSX.Element {
     }
   };
 
-  const analyse = async (selected: File): Promise<void> => {
+  const analyse = async (selected: File, selectedSheet?: string): Promise<void> => {
     setBusy(true);
     setFile(selected);
     try {
-      const result = await api.importPreview(moduleName, selected);
+      const result = await api.importPreview(moduleName, selected, selectedSheet);
       setPreview(result as unknown as Preview);
       setMapping(result.suggestedMapping);
+      setSheetName(result.selectedSheet ?? undefined);
     } catch (err) {
       toast.error('Could not read the file', (err as Error).message);
       setFile(null);
@@ -88,7 +93,7 @@ export default function ImportAdmin(): JSX.Element {
     if (!file) return;
     setBusy(true);
     try {
-      const result = await api.runImport(moduleName, file, mapping, duplicateHandling, runWorkflows, createOptions);
+      const result = await api.runImport(moduleName, file, mapping, duplicateHandling, runWorkflows, createOptions, sheetName);
       toast.success('Import started', `${result.totalRows} rows queued — progress appears below.`);
       setFile(null);
       setPreview(null);
@@ -145,6 +150,10 @@ export default function ImportAdmin(): JSX.Element {
           >
             <Download className="h-4 w-4" /> Template
           </a>
+
+          {preview && (
+            preview.sheets.length > 1 && <div className="w-56"><label className="label">Excel sheet</label><Select value={sheetName ?? ''} onChange={(sheet) => { if (file) void analyse(file, sheet); }} options={preview.sheets.map((sheet) => ({ value: sheet, label: sheet }))} /></div>
+          )}
 
           {preview && (
             <div className="w-52">
@@ -234,6 +243,7 @@ export default function ImportAdmin(): JSX.Element {
                   <p className="truncate text-2xs text-muted">
                     e.g. {preview.sample[0]?.[header] || '(empty)'}
                   </p>
+                  {preview.mappingSuggestions?.[header] && <p className={cn('mt-0.5 text-2xs font-medium', preview.mappingSuggestions[header].confidence === 'high' ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400')}>{preview.mappingSuggestions[header].confidence === 'high' ? 'High confidence' : 'Possible match'}</p>}
                 </div>
                 <span className="text-slate-300">→</span>
                 <Select

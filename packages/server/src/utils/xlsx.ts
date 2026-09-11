@@ -14,8 +14,8 @@
  * for want of resources, so a hundred lines here is the cheaper trade.
  *
  * Deliberately not supported, because a CRM import does not need them:
- * formulas are read as their cached result, formatting is ignored, and only
- * the first worksheet is read. Anything it cannot parse throws with a sentence
+ * formulas are read as their cached result and formatting is ignored. Anything
+ * it cannot parse throws with a sentence
  * saying to save as CSV, which always works.
  */
 import { inflateRawSync } from 'node:zlib';
@@ -139,21 +139,47 @@ function columnIndex(ref: string): number {
  * Same shape `parseCsv` returns, so the importer does not care which kind of
  * file it was handed.
  */
-export function parseXlsx(buf: Buffer): { headers: string[]; rows: Record<string, string>[] } {
+interface WorkbookSheet { name: string; path: string }
+
+/** Workbook sheet names and XML parts, in Excel's displayed order. */
+function workbookSheets(files: Map<string, Buffer>): WorkbookSheet[] {
+  const workbook = files.get('xl/workbook.xml')?.toString('utf8') ?? '';
+  const rels = files.get('xl/_rels/workbook.xml.rels')?.toString('utf8') ?? '';
+  const targets = new Map<string, string>();
+  for (const relation of rels.match(/<Relationship\b[^>]*\/>/g) ?? []) {
+    const id = relation.match(/\bId="([^"]+)"/)?.[1];
+    const target = relation.match(/\bTarget="([^"]+)"/)?.[1];
+    if (id && target) targets.set(id, target.startsWith('/') ? target.slice(1) : `xl/${target.replace(/^\.\//, '')}`);
+  }
+  const sheets: WorkbookSheet[] = [];
+  for (const sheet of workbook.match(/<sheet\b[^>]*\/>/g) ?? []) {
+    const name = decode(sheet.match(/\bname="([^"]*)"/)?.[1] ?? '');
+    const id = sheet.match(/\br:id="([^"]+)"/)?.[1];
+    const path = id ? targets.get(id) : undefined;
+    if (name && path) sheets.push({ name, path });
+  }
+  return sheets;
+}
+
+/** Names of the sheets a user can select in an Excel import. */
+export function xlsxSheetNames(buf: Buffer): string[] {
+  return workbookSheets(unzip(buf)).map((sheet) => sheet.name);
+}
+
+/**
+ * One worksheet, as a grid of trimmed strings. `sheetName` is optional for
+ * compatibility: existing callers still get the workbook's first sheet.
+ */
+export function parseXlsx(buf: Buffer, sheetName?: string): { headers: string[]; rows: Record<string, string>[] } {
   const files = unzip(buf);
 
   // The workbook names its sheets; the relationship file says which XML part
   // each one is. Falling back to sheet1.xml covers files whose rels are
   // unusual, which is most of what Google Sheets exports.
-  const workbook = files.get('xl/workbook.xml')?.toString('utf8') ?? '';
-  const rels = files.get('xl/_rels/workbook.xml.rels')?.toString('utf8') ?? '';
-  const firstRid = workbook.match(/<sheet\b[^>]*r:id="([^"]+)"/)?.[1];
-  const target = firstRid
-    ? rels.match(new RegExp(`<Relationship[^>]*Id="${firstRid}"[^>]*Target="([^"]+)"`))?.[1]
-    : undefined;
-  const sheetPath = target
-    ? (target.startsWith('/') ? target.slice(1) : `xl/${target.replace(/^\.\//, '')}`)
-    : 'xl/worksheets/sheet1.xml';
+  const sheets = workbookSheets(files);
+  const selected = sheetName ? sheets.find((sheet) => sheet.name === sheetName) : sheets[0];
+  if (sheetName && !selected) throw new Error(`Worksheet “${sheetName}” was not found.`);
+  const sheetPath = selected?.path ?? 'xl/worksheets/sheet1.xml';
 
   const sheet = (files.get(sheetPath) ?? files.get('xl/worksheets/sheet1.xml'))?.toString('utf8');
   if (!sheet) throw new Error('That .xlsx has no readable worksheet. Save it as CSV and try again.');

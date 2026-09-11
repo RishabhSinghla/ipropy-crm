@@ -7,7 +7,7 @@
  * adding a format meant remembering both.
  */
 import { parseCsv } from '../../utils/csv.js';
-import { looksLikeXlsx, parseXlsx } from '../../utils/xlsx.js';
+import { looksLikeXlsx, parseXlsx, xlsxSheetNames } from '../../utils/xlsx.js';
 import { BadRequestError } from '../../utils/errors.js';
 
 export interface Sheet {
@@ -15,12 +15,12 @@ export interface Sheet {
   rows: Record<string, string>[];
 }
 
-export function readImportFile(buffer: Buffer, filename: string): Sheet {
+export function readImportFile(buffer: Buffer, filename: string, sheetName?: string): Sheet {
   // The magic bytes decide, not the extension: a workbook renamed .csv is
   // still a workbook, and a CSV emailed as .xls is still text.
   if (looksLikeXlsx(buffer)) {
     try {
-      return parseXlsx(buffer);
+      return parseXlsx(buffer, sheetName);
     } catch (err) {
       throw new BadRequestError(
         `Could not read “${filename}” as an Excel file: ${(err as Error).message} `
@@ -39,4 +39,9 @@ export function readImportFile(buffer: Buffer, filename: string): Sheet {
   }
 
   return parseCsv(buffer.toString('utf8'));
+}
+
+/** CSV has one implicit sheet; Excel exposes every worksheet to the wizard. */
+export function importSheetNames(buffer: Buffer, filename: string): string[] {
+  return looksLikeXlsx(buffer) ? xlsxSheetNames(buffer) : ['CSV'];
 }

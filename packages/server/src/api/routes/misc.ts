@@ -35,7 +35,7 @@ import { invalidateWorkflows } from '../../core/workflow/engine.js';
 import { runSchedulerNow } from '../../core/workflow/scheduler.js';
 import { TASK_TYPES } from '../../core/workflow/tasks.js';
 import { mergeRecords } from '../../core/entity/conversion.js';
-import { readImportFile } from '../../core/import/readFile.js';
+import { importSheetNames, readImportFile } from '../../core/import/readFile.js';
 import { growPicklists, growableFields } from '../../core/import/picklistGrowth.js';
 import { reconcileColumns } from '../../db/seed/reconcileColumns.js';
 import {
@@ -961,13 +961,36 @@ miscRouter.get('/import/:module/template', asyncHandler(async (req, res) => {
   res.send(csv);
 }));
 
+/** A small, transparent vocabulary for spreadsheet headings people actually
+ * use. It augments metadata matching; it never replaces the administrator's
+ * final choice. */
+const IMPORT_HEADING_GROUPS: Record<string, string[]> = {
+  name: ['name', 'fullname', 'customername', 'clientname', 'contactname', 'ownername'],
+  phone: ['mobile', 'mobileno', 'mobilephone', 'phone', 'phoneno', 'contactno', 'contactnumber', 'whatsapp', 'whatsappno'],
+  email: ['email', 'emailid', 'mail'],
+  price: ['budget', 'demand', 'price', 'askingprice', 'propertyprice', 'rate', 'amount'],
+  area: ['area', 'size', 'plotsize', 'carpetarea', 'builtuparea', 'requiredarea', 'superarea'],
+  location: ['location', 'locality', 'area', 'sector', 'address'],
+  status: ['status', 'availability', 'propertystatus'],
+};
+
+function normaliseImportHeading(value: string): string {
+  return value.toLowerCase().replace(/\*/g, '').replace(/[^a-z0-9]/g, '');
+}
+
+function headingGroup(value: string): string | null {
+  const heading = normaliseImportHeading(value);
+  return Object.entries(IMPORT_HEADING_GROUPS).find(([, aliases]) => aliases.includes(heading))?.[0] ?? null;
+}
+
 miscRouter.post('/import/:module/preview', upload.single('file'), asyncHandler(async (req, res) => {
   const user = getUser(req);
   await assertCapability(user, 'records.import');
   const file = (req as unknown as { file?: Express.Multer.File }).file;
   if (!file) throw new BadRequestError('No file uploaded');
 
-  const { headers, rows } = readImportFile(file.buffer, file.originalname);
+  const sheetName = typeof req.body.sheetName === 'string' && req.body.sheetName ? req.body.sheetName : undefined;
+  const { headers, rows } = readImportFile(file.buffer, file.originalname, sheetName);
   if (!headers.length) {
     throw new BadRequestError(
       `“${file.originalname}” has no readable header row. The first row must name the columns.`,
@@ -977,18 +1000,32 @@ miscRouter.post('/import/:module/preview', upload.single('file'), asyncHandler(a
 
   // Suggest a mapping by matching CSV headers against field names and labels.
   const suggestions: Record<string, string> = {};
+  const mappingSuggestions: Record<string, { field: string; confidence: 'high' | 'possible' }> = {};
   for (const header of headers) {
-    const norm = header.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const match = module.fields.find((f) => f.config.importable !== false &&
-      f.name.replace(/_/g, '') === norm || f.label.toLowerCase().replace(/[^a-z0-9]/g, '') === norm);
-    if (match) suggestions[header] = match.name;
+    const norm = normaliseImportHeading(header);
+    const candidates = module.fields.filter((field) => field.isActive && field.displayType !== 'hidden' && field.config.importable !== false);
+    const exact = candidates.find((field) => normaliseImportHeading(field.name) === norm || normaliseImportHeading(field.label) === norm);
+    if (exact) {
+      suggestions[header] = exact.name;
+      mappingSuggestions[header] = { field: exact.name, confidence: 'high' };
+      continue;
+    }
+    const sourceGroup = headingGroup(header);
+    const similar = sourceGroup ? candidates.find((field) => headingGroup(field.name) === sourceGroup || headingGroup(field.label) === sourceGroup) : undefined;
+    if (similar) {
+      suggestions[header] = similar.name;
+      mappingSuggestions[header] = { field: similar.name, confidence: 'possible' };
+    }
   }
 
   res.json({
+    sheets: importSheetNames(file.buffer, file.originalname),
+    selectedSheet: sheetName ?? importSheetNames(file.buffer, file.originalname)[0] ?? null,
     headers,
     sample: rows.slice(0, 5),
     totalRows: rows.length,
     suggestedMapping: suggestions,
+    mappingSuggestions,
     fields: module.fields
       .filter((f) => f.isActive && !f.isReadonly && f.displayType !== 'hidden' && f.config.importable !== false)
       .map((f) => ({ name: f.name, label: f.label, uitype: f.uitype, mandatory: f.isMandatory })),
@@ -1017,7 +1054,8 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
   // options are a deliberate, closed set.
   const createOptions = String(req.body.createOptions ?? 'true') !== 'false';
   const module = await registry.requireModule(req.params.module);
-  const { rows } = readImportFile(file.buffer, file.originalname);
+  const sheetName = typeof req.body.sheetName === 'string' && req.body.sheetName ? req.body.sheetName : undefined;
+  const { rows } = readImportFile(file.buffer, file.originalname, sheetName);
   if (!rows.length) throw new BadRequestError(`“${file.originalname}” has a header row and no data rows.`);
 
   /*
