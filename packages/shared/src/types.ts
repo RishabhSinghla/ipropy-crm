@@ -118,6 +118,10 @@ export interface LayoutConfig {
    * salesperson opening a lead wants the person's name, not the row's id.
    */
   showRecordNumber?: boolean;
+  /** Field used as the large heading; falls back to the module's record label. */
+  headerTitleField?: string;
+  /** The pipeline/status chip beside the title is optional per detail layout. */
+  showPipelineField?: boolean;
   /** related lists shown, in order */
   relatedLists?: string[];
   /** which tabs appear on the detail view */
