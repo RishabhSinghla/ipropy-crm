@@ -197,7 +197,8 @@ export async function seedDemoData(conn: Tx, users: SeededUser[]): Promise<void>
         numberField: 'property_code', createdAt: daysAgo(300 - u),
         searchText: `${p.name} ${tower} ${unitNo} ${config} ${p.locality}`,
         values: {
-          name: `${p.name} — Tower ${tower}, Unit ${unitNo}`,
+          full_name: `${p.name} — Tower ${tower}, Unit ${unitNo}`,
+          mobile: `98${String(unitSeed).padStart(8, '0')}`,
           project_name: p.name, status, property_type: config === 'Commercial' ? 'Office Space' : 'Apartment',
           tower: `Tower ${tower}`, floor, unit_number: unitNo,
           facing: pick(facings, u), corner_unit: u % 7 === 0, vastu_compliant: u % 3 !== 0,

@@ -370,7 +370,9 @@ const MODULES: ModuleDef[] = [
       `all` because these combine — two floors in one locality are not
       duplicates; the same house number on the same floor is.
     */
-    duplicateCheckFields: ['full_name', 'locality', 'floor'],
+    // One owner / contact number means one Property record in this CRM. Unit
+    // numbers can repeat across projects and are descriptive, not an identity.
+    duplicateCheckFields: ['mobile'],
     settings: { duplicateCheckMode: 'all' },
     blocks: [
       {
@@ -379,6 +381,11 @@ const MODULES: ModuleDef[] = [
         fields: [
           F.autonum('property_code', 'Property Code', 'UNIT-'),
           F.text('full_name', 'Full Name', { mandatory: true, quickCreate: true, searchable: true }),
+          F.phone('mobile', 'Mobile', {
+            mandatory: true, unique: true, quickCreate: true, maxLength: 10,
+            config: { digits: 10, codePrefix: '+91' },
+            help: 'Required and unique — one mobile can belong to only one property record',
+          }),
           // Projects are no longer a module — a unit carries its development's
           // name itself. Plain text, so it needs no second record to exist.
           F.text('project_name', 'Project', { quickCreate: true, searchable: true }),
