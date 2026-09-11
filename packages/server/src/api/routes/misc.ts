@@ -36,6 +36,7 @@ import { runSchedulerNow } from '../../core/workflow/scheduler.js';
 import { TASK_TYPES } from '../../core/workflow/tasks.js';
 import { mergeRecords } from '../../core/entity/conversion.js';
 import { readImportFile } from '../../core/import/readFile.js';
+import { suggestMapping, certainMapping } from '../../core/import/autoMap.js';
 import {
   DEFAULT_CONTEXT, detectDateOrder, normaliseForField,
   type DateOrder, type NormaliseContext,
@@ -979,22 +980,41 @@ miscRouter.post('/import/:module/preview', upload.single('file'), asyncHandler(a
   }
   const module = await registry.requireModule(req.params.module);
 
-  // Suggest a mapping by matching CSV headers against field names and labels.
-  const suggestions: Record<string, string> = {};
-  for (const header of headers) {
-    const norm = header.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const match = module.fields.find((f) => f.config.importable !== false &&
-      f.name.replace(/_/g, '') === norm || f.label.toLowerCase().replace(/[^a-z0-9]/g, '') === norm);
-    if (match) suggestions[header] = match.name;
-  }
+  /*
+    What each column probably is.
+
+    This used to be "the header equals a field name or label once punctuation
+    is gone", which on a real file — Customer Name, Mobile No, Requirement,
+    Unit — mapped three columns of eight. It also read as
+    `(importable && name match) || label match`, so a field marked
+    un-importable was still offered whenever its *label* happened to match.
+
+    `suggestedMapping` carries only the guesses safe to fill in for somebody;
+    the rest come back in `suggestions` for a person to accept, because a
+    silently mis-mapped column writes mobile numbers into a budget field and
+    nobody finds out until a report is wrong.
+  */
+  const suggestionList = suggestMapping(module.fields, headers, rows);
+  const suggestions = certainMapping(suggestionList);
+
+  // How this file writes its dates, so the wizard can show it and offer to
+  // change it rather than deciding silently at import time.
+  const dateHeaders = headers.filter((h) => suggestions[h]
+    && module.fields.some((f) => f.name === suggestions[h] && (f.uitype === 'date' || f.uitype === 'datetime')));
+  const dateOrder = detectDateOrder(rows.flatMap((r) => dateHeaders.map((h) => r[h])));
 
   res.json({
     headers,
     sample: rows.slice(0, 5),
     totalRows: rows.length,
     suggestedMapping: suggestions,
+    suggestions: suggestionList,
+    dateOrder: { detected: dateOrder.order, certain: dateOrder.certain },
     fields: module.fields
-      .filter((f) => f.isActive && !f.isReadonly && f.displayType !== 'hidden' && f.config.importable !== false)
+      // Unit companions are hidden on the form and are still import targets —
+      // a spreadsheet keeps `Area` and `Unit` in two columns.
+      .filter((f) => f.isActive && !f.isReadonly && f.config.importable !== false
+        && (f.displayType !== 'hidden' || Boolean(f.config.unitMaster)))
       .map((f) => ({ name: f.name, label: f.label, uitype: f.uitype, mandatory: f.isMandatory })),
   });
 }));

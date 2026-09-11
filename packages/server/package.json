@@ -21,7 +21,8 @@
     "test:integration:watch": "vitest --config vitest.integration.config.ts",
     "tenant": "tsx src/control/cli.ts",
     "control": "tsx src/control/server.ts",
-    "go-live:users": "tsx src/scripts/goLiveUsers.ts"
+    "go-live:users": "tsx src/scripts/goLiveUsers.ts",
+    "vtiger:discover": "tsx src/scripts/vtiger/discover.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.123.0",

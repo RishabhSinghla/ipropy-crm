@@ -37,3 +37,7 @@ wa-bridge/sessions/
 
 # Editor temp files from network volumes (OneDrive/SMB leave these behind)
 .!*
+
+# Raw Vtiger export — a full copy of a decade of business data, staged
+# locally before it's mapped and loaded. Never belongs in git history.
+packages/server/src/scripts/vtiger/.output/

@@ -41,7 +41,8 @@
     "test:e2e:ui": "playwright test --ui",
     "tenant": "npm run tenant -w @ipropy/server --",
     "control": "npm run control -w @ipropy/server",
-    "go-live:users": "npm run go-live:users -w @ipropy/server"
+    "go-live:users": "npm run go-live:users -w @ipropy/server",
+    "vtiger:discover": "npm run vtiger:discover -w @ipropy/server"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
