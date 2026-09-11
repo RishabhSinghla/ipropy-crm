@@ -106,12 +106,23 @@ export async function buildTimeline(
   for (const r of audit.rows) {
     const changes = Array.isArray(r.changes) ? r.changes : [];
     // A create event lists every initial value — too noisy for a feed.
-    const title = r.action === 'create' ? 'Record created'
+    /*
+      Where a record came from belongs in its own history.
+
+      "Record created" is the same sentence whether somebody typed it or it
+      arrived in a file of four thousand, and a week later that is the
+      difference between "the rep chose Referral" and "the whole file was
+      referrals". The source is already on the audit row.
+    */
+    const how = r.source === 'import' ? ' by import'
+      : r.source === 'api_key' ? ' by a connected app'
+        : '';
+    const title = r.action === 'create' ? `Record created${how}`
       : r.action === 'delete' ? 'Record deleted'
       : r.action === 'restore' ? 'Record restored'
       : changes.length === 1
-        ? `Changed ${(changes[0] as { label?: string }).label ?? 'a field'}`
-        : `Updated ${changes.length} fields`;
+        ? `Changed ${(changes[0] as { label?: string }).label ?? 'a field'}${how}`
+        : `Updated ${changes.length} fields${how}`;
     entries.push({
       id: `audit-${r.id}`, type: 'audit', at: r.created_at,
       actorId: r.user_id, actorName: r.user_name ?? 'System',

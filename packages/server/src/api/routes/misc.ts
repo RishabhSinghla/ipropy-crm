@@ -1345,7 +1345,15 @@ miscRouter.post('/import/:module/dry-run', upload.single('file'), asyncHandler(a
 
 miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (req, res) => {
   const user = getUser(req);
-  const scope = getScope(req);
+  /*
+    Every row this writes is stamped as an import.
+
+    Without it a file's four thousand records are indistinguishable from four
+    thousand somebody typed, and the question a week later — "why does this
+    lead say Referral?" — has no answer on the record. The audit trail already
+    carries a source; it was only ever told 'app'.
+  */
+  const scope = { ...getScope(req), source: 'import' };
   await assertCanImport(user, req.params.module);
   const file = (req as unknown as { file?: Express.Multer.File }).file;
   if (!file) throw new BadRequestError('No file uploaded');
