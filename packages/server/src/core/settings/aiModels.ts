@@ -46,14 +46,18 @@ export const AI_JOBS = {
   transcribe: {
     key: 'ai_models.transcribe',
     label: 'Transcribe recordings',
-    // Goes to the speech-to-text card when one has a key, and to OpenRouter
-    // otherwise — which does serve transcription, at /audio/transcriptions.
-    // The id has to match whichever it reaches: OpenRouter prefixes this model
-    // `openai/`, Groq does not.
+    // This box is the OpenRouter path only.
+    //
+    // When the Speech to text card has a key — which is the normal setup — the
+    // request is shaped by *that* card and carries *its* model, and this value
+    // is never read. Saying otherwise (the previous wording) sent people here
+    // to change something that had no effect on the transcription they were
+    // unhappy with. The model for the configured provider is on the card
+    // itself, beside the key and the address that reach the same endpoint.
     fallback: 'openai/whisper-large-v3-turbo',
-    description: 'Turns call recordings and voice notes into words. Handles Hindi and English mixed together. '
-      + 'Goes to the Speech to text service under Admin → Integrations when one has a key, and to '
-      + 'OpenRouter otherwise.',
+    description: 'Turns call recordings and voice notes into words when no Speech to text service is '
+      + 'set up under Admin → Integrations. If one is set up, its own Model box is what transcribes '
+      + 'and this is ignored. OpenRouter prefixes the id `openai/`; Groq does not.',
   },
   embed: {
     key: 'ai_models.embed',

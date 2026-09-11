@@ -109,12 +109,25 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
     { key: 'model', label: 'Model', source: 'config', placeholder: 'llama3.1', model: true },
     { key: 'fastModel', label: 'Fast model', source: 'config', placeholder: 'llama3.1', model: true },
   ],
-  // No Model field here on purpose. Every AI job names its model in
-  // Admin → Settings → AI models, and this card used to hold a second copy that
-  // nothing read — two boxes for one setting, quietly disagreeing.
+  /*
+    The Model field is back, and the comment that removed it was wrong.
+
+    It said every AI job names its model in Admin → Settings → AI models and
+    that this was a second copy nothing read. The opposite is true for
+    transcription: when this card holds a key, `resolveStt` sends **this row's**
+    model and the box in AI models is never consulted. So the visible setting
+    did nothing and the one in use could not be seen, let alone changed.
+
+    That is how production ended up transcribing on `whisper-large-v3-turbo` —
+    three times faster and measurably worse on exactly this desk's audio, Hindi
+    and English in one sentence — with no way to say otherwise from the UI. The
+    field carries `model: true`, so it offers whatever the provider actually
+    serves: the same list the Test button counts.
+  */
   stt: [
     { key: 'apiKey', label: 'API Key (OpenAI-compatible Whisper)', source: 'credentials', secret: true },
     { key: 'baseUrl', label: 'Base URL', source: 'config', placeholder: 'https://api.groq.com/openai/v1' },
+    { key: 'model', label: 'Model', source: 'config', placeholder: 'whisper-large-v3', model: true },
   ],
   // Not marked secret, and that is correct rather than an oversight: a DSN sits
   // in the JavaScript of every site that uses one and can only write events.

@@ -400,16 +400,28 @@ const STT_CAPABLE: { provider: Exclude<AiProvider, 'none'>; baseUrl: string; mod
  * already do the job, rather than making a person configure the same vendor
  * twice to use two of its endpoints.
  */
+/** The transcription model a provider serves, when the card names none itself. */
+function defaultSttModel(baseUrl: string): string {
+  const groq = STT_CAPABLE.find((c) => c.provider === 'groq')!;
+  return /api\.groq\.com/i.test(baseUrl) ? groq.model : config.stt.model;
+}
+
 function resolveStt(map: Map<string, IntegrationRow>, sttRow: IntegrationRow | undefined): ResolvedSettings['stt'] {
   const explicitKey = pick(sttRow, 'credentials', 'apiKey', config.stt.apiKey);
   const provider = pick(sttRow, 'config', 'provider', config.stt.provider) === 'openai' ? 'openai' : 'none';
 
   if (explicitKey) {
+    const baseUrl = pick(sttRow, 'config', 'baseUrl', config.stt.baseUrl) || config.stt.baseUrl;
     return {
       provider,
       apiKey: explicitKey,
-      baseUrl: pick(sttRow, 'config', 'baseUrl', config.stt.baseUrl) || config.stt.baseUrl,
-      model: pick(sttRow, 'config', 'model', config.stt.model) || config.stt.model,
+      baseUrl,
+      // `whisper-1` is OpenAI's id and the shipped default. A card pointed at
+      // Groq with no model of its own would send it there, and Groq does not
+      // serve it — the request fails and the failure reads as "the microphone
+      // is broken". Default to what the provider in the address actually
+      // serves; an id the admin chose stays theirs, right or wrong.
+      model: pick(sttRow, 'config', 'model', '') || defaultSttModel(baseUrl),
     };
   }
 
