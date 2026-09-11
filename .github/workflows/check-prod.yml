@@ -115,13 +115,24 @@ jobs:
           # both the scheduler and the engine filter on `is_active` — so either
           # they were switched off after that run, or something runs them
           # anyway. The newest log row for each answers it.
+          # `next_run_at` in the past on a live workflow is the scheduler not
+          # ticking, which is the failure that matters: no follow-up reminders,
+          # no escalation, nothing logged, nothing to notice. The instance also
+          # shares its process with the scheduler, so this is the one place it
+          # shows.
           psql "$PROD_DATABASE_URL" -P pager=off -c \
             "SELECT w.name, w.is_active,
-                    to_char(max(l.created_at), 'MM-DD HH24:MI') AS newest_log,
-                    count(*) FILTER (WHERE l.created_at > now() - interval '12 hours') AS rows_12h
+                    to_char(w.next_run_at, 'MM-DD HH24:MI') AS due,
+                    CASE WHEN NOT w.is_active THEN '-'
+                         WHEN w.next_run_at IS NULL THEN 'never set'
+                         WHEN w.next_run_at < now() - interval '15 minutes'
+                           THEN 'OVERDUE by ' || date_trunc('minute', now() - w.next_run_at)::text
+                         ELSE 'on time' END AS verdict,
+                    to_char(max(l.created_at), 'MM-DD HH24:MI') AS newest_log
                FROM ipy_workflow w LEFT JOIN ipy_workflow_log l ON l.workflow_id = w.id
               WHERE w.trigger = 'scheduled'
-              GROUP BY w.id, w.name, w.is_active ORDER BY w.is_active DESC, w.name;"
+              GROUP BY w.id, w.name, w.is_active, w.next_run_at
+              ORDER BY w.is_active DESC, w.name;"
           echo
           echo "--- which AI model does each job use, and is the key there? ---"
           # Semantic search has been inert since it was built: `ipy_embedding`
