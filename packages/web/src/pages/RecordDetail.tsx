@@ -334,7 +334,7 @@ export default function RecordDetail(): JSX.Element {
                         field={fieldMap.get(meta.pipelineField)!}
                         value={record.values[meta.pipelineField]}
                         restrictTo={restrictionForField(meta.picklistDependencies, record.values, meta.pipelineField)}
-                        onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void refetch(); }}
+                        onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void queryClient.invalidateQueries({ queryKey: ['matching', moduleName, record.id] }); void refetch(); }}
                       />
                     ) : (
                       <FieldValue
@@ -351,7 +351,7 @@ export default function RecordDetail(): JSX.Element {
                         field={fieldMap.get('rating')!}
                         value={record.values.rating}
                         display={record.display?.rating}
-                        onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void refetch(); }}
+                        onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void queryClient.invalidateQueries({ queryKey: ['matching', moduleName, record.id] }); void refetch(); }}
                       />
                     ) : (
                       <FieldValue field={fieldMap.get('rating')!} value={record.values.rating} display={record.display?.rating} />
@@ -405,7 +405,7 @@ export default function RecordDetail(): JSX.Element {
                             compact
                             siblings={record.values}
                             restrictTo={restrictionForField(meta.picklistDependencies, record.values, field.name)}
-                            onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void refetch(); }}
+                            onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void queryClient.invalidateQueries({ queryKey: ['matching', moduleName, record.id] }); void refetch(); }}
                           />
                         ) : (
                           <FieldValue field={field} value={record.values[name]} display={record.display?.[name]} compact />
@@ -423,7 +423,7 @@ export default function RecordDetail(): JSX.Element {
                         value={record.values.owner_id}
                         display={record.display?.owner_id}
                         compact
-                        onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void refetch(); }}
+                        onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void queryClient.invalidateQueries({ queryKey: ['matching', moduleName, record.id] }); void refetch(); }}
                       />
                     ) : record.display?.owner_id ? (
                       <span className="inline-flex items-center gap-1"><Avatar name={record.display.owner_id} size={16} />{record.display.owner_id}</span>
@@ -515,7 +515,7 @@ export default function RecordDetail(): JSX.Element {
               record={record}
               layoutConfig={layoutConfig}
               module={moduleName!}
-              onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void refetch(); }}
+              onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void queryClient.invalidateQueries({ queryKey: ['matching', moduleName, record.id] }); void refetch(); }}
             />
           )}
           {activeTab === 'timeline' && <TimelineTab module={moduleName!} id={id!} />}
@@ -672,9 +672,15 @@ function OverviewTab({
                       'flex min-w-0 items-baseline gap-2.5',
                       field.config.fullWidth && 'sm:col-span-2',
                     )}
+                    onClick={(event) => {
+                      // The entire value box is the edit target. Do not
+                      // re-click a nested control; it already owns the event.
+                      if (!record.can?.edit || (event.target as HTMLElement).closest('button, input, select, textarea, a')) return;
+                      (event.currentTarget.querySelector('dd button') as HTMLButtonElement | null)?.click();
+                    }}
                   >
-                    <dt className="w-[38%] max-w-[10rem] shrink-0 truncate text-2xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400" title={field.label}>{field.label}</dt>
-                    <dd className="min-w-0 flex-1 rounded-md border border-slate-200 bg-slate-50/70 px-2 py-1 text-sm text-slate-900 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-100">
+                    <dt className="w-[38%] max-w-[10rem] shrink-0 truncate text-2xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300" title={field.label}>{field.label}</dt>
+                    <dd className={cn('min-w-0 flex-1 rounded-md border border-slate-200 bg-slate-50/70 px-2 py-1 text-sm text-slate-900 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-100', record.can?.edit && 'cursor-pointer hover:border-brand-300 hover:bg-brand-50/30 dark:hover:border-brand-700')}>
                       {record.can?.edit && isInlineEditable(field) ? (
                         <EditableField
                           module={module}

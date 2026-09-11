@@ -904,7 +904,7 @@ export default function ListView(): JSX.Element {
       </div>
 
       {/* Pagination */}
-      {displayMode === 'table' && (data?.totalPages ?? 1) > 1 && (
+      {displayMode === 'table' && (data?.total ?? 0) > 0 && (
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900 sm:px-6">
           <p className="text-xs text-muted tnum">
             {((data!.page - 1) * data!.pageSize + 1).toLocaleString('en-IN')}–

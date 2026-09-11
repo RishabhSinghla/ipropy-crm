@@ -452,7 +452,13 @@ function DashboardGrid({ widgets, canEdit, dashboardId, editing, onEditWidget, o
   const { width, containerRef, mounted } = useContainerWidth();
   const queryClient = useQueryClient();
   const [grid, setGrid] = useState<LayoutItem[]>(() =>
-    widgets.map((w) => ({ i: w.id, x: w.x, y: w.y, w: w.w, h: w.h, minW: 1, minH: 1 })),
+    widgets.map((w) => ({
+      i: w.id, x: w.x, y: w.y, w: w.w, h: w.h,
+      // Trend lines need room for dates and a meaningful slope. A saved
+      // accidental resize must not turn a sales trend into a postage stamp.
+      minW: w.type === 'line' || w.type === 'area' ? 6 : 1,
+      minH: w.type === 'line' || w.type === 'area' ? 4 : 1,
+    })),
   );
 
   const persist = (layout: Layout): void => {
