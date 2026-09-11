@@ -98,6 +98,26 @@ jobs:
           # no phone field was flagged searchable and nothing reached the index.
           # Reported as a permissions problem; it was not one. Migration 098
           # backfilled it, and this is the line that says whether it held.
+          echo "--- can the website actually deliver a lead? ---"
+          # Two ways this goes quiet, both of which have happened. The form key
+          # may still be the committed default, which the server deliberately
+          # refuses with a 503 so a published key cannot inject leads — correct,
+          # and indistinguishable from a broken website. And a lead can be
+          # accepted and then thrown away in validation, whose only trace is
+          # `ipy_lead_inbox.status = 'failed'`.
+          psql "$PROD_DATABASE_URL" -tAc \
+            "SELECT 'webform key: ' ||
+                    CASE WHEN coalesce(config->>'key','') = '' THEN 'NOT SET — the form answers 503'
+                         WHEN config->>'key' = 'ipropy-public-webform' THEN 'the COMMITTED DEFAULT — the form answers 503'
+                         ELSE 'set (' || length(config->>'key') || ' chars)' END
+               FROM ipy_integration WHERE provider = 'webform';"
+          psql "$PROD_DATABASE_URL" -tAc \
+            "SELECT 'lead inbox: ' || coalesce(string_agg(status || '=' || n, ', '), '(nothing has ever arrived)')
+               FROM (SELECT status, count(*)::text AS n FROM ipy_lead_inbox GROUP BY status) t;"
+          psql "$PROD_DATABASE_URL" -tAc \
+            "SELECT 'most recent arrival: ' || coalesce(to_char(max(created_at), 'YYYY-MM-DD HH24:MI'), 'never')
+               FROM ipy_lead_inbox;"
+          echo
           echo "--- API keys, and whether anything is using them ---"
           # Name and dates only: no prefix, no hash. Enough to decide whether a
           # key can be revoked without stopping the automation that holds it,
