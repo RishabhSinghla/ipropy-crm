@@ -1030,6 +1030,30 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
   // `review` parks every collision for a person to answer afterwards instead
   // of deciding it now — see core/import/duplicates.ts.
   const duplicateHandling = String(req.body.duplicateHandling ?? 'review') as 'skip' | 'create' | 'review';
+  /*
+    What this file is for.
+
+    `create` is a new list of people. `update` is a refresh of records that
+    already exist and must never invent one. `upsert` is the usual answer for a
+    database somebody keeps in Excel — most rows are already here, a few are
+    new. `skip_existing` adds only what is missing and leaves the rest alone.
+
+    Update has to look the record up *before* it writes: the create path
+    reports a collision by throwing, and by then the record exists and there is
+    nothing to take it back.
+  */
+  const importMode = (['create', 'update', 'upsert', 'skip_existing']
+    .includes(String(req.body.importMode ?? '')) ? String(req.body.importMode) : 'create') as
+    'create' | 'update' | 'upsert' | 'skip_existing';
+
+  /*
+    Values set on every row, whether or not the file has a column for them.
+
+    "This spreadsheet is all Builder Floors from the 99acres export" is a fact
+    about the file, not about any row in it, and typing it into 4,000 rows
+    first is the kind of thing that makes people give up on an import.
+  */
+  const staticValues = JSON.parse(String(req.body.staticValues ?? '{}')) as Record<string, unknown>;
   // Automations (instant greeting → the outreach queue, scoring, first-call
   // tasks) fire per record through the workflow engine. On a bulk import that
   // meant a queue of hundreds of WhatsApp greetings nobody asked for, and a
@@ -1082,7 +1106,7 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
   res.status(202).json({ jobId: job?.id, totalRows: rows.length });
 
   void (async () => {
-    let created = 0; let skipped = 0; let failed = 0; let duplicates = 0;
+    let created = 0; let updated = 0; let skipped = 0; let failed = 0; let duplicates = 0;
     const errors: { row: number; error: string }[] = [];
 
     /*
@@ -1233,6 +1257,42 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
       const sheetRow = i + 2;
       const rowName = String(values.full_name ?? values.name ?? Object.values(values)[0] ?? `row ${sheetRow}`);
 
+      // A column in the file always wins over a value set for the whole file.
+      for (const [name, value] of Object.entries(staticValues)) {
+        if (values[name] === undefined) values[name] = value;
+      }
+
+      if (importMode !== 'create') {
+        const existing = await recordService.findDuplicateRecord(module.name, values).catch(() => null);
+        if (existing) {
+          if (importMode === 'skip_existing') {
+            skipped++;
+            if (details.skipped.length < CAP) details.skipped.push(`${rowName} — already here`);
+            await logRow(job!.id, sheetRow, 'skipped', values, { label: rowName, message: 'already here' });
+            continue;
+          }
+          try {
+            await recordService.updateRecord(scope, module.name, existing.id, values, { skipWorkflow: !runWorkflows });
+            updated++;
+            await logRow(job!.id, sheetRow, 'updated', values, { recordId: existing.id, label: existing.label });
+          } catch (err) {
+            failed++;
+            const message = err instanceof Error ? err.message : 'unknown error';
+            if (errors.length < 100) errors.push({ row: sheetRow, error: message });
+            await logRow(job!.id, sheetRow, 'failed', values, { label: rowName, message });
+          }
+          continue;
+        }
+        if (importMode === 'update') {
+          // Update-only must not invent a record. Saying so is the point: a
+          // file that matches nothing is usually mapped to the wrong column.
+          skipped++;
+          if (details.skipped.length < CAP) details.skipped.push(`${rowName} — no matching record to update`);
+          await logRow(job!.id, sheetRow, 'skipped', values, { label: rowName, message: 'no matching record to update' });
+          continue;
+        }
+      }
+
       try {
         const envelope = await recordService.createRecord(scope, module.name, values, {
           skipDuplicateCheck: duplicateHandling === 'create',
@@ -1277,10 +1337,10 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
       const step = await db.query(
         `UPDATE ipy_import_job
          SET processed_rows = $2, created_rows = $3, skipped_rows = $4, failed_rows = $5,
-             details = $6::jsonb, duplicate_rows = $7, pending_rows = $7
+             details = $6::jsonb, duplicate_rows = $7, pending_rows = $7, updated_rows = $8
          WHERE id = $1 AND status = 'running'
          RETURNING id`,
-        [job!.id, i + 1, created, skipped, failed, JSON.stringify(details), duplicates],
+        [job!.id, i + 1, created, skipped, failed, JSON.stringify(details), duplicates, updated],
       ).catch(() => undefined);
       if (step && step.rowCount === 0) { cancelled = true; break; }
     }
@@ -1289,10 +1349,10 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
       `UPDATE ipy_import_job
        SET status = $6, processed_rows = $2, created_rows = $3, skipped_rows = $4,
            failed_rows = $5, errors = $7, duplicate_rows = $8, pending_rows = $8,
-           completed_at = now()
+           updated_rows = $9, completed_at = now()
        WHERE id = $1`,
       [job!.id, rows.length, created, skipped, failed, cancelled ? 'cancelled' : 'completed',
-        JSON.stringify(errors), duplicates],
+        JSON.stringify(errors), duplicates, updated],
     );
 
     // An import of any size outlives the page that started it.
@@ -1327,7 +1387,7 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
 async function logRow(
   jobId: string,
   rowNumber: number,
-  outcome: 'created' | 'skipped' | 'failed' | 'duplicate',
+  outcome: 'created' | 'updated' | 'skipped' | 'failed' | 'duplicate',
   values: Record<string, unknown>,
   extra: { recordId?: string; label?: string; message?: string; existingId?: string } = {},
 ): Promise<void> {

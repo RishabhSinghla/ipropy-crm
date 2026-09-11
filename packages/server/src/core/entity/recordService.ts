@@ -1071,6 +1071,24 @@ function buildSearchText(module: ModuleMeta, values: Record<string, unknown>): s
   return parts.join(' ').slice(0, 4000);
 }
 
+/**
+ * The record this row would collide with, if there is one.
+ *
+ * The create path throws a `ConflictError` carrying the same id, which is
+ * enough when the answer is "don't create it". An import that is *updating*
+ * has to know before it writes, because finding out afterwards means the
+ * record has already been created and there is nothing to undo it with.
+ */
+export async function findDuplicateRecord(
+  moduleName: string,
+  values: Record<string, unknown>,
+): Promise<{ id: string; label: string } | null> {
+  const module = await registry.requireModule(moduleName);
+  if (!module.duplicateCheckFields.length) return null;
+  const prepared = await prepareValues(module, values, { isCreate: true, conn: db });
+  return findDuplicate(db, module, prepared.values);
+}
+
 async function findDuplicate(
   conn: Tx,
   module: ModuleMeta,
@@ -1642,6 +1660,7 @@ export const recordService = {
   listRecords,
   createRecord,
   updateRecord,
+  findDuplicateRecord,
   deleteRecord,
   restoreRecord,
   massUpdate,
