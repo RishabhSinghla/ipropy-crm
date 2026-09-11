@@ -1180,6 +1180,30 @@ miscRouter.post('/import/:module/dry-run', upload.single('file'), asyncHandler(a
   const importMode = String(req.body.importMode ?? 'create');
   const createOptions = String(req.body.createOptions ?? 'true') !== 'false';
   const module = await registry.requireModule(req.params.module);
+
+  /*
+    The same refusal the real import makes, made here first.
+
+    A dry run exists to say what the import will do, and this one could not see
+    the one thing that stops an import dead: a mapping naming a field that is
+    no longer on the module — a saved template used after somebody deleted or
+    renamed that field. The dry run happily reported every row as "created,
+    no problems" and the commit that followed answered 400. A preview that
+    promises success and a button that then refuses is worse than no preview.
+
+    Thrown rather than listed per row, exactly as the commit route throws it,
+    because it is not a problem with any row: it is a problem with the mapping,
+    and the answer is to re-map the column rather than to fix the file.
+  */
+  const unmapped = [...new Set(Object.values(mapping).filter(Boolean))]
+    .filter((name) => !module.fields.some((f) => f.name === name));
+  if (unmapped.length) {
+    throw new BadRequestError(
+      `${module.label} has no field named ${unmapped.map((u) => `“${u}”`).join(', ')} any more. `
+      + 'Re-check the column mapping — the field was probably deleted after this mapping was saved.',
+    );
+  }
+
   const { headers, rows, widths } = readImportFile(file.buffer, file.originalname);
 
   const dateColumns = module.fields
