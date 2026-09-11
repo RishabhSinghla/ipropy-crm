@@ -394,7 +394,10 @@ const GUIDES: Record<string, Guide> = {
       { title: 'Choose a Whisper provider', help: 'Groq is the low-cost, fast recommendation. The same Groq key can be used here and on the Groq AI card.', href: 'https://console.groq.com/keys', linkLabel: 'Open Groq keys' },
       { title: 'Paste the API key', help: 'Use your Groq or OpenAI-compatible speech key.', field: 'apiKey' },
       { title: 'Set the speech API address', help: 'For Groq use https://api.groq.com/openai/v1. For OpenAI use https://api.openai.com/v1.', field: 'baseUrl' },
-      { title: 'Pick the model', help: 'Under Settings → AI models → Transcribe recordings, with every other model. whisper-large-v3-turbo is the free Groq one.', href: '/admin/settings', linkLabel: 'Open AI models' },
+      // Sent people to the wrong screen: the box under Settings → AI models is
+      // the fallback for when this card has no key, and this card's own model
+      // is what transcribes whenever it does.
+      { title: 'Pick the model', help: 'Both Groq Whisper models are free. whisper-large-v3 is the accurate one and the right choice for Hindi and English mixed together; whisper-large-v3-turbo is faster and noticeably rougher on the same audio.', field: 'model' },
     ],
   },
   facebook_leads: {
