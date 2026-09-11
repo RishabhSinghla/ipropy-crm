@@ -20,7 +20,7 @@ import { createServer } from 'node:http';
 import { db } from '../../src/db/pool.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import { createApp } from '../../src/app.js';
-import { adminContext } from './fixtures.js';
+import { adminContext, propertyInput } from './fixtures.js';
 import { createRecord } from '../../src/core/entity/recordService.js';
 import * as settings from '../../src/core/settings/integrations.js';
 
@@ -45,9 +45,9 @@ beforeAll(async () => {
 
   const ctx = await adminContext();
   const _ownerId = ctx.user!.id; void _ownerId;
-  const rec = await createRecord(ctx, 'properties', {
-    name: `n8n handoff test ${Date.now()}`,
-  });
+  const rec = await createRecord(ctx, 'properties', propertyInput({
+    full_name: `n8n handoff test ${Date.now()}`,
+  }));
   propertyId = rec.id as string;
 });
 

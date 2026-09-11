@@ -380,7 +380,7 @@ const MODULES: ModuleDef[] = [
         label: 'Property Information',
         fields: [
           F.autonum('property_code', 'Property Code', 'UNIT-'),
-          F.text('full_name', 'Full Name', { mandatory: true, quickCreate: true, searchable: true }),
+          F.text('full_name', 'Full Name', { quickCreate: true, searchable: true }),
           F.phone('mobile', 'Mobile', {
             mandatory: true, unique: true, quickCreate: true, maxLength: 10,
             config: { digits: 10, codePrefix: '+91' },

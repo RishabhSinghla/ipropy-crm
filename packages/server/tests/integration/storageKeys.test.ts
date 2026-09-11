@@ -17,7 +17,11 @@ import {
 } from '../../src/core/storage/keys.js';
 import { localPath } from '../../src/core/storage/index.js';
 import { config } from '../../src/config.js';
-import { adminContext } from './fixtures.js';
+import { adminContext, propertyInput } from './fixtures.js';
+
+async function createProperty(ctx: ServiceContext, values: Record<string, unknown>) {
+  return recordService.createRecord(ctx, 'properties', propertyInput(values));
+}
 
 describe('storage keys', () => {
   let ctx: ServiceContext;
@@ -28,7 +32,7 @@ describe('storage keys', () => {
   });
 
   it('names the folder after the record, not a UUID', async () => {
-    const created = await recordService.createRecord(ctx, 'properties', { name: 'Verdant Greens — Tower D, Unit 702' });
+    const created = await createProperty(ctx, { full_name: 'Verdant Greens — Tower D, Unit 702' });
     const key = await buildStorageKey({ recordId: created.id, originalName: 'IMG_9001.HEIC', ext: '.heic' });
 
     expect(key).toContain('verdant-greens-tower-d-unit-702');
@@ -38,7 +42,7 @@ describe('storage keys', () => {
   });
 
   it('leads the folder with the record number, since that is what people quote', async () => {
-    const created = await recordService.createRecord(ctx, 'properties', { name: 'Numbered Unit' });
+    const created = await createProperty(ctx, { full_name: 'Numbered Unit' });
     const row = await db.queryOne<{ record_number: string | null }>(
       `SELECT record_number FROM ipy_record WHERE id = $1`, [created.id],
     );
@@ -57,9 +61,7 @@ describe('storage keys', () => {
     // starts UNIT-, so every property in the drive had identical insides:
     // UNIT-RAW-UPLOADS, UNIT-SHAPES, UNIT-01.jpg. Nothing broke, because both
     // sides were wrong the same way. It just made the name useless.
-    const created = await recordService.createRecord(ctx, 'properties', {
-      name: 'D404', bedrooms: 3,
-    });
+    const created = await createProperty(ctx, { full_name: 'D404', bedrooms: 3 });
     const folder = await propertyFolderKey(created.id);
     expect(folder).toBe('D404-3bhk');
     expect(unitFromFolderName(folder!)).toBe('D404');
@@ -81,7 +83,7 @@ describe('storage keys', () => {
   it('never renames a folder that already exists', async () => {
     // Renaming is not a tidy-up. The photographs are in there, the CRM cannot
     // move them, and the folder belongs to whoever is working in it.
-    const created = await recordService.createRecord(ctx, 'properties', { name: 'K909' });
+    const created = await createProperty(ctx, { full_name: 'K909' });
     await db.query(
       `INSERT INTO ipy_property_storage (record_id, folder_key) VALUES ($1, 'old-shape/whatever-it-was')
        ON CONFLICT (record_id) DO UPDATE SET folder_key = EXCLUDED.folder_key`,
@@ -96,7 +98,7 @@ describe('storage keys', () => {
   it('never collides when the same phone filename is uploaded twice', async () => {
     // Two photos off one phone are honestly both IMG_9001.jpg. Without the
     // unique tail the second save() would overwrite the first.
-    const created = await recordService.createRecord(ctx, 'properties', { name: 'Same Names' });
+    const created = await createProperty(ctx, { full_name: 'Same Names' });
     const keys = await Promise.all(
       Array.from({ length: 8 }, () => buildStorageKey({ recordId: created.id, originalName: 'IMG_9001.jpg', ext: '.jpg' })),
     );
@@ -104,7 +106,7 @@ describe('storage keys', () => {
   });
 
   it('falls back to the record id when the name has no ASCII form', async () => {
-    const created = await recordService.createRecord(ctx, 'properties', { name: 'ग्रीनफील्ड' });
+    const created = await createProperty(ctx, { full_name: 'ग्रीनफील्ड' });
     const key = await buildStorageKey({ recordId: created.id, originalName: 'फोटो.jpg', ext: '.jpg' });
 
     // The drop box is a nested path, so take it off the end rather than
@@ -136,7 +138,7 @@ describe('storage keys', () => {
   it('cannot escape the storage root, whatever the record is called', async () => {
     const root = resolve(config.storage.localPath);
     for (const name of ['../../etc/passwd', '..\\..\\windows', '../../../root']) {
-      const created = await recordService.createRecord(ctx, 'properties', { name });
+      const created = await createProperty(ctx, { full_name: name });
       const key = await buildStorageKey({ recordId: created.id, originalName: '../../evil.jpg', ext: '.jpg' });
       expect(key).not.toContain('..');
       // localPath is the last line of defence; prove the two agree.
@@ -145,7 +147,7 @@ describe('storage keys', () => {
   });
 
   it('files derivatives into their explicit property folders', async () => {
-    const created = await recordService.createRecord(ctx, 'properties', { name: 'Derivative Home' });
+    const created = await createProperty(ctx, { full_name: 'Derivative Home' });
     const key = await buildStorageKey({ recordId: created.id, originalName: 'IMG_1.jpg', ext: '.jpg' });
     const derivative = derivativeStorageKey(key, PROPERTY_MEDIA_FOLDERS.crmWebsite, 'large', '.webp');
     expect(derivative).toContain(`/${PROPERTY_MEDIA_FOLDERS.crmWebsite}/`);

@@ -17,7 +17,7 @@ import { createApp } from '../../src/app.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import { db } from '../../src/db/pool.js';
 import { recordService, type ServiceContext } from '../../src/core/entity/recordService.js';
-import { adminContext } from './fixtures.js';
+import { adminContext, propertyInput } from './fixtures.js';
 
 let app: Express;
 let ctx: ServiceContext;
@@ -32,14 +32,14 @@ const made: string[] = [];
  * relying on a property reaching the public website without anybody saying so.
  */
 async function publish(name: string, extra: Record<string, unknown> = {}): Promise<string> {
-  const rec = await recordService.createRecord(ctx, 'properties', {
-    name,
+  const rec = await recordService.createRecord(ctx, 'properties', propertyInput({
+    full_name: name,
     status: 'Available',
     project_name: 'Catalogue Test Project',
     city: 'Faridabad',
     publish_to_web: true,
     ...extra,
-  });
+  }));
   made.push(rec.id);
   return rec.id;
 }

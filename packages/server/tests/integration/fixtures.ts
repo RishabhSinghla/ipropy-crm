@@ -90,3 +90,12 @@ export function leadInput(overrides: Record<string, unknown> = {}): Record<strin
     ...overrides,
   };
 }
+
+/** Minimum Property payload under the real Mobile-only duplicate rule. */
+let propertySeq = 0;
+export function propertyInput(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  const legacyName = typeof overrides.name === 'string' ? overrides.name : undefined;
+  const { name: _legacyName, ...rest } = overrides;
+  const mobile = `8${String(Date.now()).slice(-8)}${propertySeq++ % 10}`;
+  return { full_name: legacyName ?? `Integration Property ${propertySeq}`, mobile, ...rest };
+}

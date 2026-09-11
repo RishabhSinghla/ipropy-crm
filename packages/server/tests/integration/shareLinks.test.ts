@@ -18,7 +18,7 @@ import { registry } from '../../src/core/metadata/registry.js';
 import { db } from '../../src/db/pool.js';
 import { recordService, type ServiceContext } from '../../src/core/entity/recordService.js';
 import { mintToken } from '../../src/core/sharing/shareLinks.js';
-import { adminContext, leadInput, SEEDED } from './fixtures.js';
+import { adminContext, leadInput, propertyInput, SEEDED } from './fixtures.js';
 
 let app: Express;
 let token: string;
@@ -34,7 +34,7 @@ async function login(email: string): Promise<string> {
 async function propertyWithPhoto(name: string, values: Record<string, unknown> = {}): Promise<{
   id: string; attachmentId: string;
 }> {
-  const record = await recordService.createRecord(ctx, 'properties', { name, ...values });
+  const record = await recordService.createRecord(ctx, 'properties', propertyInput({ full_name: name, ...values }));
   const att = await db.queryOne<{ id: string }>(
     `INSERT INTO ipy_attachment (record_id, file_name, mime_type, size, storage_key)
      VALUES ($1,'IMG_1.jpg','image/jpeg',100,$2) RETURNING id`,

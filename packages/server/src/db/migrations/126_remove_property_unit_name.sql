@@ -39,7 +39,7 @@ BEGIN
     -- A historical field rename could leave Full Name pointing at `name`.
     -- Point it to its new dedicated column before that column is deleted.
     UPDATE ipy_field
-       SET storage = 'column', column_name = 'full_name', updated_at = now()
+       SET storage = 'column', column_name = 'full_name', is_mandatory = false, updated_at = now()
      WHERE module_id = property_module AND name = 'full_name';
 
     INSERT INTO ipy_field_tombstone (module_name, field_name, storage, column_name, had_values)

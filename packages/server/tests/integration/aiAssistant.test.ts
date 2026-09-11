@@ -6,7 +6,7 @@ import { createApp } from '../../src/app.js';
 import { db } from '../../src/db/pool.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import { recordService } from '../../src/core/entity/recordService.js';
-import { contextFor, SEEDED } from './fixtures.js';
+import { contextFor, propertyInput, SEEDED } from './fixtures.js';
 
 let app: Express;
 let token: string;
@@ -76,10 +76,10 @@ describe('Ask iPropy conversations, memory and confirmed actions', () => {
 
   it('executes the stored validated payload only after confirmation', async () => {
     const marker = `AI Action ${randomUUID()}`;
-    const property = await recordService.createRecord(await contextFor(userEmail), 'properties', {
-      name: marker,
+    const property = await recordService.createRecord(await contextFor(userEmail), 'properties', propertyInput({
+      full_name: marker,
       status: 'Available',
-    });
+    }));
     const thread = await authorised('post', '/api/ai/threads').send({ title: marker }).expect(201);
     const action = await db.queryOne<{ id: string }>(
       `INSERT INTO ipy_ai_action
