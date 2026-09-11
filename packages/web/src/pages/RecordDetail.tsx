@@ -313,6 +313,11 @@ export default function RecordDetail(): JSX.Element {
                       ? String(record.display?.[layoutConfig.headerTitleField] ?? record.values[layoutConfig.headerTitleField])
                       : record.label}
                   </h1>
+                  {fieldMap.get('contact_type') && record.values.contact_type && (
+                    <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-700 dark:bg-brand-950/40 dark:text-brand-300">
+                      {record.display?.contact_type ?? String(record.values.contact_type)}
+                    </span>
+                  )}
                   {/* Off unless an admin asks for it in Admin → Layout Designer.
                       The auto-number is an internal key; the header is for the
                       person, not the row id. */}
@@ -408,8 +413,8 @@ export default function RecordDetail(): JSX.Element {
                       </span>
                     );
                   })}
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="text-xs font-normal text-muted">Owner:</span>
+                  {!((layoutConfig.headerFields ?? []).includes('owner_id')) && <span className="inline-flex items-center gap-1.5">
+                    <span className="text-xs font-normal text-muted">Assigned to:</span>
                     {fieldMap.get('owner_id') && record.can?.edit ? (
                       <EditableField
                         module={moduleName!}
@@ -425,7 +430,7 @@ export default function RecordDetail(): JSX.Element {
                     ) : (
                       <span className="text-muted">Unassigned</span>
                     )}
-                  </span>
+                  </span>}
                   <span className="shrink-0 text-xs font-normal text-muted">Updated {relativeTime(record.updatedAt)}</span>
                 </div>
               </div>
@@ -456,12 +461,6 @@ export default function RecordDetail(): JSX.Element {
                   <Send className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">Email</span>
                 </button>
-              )}
-
-              {record.can?.edit && (
-                <Link to={`/${moduleName}/${id}/edit`} className="btn-secondary btn-sm">
-                  <Edit3 className="h-3.5 w-3.5" /> Edit
-                </Link>
               )}
 
               <Dropdown trigger={<button className="btn-ghost p-2" aria-label="More actions"><MoreHorizontal className="h-4 w-4" /></button>}>
@@ -542,7 +541,6 @@ export default function RecordDetail(): JSX.Element {
             </>
           )}
           <DuplicateSuggestions module={moduleName!} id={id!} label={record.label} />
-          <ReplyReady recordId={id!} />
           <PendingProposals module={moduleName!} recordId={id!} />
           <CommentsPanel module={moduleName!} id={id!} currentUser={user?.id ?? ''} />
           <AiPanel module={moduleName!} record={record} meta={meta} />
@@ -2109,70 +2107,6 @@ function PropertyPhotoCarousel({
  * and the gap between a four-minute reply and a four-hour one is usually just
  * whether the words were already written.
  */
-function ReplyReady({ recordId }: { recordId: string }): JSX.Element | null {
-  const [busy, setBusy] = useState<string | null>(null);
-  const { data, refetch } = useQuery({
-    queryKey: ['outreach', 'queue'],
-    queryFn: () => api.deviceQueue(),
-    staleTime: 30_000,
-  });
-
-  const waiting = (data ?? []).filter((m) => m.recordId === recordId);
-  if (!waiting.length) return null;
-
-  const send = (id: string, link: string): void => {
-    // Opened before the await so the tap and the window are in the same gesture
-    // — Safari blocks a popup opened after an async hop.
-    window.open(link, '_blank', 'noopener');
-    void api.deviceSendOpened(id).catch(() => undefined);
-  };
-
-  const confirm = async (id: string): Promise<void> => {
-    setBusy(id);
-    try {
-      await api.deviceSendDone(id);
-      toast.success('Logged as sent');
-      await refetch();
-    } catch (err) {
-      toast.error('Could not log that', (err as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  return (
-    <div className="card overflow-hidden border-emerald-200 dark:border-emerald-900">
-      <div className="flex items-center gap-2 border-b border-emerald-200 bg-emerald-50 px-4 py-2.5 dark:border-emerald-900 dark:bg-emerald-950/40">
-        <MessageCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-        <span className="text-sm font-medium text-emerald-900 dark:text-emerald-200">
-          {waiting.length === 1 ? 'Reply ready to send' : `${waiting.length} replies ready to send`}
-        </span>
-      </div>
-      <div className="divide-y divide-slate-100 dark:divide-slate-800">
-        {waiting.map((message) => (
-          <div key={message.id} className="p-4">
-            <p className="whitespace-pre-wrap text-sm">{message.body}</p>
-            <p className="mt-1 text-2xs text-muted">To {message.handle}</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button className="btn-primary btn-sm" onClick={() => send(message.id, message.link)}>
-                <MessageCircle className="h-3.5 w-3.5" /> Send on WhatsApp
-              </button>
-              <button
-                className="btn-secondary btn-sm"
-                disabled={busy === message.id}
-                onClick={() => void confirm(message.id)}
-              >
-                {busy === message.id ? <Spinner className="h-3 w-3" /> : <Check className="h-3.5 w-3.5" />}
-                I sent it
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 /**
  * Changes the CRM is waiting on you to approve.
  *

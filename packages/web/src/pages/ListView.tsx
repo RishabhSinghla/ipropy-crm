@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FieldMeta, type FilterGroup, formatIndianPrice, formatPhoneWithCode, toInternational, type ListQuery, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Columns3, Compass, Download, Filter,
-  LayoutGrid, List, MailCheck, MapPin, MessageCircle, Pencil, Phone, Plus, RefreshCw, Ruler, Save, Search, Settings2, Star, Trash2, Upload, Users, X,
+  LayoutGrid, List, MapPin, MessageCircle, Pencil, Phone, Plus, RefreshCw, Ruler, Save, Search, Settings2, Star, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { ApiError, api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
@@ -48,6 +48,7 @@ export default function ListView(): JSX.Element {
 
 
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(() => Number(searchParams.get('pageSize')) || 25);
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [viewId, setViewId] = useState<string | undefined>(searchParams.get('view') ?? undefined);
@@ -216,12 +217,13 @@ export default function ListView(): JSX.Element {
     if (sortBy) next.set('sort', sortBy);
     if (sortBy && sortDir !== 'desc') next.set('dir', sortDir);
     if (page > 1) next.set('page', String(page));
+    if (pageSize !== 25) next.set('pageSize', String(pageSize));
     if (countConditions(filter)) next.set('filter', JSON.stringify(filter));
 
     if (next.toString() !== searchParams.toString()) {
       setSearchParams(next, { replace: true });
     }
-  }, [moduleName, hydratedFor, activeView?.id, search, sortBy, sortDir, page, filter]);
+  }, [moduleName, hydratedFor, activeView?.id, search, sortBy, sortDir, page, pageSize, filter]);
 
   /** The URL to come back to — handed to every record link and the New button. */
   const returnTo = `/${moduleName}${searchParams.toString() ? `?${searchParams}` : ''}`;
@@ -243,13 +245,13 @@ export default function ListView(): JSX.Element {
   const query: ListQuery = useMemo(() => ({
     view: activeView?.id,
     page,
-    pageSize: displayMode === 'kanban' ? 200 : 25,
+    pageSize: displayMode === 'kanban' ? 200 : pageSize,
     search: search || undefined,
     filter: countConditions(filter) ? filter : undefined,
     sortBy, sortDir,
     columns: columns.length ? columns : undefined,
     groupBy: groupByField,
-  }), [activeView?.id, page, search, filter, sortBy, sortDir, columns, groupByField, displayMode]);
+  }), [activeView?.id, page, pageSize, search, filter, sortBy, sortDir, columns, groupByField, displayMode]);
 
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['records', moduleName, query],
@@ -328,32 +330,10 @@ export default function ListView(): JSX.Element {
     if (moduleName && data?.rows) saveListNav(moduleName, data.rows.map((r) => r.id));
   }, [moduleName, data]);
 
-  // Which rows need attention. Leads remain highlighted while their pipeline
-  // status is New; other modules use unread-style state. Asked for separately rather than returned by
-  // the list, because the list endpoint is shared with exports and
-  // the portal, none of which have a reader to be unread for.
-  const pageIds = useMemo(() => (data?.rows ?? []).map((r) => r.id), [data]);
-  const { data: unseenData } = useQuery({
-    queryKey: ['unseen', moduleName, pageIds],
-    queryFn: () => api.unseen(moduleName!, pageIds),
-    enabled: Boolean(moduleName) && pageIds.length > 0,
-    // Always refetch on mount: opening a record marks it seen, and coming
-    // straight back to a cached "still unread" answer is the one moment the
-    // highlight is visibly wrong. The query is a single indexed lookup over
-    // one page of ids, so this is cheap.
-    refetchOnMount: 'always',
-    staleTime: 0,
-  });
-  const unseen = useMemo(() => new Set(unseenData?.unseen ?? []), [unseenData]);
-
-  const markAllSeen = async (): Promise<void> => {
-    if (!moduleName) return;
-    await api.markModuleSeen(moduleName);
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['unseen', moduleName] }),
-      queryClient.invalidateQueries({ queryKey: ['unseen-counts'] }),
-    ]);
-  };
+  // Attention is driven by the actual sales state, not a separate per-user
+  // "seen" inbox. A contact is never silently cleared just because someone
+  // visited the list.
+  const unseen = useMemo(() => new Set<string>(), []);
 
   if (!moduleName) return <div />;
 
@@ -562,17 +542,6 @@ export default function ListView(): JSX.Element {
                 </>
               )}
             </Dropdown>
-
-            {unseen.size > 0 && (
-              <button
-                onClick={() => void markAllSeen()}
-                className="btn-ghost btn-sm text-brand-600 dark:text-brand-400"
-                title="Clear the highlight on records you haven’t opened"
-              >
-                <MailCheck className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Mark all as seen</span>
-              </button>
-            )}
 
             {canCreate && (
               // Same reason as `list-search` above: the label is the admin's
@@ -941,6 +910,14 @@ export default function ListView(): JSX.Element {
             {((data!.page - 1) * data!.pageSize + 1).toLocaleString('en-IN')}–
             {Math.min(data!.page * data!.pageSize, data!.total).toLocaleString('en-IN')} of {data!.total.toLocaleString('en-IN')}
           </p>
+          <label className="flex items-center gap-1.5 text-xs text-muted">
+            Rows
+            <Select
+              value={String(pageSize)}
+              onChange={(value) => { setPageSize(Number(value)); setPage(1); }}
+              options={[25, 50, 100].map((size) => ({ value: String(size), label: String(size) }))}
+            />
+          </label>
           <div className="flex items-center gap-1">
             <button
               className="btn-ghost p-1.5 disabled:opacity-30"
@@ -950,9 +927,22 @@ export default function ListView(): JSX.Element {
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <span className="px-2 text-xs tnum text-muted">
-              {data!.page} / {data!.totalPages}
-            </span>
+            <label className="flex items-center gap-1 px-1 text-xs tnum text-muted">
+              Page
+              <input
+                className="input h-7 w-14 px-1 text-center text-xs"
+                aria-label="Go to page"
+                type="number"
+                min={1}
+                max={data!.totalPages}
+                value={page}
+                onChange={(e) => {
+                  const next = Number(e.target.value);
+                  if (Number.isInteger(next) && next >= 1 && next <= data!.totalPages) setPage(next);
+                }}
+              />
+              <span>/ {data!.totalPages}</span>
+            </label>
             <button
               className="btn-ghost p-1.5 disabled:opacity-30"
               aria-label="Next page"
@@ -1774,10 +1764,7 @@ function MassOwnerButton({
 }): JSX.Element {
   const [open, setOpen] = useState(false);
   const [ownerId, setOwnerId] = useState('');
-  // Bulk reassignment can only ever be given to an Administrator — the
-  // server refuses anyone else (recordService's transferOwnership), so the
-  // picker only offers people the write will actually accept.
-  const { data: users } = useQuery({ queryKey: ['users', 'adminOnly'], queryFn: () => api.users(false, true) });
+  const { data: users } = useQuery({ queryKey: ['users'], queryFn: () => api.users() });
   const [busy, setBusy] = useState(false);
   const countLabel = allQuery ? allCount.toLocaleString('en-IN') : String(ids.length);
 
@@ -1818,7 +1805,7 @@ function MassOwnerButton({
           </>
         }
       >
-        <label className="label">New owner</label>
+        <label className="label">Assign to</label>
         <Select
           value={ownerId}
           onChange={setOwnerId}
