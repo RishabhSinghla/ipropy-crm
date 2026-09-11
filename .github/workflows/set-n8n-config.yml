@@ -22,8 +22,6 @@ on:
         description: "n8n webhook URL. Blank keeps whatever production already has."
         required: false
         default: ""
-        required: false
-        default: ""
 
 jobs:
   configure:
