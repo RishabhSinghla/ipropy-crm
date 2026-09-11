@@ -1,4 +1,4 @@
-import { type CSSProperties, type JSX, type KeyboardEvent as ReactKeyboardEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, type JSX, type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 /**
  * Universal inline editing. Click any editable field's displayed value —
  * in a list table cell, a kanban card, or a record detail page — and change
@@ -609,6 +609,7 @@ function InlineTextEditor({
   onCommit: (draft: unknown) => void;
 }): JSX.Element {
   const isMultiline = field.uitype === 'textarea' || field.uitype === 'richtext';
+  const inputId = useId();
   const committedRef = useRef(false);
   // CurrencyInput (and potentially other sub-editors) buffers what the user
   // types locally and only calls onChange once, already-parsed, from its own
@@ -645,7 +646,13 @@ function InlineTextEditor({
         }
       }}
     >
+      {/* The editor opens over the value, so the field's own label is not on
+          screen beside it — which left the control with no accessible name at
+          all. A screen reader announced an edit box and nothing about what it
+          edits. `FieldInput` already takes an id for exactly this. */}
+      <label htmlFor={inputId} className="sr-only">{field.label}</label>
       <FieldInput
+        id={inputId}
         field={field}
         value={draft}
         onChange={handleChange}

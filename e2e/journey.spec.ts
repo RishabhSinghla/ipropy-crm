@@ -114,7 +114,7 @@ test.describe('lead lifecycle through the UI', () => {
     await expect(row(name)).toBeVisible();
   });
 
-  test('edit it from the edit page', async ({ page }) => {
+  test('rename it inline on the record', async ({ page }) => {
     const row = (text: string) => rowIn(page, text);
     await page.goto('/leads');
     await page.waitForTimeout(1200);
@@ -125,12 +125,20 @@ test.describe('lead lifecycle through the UI', () => {
     await detail.waitForLoadState('domcontentloaded');
     await detail.waitForURL(/\/leads\/[0-9a-f-]{36}/);
     await rowClick;
-    await detail.getByRole('link', { name: 'Edit' }).click();
-    await detail.waitForURL(/\/edit$/);
+    /*
+      Edited where it is shown. There is no separate edit page any more — the
+      owner asked for the one it used to open to go, since every field on the
+      record already edits in place and a second screen for the same job was
+      one more thing to keep in step.
+    */
     const renamed = `${name} II`;
-    await detail.getByRole('textbox', { name: /full name/i }).first().fill(renamed);
-    await detail.getByRole('button', { name: /save/i }).click();
-    // An edit returns to the record itself, where the new name is the heading.
+    // Full Name edits in two places on this screen — the header strip and the
+    // Overview form. Either will do; take the first.
+    await detail.getByRole('button', { name: 'Edit Full Name' }).first().click();
+    const input = detail.getByRole('textbox', { name: /full name/i }).first();
+    await input.fill(renamed);
+    await input.press('Enter');
+    // The heading is the value, so a saved rename is visible in it.
     await expect(detail.getByRole('heading', { name: renamed })).toBeVisible({ timeout: 10_000 });
   });
 
