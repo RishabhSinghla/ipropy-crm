@@ -40,7 +40,7 @@ function required(name: string): string {
 // for. Filtered from the *sample-pulling* pass only — they still show up
 // in the module list so nothing is silently hidden from the report.
 const SKIP_SAMPLING = new Set([
-  'SMSNotifier', 'ModComments', 'Integration', 'PriceBooks', 'PriceBookProductRel',
+  'SMSNotifier', 'Integration', 'PriceBooks', 'PriceBookProductRel',
   'Vendors', 'PurchaseOrder', 'SalesOrder', 'Quotes', 'Invoice', 'Currency',
   'ServiceContracts', 'Services', 'PBXManager',
 ]);
@@ -69,6 +69,11 @@ async function main(): Promise<void> {
   const modules = report.modules as Record<string, unknown>;
 
   for (const type of types) {
+    // Vtiger-cloud's per-minute limit is tight enough that a plain loop over
+    // twenty-odd modules trips it before the end, even with the client's own
+    // 429 backoff. A flat pause between modules keeps requests spread out
+    // instead of firing them as fast as the loop can go.
+    await new Promise((r) => setTimeout(r, 600));
     process.stdout.write(`  describing ${type}...`);
     try {
       const described = await client.describe(type);

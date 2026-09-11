@@ -85,25 +85,19 @@ jobs:
           # dropped column is a 42703 waiting for the next query that names it.
           for spec in "ipy_e_properties:carpet_area,area_size,configuration,base_price,asking_price,total_price,demand,locality,preferred_locations,status" \
                       "ipy_e_leads:budget,configuration,preferred_locations,area,area_size,mobile,status"; do
-            table="${spec%%:*}"; cols="${spec#*:}"
-            live=$(psql "$PROD_DATABASE_URL" -tAc \
-              "SELECT coalesce(string_agg(c, ', ' || chr(39)), '')
-                 FROM unnest(string_to_array('$cols', ',')) c
-                WHERE EXISTS (SELECT 1 FROM information_schema.columns
-                               WHERE table_name = '$table' AND column_name = c);")
-            gone=$(psql "$PROD_DATABASE_URL" -tAc \
-              "SELECT coalesce(string_agg(c, ', '), '(none)')
-                 FROM unnest(string_to_array('$cols', ',')) c
-                WHERE NOT EXISTS (SELECT 1 FROM information_schema.columns
-                                   WHERE table_name = '$table' AND column_name = c);")
-            sel=$(psql "$PROD_DATABASE_URL" -tAc \
-              "SELECT coalesce(string_agg(format('%L || %L || count(to_jsonb(t)->>%L)', ', ' || c || '=', '', c), ' || '), )
-                 FROM unnest(string_to_array('$cols', ',')) c
-                WHERE EXISTS (SELECT 1 FROM information_schema.columns
-                               WHERE table_name = '$table' AND column_name = c);")
-            psql "$PROD_DATABASE_URL" -tAc \
-              "SELECT '$table rows=' || count(*) || $sel FROM $table t;"
-            echo "  absent from $table: $gone"
+            table="${spec%%:*}"
+            present=$(psql "$PROD_DATABASE_URL" -tAc \
+              "SELECT column_name FROM information_schema.columns WHERE table_name = '$table';")
+            sel=""; gone=""
+            for c in $(echo "${spec#*:}" | tr ',' ' '); do
+              if echo "$present" | grep -qx "$c"; then
+                sel="$sel || ', $c=' || count(to_jsonb(t)->>'$c')"
+              else
+                gone="$gone $c"
+              fi
+            done
+            psql "$PROD_DATABASE_URL" -tAc "SELECT '$table rows=' || count(*)$sel FROM $table t;"
+            echo "  absent from $table:${gone:- (none)}"
           done
           echo
           echo "=== are the matching pairs actually configured? ==="

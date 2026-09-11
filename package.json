@@ -42,7 +42,10 @@
     "tenant": "npm run tenant -w @ipropy/server --",
     "control": "npm run control -w @ipropy/server",
     "go-live:users": "npm run go-live:users -w @ipropy/server",
-    "vtiger:discover": "npm run vtiger:discover -w @ipropy/server"
+    "vtiger:discover": "npm run vtiger:discover -w @ipropy/server",
+    "vtiger:extract": "npm run vtiger:extract -w @ipropy/server",
+    "vtiger:load": "npm run vtiger:load -w @ipropy/server",
+    "vtiger:migrate": "npm run vtiger:migrate -w @ipropy/server"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
