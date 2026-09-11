@@ -745,19 +745,30 @@ export default function ImportAdmin(): JSX.Element {
           </div>
 
           <div className="flex flex-wrap items-end gap-4 border-t border-slate-100 px-4 py-3 dark:border-slate-800">
-            <div className="w-64">
-              <label className="label">When a row matches someone already here</label>
-              <Select
-                value={duplicateHandling}
-                onChange={setDuplicateHandling}
-                options={[
-                  { value: 'review', label: 'Let me decide at the end' },
-                  { value: 'skip', label: 'Skip duplicates' },
-                  { value: 'create', label: 'Create anyway' },
-                ]}
-                className="py-1.5 text-sm"
-              />
-            </div>
+            {/* Only asked when it is still a question. Add or update, Only
+                update and Only add what is missing each already say what
+                happens to a row that matches — leaving the dropdown there
+                offered a second, contradicting answer that the import ignores. */}
+            {importMode === 'create' ? (
+              <div className="w-64">
+                <label className="label">When a row matches someone already here</label>
+                <Select
+                  value={duplicateHandling}
+                  onChange={setDuplicateHandling}
+                  options={[
+                    { value: 'review', label: 'Let me decide at the end' },
+                    { value: 'skip', label: 'Skip duplicates' },
+                    { value: 'create', label: 'Create anyway' },
+                  ]}
+                  className="py-1.5 text-sm"
+                />
+              </div>
+            ) : (
+              <p className="pb-1.5 text-xs text-muted">
+                {MODES.find((m) => m.value === importMode)?.title} already says what happens to a row
+                that matches someone here.
+              </p>
+            )}
 
             <label className="flex cursor-pointer items-center gap-2 pb-1.5">
               <input
@@ -843,7 +854,7 @@ export default function ImportAdmin(): JSX.Element {
             </div>
           </div>
 
-          {duplicateHandling === 'review' && (
+          {duplicateHandling === 'review' && importMode === 'create' && (
             <p className="mx-4 mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300">
               Rows that match a record already here — same mobile or email — are set aside rather than
               imported or thrown away. When the file finishes you get them side by side and choose,
