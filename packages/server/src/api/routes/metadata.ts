@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { invalidatePublicFields } from './public.js';
+import { invalidatePayloadColumns } from '../../core/entity/payloadColumns.js';
 import { z } from 'zod';
 import { UITYPE_LIST, UITYPES } from '@ipropy/shared';
 import { db, transaction, type Tx } from '../../db/pool.js';
@@ -39,6 +40,10 @@ function invalidateAll(): void {
   // so a field deleted here changes it. Without this the site keeps asking for
   // a column that has just gone and answers 400 until the next restart.
   invalidatePublicFields();
+  // Same reason, for the write side: `markContacted` and `setIfPresent` decide
+  // what to write from the columns that exist, and a field deleted here
+  // changes that answer.
+  invalidatePayloadColumns();
 }
 
 // ---------------------------------------------------------------------------

@@ -21,9 +21,17 @@ let recordUrl = '';
 test('a rep adds a lead they just spoke to', async ({ page }) => {
   await page.goto('/leads/new');
   await page.getByRole('textbox', { name: /full name/i }).fill(name);
-  await page.getByRole('textbox', { name: /^mobile/i }).fill(String(9811570000 + (Date.now() % 9000)));
+  // `Date.now() % 9000` cycles every nine seconds, so two runs in the same
+  // afternoon collide and the duplicate check answers with an error toast
+  // instead of "created" — which reads as the create screen being broken. The
+  // last eight digits of the clock cycle once a day instead.
+  await page.getByRole('textbox', { name: /^mobile/i }).fill(`98${String(Date.now()).slice(-8)}`);
   await page.getByTestId('record-form-submit').click();
-  await expect(page.getByText(/created/i).first()).toBeVisible({ timeout: 15_000 });
+  // Named rather than matched on /created/i alone: if the save is refused, this
+  // says which message actually appeared instead of "element not found".
+  const toast = page.getByRole('status').or(page.getByText(/created|already exists|could not/i)).first();
+  await expect(toast).toBeVisible({ timeout: 15_000 });
+  await expect(toast).toContainText(/created/i);
 });
 
 test('they open it from the list', async ({ page, context }) => {

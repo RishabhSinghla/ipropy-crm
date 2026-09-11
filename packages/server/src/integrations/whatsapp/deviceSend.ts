@@ -28,6 +28,7 @@ import { BadRequestError } from '../../utils/errors.js';
 import { touchActivity } from '../../core/entity/recordService.js';
 import { getOrCreateConversation, resolveHandle } from './service.js';
 import { isOptedOut } from './consent.js';
+import { markContacted } from '../../core/entity/payloadColumns.js';
 
 /**
  * WhatsApp truncates a prefilled message somewhere north of this, and a long
@@ -325,13 +326,7 @@ export async function logDeviceMessage(input: {
     // A device send is real contact — the lead should stop looking untouched.
     if (input.recordId) {
       await touchActivity(input.recordId);
-      await db.query(
-        `UPDATE ipy_e_leads
-         SET last_contacted_at = now(),
-             status = CASE WHEN status = 'New' THEN 'Contacted' ELSE status END
-         WHERE record_id = $1`,
-        [input.recordId],
-      );
+      await markContacted(input.recordId);
     }
 
     return message?.id ?? null;

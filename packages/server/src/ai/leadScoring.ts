@@ -14,6 +14,7 @@ import { priceField, priceSql } from '../core/settings/priceField.js';
 import { logger } from '../utils/logger.js';
 import { completeJson, isAiAvailable, saveInsight, REAL_ESTATE_SYSTEM } from './client.js';
 import { fenceId, fenced, fencedList, untrustedRule } from './untrusted.js';
+import { setIfPresent } from '../core/entity/payloadColumns.js';
 
 interface LeadContext {
   recordId: string;
@@ -273,12 +274,10 @@ export async function scoreLead(recordId: string, opts: { persist?: boolean } = 
 
       Parameter count rule (CLAUDE.md rule 8): this UPDATE binds exactly two.
     */
-    await db.query(
-      `UPDATE ipy_e_leads
-       SET rating = $2
-       WHERE record_id = $1`,
-      [recordId, result.temperature],
-    );
+    // `rating` is a field an admin can retire, and production has: the write
+    // raised 42703 on every scored lead and the caller is a workflow task that
+    // logs and carries on, so scores stopped moving with nothing saying so.
+    await setIfPresent('ipy_e_leads', recordId, 'rating', result.temperature);
 
     await saveInsight({
       recordId,

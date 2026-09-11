@@ -71,8 +71,14 @@ export const FIELDS_USED_IN_CODE: Record<string, string> = {
   'leads.last_contacted_at': 'the neglected-lead rules and first-response timing',
   'leads.budget': 'buyer matching against inventory',
   'leads.configuration': 'buyer matching against inventory',
+  // `leads.do_not_call` was here and has been removed: the check moved to
+  // `core/consent/`, which is keyed on the handle rather than the record —
+  // because somebody can text STOP from a number the CRM holds no lead for,
+  // and that still has to be honoured. Nothing reads the column now, so
+  // refusing the rename was refusing it for a reason that had stopped
+  // existing. `do_not_whatsapp` stays: `integrations/whatsapp/broadcast.ts`
+  // still reads it by name as a second gate beside the consent store.
   'leads.do_not_whatsapp': 'the consent check that stops a broadcast reaching someone who opted out',
-  'leads.do_not_call': 'the do-not-call check before a number is dialled',
   'leads.preferred_locations': 'buyer matching against inventory, and the first reply that names a locality',
   'leads.possession_timeline': 'buyer matching, and how soon a lead is chased',
   'leads.purpose': 'buyer matching — whether they are buying to live in or to let',

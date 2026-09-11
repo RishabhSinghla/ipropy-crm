@@ -141,6 +141,51 @@ const KNOWN_DIRECT_REFERENCES = new Set([
 /** Columns nobody can delete, so naming them is always correct. */
 const STRUCTURAL = new Set(['record_id', 'custom_fields']);
 
+/**
+ * The columns an `UPDATE ipy_e_leads SET …` assigns to.
+ *
+ * `referencesIn` above is alias-qualified on purpose, and an UPDATE has no
+ * alias to qualify with — it says `SET last_contacted_at = now()`. So six
+ * write statements sat outside this test's reach, and on 11 September all six
+ * were naming columns production had deleted: logging a call raised 42703
+ * after the call row was already written, the provider's status webhook did
+ * the same, a WhatsApp device send failed silently inside a catch, and lead
+ * scoring's rating write had stopped moving any score at all.
+ *
+ * Writes go through `core/entity/payloadColumns.ts` now, which asks the
+ * database what it has and writes only that.
+ */
+function assignmentsIn(source: string, file: string): Reference[] {
+  const found: Reference[] = [];
+  for (const m of source.matchAll(/`([^`]*?)`/gs)) {
+    const sql = m[1] ?? '';
+    for (const table of DELETABLE_TABLES) {
+      for (const u of sql.matchAll(new RegExp(`UPDATE\\s+${table}\\s+SET\\s+([\\s\\S]*?)(?:\\bWHERE\\b|\\bRETURNING\\b|$)`, 'gi'))) {
+        for (const a of (u[1] ?? '').matchAll(/(?:^|,)\s*([a-z_][a-z0-9_]*)\s*=/g)) {
+          found.push({
+            file,
+            line: source.slice(0, m.index).split('\n').length,
+            alias: table,
+            column: a[1]!,
+            snippet: sql.trim().split('\n')[0]!.slice(0, 60),
+          });
+        }
+      }
+    }
+  }
+  return found;
+}
+
+/**
+ * `leads.status` is the one assignment left, and it is allowed: it is on
+ * `FIELDS_USED_IN_CODE`, so a rename is refused outright and the field is as
+ * close to structural as a payload column gets. Everything else belongs in
+ * `payloadColumns.ts`.
+ */
+const KNOWN_ASSIGNMENTS = new Set([
+  'api/routes/telephony.ts ipy_e_leads.status',
+]);
+
 describe('queries against tables whose columns can be deleted', () => {
   it('never names a column that is not there', async () => {
     const leads = await realColumns('ipy_e_leads');
@@ -187,5 +232,31 @@ describe('queries against tables whose columns can be deleted', () => {
     // reference somebody rewrote, and leaving it here invites the next one.
     const stale = [...KNOWN_DIRECT_REFERENCES].filter((k) => !seen.has(k));
     expect(stale, `Remove these from KNOWN_DIRECT_REFERENCES — they are gone:\n${stale.join('\n')}`).toEqual([]);
+  });
+
+  it('writes no payload column directly either', async () => {
+    const files = await sourceFiles(SRC);
+    const added: string[] = [];
+
+    for (const file of files) {
+      // The one file allowed to name these: it checks each against
+      // information_schema before writing it.
+      if (file.includes('/core/entity/payloadColumns.ts')) continue;
+      const source = await readFile(file, 'utf8');
+      for (const ref of assignmentsIn(source, file)) {
+        if (STRUCTURAL.has(ref.column)) continue;
+        const key = `${relative(SRC, ref.file)} ${ref.alias}.${ref.column}`;
+        if (!KNOWN_ASSIGNMENTS.has(key)) added.push(`${key} — ${ref.snippet}`);
+      }
+    }
+
+    expect(
+      added,
+      'This UPDATE assigns a payload column by name, which becomes a 42703 the '
+      + 'day an administrator deletes that field — and unlike a read it fails '
+      + 'after other writes have already landed. Use `markContacted` or '
+      + '`setIfPresent` from `core/entity/payloadColumns.ts`.'
+      + `\n\n${added.join('\n')}`,
+    ).toEqual([]);
   });
 });

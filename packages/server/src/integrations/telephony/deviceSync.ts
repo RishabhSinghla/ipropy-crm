@@ -28,6 +28,7 @@ import { logger } from '../../utils/logger.js';
 import { BadRequestError, UnauthorizedError } from '../../utils/errors.js';
 import { notify } from '../../core/notifications/index.js';
 import { bus } from '../../core/events/bus.js';
+import { markContacted } from '../../core/entity/payloadColumns.js';
 
 /**
  * Android's CallLog.Calls type constants. Mapped here rather than in the app so
@@ -196,24 +197,14 @@ export async function syncCalls(device: AuthedDevice, entries: DeviceCallEntry[]
           [match.recordId, started],
         );
         if (status === 'completed') {
-          await db.query(
-            `UPDATE ipy_e_leads
-             SET last_contacted_at = GREATEST(COALESCE(last_contacted_at, $2), $2),
-                 contact_attempts = contact_attempts + 1,
-                 status = CASE WHEN status = 'New' THEN 'Contacted' ELSE status END
-             WHERE record_id = $1`,
-            [match.recordId, started],
-          );
+          await markContacted(match.recordId, { at: started, attempt: true });
           await db.query(
             `UPDATE ipy_sla_tracker SET first_response_at = COALESCE(first_response_at, $2)
              WHERE record_id = $1 AND first_response_at IS NULL`,
             [match.recordId, started],
           );
         } else {
-          await db.query(
-            `UPDATE ipy_e_leads SET contact_attempts = contact_attempts + 1 WHERE record_id = $1`,
-            [match.recordId],
-          );
+          await markContacted(match.recordId, { attempt: true, reached: false });
         }
 
         if (Date.now() - started.getTime() <= 10 * 60_000) {

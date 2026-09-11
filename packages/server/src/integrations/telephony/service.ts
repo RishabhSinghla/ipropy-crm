@@ -16,6 +16,7 @@ import { BadRequestError, IntegrationError } from '../../utils/errors.js';
 import { bus } from '../../core/events/bus.js';
 import { touchActivity } from '../../core/entity/recordService.js';
 import { notify } from '../../core/notifications/index.js';
+import { markContacted } from '../../core/entity/payloadColumns.js';
 
 export interface PlaceCallInput {
   agentUserId: string;
@@ -408,23 +409,16 @@ export async function updateCallStatus(update: CallStatusUpdate): Promise<void> 
       await touchActivity(call.record_id);
       // A completed outbound call counts as contact — keep the lead in step.
       if (status === 'completed' && call.direction === 'outbound') {
-        await db.query(
-          `UPDATE ipy_e_leads
-           SET last_contacted_at = now(), contact_attempts = contact_attempts + 1,
-               status = CASE WHEN status = 'New' THEN 'Contacted' ELSE status END
-           WHERE record_id = $1`,
-          [call.record_id],
-        );
+        await markContacted(call.record_id, { attempt: true });
         await db.query(
           `UPDATE ipy_sla_tracker SET first_response_at = COALESCE(first_response_at, now())
            WHERE record_id = $1 AND first_response_at IS NULL`,
           [call.record_id],
         );
       } else if (call.direction === 'outbound') {
-        await db.query(
-          `UPDATE ipy_e_leads SET contact_attempts = contact_attempts + 1 WHERE record_id = $1`,
-          [call.record_id],
-        );
+        // Rang and got nothing: an attempt was made, but nobody was reached,
+        // so the lead does not leave New and the contact date does not move.
+        await markContacted(call.record_id, { attempt: true, reached: false });
       }
     }
 
@@ -492,13 +486,7 @@ export async function logManualCall(input: {
 
   if (input.recordId) {
     await touchActivity(input.recordId);
-    await db.query(
-      `UPDATE ipy_e_leads
-       SET last_contacted_at = now(), contact_attempts = contact_attempts + 1,
-           status = CASE WHEN status = 'New' THEN 'Contacted' ELSE status END
-       WHERE record_id = $1`,
-      [input.recordId],
-    );
+    await markContacted(input.recordId, { attempt: true });
   }
 
   bus.emitAsync('call.ended', {
