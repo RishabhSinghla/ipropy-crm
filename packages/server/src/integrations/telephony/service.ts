@@ -470,29 +470,30 @@ export async function logManualCall(input: {
   // duration), so add the outcome to it instead of creating a manual twin.
   const synced = numberTail.length === 10 ? await db.queryOne<{ id: string }>(
     `SELECT id
-       FROM ipy_call
+      FROM ipy_call
       WHERE user_id = $1
-        AND record_id IS NOT DISTINCT FROM $2
-        AND direction = $3
+        AND direction = $2
         AND source = 'device'
         AND ended_at > now() - interval '2 minutes'
-        AND abs(duration_seconds - $5::int) <= 120
+        AND abs(duration_seconds - $4::int) <= 120
         AND right(regexp_replace(
           CASE WHEN direction = 'outbound' THEN to_number ELSE from_number END,
           '\\D', '', 'g'
-        ), 10) = $4
+        ), 10) = $3
       ORDER BY ended_at DESC NULLS LAST
       LIMIT 1`,
-    [input.userId, input.recordId, input.direction, numberTail, input.durationSeconds],
+    [input.userId, input.direction, numberTail, input.durationSeconds],
   ) : null;
   if (synced) {
     await db.query(
       `UPDATE ipy_call
           SET disposition = COALESCE($2, disposition),
               notes = COALESCE($3, notes),
+              record_id = COALESCE($4, record_id),
+              record_module = COALESCE($5, record_module),
               disposition_at = CASE WHEN $2::text IS NULL THEN disposition_at ELSE now() END
         WHERE id = $1`,
-      [synced.id, input.disposition ?? null, input.notes ?? null],
+      [synced.id, input.disposition ?? null, input.notes ?? null, input.recordId, input.module],
     );
     return { callId: synced.id };
   }
