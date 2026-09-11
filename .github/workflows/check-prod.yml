@@ -111,6 +111,17 @@ jobs:
                       WHERE l.workflow_id = w.id AND l.created_at > now() - interval '7 days') AS rows_7d,
                     to_char(w.updated_at, 'MM-DD HH24:MI') AS changed
                FROM ipy_workflow w ORDER BY w.is_active DESC, w.name;"
+          # The two switched-off ones show a `last_run` from this morning, and
+          # both the scheduler and the engine filter on `is_active` — so either
+          # they were switched off after that run, or something runs them
+          # anyway. The newest log row for each answers it.
+          psql "$PROD_DATABASE_URL" -P pager=off -c \
+            "SELECT w.name, w.is_active,
+                    to_char(max(l.created_at), 'MM-DD HH24:MI') AS newest_log,
+                    count(*) FILTER (WHERE l.created_at > now() - interval '12 hours') AS rows_12h
+               FROM ipy_workflow w LEFT JOIN ipy_workflow_log l ON l.workflow_id = w.id
+              WHERE w.trigger = 'scheduled'
+              GROUP BY w.id, w.name, w.is_active ORDER BY w.is_active DESC, w.name;"
           echo
           echo "--- which AI model does each job use, and is the key there? ---"
           # Semantic search has been inert since it was built: `ipy_embedding`
