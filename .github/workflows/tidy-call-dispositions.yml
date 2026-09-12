@@ -64,9 +64,9 @@ jobs:
           # the calls that used it.
           echo "Deliberately retired outcomes:"
           psql "$DATABASE_URL" -P pager=off -c "
-            SELECT value, created_at::date AS retired
+            SELECT value, deleted_at::date AS retired, had_records, replaced_with
               FROM ipy_picklist_tombstone
-             WHERE picklist_name = 'call_disposition' ORDER BY created_at"
+             WHERE picklist_name = 'call_disposition' ORDER BY deleted_at"
 
       - name: Clear them
         if: ${{ inputs.apply }}
