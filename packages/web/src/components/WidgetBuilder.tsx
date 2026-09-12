@@ -84,6 +84,11 @@ const FORMATS = [
   { value: 'currency', label: 'Currency (₹)' },
   { value: 'percent', label: 'Percent' },
 ];
+const FONT_SCALES = [
+  { value: 'compact', label: 'Compact' },
+  { value: 'comfortable', label: 'Comfortable' },
+  { value: 'large', label: 'Large' },
+];
 
 const EMPTY_FILTER: FilterGroup = { logic: 'AND', conditions: [] };
 
@@ -349,6 +354,41 @@ export default function WidgetBuilder({
                   placeholder="10"
                 />
               </div>
+
+              <div>
+                <label className="label">Accent colour</label>
+                <input
+                  type="color"
+                  value={config.color ?? '#6366f1'}
+                  onChange={(e) => set({ color: e.target.value })}
+                  className="h-9 w-full cursor-pointer rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-700 dark:bg-slate-900"
+                  aria-label="Widget accent colour"
+                />
+              </div>
+
+              <div>
+                <label className="label">Content size</label>
+                <Select
+                  value={String(config.fontScale ?? 'comfortable')}
+                  onChange={(v) => set({ fontScale: v as WidgetConfig['fontScale'] })}
+                  options={FONT_SCALES}
+                />
+              </div>
+
+              {(type === 'line' || type === 'area') && (
+                <div>
+                  <label className="label">Chart line thickness</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="8"
+                    step="1"
+                    className="input"
+                    value={Number(config.lineWidth ?? 2)}
+                    onChange={(e) => set({ lineWidth: Math.max(1, Math.min(8, Number(e.target.value) || 2)) })}
+                  />
+                </div>
+              )}
 
               {type === 'metric' && (
                 <label className="flex items-center gap-2 self-end pb-2 text-sm">

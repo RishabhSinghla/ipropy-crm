@@ -529,8 +529,8 @@ export async function seedDefaultLayouts(conn: Tx, def: ModuleDef): Promise<void
       ...(def.name === 'properties' ? [
         { key: 'matching', label: 'Matching contacts', icon: 'link-2' },
       ] : []),
-      ...(def.name === 'leads' ? [{ key: 'calls', label: 'Calls', icon: 'phone' }] : []),
       { key: 'files', label: 'Files', icon: 'paperclip' },
+      ...(def.name === 'leads' || def.name === 'properties' ? [{ key: 'calls', label: 'Calls', icon: 'phone' }] : []),
       ...(def.relations ?? []).map((relation) => ({
         key: `rel:${relation.name}`, label: relation.label, icon: 'link-2',
       })),

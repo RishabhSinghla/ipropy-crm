@@ -848,6 +848,76 @@ export async function deleteRecord(
   }));
 }
 
+/**
+ * Move a record between the two core CRM modules.
+ *
+ * This deliberately creates a fresh record in the destination module instead
+ * of changing `module_name` in place: each module has its own payload table,
+ * required fields and defaults.  Values whose internal names exist in both
+ * modules are carried over; the two name fields are the one friendly alias
+ * (`full_name` ↔ `name`).  Pipeline statuses are not copied because a lead's
+ * stages and an inventory unit's availability are different vocabularies.
+ */
+export async function moveRecord(
+  ctx: ServiceContext,
+  sourceModuleName: string,
+  recordId: string,
+  targetModuleName: string,
+): Promise<RecordEnvelope> {
+  const validPair = (sourceModuleName === 'leads' && targetModuleName === 'properties')
+    || (sourceModuleName === 'properties' && targetModuleName === 'leads');
+  if (!validPair) throw new ValidationError('Records can only be moved between Leads and Inventories');
+
+  const [sourceModule, targetModule] = await Promise.all([
+    registry.requireModule(sourceModuleName),
+    registry.requireModule(targetModuleName),
+  ]);
+  const source = await getRecord(ctx, sourceModuleName, recordId, { withDisplay: false });
+  const targetFields = new Set(
+    targetModule.fields
+      .filter((field) => field.isActive && !field.isReadonly && field.uitype !== 'autonumber')
+      .map((field) => field.name),
+  );
+  const values: Record<string, unknown> = {};
+
+  for (const [name, value] of Object.entries(source.values)) {
+    // Status values have different meanings in the two modules. Let the
+    // destination module apply its own mandatory default instead.
+    if (name === sourceModule.pipelineField || name === targetModule.pipelineField) continue;
+    if (targetFields.has(name) && value !== undefined && value !== null) values[name] = value;
+  }
+
+  if (targetFields.has('name') && !values.name) {
+    values.name = source.values.full_name ?? source.values.name ?? source.label;
+  }
+  if (targetFields.has('full_name') && !values.full_name) {
+    values.full_name = source.values.name ?? source.values.full_name ?? source.label;
+  }
+  values.owner_id = source.ownerId;
+
+  return transaction(async (tx) => {
+    const moved = await createRecord(ctx, targetModuleName, values, { conn: tx });
+
+    // Keep the useful work attached to the new row. Files have no module of
+    // their own and calls do, so both ids and call module must be updated.
+    await Promise.all([
+      tx.query(`UPDATE ipy_attachment SET record_id = $2 WHERE record_id = $1`, [recordId, moved.id]),
+      tx.query(`UPDATE ipy_call SET record_id = $2, record_module = $3 WHERE record_id = $1`, [recordId, moved.id, targetModuleName]),
+    ]);
+
+    await deleteRecord(ctx, sourceModuleName, recordId, { conn: tx });
+    await writeAudit(tx, {
+      recordId: moved.id,
+      module: targetModuleName,
+      userId: ctx.user.id,
+      action: 'convert',
+      changes: [{ field: 'moved_from', label: 'Moved from', from: sourceModule.label, to: targetModule.label }],
+      source: ctx.source ?? 'app',
+    });
+    return moved;
+  });
+}
+
 export async function restoreRecord(ctx: ServiceContext, moduleName: string, recordId: string): Promise<void> {
   await assertModuleAccess(ctx.user, moduleName, 'edit');
   await db.query(
@@ -1706,6 +1776,7 @@ export const recordService = {
   updateRecord,
   findDuplicateRecord,
   deleteRecord,
+  moveRecord,
   restoreRecord,
   massUpdate,
   massUpdateByQuery,

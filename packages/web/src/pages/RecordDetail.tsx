@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type BuyerMatch, type FieldMeta, formatIndianPrice, type ModuleMeta, type PropertyMatch, type RecordEnvelope, relativeTime, type TimelineEntry } from '@ipropy/shared';
 import {
-  Activity, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Edit3, Eye, FileQuestion, FileText, Images, LayoutDashboard, Link2, MessageCircle, Mic, MoreHorizontal, Paperclip, Pencil, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Trash2, Upload, X,
+  Activity, ArrowRightLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Edit3, ExternalLink, Eye, FileQuestion, FileText, FolderOpen, Images, LayoutDashboard, Link2, MessageCircle, Mic, MoreHorizontal, Paperclip, Pencil, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { api, authedFileUrl } from '../lib/api';
 import { compressImage, formatBytes } from '../lib/compressImage';
@@ -52,7 +52,9 @@ export default function RecordDetail(): JSX.Element {
 
   const [tab, setTab] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [moveTarget, setMoveTarget] = useState<'leads' | 'properties' | null>(null);
   const [sharing, setSharing] = useState(false);
+  const [collaborators, setCollaborators] = useState(false);
   const [compose, setCompose] = useState<'whatsapp' | 'email' | null>(null);
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [summarising, setSummarising] = useState(false);
@@ -183,6 +185,16 @@ export default function RecordDetail(): JSX.Element {
     },
   });
 
+  const moveMutation = useMutation({
+    mutationFn: (targetModule: 'leads' | 'properties') => api.move(moduleName!, id!, targetModule),
+    onSuccess: (moved, targetModule) => {
+      toast.success(`Moved to ${targetModule === 'properties' ? 'Inventories' : 'Leads'}`, moved.label);
+      invalidateRecordQueries(queryClient, moduleName, id);
+      void queryClient.invalidateQueries({ queryKey: ['records', targetModule] });
+      navigate(`/${targetModule}/${moved.id}`);
+    },
+  });
+
   const starMutation = useMutation({
     mutationFn: (starred: boolean) => api.star(moduleName!, id!, starred),
     onSuccess: () => {
@@ -281,8 +293,9 @@ export default function RecordDetail(): JSX.Element {
       label: r.label,
       icon: <Link2 className="h-3.5 w-3.5" />,
     })),
-    ...(supportsCalls ? [{ key: 'calls', label: 'Calls', icon: <Phone className="h-3.5 w-3.5" /> }] : []),
+    ...(moduleName === 'leads' && supportsCalls ? [{ key: 'calls', label: 'Calls', icon: <Phone className="h-3.5 w-3.5" /> }] : []),
     { key: 'files', label: 'Files', icon: <Paperclip className="h-3.5 w-3.5" /> },
+    ...(moduleName === 'properties' && supportsCalls ? [{ key: 'calls', label: 'Calls', icon: <Phone className="h-3.5 w-3.5" /> }] : []),
   ];
   const availableByKey = new Map(availableTabs.map((item) => [item.key, item]));
   const configuredTabs = layoutConfig.tabs?.flatMap((item) => {
@@ -295,7 +308,23 @@ export default function RecordDetail(): JSX.Element {
       ...(Icon ? { icon: <Icon className="h-3.5 w-3.5" /> } : {}),
     }];
   });
-  const tabs = configuredTabs?.length ? configuredTabs : availableTabs;
+  // Existing saved layouts predate the Inventory Calls tab. Append any newly
+  // available tab so an old customised layout cannot hide new functionality.
+  const configuredOrAvailableTabs = configuredTabs?.length
+    ? [...configuredTabs, ...availableTabs.filter((item) => !configuredTabs.some((configured) => configured.key === item.key))]
+    : availableTabs;
+  // Inventory calls belong directly after Files. Repositioning also repairs
+  // already-saved layouts that were created before the Calls tab existed.
+  const tabs = moduleName === 'properties'
+    ? (() => {
+      const calls = configuredOrAvailableTabs.filter((item) => item.key === 'calls');
+      const withoutCalls = configuredOrAvailableTabs.filter((item) => item.key !== 'calls');
+      const filesIndex = withoutCalls.findIndex((item) => item.key === 'files');
+      return filesIndex < 0 ? [...withoutCalls, ...calls] : [
+        ...withoutCalls.slice(0, filesIndex + 1), ...calls, ...withoutCalls.slice(filesIndex + 1),
+      ];
+    })()
+    : configuredOrAvailableTabs;
 
   // A configured default tab can outlive what it named — an admin deletes the
   // related list it pointed at and every record of the module then opens on a
@@ -396,6 +425,25 @@ export default function RecordDetail(): JSX.Element {
                         Send to a buyer
                       </DropdownItem>
                     )}
+                    {(moduleName === 'leads' || moduleName === 'properties') && record.can?.edit && (
+                      <DropdownItem
+                        icon={<Users className="h-3.5 w-3.5" />}
+                        onClick={() => { setCollaborators(true); close(); }}
+                      >
+                        Share with team
+                      </DropdownItem>
+                    )}
+                    {(moduleName === 'leads' || moduleName === 'properties') && record.can?.edit && record.can?.delete && (
+                      <DropdownItem
+                        icon={<ArrowRightLeft className="h-3.5 w-3.5" />}
+                        onClick={() => {
+                          close();
+                          setMoveTarget(moduleName === 'leads' ? 'properties' : 'leads');
+                        }}
+                      >
+                        Move to {moduleName === 'leads' ? 'Inventories' : 'Leads'}
+                      </DropdownItem>
+                    )}
                     {record.can?.delete && (
                       <DropdownItem
                         icon={<Trash2 className="h-3.5 w-3.5" />}
@@ -421,34 +469,8 @@ export default function RecordDetail(): JSX.Element {
                       ? String(record.display?.[layoutConfig.headerTitleField] ?? record.values[layoutConfig.headerTitleField])
                       : record.label}
                   </h1>
-                  {/*
-                    No contact-type chip and no record number beside the name.
-
-                    Both were removed on the owner's instruction and the reason
-                    is the same for each: the header is for the person, and
-                    "Buyer" was already on the row he came from and in the
-                    fields below, while the auto-number is an internal key
-                    nobody dials. The Layout Designer switches that offered them
-                    went with them — a toggle for something nothing draws is a
-                    setting that lies.
-                  */}
-                  {meta.pipelineField && record.values[meta.pipelineField] != null && (
-                    record.can?.edit && isInlineEditable(fieldMap.get(meta.pipelineField)!) ? (
-                      <EditableField
-                        module={moduleName!}
-                        recordId={record.id}
-                        field={fieldMap.get(meta.pipelineField)!}
-                        value={record.values[meta.pipelineField]}
-                        restrictTo={restrictionForField(meta.picklistDependencies, record.values, meta.pipelineField)}
-                        onSaved={() => { invalidateRecordQueries(queryClient, moduleName, record.id); void queryClient.invalidateQueries({ queryKey: ['matching', moduleName, record.id] }); void refetch(); }}
-                      />
-                    ) : (
-                      <FieldValue
-                        field={fieldMap.get(meta.pipelineField)!}
-                        value={record.values[meta.pipelineField]}
-                      />
-                    )
-                  )}
+                  {/* The header is intentionally only the record name. Status
+                      remains editable in Overview and visible in lists. */}
                   {fieldMap.get('rating') && (
                     record.can?.edit && isInlineEditable(fieldMap.get('rating')!) ? (
                       <EditableField
@@ -610,6 +632,14 @@ export default function RecordDetail(): JSX.Element {
       </Modal>
 
       <Modal
+        open={collaborators}
+        onClose={() => setCollaborators(false)}
+        title={`Share ${meta.singularLabel} with team`}
+      >
+        <RecordCollaboratorsPanel module={moduleName!} recordId={id!} />
+      </Modal>
+
+      <Modal
         open={Boolean(aiSummary)}
         onClose={() => setAiSummary(null)}
         title={`Summary of ${record.label}`}
@@ -634,6 +664,18 @@ export default function RecordDetail(): JSX.Element {
         danger
       />
 
+      <ConfirmDialog
+        open={moveTarget !== null}
+        onClose={() => setMoveTarget(null)}
+        onConfirm={async () => {
+          if (moveTarget) await moveMutation.mutateAsync(moveTarget);
+          setMoveTarget(null);
+        }}
+        title={`Move to ${moveTarget === 'properties' ? 'Inventories' : 'Leads'}?`}
+        body="Matching values, files, and call history move to the new record. The original record is removed from its current module."
+        confirmLabel={moveMutation.isPending ? 'Moving…' : 'Move record'}
+      />
+
       {compose && (
         <ComposeModal
           channel={compose}
@@ -645,6 +687,94 @@ export default function RecordDetail(): JSX.Element {
       )}
     </div>
     </CallDispositionProvider>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+type RecordShare = {
+  subject_type: 'user' | 'group' | 'role';
+  subject_id: string;
+  access: 'read' | 'read_write';
+  created_at: string;
+};
+
+function RecordCollaboratorsPanel({ module, recordId }: { module: string; recordId: string }): JSX.Element {
+  const [selectedUserId, setSelectedUserId] = useState('');
+  const [access, setAccess] = useState<'read' | 'read_write'>('read_write');
+  const { data: users = [] } = useQuery({ queryKey: ['users'], queryFn: () => api.users() });
+  const { data: shares = [], isLoading, refetch } = useQuery({
+    queryKey: ['record-shares', module, recordId],
+    queryFn: () => api.recordShares(module, recordId),
+  });
+
+  const activeUsers = users as { id: string; fullName: string }[];
+  const collaborators = shares as RecordShare[];
+  const userName = (id: string): string => activeUsers.find((person) => person.id === id)?.fullName ?? id;
+  const save = useMutation({
+    mutationFn: (next: RecordShare[]) => api.saveRecordShares(module, recordId, next.map((share) => ({
+      type: share.subject_type, id: share.subject_id, access: share.access,
+    }))),
+    onSuccess: () => {
+      void refetch();
+      setSelectedUserId('');
+      toast.success('Team access updated');
+    },
+    onError: (error: Error) => toast.error('Could not update sharing', error.message),
+  });
+
+  const add = (): void => {
+    if (!selectedUserId || collaborators.some((share) => share.subject_type === 'user' && share.subject_id === selectedUserId)) return;
+    save.mutate([...collaborators, {
+      subject_type: 'user', subject_id: selectedUserId, access, created_at: new Date().toISOString(),
+    }]);
+  };
+
+  const availableUsers = activeUsers.filter((person) => !collaborators.some(
+    (share) => share.subject_type === 'user' && share.subject_id === person.id,
+  ));
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted">
+        Add teammates who should work on this record. They keep access even though the owner stays the same.
+      </p>
+      <div className="grid gap-2 sm:grid-cols-[1fr_9rem_auto]">
+        <select className="input" aria-label="Teammate" value={selectedUserId} onChange={(event) => setSelectedUserId(event.target.value)}>
+          <option value="">Select a teammate</option>
+          {availableUsers.map((person) => <option key={person.id} value={person.id}>{person.fullName}</option>)}
+        </select>
+        <select className="input" aria-label="Access level" value={access} onChange={(event) => setAccess(event.target.value as 'read' | 'read_write')}>
+          <option value="read_write">Can view & edit</option>
+          <option value="read">View only</option>
+        </select>
+        <button type="button" className="btn-primary" disabled={!selectedUserId || save.isPending} onClick={add}>
+          {save.isPending ? <Spinner className="h-4 w-4" /> : <Plus className="h-4 w-4" />} Add
+        </button>
+      </div>
+      <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-700">
+        {isLoading ? <div className="p-3"><Skeleton className="h-8 w-full" /></div> : collaborators.length === 0 ? (
+          <p className="p-4 text-sm text-muted">Only the owner can access this record right now.</p>
+        ) : collaborators.map((share) => (
+          <div key={`${share.subject_type}-${share.subject_id}`} className="flex items-center gap-3 p-3">
+            <Avatar name={share.subject_type === 'user' ? userName(share.subject_id) : share.subject_type} size={28} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">{share.subject_type === 'user' ? userName(share.subject_id) : `${share.subject_type}: ${share.subject_id}`}</p>
+              <p className="text-2xs text-muted">{share.access === 'read_write' ? 'Can view and edit' : 'Can view'}</p>
+            </div>
+            <button
+              type="button"
+              className="btn-ghost p-1.5 text-negative"
+              aria-label="Remove access"
+              disabled={save.isPending}
+              onClick={() => save.mutate(collaborators.filter((candidate) => candidate !== share))}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
