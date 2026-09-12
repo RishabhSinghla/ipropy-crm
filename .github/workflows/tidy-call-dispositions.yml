@@ -12,8 +12,10 @@
 # call then shows up in "needs disposition", which is the honest state for a
 # call whose outcome was never really recorded.
 #
-# An outcome an admin has since *deactivated* is left alone: a rep did choose
-# it at the time, and the history is the point.
+# An outcome an admin has since deactivated *or retired* is left alone: a rep
+# did choose it at the time, and the history is the point. What gets cleared is
+# only an outcome that was never on the list at all — which, since nothing in
+# the UI could produce one, means something holding an API key wrote it.
 name: Tidy call dispositions
 
 on:
@@ -46,7 +48,20 @@ jobs:
               FROM ipy_picklist_value v JOIN ipy_picklist p ON p.id = v.picklist_id
              WHERE p.name = 'call_disposition' ORDER BY v.sequence"
 
-          echo "Outcomes on no list:"
+          echo "Retired by an admin — real calls, left alone:"
+          psql "$DATABASE_URL" -P pager=off -c "
+            SELECT c.disposition, count(*) AS calls, max(c.started_at)::date AS last
+              FROM ipy_call c
+             WHERE c.disposition IS NOT NULL
+               AND c.disposition NOT IN (
+                 SELECT v.value FROM ipy_picklist_value v
+                   JOIN ipy_picklist p ON p.id = v.picklist_id
+                  WHERE p.name = 'call_disposition')
+               AND EXISTS (SELECT 1 FROM ipy_picklist_tombstone t
+                            WHERE t.picklist_name = 'call_disposition' AND t.value = c.disposition)
+             GROUP BY 1 ORDER BY 2 DESC"
+
+          echo "On no list and never retired — this is what 'apply' would clear:"
           psql "$DATABASE_URL" -P pager=off -c "
             SELECT c.disposition, count(*) AS calls, min(c.started_at)::date AS first, max(c.started_at)::date AS last
               FROM ipy_call c
@@ -55,6 +70,8 @@ jobs:
                  SELECT v.value FROM ipy_picklist_value v
                    JOIN ipy_picklist p ON p.id = v.picklist_id
                   WHERE p.name = 'call_disposition')
+               AND NOT EXISTS (SELECT 1 FROM ipy_picklist_tombstone t
+                                WHERE t.picklist_name = 'call_disposition' AND t.value = c.disposition)
              GROUP BY 1 ORDER BY 2 DESC"
 
           # Was it deleted on purpose? A tombstone is an admin saying "keep it
@@ -84,6 +101,9 @@ jobs:
                    SELECT v.value FROM ipy_picklist_value v
                      JOIN ipy_picklist p ON p.id = v.picklist_id
                     WHERE p.name = 'call_disposition')
+                 AND NOT EXISTS (SELECT 1 FROM ipy_picklist_tombstone t
+                                  WHERE t.picklist_name = 'call_disposition'
+                                    AND t.value = ipy_call.disposition)
               RETURNING 1)
             SELECT count(*) FROM cleared")"
           echo "::notice::Cleared ${N} call(s). They now appear in 'needs disposition' for whoever made them."

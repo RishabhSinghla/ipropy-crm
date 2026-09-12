@@ -142,6 +142,30 @@ export async function fieldsThatCannotBeCleared(name: string, conn: Tx = db): Pr
   return blocked;
 }
 
+/**
+ * Where a dropdown's values are also stored outside the module tables.
+ *
+ * Everything above walks `ipy_field`, because that is where an admin's own
+ * fields live. Some options are also written to the CRM's own tables, and a
+ * call's outcome is one: `ipy_call.disposition` is a column on a built-in
+ * table that no admin can reshape, so it appears in no field list.
+ *
+ * It cost a real record. "Site Visit Scheduled" was retired on production on
+ * 6 September and the editor reported it held nothing, because it counted
+ * leads; a call from 16 August was recorded against it and still is. The
+ * admin retired an option they were told nothing used, and orphaned a piece
+ * of somebody's call history — invisible in the UI, and since outcomes became
+ * validated, a value nothing can write again.
+ *
+ * This is the one place tight coupling is right: the table is ours, not the
+ * admin's, and the alternative is a rename that half-lands.
+ */
+const SYSTEM_USES: Record<string, { table: string; column: string; module: string; field: string }[]> = {
+  call_disposition: [
+    { table: 'ipy_call', column: 'disposition', module: 'Calls', field: 'Outcome' },
+  ],
+};
+
 /** A SQL predicate matching rows whose value for `use` is `$1`. */
 function matchExpr(use: PicklistFieldUse): string {
   if (use.storage === 'column') {
@@ -169,6 +193,16 @@ export async function countRecordsWithValue(
          FROM ${quoteIdent(use.tableName)}
         WHERE ${matchExpr(use)}
           AND EXISTS (SELECT 1 FROM ipy_record r WHERE r.id = record_id AND r.is_deleted = false)`,
+      [value],
+    );
+    const count = row?.count ?? 0;
+    if (count > 0) byField.push({ module: use.module, field: use.field, count });
+  }
+
+  for (const use of SYSTEM_USES[name] ?? []) {
+    const row = await conn.queryOne<{ count: number }>(
+      `SELECT COUNT(*)::int AS count FROM ${quoteIdent(use.table)}
+        WHERE ${quoteIdent(use.column)} = $1`,
       [value],
     );
     const count = row?.count ?? 0;
@@ -244,6 +278,15 @@ export async function replaceValueInRecords(
     }
 
     const res = await conn.query(sql, params);
+    records += res.rowCount ?? 0;
+  }
+
+  for (const use of SYSTEM_USES[name] ?? []) {
+    const table = quoteIdent(use.table);
+    const col = quoteIdent(use.column);
+    const res = to === null
+      ? await conn.query(`UPDATE ${table} SET ${col} = NULL WHERE ${col} = $1`, [from])
+      : await conn.query(`UPDATE ${table} SET ${col} = $2 WHERE ${col} = $1`, [from, to]);
     records += res.rowCount ?? 0;
   }
 
