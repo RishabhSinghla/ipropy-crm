@@ -1,213 +1,105 @@
 import { describe, expect, it } from 'vitest';
 import {
-  transformNote, transformTask, transformMeeting,
+  transformContact, transformNote, transformTask, transformMeeting,
   transformEmail, transformCall, parseVtigerCurrency,
 } from '../src/scripts/vtiger/transform.js';
-import { buildLead, buildInventory, type TargetSchema } from '../src/scripts/vtiger/buildRecord.js';
-import { destinationFor } from '../src/scripts/vtiger/routing.js';
 
 // Shape matches the live account's discovery pull; values are synthetic —
 // never the real customer's name/phone/email.
-const SAMPLE = {
+const SAMPLE_CONTACT = {
   id: '12x555',
-  firstname: '', lastname: 'Test Person',
-  email: 'person@example.com', mobile: '9811100000', otherphone: '9822200000',
+  firstname: '', lastname: 'Test Buyer',
+  email: 'buyer@example.com', mobile: '9811100000', otherphone: '',
   contacttype: 'Buyer', leadsource: 'Propertywala', title: 'Apartment',
-  contactstatus: 'Lead Won', happiness_rating: 'Greenfields Colony',
+  contactstatus: 'Lead Lost', happiness_rating: 'Greenfields Colony',
   cf_contacts_beds: '3 BHK', cf_contacts_test4: 'Deal with others',
-  cf_contacts_budgetdemand: '8500000', support_end_date: '2026-03-15',
-  department: 'B-204', cf_contacts_test5: '5th Floor', cf_contacts_test6: 'North',
-  cf_contacts_test7: '1800', cf_contacts_test2: 'Front', cf_contacts_ertyu: 'Builder Floor',
-  cf_contacts_test3: 'VIP Group', othercity: 'Second unit note',
-  assigned_user_id: '19x1', createdtime: '2019-06-01 10:00:00', modifiedtime: '2026-01-10 09:30:00',
-  // noise Vtiger keeps on every row — must not appear in the notes
-  record_currency_id: '1', timespentinlead_won: '3600', isclosed: '0',
+  cf_contacts_budgetdemand: '', support_end_date: '2026-03-15',
+  language: '', assigned_user_id: '19x1',
+  department: 'B-204', cf_contacts_ertyu: '', cf_contacts_test2: '',
+  cf_contacts_test5: '5th Floor', cf_contacts_test6: '', cf_contacts_test7: '',
+  birthday: '',
+  createdtime: '2019-06-01 10:00:00', modifiedtime: '2026-01-10 09:30:00',
 };
 
-/** A schema where everything resolves — the healthy case. */
-function fullSchema(overrides: Partial<Record<string, string | null>> = {}): TargetSchema {
-  const fields: Record<string, string | null> = {
-    full_name: 'full_name', mobile: 'mobile', alternate_phone: 'alternate_phone',
-    email: 'email', secondary_email: 'secondary_email', status: 'status',
-    contact_type: 'contact_type', lead_source: 'lead_source', property_type: 'property_type',
-    configuration: 'configuration', preferred_locations: 'preferred_locations',
-    lost_reason: 'lost_reason', budget: 'budget', next_followup_at: 'next_followup_at',
-    preferred_language: 'preferred_language', notes: 'qualification_notes',
-    // inventory side
-    category: 'category', unit_type: 'unit_type', unit_number: 'unit_number',
-    portion_type: 'portion_type', floor: 'floor', facing: 'facing', bedrooms: 'bedrooms',
-    area_size: 'area_size', area_size_unit: 'area_size_unit', asking_price: 'asking_price',
-    asking_price_unit: 'asking_price_unit', next_follow_up: 'next_follow_up',
-    property_source: 'property_source', block_tower: 'block_tower',
-    ...overrides,
-  };
-  const picklists: Record<string, string> = {
-    status: 'lead_status', contact_type: 'contact_type', lead_source: 'lead_source',
-    property_type: 'property_type', configuration: 'configuration',
-    preferred_locations: 'locality', lost_reason: 'lost_reason', category: 'property_type',
-    facing: 'facing', portion_type: 'portion_type', bedrooms: 'configuration', floor: 'floor_list',
-    property_source: 'lead_source', unit_type: 'property_type',
-  };
-  const known: Record<string, Set<string>> = {
-    lead_status: new Set(['New', 'Converted', 'Lost', 'Negotiation', 'Qualified', 'Site Visit Scheduled', 'Attempted Contact']),
-    property_status: new Set(['Available', 'Held', 'Sold', 'Not For Sale']),
-    contact_type: new Set(['Buyer', 'Seller', 'Tenant']),
-    lead_source: new Set(['99acres']), // deliberately missing 'Propertywala'
-    property_type: new Set(['Apartment', 'Builder Floor']),
-    configuration: new Set(['3 BHK']),
-    locality: new Set<string>(),
-    lost_reason: new Set(['Budget Mismatch']),
-    facing: new Set(['North', 'South']),
-    floor_list: new Set(['Ground']),
-    portion_type: new Set<string>(),
-  };
+const KNOWN = {
+  contact_type: new Set(['Buyer', 'Seller', 'Tenant', 'Landlord']),
+  lead_source: new Set(['99acres', 'Website', 'Referral']), // deliberately missing 'Propertywala'
+  property_type: new Set(['Apartment', 'Villa']),
+  configuration: new Set(['3 BHK', '4 BHK']),
+  locality: new Set<string>(), // deliberately empty, like a dynamic list
+  lost_reason: new Set(['Budget Mismatch']), // deliberately missing 'Deal with others'
+};
+
+function opts(overrides: Partial<typeof KNOWN> = {}) {
   return {
-    fields,
-    notesField: fields.notes ?? null,
-    picklistOf: (f) => picklists[f] ?? null,
-    knownValues: (p) => known[p] ?? new Set<string>(),
-    resolveOwner: (id) => (id === '19x1' ? 'user-uuid' : undefined),
+    existingPicklistValues: { ...KNOWN, ...overrides },
+    resolveOwner: (id: string | undefined) => (id === '19x1' ? 'ipropy-user-uuid' : undefined),
   };
 }
 
-describe('destinationFor', () => {
-  it('sends only Sellers to inventories', () => {
-    expect(destinationFor('Seller')).toBe('inventory');
-    expect(destinationFor('seller')).toBe('inventory'); // case shouldn't decide this
-    expect(destinationFor('Buyer')).toBe('lead');
-    expect(destinationFor('Tenant')).toBe('lead');
-    expect(destinationFor('Dealer')).toBe('lead');
-    expect(destinationFor('Builder')).toBe('lead');
-    expect(destinationFor('Vendor')).toBe('lead');
-    expect(destinationFor('Landlord')).toBe('lead');
-    expect(destinationFor('')).toBe('lead');
-    expect(destinationFor(undefined)).toBe('lead');
-  });
-});
-
-describe('buildLead', () => {
-  it('maps the person, the requirement and the historical dates', () => {
-    const r = buildLead(SAMPLE, fullSchema());
-    expect(r.values.full_name).toBe('Test Person');
-    expect(r.values.mobile).toBe('9811100000');
-    expect(r.values.alternate_phone).toBe('9822200000');
-    expect(r.values.contact_type).toBe('Buyer');
-    expect(r.values.property_type).toBe('Apartment');
-    expect(r.values.configuration).toEqual(['3 BHK']);
-    expect(r.values.preferred_locations).toEqual(['Greenfields Colony']);
-    expect(r.values.budget).toBe(8_500_000);
-    expect(r.createdAt).toBe(new Date('2019-06-01T10:00:00').toISOString());
+describe('transformContact', () => {
+  it('maps the direct-match fields and preserves historical dates', () => {
+    const result = transformContact(SAMPLE_CONTACT, opts());
+    expect(result.values.full_name).toBe('Test Buyer');
+    expect(result.values.mobile).toBe('9811100000');
+    expect(result.values.contact_type).toBe('Buyer');
+    expect(result.values.property_type).toBe('Apartment');
+    expect(result.values.configuration).toEqual(['3 BHK']);
+    expect(result.values.owner_id).toBe('ipropy-user-uuid');
+    expect(result.createdAt).toBe(new Date('2019-06-01T10:00:00').toISOString());
+    expect(result.updatedAt).toBe(new Date('2026-01-10T09:30:00').toISOString());
   });
 
-  it('translates the Vtiger stage into the lead pipeline', () => {
-    expect(buildLead(SAMPLE, fullSchema()).values.status).toBe('Converted');
-    expect(buildLead({ ...SAMPLE, contactstatus: 'Lead Lost' }, fullSchema()).values.status).toBe('Lost');
-    expect(buildLead({ ...SAMPLE, contactstatus: 'New Contact' }, fullSchema()).values.status).toBe('New');
+  it('maps the known pipeline stage cleanly', () => {
+    const result = transformContact(SAMPLE_CONTACT, opts());
+    expect(result.values.status).toBe('Lost');
+    expect(result.warnings).toHaveLength(0);
   });
 
-  it('keeps the original Vtiger stage in the notes, since three mappings are guesses', () => {
-    const r = buildLead(SAMPLE, fullSchema());
-    expect(r.values.qualification_notes).toContain('Vtiger stage: Lead Won');
+  it('falls back to New and warns on an unmapped stage, rather than leaving it unset', () => {
+    const result = transformContact({ ...SAMPLE_CONTACT, contactstatus: 'Some New Stage' }, opts());
+    expect(result.values.status).toBe('New');
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({ field: 'contactstatus' }),
+    );
   });
 
-  it('falls back to New and warns on a stage nobody mapped', () => {
-    const r = buildLead({ ...SAMPLE, contactstatus: 'Brand New Stage' }, fullSchema());
-    expect(r.values.status).toBe('New');
-    expect(r.warnings.join(' ')).toContain('Brand New Stage');
+  it('flags a value not already in the target picklist, rather than silently coercing it', () => {
+    const result = transformContact(SAMPLE_CONTACT, opts());
+    expect(result.newPicklistValues).toContainEqual({ picklist: 'lead_source', value: 'Propertywala' });
+    expect(result.newPicklistValues).toContainEqual({ picklist: 'lost_reason', value: 'Deal with others' });
+    // Already-known values must NOT be flagged
+    expect(result.newPicklistValues).not.toContainEqual(expect.objectContaining({ picklist: 'contact_type' }));
   });
 
-  it('flags a dropdown value the target does not have, rather than bending it', () => {
-    const r = buildLead(SAMPLE, fullSchema());
-    expect(r.newPicklistValues).toContainEqual({ picklist: 'lead_source', value: 'Propertywala' });
-    expect(r.newPicklistValues).toContainEqual({ picklist: 'lost_reason', value: 'Deal with others' });
-    expect(r.newPicklistValues).not.toContainEqual(expect.objectContaining({ picklist: 'contact_type' }));
+  it('wraps a single locality/bedroom value into the array field iPropy expects', () => {
+    const result = transformContact(SAMPLE_CONTACT, opts());
+    expect(result.values.preferred_locations).toEqual(['Greenfields Colony']);
   });
 
-  it('writes a value into notes when the field does not exist on this database', () => {
-    const r = buildLead(SAMPLE, fullSchema({ property_type: null, budget: null }));
-    const notes = String(r.values.qualification_notes);
-    expect(notes).toContain('Category: Apartment');
-    expect(notes).toContain('budget: 8500000');
-    expect(r.values.property_type).toBeUndefined();
+  it('folds property-shaped asides into one qualification note, none of them dropped', () => {
+    const result = transformContact(SAMPLE_CONTACT, opts());
+    const notes = result.values.qualification_notes as string;
+    expect(notes).toContain('Unit Number: B-204');
+    expect(notes).toContain('Floor: 5th Floor');
+    expect(notes).not.toContain('Unit Type'); // was blank on this row — not printed as "Unit Type: "
   });
 
-  it('carries every other populated Vtiger column into the notes', () => {
-    const notes = String(buildLead(SAMPLE, fullSchema()).values.qualification_notes);
-    expect(notes).toContain('Group: VIP Group');       // cf_contacts_test3, never explicitly mapped
-    expect(notes).toContain('Second Unit: Second unit note');
+  it('handles the name being entirely in firstname instead of lastname', () => {
+    const result = transformContact({ ...SAMPLE_CONTACT, firstname: 'Whole Name Here', lastname: '' }, opts());
+    expect(result.values.full_name).toBe('Whole Name Here');
   });
 
-  it('leaves Vtiger internal bookkeeping out of the notes', () => {
-    const notes = String(buildLead(SAMPLE, fullSchema()).values.qualification_notes);
-    expect(notes).not.toContain('record_currency_id');
-    expect(notes).not.toContain('timespentinlead_won');
-    expect(notes).not.toContain('isclosed');
+  it('warns when a row has neither a usable phone nor an email', () => {
+    const result = transformContact({ ...SAMPLE_CONTACT, mobile: '', email: '' }, opts());
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({ field: 'mobile/email' }),
+    );
   });
 
-  it('handles the whole name sitting in firstname instead of lastname', () => {
-    const r = buildLead({ ...SAMPLE, firstname: 'Only First', lastname: '' }, fullSchema());
-    expect(r.values.full_name).toBe('Only First');
-  });
-
-  it('never leaves a record nameless', () => {
-    const r = buildLead({ ...SAMPLE, firstname: '', lastname: '' }, fullSchema());
-    expect(r.values.full_name).toBe('(no name in Vtiger)');
-  });
-});
-
-describe('buildInventory — a Seller becomes a unit', () => {
-  const seller = { ...SAMPLE, contacttype: 'Seller' };
-
-  it('keeps the owner reachable on the inventory record', () => {
-    const r = buildInventory(seller, fullSchema());
-    expect(r.values.full_name).toBe('Test Person');
-    expect(r.values.mobile).toBe('9811100000');
-    expect(r.values.email).toBe('person@example.com');
-    expect(r.values.contact_type).toBe('Seller');
-  });
-
-  it('maps the unit details that sit on the Vtiger contact', () => {
-    const r = buildInventory(seller, fullSchema());
-    expect(r.values.unit_number).toBe('B-204');
-    expect(r.values.facing).toBe('North');
-    expect(r.values.portion_type).toBe('Front');
-    expect(r.values.bedrooms).toBe('3 BHK');
-    expect(r.values.area_size).toBe(1800);
-  });
-
-  it("reads the seller's Budget as their asking price", () => {
-    expect(buildInventory(seller, fullSchema()).values.asking_price).toBe(8_500_000);
-  });
-
-  it('translates the Vtiger stage into the property pipeline, not the lead one', () => {
-    expect(buildInventory(seller, fullSchema()).values.status).toBe('Sold'); // Lead Won
-    expect(buildInventory({ ...seller, contactstatus: 'Lead Lost' }, fullSchema()).values.status).toBe('Not For Sale');
-    expect(buildInventory({ ...seller, contactstatus: 'Property Available' }, fullSchema()).values.status).toBe('Available');
-    expect(buildInventory({ ...seller, contactstatus: 'Negotiation' }, fullSchema()).values.status).toBe('Held');
-  });
-
-  // Production types Floor, Portion and Facing as dropdowns, not numbers, so
-  // the value goes across as written and the option is added if it is new.
-  // Coercing "5th Floor" to 5 would have been wrong there, and lossy.
-  it('keeps the floor exactly as written and offers it as a new dropdown option', () => {
-    const r = buildInventory(seller, fullSchema());
-    expect(r.values.floor).toBe('5th Floor');
-    expect(r.newPicklistValues).toContainEqual({ picklist: 'floor_list', value: '5th Floor' });
-  });
-
-  it('handles a floor with no number in it at all', () => {
-    const r = buildInventory({ ...seller, cf_contacts_test5: 'Ground' }, fullSchema());
-    expect(r.values.floor).toBe('Ground');
-  });
-
-  it('puts the floor in notes when the module has no floor field', () => {
-    const r = buildInventory({ ...seller }, fullSchema({ floor: null }));
-    expect(String(r.values.qualification_notes)).toContain('Floor: 5th Floor');
-  });
-
-  it('warns rather than losing values when the module has no notes field at all', () => {
-    const r = buildInventory(seller, fullSchema({ notes: null, block_tower: null }));
-    expect(r.warnings.join(' ')).toContain('no notes field');
+  it('leaves budget undefined rather than 0 when the multicurrency field is blank', () => {
+    const result = transformContact(SAMPLE_CONTACT, opts());
+    expect(result.values.budget).toBeUndefined();
   });
 });
 
@@ -215,67 +107,85 @@ describe('parseVtigerCurrency', () => {
   it('reads a plain Indian-formatted amount', () => {
     expect(parseVtigerCurrency('85,00,000')).toBe(8_500_000);
   });
-  it('reads the value before multicurrency\'s "::" separator', () => {
-    expect(parseVtigerCurrency('8500000::Indian Rupee:1.0:8500000')).toBe(8_500_000);
+
+  it('reads the value before Vtiger multicurrency\'s "::" separator', () => {
+    expect(parseVtigerCurrency('8500000::Indian Rupee:1.0:8500000:8500000')).toBe(8_500_000);
   });
-  it('returns undefined, not 0, when there is nothing to read', () => {
+
+  it('returns undefined, not 0, for an empty or unreadable value', () => {
     expect(parseVtigerCurrency('')).toBeUndefined();
     expect(parseVtigerCurrency(undefined)).toBeUndefined();
   });
 });
 
 describe('transformNote', () => {
-  it('maps a comment with its Vtiger linkage', () => {
-    const r = transformNote({
-      commentcontent: 'Called, wants a site visit', related_to: '12x555',
+  it('maps a ModComments row to a comment body with its Vtiger linkage', () => {
+    const result = transformNote({
+      commentcontent: 'Called, wants a site visit next week', related_to: '12x555',
       creator: '19x1', is_private: '0', createdtime: '2024-05-01 12:00:00',
     });
-    expect(r?.body).toBe('Called, wants a site visit');
-    expect(r?.relatedVtigerId).toBe('12x555');
+    expect(result?.body).toBe('Called, wants a site visit next week');
+    expect(result?.relatedVtigerId).toBe('12x555');
+    expect(result?.isPrivate).toBe(false);
   });
-  it('returns null for an empty comment rather than a blank timeline entry', () => {
+
+  it('returns null for a comment with no content, rather than a blank timeline entry', () => {
     expect(transformNote({ commentcontent: '', related_to: '12x555' })).toBeNull();
   });
 });
 
 describe('transformTask / transformMeeting', () => {
-  it('formats a task, keeping status and description', () => {
-    const r = transformTask({
-      subject: 'Follow up on loan', taskstatus: 'In Progress',
-      description: 'Bank confirmed', date_start: '2024-06-01', contact_id: '12x555',
+  it('formats a task into a labelled note, keeping status and description', () => {
+    const result = transformTask({
+      subject: 'Follow up on loan approval', taskstatus: 'In Progress',
+      description: 'Bank confirmed pre-approval', date_start: '2024-06-01',
+      contact_id: '12x555', createdtime: '2024-06-01 09:00:00',
     });
-    expect(r?.body).toContain('[Task] Follow up on loan');
-    expect(r?.body).toContain('Status: In Progress');
+    expect(result?.body).toContain('[Task] Follow up on loan approval');
+    expect(result?.body).toContain('Status: In Progress');
+    expect(result?.body).toContain('Bank confirmed pre-approval');
+    expect(result?.relatedVtigerId).toBe('12x555');
   });
-  it('formats a site visit with its check-in', () => {
-    const r = transformMeeting({
-      subject: 'Site visit', location: 'Baner', checkin_datetime: '2024-06-02 11:00:00',
-      actual_checkedin_location: 'Baner', contact_id: '12x555',
+
+  it('formats a meeting/site-visit with check-in details when present', () => {
+    const result = transformMeeting({
+      subject: 'Site visit', location: 'Baner project site',
+      checkin_datetime: '2024-06-02 11:00:00', actual_checkedin_location: 'Baner',
+      contact_id: '12x555',
     });
-    expect(r?.body).toContain('[Meeting] Site visit');
-    expect(r?.body).toContain('Checked in: 2024-06-02 11:00:00 at Baner');
+    expect(result?.body).toContain('[Meeting] Site visit');
+    expect(result?.body).toContain('Checked in: 2024-06-02 11:00:00 at Baner');
   });
 });
 
-describe('transformEmail / transformCall', () => {
-  it('splits multi-address fields', () => {
-    const r = transformEmail({
-      parent_type: 'Contacts', parent_id: '12x555', subject: 'Brochure',
-      from_email: 'rep@example.com', saved_toid: 'a@example.com, b@example.com',
+describe('transformEmail', () => {
+  it('maps a Contacts-linked email and splits multi-address fields', () => {
+    const result = transformEmail({
+      parent_type: 'Contacts', parent_id: '12x555', subject: 'Brochure attached',
+      from_email: 'rep@dsassociates.com', saved_toid: 'buyer@example.com, second@example.com',
+      description: 'Please find attached', createdtime: '2024-07-01 10:00:00',
     });
-    expect(r?.toAddresses).toEqual(['a@example.com', 'b@example.com']);
+    expect(result?.toAddresses).toEqual(['buyer@example.com', 'second@example.com']);
+    expect(result?.relatedVtigerId).toBe('12x555');
   });
-  it('skips anything not linked to a contact', () => {
+
+  it('skips an email not linked to a Contact', () => {
     expect(transformEmail({ parent_type: 'Accounts', parent_id: '5x1' })).toBeNull();
-    expect(transformCall({ customertype: 'Leads', customer: '7x1' })).toBeNull();
   });
-  it('maps a call with direction-appropriate from/to', () => {
-    const r = transformCall({
+});
+
+describe('transformCall', () => {
+  it('maps a Contacts-linked call with direction-appropriate from/to', () => {
+    const result = transformCall({
       customertype: 'Contacts', customer: '12x555', customernumber: '9811100000',
-      direction: 'Inbound', totalduration: '120',
+      direction: 'Inbound', totalduration: '120', starttime: '2024-08-01 09:00:00',
     });
-    expect(r?.direction).toBe('inbound');
-    expect(r?.fromNumber).toBe('9811100000');
-    expect(r?.durationSeconds).toBe(120);
+    expect(result?.direction).toBe('inbound');
+    expect(result?.fromNumber).toBe('9811100000');
+    expect(result?.durationSeconds).toBe(120);
+  });
+
+  it('skips a call not linked to a Contact', () => {
+    expect(transformCall({ customertype: 'Leads', customer: '7x1' })).toBeNull();
   });
 });
