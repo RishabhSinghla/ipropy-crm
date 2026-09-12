@@ -313,7 +313,10 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
     use. Nothing is lost — the pencil is one hover away — and the primary
     gesture does the primary thing again.
   */
-  const behindPencil = surface === 'list' || HAS_OWN_LINK.has(field.uitype);
+  // Detail labels describe a field; only the value control changes it. Keeping
+  // a dedicated pencil avoids a click on the left-hand label opening the
+  // editor in dense two-column detail layouts.
+  const behindPencil = true;
 
   const readState = behindPencil ? (
     // For a linked uitype there is a second reason: FieldValue renders an <a>

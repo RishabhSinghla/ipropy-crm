@@ -22,7 +22,7 @@ import { toast } from '../../lib/store';
 import { cn } from '../../lib/utils';
 import { FilterBuilder, countConditions } from '../../components/FilterBuilder';
 import {
-  Badge, Card, ConfirmDialog, EmptyState, Input, Modal, Select, Spinner, Textarea, Toggle,
+  Badge, Card, ConfirmDialog, EmptyState, Input, Modal, Select, Spinner, Textarea,
 } from '../../components/ui';
 
 const EMPTY_FILTER: FilterGroup = { logic: 'AND', conditions: [] };
@@ -277,10 +277,8 @@ export function ViewEditor({
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(view.sortDir ?? 'desc');
   const [displayMode, setDisplayMode] = useState(view.displayMode ?? 'table');
   const [groupBy, setGroupBy] = useState(view.groupBy ?? '');
-  const [showMetrics, setShowMetrics] = useState(Boolean(view.showMetrics));
-  const [shareWithTeam, setShareWithTeam] = useState(Boolean(view.isPublic ?? isPublic));
 
-  useEffect(() => { setName(view.name); setShareWithTeam(Boolean(view.isPublic ?? isPublic)); }, [view.id, view.isPublic, isPublic]);
+  useEffect(() => { setName(view.name); }, [view.id]);
 
   const listable = useMemo(
     () => module.fields.filter((f) => f.isActive && f.displayType !== 'hidden'),
@@ -298,8 +296,8 @@ export function ViewEditor({
         sortDir,
         displayMode,
         groupBy: displayMode === 'kanban' ? (groupBy || null) : null,
-        showMetrics,
-        isPublic: shareWithTeam,
+        showMetrics: false,
+        isPublic,
       };
       return view.id
         ? api.updateView(moduleName, view.id, payload)
@@ -429,16 +427,6 @@ export function ViewEditor({
           </div>
         </div>
 
-        <Toggle
-          checked={showMetrics}
-          onChange={setShowMetrics}
-          label="Show a record count on the tab"
-        />
-        <Toggle
-          checked={shareWithTeam}
-          onChange={setShareWithTeam}
-          label="Share this view with CRM users who can access this module"
-        />
       </div>
     </Modal>
   );

@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type BuyerMatch, type FieldMeta, formatIndianPrice, type ModuleMeta, type PropertyMatch, type RecordEnvelope, relativeTime, type TimelineEntry } from '@ipropy/shared';
 import {
-  Activity, ArrowRightLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Edit3, ExternalLink, Eye, FileQuestion, FileText, FolderOpen, Images, LayoutDashboard, Link2, MessageCircle, Mic, MoreHorizontal, Paperclip, Pencil, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Trash2, Upload, Users, X,
+  Activity, ArrowRightLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Edit3, ExternalLink, Eye, FileQuestion, FileText, FolderOpen, Images, LayoutDashboard, Link2, MessageCircle, Mic, MoreHorizontal, Paperclip, Pencil, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Tag, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { api, authedFileUrl } from '../lib/api';
 import { compressImage, formatBytes } from '../lib/compressImage';
@@ -15,7 +15,7 @@ import { useVoiceCapture } from '../lib/useVoiceCapture';
 import { loadListNav } from '../lib/listNav';
 import { cn, renderMarkdown, restrictionForField } from '../lib/utils';
 import { resolveIcon } from '../lib/icons';
-import { FieldValue } from '../components/FieldRenderer';
+import { FieldValue, TagInput } from '../components/FieldRenderer';
 import { EditableField, isInlineEditable } from '../components/EditableField';
 import { assignmentField } from '../lib/fields';
 import { ShareLinksPanel } from '../components/ShareLinks';
@@ -56,6 +56,8 @@ export default function RecordDetail(): JSX.Element {
   const [moveTarget, setMoveTarget] = useState<'leads' | 'properties' | null>(null);
   const [sharing, setSharing] = useState(false);
   const [collaborators, setCollaborators] = useState(false);
+  const [tagging, setTagging] = useState(false);
+  const [tagDraft, setTagDraft] = useState<string[]>([]);
   const [compose, setCompose] = useState<'whatsapp' | 'email' | null>(null);
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [summarising, setSummarising] = useState(false);
@@ -204,6 +206,11 @@ export default function RecordDetail(): JSX.Element {
       invalidateRecordQueries(queryClient, moduleName, id);
       void refetch();
     },
+  });
+  const tagsMutation = useMutation({
+    mutationFn: (tags: string[]) => api.setTags(moduleName!, id!, tags),
+    onSuccess: () => { toast.success('Tags updated'); setTagging(false); void refetch(); },
+    onError: (err: Error) => toast.error('Could not update tags', err.message),
   });
 
   // A failed load has to be distinguishable from a slow one. Previously this
@@ -382,6 +389,14 @@ export default function RecordDetail(): JSX.Element {
 
             {/* Actions, right-aligned on the same line as the back arrow. */}
             <div className="ml-auto flex flex-wrap items-center gap-1.5 sm:justify-end">
+              {(record.tags ?? []).slice(0, 3).map((tag) => (
+                <span key={tag} className="rounded-full bg-violet-50 px-2 py-1 text-2xs font-medium text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">{tag}</span>
+              ))}
+              {record.can?.edit && (
+                <button className="btn-ghost p-2" title="Tags" aria-label="Edit tags" onClick={() => { setTagDraft(record.tags ?? []); setTagging(true); }}>
+                  <Tag className="h-4 w-4" />
+                </button>
+              )}
               <button
                 onClick={() => starMutation.mutate(!record.starred)}
                 className="btn-ghost p-2"
@@ -663,6 +678,24 @@ export default function RecordDetail(): JSX.Element {
         </div>
       </Modal>
 
+      <Modal
+        open={tagging}
+        onClose={() => setTagging(false)}
+        title="Tags"
+        size="sm"
+        footer={(
+          <>
+            <button className="btn-secondary" onClick={() => setTagging(false)}>Cancel</button>
+            <button className="btn-primary" disabled={tagsMutation.isPending} onClick={() => tagsMutation.mutate(tagDraft)}>
+              {tagsMutation.isPending ? 'Saving…' : 'Save tags'}
+            </button>
+          </>
+        )}
+      >
+        <p className="mb-3 text-sm text-muted">Add tags that help the team find and group this record.</p>
+        <TagInput value={tagDraft} onChange={setTagDraft} />
+      </Modal>
+
       <ConfirmDialog
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
@@ -869,7 +902,7 @@ function OverviewTab({
                     onClick={(event) => {
                       // The entire value box is the edit target. Do not
                       // re-click a nested control; it already owns the event.
-                      if (!record.can?.edit || (event.target as HTMLElement).closest('button, input, select, textarea, a')) return;
+                      if (!record.can?.edit || (event.target as HTMLElement).closest('dt, button, input, select, textarea, a')) return;
                       (event.currentTarget.querySelector('dd button') as HTMLButtonElement | null)?.click();
                     }}
                   >

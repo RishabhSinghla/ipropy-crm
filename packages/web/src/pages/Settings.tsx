@@ -7,6 +7,7 @@ import {
   Moon, Phone, Plus, RefreshCw, Save, Smartphone, Sun, Trash2, User, X,
 } from 'lucide-react';
 import { api } from '../lib/api';
+import { loadPageSize, PAGE_SIZE_OPTIONS, savePageSize } from '../lib/pageSize';
 import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { currentSubscription, disablePush, enablePush, permissionState, pushSupport } from '../lib/push';
@@ -158,10 +159,21 @@ function PreferencesTab({
 }: { theme: 'light' | 'dark'; setTheme: (t: 'light' | 'dark') => void }): JSX.Element {
   const { user, bootstrap } = useApp();
   const [defaultDashboardId, setDefaultDashboardId] = useState(user?.defaultDashboardId ?? '');
+  const [pageSize, setPageSize] = useState(() => loadPageSize());
   const { data: dashboards } = useQuery({ queryKey: ['dashboards'], queryFn: () => api.dashboards() });
 
   return (
     <div className="card space-y-5 p-5">
+      <div>
+        <label className="label">Records shown per page</label>
+        <Select
+          value={String(pageSize)}
+          onChange={(value) => { const size = Number(value); setPageSize(size); savePageSize(undefined, size); toast.success('List page size updated'); }}
+          options={PAGE_SIZE_OPTIONS.map((size) => ({ value: String(size), label: `${size} records` }))}
+        />
+        <p className="mt-1 text-xs text-muted">Used across Leads, Inventories, and every other list.</p>
+      </div>
+
       <div>
         <p className="mb-2 text-sm font-medium">Appearance</p>
         <div className="flex gap-2">

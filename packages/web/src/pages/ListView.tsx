@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type CustomView, type FieldMeta, type FilterGroup, formatIndianPrice, formatPhoneWithCode, toInternational, type ListQuery, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Columns3, Compass, Copy, Download, Filter,
-  LayoutGrid, List, MessageCircle, Pencil, Phone, Plus, RefreshCw, Ruler, Save, Search, Settings2, Share2, Star, Trash2, Upload, Users, X,
+  LayoutGrid, List, MessageCircle, Pencil, Phone, Plus, RefreshCw, Ruler, Save, Search, Settings2, Star, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { ApiError, api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
@@ -223,14 +223,6 @@ export default function ListView(): JSX.Element {
     onError: (error: Error) => toast.error('Could not delete this view', error.message),
   });
 
-  const shareViewMutation = useMutation({
-    mutationFn: ({ id, isPublic }: { id: string; isPublic: boolean }) => api.updateView(moduleName!, id, { isPublic }),
-    onSuccess: (_, variables) => {
-      toast.success(variables.isPublic ? 'View shared with the CRM team' : 'View is now private');
-      void queryClient.invalidateQueries({ queryKey: ['views', moduleName] });
-    },
-    onError: (error: Error) => toast.error('Could not change view sharing', error.message),
-  });
 
   /**
    * Adopt the selected view's columns, sort and display mode.
@@ -475,7 +467,7 @@ export default function ListView(): JSX.Element {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="shrink-0 border-b border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-900 sm:px-4">
+      <div className="shrink-0 border-y border-slate-200 bg-slate-50/90 px-3 py-2 shadow-sm dark:border-slate-800 dark:bg-slate-950/70 sm:px-4">
         {/*
           No title bar.
 
@@ -535,14 +527,9 @@ export default function ListView(): JSX.Element {
                           {view.id === activeView?.id && <span className="text-brand-600">Current</span>}
                         </DropdownItem>
                         {canManage && (
-                          <>
-                            <button className="btn-ghost shrink-0 p-1.5" title="Edit view" aria-label={`Edit ${view.name}`} onClick={(e) => { e.stopPropagation(); setEditingView(view as AdminView); close(); }}>
-                              <Pencil className="h-3.5 w-3.5" />
-                            </button>
-                            <button className="btn-ghost shrink-0 p-1.5" title={view.isPublic ? 'Make view private' : 'Share with CRM team'} aria-label={view.isPublic ? `Make ${view.name} private` : `Share ${view.name} with CRM team`} onClick={(e) => { e.stopPropagation(); shareViewMutation.mutate({ id: view.id, isPublic: !view.isPublic }); }}>
-                              <Share2 className="h-3.5 w-3.5" />
-                            </button>
-                          </>
+                          <button className="btn-ghost shrink-0 p-1.5" title="Edit view" aria-label={`Edit ${view.name}`} onClick={(e) => { e.stopPropagation(); setEditingView(view as AdminView); close(); }}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
                         )}
                       </div>
                     );
@@ -680,11 +667,8 @@ export default function ListView(): JSX.Element {
 
             {displayMode === 'table' && (data?.total ?? 0) > 0 && (
               <div className="hidden items-center gap-1 rounded-lg border border-slate-200 px-1.5 py-1 text-xs text-muted lg:flex dark:border-slate-700">
-                <label className="hidden items-center gap-1 xl:flex">Rows
-                  <Select value={String(pageSize)} onChange={(value) => setPageSize(Number(value))} options={PAGE_SIZE_OPTIONS.map((n) => ({ value: String(n), label: String(n) }))} className="h-6 w-14 py-0 text-xs" />
-                </label>
                 <button className="btn-ghost p-0.5" aria-label="Previous page" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}><ChevronLeft className="h-3.5 w-3.5" /></button>
-                <label className="flex items-center gap-1 whitespace-nowrap"><input className="h-5 w-10 rounded border border-slate-200 bg-transparent px-1 text-center text-xs dark:border-slate-700" aria-label="Go to page" type="number" min={1} max={data!.totalPages} value={page} onChange={(e) => { const next = Number(e.target.value); if (Number.isInteger(next) && next >= 1 && next <= data!.totalPages) setPage(next); }} /><span>/ {data!.totalPages}</span></label>
+                <label className="flex items-center gap-1 whitespace-nowrap"><input className="h-5 w-10 rounded border border-slate-200 bg-white px-1 text-center text-xs dark:border-slate-700 dark:bg-slate-900" aria-label="Go to page" type="number" min={1} max={data!.totalPages} value={page} onFocus={(e) => e.currentTarget.select()} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} onChange={(e) => { const next = Number(e.target.value); if (Number.isInteger(next) && next >= 1 && next <= data!.totalPages) setPage(next); }} /><span>/ {data!.totalPages}</span></label>
                 <button className="btn-ghost p-0.5" aria-label="Next page" disabled={page >= data!.totalPages} onClick={() => setPage((p) => Math.min(data!.totalPages, p + 1))}><ChevronRight className="h-3.5 w-3.5" /></button>
               </div>
             )}
