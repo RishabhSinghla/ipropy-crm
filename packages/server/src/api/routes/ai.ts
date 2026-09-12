@@ -537,11 +537,11 @@ aiRouter.post('/voice-note', modelLimiter, assistantAudioUpload.single('audio'),
         continue in that register, which is exactly what the team writes. The
         transliteration pass below is the floor under it when it does not.
 
-        No `language` is sent on purpose. Forcing `hi` produces Devanagari and
-        drops English words; forcing `en` makes it translate the Hindi half away
-        and invent words for what it cannot place. Auto-detection on a code-mixed
-        clip is the least wrong of the three.
+        Hindi is explicit so a Hindi/Hinglish clip cannot be returned as Urdu
+        script. Any Devanagari output is converted to the team's Latin-script
+        Hinglish below; English terms in the prompt remain strong spelling hints.
       */
+      language: 'hi',
       prompt: 'Site visit note, iPropy CRM, Faridabad, Greenfield Colony. '
         + 'Client ko 3 BHK builder floor dikhaya, park facing, carpet area 1450 square feet, '
         + 'demand 1.45 crore, token next week, registry ke baad possession. '
@@ -601,7 +601,7 @@ aiRouter.post('/voice-note', modelLimiter, assistantAudioUpload.single('audio'),
     whatever comes back. It is a no-op on a note that is already Latin, which is
     almost all of them.
   */
-  const { hasDevanagari, toLatin } = await import('../../ai/devanagari.js');
+  const { hasDevanagari, hasUrdu, toLatin } = await import('../../ai/devanagari.js');
   const written = tidied?.text.trim() || transcript.trim();
   const note = toLatin(written);
 
@@ -614,7 +614,7 @@ aiRouter.post('/voice-note', modelLimiter, assistantAudioUpload.single('audio'),
     note,
     tidied: Boolean(tidied?.text.trim()),
     /** True when the script had to be corrected — useful when this is reported as "it wrote Hindi". */
-    transliterated: hasDevanagari(written),
+    transliterated: hasDevanagari(written) || hasUrdu(written),
   });
 }));
 

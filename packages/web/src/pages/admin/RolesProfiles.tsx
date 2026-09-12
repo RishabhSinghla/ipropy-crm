@@ -452,7 +452,7 @@ function RolePermissions({ role }: { role: RoleNode }): JSX.Element {
         <p className="mb-1 text-sm font-medium">Capabilities — extra powers beyond module access</p>
         <p className="mb-3 text-2xs text-muted">
           These are on/off switches for whole features. &ldquo;Reassign records&rdquo; is the one behind the
-          Reassign button on list pages such as Contacts — without it, that button fails even when the
+          Reassign button on list pages such as Leads — without it, that button fails even when the
           role can edit the records.
         </p>
         <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">

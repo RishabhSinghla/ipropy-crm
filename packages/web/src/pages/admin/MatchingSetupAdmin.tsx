@@ -73,7 +73,7 @@ export default function MatchingSetupAdmin(): JSX.Element {
         <div>
           <h1 className="text-lg font-semibold tracking-tight">Matching Setup</h1>
           <p className="text-sm text-muted">
-            Which Contact field is compared against which Property field when the CRM
+            Which Lead field is compared against which Inventory field when the CRM
             matches buyers to inventory, and how much price/currency grace to allow.
           </p>
         </div>
@@ -101,10 +101,10 @@ export default function MatchingSetupAdmin(): JSX.Element {
           <ul className="mt-1.5 space-y-0.5 text-xs text-amber-800 dark:text-amber-300">
             {data!.broken!.map((b, i) => (
               <li key={i}>
-                {b.contactLabel ?? 'a deleted Contact field'} → {b.propertyLabel ?? 'a deleted Property field'}
+                {b.contactLabel ?? 'a deleted Lead field'} → {b.propertyLabel ?? 'a deleted Inventory field'}
                 {' — '}
-                {b.missing === 'contact' ? 'the Contact field was deleted'
-                  : b.missing === 'property' ? 'the Property field was deleted'
+                {b.missing === 'contact' ? 'the Lead field was deleted'
+                  : b.missing === 'property' ? 'the Inventory field was deleted'
                   : 'both fields were deleted'}
               </li>
             ))}
@@ -161,7 +161,7 @@ export default function MatchingSetupAdmin(): JSX.Element {
                 const isBedrooms = pair.contactField === 'configuration';
                 return (
                   <div key={i} className="flex flex-wrap items-center gap-2 p-3">
-                    <span className="w-20 shrink-0 text-xs font-medium text-muted">Contact</span>
+                    <span className="w-20 shrink-0 text-xs font-medium text-muted">Lead</span>
                     <Select
                       value={pair.contactFieldId ?? ''}
                       onChange={(id) => setPair(i, { contactFieldId: id, contactField: data.contactFields.find((f) => f.id === id)?.name ?? '' })}
@@ -170,7 +170,7 @@ export default function MatchingSetupAdmin(): JSX.Element {
                       className="w-48 py-1.5 text-sm"
                     />
                     <span className="text-xs text-muted">maps to</span>
-                    <span className="w-20 shrink-0 text-xs font-medium text-muted">Property</span>
+                    <span className="w-20 shrink-0 text-xs font-medium text-muted">Inventory</span>
                     <Select
                       value={pair.propertyFieldId ?? ''}
                       onChange={(id) => setPair(i, { propertyFieldId: id, propertyField: data.propertyFields.find((f) => f.id === id)?.name ?? '' })}
@@ -206,9 +206,9 @@ export default function MatchingSetupAdmin(): JSX.Element {
           </div>
 
           <p className="mt-4 rounded-lg bg-slate-50 px-3 py-2 text-xs text-muted dark:bg-slate-900">
-            The pair whose Contact side is the buyer&apos;s bedroom wish list drives BHK matching
-            against whichever Property field you point it at (normally Bedrooms). The pair whose
-            Property side is a price/currency field uses the grace percentage above. Every other
+            The pair whose Lead side is the buyer&apos;s bedroom wish list drives BHK matching
+            against whichever Inventory field you point it at (normally Bedrooms). The pair whose
+            Inventory side is a price/currency field uses the grace percentage above. Every other
             pair is saved for reference. Changes apply to the next match — nothing needs a deploy.
           </p>
         </>

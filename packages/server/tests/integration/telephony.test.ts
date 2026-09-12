@@ -208,6 +208,57 @@ describe('a call logged by hand', () => {
     });
     expect(callId).toBeTruthy();
   });
+
+  it('adds a disposition to an already-synced call instead of making a twin', async () => {
+    const admin = await adminContext();
+    const mobile = `96${String(Date.now()).slice(-8)}`;
+    const lead = await createRecord(admin, 'leads', leadInput({ full_name: 'Synced Call Lead', mobile }));
+    const externalId = `synced-before-save-${Date.now()}`;
+    await syncCalls(device, [{
+      externalId, number: mobile, type: 2,
+      timestamp: Date.now() - 45_000, durationSeconds: 45, contactName: null,
+    }]);
+    const synced = await db.queryOne<{ id: string }>(
+      `SELECT id FROM ipy_call WHERE device_id = $1 AND external_id = $2`,
+      [device.id, externalId],
+    );
+
+    const logged = await logManualCall({
+      userId: device.userId, recordId: lead.id, module: 'leads',
+      toNumber: mobile, direction: 'outbound', durationSeconds: 60,
+      disposition: 'Interested', notes: 'Asked for inventory details',
+    });
+    expect(logged.callId).toBe(synced!.id);
+    const rows = await db.query<{ id: string; disposition: string | null }>(
+      `SELECT id, disposition FROM ipy_call WHERE id = $1`, [synced!.id],
+    );
+    expect(rows.rows).toEqual([{ id: synced!.id, disposition: 'Interested' }]);
+  });
+
+  it('upgrades a just-saved manual call when the phone sync arrives later', async () => {
+    const admin = await adminContext();
+    const mobile = `95${String(Date.now()).slice(-8)}`;
+    const lead = await createRecord(admin, 'leads', leadInput({ full_name: 'One Call Only', mobile }));
+    const manual = await logManualCall({
+      userId: device.userId, recordId: lead.id, module: 'leads',
+      toNumber: mobile, direction: 'outbound', durationSeconds: 45,
+      disposition: 'Call Back Later', notes: 'Call tomorrow',
+    });
+    const externalId = `save-before-sync-${Date.now()}`;
+    const result = await syncCalls(device, [{
+      externalId, number: mobile, type: 2,
+      timestamp: Date.now() - 45_000, durationSeconds: 45, contactName: null,
+    }]);
+    expect(result).toMatchObject({ created: 0, duplicates: 1, matched: 1 });
+    const rows = await db.query<{ id: string; source: string; disposition: string; external_id: string }>(
+      `SELECT id, source, disposition, external_id FROM ipy_call
+        WHERE right(regexp_replace(to_number, '\\D','','g'), 10) = $1`,
+      [mobile],
+    );
+    expect(rows.rows).toEqual([{
+      id: manual.callId, source: 'device', disposition: 'Call Back Later', external_id: externalId,
+    }]);
+  });
 });
 
 /**

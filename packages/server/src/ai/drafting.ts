@@ -185,10 +185,10 @@ export async function draftMessage(input: DraftInput): Promise<DraftResult | nul
   // message they just sent, which is the most obvious place to try this.
   const fence = fenceId();
 
-  const prompt = `Draft a ${input.channel === 'call_script' ? 'call script' : `${input.channel} message`} for this contact.
+  const prompt = `Draft a ${input.channel === 'call_script' ? 'call script' : `${input.channel} message`} for this CRM record.
 
 ## Who they are
-${fenced(fence, 'Contact', `${ctx.label}\n${ctx.summary}`)}
+${fenced(fence, 'Record', `${ctx.label}\n${ctx.summary}`)}
 
 ${fenced(fence, '## Interaction history', ctx.history)}
 ${propertyBlock}

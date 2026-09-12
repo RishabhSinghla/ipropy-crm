@@ -156,6 +156,58 @@ export async function syncCalls(device: AuthedDevice, entries: DeviceCallEntry[]
     const match = await matchLead(number);
 
     try {
+      const alreadySynced = await db.queryOne<{ id: string }>(
+        `SELECT id FROM ipy_call WHERE device_id = $1 AND external_id = $2`,
+        [device.id, entry.externalId],
+      );
+      if (alreadySynced) {
+        result.duplicates++;
+        continue;
+      }
+
+      // The disposition popup can be saved before Android uploads its call
+      // log. In that order a manual row already represents this same call.
+      // Upgrade it with the phone's exact facts instead of inserting a second
+      // card in the Calls tab.
+      const numberTail = number.replace(/\D/g, '').slice(-10);
+      const manual = numberTail.length === 10 ? await db.queryOne<{ id: string }>(
+        `SELECT id
+           FROM ipy_call
+          WHERE user_id = $1 AND direction = $2 AND source = 'manual'
+            AND right(regexp_replace(
+              CASE WHEN direction = 'outbound' THEN to_number ELSE from_number END,
+              '\\D', '', 'g'
+            ), 10) = $3
+            AND abs(extract(epoch FROM (COALESCE(ended_at, started_at) - $4::timestamptz))) <= 120
+            AND abs(duration_seconds - $5::int) <= 120
+          ORDER BY abs(extract(epoch FROM (COALESCE(ended_at, started_at) - $4::timestamptz)))
+          LIMIT 1`,
+        [device.userId, direction, numberTail, ended, Math.max(0, entry.durationSeconds)],
+      ) : null;
+      if (manual) {
+        await db.query(
+          `UPDATE ipy_call
+              SET from_number = $2, to_number = $3,
+                  record_id = COALESCE(record_id, $4),
+                  record_module = COALESCE(record_module, $5),
+                  status = $6, duration_seconds = $7,
+                  provider = 'device', source = 'device', device_id = $8, external_id = $9,
+                  started_at = $10, answered_at = $11, ended_at = $12
+            WHERE id = $1`,
+          [
+            manual.id,
+            direction === 'outbound' ? (device.phoneNumber ?? 'device') : number,
+            direction === 'outbound' ? number : (device.phoneNumber ?? 'device'),
+            match?.recordId ?? null, match?.module ?? null,
+            status, Math.max(0, entry.durationSeconds), device.id, entry.externalId,
+            started, status === 'completed' ? started : null, ended,
+          ],
+        );
+        result.duplicates++;
+        if (match) result.matched++;
+        continue;
+      }
+
       const inserted = await db.queryOne<{ id: string }>(
         `INSERT INTO ipy_call
           (direction, from_number, to_number, user_id, record_id, record_module,

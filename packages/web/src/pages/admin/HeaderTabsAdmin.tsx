@@ -193,7 +193,7 @@ export default function HeaderTabsAdmin(): JSX.Element {
           </button>
           <p className="w-full text-2xs text-muted">
             Site visit shows on phones regardless (bottom bar and menu). Placing it here also puts it
-            on the desktop header, beside Properties&rsquo; &ldquo;New&rdquo; button.
+            on the desktop header, beside Inventories&rsquo; &ldquo;New&rdquo; button.
           </p>
           <button className="btn-secondary btn-sm" onClick={() => add({ kind: 'link', value: '' })}>
             <Plus className="h-3.5 w-3.5" /> A link
