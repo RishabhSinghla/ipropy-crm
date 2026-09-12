@@ -1054,7 +1054,16 @@ function PhonesTab(): JSX.Element {
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="truncate text-xs font-medium">{d.label ?? 'Android phone'}</p>
-                      {!d.is_active && <Badge color="red">Revoked</Badge>}
+                      {!d.is_active && <Badge color="#ef4444">Revoked</Badge>}
+                      {/*
+                        A phone that has never synced looked exactly like one
+                        that synced an hour ago: the "synced …" line is simply
+                        absent, and an absence is not something anyone reads.
+                        Production had three paired handsets and not one call
+                        ever uploaded, for a month, with nothing on this screen
+                        saying so.
+                      */}
+                      {d.is_active && !d.last_sync_at && <Badge color="#f59e0b">Never synced</Badge>}
                     </div>
                     <p className="text-2xs text-muted">
                       {d.model ? `${d.model} · ` : ''}
@@ -1065,6 +1074,12 @@ function PhonesTab(): JSX.Element {
                       paired {relativeTime(d.created_at)}
                       {d.last_sync_at ? ` · synced ${relativeTime(d.last_sync_at)}` : ''}
                     </p>
+                    {d.is_active && !d.last_sync_at && (
+                      <p className="text-2xs text-muted">
+                        Nothing has been uploaded from this handset yet. Open iPropy Companion on
+                        it, allow the call log permission, and tap Sync now.
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
@@ -1118,13 +1133,13 @@ function PairPhoneModal({ open, onClose, onPaired }: {
   const [form, setForm] = useState({ label: '', phoneNumber: '', model: '' });
   const [busy, setBusy] = useState(false);
   const [pairing, setPairing] = useState<{ token: string } | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<'token' | 'server' | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setForm({ label: '', phoneNumber: '', model: '' });
     setPairing(null);
-    setCopied(false);
+    setCopied(null);
     setBusy(false);
   }, [open]);
 
@@ -1145,13 +1160,24 @@ function PairPhoneModal({ open, onClose, onPaired }: {
     }
   };
 
-  const copyToken = (): void => {
-    if (!pairing) return;
-    void navigator.clipboard.writeText(pairing.token).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+  const copy = (what: 'token' | 'server', text: string): void => {
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(what);
+      setTimeout(() => setCopied(null), 2000);
     }).catch(() => undefined);
   };
+
+  /*
+    The app asks for two things and this screen used to hand over one.
+
+    Its first screen is Server address and Pairing token, and a rep who has
+    only been given the token types the address from memory — on a phone,
+    into a field that rejects anything but https, before they have ever seen
+    the CRM on that handset. Read off the page rather than written down: this
+    is the address they are already using, and a CRM on another domain hands
+    out its own.
+  */
+  const serverUrl = typeof window === 'undefined' ? '' : window.location.origin;
 
   return (
     <Modal
@@ -1175,22 +1201,43 @@ function PairPhoneModal({ open, onClose, onPaired }: {
       {pairing ? (
         <div className="space-y-3">
           <p className="text-sm text-muted">
-            Copy this token into the app now — it is not shown again. It grants the phone access
-            to your call data, so treat it like a password.
+            The app asks for both of these. The token is shown once and is not stored anywhere
+            you can read it again — it grants the phone access to your call data, so treat it
+            like a password.
           </p>
-          <div className="relative rounded-lg border border-slate-200 bg-slate-50 p-3 pr-10 dark:border-slate-700 dark:bg-slate-950/60">
-            <code className="block break-all font-mono text-xs">{pairing.token}</code>
-            <button
-              className="btn-ghost btn-sm absolute right-1.5 top-1.5"
-              onClick={copyToken}
-              aria-label="Copy the pairing token"
-            >
-              {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
-            </button>
+          <div>
+            <span className="label">Server address</span>
+            <div className="relative rounded-lg border border-slate-200 bg-slate-50 p-3 pr-10 dark:border-slate-700 dark:bg-slate-950/60">
+              <code className="block break-all font-mono text-xs">{serverUrl}</code>
+              <button
+                className="btn-ghost btn-sm absolute right-1.5 top-1.5"
+                onClick={() => copy('server', serverUrl)}
+                aria-label="Copy the server address"
+              >
+                {copied === 'server'
+                  ? <Check className="h-3.5 w-3.5 text-emerald-500" />
+                  : <Copy className="h-3.5 w-3.5" />}
+              </button>
+            </div>
+          </div>
+          <div>
+            <span className="label">Pairing token</span>
+            <div className="relative rounded-lg border border-slate-200 bg-slate-50 p-3 pr-10 dark:border-slate-700 dark:bg-slate-950/60">
+              <code className="block break-all font-mono text-xs">{pairing.token}</code>
+              <button
+                className="btn-ghost btn-sm absolute right-1.5 top-1.5"
+                onClick={() => copy('token', pairing.token)}
+                aria-label="Copy the pairing token"
+              >
+                {copied === 'token'
+                  ? <Check className="h-3.5 w-3.5 text-emerald-500" />
+                  : <Copy className="h-3.5 w-3.5" />}
+              </button>
+            </div>
           </div>
           <p className="text-2xs text-muted">
             In <span className="font-medium">iPropy Companion</span> on the phone: tap Pair this
-            device, then paste this token.
+            device, put the server address in the first box and the token in the second.
           </p>
         </div>
       ) : (

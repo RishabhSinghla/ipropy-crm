@@ -216,8 +216,41 @@ that no longer exists, which made every picture correctly and delivered none of 
 six days. Both looked healthy from every angle a test can see.
 
 ```bash
-python3 scripts/check-deployed.py   # live n8n + media container vs this repo
+bash scripts/automation-up.sh       # start n8n + the media worker
+python3 scripts/check-deployed.py   # and check both against this repo
 ```
+
+**The automation's settings live outside this repo, in `~/.ipropy/automation.env`
+(chmod 600).** `automation-up.sh` recreates both containers from that file, so
+the containers are disposable and the settings are not. `MEDIA_`-prefixed names
+go to the media worker with the prefix stripped; the rest go to n8n — one file
+for two containers that both want a variable called `CRM_URL` and do not mean
+the same thing by it.
+
+That file is the only copy of the n8n API key. A key cannot be read back out of
+the CRM, only rotated (`Rotate API key`), and losing it stops media *delivery*
+while the polling still succeeds — so it fails silently. The container name
+matters too: n8n reaches the worker at `http://ipropy-media:8080`.
+
+**Two walkers, and they check different promises.** `definition-of-done.mjs`
+walks what the product promises an *administrator* — create a field and it is
+everywhere, rename it and nothing breaks, delete and restore it and the data
+comes back. `daily-paths.mjs` walks what it promises a *rep*: add the person
+you just spoke to, change their status, leave a note, run your list, send a
+unit to a buyer, and let the phone file the calls you made.
+
+```bash
+API=http://localhost:4000 node scripts/definition-of-done.mjs   # 20 checks
+API=http://localhost:4000 node scripts/daily-paths.mjs          # 19 checks
+```
+
+Neither may be pointed at production — both create records. The second exists
+because four of those paths were broken on production at once on 11 September
+2026 (logging a call, the device call sync, the WhatsApp send, lead scoring),
+each failing quietly in its own way, with every unit and integration test green.
+**Run both against a database mirrored to production's shape**
+(`scripts/mirror-prod-shape.sh`), not a fresh seed — on a fresh seed every one
+of those four passes.
 
 It compares node by node and file by file, and fails when a workflow is switched **off** —
 which `n8n import:workflow` does every time it runs, in a line that is easy to miss. Always
@@ -414,10 +447,15 @@ Both were mine, both invisible, and both had been live for a day or more.
   one in Admin → Integrations" until a Groq key is pasted in. Base URL and model are already right.
 * **Music sends only parameters its model accepts.** `modalities` and `audio` were on the request
   and are on no music model's `supported_parameters`, so the whole call was refused in 0.0s.
-* **Semantic search is built and has never been switched on.** pgvector 0.8.6 is installed,
-  `ipy_embedding` exists, and it holds zero rows, because indexing needs the embed model above.
-  Searching by meaning across leads, notes, messages and calls is inert until that is fixed — and it
-  fails quietly, as ordinary keyword search.
+* **Semantic search is live.** Checked on production 11 September 2026: 355 rows in
+  `ipy_embedding` across both leads and properties, written by
+  `nvidia/nemotron-3-embed-1b:free` — the very id the note above records as failing — with the
+  newest that morning. Whatever was wrong account-side has been sorted; **do not go hunting for a
+  replacement id.** Rerank is still unverified, because it runs at query time and leaves nothing
+  behind to look at.
+
+  The model settings live in `ipy_setting` under `ai_models.*`, not `ai.model*`, and
+  `scripts/../.github/workflows/check-prod.yml` prints them along with the embedding count.
 * **Site capture now runs end to end and is proved.** A property finished in the CRM reaches n8n,
   the worker names, finishes, cuts every shape, watermarks, builds the reel and the walkthrough,
   and the finished pictures come back onto the record. Run 4733 is the reference. What has *still*
@@ -609,8 +647,30 @@ DATABASE_URL='postgresql://ipropy:ipropy@localhost:5432/ipropy_scale' npm run db
 docker exec -i ipropy-db psql -U ipropy -d ipropy_scale < scripts/load-test-data.sql
 ```
 
-Measured at that size, all well indexed: lists 59ms, deep paging 73ms, text search 42ms,
-matching 33ms, comparables 8ms, dashboard 4ms.
+Measured at that size, 11 September 2026: lists 32ms, deep paging 71ms, text search 37ms,
+record detail 8ms, dashboard 4ms, **matching 28ms one way and 150ms the other**.
+
+Two things to know about that line, because it was wrong for a while and nobody could
+tell:
+
+* **`scripts/load-test-data.sql` had stopped working** and the figures could not be
+  reproduced by anybody who tried. It named `country_code`, `lifecycle_stage`,
+  `budget_min`, `budget_max`, `ai_score`, `name`, `configuration` and `carpet_area`,
+  none of which the model still has, so it errored after inserting 60,000 `ipy_record`
+  rows and left the database half built. Fixed; if it breaks again the symptom is a
+  loader that exits non-zero with leads loaded and properties empty.
+* **`to_jsonb(row)` is what makes a query slow here.** It is the pattern that keeps a
+  query safe when an admin deletes a field — a dropped column answers NULL instead of
+  raising 42703 — and it builds a JSON object out of *every* column of *every* row
+  considered. Reverse matching was 2043ms, the caller lookup the phone app makes was
+  1556ms, and the duplicate check on every inbound lead was 1511ms. Reading one column
+  at a time through `fieldText`/`fieldJson` in `core/entity/payloadColumns.ts` keeps the
+  same protection and the same answer: 150ms, 35ms and 52ms.
+
+  Use those helpers rather than `to_jsonb(x)->>'…'` in anything that filters or sorts.
+  `#>>'{}'` and not `::text`, because the two disagree on timestamps. And watch rule 8
+  on the way: dropping a `to_jsonb` read often drops the last reference to a bound
+  parameter, and Postgres refuses a statement with a parameter it never names.
 
 **The shape to watch for**, which has now been found four times in this codebase: a
 bounded slice, ordered by something unrelated to what is done with it afterwards.

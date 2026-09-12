@@ -1,0 +1,92 @@
+# What the team has actually done in the CRM in the last few hours.
+#
+# Written for 12 September 2026, the morning the team starts logging calls from
+# their own handsets. Nothing in this repository could see whether that was
+# working: `check-prod` reports what is *configured*, and the only signal that a
+# rep is stuck is a rep saying so.
+#
+# Read-only, and it names no customer — labels and counts, not numbers.
+#
+#   gh workflow run "Morning watch" -f hours=2
+name: Morning watch
+
+on:
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: "How far back to look"
+        default: "6"
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install psql 18
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: Look
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          HOURS: ${{ inputs.hours }}
+        run: |
+          set -euo pipefail
+          WINDOW="${HOURS} hours"
+
+          echo "=== phones ==="
+          # The question of the morning. A handset that has never synced is the
+          # feature not working for whoever is carrying it.
+          psql "$DATABASE_URL" -P pager=off -c "
+            SELECT d.label, u.email, d.app_version, d.is_active,
+                   coalesce(to_char(d.last_sync_at, 'YYYY-MM-DD HH24:MI'), 'NEVER') AS last_sync,
+                   d.last_sync_count
+              FROM ipy_device d LEFT JOIN ipy_user u ON u.id = d.user_id
+             ORDER BY d.created_at DESC LIMIT 10;"
+
+          echo "=== calls in the last ${WINDOW} ==="
+          psql "$DATABASE_URL" -P pager=off -c "
+            SELECT c.source, c.direction, count(*) AS calls,
+                   count(*) FILTER (WHERE c.disposition IS NOT NULL) AS with_outcome,
+                   count(*) FILTER (WHERE c.record_id IS NOT NULL) AS linked_to_a_contact
+              FROM ipy_call c
+             WHERE c.started_at > now() - interval '${HOURS} hours'
+             GROUP BY 1, 2 ORDER BY 3 DESC;"
+
+          echo "=== outcomes chosen ==="
+          psql "$DATABASE_URL" -P pager=off -c "
+            SELECT c.disposition, count(*) AS calls,
+                   bool_or(v.value IS NULL) AS not_on_the_list
+              FROM ipy_call c
+              LEFT JOIN ipy_picklist_value v
+                     ON v.value = c.disposition
+                    AND v.picklist_id = (SELECT id FROM ipy_picklist WHERE name = 'call_disposition')
+             WHERE c.disposition_at > now() - interval '${HOURS} hours'
+             GROUP BY 1 ORDER BY 2 DESC;"
+
+          echo "=== waiting to be asked about ==="
+          # A call with no outcome that is older than an hour is a rep who was
+          # never prompted, or who dismissed the prompt.
+          psql "$DATABASE_URL" -tAc "
+            SELECT 'calls with no outcome yet: ' || count(*)
+              || ' | of those, older than an hour: '
+              || count(*) FILTER (WHERE started_at < now() - interval '1 hour')
+              FROM ipy_call
+             WHERE disposition IS NULL AND status = 'completed'
+               AND duration_seconds > 0
+               AND started_at > now() - interval '${HOURS} hours';"
+
+          echo "=== the rest of the CRM, same window ==="
+          psql "$DATABASE_URL" -P pager=off -c "
+            SELECT a.action, count(*)
+              FROM ipy_audit a WHERE a.created_at > now() - interval '${HOURS} hours'
+             GROUP BY 1 ORDER BY 2 DESC LIMIT 10;"
+          psql "$DATABASE_URL" -tAc "
+            SELECT 'people signed in: ' || count(DISTINCT user_id)
+              FROM ipy_session WHERE created_at > now() - interval '${HOURS} hours';"
+          psql "$DATABASE_URL" -tAc "
+            SELECT 'contacts added: ' || count(*)
+              FROM ipy_record
+             WHERE module_name = 'leads' AND created_at > now() - interval '${HOURS} hours';"

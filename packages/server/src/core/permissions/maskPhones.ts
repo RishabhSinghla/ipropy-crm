@@ -93,7 +93,22 @@ export async function revealPhone(
   fieldName: string,
 ): Promise<string | null> {
   const module = await registry.getModule(moduleName);
-  const field = module?.fields.find((f) => f.name === fieldName && f.uitype === 'phone');
+  /*
+    Any field the masking can hide, not only a phone.
+
+    `owner_only` stopped being phone-specific in migration 099 and this check
+    did not follow, so a field of any other type could be masked and then
+    revealed by nobody — the value shown as `98xxx43` to everyone except its
+    owner and an admin, with the reveal silently answering null and no
+    explanation anywhere. That defeats the whole reason there are two settings:
+    `hidden` means no, `owner_only` means yes, on the record and in the log.
+
+    It bites hardest on an email, because `maskNumber` masks anything holding
+    six digits — `rakesh.kumar9876543@gmail.com` renders as `98xxx43` — so the
+    field most likely to be set `owner_only` after the phone is also the one
+    that was least recoverable.
+  */
+  const field = module?.fields.find((f) => f.name === fieldName);
   if (!module || !field) return null;
 
   // A field the profile hides outright is not revealable. Only the masked
@@ -113,9 +128,13 @@ export async function revealPhone(
   if (!row?.value) return null;
 
   await db.query(
+    // Still `phone_revealed`: the action name is what every existing audit row,
+    // filter and report already says, and renaming it would silently split the
+    // trail in two. The field is in `changes` for anything that needs to know
+    // which one it was.
     `INSERT INTO ipy_audit (record_id, module_name, action, changes, user_id, source)
      VALUES ($1, $2, 'phone_revealed', $3, $4, 'app')`,
-    [recordId, moduleName, JSON.stringify({ field: fieldName }), user.id],
+    [recordId, moduleName, JSON.stringify({ field: fieldName, uitype: field.uitype }), user.id],
   );
 
   return row.value;

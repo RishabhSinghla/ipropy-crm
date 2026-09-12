@@ -13,15 +13,29 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import os
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
-from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageOps
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageOps, UnidentifiedImageError
 
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_LOGO = ROOT / "iPropy-Logo-1.jpeg"
 DEFAULT_SOURCE = ROOT / "B12-Greenfield-Colony" / "IMG_4377.jpg"
-SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+# HEIC belongs here. The team shoots site visits on phones, and an iPhone
+# writes HEIC — so every photo from a real visit was invisible to this script,
+# and a folder holding nothing else failed the whole run with "No supported
+# photos found in: /data/". n8n did exactly that every two minutes on
+# 9 September 2026: 1,900 errored runs against 8,221 good ones.
+#
+# `professional_photo_finish.py`, in this same service, has accepted HEIC all
+# along and converts it — so the two halves of one pipeline disagreed about
+# what a photograph is. This is that file's list, and its converter.
+SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
+HEIC_EXTENSIONS = {".heic", ".heif"}
 ORIENTATION_TAG = 274
 
 
@@ -224,13 +238,24 @@ def add_watermark(
     return photo
 
 
+def written_suffix(source: Path) -> str:
+    """What the finished copy is called.
+
+    A HEIC goes in and a JPEG comes out: Pillow can be taught to *read* HEIC
+    through a converter and cannot write it at all, so keeping the suffix would
+    produce a file called `.heic` that is not one. Same rule as
+    `professional_photo_finish.py`.
+    """
+    return ".jpg" if source.suffix.lower() in HEIC_EXTENSIONS else source.suffix
+
+
 def output_for_file(source: Path, requested_output: str | None) -> Path:
     if requested_output:
         output = project_path(requested_output)
         if output.is_dir():
-            return output / source.name
+            return output / f"{source.stem}{written_suffix(source)}"
         return output
-    return source.with_name(f"{source.stem}-ipropy-watermarked{source.suffix}")
+    return source.with_name(f"{source.stem}-ipropy-watermarked{written_suffix(source)}")
 
 
 def find_photos(folder: Path, recursive: bool) -> list[Path]:
@@ -263,12 +288,56 @@ def build_jobs(
         else source.with_name(f"{source.name}-watermarked")
     )
     jobs = [
-        (photo, output_folder / photo.relative_to(source))
+        (photo, (output_folder / photo.relative_to(source)).with_suffix(written_suffix(photo)))
         for photo in find_photos(source, recursive)
     ]
     if not jobs:
         raise ValueError(f"No supported photos found in: {source}")
     return jobs
+
+
+def open_photo(source_path: Path) -> Image.Image:
+    """Pillow first, then whichever HEIC converter the machine has.
+
+    Copied in shape from `load_photo` in `professional_photo_finish.py` rather
+    than invented: `sips` is macOS only and absent on a server, and
+    GraphicsMagick with libde265 reads the same formats — the Dockerfile
+    already installs `libheif1` for exactly this. Whichever is present wins.
+
+    In the normal pipeline `prepare_photos.sh` has converted the file long
+    before this runs. "Almost never" is not never, and the run that proved it
+    failed every two minutes for a day.
+    """
+    try:
+        opened = Image.open(source_path)
+        opened.load()
+        return opened
+    except (UnidentifiedImageError, OSError):
+        converter = shutil.which("sips") or shutil.which("gm")
+        if source_path.suffix.lower() not in HEIC_EXTENSIONS or not converter:
+            raise
+        handle, temporary_name = tempfile.mkstemp(suffix=".jpg")
+        os.close(handle)
+        temporary_file = Path(temporary_name)
+        completed = subprocess.run(
+            [converter, "-s", "format", "jpeg", str(source_path), "--out", str(temporary_file)]
+            if converter.endswith("sips")
+            else [converter, "convert", str(source_path), "-auto-orient", "-quality", "96", str(temporary_file)],
+            capture_output=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = completed.stderr.decode(errors="replace").strip()
+            raise RuntimeError(detail or f"could not read this HEIC photo: {source_path.name}")
+        opened = Image.open(temporary_file)
+        opened.load()
+        # Read into memory, so the temporary file can go now rather than
+        # accumulating one per photo for the life of the container.
+        copied = opened.copy()
+        copied.info = dict(opened.info)
+        opened.close()
+        temporary_file.unlink(missing_ok=True)
+        return copied
 
 
 def save_photo(
@@ -279,7 +348,7 @@ def save_photo(
     opacity: int,
     quality: int,
 ) -> None:
-    with Image.open(source_path) as opened:
+    with open_photo(source_path) as opened:
         icc_profile = opened.info.get("icc_profile")
         photo = ImageOps.exif_transpose(opened)
         exif = photo.getexif()

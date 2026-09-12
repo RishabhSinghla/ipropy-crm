@@ -231,6 +231,57 @@ describe('masking a phone number', () => {
   });
 
   /**
+   * `owner_only` on something that is not a phone.
+   *
+   * Masking stopped being phone-specific in migration 099 — an admin can set
+   * the permission on any field — and the reveal did not follow: it looked for
+   * `uitype === 'phone'` and answered null for everything else. So a field of
+   * any other type could be masked and then revealed by nobody, silently.
+   *
+   * Email is the case that bites, because `maskNumber` masks anything holding
+   * six digits: `rakesh.kumar9876543@gmail.com` renders as `98xxx43`, which is
+   * not a masked email so much as a destroyed one, and until this it could not
+   * be got back.
+   */
+  it('reveals a masked field that is not a phone', async () => {
+    const email = await db.queryOne<{ id: string }>(
+      `SELECT f.id FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+        WHERE m.name = 'leads' AND f.name = 'email'`,
+    );
+    // A CRM whose admin has deleted the email field has nothing to assert.
+    if (!email) return;
+
+    // Digits on purpose: `maskNumber` only masks a value holding six of them,
+    // so an address without any would never have been masked and would prove
+    // nothing about the reveal.
+    const address = 'rakesh.kumar9876543@example.com';
+    await db.query(`UPDATE ipy_e_leads SET email = $2 WHERE record_id = $1`, [leadId, address]);
+
+    await db.query(
+      `INSERT INTO ipy_profile_field_perm (profile_id, field_id, permission)
+       SELECT unnest($1::uuid[]), $2::uuid, 'owner_only'
+       ON CONFLICT (profile_id, field_id) DO UPDATE SET permission = 'owner_only'`,
+      [profileIds, email.id],
+    );
+    invalidatePermissions();
+
+    try {
+      const res = await request(app)
+        .get(`/api/records/leads/${leadId}/phone/email`)
+        .set('Authorization', `Bearer ${managerToken}`);
+
+      expect(res.status, 'a masked field the reveal cannot reach is masked for ever').toBe(200);
+      expect(res.body.number).toBe(address);
+    } finally {
+      await db.query(
+        `DELETE FROM ipy_profile_field_perm WHERE profile_id = ANY($1::uuid[]) AND field_id = $2::uuid`,
+        [profileIds, email.id],
+      );
+      invalidatePermissions();
+    }
+  });
+
+  /**
    * `hidden` and `owner_only` are different answers and the reveal endpoint has
    * to tell them apart — otherwise the audited escape hatch quietly becomes a
    * way around a field an admin refused outright.

@@ -22,6 +22,7 @@ import { logger } from '../utils/logger.js';
 import { featureOn } from '../core/settings/aiFeatures.js';
 import { houseStyle } from '../core/settings/houseStyle.js';
 import { modelFor } from '../core/settings/aiModels.js';
+import { columnsOf, fieldText } from '../core/entity/payloadColumns.js';
 
 interface Lead {
   label: string;
@@ -81,23 +82,33 @@ async function matchingUnits(lead: Lead): Promise<string[]> {
   // which an admin may have retired in favour of their own — the greeting would
   // otherwise offer nothing, or offer units outside the budget it was told.
   const price = await priceField();
-  const priceExpr = priceSql(price, '$5');
+  // One column at a time, across every unit in the business. The bedroom field
+  // is a name from the matching setup and is written directly rather than
+  // bound: `fieldText` only ever emits a name it has just found in
+  // `information_schema`.
+  const present = await columnsOf('ipy_e_properties');
+  const unit = (c: string): string => fieldText(present, 'p', c);
+  // Bound only when the price is a JSONB key — see CLAUDE.md rule 8.
+  const priceParam = price.storage === 'json' ? '$4' : '';
+  const priceExpr = priceSql(price, priceParam, 'p', present);
 
   const { rows } = await db.query<{ label: string; bedrooms: string | null; locality: string | null; base_price: number | null }>(
     `SELECT r.label,
-            to_jsonb(p)->>$4               AS bedrooms,
-            to_jsonb(p)->>'locality'       AS locality,
+            ${unit(bedroomField)}    AS bedrooms,
+            ${unit('locality')}      AS locality,
             ${priceExpr} AS base_price
        FROM ipy_e_properties p
        JOIN ipy_record r ON r.id = p.record_id
       WHERE r.is_deleted = false
-        AND to_jsonb(p)->>'status' = 'Available'
-        AND ($1::numeric[] = '{}' OR (to_jsonb(p)->>$4)::numeric = ANY($1::numeric[]))
-        AND ($2::text[] = '{}' OR to_jsonb(p)->>'locality' = ANY($2::text[]))
+        AND ${unit('status')} = 'Available'
+        AND ($1::numeric[] = '{}' OR (${unit(bedroomField)})::numeric = ANY($1::numeric[]))
+        AND ($2::text[] = '{}' OR ${unit('locality')} = ANY($2::text[]))
         AND ($3::numeric IS NULL OR ${priceExpr} <= $3 * ${grace})
       ORDER BY r.updated_at DESC
       LIMIT 2`,
-    [wantedBedrooms, localities, lead.budget, bedroomField, price.column],
+    price.storage === 'json'
+      ? [wantedBedrooms, localities, lead.budget, price.column]
+      : [wantedBedrooms, localities, lead.budget],
   );
   return rows.map((r) => [r.label, r.bedrooms != null ? `${r.bedrooms} BHK` : null, r.locality].filter(Boolean).join(' '));
 }

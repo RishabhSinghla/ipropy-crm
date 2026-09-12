@@ -47,13 +47,44 @@ export async function priceField(): Promise<PriceField> {
  * controls, and this file has no business opening a SQL-injection surface to
  * read a number.
  */
-export function priceSql(price: PriceField, columnParam: string, alias = 'p'): string {
+export function priceSql(
+  price: PriceField,
+  columnParam: string,
+  alias = 'p',
+  /**
+   * The table's real columns, when the caller has them.
+   *
+   * Without it this reads `to_jsonb(p)` three times over — once for the mapped
+   * field and once for each built-in fallback — and each of those builds a
+   * JSON object out of every column of the row. In the matching query the
+   * whole expression is evaluated three times per unit, so it was nine
+   * whole-row serialisations for every property in the business, to compare
+   * one number.
+   *
+   * Given the column set it reads one column instead, and drops a fallback
+   * that no longer exists rather than asking for it. Same answer either way —
+   * `#>>'{}'` matches `to_jsonb(row)->>'col'` exactly, including on dates.
+   */
+  present?: Set<string>,
+): string {
+  if (!present) {
+    const mapped = price.storage === 'json'
+      ? `ipy_try_numeric(to_jsonb(${alias})->'custom_fields'->>${columnParam})`
+      : `ipy_try_numeric(to_jsonb(${alias})->>${columnParam})`;
+    return `COALESCE(${mapped},
+               ipy_try_numeric(to_jsonb(${alias})->>'total_price'),
+               ipy_try_numeric(to_jsonb(${alias})->>'base_price'))`;
+  }
+
   const mapped = price.storage === 'json'
-    ? `ipy_try_numeric(to_jsonb(${alias})->'custom_fields'->>${columnParam})`
-    : `ipy_try_numeric(to_jsonb(${alias})->>${columnParam})`;
-  return `COALESCE(${mapped},
-             ipy_try_numeric(to_jsonb(${alias})->>'total_price'),
-             ipy_try_numeric(to_jsonb(${alias})->>'base_price'))`;
+    ? `ipy_try_numeric(${alias}.custom_fields->>${columnParam})`
+    : present.has(price.column)
+      ? `ipy_try_numeric(to_jsonb(${alias}."${price.column}")#>>'{}')`
+      : 'NULL::numeric';
+  const fallbacks = ['total_price', 'base_price']
+    .filter((c) => present.has(c))
+    .map((c) => `ipy_try_numeric(to_jsonb(${alias}."${c}")#>>'{}')`);
+  return fallbacks.length ? `COALESCE(${[mapped, ...fallbacks].join(', ')})` : mapped;
 }
 
 /** And in TypeScript, off a `to_jsonb(p)` row. */

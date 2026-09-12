@@ -14,7 +14,7 @@ import { priceField, priceSql } from '../core/settings/priceField.js';
 import { logger } from '../utils/logger.js';
 import { completeJson, isAiAvailable, saveInsight, REAL_ESTATE_SYSTEM } from './client.js';
 import { fenceId, fenced, fencedList, untrustedRule } from './untrusted.js';
-import { setIfPresent } from '../core/entity/payloadColumns.js';
+import { columnsOf, fieldText, setIfPresent } from '../core/entity/payloadColumns.js';
 
 interface LeadContext {
   recordId: string;
@@ -104,14 +104,25 @@ async function countMatchingInventory(lead: Record<string, unknown>): Promise<nu
   // lead once an admin created their own price field — and that count feeds the
   // lead's score, so every score quietly shifted.
   const price = await priceField();
+  // One column at a time. This counts across every unit in the business and
+  // runs on every lead that gets scored, and `to_jsonb(p)` built the whole row
+  // as JSON four times over to read three fields of it.
+  const present = await columnsOf('ipy_e_properties');
+  const unit = (c: string): string => fieldText(present, 'p', c);
+  // Bound only when the price is a JSONB key — a real column is validated
+  // against information_schema and written directly, and a parameter bound to
+  // a statement that never names it is refused outright (CLAUDE.md rule 8).
+  const priceParam = price.storage === 'json' ? '$3' : '';
+  const params: unknown[] = [budgetMax, configs];
+  if (price.storage === 'json') params.push(price.column);
   const row = await db.queryOne<{ count: number }>(
     `SELECT COUNT(*)::int AS count FROM ipy_e_properties p
      JOIN ipy_record r ON r.id = p.record_id
-     WHERE r.is_deleted = false AND to_jsonb(p)->>'status' = 'Available'
-       AND ${priceSql(price, '$3')} <= $1 * 1.1
-       AND ($2::text[] = '{}' OR to_jsonb(p)->>'configuration' = ANY($2::text[])
-                              OR to_jsonb(p)->>'bedrooms' = ANY($2::text[]))`,
-    [budgetMax, configs, price.column],
+     WHERE r.is_deleted = false AND ${unit('status')} = 'Available'
+       AND ${priceSql(price, priceParam, 'p', present)} <= $1 * 1.1
+       AND ($2::text[] = '{}' OR ${unit('configuration')} = ANY($2::text[])
+                              OR ${unit('bedrooms')} = ANY($2::text[]))`,
+    params,
   );
   return row?.count ?? 0;
 }

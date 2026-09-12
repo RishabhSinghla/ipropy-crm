@@ -119,12 +119,17 @@ const KNOWN_DIRECT_REFERENCES = new Set([
   'ai/assistant.ts l.status',
   'ai/callProposal.ts l.next_followup_at',
   'ai/callProposal.ts l.status',
-  // Guarded by `modelHas(...)` in the same handler — the reference is real but
-  // the statement is not built unless the column is there.
-  'api/routes/public.ts u.city',
-  'api/routes/public.ts u.project_name',
+  // `u.status` is the published-status filter every public query is built on,
+  // and it is on FIELDS_USED_IN_CODE, so it cannot be renamed or deleted.
+  //
+  // The other three left this list on 2026-09-12. `city`, `project_name` and
+  // `total_price` were all "guarded by modelHas in the same handler", which
+  // was true of the route and not of the expression: /cities is guarded on
+  // city and project_name and also reported MIN/MAX of a price that is
+  // deleted on production, so putting the website's two missing fields back
+  // would have turned that page into a 42703 on the day it was fixed. They go
+  // through `pcol()` now, which names the column only if it is there.
   'api/routes/public.ts u.status',
-  'api/routes/public.ts u.total_price',
   'api/routes/webhooks.ts l.mobile',
   'api/routes/webhooks.ts l.status',
   'core/locations/index.ts p.latitude',

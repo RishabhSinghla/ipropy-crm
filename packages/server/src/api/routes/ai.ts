@@ -5,7 +5,7 @@ import multer from 'multer';
 import { db } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
-import { BadRequestError, NotFoundError } from '../../utils/errors.js';
+import { BadRequestError, NotFoundError, ServiceUnavailableError } from '../../utils/errors.js';
 import { assertCapability, assertModuleAccess, canAccessRecord, getFieldPermissions } from '../../core/permissions/index.js';
 import { aiStatus, complete } from '../../ai/client.js';
 import {
@@ -185,7 +185,24 @@ aiRouter.post('/draft', modelLimiter, asyncHandler(async (req, res) => {
     visibleFields: await readableAiFields(user, input.module),
     scope,
   });
-  if (!draft) throw new BadRequestError('AI drafting is unavailable — check the API key configuration');
+  /*
+    503, not 400. Nothing was wrong with the request — the CRM simply has no
+    model to write with, and a 400 tells the browser the rep typed something
+    bad. `/api/webhooks/leads/generic` already answers this way when its key is
+    missing, and this is the same situation.
+
+    Worth knowing when it happens: drafting is the one AI feature with no
+    deterministic half, so unlike matching, scoring, the digest and duplicate
+    detection — all of which answer perfectly well with no provider — this
+    stops outright. On a free key that runs out mid-month, it stops for the
+    rest of the month.
+  */
+  if (!draft) {
+    throw new ServiceUnavailableError(
+      'No AI model is connected, so there is nothing to write the draft with. '
+      + 'Add a key under Admin → Integrations, or write the message yourself.',
+    );
+  }
   res.json(draft);
 }));
 

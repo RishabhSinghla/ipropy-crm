@@ -17,6 +17,7 @@
  * four cases and all four are handled here rather than in the route.
  */
 import { db, type Tx } from '../../db/pool.js';
+import { BadRequestError } from '../../utils/errors.js';
 import { quoteIdent } from '../query/builder.js';
 import * as registry from './registry.js';
 
@@ -141,6 +142,30 @@ export async function fieldsThatCannotBeCleared(name: string, conn: Tx = db): Pr
   return blocked;
 }
 
+/**
+ * Where a dropdown's values are also stored outside the module tables.
+ *
+ * Everything above walks `ipy_field`, because that is where an admin's own
+ * fields live. Some options are also written to the CRM's own tables, and a
+ * call's outcome is one: `ipy_call.disposition` is a column on a built-in
+ * table that no admin can reshape, so it appears in no field list.
+ *
+ * It cost a real record. "Site Visit Scheduled" was retired on production on
+ * 6 September and the editor reported it held nothing, because it counted
+ * leads; a call from 16 August was recorded against it and still is. The
+ * admin retired an option they were told nothing used, and orphaned a piece
+ * of somebody's call history — invisible in the UI, and since outcomes became
+ * validated, a value nothing can write again.
+ *
+ * This is the one place tight coupling is right: the table is ours, not the
+ * admin's, and the alternative is a rename that half-lands.
+ */
+const SYSTEM_USES: Record<string, { table: string; column: string; module: string; field: string }[]> = {
+  call_disposition: [
+    { table: 'ipy_call', column: 'disposition', module: 'Calls', field: 'Outcome' },
+  ],
+};
+
 /** A SQL predicate matching rows whose value for `use` is `$1`. */
 function matchExpr(use: PicklistFieldUse): string {
   if (use.storage === 'column') {
@@ -168,6 +193,16 @@ export async function countRecordsWithValue(
          FROM ${quoteIdent(use.tableName)}
         WHERE ${matchExpr(use)}
           AND EXISTS (SELECT 1 FROM ipy_record r WHERE r.id = record_id AND r.is_deleted = false)`,
+      [value],
+    );
+    const count = row?.count ?? 0;
+    if (count > 0) byField.push({ module: use.module, field: use.field, count });
+  }
+
+  for (const use of SYSTEM_USES[name] ?? []) {
+    const row = await conn.queryOne<{ count: number }>(
+      `SELECT COUNT(*)::int AS count FROM ${quoteIdent(use.table)}
+        WHERE ${quoteIdent(use.column)} = $1`,
       [value],
     );
     const count = row?.count ?? 0;
@@ -246,6 +281,15 @@ export async function replaceValueInRecords(
     records += res.rowCount ?? 0;
   }
 
+  for (const use of SYSTEM_USES[name] ?? []) {
+    const table = quoteIdent(use.table);
+    const col = quoteIdent(use.column);
+    const res = to === null
+      ? await conn.query(`UPDATE ${table} SET ${col} = NULL WHERE ${col} = $1`, [from])
+      : await conn.query(`UPDATE ${table} SET ${col} = $2 WHERE ${col} = $1`, [from, to]);
+    records += res.rowCount ?? 0;
+  }
+
   // Saved views, workflow conditions and dashboard widgets filter on the stored
   // string too. A rename that leaves those behind produces a view that silently
   // returns nothing, which reads as "the CRM lost my leads".
@@ -293,4 +337,46 @@ async function renameInFilters(name: string, from: string, to: string, conn: Tx)
     changed += res.rowCount ?? 0;
   }
   return changed;
+}
+
+/**
+ * The options a dropdown currently offers, in the order the admin put them.
+ *
+ * Through the metadata registry rather than a query of its own: that cache is
+ * what `GET /api/meta/picklists/:name` answers from, so the list a rep sees in
+ * the dropdown and the list the server will accept are the same object. Two
+ * readers of the same table drift the moment one of them caches; one reader
+ * cannot. The registry is invalidated whenever an admin edits a picklist, so
+ * an option added in Settings is accepted by the next request.
+ */
+export async function activeValues(name: string): Promise<string[]> {
+  const options = await registry.getPicklist(name);
+  return options.filter((o) => o.isActive).map((o) => o.value);
+}
+
+/**
+ * Refuse a value the dropdown does not offer.
+ *
+ * Call dispositions were free text: the endpoint took `z.string().max(60)` and
+ * wrote whatever arrived. Nothing in the UI could produce a stray value, but
+ * anything holding an API key could, and production had three calls recorded
+ * against an outcome that exists in no list and appears in no report. A CRM
+ * whose reports are built by grouping on a column cannot let that column hold
+ * values nobody chose.
+ *
+ * An empty list means the picklist is missing or every option is switched off.
+ * That is a configuration problem, and blocking a rep from recording what
+ * happened on a call is the wrong way to report it — so an empty list accepts
+ * anything, exactly as before.
+ */
+export async function assertPicklistValue(
+  name: string,
+  value: string | null | undefined,
+): Promise<void> {
+  if (value === null || value === undefined || value === '') return;
+  const values = await activeValues(name);
+  if (!values.length || values.includes(value)) return;
+  throw new BadRequestError(
+    `"${value}" is not one of the ${name} options. Choose one of: ${values.join(', ')}`,
+  );
 }

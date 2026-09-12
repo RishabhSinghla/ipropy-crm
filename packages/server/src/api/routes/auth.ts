@@ -2,7 +2,7 @@ import { Router } from 'express';
 import crypto from 'node:crypto';
 import { z } from 'zod';
 import { clearRefreshCookie, readRefreshToken, setRefreshCookie } from '../../core/auth/refreshCookie.js';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { db, queryOne } from '../../db/pool.js';
 import { config } from '../../config.js';
 import { logger } from '../../utils/logger.js';
@@ -17,13 +17,54 @@ import { clearPinDeviceCookie } from '../../core/auth/devicePin.js';
 
 export const authRouter = Router();
 
+/*
+  Two buckets, because one was locking out the wrong people.
+
+  This was keyed on the IP alone, which is how `express-rate-limit` behaves by
+  default, and the whole team shares an IP: an office, or a mobile network's
+  NAT. So twenty failed attempts on *one* account — somebody's password manager
+  filling the wrong entry, or an attacker picking any single name — locked out
+  every colleague behind that address for fifteen minutes, correct password and
+  all. Measured: a second account with the right password got a 429.
+
+  The tight bucket is therefore per account *and* address. An attacker working
+  one account is stopped exactly as before, and a colleague at the next desk is
+  not.
+
+  The loose one is still per address, and is what stops the other attack the
+  first bucket cannot see: spraying one password across a thousand names, where
+  every account has a bucket of its own and none of them fills. It is set high
+  enough that a busy office never meets it.
+
+  `skipSuccessfulRequests` on both: signing in correctly costs nothing, so a
+  working day of real logins cannot exhaust either.
+*/
+export const attemptedAccount = (req: { body?: unknown }): string => {
+  const body = (req.body ?? {}) as { identifier?: unknown; email?: unknown };
+  const raw = String(body.identifier ?? body.email ?? '').trim().toLowerCase();
+  // A phone typed three ways is one account; `phoneKey` is the same reduction
+  // the sign-in itself uses, so the bucket matches what is being attacked.
+  return phoneKey(raw) ?? raw ?? '';
+};
+
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: config.security.loginRateLimit,
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: true,
+  keyGenerator: (req) => `${ipKeyGenerator(req.ip ?? '')}|${attemptedAccount(req)}`,
   message: { error: 'rate_limited', message: 'Too many sign-in attempts. Try again in a few minutes.' },
+});
+
+/** The spray guard: many names, one address. Deliberately generous. */
+const loginSprayLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: config.security.loginRateLimit * 10,
+  standardHeaders: false,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: { error: 'rate_limited', message: 'Too many sign-in attempts from this connection. Try again in a few minutes.' },
 });
 
 const loginSchema = z.object({
@@ -46,7 +87,7 @@ function phoneKey(value: string): string | null {
   return digits.length >= 10 ? digits.slice(-10) : null;
 }
 
-authRouter.post('/login', loginLimiter, asyncHandler(async (req, res) => {
+authRouter.post('/login', loginSprayLimiter, loginLimiter, asyncHandler(async (req, res) => {
   const parsed = loginSchema.parse(req.body);
   const identifier = (parsed.identifier ?? parsed.email ?? '').trim();
   const { password } = parsed;
@@ -133,9 +174,58 @@ authRouter.post('/refresh', asyncHandler(async (req, res) => {
 authRouter.post('/logout', requireAuth, asyncHandler(async (req, res) => {
   const token = readRefreshToken(req);
   clearRefreshCookie(res);
-  if (token) {
-    await db.query(`UPDATE ipy_session SET revoked_at = now() WHERE token_hash = $1`, [hashRefreshToken(token)]);
+
+  /*
+    The whole chain, not the one link that was handed over.
+
+    Rotation gives every exchange a new row and points the old one at it
+    through `replaced_by`. Logging out revoked only the row whose hash matched,
+    so a tab holding a token another tab had already rotated revoked something
+    already superseded — and answered `{ ok: true }` while the session carried
+    happily on.
+
+    That is not an edge case here. Two tabs hitting a 401 together is the
+    normal case the grace window exists for, so the token in the tab somebody
+    presses Log out in is *routinely* a link or two behind. Measured before
+    fixing: tab A refreshes, tab B logs out, tab A keeps working.
+
+    Forward through `replaced_by` from whatever was presented, so every
+    descendant dies with it.
+  */
+  /*
+    "Did this token ever name a session" is a different question from "did this
+    call revoke anything", and conflating them cost a whole session.
+
+    The revoke below only touches rows that are still live, so logging out a
+    session that was *already* logged out — a second click, a token a theft
+    check had revoked — matched nothing, which read as "unknown token" and sent
+    the fallback through to revoke every other session the user had. Signing
+    out twice on a laptop would have signed them out of their phone.
+
+    So recognition is asked first, and separately.
+  */
+  const known = token
+    ? await db.queryOne<{ one: number }>(
+      `SELECT 1 AS one FROM ipy_session WHERE token_hash = $1 LIMIT 1`,
+      [hashRefreshToken(token)],
+    )
+    : null;
+
+  if (known && token) {
+    await db.query(
+      `WITH RECURSIVE family AS (
+         SELECT id, replaced_by FROM ipy_session WHERE token_hash = $1
+         UNION ALL
+         SELECT s.id, s.replaced_by FROM ipy_session s JOIN family f ON s.id = f.replaced_by
+       )
+       UPDATE ipy_session SET revoked_at = now()
+        WHERE id IN (SELECT id FROM family) AND revoked_at IS NULL`,
+      [hashRefreshToken(token)],
+    );
   } else {
+    // No token, or one no session has ever had: they asked to be logged out and
+    // we know who they are, so end all of it rather than answering "ok" to
+    // somebody who is still signed in.
     await db.query(`UPDATE ipy_session SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, [getUser(req).id]);
   }
   res.json({ ok: true });
@@ -232,7 +322,7 @@ const passwordSchema = z.object({
  * an address can fill that person's inbox by submitting this form in a loop,
  * and every one of those emails costs against a small monthly allowance.
  */
-authRouter.post('/forgot-password', loginLimiter, asyncHandler(async (req, res) => {
+authRouter.post('/forgot-password', loginSprayLimiter, loginLimiter, asyncHandler(async (req, res) => {
   const { email } = z.object({ email: z.string().email().max(200) }).parse(req.body);
 
   // Said before anything else, and identically in every branch below.
@@ -309,7 +399,7 @@ function escapeHtml(value: string): string {
  * change-password exactly: sessions and device PINs die, because a reset is a
  * recovery from "somebody may have my account", not a convenience.
  */
-authRouter.post('/reset-password', loginLimiter, asyncHandler(async (req, res) => {
+authRouter.post('/reset-password', loginSprayLimiter, loginLimiter, asyncHandler(async (req, res) => {
   const { token, newPassword } = z.object({
     token: z.string().min(20).max(200),
     newPassword: z.string().min(8).max(200),

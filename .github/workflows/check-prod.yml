@@ -98,6 +98,138 @@ jobs:
           # no phone field was flagged searchable and nothing reached the index.
           # Reported as a permissions problem; it was not one. Migration 098
           # backfilled it, and this is the line that says whether it held.
+          echo "--- automations: which are switched on, and have they run? ---"
+          # A workflow that is off is silent by design and silent when it has
+          # been off by accident, and these are the ones that chase people:
+          # escalate an untouched lead, nurture a cold one, release an expired
+          # block. `last_run_at` is the half that says whether "on" is true in
+          # practice as well as in the row.
+          psql "$PROD_DATABASE_URL" -P pager=off -c \
+            "SELECT w.name, w.trigger, w.is_active,
+                    coalesce(to_char(w.last_run_at, 'MM-DD HH24:MI'), 'never') AS last_run,
+                    (SELECT count(*) FROM ipy_workflow_log l
+                      WHERE l.workflow_id = w.id AND l.created_at > now() - interval '7 days') AS rows_7d,
+                    to_char(w.updated_at, 'MM-DD HH24:MI') AS changed
+               FROM ipy_workflow w ORDER BY w.is_active DESC, w.name;"
+          # The two switched-off ones show a `last_run` from this morning, and
+          # both the scheduler and the engine filter on `is_active` — so either
+          # they were switched off after that run, or something runs them
+          # anyway. The newest log row for each answers it.
+          # `next_run_at` in the past on a live workflow is the scheduler not
+          # ticking, which is the failure that matters: no follow-up reminders,
+          # no escalation, nothing logged, nothing to notice. The instance also
+          # shares its process with the scheduler, so this is the one place it
+          # shows.
+          psql "$PROD_DATABASE_URL" -P pager=off -c \
+            "SELECT w.name, w.is_active,
+                    to_char(w.next_run_at, 'MM-DD HH24:MI') AS due,
+                    CASE WHEN NOT w.is_active THEN '-'
+                         WHEN w.next_run_at IS NULL THEN 'never set'
+                         WHEN w.next_run_at < now() - interval '15 minutes'
+                           THEN 'OVERDUE by ' || date_trunc('minute', now() - w.next_run_at)::text
+                         ELSE 'on time' END AS verdict,
+                    to_char(max(l.created_at), 'MM-DD HH24:MI') AS newest_log
+               FROM ipy_workflow w LEFT JOIN ipy_workflow_log l ON l.workflow_id = w.id
+              WHERE w.trigger = 'scheduled'
+              GROUP BY w.id, w.name, w.is_active, w.next_run_at
+              ORDER BY w.is_active DESC, w.name;"
+          # The decisive one: a workflow that is off should have stopped
+          # logging. Days-with-activity says whether it stopped or is still
+          # going, which no single timestamp can.
+          # `ipy_workflow_log` counts *matches*, not ticks: a record that does
+          # not match is written to `ipy_workflow_state` and skipped before any
+          # log row exists (`engine.ts`, "if (!matched || !shouldRun)"). So an
+          # hourly workflow with two logged days ran 336 times and found
+          # something twice — which reads as a dead scheduler and is not one.
+          #
+          # `ipy_workflow_state.last_run_at` is the honest signal, because it
+          # moves on every evaluation whether anything matched or not.
+          psql "$PROD_DATABASE_URL" -P pager=off -c \
+            "SELECT w.name, w.is_active,
+                    coalesce(w.schedule #>> '{}', '(none)') AS schedule,
+                    count(DISTINCT date_trunc('day', l.created_at)) AS days_14d,
+                    to_char(max(l.created_at), 'MM-DD HH24:MI') AS newest
+               FROM ipy_workflow w
+               LEFT JOIN ipy_workflow_log l
+                 ON l.workflow_id = w.id AND l.created_at > now() - interval '14 days'
+              WHERE w.trigger = 'scheduled'
+              GROUP BY w.id, w.name, w.is_active, w.schedule
+              ORDER BY w.is_active DESC, w.name;"
+          psql "$PROD_DATABASE_URL" -tAc \
+            "SELECT 'scheduler last evaluated a record: '
+                 || coalesce(to_char(max(last_run_at), 'MM-DD HH24:MI'), 'never')
+                 || ' (' || coalesce(date_trunc('minute', now() - max(last_run_at))::text, '-') || ' ago)'
+               FROM ipy_workflow_state;"
+          echo
+          echo "--- which AI model does each job use, and is the key there? ---"
+          # Semantic search has been inert since it was built: `ipy_embedding`
+          # holds nothing because indexing needs the embed model, and the
+          # failure is silent — search simply behaves as ordinary keyword
+          # search. This prints the ids and whether a key is present, never a
+          # key, so the next person can check an id against OpenRouter's own
+          # catalogue instead of guessing at replacements.
+          psql "$PROD_DATABASE_URL" -P pager=off -c \
+            "SELECT key, left(value #>> '{}', 46) AS model
+               FROM ipy_setting
+              WHERE key ~ 'model' AND category IN ('ai','ai_models')
+              ORDER BY key;"
+          # Was reported as inert for weeks — `ipy_embedding` empty because
+          # indexing needs the embed model, failing silently as ordinary
+          # keyword search. Print what is actually in there.
+          psql "$PROD_DATABASE_URL" -tAc \
+            "SELECT 'embeddings: ' || count(*) || ' rows'
+                 || ', modules: ' || coalesce(string_agg(DISTINCT module_name, '/'), 'none')
+                 || ', model: ' || coalesce(max(model), 'none')
+                 || ', newest ' || coalesce(to_char(max(updated_at), 'YYYY-MM-DD HH24:MI'), 'never')
+               FROM ipy_embedding;"
+          psql "$PROD_DATABASE_URL" -tAc \
+            "SELECT provider || ': active=' || is_active || ', key=' || (credentials ? 'apiKey')
+               FROM ipy_integration WHERE provider LIKE 'ai_%' ORDER BY provider;"
+          echo
+          echo "--- can the website actually deliver a lead? ---"
+          # Two ways this goes quiet, both of which have happened. The form key
+          # may still be the committed default, which the server deliberately
+          # refuses with a 503 so a published key cannot inject leads — correct,
+          # and indistinguishable from a broken website. And a lead can be
+          # accepted and then thrown away in validation, whose only trace is
+          # `ipy_lead_inbox.status = 'failed'`.
+          # There are two doors and they are not the same. A hosted form —
+          # `/api/webhooks/forms/:publicKey`, which is what the website posts
+          # to — carries its own key in `ipy_webform`. The generic endpoint
+          # `/api/webhooks/leads/generic` is the other one, for a hand-rolled
+          # form, and it is deliberately refused while its key is the committed
+          # default, so that a published key cannot inject leads. The second
+          # being off is normal and is not the website being broken.
+          psql "$PROD_DATABASE_URL" -P pager=off -c \
+            "SELECT public_key, name, is_active, submission_count
+               FROM ipy_webform ORDER BY created_at;"
+          psql "$PROD_DATABASE_URL" -tAc \
+            "SELECT 'generic endpoint: ' ||
+                    CASE WHEN coalesce(config->>'key','') IN ('', 'ipropy-public-webform')
+                         THEN 'off (its key is unset or the committed default) — normal unless you hand-rolled a form'
+                         ELSE 'on' END
+               FROM ipy_integration WHERE provider = 'webform';"
+          psql "$PROD_DATABASE_URL" -tAc \
+            "SELECT 'lead inbox: ' || coalesce(string_agg(status || '=' || n, ', '), '(nothing has ever arrived)')
+               FROM (SELECT status, count(*)::text AS n FROM ipy_lead_inbox GROUP BY status) t;"
+          psql "$PROD_DATABASE_URL" -tAc \
+            "SELECT 'most recent arrival: ' || coalesce(to_char(max(received_at), 'YYYY-MM-DD HH24:MI'), 'never')
+               FROM ipy_lead_inbox;"
+          echo
+          echo "--- API keys, and whether anything is using them ---"
+          # Name and dates only: no prefix, no hash. Enough to decide whether a
+          # key can be revoked without stopping the automation that holds it,
+          # which is the question after one leaked into a public Actions log on
+          # 18 August 2026.
+          psql "$PROD_DATABASE_URL" -P pager=off -c \
+            "SELECT k.name,
+                    to_char(k.created_at, 'YYYY-MM-DD') AS created,
+                    coalesce(to_char(k.last_used_at, 'YYYY-MM-DD'), 'never') AS last_used,
+                    coalesce(to_char(k.revoked_at, 'YYYY-MM-DD'), 'LIVE') AS revoked,
+                    u.email
+               FROM ipy_api_key k LEFT JOIN ipy_user u ON u.id = k.user_id
+              ORDER BY k.created_at;"
+          echo
           echo "--- can a lead be found by its number ---"
           psql "$PROD_DATABASE_URL" -P pager=off -tAc "
             SELECT 'leads with a mobile: ' || count(*)
@@ -106,3 +238,34 @@ jobs:
                    WHERE position(regexp_replace(e.mobile, '\\D', '', 'g') in r.search_text) > 0)
               FROM ipy_record r JOIN ipy_e_leads e ON e.record_id = r.id
              WHERE NOT r.is_deleted AND e.mobile IS NOT NULL;"
+          echo
+          echo "--- can the team actually use the phone tomorrow ---"
+          # Every profile ships able to place and log calls. A profile edited
+          # since then that lost `telephony.call` is a whole group of reps
+          # getting 403 on the first call of the morning, and nothing else in
+          # the CRM would look wrong.
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT p.name,
+                   p.capabilities @> '[\"telephony.call\"]' AS can_call,
+                   p.capabilities @> '[\"telephony.listen_recordings\"]' AS can_listen,
+                   count(u.id) FILTER (WHERE u.is_active) AS active_users
+              FROM ipy_profile p LEFT JOIN ipy_user u ON u.profile_id = p.id
+             GROUP BY p.name, p.capabilities ORDER BY p.name;"
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT d.label, u.email, d.app_version,
+                   to_char(d.created_at, 'YYYY-MM-DD') AS paired,
+                   coalesce(to_char(d.last_sync_at, 'YYYY-MM-DD HH24:MI'), 'never') AS last_sync,
+                   d.last_sync_count, d.is_active
+              FROM ipy_device d LEFT JOIN ipy_user u ON u.id = d.user_id
+             ORDER BY d.created_at;"
+          # Where the calls came from. A device-synced call proves the loop
+          # the team is about to depend on has worked at least once; only
+          # 'manual' and 'api' rows mean it never has.
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT source, count(*), min(started_at)::date AS first, max(started_at)::date AS last
+              FROM ipy_call GROUP BY source ORDER BY 2 DESC;"
+          psql "$PROD_DATABASE_URL" -tAc "
+            SELECT 'calls logged: ' || count(*)
+              || ' | with an outcome: ' || count(*) FILTER (WHERE disposition IS NOT NULL)
+              || ' | in the last 7 days: ' || count(*) FILTER (WHERE started_at > now() - interval '7 days')
+              FROM ipy_call;"

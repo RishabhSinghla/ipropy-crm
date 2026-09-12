@@ -649,18 +649,44 @@ miscRouter.get('/workflows/:id', asyncHandler(async (req, res) => {
   res.json({ ...workflow, tasks: tasks.rows, recentRuns: logs.rows });
 }));
 
+/**
+ * The triggers the engine actually listens for.
+ *
+ * `trigger` was `z.string()`, so a workflow could be saved against a trigger
+ * nothing ever emits. It then sits in the list looking armed and never runs —
+ * no error, no run log, nothing to notice. Same reasoning as the task types
+ * below.
+ */
+const WORKFLOW_TRIGGERS = [
+  'on_create', 'on_modify', 'on_create_or_modify', 'on_field_change',
+  'on_delete', 'on_inbound_message', 'on_call_end', 'scheduled',
+] as const;
+
 const workflowSchema = z.object({
   module: z.string(),
   name: z.string().min(1),
   description: z.string().optional(),
-  trigger: z.string(),
+  trigger: z.enum(WORKFLOW_TRIGGERS, {
+    errorMap: () => ({ message: `Unknown trigger. One of: ${WORKFLOW_TRIGGERS.join(', ')}` }),
+  }),
   watchFields: z.array(z.string()).default([]),
   conditions: z.record(z.unknown()).default({ logic: 'AND', conditions: [] }),
   executionMode: z.enum(['always', 'once', 'once_until_false']).default('always'),
   schedule: z.record(z.unknown()).nullable().optional(),
   isActive: z.boolean().default(true),
   tasks: z.array(z.object({
-    type: z.string(),
+    /*
+      Checked against the handlers that exist, not accepted as any string.
+
+      `runTask` answers an unknown type with a log line and a return, so a
+      workflow built with a typo — `field_update` for `update_fields`, which is
+      the obvious guess — reported itself as working, ran green on every
+      matching record, and did nothing at all. The run log filled with
+      successes. Refused at the point somebody can still fix it.
+    */
+    type: z.string().refine((t) => TASK_TYPES.includes(t), {
+      message: `Unknown task type. One of: ${TASK_TYPES.join(', ')}`,
+    }),
     name: z.string(),
     delayMinutes: z.number().int().min(0).default(0),
     delayField: z.string().nullable().optional(),
@@ -1180,6 +1206,30 @@ miscRouter.post('/import/:module/dry-run', upload.single('file'), asyncHandler(a
   const importMode = String(req.body.importMode ?? 'create');
   const createOptions = String(req.body.createOptions ?? 'true') !== 'false';
   const module = await registry.requireModule(req.params.module);
+
+  /*
+    The same refusal the real import makes, made here first.
+
+    A dry run exists to say what the import will do, and this one could not see
+    the one thing that stops an import dead: a mapping naming a field that is
+    no longer on the module — a saved template used after somebody deleted or
+    renamed that field. The dry run happily reported every row as "created,
+    no problems" and the commit that followed answered 400. A preview that
+    promises success and a button that then refuses is worse than no preview.
+
+    Thrown rather than listed per row, exactly as the commit route throws it,
+    because it is not a problem with any row: it is a problem with the mapping,
+    and the answer is to re-map the column rather than to fix the file.
+  */
+  const unmapped = [...new Set(Object.values(mapping).filter(Boolean))]
+    .filter((name) => !module.fields.some((f) => f.name === name));
+  if (unmapped.length) {
+    throw new BadRequestError(
+      `${module.label} has no field named ${unmapped.map((u) => `“${u}”`).join(', ')} any more. `
+      + 'Re-check the column mapping — the field was probably deleted after this mapping was saved.',
+    );
+  }
+
   const { headers, rows, widths } = readImportFile(file.buffer, file.originalname);
 
   const dateColumns = module.fields

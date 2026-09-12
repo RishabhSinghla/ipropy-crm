@@ -64,6 +64,30 @@ export default async function setup(): Promise<void> {
   const { seed } = await import('../../src/db/seed/index.js');
   await seed();
 
+  /*
+    Optionally, reshape it the way production actually is.
+
+    A fresh seed gives leads and properties ~60 columns each, every field named
+    after its own column and not one in JSONB. Production has 15 and 16, several
+    renamed, the rest permanently deleted — and the whole 42703 family of
+    outages this project keeps rediscovering is invisible on the first shape and
+    obvious on the second. The suite has always run on the first.
+
+        MIRROR_PROD_SHAPE=1 npm run test:integration
+
+    It is opt-in because the two shapes answer different questions: the seeded
+    one asks whether the product works, this one asks whether it survives an
+    admin who has been using it for a year. Both are worth running.
+  */
+  if (process.env.MIRROR_PROD_SHAPE === '1') {
+    const { execFileSync } = await import('node:child_process');
+    const script = new URL('../../../../scripts/mirror-prod-shape.sh', import.meta.url).pathname;
+    execFileSync('bash', [script], {
+      stdio: 'inherit',
+      env: { ...process.env, POSTGRES_DB: TEST_DATABASE_NAME },
+    });
+  }
+
   // Release the provisioning process's own pool; each worker opens its own.
   const { closePool } = await import('../../src/db/pool.js');
   await closePool();

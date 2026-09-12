@@ -1,14 +1,25 @@
 # Point production at the automation server, and give both ends one secret.
 #
-# Run manually. The secret is generated here and printed once: production
-# stores it, and it is the only thing standing between the open webhooks
-# router and anything that can raise a notification, so it is never committed.
+# Run manually. The secret is **supplied** as a repository secret and is never
+# generated here and never printed. It used to be `openssl rand` followed by an
+# `echo`, and **this repository is public** — so the run on 18 August 2026
+# published the callback secret to the internet. That secret is the only thing
+# standing between the open webhooks router and anything that can raise a
+# notification in the CRM.
+#
+# Set it yourself, so you already have the value to put on the n8n machine:
+#
+#   openssl rand -hex 24                      # keep this, it is what n8n needs
+#   gh secret set N8N_CALLBACK_SECRET         # paste it, never committed
+#
+# then run this workflow. `probe-prod-schema.yml` had the rule right all along:
+# it prints counts and never a value, "because this log is public".
 name: Set n8n config
 on:
   workflow_dispatch:
     inputs:
       webhook_url:
-        description: "n8n webhook URL, or leave blank if n8n only polls"
+        description: "n8n webhook URL. Blank keeps whatever production already has."
         required: false
         default: ""
 
@@ -27,9 +38,14 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
           WEBHOOK_URL: ${{ inputs.webhook_url }}
+          SECRET: ${{ secrets.N8N_CALLBACK_SECRET }}
         run: |
           set -euo pipefail
-          SECRET="$(openssl rand -hex 24)"
+          if [ -z "${SECRET:-}" ]; then
+            echo "::error::No N8N_CALLBACK_SECRET is set. Generate one with 'openssl rand -hex 24',"
+            echo "::error::keep it for the n8n machine, and add it with 'gh secret set N8N_CALLBACK_SECRET'."
+            exit 1
+          fi
 
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<SQL
           INSERT INTO ipy_integration (provider, kind, label, is_active, status, config, credentials)
@@ -41,14 +57,21 @@ jobs:
           UPDATE ipy_integration
              SET is_active = true,
                  status = 'connected',
-                 config = COALESCE(config,'{}'::jsonb) || jsonb_build_object('webhookUrl', '${WEBHOOK_URL}'),
+                 -- Blank leaves the existing URL alone rather than erasing it.
+                 -- This workflow is now the way the callback secret is rotated,
+                 -- and a rotation must not quietly take the webhook URL with it.
+                 config = COALESCE(config,'{}'::jsonb)
+                          || CASE WHEN '${WEBHOOK_URL}' = ''
+                                  THEN '{}'::jsonb
+                                  ELSE jsonb_build_object('webhookUrl', '${WEBHOOK_URL}') END,
                  credentials = COALESCE(credentials,'{}'::jsonb) || jsonb_build_object('callbackSecret', '${SECRET}')
            WHERE provider = 'n8n';
           SQL
 
-          echo "::notice::n8n configured on production."
-          echo "Put this on the n8n machine as IPROPY_CALLBACK_SECRET:"
-          echo "$SECRET"
+          # Never echoed. You already have the value — you generated it and put
+          # it in the repository secret, and it goes on the n8n machine as
+          # IPROPY_CALLBACK_SECRET.
+          echo "::notice::n8n configured on production with the supplied callback secret."
 
       - name: Say what still needs doing
         run: |

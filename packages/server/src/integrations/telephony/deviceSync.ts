@@ -28,7 +28,7 @@ import { logger } from '../../utils/logger.js';
 import { BadRequestError, UnauthorizedError } from '../../utils/errors.js';
 import { notify } from '../../core/notifications/index.js';
 import { bus } from '../../core/events/bus.js';
-import { markContacted } from '../../core/entity/payloadColumns.js';
+import { columnsOf, fieldText, markContacted } from '../../core/entity/payloadColumns.js';
 
 /**
  * Android's CallLog.Calls type constants. Mapped here rather than in the app so
@@ -299,17 +299,34 @@ async function matchLead(number: string): Promise<{ recordId: string; module: st
   const tail = number.replace(/\D/g, '').slice(-10);
   if (tail.length < 10) return null;
 
+  /*
+    Once per uploaded call, and a phone hands over its whole log each sync.
+
+    Every one of these is a field an admin may retire — `whatsapp_number`
+    already went with migration 060 — so none is named outright: that raises
+    42703 and the companion then matches no caller to any contact at all.
+
+    But `to_jsonb(l)->>'mobile'` builds a JSON object out of every column of
+    every contact in the business, and this did it four times per row. Measured
+    on 60,000 contacts: 1,556 ms for one lookup, so a phone syncing fifty calls
+    would have spent over a minute and timed out. Reading the columns one at a
+    time keeps the same protection and the same answer. A field that has gone
+    resolves to `NULL::text` and simply never matches, which is what it should
+    do.
+  */
+  const present = await columnsOf('ipy_e_leads');
+  const tenDigits = (column: string): string =>
+    `right(regexp_replace(COALESCE(${fieldText(present, 'l', column)}, ''), '\\D', '', 'g'), 10)`;
+
   const row = await db.queryOne<{ record_id: string; module_name: string }>(
     `SELECT r.id AS record_id, r.module_name
      FROM ipy_e_leads l JOIN ipy_record r ON r.id = l.record_id
      WHERE r.is_deleted = false
-       -- Every one of these is a field an admin may retire, and
-       -- whatsapp_number already went with migration 060. Naming one raises
-       -- 42703, and the companion app then matches no caller to any contact.
-       AND (right(regexp_replace(COALESCE(to_jsonb(l)->>'mobile',''), '\\D','','g'), 10) = $1
-         OR right(regexp_replace(COALESCE(to_jsonb(l)->>'alternate_phone',''), '\\D','','g'), 10) = $1
-         OR right(regexp_replace(COALESCE(to_jsonb(l)->>'whatsapp_number',''), '\\D','','g'), 10) = $1)
-     ORDER BY CASE to_jsonb(l)->>'status' WHEN 'Converted' THEN 0 WHEN 'Negotiation' THEN 1 ELSE 2 END,
+       AND (${tenDigits('mobile')} = $1
+         OR ${tenDigits('alternate_phone')} = $1
+         OR ${tenDigits('whatsapp_number')} = $1)
+     ORDER BY CASE ${fieldText(present, 'l', 'status')}
+                WHEN 'Converted' THEN 0 WHEN 'Negotiation' THEN 1 ELSE 2 END,
               r.updated_at DESC
      LIMIT 1`,
     [tail],

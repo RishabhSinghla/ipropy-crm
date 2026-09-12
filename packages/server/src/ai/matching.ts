@@ -14,6 +14,7 @@ import { priceFieldFrom, priceSql, priceFromRow, type PriceField } from '../core
 import { SqlParams } from '../core/query/builder.js';
 import { db } from '../db/pool.js';
 import { completeJson, isAiAvailable, saveInsight, REAL_ESTATE_SYSTEM } from './client.js';
+import { columnsOf, fieldText, fieldJson } from '../core/entity/payloadColumns.js';
 
 /**
  * The property field an admin has mapped "how many bedrooms" to — Admin →
@@ -294,7 +295,11 @@ async function queryInventory(req: Requirement, config: MatchingConfig, limit: n
   const minP = params.add(minPrice);
   const projectP = params.add(req.projectName ?? null);
   const limitP = params.add(limit);
-  const bedroomFieldP = params.add(bedroomField);
+  // Not bound any more: the bedroom field is written straight into the SQL by
+  // `unit()`, which only ever emits a name it found in `information_schema`.
+  // Leaving the parameter here bound and unreferenced is CLAUDE.md rule 8 —
+  // Postgres refuses the whole statement with "could not determine data type
+  // of parameter" — and it did, on the first run after this change.
   const wantedBedroomsP = params.add(wantedBedrooms.length ? wantedBedrooms : [-1]);
   /*
     The bedroom field holds "3 BHK", not 3.
@@ -310,10 +315,33 @@ async function queryInventory(req: Requirement, config: MatchingConfig, limit: n
   const wantedLabelsP = params.add(wantedLabels.length ? wantedLabels : ['']);
   const locations = toList(req.locations);
   const locationP = params.add(locations.length ? locations : ['']);
-  // Bound, not interpolated — the column comes from metadata, and the same
-  // contract the bedroom and area fields already have keeps it that way.
-  const priceColumnP = params.add(price.column);
-  const priceExpr = priceSql(price, priceColumnP);
+  /*
+    Same change as the reverse direction, for the same reason: every one of
+    these is evaluated for every unit in the business, and `to_jsonb(p)` built
+    the whole row as JSON each time to read one field of it. The deleted-field
+    safety is unchanged — `unit()` answers NULL for a field that has gone.
+
+    The bedroom field is a name from the matching setup rather than a literal,
+    and it is emitted directly here instead of bound: `fieldText` only ever
+    writes a name it has just found in `information_schema`, so there is
+    nothing of a user's in it.
+  */
+  const propColumns = await columnsOf('ipy_e_properties');
+  const unit = (column: string): string => fieldText(propColumns, 'p', column);
+
+  /*
+    The price key is bound only when it is a JSONB key, because that is the
+    only case that still needs it — a real column is validated against
+    `information_schema` and written directly, while a key inside
+    `custom_fields` cannot be validated that way and so stays bound.
+
+    Binding it unconditionally would leave the parameter unreferenced on the
+    column path, and Postgres refuses a statement with a bound parameter it
+    never uses. That is CLAUDE.md rule 8, and it is what this change broke on
+    its first run.
+  */
+  const priceColumnP = price.storage === 'json' ? params.add(price.column) : '';
+  const priceExpr = priceSql(price, priceColumnP, 'p', propColumns);
   // The permission fragment for the candidate rows, or nothing when this
   // caller can see the whole table — a workflow or the scheduler has no user.
   const scopeSql = scope
@@ -337,10 +365,23 @@ async function queryInventory(req: Requirement, config: MatchingConfig, limit: n
      FROM ipy_e_properties p
      JOIN ipy_record r ON r.id = p.record_id
      WHERE r.is_deleted = false
-       AND to_jsonb(p)->>'status' = 'Available'
-       AND (${maxP}::numeric IS NULL OR ${priceExpr} <= ${maxP})
-       AND (${minP}::numeric IS NULL OR ${priceExpr} >= ${minP})
-       AND (${projectP}::text IS NULL OR to_jsonb(p)->>'project_name' ILIKE ${projectP})
+       AND ${unit('status')} = 'Available'
+       -- A unit with no price is unknown, not unaffordable.
+       --
+       -- NULL <= :max is NULL rather than true, so these two lines quietly
+       -- excluded every unpriced unit the moment a buyer stated a budget — 42
+       -- of production's 52. From a rep's seat that reads as having almost no
+       -- stock, and it contradicts scoreProperty, which skips the budget term
+       -- for exactly these units rather than dropping them. This is the same
+       -- NULL semantics core/settings/priceField.ts was written for, one
+       -- query along.
+       --
+       -- They rank below priced units in the ORDER BY, so a buyer still sees
+       -- what actually fits first, and scoreProperty says on each one that
+       -- there is no price on record.
+       AND (${maxP}::numeric IS NULL OR ${priceExpr} IS NULL OR ${priceExpr} <= ${maxP})
+       AND (${minP}::numeric IS NULL OR ${priceExpr} IS NULL OR ${priceExpr} >= ${minP})
+       AND (${projectP}::text IS NULL OR ${unit('project_name')} ILIKE ${projectP})
        ${scopeSql}
      -- Relevance before price, for the same reason the reverse match orders by
      -- it: this takes a bounded slice and scores it in memory, so the slice has
@@ -350,10 +391,13 @@ async function queryInventory(req: Requirement, config: MatchingConfig, limit: n
      -- sixty cheap 1 BHKs somewhere else. Price still breaks the tie, because
      -- among equally suitable units the cheaper one is the better pitch.
      ORDER BY (
-                ipy_try_numeric(to_jsonb(p)->>${bedroomFieldP}) = ANY(${wantedBedroomsP}::numeric[])
-                OR lower(btrim(to_jsonb(p)->>${bedroomFieldP})) = ANY(${wantedLabelsP}::text[])
+                ipy_try_numeric(${unit(bedroomField)}) = ANY(${wantedBedroomsP}::numeric[])
+                OR lower(btrim(${unit(bedroomField)})) = ANY(${wantedLabelsP}::text[])
               ) DESC NULLS LAST,
-              (to_jsonb(p)->>'locality' = ANY(${locationP}::text[])) DESC NULLS LAST,
+              (${unit('locality')} = ANY(${locationP}::text[])) DESC NULLS LAST,
+              -- Priced units first among equals: an unpriced one is a lead for
+              -- the rep to go and price, not the unit to pitch this morning.
+              (${priceExpr} IS NOT NULL) DESC,
               ${priceExpr} ASC NULLS LAST
      LIMIT ${limitP}`,
     params.all(),
@@ -378,6 +422,11 @@ function scoreProperty(row: PropertyRow, req: Requirement, config: MatchingConfi
   const grace = config.priceGracePercent / 100;
 
   // Budget fit — the dominant factor.
+  if (req.budget && !price) {
+    // Said plainly rather than left as a silent gap in the reasons: the unit is
+    // in the list on its other merits and nobody has priced it yet.
+    mismatches.push('No price on record — worth confirming before pitching it');
+  }
   if (req.budget && price) {
     const ratio = price / req.budget;
     if (ratio <= 1 - grace / 2) { score += 22; reasons.push(`${formatIndianPrice(price)} sits comfortably under the ${formatIndianPrice(req.budget)} budget`); }
@@ -700,6 +749,21 @@ function revivalReason(
 ): string | null {
   if (!lostReason) return null;
   const price = property.matched_price ?? property.total_price ?? property.base_price ?? 0;
+  /*
+    Null, not zero, for the budget band.
+
+    An unpriced unit fell back to 0 here, and the band below is
+    `budget ∈ [p/(1+g), p/(1−g)]` — which at p = 0 is `budget ∈ [0, 0]`, so the
+    only buyers who could match were those with no budget at all. The forward
+    direction now keeps unpriced units in the running and scores them on their
+    other merits, and this is the same statement from the other side: an
+    unknown price is not a price of nothing, and it cannot exclude anybody.
+
+    Without this the two directions disagree again, in the way
+    `definition-of-done.mjs` exists to catch — a unit that matched a buyer
+    going one way, and no buyers at all coming back.
+  */
+  const bandPrice = property.matched_price ?? property.total_price ?? property.base_price ?? null;
   const inBudget = Boolean(req.budget && price && price <= req.budget);
 
   switch (lostReason) {
@@ -812,16 +876,45 @@ export async function matchBuyersForProperty(
   const property = toPropertyRow(propertyRaw.row, propertyRaw.label, bedroomField, areaField, mappedPriceField);
 
   const price = property.matched_price ?? property.total_price ?? property.base_price ?? 0;
+  /*
+    Null, not zero, for the budget band.
+
+    An unpriced unit fell back to 0 here, and the band below is
+    `budget ∈ [p/(1+g), p/(1−g)]` — which at p = 0 is `budget ∈ [0, 0]`, so the
+    only buyers who could match were those with no budget at all. The forward
+    direction now keeps unpriced units in the running and scores them on their
+    other merits, and this is the same statement from the other side: an
+    unknown price is not a price of nothing, and it cannot exclude anybody.
+
+    Without this the two directions disagree again, in the way
+    `definition-of-done.mjs` exists to catch — a unit that matched a buyer
+    going one way, and no buyers at all coming back.
+  */
+  const bandPrice = property.matched_price ?? property.total_price ?? property.base_price ?? null;
 
   // One accumulator: the scope fragment appends its own params after these.
   const params = new SqlParams();
-  const priceP = params.add(price);
+  const priceP = params.add(bandPrice);
   const gracePP = params.add(config.priceGracePercent / 100);
   const configP = params.add(acceptableConfigurations(parsedBedrooms(property)));
   const localityP = params.add(property.locality ?? '');
   const scopeSql = scope
     ? await (async () => { const f = await recordScopeSql(scope, 'leads', params, false); return f ? `AND ${f}` : ''; })()
     : '';
+
+  /*
+    Still no payload column named outright — the deleted-field safety is intact
+    — but read one column at a time instead of serialising the whole row.
+
+    `to_jsonb(l)->>'status'` builds a JSON object out of all 73 columns of
+    every contact considered in order to read one of them, and this statement
+    reads six of them in its WHERE and two more in its ORDER BY, across every
+    contact in the business. Measured on 60,000: 777 ms this way, 26 ms the
+    other, for an identical answer.
+  */
+  const leadColumns = await columnsOf('ipy_e_leads');
+  const lead = (column: string): string => fieldText(leadColumns, 'l', column);
+  const leadJson = (column: string): string => fieldJson(leadColumns, 'l', column);
 
   const leads = await db.query<{ record_id: string; label: string; owner_id: string | null; row: Record<string, unknown> }>(
     // Lost leads are in scope now; Junk never is. A wrong number, a broker
@@ -835,16 +928,18 @@ export async function matchBuyersForProperty(
     // Same rule as the forward direction: no payload column is named. Every
     // one of budget, area, configuration, possession_timeline, purpose and
     // lost_reason is a field an admin may delete, and one deletion used to
-    // take the whole reverse match down with a 42703.
+    // take the whole reverse match down with a 42703. `lead()` keeps that
+    // guarantee — a deleted field reads as NULL — and costs one column instead
+    // of the row.
     `SELECT l.record_id, r.label, r.owner_id, to_jsonb(l) AS row
      FROM ipy_e_leads l JOIN ipy_record r ON r.id = l.record_id
      WHERE r.is_deleted = false
-       AND COALESCE((to_jsonb(l)->>'is_converted')::boolean, false) = false
-       AND COALESCE(to_jsonb(l)->>'status', '') <> 'Junk'
+       AND COALESCE((${lead('is_converted')})::boolean, false) = false
+       AND COALESCE(${lead('status')}, '') <> 'Junk'
        AND (
-         COALESCE(to_jsonb(l)->>'status', '') <> 'Lost'
-           AND (ipy_try_numeric(to_jsonb(l)->>'budget') IS NULL
-             OR to_jsonb(l)->>'budget_unit' NOT IN ('total') AND to_jsonb(l)->>'area' IS NOT NULL
+         COALESCE(${lead('status')}, '') <> 'Lost'
+           AND (ipy_try_numeric(${lead('budget')}) IS NULL
+             OR ${lead('budget_unit')} NOT IN ('total') AND ${lead('area')} IS NOT NULL
              -- The inverse of the forward band, not the same band again.
              --
              -- Forward asks "is this price within ±grace of the budget", i.e.
@@ -857,10 +952,11 @@ export async function matchBuyersForProperty(
              -- ₹2.6 Cr buyer never appeared against the ₹2.34 Cr flat that
              -- scored 90 for them in the other direction. The person with more
              -- money than the unit costs is the best buyer it has.
-             OR (ipy_try_numeric(to_jsonb(l)->>'budget') >= ${priceP} / (1 + ${gracePP}::numeric)
-                 AND ipy_try_numeric(to_jsonb(l)->>'budget')
+             OR ${priceP}::numeric IS NULL
+             OR (ipy_try_numeric(${lead('budget')}) >= ${priceP} / (1 + ${gracePP}::numeric)
+                 AND ipy_try_numeric(${lead('budget')})
                      <= ${priceP} / NULLIF(1 - ${gracePP}::numeric, 0)))
-         OR to_jsonb(l)->>'status' = 'Lost' AND to_jsonb(l)->>'lost_reason' IS NOT NULL
+         OR ${lead('status')} = 'Lost' AND ${lead('lost_reason')} IS NOT NULL
        )
        ${scopeSql}
      -- Ordered by how likely this lead is to match *this unit*, not by how
@@ -879,8 +975,8 @@ export async function matchBuyersForProperty(
      -- Nothing is excluded that was not excluded before — the scorer still
      -- decides, and still forgives a location miss or an adjacent BHK count.
      -- This only makes the four hundred rows fetched the right four hundred.
-     ORDER BY (COALESCE(to_jsonb(l)->'configuration', '[]'::jsonb) ?| ${configP}::text[]) DESC,
-              (COALESCE(to_jsonb(l)->'preferred_locations', '[]'::jsonb) ? ${localityP}) DESC,
+     ORDER BY (COALESCE(${leadJson('configuration')}, '[]'::jsonb) ?| ${configP}::text[]) DESC,
+              (COALESCE(${leadJson('preferred_locations')}, '[]'::jsonb) ? ${localityP}) DESC,
               r.updated_at DESC
      LIMIT 400`,
     params.all(),

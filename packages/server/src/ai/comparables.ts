@@ -21,6 +21,7 @@
 import { formatIndianPrice } from '@ipropy/shared';
 import { db } from '../db/pool.js';
 import { priceField, priceSql } from '../core/settings/priceField.js';
+import { columnsOf, fieldText } from '../core/entity/payloadColumns.js';
 
 /**
  * The fewest comparable units worth speaking about.
@@ -81,30 +82,38 @@ export async function comparablesFor(input: {
     at all rather than a wrong one.
   */
   const price = await priceField();
-  // $6, after the five the statement already binds.
-  const priceExpr = priceSql(price, '$6');
+  // One column at a time: this scans every unit in the business and read the
+  // whole row as JSON eight times over to do it.
+  const present = await columnsOf('ipy_e_properties');
+  const unit = (c: string): string => fieldText(present, 'p', c);
+  // $6, and only when the price is a JSONB key — a bound parameter the
+  // statement never names is refused outright (CLAUDE.md rule 8).
+  const priceParam = price.storage === 'json' ? '$6' : '';
+  const priceExpr = priceSql(price, priceParam, 'p', present);
 
   const rows = await db.query<Row>(
     `SELECT ${priceExpr} AS price,
-            to_jsonb(p)->>'status' AS status,
-            CASE WHEN to_jsonb(p)->>'status' IN ('Sold','Registered','Agreement Done','Booked')
+            ${unit('status')} AS status,
+            CASE WHEN ${unit('status')} IN ('Sold','Registered','Agreement Done','Booked')
                  THEN EXTRACT(DAY FROM (r.updated_at - r.created_at))::int
                  ELSE NULL END AS days_listed
      FROM ipy_e_properties p
      JOIN ipy_record r ON r.id = p.record_id
      WHERE r.is_deleted = false
-       AND to_jsonb(p)->>'locality' = $1
-       AND ipy_try_numeric(to_jsonb(p)->>'bedrooms') = $2
+       AND ${unit('locality')} = $1
+       AND ipy_try_numeric(${unit('bedrooms')}) = $2
        AND ${priceExpr} > 0
        AND r.created_at > now() - ($3 || ' days')::interval
        AND ($4::uuid IS NULL OR p.record_id <> $4)
        -- Same size bracket, or no size recorded either side. A 700 sq ft and a
        -- 1,600 sq ft 3-bedroom unit are not the same product and averaging
        -- them produces a number describing neither.
-       AND ($5::numeric IS NULL OR ipy_try_numeric(to_jsonb(p)->>'area') IS NULL
-            OR ipy_try_numeric(to_jsonb(p)->>'area')
+       AND ($5::numeric IS NULL OR ipy_try_numeric(${unit('area')}) IS NULL
+            OR ipy_try_numeric(${unit('area')})
                  BETWEEN $5 * ${1 - AREA_TOLERANCE} AND $5 * ${1 + AREA_TOLERANCE})`,
-    [input.locality, input.bedrooms, String(MAX_AGE_DAYS), input.excludeRecordId ?? null, input.area, price.column],
+    price.storage === 'json'
+      ? [input.locality, input.bedrooms, String(MAX_AGE_DAYS), input.excludeRecordId ?? null, input.area, price.column]
+      : [input.locality, input.bedrooms, String(MAX_AGE_DAYS), input.excludeRecordId ?? null, input.area],
   );
 
   if (rows.rows.length < MIN_COMPARABLES) return null;

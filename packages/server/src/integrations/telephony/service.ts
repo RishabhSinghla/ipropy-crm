@@ -502,10 +502,21 @@ export async function logManualCall(input: {
   // statement with "inconsistent types deduced for parameter $7" — every manual call log
   // returned a 500. make_interval takes the integer directly.
   const row = await db.queryOne<{ id: string }>(
+    /*
+      `disposition_at` is stamped here too, not only by the disposition button.
+
+      Without a telephony provider the call dialog logs the call and its
+      outcome in one request, which is how every call the team makes is
+      recorded — so the column that says "when was the outcome decided" was
+      null on all of them, and anything grouping by it saw no outcomes at all.
+      It is the moment of the log, because that is when the rep answered.
+    */
     `INSERT INTO ipy_call
       (direction, from_number, to_number, user_id, record_id, record_module,
-       status, duration_seconds, provider, source, disposition, notes, started_at, ended_at)
-     VALUES ($1,$2,$3,$4,$5,$6,'completed',$7::int,'manual','manual',$8,$9,
+       status, duration_seconds, provider, source, disposition, disposition_at,
+       notes, started_at, ended_at)
+     VALUES ($1,$2,$3,$4,$5,$6,'completed',$7::int,'manual','manual',$8,
+             CASE WHEN $8::text IS NULL THEN NULL ELSE now() END, $9,
              now() - make_interval(secs => $7::int), now())
      RETURNING id`,
     [

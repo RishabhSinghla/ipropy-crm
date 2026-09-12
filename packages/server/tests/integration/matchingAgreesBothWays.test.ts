@@ -131,11 +131,18 @@ describe('forward and reverse matching', () => {
         'a buyer who can comfortably afford the unit must appear against it in reverse').toBe(true);
     } finally {
       await db.query(`UPDATE ipy_e_leads SET budget = $2 WHERE record_id = $1`, [lead.record_id, lead.budget]);
+      // Bound to exactly what each statement names. The `base_price`-only
+      // branch used to leave `$2` bound and unreferenced, which Postgres
+      // refuses outright — so any real failure in the block above came back as
+      // "could not determine data type of parameter $2" from the cleanup,
+      // pointing at the wrong line and hiding what actually broke.
       await db.query(
         hasTotal
           ? `UPDATE ipy_e_properties SET total_price = $2, base_price = $3 WHERE record_id = $1`
-          : `UPDATE ipy_e_properties SET base_price = $3 WHERE record_id = $1`,
-        [targetId, property?.total_price ?? null, property?.base_price ?? null],
+          : `UPDATE ipy_e_properties SET base_price = $2 WHERE record_id = $1`,
+        hasTotal
+          ? [targetId, property?.total_price ?? null, property?.base_price ?? null]
+          : [targetId, property?.base_price ?? null],
       );
     }
   });

@@ -37,21 +37,25 @@ FROM generate_series(1, 60000) g
 CROSS JOIN LATERAL (SELECT id FROM ipy_module WHERE name = 'leads') m
 CROSS JOIN LATERAL (SELECT id FROM ipy_user ORDER BY md5(g::text || id::text) LIMIT 1) u;
 
-INSERT INTO ipy_e_leads (record_id, full_name, country_code, mobile, email, status, lifecycle_stage,
-                         budget_min, budget_max, configuration, preferred_locations, ai_score,
+-- `country_code`, `lifecycle_stage`, `budget_min`, `budget_max` and `ai_score`
+-- were all named here and none of them is on the model any more, so this
+-- script had stopped loading anything at all — it errored after inserting
+-- 60,000 `ipy_record` rows and left the database half built. Which means the
+-- performance figures in CLAUDE.md could not be reproduced by anybody who
+-- tried. One budget field now, as the model has.
+INSERT INTO ipy_e_leads (record_id, full_name, mobile, email, status,
+                         budget, budget_unit, configuration, preferred_locations,
                          next_followup_at, is_converted, lost_reason, custom_fields)
 SELECT
   r.id,
-  r.label, '+91',
+  r.label,
   '9' || lpad(((row_number() OVER ()) % 900000000)::text, 9, '0'),
   lower(replace(r.label, ' ', '.')) || (row_number() OVER ()) || '@example.com',
   (ARRAY['New','Attempted Contact','Contacted','Qualified','Site Visit Scheduled','Site Visit Done','Negotiation','Converted','Junk','Lost'])[1 + (abs(hashtext(r.id::text)) % 10)],
-  (ARRAY['Lead','Prospect','Customer'])[1 + (abs(hashtext(r.id::text)) % 3)],
-  (5 + (abs(hashtext(r.id::text)) % 30)) * 1000000,
   (15 + (abs(hashtext(r.id::text)) % 40)) * 1000000,
+  'total',
   to_jsonb(ARRAY[(ARRAY['1 BHK','2 BHK','3 BHK','4 BHK'])[1 + (abs(hashtext(r.id::text)) % 4)]]),
   to_jsonb(ARRAY[(ARRAY['Powai','Kharadi','Sarjapur Road','Andheri West','Baner'])[1 + (abs(hashtext(r.id::text)) % 5)]]),
-  abs(hashtext(r.id::text)) % 100,
   CURRENT_DATE + ((abs(hashtext(r.id::text)) % 60) - 30),
   false,
   CASE WHEN (abs(hashtext(r.id::text)) % 10) = 9
@@ -76,16 +80,24 @@ FROM generate_series(1, 8000) g
 CROSS JOIN LATERAL (SELECT id FROM ipy_module WHERE name = 'properties') m
 CROSS JOIN LATERAL (SELECT id FROM ipy_user ORDER BY md5(g::text || id::text) LIMIT 1) u;
 
-INSERT INTO ipy_e_properties (record_id, name, status, configuration, base_price, total_price,
-                              carpet_area, city, locality, possession_status, floor, facing,
+-- `name`, `configuration` and `carpet_area` have gone the same way: the unit's
+-- name is `full_name`, its BHK is `bedrooms`, and its size is `area` with an
+-- `area_unit` beside it.
+INSERT INTO ipy_e_properties (record_id, full_name, status, bedrooms, base_price, total_price,
+                              area, area_unit, city, locality, possession_status, floor, facing,
                               vastu_compliant, corner_unit, custom_fields)
 SELECT
   r.id, r.label,
   (ARRAY['Available','Available','Available','Held','Booked','Sold'])[1 + (abs(hashtext(r.id::text)) % 6)],
-  (ARRAY['1 BHK','2 BHK','3 BHK','4 BHK'])[1 + (abs(hashtext(r.id::text)) % 4)],
+  -- A number here, not '3 BHK': on a seeded database `bedrooms` is an integer
+  -- column, while production's `bedrooms` is a picklist of labels backed by
+  -- `configuration`. The matcher reads both; this file has to match whichever
+  -- database it is pointed at, and it is only ever pointed at a fresh one.
+  1 + (abs(hashtext(r.id::text)) % 4),
   (40 + (abs(hashtext(r.id::text)) % 300)) * 100000,
   (42 + (abs(hashtext(r.id::text)) % 300)) * 100000,
   400 + (abs(hashtext(r.id::text)) % 1600),
+  'sqft',
   (ARRAY['Mumbai','Pune','Bengaluru'])[1 + (abs(hashtext(r.id::text)) % 3)],
   (ARRAY['Powai','Kharadi','Sarjapur Road','Andheri West','Baner'])[1 + (abs(hashtext(r.id::text)) % 5)],
   (ARRAY['Ready To Move','Under Construction','New Launch'])[1 + (abs(hashtext(r.id::text)) % 3)],
