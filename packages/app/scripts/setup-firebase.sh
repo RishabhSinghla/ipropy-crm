@@ -38,8 +38,21 @@ $FB login:list 2>/dev/null | grep '@' | head -1
 # Create the project, or carry on with it if it is already there. Firebase
 # project ids are global, so the first choice may be taken by a stranger —
 # `FIREBASE_PROJECT=something-else bash …` picks another.
+# Same lesson as the app id below: ask for JSON, never read the drawn table.
+project_exists() {
+  $FB projects:list --json 2>/dev/null | python3 -c '
+import json, sys
+try:
+    payload = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+projects = payload.get("result", payload) if isinstance(payload, dict) else payload
+sys.exit(0 if any(p.get("projectId") == sys.argv[1] for p in projects or []) else 1)
+' "$PROJECT_ID"
+}
+
 say "→ project '$PROJECT_ID'…"
-if $FB projects:list 2>/dev/null | grep -q "\b$PROJECT_ID\b"; then
+if project_exists; then
   echo "   already exists, using it"
 else
   $FB projects:create "$PROJECT_ID" --display-name "iPropy CRM" \
@@ -50,20 +63,59 @@ fi
 # android/app/build.gradle exactly, or Firebase hands out a config the app
 # refuses and notifications fail with nothing logged.
 PACKAGE="com.ipropy.crm"
+
+# Read the app id out of --json, never out of the printed table.
+#
+# The table is drawn with box characters and does not include the package name
+# at all, so the obvious `apps:list | grep <package> | awk '{print $4}'` matches
+# nothing, the pipeline fails, and `set -e` ends the run one step from the
+# finish with no explanation. That is exactly what happened the first time this
+# was used.
+app_id_for_package() {
+  $FB apps:list ANDROID --project "$PROJECT_ID" --json 2>/dev/null | python3 -c '
+import json, sys
+try:
+    payload = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+apps = payload.get("result", payload) if isinstance(payload, dict) else payload
+for app in apps or []:
+    if app.get("packageName") == sys.argv[1]:
+        print(app.get("appId", ""))
+        break
+' "$PACKAGE"
+}
+
 say "→ registering the Android app ($PACKAGE)…"
-if $FB apps:list ANDROID --project "$PROJECT_ID" 2>/dev/null | grep -q "$PACKAGE"; then
+APP_ID="$(app_id_for_package)"
+if [ -n "$APP_ID" ]; then
   echo "   already registered"
 else
   $FB apps:create ANDROID "iPropy" --package-name "$PACKAGE" --project "$PROJECT_ID"
+  APP_ID="$(app_id_for_package)"
 fi
-
-APP_ID="$($FB apps:list ANDROID --project "$PROJECT_ID" 2>/dev/null | grep "$PACKAGE" | awk '{print $4}' | head -1)"
 [ -n "$APP_ID" ] || { echo "Registered the app but could not read its id back." >&2; exit 1; }
+echo "   $APP_ID"
 
 say "→ writing google-services.json…"
-$FB apps:sdkconfig ANDROID "$APP_ID" --project "$PROJECT_ID" --out "$ANDROID_APP/google-services.json"
-[ -s "$ANDROID_APP/google-services.json" ] || { echo "The config file came back empty." >&2; exit 1; }
-echo "   $ANDROID_APP/google-services.json"
+CONFIG="$ANDROID_APP/google-services.json"
+
+# `--out` refuses to overwrite, so an already-configured checkout would end the
+# run here with an error that reads like a fault rather than "nothing to do".
+# Written to a temporary file and moved into place, and only when it differs.
+TMP_CONFIG="$(mktemp -t google-services)"
+trap 'rm -f "$TMP_CONFIG"' EXIT
+rm -f "$TMP_CONFIG"
+$FB apps:sdkconfig ANDROID "$APP_ID" --project "$PROJECT_ID" --out "$TMP_CONFIG" >/dev/null
+[ -s "$TMP_CONFIG" ] || { echo "The config file came back empty." >&2; exit 1; }
+
+if [ -f "$CONFIG" ] && cmp -s "$TMP_CONFIG" "$CONFIG"; then
+  echo "   already up to date"
+else
+  mv "$TMP_CONFIG" "$CONFIG"
+  echo "   written"
+fi
+echo "   $CONFIG"
 
 cat <<MSG
 
