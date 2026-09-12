@@ -29,7 +29,9 @@ import { Spinner } from '../components/ui';
   AI assistant into this chunk — the whole reason the web shell is lazy.
 */
 import { resolveIcon } from '../lib/icons';
-import { Camera, CircleUser } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Bell, Camera, CircleUser } from 'lucide-react';
+import { api } from '../lib/api';
 import { cn } from '../lib/utils';
 import { tap } from '../lib/nativeActions';
 import { useBottomBarHeight } from './useBottomBarHeight';
@@ -37,6 +39,7 @@ import { useBottomBarHeight } from './useBottomBarHeight';
 import MobileList from './List';
 import MobileRecord from './Record';
 import MobileCompose from './Compose';
+import MobileAlerts from './Alerts';
 import MobileYou from './You';
 
 // At a desk in spirit, so they load only if somebody asks for them.
@@ -63,6 +66,7 @@ export default function MobileShell(): JSX.Element {
           <Routes>
             <Route index element={<Navigate to={`/${home}`} replace />} />
             <Route path="/settings" element={<MobileYou />} />
+            <Route path="/alerts" element={<MobileAlerts />} />
             <Route path="/capture" element={<SiteCapture />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/dashboard/:id" element={<Dashboard />} />
@@ -80,6 +84,32 @@ export default function MobileShell(): JSX.Element {
 
       <TabBar />
     </div>
+  );
+}
+
+/**
+ * The bell, with the number on it.
+ *
+ * The count is what makes the tab worth having — a rep glances at the bar and
+ * knows whether to open it. Same query key as the Alerts screen, so opening one
+ * alert updates the badge without a second request.
+ */
+function BellWithCount(): JSX.Element {
+  const { data } = useQuery({
+    queryKey: ['notifications'],
+    queryFn: () => api.notifications(),
+    refetchInterval: 40_000,
+  });
+  const unread = data?.unreadCount ?? 0;
+  return (
+    <span className="relative">
+      <Bell className="h-6 w-6" />
+      {unread > 0 && (
+        <span className="absolute -right-2 -top-1 min-w-[18px] rounded-full bg-rose-600 px-1 text-center text-[10px] font-bold leading-[18px] text-white">
+          {unread > 99 ? '99+' : unread}
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -126,6 +156,7 @@ function TabBar(): JSX.Element | null {
       label: m.label,
       icon: <ModuleTabIcon name={m.icon} />,
     })),
+    { to: '/alerts', label: 'Alerts', icon: <BellWithCount /> },
     { to: '/capture', label: 'Site visit', icon: <Camera className="h-6 w-6" /> },
     { to: '/settings', label: 'You', icon: <CircleUser className="h-6 w-6" /> },
   ];

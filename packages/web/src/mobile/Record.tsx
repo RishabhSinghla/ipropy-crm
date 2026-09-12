@@ -15,16 +15,18 @@
  * detail layout, so an admin adding a field sees it on the phone with no
  * release. Nothing about leads or properties is written into this file.
  */
-import { type JSX, useMemo, useState } from 'react';
+import { type JSX, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import type { FieldMeta, LayoutConfig, RecordEnvelope } from '@ipropy/shared';
 import { relativeTime, toInternational } from '@ipropy/shared';
-import { MessageCircle, MoreVertical, Phone, StickyNote, Trash2 } from 'lucide-react';
-import { api, ApiError } from '../lib/api';
+import { FileText, ImagePlus, MessageCircle, MoreVertical, Phone, Share2, StickyNote, Trash2 } from 'lucide-react';
+import { api, ApiError, authedFileUrl } from '../lib/api';
 import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
-import { dial, openExternal, tap } from '../lib/nativeActions';
+import { dial, downloadFromUrl, openExternal, tap } from '../lib/nativeActions';
+import { apiBase, isNative } from '../lib/native';
+import { canShareRecords } from '../lib/sharing';
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { FieldInput, FieldValue } from '../components/FieldRenderer';
 import { ConfirmDialog, Spinner } from '../components/ui';
@@ -81,6 +83,36 @@ export default function MobileRecord(): JSX.Element {
       toast.success('Note added');
     },
     onError: (err: Error) => toast.error('Note not added', err.message),
+  });
+
+  /*
+    Sending a unit to a buyer, in one tap.
+
+    The web asks for a label and an expiry first, which is right at a desk where
+    somebody is sending five links and wants to tell them apart later. Standing
+    in front of a buyer it is four decisions between wanting to send something
+    and having sent it. So this mints a link and goes straight to the phone's
+    share sheet — WhatsApp, SMS, email, whatever they use. The link is listed on
+    the record afterwards and can be revoked from the web like any other.
+  */
+  const share = useMutation({
+    mutationFn: async () => {
+      const link = await api.createShareLink(module, id, {});
+      const url = `${apiBase() || window.location.origin}/s/${link.token}`;
+      const { Share } = await import('@capacitor/share');
+      await Share.share({
+        title: record?.label ?? 'Property',
+        text: `Property details from iPropy\n${url}`,
+        dialogTitle: 'Send to',
+      });
+      return url;
+    },
+    onError: (err: Error) => {
+      // Cancelling the share sheet rejects. That is a decision, not a fault,
+      // and shouting about it is how an app feels broken.
+      if (/cancel/i.test(err.message)) return;
+      toast.error('Could not send it', err.message);
+    },
   });
 
   const remove = useMutation({
@@ -180,6 +212,13 @@ export default function MobileRecord(): JSX.Element {
             />
           )}
           <Action icon={<StickyNote className="h-5 w-5" />} label="Note" onClick={() => setNoteOpen(true)} />
+          {canShareRecords(module, meta?.settings) && (
+            <Action
+              icon={share.isPending ? <Spinner className="h-5 w-5" /> : <Share2 className="h-5 w-5" />}
+              label="Send"
+              onClick={() => { if (!share.isPending) share.mutate(); }}
+            />
+          )}
         </div>
 
         {blocks.map((block) => (
@@ -205,6 +244,8 @@ export default function MobileRecord(): JSX.Element {
             ))}
           </Group>
         ))}
+
+        <Attachments recordId={record.id} moduleName={module} canEdit={canEdit} />
 
         {(timeline?.length ?? 0) > 0 && (
           <Group title="Activity">
@@ -277,6 +318,116 @@ export default function MobileRecord(): JSX.Element {
         onClose={() => setConfirmDelete(false)}
       />
     </div>
+  );
+}
+
+/**
+ * Photos and documents on the record.
+ *
+ * A strip rather than a list, because on a property these are almost always
+ * photographs and a name like `IMG_4821.HEIC` tells nobody anything. The add
+ * tile opens the phone's own picker, which offers the camera and the gallery
+ * in one sheet — the OS does that for a plain file input, and doing it any
+ * other way risks the EXIF the capture pipeline files photos by.
+ */
+function Attachments({
+  recordId, moduleName, canEdit,
+}: { recordId: string; moduleName: string; canEdit: boolean }): JSX.Element | null {
+  const queryClient = useQueryClient();
+  const input = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState<{ done: number; total: number } | null>(null);
+
+  const { data } = useQuery({
+    queryKey: ['files', recordId],
+    queryFn: () => api.files(recordId),
+  });
+
+  const files = ((data ?? []) as unknown as {
+    id: string; file_name: string; mime_type: string;
+  }[]);
+
+  async function add(list: FileList | null): Promise<void> {
+    if (!list?.length) return;
+    const chosen = Array.from(list);
+    setBusy({ done: 0, total: chosen.length });
+    for (const file of chosen) {
+      try { await api.uploadFile(file, recordId, moduleName); }
+      catch (err) { toast.error(`Could not add ${file.name}`, (err as Error).message); }
+      finally { setBusy((b) => (b ? { ...b, done: b.done + 1 } : b)); }
+    }
+    setBusy(null);
+    await queryClient.invalidateQueries({ queryKey: ['files', recordId] });
+    void tap();
+  }
+
+  if (!canEdit && !files.length) return null;
+
+  return (
+    <Group title="Photos and files">
+      <div className="flex gap-2 overflow-x-auto p-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {canEdit && (
+          <button
+            type="button"
+            onClick={() => input.current?.click()}
+            disabled={Boolean(busy)}
+            className="flex h-20 w-20 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-[var(--border)] text-muted active:bg-slate-500/10 disabled:opacity-60"
+          >
+            {busy
+              ? <span className="text-[12px] font-medium">{busy.done}/{busy.total}</span>
+              : <><ImagePlus className="h-5 w-5" /><span className="text-[11px]">Add</span></>}
+          </button>
+        )}
+
+        {files.map((file) => (
+          <a
+            key={file.id}
+            href={authedFileUrl(`/api/files/${file.id}`)}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(e) => {
+              // A webview has nowhere to open a tab. Hand the bytes to the
+              // share sheet, which is where a phone user expects to choose
+              // what opens them.
+              if (isNative) {
+                e.preventDefault();
+                void downloadFromUrl(authedFileUrl(`/api/files/${file.id}`), file.file_name).catch(() => undefined);
+              }
+            }}
+            className="h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-muted)]"
+          >
+            {file.mime_type?.startsWith('image/') ? (
+              <img
+                src={authedFileUrl(`/api/files/${file.id}`, { variant: 'thumb' })}
+                alt={file.file_name}
+                loading="lazy"
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <span className="flex h-full w-full flex-col items-center justify-center gap-1 p-1 text-center text-muted">
+                <FileText className="h-5 w-5" />
+                <span className="line-clamp-2 text-[10px] leading-tight">{file.file_name}</span>
+              </span>
+            )}
+          </a>
+        ))}
+
+        {!canEdit && !files.length && (
+          <p className="px-1 py-6 text-[15px] text-muted">Nothing attached yet.</p>
+        )}
+      </div>
+
+      <input
+        ref={input}
+        type="file"
+        // No `capture` attribute on purpose: without it the OS offers the
+        // camera *and* the gallery, which is what somebody standing at a gate
+        // and somebody at a desk each need.
+        accept="image/*,video/*,application/pdf"
+        multiple
+        className="hidden"
+        onChange={(e) => { void add(e.target.files); e.target.value = ''; }}
+      />
+    </Group>
   );
 }
 

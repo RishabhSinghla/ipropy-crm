@@ -30,6 +30,7 @@ import { PeekLink } from '../components/PeekLink';
 import { CallButton, CallDispositionProvider } from '../components/CallDisposition';
 import { isNative } from '../lib/native';
 import { downloadFromUrl } from '../lib/nativeActions';
+import { canShareRecords } from '../lib/sharing';
 
 export default function RecordDetail(): JSX.Element {
   const { module: moduleName, id } = useParams<{ module: string; id: string }>();
@@ -417,7 +418,13 @@ export default function RecordDetail(): JSX.Element {
                     >
                       {summarising ? 'Summarising…' : 'Summarise with AI'}
                     </DropdownItem>
-                    {moduleName === 'properties' && (
+                    {/*
+                      One rule, in lib/sharing.ts, so the app and this page
+                      cannot drift. `settings` is not on this page's local
+                      Module type; the cast asks the same question of whatever
+                      the metadata actually carries.
+                    */}
+                    {canShareRecords(moduleName, (module as { settings?: Record<string, unknown> } | undefined)?.settings) && (
                       <DropdownItem
                         icon={<Link2 className="h-3.5 w-3.5" />}
                         onClick={() => { setSharing(true); close(); }}
