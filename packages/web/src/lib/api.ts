@@ -414,6 +414,15 @@ export interface AiAssistantMessage {
   action?: AiAssistantAction;
   choices?: AiAssistantChoice[];
   results?: ListResult;
+  /*
+    What it looked up before answering.
+
+    Shown under the reply on purpose. An assistant that says "14 follow-ups are
+    overdue" is asking to be trusted; one that also shows it counted them is
+    showing its working — and a wrong answer becomes a wrong *step* somebody
+    can point at rather than a reason to stop believing the whole thing.
+  */
+  steps?: { tool: string; label: string }[];
 }
 
 export interface AiThreadSummary {
@@ -1036,7 +1045,7 @@ export const api = {
   callHistory: (id: string) => get<Record<string, unknown>[]>(`/api/telephony/calls/${id}/history`),
 
   // --- AI -----------------------------------------------------------------
-  aiStatus: () => get<{ available: boolean; message: string }>('/api/ai/status'),
+  aiStatus: () => get<{ available: boolean; message: string; speechToText?: boolean }>('/api/ai/status'),
   matchingFields: () => get<{ contactField: string; propertyField: string; contactLabel: string; propertyLabel: string }[]>('/api/ai/matching-fields'),
   scoreLead: (id: string) => post<Record<string, unknown>>(`/api/ai/score-lead/${id}`),
   analyseDeal: (id: string) => post<Record<string, unknown>>(`/api/ai/analyse-deal/${id}`),

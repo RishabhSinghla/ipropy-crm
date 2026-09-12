@@ -17,6 +17,7 @@ import { runWidget } from '../core/analytics/widgets.js';
 import { canAccessRecord, getFieldPermissions } from '../core/permissions/index.js';
 import { NotFoundError } from '../utils/errors.js';
 import { complete, completeJson, isAiAvailable, REAL_ESTATE_SYSTEM } from './client.js';
+import { runAgent, type AgentStep } from './agent.js';
 import {
   planAssistantAction,
   type AssistantActionProposal,
@@ -189,6 +190,15 @@ export interface AskResult {
   chart?: unknown;
   action?: AssistantActionProposal;
   choices?: AssistantRecordChoice[];
+  /*
+    What it looked up on the way to the answer.
+
+    Shown in the UI on purpose. An assistant that says "you have 14 overdue
+    follow-ups" is asking to be trusted; one that also says it counted them is
+    showing its working, and a wrong answer becomes a wrong *step* somebody can
+    point at instead of a reason to stop using it.
+  */
+  steps?: AgentStep[];
 }
 
 
@@ -310,6 +320,27 @@ export async function ask(
       assistantContext,
     );
   }
+
+  /*
+    Look things up first, then answer.
+
+    Everything below this was a single shot: one filter, one query, one
+    paragraph — and questions like "which leads should I call today" or "which
+    properties have the most buyer interest" need several looks and a
+    comparison, so they fell through to the digest branch and got a vague
+    answer built from numbers nobody asked for.
+
+    The agent runs up to five read-only tool calls with this user's own scope
+    and answers from what it found. It returns null when the model gives
+    nothing usable, and the original paths below still run — a weak free model
+    having a bad turn should degrade to the old behaviour, not to an empty
+    reply.
+  */
+  const agent = await runAgent(question, ctx, assistantContext).catch((err) => {
+    logger.warn({ err }, 'ask agent failed; falling back to single-shot');
+    return null;
+  });
+  if (agent) return { answer: agent.answer, steps: agent.steps };
 
   const query = await parseNaturalQuery(question, ctx, undefined, opts.conversationContext);
   if (!query) {
