@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FieldMeta, type FilterGroup, formatIndianPrice, formatPhoneWithCode, toInternational, type ListQuery, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Columns3, Compass, Download, Filter,
-  LayoutGrid, List, MapPin, MessageCircle, Pencil, Phone, Plus, RefreshCw, Ruler, Save, Search, Settings2, Star, Trash2, Upload, Users, X,
+  LayoutGrid, List, MessageCircle, Pencil, Phone, Plus, RefreshCw, Ruler, Save, Search, Settings2, Star, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { ApiError, api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
@@ -557,63 +557,6 @@ export default function ListView(): JSX.Element {
               )}
             </Dropdown>
 
-            {canCreate && (
-              // Same reason as `list-search` above: the label is the admin's
-              // word for the record, so "New Lead" became "New Contact".
-              // Properties gets a split button — the second action is the
-              // gate-side capture screen, so it lives where "add a property"
-              // already lives rather than as a separate tab competing with it.
-              moduleName === 'properties' ? (
-                <div className="inline-flex" data-testid="list-create">
-                  <button
-                    onClick={() => setShowQuickCreate(true)}
-                    className="btn-primary btn-sm rounded-r-none focus:z-10"
-                    title={`New ${meta.singularLabel}`}
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    New {meta.singularLabel}
-                  </button>
-                  <Dropdown
-                    align="right"
-                    trigger={(
-                      <button
-                        className="btn-primary btn-sm rounded-l-none border-l border-l-white/30 px-2 focus:z-10"
-                        aria-label={`More ways to add a ${meta.singularLabel.toLowerCase()}`}
-                        title="More ways to add"
-                      >
-                        <ChevronDown className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  >
-                    {(close) => (
-                      <>
-                        <Link
-                          to={`/${moduleName}/new`}
-                          onClick={close}
-                          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                          Full page form
-                        </Link>
-                        <Link
-                          to="/capture"
-                          onClick={close}
-                          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
-                        >
-                          <MapPin className="h-3.5 w-3.5" />
-                          Capture on site
-                        </Link>
-                      </>
-                    )}
-                  </Dropdown>
-                </div>
-              ) : (
-                <button data-testid="list-create" onClick={() => setShowQuickCreate(true)} className="btn-primary btn-sm">
-                  <Plus className="h-3.5 w-3.5" />
-                  New {meta.singularLabel}
-                </button>
-              )
-            )}
           </div>
         </div>
 

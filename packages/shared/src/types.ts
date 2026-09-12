@@ -206,8 +206,11 @@ export interface WidgetConfig {
   comparePrevious?: boolean;
   target?: number;
   format?: 'number' | 'currency' | 'percent' | 'area';
+  /** Per-widget visual controls, kept with the data query so a copied dashboard keeps its look. */
   color?: string;
   colorScheme?: string[];
+  fontScale?: 'compact' | 'comfortable' | 'large';
+  lineWidth?: number;
   /** funnel: ordered stage values */
   stages?: string[];
   /** ai_insights: what to analyse */

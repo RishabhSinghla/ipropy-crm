@@ -23,6 +23,15 @@ import { PeekLink } from '../components/PeekLink';
 
 const PALETTE = ['#6366f1', '#22c55e', '#f59e0b', '#ec4899', '#0ea5e9', '#a855f7', '#14b8a6', '#f97316', '#64748b', '#ef4444'];
 
+function accent(widget: DashboardWidget): string {
+  return (widget.config.color as string | undefined) ?? '#6366f1';
+}
+
+function palette(widget: DashboardWidget, index: number): string {
+  const scheme = widget.config.colorScheme;
+  return scheme?.[index % scheme.length] ?? (index === 0 ? accent(widget) : PALETTE[index % PALETTE.length]);
+}
+
 export default function DashboardPage(): JSX.Element {
   const { id } = useParams<{ id?: string }>();
   const navigate = useNavigate();
@@ -672,6 +681,7 @@ function Widget({ widget }: { widget: DashboardWidget }): JSX.Element {
 
   const d = (data ?? {}) as Record<string, unknown>;
 
+  const content = (() => {
   switch (widget.type) {
     case 'metric':
       return <MetricCard widget={widget} data={d} />;
@@ -716,6 +726,13 @@ function Widget({ widget }: { widget: DashboardWidget }): JSX.Element {
         </div>
       );
   }
+  })();
+
+  // Keep every widget usable when it becomes a large dashboard tile. This is
+  // visual scaling rather than a fixed font size, so charts, labels and table
+  // rows grow together and remain inside their resizable card.
+  const zoom = widget.config.fontScale === 'compact' ? 0.9 : widget.config.fontScale === 'large' ? 1.12 : 1;
+  return <div className="h-full" style={{ zoom }}>{content}</div>;
 }
 
 /**
@@ -1116,7 +1133,7 @@ function BarCard({
               onClick={(_data, index) => drill(index)}
             >
               {series.map((s, i) => (
-                <Cell key={s.key} fill={s.color ?? PALETTE[i % PALETTE.length]} />
+                <Cell key={s.key} fill={s.color ?? palette(widget, i)} />
               ))}
             </Bar>
           </BarChart>
@@ -1138,6 +1155,8 @@ function LineCard({
   const dateField = (widget.config.dateField as string) ?? 'created_at';
   const interval = widget.config.interval as string | undefined;
   const drillable = Boolean(widget.config.module);
+  const color = accent(widget);
+  const lineWidth = Math.max(1, Math.min(8, Number(widget.config.lineWidth) || 2));
 
   const drill = (index: number): void => {
     const s = series[index];
@@ -1156,7 +1175,7 @@ function LineCard({
       cx={props.cx}
       cy={props.cy}
       r={3.5}
-      fill="#6366f1"
+      fill={color}
       stroke="#fff"
       strokeWidth={1}
       style={{ cursor: drillable ? 'pointer' : undefined }}
@@ -1178,9 +1197,9 @@ function LineCard({
               contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
             />
             {area ? (
-              <Area tabIndex={-1} type="monotone" dataKey="value" stroke="#6366f1" fill="#6366f1" fillOpacity={0.15} strokeWidth={2} dot={clickableDot as never} activeDot={clickableDot as never} />
+              <Area tabIndex={-1} type="monotone" dataKey="value" stroke={color} fill={color} fillOpacity={0.15} strokeWidth={lineWidth} dot={clickableDot as never} activeDot={clickableDot as never} />
             ) : (
-              <Line tabIndex={-1} type="monotone" dataKey="value" stroke="#6366f1" strokeWidth={2} dot={clickableDot as never} activeDot={clickableDot as never} />
+              <Line tabIndex={-1} type="monotone" dataKey="value" stroke={color} strokeWidth={lineWidth} dot={clickableDot as never} activeDot={clickableDot as never} />
             )}
           </Chart>
         </ResponsiveContainer>
@@ -1223,7 +1242,7 @@ function PieCard({
               cursor={drillable ? 'pointer' : undefined}
               onClick={(_entry, index) => drill(index)}
             >
-              {series.map((s, i) => <Cell key={s.key} fill={s.color ?? PALETTE[i % PALETTE.length]} />)}
+              {series.map((s, i) => <Cell key={s.key} fill={s.color ?? palette(widget, i)} />)}
             </Pie>
             <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }} />
             <Legend wrapperStyle={{ fontSize: 11 }} iconSize={8} />
@@ -1282,7 +1301,7 @@ function FunnelCard({ widget, data }: { widget: DashboardWidget; data: Record<st
                 className="flex h-full items-center rounded transition-all"
                 style={{
                   width: `${(stage.value / max) * 100}%`,
-                  backgroundColor: PALETTE[i % PALETTE.length],
+                  backgroundColor: palette(widget, i),
                   minWidth: stage.value > 0 ? '2%' : 0,
                 }}
               />

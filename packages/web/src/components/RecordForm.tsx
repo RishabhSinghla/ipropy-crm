@@ -132,6 +132,16 @@ export default function RecordForm({
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [duplicates, setDuplicates] = useState<{ id: string; label: string; matchedOn: string[] }[]>([]);
 
+  // The current user arrives asynchronously after a page refresh.  Keep the
+  // create form from retaining its initial “Unassigned” placeholder while
+  // that bootstrap request is in flight; never overwrite an owner a person
+  // deliberately chose.
+  useEffect(() => {
+    if (isCreate && !values.owner_id && initialValues?.owner_id) {
+      setValues((current) => current.owner_id ? current : { ...current, owner_id: initialValues.owner_id });
+    }
+  }, [isCreate, initialValues?.owner_id, values.owner_id]);
+
   const { data: layout } = useQuery({
     queryKey: ['layout', module.name, mode],
     queryFn: () => api.layout(module.name, mode === 'quick_create' ? 'quick_create' : 'edit'),

@@ -11,7 +11,7 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
-  createRecord, deleteRecord, getRecord, listRecords, massUpdate, restoreRecord,
+  createRecord, deleteRecord, getRecord, listRecords, massUpdate, moveRecord, restoreRecord,
   transferOwnership, updateRecord, type ServiceContext,
 } from '../../src/core/entity/recordService.js';
 import { db } from '../../src/db/pool.js';
@@ -428,5 +428,24 @@ describe('hidden fields cannot be used as an oracle', () => {
   it('does not get in an admin\'s way', async () => {
     const result = await listRecords(admin, 'properties', { sortBy: hiddenField, pageSize: 1 });
     expect(result.total).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('moving between leads and inventories', () => {
+  it('creates the destination record, maps its name, and removes the source in either direction', async () => {
+    const name = `Move test ${Date.now()}`;
+    const lead = await createRecord(admin, 'leads', leadInput({ full_name: name }));
+
+    const property = await moveRecord(admin, 'leads', lead.id, 'properties');
+    expect(property.values.name).toBe(name);
+    expect(property.values.status).toBe('Available');
+
+    await expect(getRecord(admin, 'leads', lead.id)).rejects.toThrow(/not found/i);
+
+    const returnedLead = await moveRecord(admin, 'properties', property.id, 'leads');
+    expect(returnedLead.values.full_name).toBe(name);
+    expect(returnedLead.values.status).toBe('New');
+
+    await expect(getRecord(admin, 'properties', property.id)).rejects.toThrow(/not found/i);
   });
 });

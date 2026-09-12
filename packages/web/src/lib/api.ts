@@ -752,6 +752,13 @@ export const api = {
   update: (module: string, id: string, values: Record<string, unknown>) =>
     patch<RecordEnvelope>(`/api/records/${module}/${id}`, values),
   remove: (module: string, id: string) => del(`/api/records/${module}/${id}`),
+  move: (module: string, id: string, targetModule: 'leads' | 'properties') =>
+    post<RecordEnvelope>(`/api/records/${module}/${id}/move`, { targetModule }),
+  recordShares: (module: string, id: string) =>
+    get<{ subject_type: 'user' | 'group' | 'role'; subject_id: string; access: 'read' | 'read_write'; created_at: string }[]>(`/api/records/${module}/${id}/shares`),
+  saveRecordShares: (module: string, id: string, subjects: {
+    type: 'user' | 'group' | 'role'; id: string; access: 'read' | 'read_write';
+  }[]) => post<{ ok: true }>(`/api/records/${module}/${id}/share`, { subjects }),
   lookup: (module: string, q: string, filter?: unknown) =>
     get<{ id: string; label: string; recordNumber: string | null }[]>(`/api/records/${module}/lookup${qs({ q, filter })}`),
   timeline: (module: string, id: string, types?: string[]) =>
