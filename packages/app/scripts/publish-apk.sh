@@ -96,7 +96,15 @@ if ! grep -aq 'crm\.ipropy\.com' <<<"$BUNDLED"; then
   echo "The built app does not mention crm.ipropy.com. It is pointed somewhere else." >&2
   exit 1
 fi
-if grep -aqE '10\.0\.2\.2|192\.168\.|localhost:[0-9]{4}' <<<"$BUNDLED"; then
+# Only the two addresses that are never legitimate in a shipped bundle: the
+# emulator's alias for its host, and a private network.
+#
+# NOT a general `localhost:port` match, which was the first attempt and was a
+# false positive twice over — the Ollama integration card carries
+# `http://localhost:11434/v1` as a *placeholder* in a settings field, and a
+# build dependency ships a sidecar URL of its own. A guard that cries wolf is
+# a guard somebody switches off.
+if grep -aqE '10\.0\.2\.2|192\.168\.[0-9]' <<<"$BUNDLED"; then
   echo "The built app still has a development server address in it." >&2
   echo "Rebuild without VITE_API_BASE set." >&2
   exit 1
