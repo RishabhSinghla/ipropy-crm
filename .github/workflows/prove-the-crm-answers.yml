@@ -188,6 +188,51 @@ jobs:
           ask "what needs an outcome"         "/api/telephony/needs-disposition"
           ask "paired phones"                 "/api/telephony/devices"
 
+          echo "--- the whole team at once ---"
+          # Eight people open the CRM at nine o'clock. One instance, one pool of
+          # database connections: a list that answers in half a second alone and
+          # queues behind itself under a handful of callers is a CRM that feels
+          # broken every morning and fine whenever anybody measures it.
+          START="$(python3 -c 'import time; print(time.time())')"
+          for i in $(seq 1 10); do
+            curl -s -o /dev/null -w '%{http_code}\n' -H "x-api-key: ${KEY}" \
+              "${BASE_URL}/api/records/leads?limit=25" >> /tmp/burst.txt &
+          done
+          wait
+          ELAPSED="$(python3 -c "import time; print(round(time.time() - ${START}, 2))")"
+          BAD="$(grep -cv '^200$' /tmp/burst.txt || true)"
+          if [ "$BAD" = "0" ]; then
+            echo "  ok    ten at once, all answered, ${ELAPSED}s for the lot"
+          else
+            echo "  FAIL  ten at once — ${BAD} of 10 did not answer 200"
+            fail=1
+          fi
+
+          echo "--- nonsense in, no 500 out ---"
+          # A malformed request must be refused, not crash. A 500 is the CRM
+          # saying something went wrong inside it, and inside it is where the
+          # customer data is.
+          bad() {
+            local name="$1" path="$2" code
+            code="$(curl -s -o /dev/null -w '%{http_code}' -H "x-api-key: ${KEY}" "${BASE_URL}${path}")"
+            case "$code" in
+              5*) echo "  FAIL  ${name} — HTTP ${code}, the server broke on it"; fail=1 ;;
+              # A 200 here is not a miss. Some of these are nonsense the CRM is
+              # right to absorb rather than reject — a negative page size is
+              # clamped, a sort on a field that has been deleted falls back to
+              # the default — and an answer is kinder than an error for both.
+              # What is being checked is that none of it reaches a 500.
+              2*) echo "  ok    ${name} — absorbed, answered ${code}" ;;
+              *)  echo "  ok    ${name} — refused with ${code}" ;;
+            esac
+          }
+          bad "a record id that is not a uuid"   "/api/records/leads/not-a-uuid"
+          bad "a module that does not exist"     "/api/records/nosuchmodule?limit=1"
+          bad "a negative page size"             "/api/records/leads?limit=-5"
+          bad "a filter that is not json"        "/api/records/leads?filter=%7Bnot-json"
+          bad "a sort on a field that is gone"   "/api/records/leads?sortBy=deleted_field_x&limit=1"
+          bad "a picklist nobody has"            "/api/meta/picklists/no_such_list"
+
           if [ "$fail" != "0" ]; then
             echo "::error::a screen the team uses does not answer on ${BASE_URL}"
             exit 1
