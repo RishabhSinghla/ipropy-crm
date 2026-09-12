@@ -1029,20 +1029,20 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
   const [decisionFilter, setDecisionFilter] = useState<'all' | 'unmarked' | 'shortlisted' | 'follow_up' | 'not_suitable'>('all');
   const [search, setSearch] = useState('');
   const [mappedFilters, setMappedFilters] = useState<string[]>([]);
+  const [showMappedFilters, setShowMappedFilters] = useState(false);
   // How deep into the ranking to look. The engine's top handful is the
   // starting point, not the verdict — widening it is how a rep goes past what
   // the score suggested and picks for this customer themselves.
   const [howMany, setHowMany] = useState(10);
 
   const aiAvailable = useApp((st) => st.aiAvailable);
-  const { data: matchingConfig } = useQuery({
-    queryKey: ['matching-config'], queryFn: () => api.matchingConfig(), staleTime: 60_000,
+  const { data: matchingFields, isLoading: loadingMatchingFields, isError: matchingFieldsFailed } = useQuery({
+    queryKey: ['matching-fields'], queryFn: () => api.matchingFields(), staleTime: 60_000,
   });
-  const mappedFields = useMemo(() => (matchingConfig?.fieldMap ?? []).map((pair) => {
-    const key = isContact ? pair.propertyField : pair.contactField;
-    const fields = isContact ? matchingConfig?.propertyFields : matchingConfig?.contactFields;
-    return { key, label: fields?.find((field) => field.name === key)?.label ?? key };
-  }).filter((field) => field.key && field.label), [matchingConfig, isContact]);
+  const mappedFields = useMemo(() => (matchingFields ?? []).map((pair) => {
+    const key = pair.contactField;
+    return { key, label: isContact ? pair.propertyLabel : pair.contactLabel };
+  }).filter((field) => field.key && field.label), [matchingFields, isContact]);
 
   /*
     Two requests, because they cost three orders of magnitude apart.
@@ -1083,7 +1083,7 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
   });
   const decisionsByTarget = useMemo(() => new Map((decisions ?? []).map((d) => [d.targetId, d.decision])), [decisions]);
 
-  const matches = useMemo<{ id: string; label: string; score: number; primary: string; secondary: string; reason: string; caveat: string; status: string | null | undefined }[]>(() => {
+  const matches = useMemo<{ id: string; label: string; score: number; primary: string; secondary: string; reason: string; caveat: string; status: string | null | undefined; matchedFields: string[] }[]>(() => {
     if (isContact) {
       const rows = ((data as { matches?: PropertyMatch[] } | undefined)?.matches ?? []);
       return rows.map((m) => ({
@@ -1095,6 +1095,7 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
         reason: m.reasons[0] ?? '',
         caveat: m.mismatches[0] ?? '',
         status: undefined,
+        matchedFields: m.matchedFields ?? [],
       }));
     }
     const rows = ((data as { buyers?: BuyerMatch[] } | undefined)?.buyers ?? []);
@@ -1107,18 +1108,14 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
       reason: b.revival ?? b.reasons[0] ?? '',
       caveat: b.reasons.find((r) => /above budget|smaller|outside/i.test(r)) ?? '',
       status: b.status,
+      matchedFields: b.matchedFields ?? [],
     }));
   }, [data, isContact]);
   const term = search.trim().toLowerCase();
   const visibleMatches = matches.filter((match) => (
     match.score >= minimumScore
     && (!term || match.label.toLowerCase().includes(term) || match.primary.toLowerCase().includes(term) || match.secondary.toLowerCase().includes(term))
-    && (!mappedFilters.length || mappedFilters.every((key) => {
-      const field = mappedFields.find((item) => item.key === key);
-      const terms = [field?.label, key].filter(Boolean).map((value) => String(value).toLowerCase().replace(/[^a-z0-9]/g, ''));
-      const evidence = `${match.reason} ${match.caveat} ${match.primary} ${match.secondary}`.toLowerCase().replace(/[^a-z0-9]/g, '');
-      return terms.some((value) => evidence.includes(value));
-    }))
+    && mappedFilters.every((key) => match.matchedFields.includes(key))
     && (decisionFilter === 'all' || (decisionFilter === 'unmarked' ? !decisionsByTarget.has(match.id) : decisionsByTarget.get(match.id) === decisionFilter))
   ));
 
@@ -1139,8 +1136,8 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
 
   return (
     <div className="card overflow-hidden">
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 p-3 dark:border-slate-800">
-        <Link2 className="h-4 w-4 text-brand-500" />
+      <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+        <Link2 className="h-4 w-4 shrink-0 text-brand-500" />
         <span className="text-sm font-medium">
           {isContact ? 'Matching inventories' : 'Matching leads'}{' '}
           {/* The count is the first question asked of this tab, so it is in
@@ -1151,25 +1148,9 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
           </span>
         </span>
         {narrating && <span className="text-2xs text-muted">writing reasons…</span>}
-
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          <Dropdown
-            align="left"
-            className="w-56"
-            trigger={<button className={cn('btn-secondary btn-sm', mappedFilters.length && 'border-brand-400 text-brand-700')}><Link2 className="h-3.5 w-3.5" />Match filters{mappedFilters.length ? ` (${mappedFilters.length})` : ''}<ChevronDown className="h-3.5 w-3.5" /></button>}
-          >
-            <div className="p-2">
-              <p className="mb-1 px-1 text-2xs font-semibold uppercase tracking-wide text-muted">Matching Setup fields</p>
-              {mappedFields.map((field) => (
-                <label key={field.key} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1.5 text-sm hover:bg-slate-50 dark:hover:bg-slate-800">
-                  <input type="checkbox" checked={mappedFilters.includes(field.key)} onChange={(event) => setMappedFilters((current) => event.target.checked ? [...current, field.key] : current.filter((key) => key !== field.key))} />
-                  <span>{field.label}</span>
-                </label>
-              ))}
-              {!mappedFields.length && <p className="px-1 py-2 text-xs text-muted">Add field mappings in Admin → Matching Setup.</p>}
-              {mappedFilters.length > 0 && <button className="mt-1 text-xs text-brand-700 hover:underline" onClick={() => setMappedFilters([])}>Clear filters</button>}
-            </div>
-          </Dropdown>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
+          <button type="button" aria-expanded={showMappedFilters} aria-controls="matching-field-filters" onClick={() => setShowMappedFilters((open) => !open)} className={cn('btn-secondary btn-sm', mappedFilters.length && 'border-brand-400 text-brand-700')}><Link2 className="h-3.5 w-3.5" />Match filters{mappedFilters.length ? ` (${mappedFilters.length})` : ''}<ChevronDown className={cn('h-3.5 w-3.5', showMappedFilters && 'rotate-180')} /></button>
           <input
             className="input h-8 w-40 py-0 text-xs"
             placeholder={isContact ? 'Search these units…' : 'Search these leads…'}
@@ -1210,8 +1191,19 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
           >
             {isFetching ? <Spinner className="h-3 w-3" /> : <RefreshCw className="h-3 w-3" />}
           </button>
-        </div>
       </div>
+      {showMappedFilters && (
+        <div id="matching-field-filters" className="border-b border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/50">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="mr-1 text-2xs font-semibold uppercase tracking-wide text-muted">Matching Setup fields</span>
+            {mappedFields.map((field) => <label key={field.key} className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-800"><input type="checkbox" checked={mappedFilters.includes(field.key)} onChange={(event) => setMappedFilters((current) => event.target.checked ? [...current, field.key] : current.filter((key) => key !== field.key))} />{field.label}</label>)}
+            {loadingMatchingFields && <span className="text-xs text-muted">Loading fields…</span>}
+            {matchingFieldsFailed && <span className="text-xs text-red-600">Could not load matching fields.</span>}
+            {!loadingMatchingFields && !matchingFieldsFailed && !mappedFields.length && <span className="text-xs text-muted">No matching fields are configured.</span>}
+            {mappedFilters.length > 0 && <button type="button" className="ml-auto text-xs text-brand-700 hover:underline" onClick={() => setMappedFilters([])}>Clear filters</button>}
+          </div>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="space-y-2 p-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10" />)}</div>

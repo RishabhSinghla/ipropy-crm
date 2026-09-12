@@ -410,12 +410,15 @@ interface ScoredProperty {
   score: number;
   reasons: string[];
   mismatches: string[];
+  matchedFields: string[];
 }
 
 function scoreProperty(row: PropertyRow, req: Requirement, config: MatchingConfig): ScoredProperty {
   let score = 50;
   const reasons: string[] = [];
   const mismatches: string[] = [];
+  const matchedFields: string[] = [];
+  const mappedLeadField = (column: string): string => pairFor(config, column)?.contactField ?? column;
   const price = row.matched_price ?? row.total_price ?? row.base_price ?? 0;
   // Admin-set (Admin → Matching Setup, default 10%). Replaces what used to be
   // three hardcoded numbers (0.9/1.05/0.7) scaled off a single fixed 10%.
@@ -429,8 +432,8 @@ function scoreProperty(row: PropertyRow, req: Requirement, config: MatchingConfi
   }
   if (req.budget && price) {
     const ratio = price / req.budget;
-    if (ratio <= 1 - grace / 2) { score += 22; reasons.push(`${formatIndianPrice(price)} sits comfortably under the ${formatIndianPrice(req.budget)} budget`); }
-    else if (ratio <= 1.0) { score += 18; reasons.push(`${formatIndianPrice(price)} fits the stated budget`); }
+    if (ratio <= 1 - grace / 2) { score += 22; matchedFields.push(mappedLeadField('budget')); reasons.push(`${formatIndianPrice(price)} sits comfortably under the ${formatIndianPrice(req.budget)} budget`); }
+    else if (ratio <= 1.0) { score += 18; matchedFields.push(mappedLeadField('budget')); reasons.push(`${formatIndianPrice(price)} fits the stated budget`); }
     else if (ratio <= 1 + grace) { score += 6; mismatches.push(`${Math.round((ratio - 1) * 100)}% above budget — negotiable`); }
     else { score -= 15; mismatches.push(`${formatIndianPrice(price)} exceeds the budget by ${Math.round((ratio - 1) * 100)}%`); }
   }
@@ -446,6 +449,7 @@ function scoreProperty(row: PropertyRow, req: Requirement, config: MatchingConfi
   if (wantedBedrooms.length && actualBedrooms !== null) {
     if (wantedBedrooms.includes(actualBedrooms)) {
       score += 20;
+      matchedFields.push(mappedLeadField('configuration'));
       reasons.push(`${actualBedrooms} BHK matches the requirement`);
     } else if (wantedBedrooms.some((w) => Math.abs(w - actualBedrooms) <= 1)) {
       // Adjacent bedroom counts are a soft miss, not a hard one.
@@ -465,7 +469,7 @@ function scoreProperty(row: PropertyRow, req: Requirement, config: MatchingConfi
       const wanted = l.toLowerCase();
       return locality.includes(wanted) || wanted.includes(locality) || city.includes(wanted);
     });
-    if (hit) { score += 15; reasons.push(`Located in ${row.locality ?? row.city}, a preferred area`); }
+    if (hit) { score += 15; matchedFields.push(mappedLeadField('preferred_locations')); reasons.push(`Located in ${row.locality ?? row.city}, a preferred area`); }
     else { score -= 10; mismatches.push(`${row.locality ?? row.city ?? 'Location'} is outside the preferred areas`); }
   }
 
@@ -493,6 +497,7 @@ function scoreProperty(row: PropertyRow, req: Requirement, config: MatchingConfi
     const areaGrace = config.areaGracePercent / 100;
     if (ratio >= 1 - areaGrace && ratio <= 1 + areaGrace) {
       score += 8;
+      matchedFields.push(mappedLeadField('area'));
       reasons.push(
         `${formatArea(row.matched_area, row.area_unit ?? 'sqft')} is about the `
         + `${formatArea(req.area, req.areaUnit)} asked for`,
@@ -565,12 +570,12 @@ function scoreProperty(row: PropertyRow, req: Requirement, config: MatchingConfi
       const tolerance = (pair.contactUitype === 'area' || pair.propertyUitype === 'area'
         ? config.areaGracePercent : config.priceGracePercent) / 100;
       const variance = Math.abs(offeredNumber - wantedNumber) / Math.max(Math.abs(wantedNumber), 1);
-      if (variance <= tolerance) { score += 7; reasons.push(`${label} is within the configured tolerance`); }
+      if (variance <= tolerance) { score += 7; matchedFields.push(pair.contactField); reasons.push(`${label} is within the configured tolerance`); }
       else { score -= 4; mismatches.push(`${label} differs by ${Math.round(variance * 100)}%`); }
       continue;
     }
     const matched = want.some((w) => have.some((h) => h === w || h.includes(w) || w.includes(h)));
-    if (matched) { score += 7; reasons.push(`${label} matches`); }
+    if (matched) { score += 7; matchedFields.push(pair.contactField); reasons.push(`${label} matches`); }
     else { score -= 4; mismatches.push(`${label} does not match`); }
   }
 
@@ -579,6 +584,7 @@ function scoreProperty(row: PropertyRow, req: Requirement, config: MatchingConfi
     score: Math.max(0, Math.min(100, Math.round(score))),
     reasons: reasons.slice(0, 5),
     mismatches: mismatches.slice(0, 3),
+    matchedFields,
   };
 }
 
@@ -632,6 +638,7 @@ export async function matchProperties(
     score: s.score,
     reasons: s.reasons,
     mismatches: s.mismatches,
+    matchedFields: s.matchedFields,
     projectName: s.row.project_name ?? undefined,
     price: s.row.matched_price ?? s.row.total_price ?? s.row.base_price ?? undefined,
     bedrooms: parsedBedrooms(s.row),
@@ -712,6 +719,7 @@ Return JSON:
       score: s.score,
       reasons: enriched?.reasons?.length ? enriched.reasons : s.reasons,
       mismatches: enriched?.mismatches?.length ? enriched.mismatches : s.mismatches,
+      matchedFields: s.matchedFields,
       projectName: s.row.project_name ?? undefined,
       price: s.row.matched_price ?? s.row.total_price ?? s.row.base_price ?? undefined,
       bedrooms: parsedBedrooms(s.row),
@@ -840,6 +848,7 @@ export interface BuyerMatch {
   score: number;
   ownerId: string | null;
   reasons: string[];
+  matchedFields?: string[];
   /** Set when this is somebody who previously said no, explaining what changed. */
   revival?: string;
   /** Table columns for the Matching contacts tab — what a rep scans before ringing. */
@@ -1026,6 +1035,7 @@ export async function matchBuyersForProperty(
           // and this one is in budget" is the reason to ring them; the scoring
           // reasons are the supporting detail.
           reasons: revival ? [revival, ...scored.reasons] : scored.reasons,
+          matchedFields: scored.matchedFields,
           ...(revival ? { revival } : {}),
           // The columns the Matching contacts table shows — the requirement as
           // the buyer stated it, so the rep can weigh the fit themselves rather

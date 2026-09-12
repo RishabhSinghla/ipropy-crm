@@ -13,6 +13,7 @@ import {
 } from '../../core/stt/index.js';
 import { scoreLead } from '../../ai/leadScoring.js';
 import { matchForRecord, matchProperties, matchBuyersForProperty, loadRequirement } from '../../ai/matching.js';
+import { matchingConfig } from '../../core/settings/matching.js';
 import { draftMessage, summariseRecord } from '../../ai/drafting.js';
 import { analyseTranscript, coachingReport } from '../../ai/callAnalysis.js';
 import { ask, dailyDigest, dashboardInsight, parseNaturalQuery } from '../../ai/assistant.js';
@@ -77,6 +78,16 @@ async function readableAiFields(user: ReturnType<typeof getUser>, module: string
     .map(([name]) => name);
 }
 
+async function readableMatchFields<T extends { matchedFields?: string[] }>(
+  rows: T[], user: ReturnType<typeof getUser>,
+): Promise<T[]> {
+  const permissions = await getFieldPermissions(user, 'leads');
+  return rows.map((row) => ({
+    ...row,
+    matchedFields: row.matchedFields?.filter((field) => permissions.get(field) !== 'hidden'),
+  }));
+}
+
 aiRouter.get('/status', asyncHandler(async (_req, res) => {
   const status = aiStatus();
   res.json({
@@ -102,6 +113,31 @@ aiRouter.post('/score-lead/:id', modelLimiter, asyncHandler(async (req, res) => 
 // ---------------------------------------------------------------------------
 // Property matching
 // ---------------------------------------------------------------------------
+
+// The match tabs need field labels, but the admin matching-config endpoint is
+// intentionally unavailable to ordinary users. Share only readable mapped
+// field names/labels here, never the admin settings or hidden field metadata.
+aiRouter.get('/matching-fields', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await Promise.all([
+    assertModuleAccess(user, 'leads', 'view'),
+    assertModuleAccess(user, 'properties', 'view'),
+  ]);
+  const [config, leadPermissions, propertyPermissions] = await Promise.all([
+    matchingConfig(),
+    getFieldPermissions(user, 'leads'),
+    getFieldPermissions(user, 'properties'),
+  ]);
+  res.json(config.fieldMap
+    .filter((pair) => leadPermissions.get(pair.contactField) !== 'hidden'
+      && propertyPermissions.get(pair.propertyField) !== 'hidden')
+    .map((pair) => ({
+      contactField: pair.contactField,
+      propertyField: pair.propertyField,
+      contactLabel: pair.contactLabel ?? pair.contactField,
+      propertyLabel: pair.propertyLabel ?? pair.propertyField,
+    })));
+}));
 
 aiRouter.get('/match/:module/:id', modelLimiter, asyncHandler(async (req, res) => {
   const scope = getScope(req);
@@ -132,7 +168,7 @@ aiRouter.get('/match/:module/:id', modelLimiter, asyncHandler(async (req, res) =
     // would rank, not just the lead the matches belong to.
     scope,
   });
-  res.json({ matches, requirement: await loadRequirement(id) });
+  res.json({ matches: await readableMatchFields(matches, scope.user), requirement: await loadRequirement(id) });
 }));
 
 /** Ad-hoc matching from a requirement the rep types in. */
@@ -155,7 +191,8 @@ aiRouter.post('/match', modelLimiter, asyncHandler(async (req, res) => {
     withNarrative: z.boolean().default(false),
   }).parse(req.body);
 
-  res.json({ matches: await matchProperties(input, { limit: input.limit, withNarrative: input.withNarrative, scope }) });
+  const matches = await matchProperties(input, { limit: input.limit, withNarrative: input.withNarrative, scope });
+  res.json({ matches: await readableMatchFields(matches, scope.user) });
 }));
 
 /** Reverse match: who should we pitch this unit to? */
@@ -168,7 +205,7 @@ aiRouter.get('/buyers-for/:propertyId', modelLimiter, asyncHandler(async (req, r
   const buyers = await matchBuyersForProperty(req.params.propertyId, limit, scope, {
     withNarrative: req.query.narrative !== 'false',
   });
-  res.json({ buyers });
+  res.json({ buyers: await readableMatchFields(buyers, scope.user) });
 }));
 
 // ---------------------------------------------------------------------------
