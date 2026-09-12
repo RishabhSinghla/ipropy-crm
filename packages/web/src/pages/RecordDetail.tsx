@@ -336,7 +336,7 @@ export default function RecordDetail(): JSX.Element {
     <CallDispositionProvider recordId={record.id} module={moduleName!} recordLabel={record.label}>
     <div className="mx-auto max-w-[1600px] p-4 sm:p-6">
       {/* Header */}
-      <div className="card mb-4 overflow-hidden">
+      <div className="card mb-4 overflow-visible">
         {/* Two rows, not three.
 
             The nav row held nothing but a back arrow and a record counter and
@@ -402,7 +402,10 @@ export default function RecordDetail(): JSX.Element {
                 </button>
               )}
 
-              <Dropdown trigger={<button className="btn-ghost p-2" aria-label="More actions"><MoreHorizontal className="h-4 w-4" /></button>}>
+              <Dropdown
+                className="min-w-[15rem]"
+                trigger={<button className="btn-ghost p-2" aria-label="More actions"><MoreHorizontal className="h-4 w-4" /></button>}
+              >
                 {(close) => (
                   <>
                     <DropdownItem

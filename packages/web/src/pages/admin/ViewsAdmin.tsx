@@ -27,10 +27,10 @@ import {
 
 const EMPTY_FILTER: FilterGroup = { logic: 'AND', conditions: [] };
 
-type AdminView = CustomView & { isActive?: boolean; count?: number };
+export type AdminView = CustomView & { isActive?: boolean; count?: number };
 
 /** An empty tab, with an id of '' so the editor knows it is creating. */
-function blankView(module: string): AdminView {
+export function blankView(module: string): AdminView {
   return {
     id: '', module, name: '', description: null,
     isDefault: false, isPublic: true, isSystem: false, ownerId: null,
@@ -258,14 +258,16 @@ export default function ViewsAdmin(): JSX.Element {
   );
 }
 
-function ViewEditor({
-  view, module, moduleName, onClose, onSaved,
+export function ViewEditor({
+  view, module, moduleName, onClose, onSaved, isPublic = true,
 }: {
   view: AdminView;
   module: ModuleMeta;
   moduleName: string;
   onClose: () => void;
   onSaved: () => void;
+  /** Views created from the CRM list belong to the current user by default. */
+  isPublic?: boolean;
 }): JSX.Element {
   const [name, setName] = useState(view.name);
   const [description, setDescription] = useState(view.description ?? '');
@@ -296,7 +298,7 @@ function ViewEditor({
         displayMode,
         groupBy: displayMode === 'kanban' ? (groupBy || null) : null,
         showMetrics,
-        isPublic: true,
+        isPublic,
       };
       return view.id
         ? api.updateView(moduleName, view.id, payload)
