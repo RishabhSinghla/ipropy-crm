@@ -75,6 +75,12 @@ const GROUPS: { id: string; title: string; blurb: string }[] = [
   { id: 'scoring', title: 'Lead scoring', blurb: 'The numbers behind Hot, Warm and Cold, and how closely a property must fit a buyer.' },
   { id: 'inventory', title: 'Inventory', blurb: 'Rules for holding and booking units.' },
   { id: 'website', title: 'Public website', blurb: 'What visitors to your site can see.' },
+  {
+    id: 'interface',
+    title: 'How the CRM behaves',
+    blurb: 'What happens when somebody clicks a row or a value. Nothing here changes your data — '
+      + 'only how it is reached.',
+  },
   { id: 'sharing', title: 'Share links', blurb: 'What a buyer sees when you send them a property.' },
   { id: 'whatsapp', title: 'WhatsApp', blurb: 'Messaging rules.' },
   { id: 'telephony', title: 'Calls', blurb: 'Call recording.' },
@@ -180,7 +186,22 @@ export default function SettingsAdmin(): JSX.Element {
           <h3 className="text-sm font-semibold">{g.title}</h3>
           {g.blurb && <p className="mt-0.5 text-xs text-muted">{g.blurb}</p>}
         </div>
-        <div className="divide-y divide-slate-100 dark:divide-slate-800">
+        {/*
+          Two columns of compact fields, not a stack of full-width rows.
+
+          Every setting used to be its own row with the name pushed left and
+          the control pushed right, so "Default Currency" and "INR" sat at
+          opposite ends of a 40rem card with nothing between them — the same
+          "the box is too big" this CRM already fixed on the record Overview.
+          A page of fourteen settings ran three screens.
+
+          The address block below was always laid out the right way, label
+          above control, two to a line; this is the rest of the page agreeing
+          with it. A setting that genuinely needs the width — business hours,
+          the address grid, a model id, a paragraph of house style — spans
+          both columns and says so itself.
+        */}
+        <div className="grid gap-x-6 p-4 sm:grid-cols-2">
           {g.rows.map((s) => (
             <Row
               key={s.key}
@@ -331,12 +352,27 @@ function Row({ setting, value, changed, onChange, onReset }: {
   const controlId = `setting-${setting.key.replace(/[^a-zA-Z0-9]/g, '-')}`;
   const Name = ownsItsLabel ? 'p' : 'label';
 
+  /*
+    A switch reads beside its name, and takes the whole row.
+
+    Beside, because the control is the width of a thumb and stacking it under a
+    label wastes the line it sits on. The whole row, because these are the
+    settings that carry a paragraph explaining what turning them off does — in
+    a half-width column that paragraph wrapped to eight lines and left the
+    field next to it floating against a column of text.
+  */
+  const isSwitch = typeof setting.value === 'boolean';
+
   return (
-    <div className={cn('py-4', wide ? 'space-y-3' : 'flex items-start gap-6')}>
-      <div className="min-w-0 flex-1">
+    <div className={cn('min-w-0 py-3', (wide || isSwitch) && 'sm:col-span-2')}>
+      <div className={cn(isSwitch && 'flex items-start justify-between gap-4')}>
         <Name
           {...(ownsItsLabel ? {} : { htmlFor: controlId })}
-          className={cn('flex items-center gap-2 text-sm font-medium', !ownsItsLabel && 'cursor-pointer')}
+          className={cn(
+            'flex items-center gap-2 text-sm font-medium',
+            !ownsItsLabel && 'cursor-pointer',
+            !isSwitch && 'mb-1',
+          )}
         >
           {setting.label ?? readableKey(setting.key)}
           {changed && (
@@ -349,11 +385,20 @@ function Row({ setting, value, changed, onChange, onReset }: {
             </button>
           )}
         </Name>
-        {setting.description && <p className="mt-0.5 text-xs text-muted">{setting.description}</p>}
+        <div className={cn(isSwitch && 'shrink-0 pt-0.5')}>
+          <Control setting={setting} value={value} onChange={onChange} id={ownsItsLabel ? undefined : controlId} />
+        </div>
       </div>
-      <div className={cn(wide ? '' : 'shrink-0')}>
-        <Control setting={setting} value={value} onChange={onChange} id={ownsItsLabel ? undefined : controlId} />
-      </div>
+      {/*
+        The explanation goes *under* the control, not between the name and it.
+
+        Above, a three-line paragraph pushed the box it was describing down the
+        screen and made every switch row as tall as a paragraph — so the page
+        read as prose with controls buried in it rather than as a form.
+      */}
+      {setting.description && (
+        <p className="mt-1 text-xs leading-snug text-muted">{setting.description}</p>
+      )}
     </div>
   );
 }

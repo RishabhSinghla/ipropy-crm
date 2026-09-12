@@ -301,6 +301,7 @@ function RolePermissions({ role }: { role: RoleNode }): JSX.Element {
   /** Which capability groups are open. Unset means the group's own default. */
   const [openCapGroups, setOpenCapGroups] = useState<Record<string, boolean>>({});
   const [fieldQuery, setFieldQuery] = useState('');
+  const [onlyRestricted, setOnlyRestricted] = useState(false);
   const [fieldPerms, setFieldPerms] = useState<Map<string, FieldPermValue>>(new Map());
   const [fieldModule, setFieldModule] = useState('leads');
   const [dirty, setDirty] = useState(false);
@@ -342,8 +343,15 @@ function RolePermissions({ role }: { role: RoleNode }): JSX.Element {
         seen.add(column);
         return true;
       })
-      .filter((f) => !q || f.label.toLowerCase().includes(q) || f.name.toLowerCase().includes(q));
-  }, [fieldModuleMeta, fieldQuery]);
+      .filter((f) => !q || f.label.toLowerCase().includes(q) || f.name.toLowerCase().includes(q))
+      .filter((f) => !onlyRestricted || (fieldPerms.get(`${fieldModule}::${f.name}`) ?? 'editable') !== 'editable');
+  }, [fieldModuleMeta, fieldQuery, onlyRestricted, fieldPerms, fieldModule]);
+
+  /** How many fields this role does not have full access to, on this module. */
+  const restrictedCount = useMemo(() => (fieldModuleMeta?.fields ?? [])
+    .filter((f) => f.isActive)
+    .filter((f) => (fieldPerms.get(`${fieldModule}::${f.name}`) ?? 'editable') !== 'editable')
+    .length, [fieldModuleMeta, fieldPerms, fieldModule]);
 
   useEffect(() => {
     if (!detail) return;
@@ -491,6 +499,27 @@ function RolePermissions({ role }: { role: RoleNode }): JSX.Element {
               aria-label="Find a field"
             />
           </div>
+          {/*
+            "Only restricted" is the question this panel exists to answer.
+
+            Every field defaults to Editable, so a role that restricts nothing
+            — which is most of them — draws twenty-four identical rows saying
+            so. The useful fact is the short list that *differs*, and it was
+            the one thing you could not see without reading all of them.
+          */}
+          <button
+            type="button"
+            aria-pressed={onlyRestricted}
+            onClick={() => setOnlyRestricted((v) => !v)}
+            className={cn(
+              'btn-secondary btn-sm text-2xs',
+              onlyRestricted && 'border-brand-400 text-brand-700 dark:text-brand-300',
+            )}
+            title="Show only the fields this role does not have full access to"
+          >
+            Only restricted
+            <span className="tnum">{restrictedCount}</span>
+          </button>
           <span className="text-2xs text-muted">Set all shown to</span>
           {([
             ['editable', 'Editable'], ['readonly', 'Read-only'],
@@ -516,9 +545,17 @@ function RolePermissions({ role }: { role: RoleNode }): JSX.Element {
               const value = fieldPerms.get(key) ?? 'editable';
               return (
                 <div key={f.name} className="flex items-center gap-3 px-4 py-2">
-                  <div className="min-w-0 flex-1">
+                  {/*
+                    The label, and the internal name only on hover.
+
+                    It was printed under every row — twenty-four lines of
+                    `alternate_phone` in a monospace face, which is the thing
+                    somebody reading API docs wants once and everybody else
+                    reads past twenty-four times. Same change the capability
+                    cards got, for the same reason.
+                  */}
+                  <div className="min-w-0 flex-1" title={`${f.label} — ${f.name}`}>
                     <p className="truncate text-sm">{f.label}</p>
-                    <p className="font-mono text-2xs text-muted">{f.name}</p>
                   </div>
                   <div className="flex shrink-0 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
                     {([
@@ -558,7 +595,9 @@ function RolePermissions({ role }: { role: RoleNode }): JSX.Element {
             })}
             {visibleFields.length === 0 && (
               <p className="px-4 py-6 text-center text-xs text-muted">
-                {fieldQuery ? `No field mentions “${fieldQuery}”.` : 'No fields on this module.'}
+                {onlyRestricted
+                  ? 'Nothing is restricted — this role sees and edits every field on this module.'
+                  : fieldQuery ? `No field mentions “${fieldQuery}”.` : 'No fields on this module.'}
               </p>
             )}
           </div>

@@ -28,7 +28,7 @@ import type { Express } from 'express';
 import { createApp } from '../../src/app.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import { db } from '../../src/db/pool.js';
-import { SEEDED } from './fixtures.js';
+import { adminEmail, SEEDED, signIn } from './fixtures.js';
 
 let app: Express;
 let adminToken: string;
@@ -45,12 +45,6 @@ interface ViewRow {
   sharedWith?: string[];
 }
 
-async function login(email: string, password: string): Promise<string> {
-  const res = await request(app).post('/api/auth/login').send({ email, password });
-  if (res.status !== 200) throw new Error(`login failed for ${email}: ${res.status} ${res.text}`);
-  return res.body.token as string;
-}
-
 const views = async (token: string): Promise<ViewRow[]> => {
   const res = await request(app).get('/api/views/leads').set('Authorization', `Bearer ${token}`);
   expect(res.status).toBe(200);
@@ -61,13 +55,11 @@ beforeAll(async () => {
   await registry.warmup();
   app = createApp();
 
-  const admin = await db.queryOne<{ email: string }>(
-    // `password_hash IS NOT NULL` skips the system account, which is an admin
-    // and has no password to log in with.
-    `SELECT email FROM ipy_user WHERE is_admin = true AND password_hash IS NOT NULL ORDER BY created_at LIMIT 1`,
-  );
-  adminToken = await login(admin!.email, 'Admin@123');
-  executiveToken = await login(SEEDED.executiveA, 'Admin@123');
+  // `signIn` and `adminEmail` rather than a hand-rolled login: a refused login
+  // otherwise leaves `undefined` in the token and the run fails somewhere else
+  // with a 401 nobody can trace. `integrationSuiteHygiene` enforces it.
+  adminToken = await signIn(app, await adminEmail());
+  executiveToken = await signIn(app, SEEDED.executiveA);
   const exec = await db.queryOne<{ id: string }>(`SELECT id FROM ipy_user WHERE email = $1`, [SEEDED.executiveA]);
   executiveId = exec!.id;
 });
@@ -181,7 +173,7 @@ describe('sharing a view with named people', () => {
     expect((await views(executiveToken)).some((v) => v.id === id)).toBe(true);
 
     // ...and a colleague who was not named does not.
-    const otherToken = await login(SEEDED.executiveB, 'Admin@123');
+    const otherToken = await signIn(app, SEEDED.executiveB);
     expect((await views(otherToken)).some((v) => v.id === id)).toBe(false);
 
     // Un-sharing takes it away again. The whole list is sent on every save, so
