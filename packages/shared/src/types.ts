@@ -588,6 +588,8 @@ export interface PropertyMatch {
   score: number;
   reasons: string[];
   mismatches: string[];
+  /** Lead-side matching fields that positively matched this unit. */
+  matchedFields?: string[];
   projectName?: string;
   price?: number;
   bedrooms?: number | null;
@@ -604,6 +606,8 @@ export interface BuyerMatch {
   score: number;
   ownerId: string | null;
   reasons: string[];
+  /** Lead-side matching fields that positively matched this unit. */
+  matchedFields?: string[];
   revival?: string;
   budget?: number | null;
   configuration?: string[] | null;

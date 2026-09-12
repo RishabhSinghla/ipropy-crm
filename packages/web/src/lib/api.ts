@@ -977,6 +977,7 @@ export const api = {
 
   // --- AI -----------------------------------------------------------------
   aiStatus: () => get<{ available: boolean; message: string }>('/api/ai/status'),
+  matchingFields: () => get<{ contactField: string; propertyField: string; contactLabel: string; propertyLabel: string }[]>('/api/ai/matching-fields'),
   scoreLead: (id: string) => post<Record<string, unknown>>(`/api/ai/score-lead/${id}`),
   analyseDeal: (id: string) => post<Record<string, unknown>>(`/api/ai/analyse-deal/${id}`),
   matchProperties: (module: string, id: string, narrative = false, limit = 10) =>
