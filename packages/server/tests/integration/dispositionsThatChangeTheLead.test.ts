@@ -84,4 +84,44 @@ describe('a disposition that acts on the lead', () => {
     );
     expect(call?.follow_up_at).toBeTruthy();
   });
+
+  /**
+   * When the outcome was decided, for the call that never went through the
+   * disposition button.
+   *
+   * With no telephony provider the dialog logs the call and its outcome in one
+   * request, which is every call this team makes. `disposition_at` was stamped
+   * only by the button, so on production every logged call had an outcome and
+   * no date for it, and anything reporting outcomes by day saw none of them.
+   */
+  it('records when the outcome was decided, however it was recorded', async () => {
+    const mobile = `91${String(stamp).slice(-8)}`;
+    const logged = await request(app).post('/api/telephony/log')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ to: mobile, direction: 'outbound', durationSeconds: 30, disposition: 'Busy' });
+    expect(logged.status).toBe(201);
+
+    const row = await db.queryOne<{ disposition_at: string | Date | null }>(
+      `SELECT disposition_at FROM ipy_call WHERE id = $1`, [logged.body.callId],
+    );
+    expect(row?.disposition_at, 'the outcome has no date').toBeTruthy();
+
+    // And a call logged without one must not claim a moment that never happened.
+    const bare = await request(app).post('/api/telephony/log')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ to: mobile, direction: 'outbound', durationSeconds: 30 });
+    const bareRow = await db.queryOne<{ disposition_at: string | Date | null }>(
+      `SELECT disposition_at FROM ipy_call WHERE id = $1`, [bare.body.callId],
+    );
+    expect(bareRow?.disposition_at).toBeNull();
+
+    // Editing the outcome later moves the date with it.
+    await request(app).patch(`/api/telephony/calls/${bare.body.callId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ disposition: 'Not Reachable' });
+    const edited = await db.queryOne<{ disposition_at: string | Date | null }>(
+      `SELECT disposition_at FROM ipy_call WHERE id = $1`, [bare.body.callId],
+    );
+    expect(edited?.disposition_at, 'editing the outcome left it dateless').toBeTruthy();
+  });
 });

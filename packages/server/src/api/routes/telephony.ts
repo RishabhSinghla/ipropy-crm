@@ -189,6 +189,12 @@ telephonyRouter.patch('/calls/:id', asyncHandler(async (req, res) => {
     params.push(v);
     sets.push(`${col} = $${params.length}`);
   }
+  // Editing the outcome moves the moment it was decided, for the same reason
+  // the button stamps it: a call whose outcome is set and whose
+  // `disposition_at` is null is invisible to everything that reports by date.
+  if (input.disposition !== undefined && input.disposition !== existing.disposition) {
+    sets.push('disposition_at = now()');
+  }
   if (!sets.length) { res.json({ ok: true }); return; }
 
   await transaction(async (tx) => {
