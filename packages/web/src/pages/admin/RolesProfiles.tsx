@@ -1,8 +1,9 @@
-import { type JSX, useEffect, useState } from 'react';
+import { type JSX, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, ChevronRight, Eye, EyeOff, Lock, Plus, Save, Shield, UserCheck, Users } from 'lucide-react';
+import { Check, ChevronRight, Eye, EyeOff, Lock, Plus, Save, Search, Shield, UserCheck, Users } from 'lucide-react';
 import { api } from '../../lib/api';
 import { toast, useApp } from '../../lib/store';
+import { byLabel } from '../../lib/fields';
 import { cn } from '../../lib/utils';
 import { Modal, Select, Skeleton, Spinner } from '../../components/ui';
 
@@ -232,10 +233,59 @@ const CAPABILITY_INFO: Record<string, { label: string; hint: string }> = {
   'admin.audit': { label: 'View audit log', hint: 'See who changed what.' },
 };
 
-/** Capabilities shown first in the grid, in this order; everything else trails. */
-const CAP_ORDER = [
-  'records.transfer_ownership', 'records.mass_edit', 'records.mass_delete',
-  'records.export', 'records.import', 'records.view_all', 'dashboards.share',
+/**
+ * Capabilities in groups, because thirty-five checkboxes in one grid is a
+ * wall.
+ *
+ * They were one flat list ordered by a hand-written array of seven with
+ * everything else trailing alphabetically, which put "Manage numbering" next
+ * to "Send WhatsApp messages" and left an administrator scanning all of them
+ * to find the one they came for. The prefixes were already the grouping —
+ * `records.`, `admin.`, `whatsapp.` — this just says so out loud.
+ *
+ * "Setting up the CRM" starts shut. It is two thirds of the list, it is the
+ * part a sales head never touches, and closed it takes one line instead of
+ * twenty-four.
+ */
+const CAP_GROUPS: { id: string; title: string; blurb: string; caps: string[]; closed?: boolean }[] = [
+  {
+    id: 'records',
+    title: 'Working with records',
+    blurb: 'What this role may do to leads and inventory beyond plain view, create, edit and delete.',
+    caps: [
+      'records.transfer_ownership', 'records.mass_edit', 'records.mass_delete',
+      'records.export', 'records.import', 'records.view_all',
+    ],
+  },
+  {
+    id: 'contact',
+    title: 'Reaching customers',
+    blurb: 'Calling, messaging, and what the role may hear afterwards.',
+    caps: ['telephony.call', 'telephony.listen_recordings', 'whatsapp.send', 'whatsapp.templates'],
+  },
+  {
+    id: 'deals',
+    title: 'Inventory and deals',
+    blurb: 'Holding a unit, changing its price, signing off a discount.',
+    caps: ['inventory.block_unit', 'inventory.change_price', 'bookings.approve_discount'],
+  },
+  {
+    id: 'ai',
+    title: 'AI and dashboards',
+    blurb: '',
+    caps: ['ai.use', 'ai.configure', 'dashboards.share'],
+  },
+  {
+    id: 'admin',
+    title: 'Setting up the CRM',
+    blurb: 'The admin area and everything in it. Most roles need none of these.',
+    closed: true,
+    caps: [
+      'admin.access', 'admin.users', 'admin.roles', 'admin.profiles', 'admin.modules',
+      'admin.fields', 'admin.layouts', 'admin.picklists', 'admin.sharing', 'admin.workflows',
+      'admin.integrations', 'admin.templates', 'admin.numbering', 'admin.audit',
+    ],
+  },
 ];
 
 /**
@@ -248,6 +298,9 @@ function RolePermissions({ role }: { role: RoleNode }): JSX.Element {
   const { modules } = useApp();
   const [perms, setPerms] = useState<Record<string, Perm>>({});
   const [capabilities, setCapabilities] = useState<string[]>([]);
+  /** Which capability groups are open. Unset means the group's own default. */
+  const [openCapGroups, setOpenCapGroups] = useState<Record<string, boolean>>({});
+  const [fieldQuery, setFieldQuery] = useState('');
   const [fieldPerms, setFieldPerms] = useState<Map<string, FieldPermValue>>(new Map());
   const [fieldModule, setFieldModule] = useState('leads');
   const [dirty, setDirty] = useState(false);
@@ -265,6 +318,32 @@ function RolePermissions({ role }: { role: RoleNode }): JSX.Element {
     queryFn: () => api.module(fieldModule),
     enabled: Boolean(fieldModule),
   });
+
+  /*
+    The fields this panel is showing: alphabetical, de-duplicated, and narrowed
+    by the search box.
+
+    Alphabetical because they arrive in `sequence` — the order somebody
+    arranged the *form* in — and this is a list you scan for one name.
+
+    De-duplicated by column because the assignment field appears twice on this
+    business's Leads: once as `assigned_to` and once as the record's own
+    `owner_id`, both labelled "Assigned To", both the same column. Two
+    identical rows with independent settings is a trap — whichever one you set,
+    the other still applies.
+  */
+  const visibleFields = useMemo(() => {
+    const q = fieldQuery.trim().toLowerCase();
+    const seen = new Set<string>();
+    return byLabel((fieldModuleMeta?.fields ?? []).filter((f) => f.isActive))
+      .filter((f) => {
+        const column = f.columnName ?? f.name;
+        if (seen.has(column)) return false;
+        seen.add(column);
+        return true;
+      })
+      .filter((f) => !q || f.label.toLowerCase().includes(q) || f.name.toLowerCase().includes(q));
+  }, [fieldModuleMeta, fieldQuery]);
 
   useEffect(() => {
     if (!detail) return;
@@ -392,11 +471,47 @@ function RolePermissions({ role }: { role: RoleNode }): JSX.Element {
           </button>
         </div>
 
+        {/*
+          A search and a bulk set, because this list is as long as the module.
+
+          Twenty-four fields times four buttons is ninety-six controls in one
+          scroll box, and the job somebody actually comes here for is usually
+          one field ("hide the mobile from telecallers") or all of them ("this
+          role reads everything and changes nothing"). Neither was reachable
+          without scrolling through the other ninety.
+        */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-2 dark:border-slate-800">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+            <input
+              className="input py-1.5 pl-8 text-xs"
+              placeholder="Find a field…"
+              value={fieldQuery}
+              onChange={(e) => setFieldQuery(e.target.value)}
+              aria-label="Find a field"
+            />
+          </div>
+          <span className="text-2xs text-muted">Set all shown to</span>
+          {([
+            ['editable', 'Editable'], ['readonly', 'Read-only'],
+            ['owner_only', 'Owner only'], ['hidden', 'Hidden'],
+          ] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              className="btn-secondary btn-sm text-2xs"
+              onClick={() => visibleFields.forEach((f) => setFieldPerm(fieldModule, f.name, value))}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         {!fieldModuleMeta ? (
           <div className="space-y-2 p-4">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
         ) : (
           <div className="max-h-96 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800">
-            {fieldModuleMeta.fields.filter((f) => f.isActive).map((f) => {
+            {visibleFields.map((f) => {
               const key = `${fieldModule}::${f.name}`;
               const value = fieldPerms.get(key) ?? 'editable';
               return (
@@ -441,8 +556,10 @@ function RolePermissions({ role }: { role: RoleNode }): JSX.Element {
                 </div>
               );
             })}
-            {fieldModuleMeta.fields.filter((f) => f.isActive).length === 0 && (
-              <p className="px-4 py-6 text-center text-xs text-muted">No fields on this module.</p>
+            {visibleFields.length === 0 && (
+              <p className="px-4 py-6 text-center text-xs text-muted">
+                {fieldQuery ? `No field mentions “${fieldQuery}”.` : 'No fields on this module.'}
+              </p>
             )}
           </div>
         )}
@@ -455,43 +572,85 @@ function RolePermissions({ role }: { role: RoleNode }): JSX.Element {
           Reassign button on list pages such as Leads — without it, that button fails even when the
           role can edit the records.
         </p>
-        <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
-          {[...allCapabilities].sort((a, b) => {
-            // The everyday data powers lead the list; admin plumbing sinks to the bottom.
-            const pa = CAP_ORDER.indexOf(a) === -1 ? 99 : CAP_ORDER.indexOf(a);
-            const pb = CAP_ORDER.indexOf(b) === -1 ? 99 : CAP_ORDER.indexOf(b);
-            return pa - pb;
-          }).map((cap) => {
-            const active = capabilities.includes(cap);
-            const info = CAPABILITY_INFO[cap] ?? { label: cap, hint: '' };
-            return (
-              <label
-                key={cap}
-                title={info.hint || undefined}
-                className={cn(
-                  'flex cursor-pointer items-start gap-2 rounded-lg border px-2.5 py-1.5 text-xs transition-colors',
-                  active
-                    ? 'border-brand-300 bg-brand-50 dark:border-brand-800 dark:bg-brand-950/50'
-                    : 'border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800',
-                )}
-              >
-                <input
-                  type="checkbox"
-                  className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300"
-                  checked={active}
-                  onChange={() => {
-                    setCapabilities(active ? capabilities.filter((c) => c !== cap) : [...capabilities, cap]);
-                    setDirty(true);
-                  }}
-                />
-                <span className="min-w-0">
-                  <span className="block font-medium leading-tight">{info.label}</span>
-                  {info.hint && <span className="block text-2xs leading-snug text-muted">{info.hint}</span>}
-                  <span className="block truncate font-mono text-2xs text-slate-400">{cap}</span>
-                </span>
-              </label>
-            );
-          })}
+        {/*
+          Anything the server offers that no group above claims still has to
+          appear, or a capability added later would be invisible here and
+          ungrantable — the same trap the settings page avoids by rendering
+          whatever is in its table.
+        */}
+        <div className="space-y-2">
+          {[
+            ...CAP_GROUPS.map((g) => ({ ...g, caps: g.caps.filter((c) => allCapabilities.includes(c)) })),
+            {
+              id: 'other',
+              title: 'Everything else',
+              blurb: 'Added to the CRM since this screen was written.',
+              closed: false,
+              caps: allCapabilities.filter((c) => !CAP_GROUPS.some((g) => g.caps.includes(c))).slice().sort(),
+            },
+          ]
+            .filter((group) => group.caps.length > 0)
+            .map((group) => {
+              const on = group.caps.filter((c) => capabilities.includes(c)).length;
+              const open = openCapGroups[group.id] ?? !group.closed;
+              return (
+                <div key={group.id} className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
+                  <button
+                    type="button"
+                    aria-expanded={open}
+                    onClick={() => setOpenCapGroups((cur) => ({ ...cur, [group.id]: !open }))}
+                    className="flex w-full items-center gap-2 bg-slate-50 px-3 py-2 text-left dark:bg-slate-800/50"
+                  >
+                    <ChevronRight className={cn('h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform', open && 'rotate-90')} />
+                    <span className="text-sm font-medium">{group.title}</span>
+                    <span className="text-2xs text-muted tnum">{on} of {group.caps.length} on</span>
+                  </button>
+                  {open && (
+                    <>
+                      {group.blurb && <p className="px-3 pt-2 text-2xs text-muted">{group.blurb}</p>}
+                      <div className="grid gap-1.5 p-3 sm:grid-cols-2 lg:grid-cols-3">
+                        {group.caps.map((cap) => {
+                          const active = capabilities.includes(cap);
+                          const info = CAPABILITY_INFO[cap] ?? { label: cap, hint: '' };
+                          return (
+                            <label
+                              key={cap}
+                              /* The internal key lives in the tooltip now, not on
+                                 the face of every card. It matters when somebody is
+                                 reading the API docs and is noise the other
+                                 ninety-nine times — and thirty-five lines of
+                                 `admin.picklists` is most of what made this panel
+                                 read as a wall. */
+                              title={`${info.hint}${info.hint ? '\n\n' : ''}${cap}`}
+                              className={cn(
+                                'flex cursor-pointer items-start gap-2 rounded-lg border px-2.5 py-1.5 text-xs transition-colors',
+                                active
+                                  ? 'border-brand-300 bg-brand-50 dark:border-brand-800 dark:bg-brand-950/50'
+                                  : 'border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800',
+                              )}
+                            >
+                              <input
+                                type="checkbox"
+                                className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300"
+                                checked={active}
+                                onChange={() => {
+                                  setCapabilities(active ? capabilities.filter((c) => c !== cap) : [...capabilities, cap]);
+                                  setDirty(true);
+                                }}
+                              />
+                              <span className="min-w-0">
+                                <span className="block font-medium leading-tight">{info.label}</span>
+                                {info.hint && <span className="block text-2xs leading-snug text-muted">{info.hint}</span>}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
         </div>
       </div>
     </div>

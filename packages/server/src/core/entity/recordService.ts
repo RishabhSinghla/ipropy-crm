@@ -1350,11 +1350,35 @@ async function loadView(
   unrestricted: boolean,
 ): Promise<ViewRow | null> {
   const isUuid = /^[0-9a-f-]{36}$/i.test(viewIdOrName);
+  /*
+    Your own version of a built-in view wins, even when the id asked for is the
+    built-in one's.
+
+    Editing "All Leads" saves a personal override rather than reshaping the row
+    the whole team reads (migration 135). The switcher sends the override's own
+    id, so this join is not what makes the common case work — a link made
+    before the override existed is. Without it a bookmark, a dashboard
+    drill-through or a shared URL naming the system view would quietly show
+    that person the built-in columns and filter while their own switcher said
+    they were on their edited one.
+
+    `sort_by` gets a CASE rather than a COALESCE: it is nullable and null means
+    "the list's own default", so coalescing would fall back to the system
+    view's sort exactly when the person had cleared theirs.
+  */
   return conn.queryOne<ViewRow>(
-    `SELECT id, columns, filter, sort_by, sort_dir
-     FROM ipy_view
-     WHERE module_id = $1 AND ${isUuid ? 'id = $2::uuid' : 'name = $2'}
-       AND ($3 OR is_system OR is_public OR owner_id = $4)
+    `SELECT COALESCE(o.id, v.id)                                        AS id,
+            COALESCE(o.columns, v.columns)                              AS columns,
+            COALESCE(o.filter, v.filter)                                AS filter,
+            CASE WHEN o.id IS NOT NULL THEN o.sort_by  ELSE v.sort_by  END AS sort_by,
+            CASE WHEN o.id IS NOT NULL THEN o.sort_dir ELSE v.sort_dir END AS sort_dir
+     FROM ipy_view v
+     LEFT JOIN ipy_view o
+            ON o.overrides_view_id = v.id AND o.owner_id = $4
+     WHERE v.module_id = $1 AND ${isUuid ? 'v.id = $2::uuid' : 'v.name = $2'}
+       AND ($3 OR v.is_system OR v.is_public OR v.owner_id = $4
+            OR EXISTS (SELECT 1 FROM ipy_view_share s
+                        WHERE s.view_id = v.id AND s.user_id = $4))
      LIMIT 1`,
     [moduleId, viewIdOrName, unrestricted, userId],
   );

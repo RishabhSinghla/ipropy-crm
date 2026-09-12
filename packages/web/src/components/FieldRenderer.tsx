@@ -193,7 +193,10 @@ export function FieldValue({
             <span className="truncate">{display}</span>
           </span>
         )
-        : <span className="text-muted">Unassigned</span>;
+        // A dash, like every other empty field on the page. "Unassigned" read
+        // as a state somebody had chosen; it is only an old record nobody has
+        // handed on yet.
+        : <span className="text-muted">—</span>;
 
     case 'address': {
       const a = value as Record<string, unknown>;
@@ -1245,7 +1248,20 @@ export function UserPicker({
         disabled={disabled}
         onChange={(e) => onChange(e.target.value || null)}
       >
-        <option value="">— Unassigned —</option>
+        {/*
+          There is no "Unassigned" to pick.
+
+          A record in this CRM belongs to somebody — a new one starts on
+          whoever is adding it, and handing it on means naming the next person,
+          not emptying the box. Offering "Unassigned" made losing a record a
+          one-click mistake with nothing to notice it by.
+
+          The blank option stays only while the value *is* blank, disabled, so
+          an older record that was saved without an assignee still reads
+          honestly instead of silently showing whoever happens to sort first.
+          Once somebody is chosen there is no way back to empty.
+        */}
+        {!value && <option value="" disabled>— Select —</option>}
         {users.map((u) => (
           <option key={u.id} value={u.id}>{u.fullName}</option>
         ))}
@@ -1254,16 +1270,6 @@ export function UserPicker({
         <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2">
           <Avatar name={selectedName} size={20} />
         </span>
-      )}
-      {value && !disabled && (
-        <button
-          type="button"
-          className="absolute right-8 top-1/2 -translate-y-1/2 rounded px-1 text-xs text-muted hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-          onClick={() => onChange(null)}
-          aria-label={`Clear ${label ?? 'assignee'}`}
-        >
-          Clear
-        </button>
       )}
       <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
       {selectedName && <style>{`select { padding-left: 2rem; }`}</style>}

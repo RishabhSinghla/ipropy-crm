@@ -296,7 +296,6 @@ function NewRecordButton({ modules }: { modules: ModuleSummary[] }): JSX.Element
         <RecordForm
           module={createMeta}
           mode="quick_create"
-          initialValues={user ? { owner_id: user.id } : undefined}
           onSaved={(record) => {
             setCreating(null);
             toast.success(`${creating.singularLabel} created`, record.label);

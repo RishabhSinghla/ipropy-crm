@@ -1,4 +1,5 @@
 import { type JSX, useEffect, useMemo, useState } from 'react';
+import { byLabel } from '../../lib/fields';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatIndianPrice, relativeTime, UITYPES, type UIType } from '@ipropy/shared';
@@ -678,7 +679,7 @@ export default function ImportAdmin(): JSX.Element {
                   value=""
                   onChange={(v) => v && setStaticValues({ ...staticValues, [v]: '' })}
                   placeholder="+ Add a fixed value"
-                  options={spareFields.map((f) => ({ value: f.name, label: f.label }))}
+                  options={byLabel(spareFields).map((f) => ({ value: f.name, label: f.label }))}
                   className="max-w-xs py-1.5 text-sm"
                 />
               )}

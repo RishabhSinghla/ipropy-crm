@@ -1008,6 +1008,125 @@ recordsRouter.post('/:module/:id/share-links', asyncHandler(async (req, res) => 
   res.status(201).json(link);
 }));
 
+// ---------------------------------------------------------------------------
+// A saved matching, and a link to the picked rows.
+//
+// Both hang off the record whose matching tab they came from, and both need
+// only 'view' on it — for the same reason the share links above do: neither
+// changes the record, and a telecaller who may discuss a unit may send it.
+// ---------------------------------------------------------------------------
+
+/** The pinned matching for this record, or null if it is running live. */
+recordsRouter.get('/:module/:id/matches/snapshot', asyncHandler(async (req, res) => {
+  const { module, id } = req.params;
+  if (!(await canAccessRecord(getScope(req), module, id, 'view'))) throw new ForbiddenError();
+
+  const row = await db.queryOne<{
+    entries: unknown; filters: unknown; saved_at: Date; saved_by: string | null; saved_by_name: string | null;
+  }>(
+    `SELECT s.entries, s.filters, s.saved_at, s.saved_by,
+            NULLIF(TRIM(CONCAT(u.first_name, ' ', u.last_name)), '') AS saved_by_name
+       FROM ipy_match_snapshot s
+       LEFT JOIN ipy_user u ON u.id = s.saved_by
+      WHERE s.record_id = $1 AND s.module = $2`,
+    [id, module],
+  );
+  if (!row) { res.json(null); return; }
+  res.json({
+    entries: row.entries,
+    filters: row.filters,
+    savedAt: row.saved_at,
+    savedById: row.saved_by,
+    savedByName: row.saved_by_name ?? 'somebody since removed',
+  });
+}));
+
+/** Pin this matching exactly as it stands. */
+recordsRouter.put('/:module/:id/matches/snapshot', asyncHandler(async (req, res) => {
+  const { module, id } = req.params;
+  const user = getUser(req);
+  if (!(await canAccessRecord(getScope(req), module, id, 'view'))) throw new ForbiddenError();
+
+  const input = z.object({
+    entries: z.array(z.object({
+      targetId: z.string().uuid(),
+      score: z.number(),
+      matchedFields: z.array(z.string()).optional(),
+    })).max(500),
+    filters: z.array(z.string()).max(50).default([]),
+  }).parse(req.body ?? {});
+
+  await db.query(
+    `INSERT INTO ipy_match_snapshot (record_id, module, entries, filters, saved_by, saved_at)
+     VALUES ($1,$2,$3,$4,$5, now())
+     ON CONFLICT (record_id, module)
+     DO UPDATE SET entries = EXCLUDED.entries, filters = EXCLUDED.filters,
+                   saved_by = EXCLUDED.saved_by, saved_at = now()`,
+    [id, module, JSON.stringify(input.entries), JSON.stringify(input.filters), user.id],
+  );
+  res.json({ ok: true });
+}));
+
+/** Unpin it — the engine's answer comes back. */
+recordsRouter.delete('/:module/:id/matches/snapshot', asyncHandler(async (req, res) => {
+  const { module, id } = req.params;
+  if (!(await canAccessRecord(getScope(req), module, id, 'view'))) throw new ForbiddenError();
+  await db.query(`DELETE FROM ipy_match_snapshot WHERE record_id = $1 AND module = $2`, [id, module]);
+  res.json({ ok: true });
+}));
+
+/**
+ * A public link to the matches somebody ticked.
+ *
+ * Every id is checked against what the caller may see before it goes on the
+ * link. Without that, a rep could put any record id in the body and mint a
+ * public page for a unit their role hides from them — the sort of hole that
+ * only ever shows up after the link has been forwarded.
+ */
+recordsRouter.post('/:module/:id/matches/share', asyncHandler(async (req, res) => {
+  const scope = getScope(req);
+  const user = getUser(req);
+  const { module, id } = req.params;
+  if (!(await canAccessRecord(scope, module, id, 'view'))) throw new ForbiddenError();
+
+  const input = z.object({
+    targetModule: z.string().min(1).max(60),
+    ids: z.array(z.string().uuid()).min(1).max(50),
+    label: z.string().max(120).optional(),
+    expiresInDays: z.number().int().min(1).max(365).optional(),
+  }).parse(req.body ?? {});
+
+  await registry.requireModule(input.targetModule);
+
+  const allowed: string[] = [];
+  for (const targetId of input.ids) {
+    if (await canAccessRecord(scope, input.targetModule, targetId, 'view')) allowed.push(targetId);
+  }
+  if (!allowed.length) throw new ForbiddenError('None of those records are yours to share');
+
+  const link = await createShareLink({
+    recordId: id,
+    userId: user.id,
+    label: input.label ?? null,
+    expiresAt: input.expiresInDays ? new Date(Date.now() + input.expiresInDays * 86_400_000) : null,
+    kind: 'matches',
+    payload: { targetModule: input.targetModule, ids: allowed },
+  });
+
+  /* The token, not a URL. `APP_URL` holds every origin this CRM answers on —
+     it is a comma-separated list, and the browser already knows which one the
+     person is standing on. The web builds the link, exactly as it does for a
+     one-property share link.
+
+     `withheld` is said out loud rather than silently dropped: a rep who ticked
+     eight and gets a link showing six needs to know. */
+  res.status(201).json({
+    ...link,
+    shared: allowed.length,
+    withheld: input.ids.length - allowed.length,
+  });
+}));
+
 recordsRouter.delete('/:module/:id/share-links/:linkId', asyncHandler(async (req, res) => {
   const { module, id, linkId } = req.params;
   if (!(await canAccessRecord(getScope(req), module, id, 'view'))) throw new ForbiddenError();

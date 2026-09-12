@@ -83,6 +83,20 @@ export interface CustomView {
   /** show record count badge in the view switcher */
   showMetrics: boolean;
   sequence: number;
+  /*
+    Your own version of one of the two built-in views.
+
+    Editing "All Leads" does not reshape the row the whole team reads — it
+    saves your copy of it, and the switcher shows the two folded into one
+    entry (migration 135). `id` is then the copy's id, which is what the list
+    sends when it asks for records; `builtInId` is the row underneath, so a
+    link made before the copy existed still selects the right entry and Reset
+    has something to delete.
+  */
+  isOverride?: boolean;
+  builtInId?: string;
+  /** Who this view was shared with by name, when it is not shared with everyone. */
+  sharedWith?: string[];
 }
 
 export type ViewDisplayMode = 'table' | 'kanban' | 'calendar' | 'map' | 'timeline' | 'gallery' | 'split';

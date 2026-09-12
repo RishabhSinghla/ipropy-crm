@@ -1,4 +1,5 @@
 import { type JSX, useState } from 'react';
+import { byLabel } from '../../lib/fields';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { type FieldMeta, type FilterGroup, type FilterOperator, NULLARY_OPERATORS, UITYPE_LIST } from '@ipropy/shared';
@@ -1373,7 +1374,7 @@ function FieldEditor({
                     value={showWhenField}
                     onChange={setShowWhenField}
                     placeholder="— always show —"
-                    options={otherFields.map((f) => ({ value: f.name, label: f.label }))}
+                    options={byLabel(otherFields).map((f) => ({ value: f.name, label: f.label }))}
                     className="min-w-[9rem] flex-1 py-1.5 text-xs sm:max-w-[12rem]"
                   />
                   {showWhenField && (
@@ -1418,7 +1419,7 @@ function FieldEditor({
                         value={notAfterField}
                         onChange={setNotAfterField}
                         placeholder="— no limit —"
-                        options={comparableFields.map((f) => ({ value: f.name, label: f.label }))}
+                        options={byLabel(comparableFields).map((f) => ({ value: f.name, label: f.label }))}
                         className="min-w-0 flex-1 py-1.5 text-xs"
                       />
                     </label>
@@ -1428,7 +1429,7 @@ function FieldEditor({
                         value={notBeforeField}
                         onChange={setNotBeforeField}
                         placeholder="— no limit —"
-                        options={comparableFields.map((f) => ({ value: f.name, label: f.label }))}
+                        options={byLabel(comparableFields).map((f) => ({ value: f.name, label: f.label }))}
                         className="min-w-0 flex-1 py-1.5 text-xs"
                       />
                     </label>

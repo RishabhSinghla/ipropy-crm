@@ -836,14 +836,28 @@ adminRouter.put('/matching-config', asyncHandler(async (req, res) => {
       );
     }
     await tx.query(
-      `INSERT INTO ipy_setting (key, value, updated_by, updated_at) VALUES ('matching.price_grace_percent',$1,$2,now())
-       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`,
-      [JSON.stringify(input.priceGracePercent), user.id],
+      /* `category` is named because it defaults to 'general', which filed these
+         three numbers among the company's name and address on the Settings
+         page — as raw keys, since they carry no label either. See migration
+         137. `label`/`description` are set on insert only: an administrator who
+         rewords one on the Settings page keeps their wording. */
+      `INSERT INTO ipy_setting (key, value, category, label, updated_by, updated_at)
+       VALUES ('matching.price_grace_percent',$1,'matching',$3,$2,now())
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, category = 'matching',
+                                       updated_by = EXCLUDED.updated_by, updated_at = now()`,
+      [JSON.stringify(input.priceGracePercent), user.id, 'Budget headroom'],
     );
     await tx.query(
-      `INSERT INTO ipy_setting (key, value, updated_by, updated_at) VALUES ('matching.area_grace_percent',$1,$2,now())
-       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`,
-      [JSON.stringify(input.areaGracePercent), user.id],
+      /* `category` is named because it defaults to 'general', which filed these
+         three numbers among the company's name and address on the Settings
+         page — as raw keys, since they carry no label either. See migration
+         137. `label`/`description` are set on insert only: an administrator who
+         rewords one on the Settings page keeps their wording. */
+      `INSERT INTO ipy_setting (key, value, category, label, updated_by, updated_at)
+       VALUES ('matching.area_grace_percent',$1,'matching',$3,$2,now())
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, category = 'matching',
+                                       updated_by = EXCLUDED.updated_by, updated_at = now()`,
+      [JSON.stringify(input.areaGracePercent), user.id, 'Size headroom'],
     );
   });
   const { invalidateMatchingConfig } = await import('../../core/settings/matching.js');

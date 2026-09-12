@@ -42,7 +42,7 @@ import { Check, ChevronDown, Images, MapPin, Plus } from 'lucide-react';
 import { api, ApiError } from '../lib/api';
 import { startingValues } from '../lib/recordDefaults';
 import { invalidateRecordQueries } from '../lib/invalidate';
-import { toast } from '../lib/store';
+import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { FieldInput } from '../components/FieldRenderer';
 import { Spinner, Toggle } from '../components/ui';
@@ -149,6 +149,7 @@ export default function SiteCapture(): JSX.Element {
    * the option starred in Admin → Dropdowns. Applied once the module arrives
    * and only over an untouched form, so it can never overwrite typing.
    */
+  const me = useApp((st) => st.user);
   const [defaultsApplied, setDefaultsApplied] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showAll, setShowAll] = useState(false);
@@ -174,9 +175,9 @@ export default function SiteCapture(): JSX.Element {
   useEffect(() => {
     if (!module || defaultsApplied) return;
     setDefaultsApplied(true);
-    const defaults = startingValues(module as ModuleMeta);
+    const defaults = startingValues(module as ModuleMeta, me?.id);
     if (Object.keys(defaults).length) setValues((prev) => ({ ...defaults, ...prev }));
-  }, [module, defaultsApplied]);
+  }, [module, defaultsApplied, me?.id]);
 
   const panel = ((layout?.config as { capture?: CapturePanelConfig } | undefined)?.capture
     ?? {}) as CapturePanelConfig;

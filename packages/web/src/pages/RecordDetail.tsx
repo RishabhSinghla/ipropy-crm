@@ -1,9 +1,9 @@
-import { type JSX, type MouseEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type JSX, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type BuyerMatch, type FieldMeta, formatIndianPrice, type ModuleMeta, type PropertyMatch, type RecordEnvelope, relativeTime, type TimelineEntry } from '@ipropy/shared';
 import {
-  Activity, ArrowRightLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Edit3, ExternalLink, Eye, FileQuestion, FileText, FolderOpen, Images, LayoutDashboard, Link2, MessageCircle, Mic, MoreHorizontal, Paperclip, Pencil, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Tag, Trash2, Upload, Users, X,
+  Activity, ArrowRightLeft, Check, ChevronLeft, ChevronRight, Download, Edit3, Eye, FileQuestion, FileText, Images, LayoutDashboard, Link2, MessageCircle, Mic, MoreHorizontal, Paperclip, Pencil, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Tag, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { api, authedFileUrl } from '../lib/api';
 import { compressImage, formatBytes } from '../lib/compressImage';
@@ -26,6 +26,7 @@ import {
 import {} from '../components/Layout';
 import DocumentViewer, { isPreviewable, type ViewableFile } from '../components/DocumentViewer';
 import ComposeModal from '../components/ComposeModal';
+import MatchingTab from '../components/MatchingTab';
 import { PeekLink } from '../components/PeekLink';
 import { CallButton, CallDispositionProvider } from '../components/CallDisposition';
 import { isNative } from '../lib/native';
@@ -588,7 +589,7 @@ export default function RecordDetail(): JSX.Element {
                       ) : record.display?.[assignedField.name] ? (
                         <span className="inline-flex items-center gap-1"><Avatar name={record.display[assignedField.name]} size={16} />{record.display[assignedField.name]}</span>
                       ) : (
-                        <span className="text-muted">Unassigned</span>
+                        <span className="text-muted">—</span>
                       )}
                       {updatedChip}
                     </span>
@@ -832,9 +833,6 @@ function OverviewTab({
   onSaved: () => void;
 }): JSX.Element {
   const fieldMap = new Map(meta.fields.map((f) => [f.name, f]));
-  const [collapsed, setCollapsed] = useState<Set<string>>(
-    () => new Set((layoutConfig.blocks ?? []).filter((b) => b.collapsed).map((b) => b.key)),
-  );
 
   const blocks = layoutConfig.blocks?.length
     ? layoutConfig.blocks
@@ -846,7 +844,6 @@ function OverviewTab({
   return (
     <>
       {blocks.map((block) => {
-        const isCollapsed = collapsed.has(block.key);
         const fields = block.fields
           .map((n) => fieldMap.get(n))
           .filter((f): f is FieldMeta => Boolean(f))
@@ -862,19 +859,20 @@ function OverviewTab({
 
         return (
           <div key={block.key} className="card overflow-hidden">
-            <button
-              onClick={() => {
-                const next = new Set(collapsed);
-                if (isCollapsed) next.delete(block.key); else next.add(block.key);
-                setCollapsed(next);
-              }}
-              className="flex w-full items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-4 py-2.5 text-left dark:border-slate-800 dark:bg-slate-800/40"
-            >
-              <ChevronDown className={cn('h-3.5 w-3.5 text-slate-400 transition-transform', isCollapsed && '-rotate-90')} />
-              <span className="text-sm font-medium">{block.label}</span>
-            </button>
+            {/*
+              A section heading, not a control — same reasoning as the form.
 
-            {!isCollapsed && (
+              Overview is the page somebody scans before picking up the phone,
+              and a chevron on every section made each one look like a closed
+              dropdown. The blocks an admin marks collapsed still show fewer
+              fields, because the empty ones are dropped below; they no longer
+              fold the rest away.
+            */}
+            <div className="flex w-full items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-4 py-2.5 dark:border-slate-800 dark:bg-slate-800/40">
+              <span className="text-sm font-medium">{block.label}</span>
+            </div>
+
+            {(
               <dl className={cn(
                 'grid gap-x-6 gap-y-1.5 p-3',
                 block.columns === 1 ? 'grid-cols-1' : block.columns === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2',
@@ -1010,261 +1008,6 @@ function TimelineTab({ module, id }: { module: string; id: string }): JSX.Elemen
   );
 }
 
-/**
- * Matching: the two-way bridge between Contacts and Properties.
- *
- * On a contact it lists the units from live inventory that fit the stated
- * requirement — budget with admin-configured headroom, bedrooms (adjacent
- * counts forgiven as a soft miss), preferred areas, area, possession. On a property
- * it runs the same engine in reverse and lists the contacts worth pitching.
- *
- * Both directions share one table: score, the record, the facts a rep weighs
- * before picking up the phone, and the first AI-written reason. A row click
- * opens the other record and carries `return` so Back lands on this record,
- * this tab, exactly where the user was.
- */
-function MatchingTab({ module, id, returnQuery }: { module: string; id: string; returnQuery: string }): JSX.Element {
-  const isContact = module === 'leads';
-  const [minimumScore, setMinimumScore] = useState(0);
-  const [decisionFilter, setDecisionFilter] = useState<'all' | 'unmarked' | 'shortlisted' | 'follow_up' | 'not_suitable'>('all');
-  const [search, setSearch] = useState('');
-  const [mappedFilters, setMappedFilters] = useState<string[]>([]);
-  const [showMappedFilters, setShowMappedFilters] = useState(false);
-  // How deep into the ranking to look. The engine's top handful is the
-  // starting point, not the verdict — widening it is how a rep goes past what
-  // the score suggested and picks for this customer themselves.
-  const [howMany, setHowMany] = useState(10);
-
-  const aiAvailable = useApp((st) => st.aiAvailable);
-  const { data: matchingFields, isLoading: loadingMatchingFields, isError: matchingFieldsFailed } = useQuery({
-    queryKey: ['matching-fields'], queryFn: () => api.matchingFields(), staleTime: 60_000,
-  });
-  const mappedFields = useMemo(() => (matchingFields ?? []).map((pair) => {
-    const key = pair.contactField;
-    return { key, label: isContact ? pair.propertyLabel : pair.contactLabel };
-  }).filter((field) => field.key && field.label), [matchingFields, isContact]);
-
-  /*
-    Two requests, because they cost three orders of magnitude apart.
-
-    Scoring the inventory is a single indexed query — tens of milliseconds.
-    The pitch sentence beside each row is a model call, and asking for both in
-    one request made the whole tab wait on the model: the table sat empty for
-    seconds with every number in it already computed. So the scores are
-    fetched on their own and painted immediately, and the narrative arrives
-    after, filling in the reason column where it has something better to say.
-
-    The narrative request is skipped entirely when no model is configured —
-    the server would only degrade to the same deterministic reasons the fast
-    call already returned.
-  */
-  const fetchMatches = (narrative: boolean) => (): Promise<{ matches?: PropertyMatch[]; buyers?: BuyerMatch[] }> => (
-    isContact ? api.matchProperties(module, id, narrative, howMany) : api.buyersForProperty(id, narrative, howMany)
-  );
-
-  const { data: fast, isLoading, refetch, isFetching } = useQuery({
-    queryKey: ['matching', module, id, howMany],
-    queryFn: fetchMatches(false),
-    staleTime: 60_000,
-  });
-
-  const { data: narrated, refetch: refetchNarrative, isFetching: narrating } = useQuery({
-    queryKey: ['matching', module, id, howMany, 'narrative'],
-    queryFn: fetchMatches(true),
-    // Only once the fast answer is on screen, so the two never compete for the
-    // same connection on first paint.
-    enabled: aiAvailable && !isLoading,
-    staleTime: 5 * 60_000,
-  });
-
-  const data = narrated ?? fast;
-  const { data: decisions, refetch: refetchDecisions } = useQuery({
-    queryKey: ['match-feedback', module, id], queryFn: () => api.matchFeedbackList(module, id), staleTime: 30_000,
-  });
-  const decisionsByTarget = useMemo(() => new Map((decisions ?? []).map((d) => [d.targetId, d.decision])), [decisions]);
-
-  const matches = useMemo<{ id: string; label: string; score: number; primary: string; secondary: string; reason: string; caveat: string; status: string | null | undefined; matchedFields: string[] }[]>(() => {
-    if (isContact) {
-      const rows = ((data as { matches?: PropertyMatch[] } | undefined)?.matches ?? []);
-      return rows.map((m) => ({
-        id: m.propertyId,
-        label: m.propertyLabel,
-        score: m.score,
-        primary: m.bedrooms != null ? `${m.bedrooms} BHK` : '—',
-        secondary: m.price ? formatIndianPrice(m.price) : '—',
-        reason: m.reasons[0] ?? '',
-        caveat: m.mismatches[0] ?? '',
-        status: undefined,
-        matchedFields: m.matchedFields ?? [],
-      }));
-    }
-    const rows = ((data as { buyers?: BuyerMatch[] } | undefined)?.buyers ?? []);
-    return rows.map((b) => ({
-      id: b.recordId,
-      label: b.label,
-      score: b.score,
-      primary: b.configuration?.join(', ') || '—',
-      secondary: b.budget ? formatIndianPrice(b.budget) : '—',
-      reason: b.revival ?? b.reasons[0] ?? '',
-      caveat: b.reasons.find((r) => /above budget|smaller|outside/i.test(r)) ?? '',
-      status: b.status,
-      matchedFields: b.matchedFields ?? [],
-    }));
-  }, [data, isContact]);
-  const term = search.trim().toLowerCase();
-  const visibleMatches = matches.filter((match) => (
-    match.score >= minimumScore
-    && (!term || match.label.toLowerCase().includes(term) || match.primary.toLowerCase().includes(term) || match.secondary.toLowerCase().includes(term))
-    && mappedFilters.every((key) => match.matchedFields.includes(key))
-    && (decisionFilter === 'all' || (decisionFilter === 'unmarked' ? !decisionsByTarget.has(match.id) : decisionsByTarget.get(match.id) === decisionFilter))
-  ));
-
-  const feedback = async (event: MouseEvent, targetId: string, decision: 'shortlisted' | 'not_suitable' | 'follow_up'): Promise<void> => {
-    event.stopPropagation();
-    try {
-      if (decisionsByTarget.get(targetId) === decision) {
-        await api.clearMatchFeedback(module, id, targetId);
-        toast.success('Match action cleared');
-      } else {
-        await api.matchFeedback(module, id, targetId, decision);
-        toast.success(decision === 'shortlisted' ? 'Match shortlisted' : decision === 'not_suitable' ? 'Marked not suitable' : 'Follow-up marked');
-      }
-      await refetchDecisions();
-    }
-    catch (err) { toast.error('Could not save match decision', (err as Error).message); }
-  };
-
-  return (
-    <div className="card overflow-hidden">
-      <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
-        <Link2 className="h-4 w-4 shrink-0 text-brand-500" />
-        <span className="text-sm font-medium">
-          {isContact ? 'Matching inventories' : 'Matching leads'}{' '}
-          {/* The count is the first question asked of this tab, so it is in
-              the heading rather than under the last row. It shows what the
-              filters left when they are narrowing anything. */}
-          <span className="tnum text-brand-600">
-            ({visibleMatches.length === matches.length ? matches.length : `${visibleMatches.length} of ${matches.length}`})
-          </span>
-        </span>
-        {narrating && <span className="text-2xs text-muted">writing reasons…</span>}
-      </div>
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
-          <button type="button" aria-expanded={showMappedFilters} aria-controls="matching-field-filters" onClick={() => setShowMappedFilters((open) => !open)} className={cn('btn-secondary btn-sm', mappedFilters.length && 'border-brand-400 text-brand-700')}><Link2 className="h-3.5 w-3.5" />Match filters{mappedFilters.length ? ` (${mappedFilters.length})` : ''}<ChevronDown className={cn('h-3.5 w-3.5', showMappedFilters && 'rotate-180')} /></button>
-          <input
-            className="input h-8 w-40 py-0 text-xs"
-            placeholder={isContact ? 'Search these units…' : 'Search these leads…'}
-            aria-label={isContact ? 'Search matching inventories' : 'Search matching leads'}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <label className="flex items-center gap-1 text-xs text-muted">Show
-            <select className="input h-8 w-16 py-0 text-xs" aria-label="How many matches to rank" value={howMany} onChange={(e) => setHowMany(Number(e.target.value))}>
-              {[10, 25, 50].map((n) => <option key={n} value={n}>{n}</option>)}
-            </select>
-          </label>
-          <label className="flex items-center gap-1 text-xs text-muted">Minimum fit
-            <select className="input h-8 w-[4.5rem] py-0 text-xs" value={minimumScore} onChange={(e) => setMinimumScore(Number(e.target.value))}>
-              {[0, 50, 70, 85].map((score) => <option key={score} value={score}>{score}%</option>)}
-            </select>
-          </label>
-          <select className="input h-8 w-32 py-0 text-xs" aria-label="Filter match actions" value={decisionFilter} onChange={(e) => setDecisionFilter(e.target.value as typeof decisionFilter)}>
-            <option value="all">All matches</option><option value="unmarked">Not marked</option><option value="shortlisted">Shortlisted</option><option value="follow_up">Follow-up</option><option value="not_suitable">Not suitable</option>
-          </select>
-          {/* When the engine's shortlist isn't the answer, the whole inventory
-              with the filters the team already knows is one click away —
-              rather than a second, lesser filter builder living in here. */}
-          <Link
-            to={isContact ? '/properties' : '/leads'}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-ghost btn-sm"
-          >
-            <Search className="h-3 w-3" />
-            {isContact ? 'Browse all inventories' : 'Browse all leads'}
-          </Link>
-          <button
-            onClick={() => { void refetch(); void refetchNarrative(); }}
-            disabled={isFetching}
-            aria-label="Refresh matches"
-            className="btn-ghost btn-sm"
-          >
-            {isFetching ? <Spinner className="h-3 w-3" /> : <RefreshCw className="h-3 w-3" />}
-          </button>
-      </div>
-      {showMappedFilters && (
-        <div id="matching-field-filters" className="border-b border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/50">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="mr-1 text-2xs font-semibold uppercase tracking-wide text-muted">Matching Setup fields</span>
-            {mappedFields.map((field) => <label key={field.key} className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-800"><input type="checkbox" checked={mappedFilters.includes(field.key)} onChange={(event) => setMappedFilters((current) => event.target.checked ? [...current, field.key] : current.filter((key) => key !== field.key))} />{field.label}</label>)}
-            {loadingMatchingFields && <span className="text-xs text-muted">Loading fields…</span>}
-            {matchingFieldsFailed && <span className="text-xs text-red-600">Could not load matching fields.</span>}
-            {!loadingMatchingFields && !matchingFieldsFailed && !mappedFields.length && <span className="text-xs text-muted">No matching fields are configured.</span>}
-            {mappedFilters.length > 0 && <button type="button" className="ml-auto text-xs text-brand-700 hover:underline" onClick={() => setMappedFilters([])}>Clear filters</button>}
-          </div>
-        </div>
-      )}
-
-      {isLoading ? (
-        <div className="space-y-2 p-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10" />)}</div>
-      ) : !matches.length ? (
-        <EmptyState
-          icon={<Link2 className="h-8 w-8" />}
-          title={isContact ? 'No matching inventory' : 'No matching leads'}
-          body={isContact
-            ? 'Nothing available fits the stated requirement right now. Add or reprice a unit, or widen the requirement.'
-            : 'No open lead fits this unit yet. It sells itself when one arrives — check back after the next enquiry.'}
-        />
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr>
-                <th className="list-head w-24">Fit</th>
-                <th className="list-head">{isContact ? 'Inventory' : 'Lead'}</th>
-                <th className="list-head hidden sm:table-cell">Bedrooms</th>
-                <th className="list-head hidden sm:table-cell">{isContact ? 'Price' : 'Budget'}</th>
-                {!isContact && <th className="list-head hidden md:table-cell">Status</th>}
-                <th className="list-head">Why it fits</th>
-                <th className="list-head w-32">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {visibleMatches.map((m) => (
-                <tr
-                  key={m.id}
-                  className="hover:bg-slate-50 dark:hover:bg-slate-800/60"
-                >
-                  <td className="list-cell"><ScoreChip score={m.score} /></td>
-                  <td className="list-cell min-w-40 max-w-56">
-                    <Link to={`/${isContact ? 'properties' : 'leads'}/${m.id}${returnQuery}`} target="_blank" rel="noopener noreferrer" className="block truncate font-medium text-brand-600 hover:underline dark:text-brand-400">
-                      {m.label}
-                    </Link>
-                  </td>
-                  <td className="list-cell hidden whitespace-nowrap tnum sm:table-cell">{m.primary}</td>
-                  <td className="list-cell hidden whitespace-nowrap tnum sm:table-cell">{m.secondary}</td>
-                  {!isContact && <td className="list-cell hidden md:table-cell">{m.status ?? '—'}</td>}
-                  <td className="list-cell max-w-md">
-                    <span className="block truncate text-xs">{m.reason}</span>
-                    {m.caveat && <span className="block truncate text-2xs text-amber-600 dark:text-amber-400">{m.caveat}</span>}
-                  </td>
-                  <td className="list-cell whitespace-nowrap">
-                    {/* Each is a toggle: clicking the one already set takes
-                        it back off, so a misclick is undone the same way it
-                        was made. `aria-pressed` is what says so out loud. */}
-                    <button aria-pressed={decisionsByTarget.get(m.id) === 'shortlisted'} className={cn('btn-ghost btn-sm px-1.5', decisionsByTarget.get(m.id) === 'shortlisted' && 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300')} onClick={(e) => void feedback(e, m.id, 'shortlisted')} title={decisionsByTarget.get(m.id) === 'shortlisted' ? 'Shortlisted — click to undo' : 'Shortlist'}><Star className={cn('h-3.5 w-3.5', decisionsByTarget.get(m.id) === 'shortlisted' && 'fill-current')} /></button>
-                    <button aria-pressed={decisionsByTarget.get(m.id) === 'follow_up'} className={cn('btn-ghost btn-sm px-1.5', decisionsByTarget.get(m.id) === 'follow_up' && 'bg-brand-100 text-brand-700 dark:bg-brand-900/40 dark:text-brand-300')} onClick={(e) => void feedback(e, m.id, 'follow_up')} title={decisionsByTarget.get(m.id) === 'follow_up' ? 'Follow-up marked — click to undo' : 'Follow-up'}><Check className="h-3.5 w-3.5" /></button>
-                    <button aria-pressed={decisionsByTarget.get(m.id) === 'not_suitable'} className={cn('btn-ghost btn-sm px-1.5 text-red-500', decisionsByTarget.get(m.id) === 'not_suitable' && 'bg-red-100 dark:bg-red-950/50')} onClick={(e) => void feedback(e, m.id, 'not_suitable')} title={decisionsByTarget.get(m.id) === 'not_suitable' ? 'Marked not suitable — click to undo' : 'Not suitable'}><X className="h-3.5 w-3.5" /></button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
 
 function TimelineItem({ entry }: { entry: TimelineEntry }): JSX.Element {
   const Icon = resolveIcon(entry.icon);

@@ -14,7 +14,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import { collectFieldErrors, type FieldMeta, type LayoutConfig } from '@ipropy/shared';
 import { api, ApiError } from '../lib/api';
-import { toast } from '../lib/store';
+import { toast, useApp } from '../lib/store';
 import { startingValues } from '../lib/recordDefaults';
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { FieldInput } from '../components/FieldRenderer';
@@ -32,6 +32,7 @@ export default function MobileCompose(): JSX.Element {
     staleTime: 5 * 60_000,
   });
 
+  const me = useApp((st) => st.user);
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [touched, setTouched] = useState(false);
 
@@ -74,8 +75,8 @@ export default function MobileCompose(): JSX.Element {
   // Defaults an admin configured, not an empty object — a status that should
   // start at "New" must start at "New" here too.
   useEffect(() => {
-    if (meta) setValues((v) => (Object.keys(v).length ? v : startingValues(meta)));
-  }, [meta]);
+    if (meta) setValues((v) => (Object.keys(v).length ? v : startingValues(meta, me?.id)));
+  }, [meta, me?.id]);
 
   /*
     `collectFieldErrors` takes the fields being shown and the whole record it

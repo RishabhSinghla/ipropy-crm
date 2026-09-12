@@ -29,10 +29,27 @@ export function FilterBuilder({
   value: FilterGroup;
   onChange: (filter: FilterGroup) => void;
 }): JSX.Element {
-  const fields = [
-    ...module.fields.filter((f) => f.isActive && f.displayType !== 'hidden' && f.config.filterable !== false),
-    ...SYSTEM_FIELDS,
-  ];
+  /*
+    One entry per idea, in alphabetical order.
+
+    Two things were wrong with the old list. It offered **"Assigned To"
+    twice** — once as the module's own field and once as the `owner_id`
+    pseudo-field below, which are the same column wearing two names, so half
+    the time you picked the one that read the same and filtered the same and
+    you could not tell which you had. And it came out in `sequence`, the order
+    an admin arranged the *form* in, which is the right order on a form and no
+    order at all in a list of thirty you are scanning for one word.
+
+    So: drop a system field the module already has a real field for, then sort
+    by label. `localeCompare` rather than `<`, for the accented and non-Latin
+    labels this CRM carries.
+  */
+  const fields = useMemo(() => {
+    const own = module.fields.filter((f) => f.isActive && f.displayType !== 'hidden' && f.config.filterable !== false);
+    const covered = new Set(own.map((f) => f.columnName ?? f.name));
+    return [...own, ...SYSTEM_FIELDS.filter((f) => !covered.has(f.name))]
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [module.fields]);
 
   const update = (index: number, node: FilterCondition | FilterGroup): void => {
     const conditions = [...value.conditions];

@@ -71,3 +71,53 @@ describe('startingValues', () => {
     expect(Object.keys(values)).toHaveLength(0);
   });
 });
+
+/**
+ * The assignee, found by what the field *is* rather than what it is called.
+ *
+ * Three create screens used to pass `{ owner_id: <current user> }` as the
+ * form's initial values, and it landed nowhere: `owner_id` is the *column*,
+ * and the field on this business's modules is named `assigned_to`. The form
+ * looked up a field by that key, found none, and every new lead and every new
+ * unit opened saying "Unassigned" — while the server, which canonicalises the
+ * rename, quietly assigned it to the creator anyway. So the screen disagreed
+ * with the record it was about to write.
+ *
+ * Pinned here because this is the fourth time a rename has broken name-keyed
+ * code in this repo, and because the symptom is cosmetic enough to survive a
+ * long time: nothing throws, nothing 500s, the record is even owned correctly.
+ */
+describe('startingValues — who the record is assigned to', () => {
+  it('fills the assignment field under whatever name it currently has', () => {
+    const values = startingValues(
+      module([field({ name: 'assigned_to', label: 'Assigned To', uitype: 'owner', columnName: 'owner_id' })]),
+      'user-1',
+    );
+    expect(values.assigned_to).toBe('user-1');
+    // And not under the column name, which is what the form was keying on.
+    expect(values.owner_id).toBeUndefined();
+  });
+
+  it('finds it by uitype even when the name has nothing to do with owning', () => {
+    const values = startingValues(
+      module([field({ name: 'relationship_manager', label: 'RM', uitype: 'owner' })]),
+      'user-1',
+    );
+    expect(values.relationship_manager).toBe('user-1');
+  });
+
+  it('leaves it alone when nobody is signed in yet', () => {
+    // The bootstrap request has not come back on a hard reload. Writing
+    // `undefined` here would look like a chosen value to the effect that fills
+    // it in once the user lands.
+    const values = startingValues(
+      module([field({ name: 'assigned_to', uitype: 'owner' })]),
+    );
+    expect('assigned_to' in values).toBe(false);
+  });
+
+  it('does nothing on a module with no assignment field', () => {
+    const values = startingValues(module([field({ name: 'full_name' })]), 'user-1');
+    expect(values).toEqual({});
+  });
+});

@@ -283,6 +283,27 @@ export interface SharedProperty {
   priceShared: boolean;
 }
 
+/**
+ * A set of units behind one public link.
+ *
+ * Each item is the same payload a single-property share returns, minus the
+ * things only a one-unit page uses. The server resolves `title` and `price`
+ * for the same reason it does there — the names this page would have guessed
+ * at are fields production deleted.
+ */
+export interface SharedMatches {
+  items: {
+    id: string;
+    title: string | null;
+    price: number | null;
+    priceShared: boolean;
+    fields: { name: string; label: string; uitype: string }[];
+    property: Record<string, unknown>;
+    photos: { id: string; url: string }[];
+  }[];
+  sharedAt: string;
+}
+
 export interface PropertyShareAdminConfig {
   fields: { name: string; label: string; uitype: string; visible: boolean }[];
   showPhotos: boolean;
@@ -845,6 +866,30 @@ export const api = {
   clearMatchFeedback: (module: string, id: string, targetId: string) =>
     del(`/api/records/${module}/${id}/matches/${targetId}/feedback`),
   matchFeedbackList: (module: string, id: string) => get<{ targetId: string; decision: 'shortlisted' | 'not_suitable' | 'follow_up' }[]>(`/api/records/${module}/${id}/matches/feedback`),
+
+  /*
+    A matching somebody pinned, or null when it is running live.
+
+    Null is a real answer here, not a miss — most records have never had their
+    matching saved — so this is a 200 with a null body rather than a 404 the
+    caller would have to special-case.
+  */
+  matchSnapshot: (module: string, id: string) => get<{
+    entries: { targetId: string; score: number; matchedFields?: string[] }[];
+    filters: string[];
+    savedAt: string;
+    savedById: string | null;
+    savedByName: string;
+  } | null>(`/api/records/${module}/${id}/matches/snapshot`),
+  saveMatchSnapshot: (module: string, id: string, body: {
+    entries: { targetId: string; score: number; matchedFields?: string[] }[];
+    filters: string[];
+  }) => put(`/api/records/${module}/${id}/matches/snapshot`, body),
+  clearMatchSnapshot: (module: string, id: string) => del(`/api/records/${module}/${id}/matches/snapshot`),
+
+  /** A public link to the matches somebody ticked. Returns the token; the page builds the URL. */
+  shareMatches: (module: string, id: string, body: { targetModule: string; ids: string[]; label?: string }) =>
+    post<{ token: string; shared: number; withheld: number }>(`/api/records/${module}/${id}/matches/share`, body),
   exportTemplates: (module: string) => get<{ id: string; name: string; columns: { fieldId: string; header?: string }[]; filter: FilterGroup | null; isDefault: boolean }[]>(`/api/records/${module}/export/templates`),
   createExportTemplate: (module: string, data: Record<string, unknown>) => post<{ id: string }>(`/api/records/${module}/export/templates`, data),
   updateExportTemplate: (module: string, id: string, data: Record<string, unknown>) => patch(`/api/records/${module}/export/templates/${id}`, data),
@@ -855,7 +900,8 @@ export const api = {
     get<(CustomView & { count?: number; isActive?: boolean; isSystem?: boolean })[]>(
       `/api/views/${module}${qs({ withCounts, includeInactive })}`),
   reorderViews: (module: string, ids: string[]) => post(`/api/views/${module}/reorder`, { ids }),
-  duplicateView: (module: string, id: string) => post<{ id: string }>(`/api/views/${module}/${id}/duplicate`, {}),
+  /** Put me back on the built-in view by deleting my own version of it. */
+  resetView: (module: string, id: string) => del(`/api/views/${module}/${id}/override`),
   createView: (module: string, data: Record<string, unknown>) => post<{ id: string }>(`/api/views/${module}`, data),
   updateView: (module: string, id: string, data: Record<string, unknown>) => put(`/api/views/${module}/${id}`, data),
   deleteView: (module: string, id: string) => del(`/api/views/${module}/${id}`),
@@ -1121,6 +1167,7 @@ export const api = {
     del<void>(`/api/records/${module}/${id}/share-links/${linkId}`),
   /** The public read. Deliberately not authenticated — a buyer has no account. */
   sharedProperty: (token: string) => get<SharedProperty>(`/api/public/share/${token}`),
+  sharedMatches: (token: string) => get<SharedMatches>(`/api/public/matches/${token}`),
   tags: () => get<{ id: string; name: string; color: string; usage_count: number }[]>('/api/tags'),
   importPreview: (module: string, file: File) => {
     const form = new FormData();

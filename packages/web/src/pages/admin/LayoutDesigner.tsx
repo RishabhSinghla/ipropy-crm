@@ -1,4 +1,5 @@
 import { type JSX, useEffect, useMemo, useState } from 'react';
+import { byLabel } from '../../lib/fields';
 /**
  * Layout Designer — what a record page looks like, as data.
  *
@@ -375,8 +376,7 @@ export default function LayoutDesigner(): JSX.Element {
                 // The pipeline field is drawn as the status chip beside the
                 // record name, so putting it in the header strip too renders
                 // nothing — offering it is offering a no-op.
-                options={placeable
-                  .filter((f) => f.name !== meta?.pipelineField)
+                options={byLabel(placeable.filter((f) => f.name !== meta?.pipelineField))
                   .map((f) => ({ value: f.name, label: f.label }))}
                 defaultTab={defaultTab}
                 tabOptions={tabOptions}
