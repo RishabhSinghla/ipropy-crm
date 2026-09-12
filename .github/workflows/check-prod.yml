@@ -238,3 +238,28 @@ jobs:
                    WHERE position(regexp_replace(e.mobile, '\\D', '', 'g') in r.search_text) > 0)
               FROM ipy_record r JOIN ipy_e_leads e ON e.record_id = r.id
              WHERE NOT r.is_deleted AND e.mobile IS NOT NULL;"
+          echo
+          echo "--- can the team actually use the phone tomorrow ---"
+          # Every profile ships able to place and log calls. A profile edited
+          # since then that lost `telephony.call` is a whole group of reps
+          # getting 403 on the first call of the morning, and nothing else in
+          # the CRM would look wrong.
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT p.name,
+                   p.capabilities @> '[\"telephony.call\"]' AS can_call,
+                   p.capabilities @> '[\"telephony.listen_recordings\"]' AS can_listen,
+                   count(u.id) FILTER (WHERE u.is_active) AS active_users
+              FROM ipy_profile p LEFT JOIN ipy_user u ON u.profile_id = p.id
+             GROUP BY p.name, p.capabilities ORDER BY p.name;"
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT d.label, u.email, d.app_version,
+                   to_char(d.created_at, 'YYYY-MM-DD') AS paired,
+                   coalesce(to_char(d.last_sync_at, 'YYYY-MM-DD HH24:MI'), 'never') AS last_sync,
+                   d.last_sync_count, d.is_active
+              FROM ipy_device d LEFT JOIN ipy_user u ON u.id = d.user_id
+             ORDER BY d.created_at;"
+          psql "$PROD_DATABASE_URL" -tAc "
+            SELECT 'calls logged: ' || count(*)
+              || ' | with an outcome: ' || count(*) FILTER (WHERE disposition IS NOT NULL)
+              || ' | in the last 7 days: ' || count(*) FILTER (WHERE started_at > now() - interval '7 days')
+              FROM ipy_call;"
