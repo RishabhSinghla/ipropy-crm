@@ -54,14 +54,19 @@ jobs:
             psql "$DATABASE_URL" -P pager=off -c "
               SELECT status,
                      count(*) AS units,
+                     -- The website's own rule, character for character:
+                     -- `publishClause` in api/routes/public.ts requires the
+                     -- string 'true'. Anything softer here reports a unit as
+                     -- publishable that the site will never show.
                      count(*) FILTER (
-                       WHERE COALESCE((custom_fields->>'publish_to_web')::boolean, true)
-                     ) AS publishable
+                       WHERE custom_fields->>'publish_to_web' = 'true'
+                     ) AS on_the_website
                 FROM ipy_e_properties p
                 JOIN ipy_record r ON r.id = p.record_id AND NOT r.is_deleted
                GROUP BY status ORDER BY 2 DESC;"
-            echo "  note  the website shows a unit only when its status is one an admin has"
-            echo "        marked public (Admin → Settings → Website) and publish_to_web is not false."
+            echo "  note  'Show on Website' is off on a new property by design — it is created"
+            echo "        before it has photos, a price or a verified address. A unit appears"
+            echo "        on the site once that switch is on AND its status is a public one."
           fi
 
           echo "--- the enquiry form ---"
