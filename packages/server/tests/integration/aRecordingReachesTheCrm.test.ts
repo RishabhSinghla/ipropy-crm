@@ -141,4 +141,33 @@ describe('a call recording', () => {
     const res = await request(app).get(`/api/telephony/calls/${callId}/recording`);
     expect(res.status).toBe(401);
   });
+
+  /**
+   * The call *log* is scoped the same way, and one exception is deliberate.
+   *
+   * A rep with no org-wide listening sees only their own calls on the calls
+   * list. On a contact they can open, they see every call made to that
+   * contact — that is the handover: the next person to ring needs to know
+   * somebody rang yesterday and what was said. Pinned here because it is a
+   * visibility rule, and a visibility rule that drifts is found by a customer.
+   */
+  it('shows a rep their own calls, and the whole history on a contact they can open', async () => {
+    const login = await request(app).post('/api/auth/login')
+      .send({ identifier: SEEDED.executiveB, password: 'Admin@123' });
+    const repToken = login.body.token;
+
+    const mine = await request(app).get('/api/telephony/calls?limit=100')
+      .set('Authorization', `Bearer ${repToken}`);
+    expect(mine.status).toBe(200);
+    expect(
+      mine.body.some((c: { id: string }) => c.id === callId),
+      "a rep can see another rep's call on the general list",
+    ).toBe(false);
+
+    // And asking for somebody else's calls by name is refused outright, not
+    // quietly answered with an empty list.
+    const admin = await request(app).get('/api/telephony/calls?userId=00000000-0000-0000-0000-000000000001')
+      .set('Authorization', `Bearer ${repToken}`);
+    expect(admin.status).toBe(403);
+  });
 });
