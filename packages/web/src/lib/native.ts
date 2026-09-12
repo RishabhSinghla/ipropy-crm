@@ -15,6 +15,34 @@
 import { Capacitor } from '@capacitor/core';
 
 export const isNative: boolean = Capacitor.isNativePlatform();
+
+/**
+ * Is this running as an app the person installed, rather than a page they
+ * opened?
+ *
+ * Two ways that can be true, and the difference matters in exactly one place.
+ * `isNative` means Capacitor is underneath, so the camera, the call log and
+ * the rest of the plugins can be called — never use this flag for those.
+ * `isInstalledApp` is the wider question of whether somebody put an icon on
+ * their home screen and expects an app when they tap it, which is also true of
+ * the installed web app.
+ *
+ * It exists because of iPhones. Apple allows no way to put a real app on one
+ * without paying for a developer account, and until that is paid for, adding
+ * the CRM to the Home Screen is the only thing an iPhone owner can actually
+ * do. Showing them the desktop layout at that point — the checkboxes, the
+ * pager, the column chooser — would be answering "install this" with the
+ * website, which is what this whole build set out to stop.
+ *
+ * `display-mode: standalone` is the standard signal; `navigator.standalone` is
+ * the older iOS one, and Safari still reports only that on some versions, so
+ * both are asked.
+ */
+export const isInstalledApp: boolean = isNative
+  || (typeof window !== 'undefined' && (
+    window.matchMedia?.('(display-mode: standalone)').matches === true
+    || (window.navigator as { standalone?: boolean }).standalone === true
+  ));
 export const platform: 'ios' | 'android' | 'web' =
   Capacitor.getPlatform() as 'ios' | 'android' | 'web';
 export const isAndroid = platform === 'android';

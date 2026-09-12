@@ -1,7 +1,7 @@
 import { type JSX, lazy, Suspense, useEffect } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useApp } from './lib/store';
-import { isNative } from './lib/native';
+import { isInstalledApp } from './lib/native';
 import { Spinner, ToastHost } from './components/ui';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import Login from './pages/Login';
@@ -78,12 +78,17 @@ export default function App(): JSX.Element {
             <Route path="/f/:publicKey" element={<PublicFormPage />} />
 
             {/*
-              Inside the installed app every signed-in route is the app's own
-              shell — a phone-shaped product, not the website at a narrow
-              width. A phone *browser* still gets the responsive web layout
-              below, unchanged: this is deliberately not a breakpoint.
+              Installed, so this is the app's own shell — a phone-shaped
+              product, not the website at a narrow width.
+
+              True of the native app and of the web app added to a Home
+              Screen, which on an iPhone is the only kind of install Apple
+              permits without a paid developer account. A browser *tab* still
+              gets the responsive web layout below, unchanged: this is
+              deliberately not a breakpoint, so the phone-width e2e specs keep
+              testing what they were written against.
             */}
-            {isNative ? (
+            {isInstalledApp ? (
               <Route path="/*" element={<RequireAuth><MobileShell /></RequireAuth>} />
             ) : (
             <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
