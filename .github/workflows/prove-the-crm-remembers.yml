@@ -64,7 +64,8 @@ jobs:
             INSERT INTO ipy_api_key (user_id, name, key_prefix, key_hash, scopes, expires_at)
             VALUES ('${OWNER}', 'Live write check (automated)', '${PREFIX}', '${HASH}',
                     '[\"GET /api/records\", \"POST /api/records\", \"PATCH /api/records\",
-                      \"GET /api/telephony\", \"POST /api/telephony\"]'::jsonb,
+                      \"GET /api/telephony\", \"POST /api/telephony\",
+                      \"GET /api/files\", \"POST /api/files\", \"GET /api/notifications\"]'::jsonb,
                     now() + interval '10 minutes')
             RETURNING id" | head -1)"
           echo "KEY_ID=${KEY_ID}" >> "$GITHUB_ENV"
@@ -174,6 +175,34 @@ jobs:
             echo "  skip  no unit to share"
           fi
 
+          echo "--- a document on the record, and getting it back ---"
+          # Reps attach a photo of an ID, a signed form, a floor plan. An upload
+          # that succeeds and cannot be read back is worse than one that fails:
+          # the paperwork looks filed and is not there.
+          printf 'Write Check (automated) — safe to ignore.\n' > /tmp/attach.txt
+          CODE="$(curl -s -o /tmp/body.json -w '%{http_code}' -H "x-api-key: ${KEY}" \
+            -F "file=@/tmp/attach.txt;type=text/plain" -F "recordId=${LEAD}" -F "module=leads" \
+            "${BASE_URL}/api/files")"
+          check "a document can be attached" 201 "$CODE"
+          FILE_ID="$(field id)"
+          echo "FILE_ID=${FILE_ID}" >> "$GITHUB_ENV"
+          if [ -n "$FILE_ID" ]; then
+            BACK="$(curl -s -H "x-api-key: ${KEY}" "${BASE_URL}/api/files/${FILE_ID}")"
+            case "$BACK" in
+              *"safe to ignore"*) echo "  ok    and it reads back byte for byte" ;;
+              *) echo "  FAIL  the document came back as something else"; fail=1 ;;
+            esac
+            LISTED="$(curl -s -H "x-api-key: ${KEY}" "${BASE_URL}/api/records/${LEAD}/files" \
+              | python3 -c "import json,sys;d=json.load(sys.stdin);print(len(d if isinstance(d,list) else d.get('files',[])))" 2>/dev/null || echo 0)"
+            check "and it is listed on the record" 1 "$LISTED"
+          else
+            echo "  FAIL  a document can be attached — no file id came back"; fail=1
+          fi
+
+          echo "--- being told about it ---"
+          CODE="$(curl -s -o /tmp/body.json -w '%{http_code}' -H "x-api-key: ${KEY}" "${BASE_URL}/api/notifications")"
+          check "notifications answer" 200 "$CODE"
+
           echo "--- what this key must not be able to do ---"
           CODE="$(curl -s -o /dev/null -w '%{http_code}' -X DELETE -H "x-api-key: ${KEY}" "${BASE_URL}/api/records/leads/${LEAD}")"
           check "it cannot delete a record" 401 "$CODE"
@@ -197,6 +226,8 @@ jobs:
           DELETE FROM ipy_notification
            WHERE created_at > now() - interval '30 minutes'
              AND (title LIKE '%Write Check (automated)%' OR body LIKE '%Write Check (automated)%');
+          DELETE FROM ipy_attachment
+           WHERE record_id = '${LEAD:-00000000-0000-0000-0000-000000000000}';
           DELETE FROM ipy_share_link
            WHERE label = 'Write Check (automated)'
               OR token = '${SHARE_TOKEN:-none}';
