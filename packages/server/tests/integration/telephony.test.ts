@@ -14,7 +14,7 @@
 import { describe, expect, it, beforeAll } from 'vitest';
 import { db } from '../../src/db/pool.js';
 import { pairDevice, syncCalls, type AuthedDevice } from '../../src/integrations/telephony/deviceSync.js';
-import { logManualCall } from '../../src/integrations/telephony/service.js';
+import { logManualCall } from '../../src/integrations/telephony/manualCall.js';
 import { createRecord, deleteRecord } from '../../src/core/entity/recordService.js';
 import { adminContext, leadInput } from './fixtures.js';
 

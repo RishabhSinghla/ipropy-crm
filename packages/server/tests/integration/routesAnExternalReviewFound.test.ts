@@ -62,28 +62,14 @@ describe('the generic lead form refuses the committed key', () => {
   });
 });
 
-describe('the softphone lookup answers nobody unauthenticated', () => {
-  it('refuses a lookup with no secret', async () => {
-    const res = await request(app).get('/api/webhooks/telephony/lookup?number=9876543210');
-    // 401, not 200-with-found:false — a refusal that answers with the shape
-    // of the data is still an oracle for who has a phone number on file.
-    expect(res.status).toBe(401);
-  });
+/*
+  The softphone lookup is gone, with Exotel and Twilio (migration 141).
 
-  it('refuses a lookup with the wrong secret', async () => {
-    const res = await request(app).get('/api/webhooks/telephony/lookup?number=9876543210&secret=nope');
-    expect(res.status).toBe(401);
-  });
-
-  it('refuses a lookup even when a session token is on the request', async () => {
-    // The softphone carries a provider secret, not a CRM session; a signed-in
-    // user is not the thing this route serves.
-    const res = await request(app)
-      .get('/api/webhooks/telephony/lookup?number=9876543210')
-      .set('Authorization', `Bearer ${adminToken}`);
-    expect(res.status).toBe(401);
-  });
-});
+  Its three cases proved an unauthenticated caller could not use the route as an
+  oracle for "does this number belong to anybody". There is no route now, and
+  `tests/webhookAuth.test.ts` pins that the removed telephony paths never answer
+  200 — which is the same guarantee with nothing left to guard.
+*/
 
 describe('a token in the URL works only where an embed needs it', () => {
   it('is refused on a data route', async () => {

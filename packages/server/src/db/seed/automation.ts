@@ -512,8 +512,6 @@ export async function seedSettings(conn: Tx): Promise<void> {
 export async function seedIntegrations(conn: Tx): Promise<void> {
   const integrations = [
     { provider: 'meta_whatsapp', kind: 'messaging', label: 'WhatsApp Business (Meta Cloud API)' },
-    { provider: 'twilio', kind: 'telephony', label: 'Twilio Voice' },
-    { provider: 'exotel', kind: 'telephony', label: 'Exotel' },
     { provider: 'knowlarity', kind: 'telephony', label: 'Knowlarity' },
     { provider: 'facebook_leads', kind: 'lead_source', label: 'Facebook Lead Ads' },
     { provider: 'google_ads', kind: 'lead_source', label: 'Google Ads Lead Form' },
@@ -529,9 +527,7 @@ export async function seedIntegrations(conn: Tx): Promise<void> {
     { provider: 'ai_gemini', kind: 'ai', label: 'Google Gemini' },
     { provider: 'ai_groq', kind: 'ai', label: 'Groq' },
     { provider: 'ai_openrouter', kind: 'ai', label: 'OpenRouter' },
-    { provider: 'ai_opencode', kind: 'ai', label: 'OpenCode Zen' },
     { provider: 'ai_openai', kind: 'ai', label: 'OpenAI-compatible' },
-    { provider: 'ai_ollama', kind: 'ai', label: 'Ollama (local)' },
     { provider: 'stt', kind: 'ai', label: 'Speech-to-text (Whisper)' },
     { provider: 'sentry', kind: 'ops', label: 'Error reporting (Sentry)' },
     { provider: 's3', kind: 'storage', label: 'S3 Object Storage' },

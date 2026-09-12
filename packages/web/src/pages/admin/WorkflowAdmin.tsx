@@ -406,7 +406,6 @@ const TASK_TYPE_LABELS: Record<string, string> = {
   webhook: 'Call a webhook',
   add_tag: 'Add tags',
   ai_action: 'Run an AI action',
-  trigger_call: 'Trigger a call',
   delay: 'Wait',
 };
 
@@ -718,7 +717,6 @@ function TaskConfigFields({
       );
 
     case 'send_sms':
-    case 'trigger_call':
       return (
         <div className="space-y-2">
           <label className="label">To</label>

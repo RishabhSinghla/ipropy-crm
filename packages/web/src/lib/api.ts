@@ -1028,7 +1028,6 @@ export const api = {
   syncWhatsappTemplates: () => post<{ synced: number }>('/api/comms/templates/sync', {}),
 
   // --- telephony ----------------------------------------------------------
-  telephonyStatus: () => get<{ configured: boolean }>('/api/telephony/status'),
   setDisposition: (id: string, data: { disposition: string; notes?: string; followUpAt?: string | null }) =>
     post(`/api/telephony/calls/${id}/disposition`, data),
   recordingUrl: (callId: string) => authedFileUrl(`/api/telephony/calls/${callId}/recording`),
@@ -1036,8 +1035,6 @@ export const api = {
   pairDevice: (data: { label?: string; phoneNumber?: string | null; model?: string | null }) =>
     post<{ deviceId: string; token: string; note: string }>('/api/telephony/devices', data),
   revokeDevice: (id: string) => del(`/api/telephony/devices/${id}`),
-  call: (to: string, recordId?: string, module?: string) =>
-    post<{ callId: string }>('/api/telephony/call', { to, recordId, module }),
   logCall: (data: Record<string, unknown>) => post('/api/telephony/log', data),
   calls: (params: Record<string, unknown> = {}) => get<Record<string, unknown>[]>(`/api/telephony/calls${qs(params)}`),
   callDetail: (id: string) => get<Record<string, unknown>>(`/api/telephony/calls/${id}`),

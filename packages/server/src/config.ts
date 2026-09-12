@@ -158,7 +158,7 @@ export const config = {
      * chat-completions shape. OpenCode's model picker filters out models that
      * use its other transports, so every model shown by the CRM is callable.
      */
-    provider: str('AI_PROVIDER') as '' | 'anthropic' | 'gemini' | 'groq' | 'openrouter' | 'opencode' | 'openai' | 'ollama',
+    provider: str('AI_PROVIDER') as '' | 'anthropic' | 'gemini' | 'groq' | 'openrouter' | 'openai',
     apiKey: str('ANTHROPIC_API_KEY'),
     model: str('AI_MODEL', 'claude-sonnet-5'),
     fastModel: str('AI_MODEL_FAST', 'claude-haiku-4-5-20251001'),
@@ -185,23 +185,12 @@ export const config = {
       model: str('OPENROUTER_MODEL', 'openrouter/free'),
       fastModel: str('OPENROUTER_MODEL_FAST', 'openrouter/free'),
     },
-    /** OpenCode Zen — free models plus one API key across several providers. */
-    opencode: {
-      apiKey: str('OPENCODE_API_KEY'),
-      model: str('OPENCODE_MODEL', 'nemotron-3-ultra-free'),
-      fastModel: str('OPENCODE_MODEL_FAST', 'deepseek-v4-flash-free'),
-    },
-    /** Any other OpenAI-compatible endpoint, incl. a local Ollama or vLLM. */
+    /** Any other OpenAI-compatible endpoint. */
     openaiCompatible: {
       apiKey: str('OPENAI_API_KEY'),
       baseUrl: str('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
       model: str('OPENAI_MODEL', 'gpt-4o-mini'),
       fastModel: str('OPENAI_MODEL_FAST', 'gpt-4o-mini'),
-    },
-    ollama: {
-      baseUrl: str('OLLAMA_BASE_URL', 'http://localhost:11434/v1'),
-      model: str('OLLAMA_MODEL', 'llama3.1'),
-      fastModel: str('OLLAMA_MODEL_FAST', 'llama3.1'),
     },
   },
 
@@ -234,24 +223,6 @@ export const config = {
     apiVersion: str('WHATSAPP_API_VERSION', 'v21.0'),
   },
 
-
-  telephony: {
-    provider: str('TELEPHONY_PROVIDER', 'none'),
-    twilio: {
-      accountSid: str('TWILIO_ACCOUNT_SID'),
-      authToken: str('TWILIO_AUTH_TOKEN'),
-      callerId: str('TWILIO_CALLER_ID'),
-      appSid: str('TWILIO_APP_SID'),
-    },
-    exotel: {
-      sid: str('EXOTEL_SID'),
-      apiKey: str('EXOTEL_API_KEY'),
-      apiToken: str('EXOTEL_API_TOKEN'),
-      subdomain: str('EXOTEL_SUBDOMAIN', 'api.exotel.com'),
-      callerId: str('EXOTEL_CALLER_ID'),
-      webhookSecret: str('EXOTEL_WEBHOOK_SECRET'),
-    },
-  },
 
   email: {
     host: str('SMTP_HOST'),

@@ -12,7 +12,6 @@ interface AppState {
   aiAvailable: boolean;
   /** False when no transcription service is configured — the mic then uses the browser's own. */
   sttAvailable: boolean;
-  telephonyAvailable: boolean;
   /** The CRM could not be reached on start-up; the shell is running on cached identity. */
   offline: boolean;
 
@@ -220,7 +219,6 @@ async function adoptSession(
   cacheModules(modules);
   set({ user: result.user, modules, offline: false });
   void api.aiStatus().then((s) => set({ aiAvailable: s.available, sttAvailable: s.speechToText === true })).catch(() => undefined);
-  void api.telephonyStatus().then((s) => set({ telephonyAvailable: s.configured })).catch(() => undefined);
 }
 
 export const useApp = create<AppState>((set, get) => ({
@@ -230,7 +228,6 @@ export const useApp = create<AppState>((set, get) => ({
   theme: initialTheme(),
   aiAvailable: false,
   sttAvailable: false,
-  telephonyAvailable: false,
   offline: false,
 
   bootstrap: async () => {
@@ -259,7 +256,6 @@ export const useApp = create<AppState>((set, get) => ({
 
       // Non-critical capability probes — never block the app shell on these.
       void api.aiStatus().then((s) => set({ aiAvailable: s.available, sttAvailable: s.speechToText === true })).catch(() => undefined);
-      void api.telephonyStatus().then((s) => set({ telephonyAvailable: s.configured })).catch(() => undefined);
 
       if (user.theme === 'dark' || user.theme === 'light') {
         set({ theme: user.theme });
