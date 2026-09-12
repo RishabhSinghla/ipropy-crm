@@ -205,12 +205,35 @@ export function MatchingTab({
     });
   }, [ids]);
 
+  /*
+    What gets pinned: the rows somebody ticked, or all of them if they ticked
+    none.
+
+    Filtering and saving was the only curation available, and "these six, not
+    those three" is not something a filter can say — the engine's shortlist is
+    a starting point and the rep's judgement is the rest of it. The Actions
+    column that used to carry shortlist/not-suitable is gone on purpose; the
+    checkboxes that replaced it already express the same thing, and now they
+    decide what Save keeps.
+
+    Ticking nothing still means "pin what I am looking at", because that is
+    what the button plainly reads as when no row is ticked.
+  */
+  const toPin = selected.size ? visible.filter((v) => selected.has(v.id)) : visible;
+
   const saveMutation = useMutation({
     mutationFn: () => api.saveMatchSnapshot(module, id, {
-      entries: visible.map((v) => ({ targetId: v.id, score: v.score, matchedFields: v.matchedFields })),
+      entries: toPin.map((v) => ({ targetId: v.id, score: v.score, matchedFields: v.matchedFields })),
       filters: mappedFilters,
     }),
-    onSuccess: () => { toast.success('Matching saved', 'It stays exactly as it is until somebody reverts it.'); void refetchSaved(); },
+    onSuccess: () => {
+      toast.success(
+        `Matching saved — ${toPin.length} ${toPin.length === 1 ? 'record' : 'records'}`,
+        'It stays exactly as it is until somebody reverts it.',
+      );
+      setSelected(new Set());
+      void refetchSaved();
+    },
     onError: (e: Error) => toast.error('Could not save this matching', e.message),
   });
 
@@ -325,8 +348,16 @@ export function MatchingTab({
               <RotateCcw className="h-3.5 w-3.5" /> Revert
             </button>
           ) : (
-            <button className="btn-secondary btn-sm" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || !visible.length}>
-              <Save className="h-3.5 w-3.5" /> Save
+            <button
+              className="btn-secondary btn-sm"
+              onClick={() => saveMutation.mutate()}
+              disabled={saveMutation.isPending || !toPin.length}
+              title={selected.size
+                ? `Pin just the ${selected.size} you have ticked`
+                : 'Pin this list exactly as it stands'}
+            >
+              <Save className="h-3.5 w-3.5" />
+              {selected.size ? `Save ${selected.size}` : 'Save'}
             </button>
           )}
 
