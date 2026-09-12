@@ -547,6 +547,53 @@ Two traps worth knowing:
 ---
 
 
+## The phone app
+
+`packages/app` is the CRM installed on Android and iPhone — the same React
+bundle, wrapped in real native projects, with the phone's camera, location,
+notifications and call log wired in. Read `packages/app/README.md` before
+touching it.
+
+Four rules that matter here:
+
+* **It runs the metadata engine, it does not reimplement it.** Screens live in
+  `packages/web/src/mobile/` and read the same modules, layouts and fields as
+  the web. A hand-written native UI would freeze every screen into a release, so
+  renaming a field would need a Play Store update. Anything added there must
+  come from metadata, not from a constant.
+* **The app is not a breakpoint.** `isNative` picks the mobile shell; a phone
+  *browser* keeps the responsive web layout unchanged. This also keeps the
+  phone-width Playwright specs pointing at what they were written against.
+* **Two localhost origins in `allowedOrigins()` are load-bearing.**
+  `https://localhost` (Android) and `capacitor://localhost` (iOS) are what a
+  Capacitor webview stamps on its requests. They read like a development
+  leftover; deleting either stops both apps at the login screen with a CORS
+  error, on production only, with every test green.
+  `tests/allowedOrigins.test.ts` fails if one goes.
+* **The session is native storage, not a cookie.** A third-party cookie from a
+  `capacitor://` origin is dropped by both platforms often enough that the team
+  would be signed out hourly. The app uses the body path `/api/auth/refresh`
+  already accepts.
+
+The standalone `companion-android/` call-sync app is folded in. Its engine came
+across unchanged except for one fix worth knowing: **all three call-log queries
+appended a row cap to the sort order**, which from Android 11 the call-log
+provider refuses outright (`Invalid token LIMIT`). Both callers catch and carry
+on, so the symptom is a handset that pairs, reports itself healthy and uploads
+nothing, ever — which is the likeliest explanation for the three handsets paired
+since August that never synced. `queryCalls` uses `QUERY_ARG_LIMIT` now. The
+second half of the same bug was quieter: `currentHighestId` returned 0 on
+failure, indistinguishable from an empty call log, and 0 means *start from the
+beginning* — so fixing the read alone would have uploaded every rep's personal
+call history. It returns null on failure and pairing refuses rather than guesses.
+
+Building needs **JDK 21** (not 17 — Capacitor 8 plugins declare a Java 21
+toolchain and Gradle will not substitute another). iPhone needs Xcode and an
+Apple Developer account, neither of which is on this machine; the project is
+complete and unbuilt.
+
+---
+
 ## Connected apps (MCP)
 
 `packages/mcp` exposes the CRM to Claude, ChatGPT or any MCP client. It holds **no**

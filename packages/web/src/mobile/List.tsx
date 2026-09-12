@@ -21,7 +21,6 @@ import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { FieldMeta, RecordEnvelope } from '@ipropy/shared';
-import { relativeTime, toInternational } from '@ipropy/shared';
 import { MessageCircle, Phone, Plus, Search as SearchIcon, X } from 'lucide-react';
 import { api } from '../lib/api';
 import { cn } from '../lib/utils';
@@ -29,6 +28,7 @@ import { dial, openExternal } from '../lib/nativeActions';
 import { useSwipeActions, type SwipeSide } from '../lib/swipeActions';
 import { Spinner } from '../components/ui';
 import { AppBar, Avatar, Fab, Row } from './primitives';
+import { phoneOf, secondLine, shortTime } from './rows';
 
 const PAGE_SIZE = 30;
 
@@ -274,87 +274,3 @@ function ListRow({
   );
 }
 
-/**
- * The line under the name.
- *
- * A number and where they have got to — the two things a rep wants before
- * deciding whether to tap. Both are found through metadata rather than named:
- * the number is whichever field is a phone, and the stage is the module's own
- * `pipelineField`, which is the setting that already means "the field this
- * module's progress is tracked on". So a module with neither shows its first
- * filled-in dropdown, and one that is renamed reaches this screen with no
- * release.
- *
- * `display` before `values`, always. The raw value of a phone is national
- * digits with no country, and of a reference is a UUID — showing either is how
- * a list ends up with a row of identifiers under every name.
- */
-function secondLine(
-  row: RecordEnvelope,
-  fields: Map<string, FieldMeta>,
-  pipelineField: string | null,
-): string {
-  const parts: string[] = [];
-
-  const shown = (name: string): string | null => {
-    const raw = row.display?.[name] ?? row.values[name];
-    if (raw === null || raw === undefined || raw === '') return null;
-    if (Array.isArray(raw) && !raw.length) return null;
-    const text = String(raw);
-    // The label repeated under itself reads as a rendering fault.
-    return text === row.label ? null : text;
-  };
-
-  for (const [name, field] of fields) {
-    if (field.uitype !== 'phone') continue;
-    const text = shown(name);
-    if (text) { parts.push(text); break; }
-  }
-
-  const stage = pipelineField ? shown(pipelineField) : null;
-  if (stage) parts.push(stage);
-
-  if (!parts.length) {
-    for (const [name, field] of fields) {
-      if (field.uitype !== 'picklist') continue;
-      const text = shown(name);
-      if (text) { parts.push(text); break; }
-    }
-  }
-
-  return parts.join(' · ');
-}
-
-/** The first phone-shaped field on the record, in international form. */
-function phoneOf(row: RecordEnvelope, fields: Map<string, FieldMeta>): string | null {
-  for (const [name, field] of fields) {
-    if (field.uitype !== 'phone') continue;
-    const value = row.values[name];
-    if (!value) continue;
-    /*
-      A number is two fields here — a country picklist and the national digits
-      (migration 026). `toInternational` is the one place that knows how to put
-      them back together, and writing it out by hand is how the lead-capture
-      path silently threw away every automated lead for weeks.
-    */
-    const country = String(row.values[String(field.config?.countryField ?? 'country_code')] ?? 'India');
-    return toInternational(country, String(value));
-  }
-  return null;
-}
-
-/**
- * A time a person reads at a glance: the clock today, the day this week, a
- * date beyond that. The same rule a messaging list uses.
- */
-function shortTime(iso: string): string {
-  const then = new Date(iso);
-  const now = new Date();
-  const sameDay = then.toDateString() === now.toDateString();
-  if (sameDay) return then.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
-  const days = (now.getTime() - then.getTime()) / 86_400_000;
-  if (days < 7) return then.toLocaleDateString('en-IN', { weekday: 'short' });
-  return then.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-}
-
-export { relativeTime };

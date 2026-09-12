@@ -19,34 +19,12 @@ import { type JSX, type ReactNode, useEffect, useRef } from 'react';
 import { ChevronLeft, X } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { tap } from '../lib/nativeActions';
+import { hueFor, initialsOf } from './rows';
 
 // ---------------------------------------------------------------------------
 // Identity
 // ---------------------------------------------------------------------------
 
-/*
-  Eight hues, picked by name.
-
-  A contacts app gives every person a colour and it is the same colour every
-  time, which is most of how you find somebody in a list without reading. Hue
-  rather than a random palette so the set stays coherent, and fixed saturation
-  and lightness so white text clears contrast on all eight.
-*/
-const HUES = [210, 268, 330, 12, 32, 152, 190, 250];
-
-function hueFor(seed: string): number {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i += 1) hash = (hash * 31 + seed.charCodeAt(i)) | 0;
-  return HUES[Math.abs(hash) % HUES.length];
-}
-
-/** Initials the way a phone does it: first letter of the first two words. */
-function initialsOf(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  if (!words.length) return '?';
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-  return (words[0][0] + words[words.length - 1][0]).toUpperCase();
-}
 
 export function Avatar({
   name, size = 48, className,
