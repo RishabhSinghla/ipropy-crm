@@ -5,10 +5,9 @@
 -- It was a count and nothing else: you could see that ninety-nine things needed
 -- looking at and had no way to list them.
 --
--- `is_unseen` is a filter operator now (see `core/query/builder.ts`), so the
--- view is an ordinary saved view with an ordinary filter, and it works
--- everywhere a filter works — sorting, columns, the editor, saving your own
--- version of it.
+-- `unread` is a system filter field (see `core/query/builder.ts`), so the view
+-- is an ordinary saved view with an ordinary filter, and it works everywhere a
+-- filter works — sorting, columns, the editor, saving your own version of it.
 --
 -- The seed creates these on a cold start; this adds them to a database that is
 -- already running. Create-only and tombstone-aware, the same way `upsertViews`
@@ -21,7 +20,7 @@ SELECT m.id,
        CASE m.name WHEN 'leads' THEN 'Unread Leads' ELSE 'Unread Inventories' END,
        CASE m.name WHEN 'leads' THEN 'Unread Leads' ELSE 'Unread Inventories' END,
        '[]'::jsonb,
-       '{"logic":"AND","conditions":[{"field":"created_at","operator":"is_unseen"}]}'::jsonb,
+       '{"logic":"AND","conditions":[{"field":"unread","operator":"is_true"}]}'::jsonb,
        'desc', 'table', true, true, 2
   FROM ipy_module m
  WHERE m.name IN ('leads', 'properties')

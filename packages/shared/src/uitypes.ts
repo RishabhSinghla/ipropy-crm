@@ -110,7 +110,6 @@ export type FilterOperator =
   | 'next_n_days'
   | 'older_than_n_days'
   | 'is_me'
-  | 'is_unseen'
   | 'is_my_team'
   | 'has_any'
   | 'has_all';
@@ -144,7 +143,6 @@ export const OPERATOR_LABELS: Record<FilterOperator, string> = {
   next_n_days: 'in the next N days',
   older_than_n_days: 'older than N days',
   is_me: 'is me',
-  is_unseen: 'I have not opened yet',
   is_my_team: 'is my team',
   has_any: 'has any of',
   has_all: 'has all of',
@@ -193,18 +191,6 @@ const DATE_OPS: FilterOperator[] = [
   'older_than_n_days',
   'is_empty',
   'is_not_empty',
-  /*
-    "I have not opened it yet", offered on a date field because the only one it
-    is ever used on is `created_at` — a record is unread when it arrived after
-    you last looked at the module and you have never opened it.
-
-    It ignores whichever date field it is attached to and asks about the record,
-    which is a little odd read literally and is the honest place to put it: it
-    belongs to the same family as `today` and `this_week` — a thing you pick
-    rather than a value you type — and inventing a field to hang it off would
-    have been a field that means nothing anywhere else.
-  */
-  'is_unseen',
 ];
 
 const CHOICE_OPS: FilterOperator[] = ['equals', 'not_equals', 'in', 'not_in', 'is_empty', 'is_not_empty'];
@@ -654,7 +640,7 @@ export const EMPTY_FILTER: FilterGroup = { logic: 'AND', conditions: [] };
 export const NULLARY_OPERATORS: FilterOperator[] = [
   'is_empty', 'is_not_empty', 'is_true', 'is_false',
   'today', 'tomorrow', 'yesterday', 'this_week', 'this_month', 'this_quarter', 'this_year',
-  'is_me', 'is_my_team', 'is_unseen',
+  'is_me', 'is_my_team',
 ];
 
 export function operatorTakesValue(op: FilterOperator): boolean {

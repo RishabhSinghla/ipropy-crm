@@ -99,7 +99,7 @@ describe('the built-in views', () => {
 
   it('filter Unread Leads to records this person has never opened', async () => {
     /*
-      `is_unseen` is the one operator with no column behind it — it reads the
+      `unread` is a system filter field with no column behind it — it reads the
       module watermark and the recently-viewed table. Opening a record has to
       take it out of the list, which is the half a filter test on its own
       cannot see.

@@ -344,39 +344,6 @@ async function buildCondition(
     case 'is_me':
       return `${expr} = ${params.add(ctx.userId)}::uuid`;
 
-    /*
-      Unread, the same definition the sidebar badge uses.
-
-      A record is unread when it arrived after this user last looked at the
-      module and they have never opened it — `core/entity/unseen.ts` is the
-      original, and this is the same two conditions written so they need no
-      joins.
-
-      That matters: `unseen.ts` says in its own comment that this is
-      deliberately not part of `listRecords`, because the list engine is shared
-      with exports, widgets and the portal and none of those have a reader for
-      something to be unread *for*. That objection is about doing it always. As
-      an operator the subquery appears only in a filter that asks for it, and
-      every one of those paths is untouched unless somebody opts in.
-
-      It ignores `expr` — the field it is attached to — because the question is
-      about the record, not a column.
-    */
-    case 'is_unseen': {
-      const user = params.add(ctx.userId);
-      const moduleName = params.add(module.name);
-      return `(
-        ${RECORD_ALIAS}.created_at > COALESCE(
-          (SELECT ms.seen_at FROM ipy_module_seen ms
-            WHERE ms.user_id = ${user}::uuid AND ms.module_name = ${moduleName}),
-          (SELECT u.created_at FROM ipy_user u WHERE u.id = ${user}::uuid)
-        )
-        AND NOT EXISTS (
-          SELECT 1 FROM ipy_recent_view rv
-           WHERE rv.user_id = ${user}::uuid AND rv.record_id = ${RECORD_ALIAS}.id
-        )
-      )`;
-    }
     case 'is_my_team': {
       const ids = [ctx.userId, ...ctx.subordinateIds, ...ctx.groupIds];
       return `${expr} = ANY(${params.add(ids)}::uuid[])`;

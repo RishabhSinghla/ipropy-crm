@@ -298,16 +298,14 @@ const MODULES: ModuleDef[] = [
 
         "Leads 99+" says how many arrived that nobody has looked at, and until
         now there was no way to *see* them — you knew the number and had to go
-        hunting. Same definition as the badge (`core/entity/unseen.ts`): it came
-        in after you last opened the module, and you have never opened it.
-
-        `created_at` is the field the operator hangs off; it asks about the
-        record rather than that column. See `is_unseen` in the query builder.
+        hunting. `unread` is a system filter field (see the query builder), and
+        it is the same definition the badge uses in `core/entity/unseen.ts`: it
+        arrived after you last opened the module, and you have never opened it.
       */
       {
         name: 'Unread Leads',
         columns: [],
-        filter: { logic: 'AND', conditions: [{ field: 'created_at', operator: 'is_unseen' }] },
+        filter: { logic: 'AND', conditions: [{ field: 'unread', operator: 'is_true' }] },
       },
     ],
   },
@@ -549,7 +547,7 @@ const MODULES: ModuleDef[] = [
       {
         name: 'Unread Inventories',
         columns: [],
-        filter: { logic: 'AND', conditions: [{ field: 'created_at', operator: 'is_unseen' }] },
+        filter: { logic: 'AND', conditions: [{ field: 'unread', operator: 'is_true' }] },
       },
     ],
   },
