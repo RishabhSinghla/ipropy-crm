@@ -38,11 +38,33 @@ export const isNative: boolean = Capacitor.isNativePlatform();
  * the older iOS one, and Safari still reports only that on some versions, so
  * both are asked.
  */
-export const isInstalledApp: boolean = isNative
-  || (typeof window !== 'undefined' && (
-    window.matchMedia?.('(display-mode: standalone)').matches === true
-    || (window.navigator as { standalone?: boolean }).standalone === true
-  ));
+export const isInstalledApp: boolean = isNative || launchedFromAHomeScreen(
+  typeof window === 'undefined' ? undefined : window,
+);
+
+/**
+ * Did this page come from an icon rather than a browser tab?
+ *
+ * A function taking the window rather than reading the global, so both answers
+ * can be tested — the branch that matters here is the one that only happens on
+ * somebody's phone, and "it is the standard check, it must be right" is how an
+ * iPhone ends up showing the desktop layout with nobody noticing.
+ *
+ * Both signals are asked. `display-mode: standalone` is the standard one and
+ * what Android reports; `navigator.standalone` is Apple's own, from before the
+ * standard existed, and some Safari versions still set only that.
+ */
+export function launchedFromAHomeScreen(win?: {
+  matchMedia?: (q: string) => { matches: boolean };
+  // `unknown`, because the real `Navigator` has no `standalone` in the DOM
+  // types — it is Apple's, and undeclared. Naming it here would make the real
+  // window fail to match this shape.
+  navigator?: unknown;
+}): boolean {
+  if (!win) return false;
+  if (win.matchMedia?.('(display-mode: standalone)').matches === true) return true;
+  return (win.navigator as { standalone?: boolean } | undefined)?.standalone === true;
+}
 export const platform: 'ios' | 'android' | 'web' =
   Capacitor.getPlatform() as 'ios' | 'android' | 'web';
 export const isAndroid = platform === 'android';
