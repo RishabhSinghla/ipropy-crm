@@ -267,6 +267,44 @@ miscRouter.get('/tags', asyncHandler(async (_req, res) => {
   res.json(rows.rows);
 }));
 
+// Tags are shared CRM vocabulary.  Everybody may read them while choosing
+// tags for a record; only someone who can manage picklists can change that
+// vocabulary for the whole team.
+const tagInput = z.object({
+  name: z.string().trim().min(1).max(40),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Colour must be a hex value').optional(),
+});
+
+miscRouter.post('/tags', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.picklists');
+  const { name, color } = tagInput.parse(req.body ?? {});
+  const row = await db.queryOne<{ id: string; name: string; color: string }>(
+    `INSERT INTO ipy_tag (name, color, created_by) VALUES ($1,$2,$3)
+     RETURNING id, name, color`,
+    [name.toLowerCase(), color ?? '#2563eb', getUser(req).id],
+  );
+  res.status(201).json(row);
+}));
+
+miscRouter.patch('/tags/:id', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.picklists');
+  const { name, color } = tagInput.partial().refine((value) => value.name !== undefined || value.color !== undefined).parse(req.body ?? {});
+  const row = await db.queryOne<{ id: string; name: string; color: string }>(
+    `UPDATE ipy_tag SET name = COALESCE($2, name), color = COALESCE($3, color)
+     WHERE id = $1 RETURNING id, name, color`,
+    [req.params.id, name?.toLowerCase(), color],
+  );
+  if (!row) throw new NotFoundError('Tag not found');
+  res.json(row);
+}));
+
+miscRouter.delete('/tags/:id', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.picklists');
+  const deleted = await db.queryOne<{ id: string }>('DELETE FROM ipy_tag WHERE id = $1 RETURNING id', [req.params.id]);
+  if (!deleted) throw new NotFoundError('Tag not found');
+  res.json({ ok: true });
+}));
+
 // ---------------------------------------------------------------------------
 // File uploads
 // ---------------------------------------------------------------------------

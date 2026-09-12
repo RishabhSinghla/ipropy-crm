@@ -1,7 +1,9 @@
 import { type JSX, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { type FieldMeta, type FilterCondition, type FilterGroup, type FilterOperator, isFilterGroup, type ModuleMeta, OPERATOR_LABELS, operatorTakesValue, UITYPES } from '@ipropy/shared';
 import { Plus, Trash2, X } from 'lucide-react';
 import { badgeVars } from '../lib/color';
+import { api } from '../lib/api';
 import { fieldByKey } from '../lib/fields';
 import { cn } from '../lib/utils';
 import { FieldInput } from './FieldRenderer';
@@ -9,6 +11,9 @@ import { Select } from './ui';
 
 /** System pseudo-fields available on every module. */
 const SYSTEM_FIELDS: FieldMeta[] = ([
+  { name: 'record_tags', label: 'Tags', uitype: 'tags' },
+  { name: 'favourite', label: 'Favourite', uitype: 'boolean' },
+  { name: 'unread', label: 'Unread', uitype: 'boolean' },
   { name: 'owner_id', label: 'Assigned To', uitype: 'owner' },
   { name: 'created_at', label: 'Created At', uitype: 'datetime' },
   { name: 'updated_at', label: 'Modified At', uitype: 'datetime' },
@@ -261,6 +266,27 @@ function MultiValueEditor({
 }: { field: FieldMeta; value: unknown; onChange: (v: unknown) => void }): JSX.Element {
   const list = Array.isArray(value) ? value : (value ? [value] : []);
   const [text, setText] = useState('');
+  const { data: recordTags } = useQuery({
+    queryKey: ['tags'], queryFn: api.tags, enabled: field.name === 'record_tags', staleTime: 60_000,
+  });
+
+  if (field.name === 'record_tags') {
+    return (
+      <div className="flex flex-wrap gap-1 rounded-lg border border-slate-200 p-1.5 dark:border-slate-700">
+        {(recordTags ?? []).map((tag) => {
+          const active = list.includes(tag.name);
+          return (
+            <button key={tag.id} type="button" onClick={() => onChange(active ? list.filter((item) => item !== tag.name) : [...list, tag.name])}
+              className={cn('rounded px-1.5 py-0.5 text-2xs transition-colors', active ? 'font-medium text-white' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800')}
+              style={active ? { backgroundColor: tag.color } : undefined}>
+              {tag.name}
+            </button>
+          );
+        })}
+        {!recordTags?.length && <span className="px-1 text-xs text-muted">Create tags in Admin → Tags first.</span>}
+      </div>
+    );
+  }
 
   if (field.options?.length) {
     return (

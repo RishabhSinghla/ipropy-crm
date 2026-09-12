@@ -78,6 +78,9 @@ describe('quoteIdent', () => {
 describe('system fields', () => {
   it('isSystemField recognises ipy_record columns', () => {
     expect(isSystemField('created_at')).toBe(true);
+    expect(isSystemField('record_tags')).toBe(true);
+    expect(isSystemField('favourite')).toBe(true);
+    expect(isSystemField('unread')).toBe(true);
     expect(isSystemField('owner_id')).toBe(true);
     expect(isSystemField('status')).toBe(false);
   });
@@ -238,6 +241,24 @@ describe('buildWhere — operator coverage', () => {
     const { sql } = await buildWhere(leads(), { logic: 'AND', conditions: [{ field: 'tags', operator: 'has_all', value: ['vip', 'hot'] }] }, p, ctx());
     expect(sql).toBe('(COALESCE(e.custom_fields->\'tags\',\'[]\'::jsonb) ?& $1::text[])');
     expect(p.all()).toEqual([['vip', 'hot']]);
+  });
+
+  it('filters shared tags, favourites and unread state without payload fields', async () => {
+    const tags = new SqlParams();
+    const tagWhere = await buildWhere(leads(), { logic: 'AND', conditions: [{ field: 'record_tags', operator: 'has_all', value: ['vip', 'hot'] }] }, tags, ctx());
+    expect(tagWhere.sql).toContain('ipy_tag_link');
+    expect(tags.all()).toEqual([['vip', 'hot'], 2]);
+
+    const favourite = new SqlParams();
+    const favouriteWhere = await buildWhere(leads(), { logic: 'AND', conditions: [{ field: 'favourite', operator: 'is_true' }] }, favourite, ctx());
+    expect(favouriteWhere.sql).toContain('ipy_starred');
+    expect(favourite.all()).toEqual(['u_1']);
+
+    const unread = new SqlParams();
+    const unreadWhere = await buildWhere(leads(), { logic: 'AND', conditions: [{ field: 'unread', operator: 'is_true' }] }, unread, ctx());
+    expect(unreadWhere.sql).toContain('ipy_module_seen');
+    expect(unreadWhere.sql).toContain('ipy_recent_view');
+    expect(unread.all()).toEqual(['u_1']);
   });
 
   it('AND/OR and nested groups combine with the right joiners', async () => {

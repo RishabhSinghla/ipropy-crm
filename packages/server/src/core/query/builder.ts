@@ -115,6 +115,12 @@ export const SYSTEM_FIELDS: Record<string, { uitype: FieldMeta['uitype']; label:
   updated_at: { uitype: 'datetime', label: 'Modified At', column: 'updated_at' },
   last_activity_at: { uitype: 'datetime', label: 'Last Activity', column: 'last_activity_at' },
   record_number: { uitype: 'string', label: 'Record #', column: 'record_number' },
+  // These are record-level ideas rather than payload-table columns.  They are
+  // still system fields so a saved view and a dashboard widget use the exact
+  // same filter language as the list screen.
+  record_tags: { uitype: 'tags', label: 'Tags', column: 'record_tags' },
+  favourite: { uitype: 'boolean', label: 'Favourite', column: 'favourite' },
+  unread: { uitype: 'boolean', label: 'Unread', column: 'unread' },
 };
 
 export function isSystemField(name: string): boolean {
@@ -229,6 +235,15 @@ async function buildCondition(
   ctx: BuildContext,
   joins: Map<string, string>,
 ): Promise<string> {
+  /*
+   * Tags, favourites and unread are per-record/per-user state, not metadata
+   * fields. Keep them here (rather than pretending they are payload columns)
+   * so they remain safe, composable members of every FilterGroup.
+   */
+  if (cond.field === 'record_tags') return buildRecordTagsCondition(cond, params);
+  if (cond.field === 'favourite') return buildFavouriteCondition(cond, params, ctx);
+  if (cond.field === 'unread') return buildUnreadCondition(cond, params, ctx);
+
   const path = cond.path ?? cond.field;
   const resolved = await resolveFieldPath(module, path, joins);
   const { expr, uitype } = resolved;
@@ -347,6 +362,37 @@ async function buildCondition(
     default:
       throw new BadRequestError(`Unsupported filter operator '${op}'`);
   }
+}
+
+function buildRecordTagsCondition(cond: FilterCondition, params: SqlParams): string {
+  const names = asArray(cond.value).map((value) => String(value).trim().toLowerCase()).filter(Boolean);
+  const linked = `EXISTS (SELECT 1 FROM ipy_tag_link tl JOIN ipy_tag t ON t.id = tl.tag_id WHERE tl.record_id = ${RECORD_ALIAS}.id`;
+  switch (cond.operator) {
+    case 'has_any':
+      return names.length ? `${linked} AND t.name = ANY(${params.add(names)}::text[]))` : 'FALSE';
+    case 'has_all':
+      return names.length
+        ? `(SELECT COUNT(DISTINCT t.name) FROM ipy_tag_link tl JOIN ipy_tag t ON t.id = tl.tag_id WHERE tl.record_id = ${RECORD_ALIAS}.id AND t.name = ANY(${params.add(names)}::text[])) = ${params.add(names.length)}`
+        : 'TRUE';
+    case 'is_empty': return `NOT ${linked})`;
+    case 'is_not_empty': return `${linked})`;
+    default: throw new BadRequestError(`Unsupported tag filter operator '${cond.operator}'`);
+  }
+}
+
+function buildFavouriteCondition(cond: FilterCondition, params: SqlParams, ctx: BuildContext): string {
+  const exists = `EXISTS (SELECT 1 FROM ipy_starred s WHERE s.record_id = ${RECORD_ALIAS}.id AND s.user_id = ${params.add(ctx.userId)}::uuid)`;
+  if (cond.operator === 'is_true') return exists;
+  if (cond.operator === 'is_false') return `NOT ${exists}`;
+  throw new BadRequestError(`Unsupported favourite filter operator '${cond.operator}'`);
+}
+
+function buildUnreadCondition(cond: FilterCondition, params: SqlParams, ctx: BuildContext): string {
+  const user = params.add(ctx.userId);
+  const unread = `(${RECORD_ALIAS}.created_at > COALESCE((SELECT ms.seen_at FROM ipy_module_seen ms WHERE ms.user_id = ${user}::uuid AND ms.module_name = ${RECORD_ALIAS}.module_name), (SELECT u.created_at FROM ipy_user u WHERE u.id = ${user}::uuid)) AND NOT EXISTS (SELECT 1 FROM ipy_recent_view rv WHERE rv.user_id = ${user}::uuid AND rv.record_id = ${RECORD_ALIAS}.id))`;
+  if (cond.operator === 'is_true') return unread;
+  if (cond.operator === 'is_false') return `NOT ${unread}`;
+  throw new BadRequestError(`Unsupported unread filter operator '${cond.operator}'`);
 }
 
 function dateRange(expr: string, startSql: string, intervalSql: string, _p: SqlParams, _ctx: BuildContext): string {

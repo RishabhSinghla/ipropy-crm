@@ -15,7 +15,7 @@ import { useVoiceCapture } from '../lib/useVoiceCapture';
 import { loadListNav } from '../lib/listNav';
 import { cn, renderMarkdown, restrictionForField } from '../lib/utils';
 import { resolveIcon } from '../lib/icons';
-import { FieldValue, TagInput } from '../components/FieldRenderer';
+import { FieldValue } from '../components/FieldRenderer';
 import { EditableField, isInlineEditable } from '../components/EditableField';
 import { assignmentField } from '../lib/fields';
 import { ShareLinksPanel } from '../components/ShareLinks';
@@ -73,6 +73,7 @@ export default function RecordDetail(): JSX.Element {
     queryFn: () => api.record(moduleName!, id!),
     enabled: Boolean(moduleName && id),
   });
+  const { data: tagOptions } = useQuery({ queryKey: ['tags'], queryFn: api.tags, staleTime: 60_000 });
 
   // Join this record's realtime room so workflow/AI writes that land after the
   // response (lead scoring, lifecycle promotion) appear without a refresh.
@@ -390,11 +391,11 @@ export default function RecordDetail(): JSX.Element {
             {/* Actions, right-aligned on the same line as the back arrow. */}
             <div className="ml-auto flex flex-wrap items-center gap-1.5 sm:justify-end">
               {(record.tags ?? []).slice(0, 3).map((tag) => (
-                <span key={tag} className="rounded-full bg-violet-50 px-2 py-1 text-2xs font-medium text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">{tag}</span>
+                <span key={tag} className="rounded-full px-2 py-1 text-2xs font-medium text-white" style={{ backgroundColor: tagOptions?.find((option) => option.name === tag)?.color ?? '#2563eb' }}>{tag}</span>
               ))}
               {record.can?.edit && (
-                <button className="btn-ghost p-2" title="Tags" aria-label="Edit tags" onClick={() => { setTagDraft(record.tags ?? []); setTagging(true); }}>
-                  <Tag className="h-4 w-4" />
+                <button className={cn('btn-ghost p-2', (record.tags?.length ?? 0) > 0 && 'text-blue-600 dark:text-blue-400')} title="Tags" aria-label="Edit tags" onClick={() => { setTagDraft(record.tags ?? []); setTagging(true); }}>
+                  <Tag className={cn('h-4 w-4', (record.tags?.length ?? 0) > 0 && 'fill-blue-100 dark:fill-blue-950')} />
                 </button>
               )}
               <button
@@ -697,8 +698,14 @@ export default function RecordDetail(): JSX.Element {
           </>
         )}
       >
-        <p className="mb-3 text-sm text-muted">Add tags that help the team find and group this record.</p>
-        <TagInput value={tagDraft} onChange={setTagDraft} />
+        <p className="mb-3 text-sm text-muted">Choose one or more shared tags to help the team find and group this record.</p>
+        <div className="flex flex-wrap gap-2">
+          {(tagOptions ?? []).map((tag) => {
+            const active = tagDraft.includes(tag.name);
+            return <button key={tag.id} type="button" onClick={() => setTagDraft((current) => active ? current.filter((name) => name !== tag.name) : [...current, tag.name])} className={cn('rounded-full border px-2.5 py-1 text-xs font-medium transition-colors', active ? 'border-transparent text-white' : 'border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800')} style={active ? { backgroundColor: tag.color } : undefined}>{tag.name}</button>;
+          })}
+          {!tagOptions?.length && <p className="text-sm text-muted">No tags exist yet. An administrator can create them in Admin → Tags.</p>}
+        </div>
       </Modal>
 
       <ConfirmDialog

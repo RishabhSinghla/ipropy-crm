@@ -321,6 +321,18 @@ export async function listRecords(
     );
     const starredIds = new Set(starred.rows.map((row) => row.record_id));
     for (const row of rows) row.starred = starredIds.has(row.id);
+
+    // Tags are shared record state, so carry them with the list just as we do
+    // per-user favourites. One grouped lookup avoids an N+1 query while making
+    // tag-aware list filters and the blue tag marker truthful on every row.
+    const tagRows = await conn.query<{ record_id: string; name: string }>(
+      `SELECT l.record_id, t.name FROM ipy_tag_link l JOIN ipy_tag t ON t.id = l.tag_id
+       WHERE l.record_id = ANY($1::uuid[]) ORDER BY t.name`,
+      [rows.map((row) => row.id)],
+    );
+    const tagsByRecord = new Map<string, string[]>();
+    for (const tag of tagRows.rows) tagsByRecord.set(tag.record_id, [...(tagsByRecord.get(tag.record_id) ?? []), tag.name]);
+    for (const row of rows) row.tags = tagsByRecord.get(row.id) ?? [];
   }
 
   // Resolved once for the whole page rather than per row. A list view is the

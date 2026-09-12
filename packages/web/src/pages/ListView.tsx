@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type CustomView, type FieldMeta, type FilterGroup, formatIndianPrice, formatPhoneWithCode, toInternational, type ListQuery, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Columns3, Compass, Download, Filter,
-  LayoutGrid, List, MapPin, MessageCircle, Pencil, Phone, Plus, RefreshCw, Ruler, Save, Search, Settings2, Star, Trash2, Upload, Users, X,
+  LayoutGrid, List, MapPin, MessageCircle, Pencil, Phone, Plus, RefreshCw, Ruler, Save, Search, Settings2, Star, Tag, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { ApiError, api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
@@ -1060,6 +1060,11 @@ export default function ListView(): JSX.Element {
                             className="mr-1.5 inline-block h-3.5 w-3.5 fill-amber-400 text-amber-500 align-middle"
                             aria-label="Favourite"
                           />
+                        )}
+                        {ci === 0 && (row.tags?.length ?? 0) > 0 && (
+                          <span className="mr-1.5 inline-block align-middle" title={`Tags: ${row.tags?.join(', ')}`} aria-label={`Tagged: ${row.tags?.join(', ')}`}>
+                            <Tag className="h-3.5 w-3.5 fill-blue-100 text-blue-600 dark:fill-blue-950 dark:text-blue-400" />
+                          </span>
                         )}
                         {ci === 0 && isNew && (
                           <span
