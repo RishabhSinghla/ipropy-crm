@@ -143,16 +143,16 @@ export function CallDispositionProvider({
       >
         <div className="space-y-3">
           <div>
-            <label className="label">Outcome</label>
-            <select className="input" value={selected} onChange={(event) => setDisposition(event.target.value)}>
+            <label className="label" htmlFor="call-outcome">Outcome</label>
+            <select id="call-outcome" className="input" value={selected} onChange={(event) => setDisposition(event.target.value)}>
               {dispositions.map((value) => <option key={value} value={value}>{value}</option>)}
             </select>
           </div>
           {!providerCallId && (
             <div>
-              <label className="label">Approximate duration (minutes)</label>
+              <label className="label" htmlFor="call-duration">Approximate duration (minutes)</label>
               <input
-                className="input tnum" type="number" min={0} max={600}
+                id="call-duration" className="input tnum" type="number" min={0} max={600}
                 value={durationMinutes}
                 onChange={(event) => setDurationMinutes(Math.max(0, Number(event.target.value) || 0))}
               />
@@ -160,7 +160,7 @@ export function CallDispositionProvider({
           )}
           <div>
             <div className="mb-1 flex items-center justify-between gap-2">
-              <label className="label mb-0">Disposition notes (optional)</label>
+              <label className="label mb-0" htmlFor="call-notes">Disposition notes (optional)</label>
               <button
                 type="button"
                 className={cn('btn-ghost btn-sm', voice.recording && 'text-red-600')}
@@ -175,7 +175,7 @@ export function CallDispositionProvider({
               </button>
             </div>
             <textarea
-              className="input" rows={4} value={notes}
+              id="call-notes" className="input" rows={4} value={notes}
               onChange={(event) => setNotes(event.target.value)}
               placeholder="What happened on the call?"
             />

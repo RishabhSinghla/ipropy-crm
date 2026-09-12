@@ -2944,14 +2944,14 @@ function CallsTab({ recordId }: { recordId: string }): JSX.Element {
       >
         <div className="space-y-3">
           <div>
-            <label className="label">Outcome</label>
-            <select className="input" value={draftDisposition} onChange={(event) => setDraftDisposition(event.target.value)}>
+            <label className="label" htmlFor="call-edit-outcome">Outcome</label>
+            <select id="call-edit-outcome" className="input" value={draftDisposition} onChange={(event) => setDraftDisposition(event.target.value)}>
               {editDispositions.map((value) => <option key={value} value={value}>{value}</option>)}
             </select>
           </div>
           <div>
             <div className="mb-1 flex items-center justify-between gap-2">
-              <label className="label mb-0">Disposition notes</label>
+              <label className="label mb-0" htmlFor="call-edit-notes">Disposition notes</label>
               <button
                 type="button" className={cn('btn-ghost btn-sm', editVoice.recording && 'text-red-600')}
                 onClick={editVoice.toggle} disabled={!editVoice.supported || editVoice.busy}
@@ -2960,7 +2960,7 @@ function CallsTab({ recordId }: { recordId: string }): JSX.Element {
                 {editVoice.recording ? 'Stop' : editVoice.busy ? 'Writing…' : 'Speak'}
               </button>
             </div>
-            <textarea className="input" rows={5} value={draftNotes} onChange={(event) => setDraftNotes(event.target.value)} />
+            <textarea id="call-edit-notes" className="input" rows={5} value={draftNotes} onChange={(event) => setDraftNotes(event.target.value)} />
           </div>
         </div>
       </Modal>
