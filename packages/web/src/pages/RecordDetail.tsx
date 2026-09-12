@@ -1028,12 +1028,21 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
   const [minimumScore, setMinimumScore] = useState(0);
   const [decisionFilter, setDecisionFilter] = useState<'all' | 'unmarked' | 'shortlisted' | 'follow_up' | 'not_suitable'>('all');
   const [search, setSearch] = useState('');
+  const [mappedFilters, setMappedFilters] = useState<string[]>([]);
   // How deep into the ranking to look. The engine's top handful is the
   // starting point, not the verdict — widening it is how a rep goes past what
   // the score suggested and picks for this customer themselves.
   const [howMany, setHowMany] = useState(10);
 
   const aiAvailable = useApp((st) => st.aiAvailable);
+  const { data: matchingConfig } = useQuery({
+    queryKey: ['matching-config'], queryFn: () => api.matchingConfig(), staleTime: 60_000,
+  });
+  const mappedFields = useMemo(() => (matchingConfig?.fieldMap ?? []).map((pair) => {
+    const key = isContact ? pair.propertyField : pair.contactField;
+    const fields = isContact ? matchingConfig?.propertyFields : matchingConfig?.contactFields;
+    return { key, label: fields?.find((field) => field.name === key)?.label ?? key };
+  }).filter((field) => field.key && field.label), [matchingConfig, isContact]);
 
   /*
     Two requests, because they cost three orders of magnitude apart.
@@ -1104,6 +1113,12 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
   const visibleMatches = matches.filter((match) => (
     match.score >= minimumScore
     && (!term || match.label.toLowerCase().includes(term) || match.primary.toLowerCase().includes(term) || match.secondary.toLowerCase().includes(term))
+    && (!mappedFilters.length || mappedFilters.every((key) => {
+      const field = mappedFields.find((item) => item.key === key);
+      const terms = [field?.label, key].filter(Boolean).map((value) => String(value).toLowerCase().replace(/[^a-z0-9]/g, ''));
+      const evidence = `${match.reason} ${match.caveat} ${match.primary} ${match.secondary}`.toLowerCase().replace(/[^a-z0-9]/g, '');
+      return terms.some((value) => evidence.includes(value));
+    }))
     && (decisionFilter === 'all' || (decisionFilter === 'unmarked' ? !decisionsByTarget.has(match.id) : decisionsByTarget.get(match.id) === decisionFilter))
   ));
 
@@ -1138,6 +1153,23 @@ function MatchingTab({ module, id, returnQuery }: { module: string; id: string; 
         {narrating && <span className="text-2xs text-muted">writing reasons…</span>}
 
         <div className="ml-auto flex flex-wrap items-center gap-2">
+          <Dropdown
+            align="left"
+            className="w-56"
+            trigger={<button className={cn('btn-secondary btn-sm', mappedFilters.length && 'border-brand-400 text-brand-700')}><Link2 className="h-3.5 w-3.5" />Match filters{mappedFilters.length ? ` (${mappedFilters.length})` : ''}<ChevronDown className="h-3.5 w-3.5" /></button>}
+          >
+            <div className="p-2">
+              <p className="mb-1 px-1 text-2xs font-semibold uppercase tracking-wide text-muted">Matching Setup fields</p>
+              {mappedFields.map((field) => (
+                <label key={field.key} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1.5 text-sm hover:bg-slate-50 dark:hover:bg-slate-800">
+                  <input type="checkbox" checked={mappedFilters.includes(field.key)} onChange={(event) => setMappedFilters((current) => event.target.checked ? [...current, field.key] : current.filter((key) => key !== field.key))} />
+                  <span>{field.label}</span>
+                </label>
+              ))}
+              {!mappedFields.length && <p className="px-1 py-2 text-xs text-muted">Add field mappings in Admin → Matching Setup.</p>}
+              {mappedFilters.length > 0 && <button className="mt-1 text-xs text-brand-700 hover:underline" onClick={() => setMappedFilters([])}>Clear filters</button>}
+            </div>
+          </Dropdown>
           <input
             className="input h-8 w-40 py-0 text-xs"
             placeholder={isContact ? 'Search these units…' : 'Search these leads…'}
