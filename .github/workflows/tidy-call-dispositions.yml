@@ -1,0 +1,78 @@
+# Find — and optionally clear — call outcomes that are on no list.
+#
+# `POST /calls/:id/disposition` accepted any string up to 60 characters until
+# 12 September 2026, so production holds calls recorded against outcomes the
+# `call_disposition` picklist has never offered. Three of them were written by
+# a probe from this repository. They are invisible in the UI and quietly wrong
+# in every report that groups by outcome.
+#
+# Dry run by default: it lists what it found and changes nothing. `apply: true`
+# clears those columns to NULL — the call, its notes, its recording and its
+# link to the lead all stay; only an outcome nobody can have chosen goes. The
+# call then shows up in "needs disposition", which is the honest state for a
+# call whose outcome was never really recorded.
+#
+# An outcome an admin has since *deactivated* is left alone: a rep did choose
+# it at the time, and the history is the point.
+name: Tidy call dispositions
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Clear them (unticked = list only, change nothing)"
+        type: boolean
+        default: false
+
+jobs:
+  tidy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install psql 18
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: Look
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          echo "The list as it stands:"
+          psql "$DATABASE_URL" -P pager=off -c "
+            SELECT v.value, v.is_active
+              FROM ipy_picklist_value v JOIN ipy_picklist p ON p.id = v.picklist_id
+             WHERE p.name = 'call_disposition' ORDER BY v.sequence"
+
+          echo "Outcomes on no list:"
+          psql "$DATABASE_URL" -P pager=off -c "
+            SELECT c.disposition, count(*) AS calls, min(c.started_at)::date AS first, max(c.started_at)::date AS last
+              FROM ipy_call c
+             WHERE c.disposition IS NOT NULL
+               AND c.disposition NOT IN (
+                 SELECT v.value FROM ipy_picklist_value v
+                   JOIN ipy_picklist p ON p.id = v.picklist_id
+                  WHERE p.name = 'call_disposition')
+             GROUP BY 1 ORDER BY 2 DESC"
+
+      - name: Clear them
+        if: ${{ inputs.apply }}
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          # `disposition_at` goes with it: a timestamp saying when an outcome
+          # was recorded, next to no outcome, reads as a bug in the CRM.
+          N="$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -tAc "
+            WITH cleared AS (
+              UPDATE ipy_call SET disposition = NULL, disposition_at = NULL
+               WHERE disposition IS NOT NULL
+                 AND disposition NOT IN (
+                   SELECT v.value FROM ipy_picklist_value v
+                     JOIN ipy_picklist p ON p.id = v.picklist_id
+                    WHERE p.name = 'call_disposition')
+              RETURNING 1)
+            SELECT count(*) FROM cleared")"
+          echo "::notice::Cleared ${N} call(s). They now appear in 'needs disposition' for whoever made them."
