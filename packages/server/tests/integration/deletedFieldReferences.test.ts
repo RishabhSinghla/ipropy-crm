@@ -16,6 +16,7 @@ import type { Express } from 'express';
 import { createApp } from '../../src/app.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import { db } from '../../src/db/pool.js';
+import { signIn } from './fixtures.js';
 
 let app: Express;
 let token: string;
@@ -25,20 +26,13 @@ const FIELD = 'e2e_doomed_field';
 const madeViews: string[] = [];
 const madeWidgets: string[] = [];
 
-/** Same local helper the other integration suites use; fixtures does not export one. */
-async function login(email: string): Promise<string> {
-  const res = await request(app).post('/api/auth/login').send({ email, password: 'Admin@123' });
-  if (res.status !== 200) throw new Error(`login failed for ${email}: ${res.status}`);
-  return res.body.token as string;
-}
-
 beforeAll(async () => {
   await registry.warmup();
   app = createApp();
   const admin = await db.queryOne<{ email: string }>(
     `SELECT email FROM ipy_user WHERE is_admin = true AND password_hash IS NOT NULL ORDER BY created_at LIMIT 1`,
   );
-  token = await login(admin!.email);
+  token = await signIn(app, admin!.email);
 
   const res = await request(app)
     .post('/api/meta/modules/leads/fields')

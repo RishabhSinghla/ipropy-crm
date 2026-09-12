@@ -5,6 +5,7 @@ import type { Express } from 'express';
 import { createApp } from '../../src/app.js';
 import { db } from '../../src/db/pool.js';
 import { registry } from '../../src/core/metadata/registry.js';
+import { signIn } from './fixtures.js';
 
 let app: Express;
 let token: string;
@@ -26,9 +27,7 @@ beforeAll(async () => {
      VALUES ($1,$2,'Live','Lists Test',true)`,
     [email, admin.password_hash],
   );
-  const login = await request(app).post('/api/auth/login').send({ email, password: 'Admin@123' });
-  if (login.status !== 200) throw new Error(`login failed: ${login.status} ${login.text}`);
-  token = login.body.token as string;
+  token = await signIn(app, email);
 });
 
 describe('live list attention and favourites', () => {

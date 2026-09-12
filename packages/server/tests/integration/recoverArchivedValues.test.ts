@@ -11,6 +11,7 @@ import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { db } from '../../src/db/pool.js';
 import { registry } from '../../src/core/metadata/registry.js';
+import { SEEDED, signIn } from './fixtures.js';
 
 let app: ReturnType<typeof createApp>;
 let token = '';
@@ -25,8 +26,7 @@ beforeAll(async () => {
   const admin = await db.queryOne<{ email: string }>(
     `SELECT email FROM ipy_user WHERE is_admin = true AND password_hash IS NOT NULL ORDER BY created_at LIMIT 1`,
   );
-  const res = await request(app).post('/api/auth/login').send({ email: admin!.email, password: 'Admin@123' });
-  token = res.body.token as string;
+  token = await signIn(app, admin!.email);
 
   const list = await request(app).get('/api/records/properties?pageSize=3')
     .set('Authorization', `Bearer ${token}`).expect(200);
@@ -121,9 +121,8 @@ describe('recovering values whose field was deleted', () => {
   });
 
   it('refuses a non-admin', async () => {
-    const exec = await request(app).post('/api/auth/login')
-      .send({ email: 'aisha.khan@ipropy.com', password: 'Admin@123' });
+    const exec = await signIn(app, SEEDED.executiveA);
     await request(app).get('/api/meta/modules/properties/archived-values')
-      .set('Authorization', `Bearer ${exec.body.token}`).expect(403);
+      .set('Authorization', `Bearer ${exec}`).expect(403);
   });
 });

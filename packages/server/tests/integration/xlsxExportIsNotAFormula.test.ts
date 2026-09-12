@@ -15,6 +15,7 @@ import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { db } from '../../src/db/pool.js';
 import { inflateRawSync } from 'node:zlib';
+import { signIn } from './fixtures.js';
 
 let app: ReturnType<typeof createApp>;
 let token = '';
@@ -43,9 +44,7 @@ function entry(zip: Buffer, wanted: string): string | null {
 
 beforeAll(async () => {
   app = createApp();
-  const login = await request(app).post('/api/auth/login')
-    .send({ identifier: 'admin@ipropy.com', password: 'Admin@123' });
-  token = login.body.token;
+  token = await signIn(app, 'admin@ipropy.com');
   const made = await request(app).post('/api/records/leads')
     .set('Authorization', `Bearer ${token}`)
     .send({ full_name: NAME, mobile: `69${String(Date.now()).slice(-8)}` });

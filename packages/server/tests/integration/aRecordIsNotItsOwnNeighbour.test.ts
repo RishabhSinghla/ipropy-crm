@@ -23,7 +23,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../src/db/pool.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import { recordService } from '../../src/core/entity/recordService.js';
-import { adminContext } from './fixtures.js';
+import { adminContext, signIn } from './fixtures.js';
 import request from 'supertest';
 import type { Express } from 'express';
 import { createApp } from '../../src/app.js';
@@ -36,8 +36,7 @@ beforeAll(async () => {
   await registry.warmup();
   app = createApp();
   const ctx = await adminContext();
-  token = (await request(app).post('/api/auth/login')
-    .send({ identifier: ctx.user.email, password: 'Admin@123' })).body.token;
+  token = await signIn(app, ctx.user.email);
 
   // Three in a known order. Created one at a time so their timestamps differ,
   // and left with whatever sub-millisecond precision Postgres gives them —

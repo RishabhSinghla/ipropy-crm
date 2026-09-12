@@ -20,6 +20,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
+import { signIn } from './fixtures.js';
 
 let app: ReturnType<typeof createApp>;
 let token = '';
@@ -28,9 +29,7 @@ let propertyId = '';
 
 beforeAll(async () => {
   app = createApp();
-  const login = await request(app).post('/api/auth/login')
-    .send({ identifier: 'admin@ipropy.com', password: 'Admin@123' });
-  token = login.body.token;
+  token = await signIn(app, 'admin@ipropy.com');
 
   const leads = await request(app).get('/api/records/leads?pageSize=1').set('Authorization', `Bearer ${token}`);
   leadId = leads.body.rows?.[0]?.id ?? '';
@@ -92,9 +91,7 @@ describe('the matching explanation', () => {
     const app = createApp();
     const { db } = await import('../../src/db/pool.js');
 
-    const login = await request(app).post('/api/auth/login')
-      .send({ identifier: 'admin@ipropy.com', password: 'Admin@123' });
-    const token = login.body.token;
+        const token = await signIn(app, 'admin@ipropy.com');
 
     const lead = await db.queryOne<{ id: string }>(
       `SELECT id FROM ipy_record WHERE module_name = 'leads' AND NOT is_deleted LIMIT 1`,

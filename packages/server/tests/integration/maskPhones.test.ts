@@ -23,7 +23,7 @@ import { registry } from '../../src/core/metadata/registry.js';
 import { db } from '../../src/db/pool.js';
 import { recordService } from '../../src/core/entity/recordService.js';
 import { invalidatePermissions } from '../../src/core/permissions/index.js';
-import { adminContext } from './fixtures.js';
+import { adminContext, signIn } from './fixtures.js';
 import { maskNumber } from '../../src/core/permissions/maskPhones.js';
 
 let app: Express;
@@ -37,12 +37,6 @@ let mobileFieldId: string;
 const profileIds: string[] = [];
 const MOBILE = '9811421156';
 const made: string[] = [];
-
-async function login(email: string): Promise<string> {
-  const res = await request(app).post('/api/auth/login').send({ email, password: 'Admin@123' });
-  if (res.status !== 200) throw new Error(`login failed for ${email}: ${res.status}`);
-  return res.body.token as string;
-}
 
 /**
  * Turn the rule on or off for both profiles under test.
@@ -76,7 +70,7 @@ beforeAll(async () => {
     `SELECT email FROM ipy_user WHERE is_admin = true AND password_hash IS NOT NULL
        AND email LIKE '%@%.%' ORDER BY created_at LIMIT 1`,
   );
-  adminToken = await login(admin!.email);
+  adminToken = await signIn(app, admin!.email);
 
   /*
     A pair where one can see the other's records without owning them, found
@@ -108,8 +102,8 @@ beforeAll(async () => {
   );
   if (!pair) throw new Error('no non-admin pair with one role above the other to test ownership against');
 
-  ownerToken = await login(pair.owner_email);
-  managerToken = await login(pair.manager_email);
+  ownerToken = await signIn(app, pair.owner_email);
+  managerToken = await signIn(app, pair.manager_email);
   profileIds.push(...new Set([pair.owner_profile, pair.manager_profile]));
 
   const field = await db.queryOne<{ id: string }>(

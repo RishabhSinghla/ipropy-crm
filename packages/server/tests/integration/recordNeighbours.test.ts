@@ -21,7 +21,7 @@ import { registry } from '../../src/core/metadata/registry.js';
 import { db } from '../../src/db/pool.js';
 import { recordService } from '../../src/core/entity/recordService.js';
 import { createApp } from '../../src/app.js';
-import { adminContext } from './fixtures.js';
+import { adminContext, signIn } from './fixtures.js';
 
 let app: Express;
 let adminToken: string;
@@ -34,8 +34,7 @@ beforeAll(async () => {
   const admin = await db.queryOne<{ email: string }>(
     `SELECT email FROM ipy_user WHERE is_admin = true AND password_hash IS NOT NULL ORDER BY created_at LIMIT 1`,
   );
-  const res = await request(app).post('/api/auth/login').send({ email: admin!.email, password: 'Admin@123' });
-  adminToken = res.body.token as string;
+  adminToken = await signIn(app, admin!.email);
 
   const budgets = [100, 200, 300, 400, 500];
   for (let i = 0; i < budgets.length; i++) {

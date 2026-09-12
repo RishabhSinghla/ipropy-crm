@@ -28,7 +28,7 @@ import { registry } from '../../src/core/metadata/registry.js';
 import { db } from '../../src/db/pool.js';
 import { loadRequirement } from '../../src/ai/matching.js';
 import { invalidatePublicFields } from '../../src/api/routes/public.js';
-import { adminContext } from './fixtures.js';
+import { adminContext, signIn } from './fixtures.js';
 import { recordService } from '../../src/core/entity/recordService.js';
 
 let app: Express;
@@ -50,10 +50,7 @@ beforeAll(async () => {
     `SELECT email FROM ipy_user WHERE is_admin = true AND password_hash IS NOT NULL
       ORDER BY created_at LIMIT 1`,
   );
-  const res = await request(app)
-    .post('/api/auth/login')
-    .send({ email: admin!.email, password: 'Admin@123' });
-  adminToken = res.body.token as string;
+  adminToken = await signIn(app, admin!.email);
 });
 
 afterAll(async () => {

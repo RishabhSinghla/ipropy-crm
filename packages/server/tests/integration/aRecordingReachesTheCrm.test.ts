@@ -12,7 +12,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { db } from '../../src/db/pool.js';
-import { SEEDED } from './fixtures.js';
+import { SEEDED, signIn } from './fixtures.js';
 
 let app: ReturnType<typeof createApp>;
 let token = '';
@@ -28,9 +28,7 @@ const AUDIO = Buffer.from(`ID3iPropy${'x'.repeat(2048)}END`, 'utf8');
 
 beforeAll(async () => {
   app = createApp();
-  const login = await request(app).post('/api/auth/login')
-    .send({ identifier: 'admin@ipropy.com', password: 'Admin@123' });
-  token = login.body.token;
+  token = await signIn(app, 'admin@ipropy.com');
 
   const paired = await request(app).post('/api/telephony/devices')
     .set('Authorization', `Bearer ${token}`)
@@ -128,12 +126,10 @@ describe('a call recording', () => {
    * and does not hold it must be refused.
    */
   it('is not readable by a rep who was not on the call', async () => {
-    const login = await request(app).post('/api/auth/login')
-      .send({ identifier: SEEDED.executiveB, password: 'Admin@123' });
-    expect(login.status).toBe(200);
+    const otherRep = await signIn(app, SEEDED.executiveB);
 
     const res = await request(app).get(`/api/telephony/calls/${callId}/recording`)
-      .set('Authorization', `Bearer ${login.body.token}`);
+      .set('Authorization', `Bearer ${otherRep}`);
     expect([403, 404]).toContain(res.status);
   });
 
@@ -152,9 +148,7 @@ describe('a call recording', () => {
    * visibility rule, and a visibility rule that drifts is found by a customer.
    */
   it('shows a rep their own calls, and the whole history on a contact they can open', async () => {
-    const login = await request(app).post('/api/auth/login')
-      .send({ identifier: SEEDED.executiveB, password: 'Admin@123' });
-    const repToken = login.body.token;
+        const repToken = await signIn(app, SEEDED.executiveB);
 
     const mine = await request(app).get('/api/telephony/calls?limit=100')
       .set('Authorization', `Bearer ${repToken}`);

@@ -17,18 +17,11 @@ import type { Express } from 'express';
 import { createApp } from '../../src/app.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import { db } from '../../src/db/pool.js';
-import { SEEDED } from './fixtures.js';
+import { SEEDED, signIn } from './fixtures.js';
 
 let app: Express;
 let adminToken: string;
 let executiveToken: string;
-
-/** Log in over HTTP so the token is minted the way a browser gets one. */
-async function login(email: string, password: string): Promise<string> {
-  const res = await request(app).post('/api/auth/login').send({ email, password });
-  if (res.status !== 200) throw new Error(`login failed for ${email}: ${res.status} ${res.text}`);
-  return res.body.token as string;
-}
 
 beforeAll(async () => {
   await registry.warmup();
@@ -38,8 +31,8 @@ beforeAll(async () => {
     `SELECT email FROM ipy_user WHERE is_admin = true AND password_hash IS NOT NULL ORDER BY created_at LIMIT 1`,
   );
   // Seeded demo users share one password — see db/seed/rbac.ts.
-  adminToken = await login(admin!.email, 'Admin@123');
-  executiveToken = await login(SEEDED.executiveA, 'Admin@123');
+  adminToken = await signIn(app, admin!.email);
+  executiveToken = await signIn(app, SEEDED.executiveA);
 });
 
 describe('the generic lead form refuses the committed key', () => {

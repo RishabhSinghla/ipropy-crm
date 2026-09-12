@@ -11,6 +11,7 @@ import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { db } from '../../src/db/pool.js';
 import { registry } from '../../src/core/metadata/registry.js';
+import { signIn } from './fixtures.js';
 
 let app: ReturnType<typeof createApp>;
 let token = '';
@@ -33,8 +34,7 @@ beforeAll(async () => {
   app = createApp();
   const admin = await db.queryOne<{ email: string }>(
     `SELECT email FROM ipy_user WHERE is_admin = true AND password_hash IS NOT NULL ORDER BY created_at LIMIT 1`);
-  token = (await request(app).post('/api/auth/login')
-    .send({ email: admin!.email, password: 'Admin@123' })).body.token;
+  token = await signIn(app, admin!.email);
 
   const status = await db.queryOne<{ name: string }>(
     `SELECT f.name FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id

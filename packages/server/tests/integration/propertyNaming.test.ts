@@ -17,25 +17,53 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../src/db/pool.js';
+import { createRecord } from '../../src/core/entity/recordService.js';
 import { propertyNamePrefix } from '../../src/integrations/automation/n8n.js';
+import { adminContext, propertyInput } from './fixtures.js';
 
 let recordId: string;
 let droppedType: string | null = null;
 
+/*
+  Its own property, not whichever one comes back first.
+
+  This used to borrow `SELECT ... FROM ipy_record ... LIMIT 1` with no ORDER BY,
+  and then assert that the prefix built from it is *not* the generic fallback.
+  Which row that returns depends on what every earlier file in the suite
+  happened to create, so the test was asserting on the contents of a record it
+  had never seen — and it failed on a quiet machine when it drew one whose name
+  slugged to the fallback.
+
+  Naming it here makes the assertion about `propertyNamePrefix` rather than
+  about the luck of the draw. The label is the one part that exists whatever
+  shape the model is in, which matters because this suite runs against both a
+  fresh seed and a mirror of production's much smaller column set.
+*/
 beforeAll(async () => {
-  const row = await db.queryOne<{ id: string }>(
-    `SELECT r.id FROM ipy_record r
-       JOIN ipy_e_properties p ON p.record_id = r.id
-      WHERE r.deleted_at IS NULL LIMIT 1`,
+  const admin = await adminContext();
+  const created = await createRecord(
+    admin,
+    'properties',
+    propertyInput({ full_name: `Naming Test ${Date.now()}` }),
   );
-  if (!row) throw new Error('no seeded property to name');
-  recordId = row.id;
+  recordId = created.id;
 });
 
 afterAll(async () => {
   // Put it back, so anything running afterwards sees the schema it expects.
   if (droppedType) {
     await db.query(`ALTER TABLE ipy_e_properties ADD COLUMN IF NOT EXISTS project_name ${droppedType}`);
+  }
+  /*
+    And take the property back out of circulation. Other files still borrow
+    "whichever property comes first"; leaving one behind with a deliberately
+    odd name would hand them the same problem this test just stopped having.
+  */
+  if (recordId) {
+    await db.query(
+      `UPDATE ipy_record SET is_deleted = true, deleted_at = now() WHERE id = $1`,
+      [recordId],
+    );
   }
 });
 

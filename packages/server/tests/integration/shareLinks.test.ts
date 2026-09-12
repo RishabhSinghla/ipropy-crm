@@ -18,17 +18,11 @@ import { registry } from '../../src/core/metadata/registry.js';
 import { db } from '../../src/db/pool.js';
 import { recordService, type ServiceContext } from '../../src/core/entity/recordService.js';
 import { mintToken } from '../../src/core/sharing/shareLinks.js';
-import { adminContext, leadInput, propertyInput, SEEDED } from './fixtures.js';
+import { SEEDED, adminContext, leadInput, propertyInput, signIn } from './fixtures.js';
 
 let app: Express;
 let token: string;
 let ctx: ServiceContext;
-
-async function login(email: string): Promise<string> {
-  const res = await request(app).post('/api/auth/login').send({ email, password: 'Admin@123' });
-  if (res.status !== 200) throw new Error(`login failed for ${email}: ${res.status}`);
-  return res.body.token as string;
-}
 
 /** A property with a photo on it, in whatever state the test needs. */
 async function propertyWithPhoto(name: string, values: Record<string, unknown> = {}): Promise<{
@@ -54,7 +48,7 @@ beforeAll(async () => {
   const admin = await db.queryOne<{ email: string }>(
     `SELECT email FROM ipy_user WHERE is_admin = true AND password_hash IS NOT NULL ORDER BY created_at LIMIT 1`,
   );
-  token = await login(admin!.email);
+  token = await signIn(app, admin!.email);
 });
 
 describe('minting a token', () => {
@@ -110,7 +104,7 @@ describe('creating a link', () => {
       [SEEDED.executiveA, lead.id],
     );
 
-    const other = await login(SEEDED.executiveB);
+    const other = await signIn(app, SEEDED.executiveB);
     const res = await request(app).post(`/api/records/leads/${lead.id}/share-links`)
       .set('Authorization', `Bearer ${other}`).send({});
     expect([403, 404]).toContain(res.status);

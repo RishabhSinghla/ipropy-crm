@@ -13,6 +13,7 @@ import { createApp } from '../../src/app.js';
 import { db } from '../../src/db/pool.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import { invalidatePermissions } from '../../src/core/permissions/index.js';
+import { signIn } from './fixtures.js';
 
 let app: ReturnType<typeof createApp>;
 let token = '';
@@ -45,8 +46,7 @@ beforeAll(async () => {
     [profileId, fieldId]);
   invalidatePermissions();
 
-  token = (await request(app).post('/api/auth/login')
-    .send({ email: user!.email, password: 'Admin@123' })).body.token;
+  token = await signIn(app, user!.email);
 });
 
 afterAll(async () => {

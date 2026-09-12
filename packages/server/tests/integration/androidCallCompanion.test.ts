@@ -15,6 +15,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
+import { signIn } from './fixtures.js';
 
 let app: ReturnType<typeof createApp>;
 let token = '';
@@ -30,9 +31,7 @@ const MISSED = 3;
 
 beforeAll(async () => {
   app = createApp();
-  const login = await request(app).post('/api/auth/login')
-    .send({ identifier: 'admin@ipropy.com', password: 'Admin@123' });
-  token = login.body.token;
+  token = await signIn(app, 'admin@ipropy.com');
 
   const lead = await request(app).post('/api/records/leads')
     .set('Authorization', `Bearer ${token}`)

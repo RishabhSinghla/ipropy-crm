@@ -18,6 +18,7 @@ import type { Express } from 'express';
 import { createApp } from '../../src/app.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import { db } from '../../src/db/pool.js';
+import { signIn } from './fixtures.js';
 
 let app: Express;
 let token: string;
@@ -41,9 +42,7 @@ beforeAll(async () => {
   const admin = await db.queryOne<{ email: string }>(
     `SELECT email FROM ipy_user WHERE is_admin = true AND password_hash IS NOT NULL ORDER BY created_at LIMIT 1`,
   );
-  const login = await request(app).post('/api/auth/login')
-    .send({ email: admin!.email, password: 'Admin@123' }).expect(200);
-  token = login.body.token as string;
+  token = await signIn(app, admin!.email);
 });
 
 describe('renaming a field', () => {

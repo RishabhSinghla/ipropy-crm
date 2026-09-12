@@ -20,7 +20,7 @@ import { createApp } from '../../src/app.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import { db } from '../../src/db/pool.js';
 import { recordService } from '../../src/core/entity/recordService.js';
-import { SEEDED, adminContext } from './fixtures.js';
+import { SEEDED, adminContext, signIn } from './fixtures.js';
 
 let app: Express;
 let outsiderToken: string;
@@ -31,9 +31,7 @@ beforeAll(async () => {
   await registry.warmup();
   app = createApp();
 
-  const login = await request(app).post('/api/auth/login')
-    .send({ email: SEEDED.executiveA, password: 'Admin@123' });
-  outsiderToken = login.body.token;
+  outsiderToken = await signIn(app, SEEDED.executiveA);
 
   /*
     Created through the real service rather than a hand-written INSERT — the

@@ -7,16 +7,10 @@ import { db } from '../../src/db/pool.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import { recordService } from '../../src/core/entity/recordService.js';
 import { getDriver } from '../../src/core/storage/index.js';
-import { adminContext, propertyInput, SEEDED } from './fixtures.js';
+import { SEEDED, adminContext, propertyInput, signIn } from './fixtures.js';
 
 let app: Express;
 let adminToken: string;
-
-async function login(email: string): Promise<string> {
-  const res = await request(app).post('/api/auth/login').send({ email, password: 'Admin@123' });
-  if (res.status !== 200) throw new Error(`login failed for ${email}: ${res.status}`);
-  return res.body.token as string;
-}
 
 beforeAll(async () => {
   await registry.warmup();
@@ -24,7 +18,7 @@ beforeAll(async () => {
   const admin = await db.queryOne<{ email: string }>(
     `SELECT email FROM ipy_user WHERE is_admin = true AND password_hash IS NOT NULL ORDER BY created_at LIMIT 1`,
   );
-  adminToken = await login(admin!.email);
+  adminToken = await signIn(app, admin!.email);
 });
 
 describe('record files', () => {
@@ -64,7 +58,7 @@ describe('record files', () => {
       });
 
     // A viewer cannot silently turn record-read access into file-edit access.
-    const viewer = await login(SEEDED.executiveB);
+    const viewer = await signIn(app, SEEDED.executiveB);
     await request(app).patch(`/api/files/${fileId}`)
       .set('Authorization', `Bearer ${viewer}`)
       .send({ fileName: 'not-allowed.txt' })

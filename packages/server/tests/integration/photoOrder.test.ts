@@ -14,7 +14,7 @@ import { db } from '../../src/db/pool.js';
 import { createApp } from '../../src/app.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import { createRecord } from '../../src/core/entity/recordService.js';
-import { adminContext, propertyInput } from './fixtures.js';
+import { adminContext, propertyInput, signIn } from './fixtures.js';
 
 let app: Express;
 let token = '';
@@ -41,11 +41,7 @@ beforeAll(async () => {
   const adminRow = await db.queryOne<{ email: string }>(
     `SELECT email FROM ipy_user WHERE is_admin = true AND password_hash IS NOT NULL ORDER BY created_at LIMIT 1`,
   );
-  const login = await request(app)
-    .post('/api/auth/login')
-    .send({ email: adminRow!.email, password: 'Admin@123' });
-  expect(login.status).toBe(200);
-  token = login.body.token as string;
+  token = await signIn(app, adminRow!.email);
 
   const admin = await adminContext();
   const property = await createRecord(admin, 'properties', propertyInput({

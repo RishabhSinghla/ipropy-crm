@@ -15,6 +15,7 @@ import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { db } from '../../src/db/pool.js';
 import { registry } from '../../src/core/metadata/registry.js';
+import { signIn } from './fixtures.js';
 
 let app: ReturnType<typeof createApp>;
 let token = '';
@@ -26,8 +27,7 @@ beforeAll(async () => {
   const admin = await db.queryOne<{ email: string }>(
     `SELECT email FROM ipy_user WHERE is_admin = true AND password_hash IS NOT NULL ORDER BY created_at LIMIT 1`,
   );
-  const res = await request(app).post('/api/auth/login').send({ email: admin!.email, password: 'Admin@123' });
-  token = res.body.token as string;
+  token = await signIn(app, admin!.email);
 });
 afterAll(async () => {
   await db.query(`DELETE FROM ipy_dropped_column WHERE column_name = $1`, [NAME]);

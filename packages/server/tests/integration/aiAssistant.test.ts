@@ -6,19 +6,13 @@ import { createApp } from '../../src/app.js';
 import { db } from '../../src/db/pool.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import { recordService } from '../../src/core/entity/recordService.js';
-import { contextFor, propertyInput, SEEDED } from './fixtures.js';
+import { SEEDED, contextFor, propertyInput, signIn } from './fixtures.js';
 
 let app: Express;
 let token: string;
 let otherToken: string;
 let userId: string;
 let userEmail: string;
-
-async function login(email: string): Promise<string> {
-  const response = await request(app).post('/api/auth/login').send({ email, password: 'Admin@123' });
-  if (response.status !== 200) throw new Error(`login failed: ${response.status} ${response.text}`);
-  return response.body.token as string;
-}
 
 const authorised = (method: 'get' | 'post' | 'patch' | 'delete', path: string, authToken = token) =>
   request(app)[method](path).set('Authorization', `Bearer ${authToken}`);
@@ -40,8 +34,8 @@ beforeAll(async () => {
   );
   if (!user) throw new Error('Could not create isolated assistant user');
   userId = user.id;
-  token = await login(userEmail);
-  otherToken = await login(SEEDED.executiveB);
+  token = await signIn(app, userEmail);
+  otherToken = await signIn(app, SEEDED.executiveB);
 });
 
 describe('Ask iPropy conversations, memory and confirmed actions', () => {

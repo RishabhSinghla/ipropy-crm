@@ -20,7 +20,7 @@ import request from 'supertest';
 import type { Express } from 'express';
 import { createApp } from '../../src/app.js';
 import { registry } from '../../src/core/metadata/registry.js';
-import { adminContext } from './fixtures.js';
+import { adminContext, signIn } from './fixtures.js';
 import { db } from '../../src/db/pool.js';
 import { hashPassword } from '../../src/middleware/auth.js';
 
@@ -36,8 +36,7 @@ beforeAll(async () => {
   app = createApp();
 
   const admin = await adminContext();
-  adminToken = (await request(app).post('/api/auth/login')
-    .send({ identifier: admin.user.email, password: 'Admin@123' })).body.token;
+  adminToken = await signIn(app, admin.user.email);
 
   // A plain rep: no admin flag, whatever profile the seed gives by default.
   await db.query(
@@ -45,9 +44,7 @@ beforeAll(async () => {
      VALUES ($1,$2,'Directory','Rep',false,true)`,
     [REP_EMAIL, await hashPassword(PASSWORD)],
   );
-  repToken = (await request(app).post('/api/auth/login')
-    .send({ identifier: REP_EMAIL, password: PASSWORD })).body.token;
-  expect(repToken, 'could not sign the test rep in').toBeTruthy();
+  repToken = await signIn(app, REP_EMAIL, PASSWORD);
 });
 
 describe('the staff directory', () => {

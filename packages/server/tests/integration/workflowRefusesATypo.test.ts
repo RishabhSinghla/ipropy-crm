@@ -14,6 +14,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
+import { signIn } from './fixtures.js';
 
 let app: ReturnType<typeof createApp>;
 let token = '';
@@ -29,9 +30,7 @@ const workflow = (over: Record<string, unknown>) => ({
 
 beforeAll(async () => {
   app = createApp();
-  const res = await request(app).post('/api/auth/login')
-    .send({ identifier: 'admin@ipropy.com', password: 'Admin@123' });
-  token = res.body.token;
+  token = await signIn(app, 'admin@ipropy.com');
 });
 
 describe('creating a workflow', () => {

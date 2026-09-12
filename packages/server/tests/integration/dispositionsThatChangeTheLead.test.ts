@@ -11,6 +11,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { db } from '../../src/db/pool.js';
+import { signIn } from './fixtures.js';
 
 let app: ReturnType<typeof createApp>;
 let token = '';
@@ -32,9 +33,7 @@ async function leadWithCall(suffix: string): Promise<{ leadId: string; callId: s
 
 beforeAll(async () => {
   app = createApp();
-  const login = await request(app).post('/api/auth/login')
-    .send({ identifier: 'admin@ipropy.com', password: 'Admin@123' });
-  token = login.body.token;
+  token = await signIn(app, 'admin@ipropy.com');
 });
 
 describe('a disposition that acts on the lead', () => {
