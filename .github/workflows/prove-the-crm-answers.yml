@@ -20,6 +20,12 @@
 name: Prove the CRM answers
 
 on:
+  # A quarter to nine, before anybody opens the CRM. A screen that stopped
+  # answering overnight — a field deleted yesterday, a deploy that half-landed —
+  # is then known before a rep meets it rather than reported as "it's broken".
+  # One job a day: see health.yml for why the minute budget is worth respecting.
+  schedule:
+    - cron: '15 3 * * *'
   workflow_dispatch:
     inputs:
       base_url:
