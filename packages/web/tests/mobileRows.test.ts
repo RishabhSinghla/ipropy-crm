@@ -150,8 +150,28 @@ describe('the number to dial', () => {
 describe('the time on the right', () => {
   const now = new Date('2026-09-12T11:00:00+05:30');
 
+  /*
+    Asserted by shape, not by the rendered string.
+
+    `toLocaleTimeString` formats in the *runner's* timezone, and that is
+    correct behaviour: a rep's phone is set to where they are, and a CRM that
+    printed times in the server's zone would be wrong on every handset. But it
+    makes an exact-value assertion a test that passes in India and fails in CI,
+    which is what this one did — `9:30 am` on a laptop in IST, `4:00 am` on a
+    runner in UTC.
+
+    What the rule actually promises is which *form* a time takes, and that is
+    the same everywhere.
+  */
+  const CLOCK = /^\d{1,2}:\d{2}(:\d{2})?\s?(am|pm)?$/i;
+
   it('shows a clock time for today', () => {
-    expect(shortTime('2026-09-12T09:30:00+05:30', now)).toMatch(/9:30/);
+    expect(shortTime('2026-09-12T09:30:00+05:30', now)).toMatch(CLOCK);
+  });
+
+  it('does not show a clock time for anything older', () => {
+    expect(shortTime('2026-09-09T09:30:00+05:30', now)).not.toMatch(CLOCK);
+    expect(shortTime('2026-07-02T09:30:00+05:30', now)).not.toMatch(CLOCK);
   });
 
   it('shows the weekday within the last week', () => {
