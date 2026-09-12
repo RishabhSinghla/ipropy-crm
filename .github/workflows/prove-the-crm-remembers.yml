@@ -66,7 +66,8 @@ jobs:
                     '[\"GET /api/records\", \"POST /api/records\", \"PATCH /api/records\",
                       \"GET /api/telephony\", \"POST /api/telephony\",
                       \"GET /api/files\", \"POST /api/files\", \"GET /api/notifications\",
-                      \"GET /api/views\", \"POST /api/views\", \"POST /api/import\"]'::jsonb,
+                      \"GET /api/views\", \"POST /api/views\", \"POST /api/import\",
+                      \"POST /api/ai\"]'::jsonb,
                     now() + interval '10 minutes')
             RETURNING id" | head -1)"
           echo "KEY_ID=${KEY_ID}" >> "$GITHUB_ENV"
@@ -237,6 +238,26 @@ jobs:
           check "and it read the file" 1 "$ROWS"
           AFTER="$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM ipy_record WHERE module_name = 'leads'")"
           check "and it wrote nothing" "$BEFORE" "$AFTER"
+
+          echo "--- the things that think ---"
+          # Scoring reads the lead and writes a rating. On production the rating
+          # field has been deleted, which is exactly the case that used to make
+          # this raise 42703 and stop every score moving — so the answer must be
+          # a score, not an error, on a CRM without that column.
+          CODE="$(post POST "/api/ai/score-lead/${LEAD}" '{}')"
+          check "a lead can be scored" 200 "$CODE"
+          SCORE="$(python3 -c "import json;d=json.load(open('/tmp/body.json'));print('yes' if isinstance(d.get('score'), (int,float)) else 'no')" 2>/dev/null || echo no)"
+          check "and the answer is a number" yes "$SCORE"
+
+          # Ask iPropy. A free model that is rate-limited answering 503 is the
+          # documented, correct degradation — not a fault — so both are accepted
+          # and the one thing refused is a 500.
+          ASK="$(post POST /api/ai/ask '{"question":"How many contacts are in the CRM?"}')"
+          case "$ASK" in
+            200) echo "  ok    Ask iPropy answers" ;;
+            503) echo "  ok    Ask iPropy is off right now, and says so (503)" ;;
+            *)   echo "  FAIL  Ask iPropy — HTTP ${ASK}"; head -c 200 /tmp/body.json; echo; fail=1 ;;
+          esac
 
           echo "--- what this key must not be able to do ---"
           CODE="$(curl -s -o /dev/null -w '%{http_code}' -X DELETE -H "x-api-key: ${KEY}" "${BASE_URL}/api/records/leads/${LEAD}")"
