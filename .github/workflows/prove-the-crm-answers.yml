@@ -96,8 +96,13 @@ jobs:
           fail=0
           ask() {
             local name="$1" path="$2"
-            local code
-            code="$(curl -s -o /tmp/body.json -w '%{http_code}' -H "x-api-key: ${KEY}" "${BASE_URL}${path}")"
+            local code answer
+            # Time it too. "Fast" is the difference between a rep using the CRM
+            # and working around it, and a screen that has quietly become slow
+            # is a bug that no status code reports.
+            answer="$(curl -s -o /tmp/body.json -w '%{http_code} %{time_total}' -H "x-api-key: ${KEY}" "${BASE_URL}${path}")"
+            code="${answer%% *}"
+            local secs="${answer##* }"
             if [ "$code" != "200" ]; then
               echo "  FAIL  ${name} — HTTP ${code} from ${path}"
               head -c 300 /tmp/body.json; echo
@@ -108,7 +113,13 @@ jobs:
             # what came back so a screen that loads nothing is visible here.
             local detail
             detail="$(python3 "$SUMMARISE" /tmp/body.json 2>/dev/null || echo 'unreadable body')"
-            echo "  ok    ${name} — ${detail}"
+            printf '  ok    %-34s %ss  %s\n' "${name}" "${secs}" "${detail}"
+            # Two seconds is not a target, it is the point at which a person
+            # notices waiting. Reported rather than failed: a slow answer is
+            # still an answer, and this job's job is to say so.
+            if python3 -c "import sys; sys.exit(0 if float('${secs}') > 2 else 1)"; then
+              echo "        ^ slow — that screen makes the team wait"
+            fi
           }
 
           echo "--- what every screen loads first ---"
