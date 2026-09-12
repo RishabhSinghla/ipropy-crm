@@ -123,10 +123,26 @@ viewsRouter.get('/:module', asyncHandler(async (req, res) => {
   const views = rows.rows.map(rowToView);
 
   // Optional per-view record counts for the badge in the view switcher.
+  /*
+    How many records each view holds, beside its name in the switcher.
+
+    It used to count only views with `showMetrics` set, and nothing sets it —
+    so the flag was on by default for nobody and the counts never appeared. The
+    question "how many are in My Leads" is the reason somebody opens that menu,
+    and it was the one thing the menu would not say.
+
+    Counted in parallel rather than in a loop: this runs on every list page
+    load, and three sequential counts against 23,000 records is three round
+    trips somebody waits through. A count that fails is left undefined and the
+    switcher simply shows no number — a wrong count beside a view name is worse
+    than none, and one failing view must not take the menu down.
+
+    Capped, because a business that made forty views should not turn its own
+    view menu into forty counts.
+  */
   if (req.query.withCounts === 'true') {
     const scope = getScope(req);
-    for (const view of views) {
-      if (!view.showMetrics) continue;
+    await Promise.all(views.slice(0, 12).map(async (view) => {
       try {
         const result = await recordService.listRecords(scope, module.name, {
           view: String(view.id), page: 1, pageSize: 1,
@@ -135,7 +151,7 @@ viewsRouter.get('/:module', asyncHandler(async (req, res) => {
       } catch {
         (view as { count?: number }).count = undefined;
       }
-    }
+    }));
   }
 
   res.json(views);

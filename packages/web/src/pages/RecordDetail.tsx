@@ -609,9 +609,18 @@ export default function RecordDetail(): JSX.Element {
         <Tabs tabs={tabs} active={activeTab} onChange={setTab} className="px-4 sm:px-5" />
       </div>
 
-      {/* Body */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="space-y-4 lg:col-span-2">
+      {/*
+        Matching gets the whole width; everything else keeps the sidebar.
+
+        The matching tabs are a *table* — fit, name, unit, type, mobile,
+        assignee, when it last moved, and a button — and squeezed into two
+        thirds of the page it scrolled sideways before the assignee was even
+        visible. The notes and insights beside it are worth reading on Overview
+        and are not what somebody came to this tab for: they are picking which
+        six units to send, and they need to see the columns to do it.
+      */}
+      <div className={cn('grid gap-4', activeTab !== 'matching' && 'lg:grid-cols-3')}>
+        <div className={cn('space-y-4', activeTab !== 'matching' && 'lg:col-span-2')}>
           {activeTab === 'overview' && (
             <OverviewTab
               meta={meta}
@@ -641,7 +650,7 @@ export default function RecordDetail(): JSX.Element {
             the duplicate panels, far enough down that people stopped writing in
             it. Same column, same order, both modules — photos come directly
             below the notes they get discussed in. */}
-        <div className="space-y-4">
+        <div className={cn('space-y-4', activeTab === 'matching' && 'hidden')}>
           <CommentsPanel module={moduleName!} id={id!} currentUser={user?.id ?? ''} />
           {moduleName === 'properties' && (
             <PropertyPhotoCarousel recordId={id!} canEdit={Boolean(record.can?.edit)} />

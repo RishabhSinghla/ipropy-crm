@@ -395,7 +395,10 @@ export function MatchingTab({
                 : 'No open lead fits this unit yet. It sells itself when one arrives — check back after the next enquiry.'}
         />
       ) : (
-        <div className="overflow-x-auto rounded-b-xl">
+        // Capped height with its own scroll: fifty matches is a real scroll,
+        // and a table whose column names have left the screen is a grid of
+        // numbers. `.list-head` is already sticky, so it stays put in here.
+        <div className="max-h-[65vh] overflow-auto rounded-b-xl">
           <table className="w-full">
             <thead>
               <tr>
@@ -421,7 +424,16 @@ export function MatchingTab({
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {rows.map((m, index) => (
-                <tr key={m.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/60">
+                <tr
+                  key={m.id}
+                  className={cn(
+                    'hover:bg-slate-50 dark:hover:bg-slate-800/60',
+                    // Ticking a row is how you choose what to send. Without a
+                    // mark on the row itself the only feedback was the count on
+                    // the Share button, which is at the other end of the card.
+                    selected.has(m.id) && 'bg-brand-50/60 dark:bg-brand-950/30',
+                  )}
+                >
                   <td className="list-cell-select">
                     <input
                       type="checkbox"
@@ -435,7 +447,7 @@ export function MatchingTab({
                       })}
                     />
                   </td>
-                  <td className="list-cell"><ScoreChip score={m.score} /></td>
+                  <td className="list-cell w-20 whitespace-nowrap"><ScoreChip score={m.score} /></td>
                   {columns.map(({ spec, field }) => (
                     <td key={spec.key} className={cn('list-cell', spec.className)}>
                       {spec.system === 'label' ? (

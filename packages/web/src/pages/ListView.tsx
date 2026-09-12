@@ -610,6 +610,15 @@ export default function ListView(): JSX.Element {
                           {view.isOverride && (
                             <span className="shrink-0 text-2xs text-muted" title="Your own version of this view">edited</span>
                           )}
+                          {/* How many are in it — the question somebody opens
+                              this menu to answer. Undefined while it loads, or
+                              when the count failed; no number beats a wrong
+                              one. */}
+                          {typeof view.count === 'number' && (
+                            <span className="shrink-0 text-2xs text-muted tnum">
+                              {view.count.toLocaleString('en-IN')}
+                            </span>
+                          )}
                           {view.id === activeView?.id && <span className="shrink-0 text-brand-600">Current</span>}
                         </DropdownItem>
                         {canEdit && (

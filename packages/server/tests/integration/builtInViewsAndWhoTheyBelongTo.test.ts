@@ -1,7 +1,8 @@
 /**
- * The view switcher ships with two views, and editing one is personal.
+ * The view switcher ships with three views, and editing one is personal.
  *
- * "All Leads" and "My Leads" are one row each, read by the whole team. Making
+ * "All Leads", "My Leads" and "Unread Leads" are one row each, read by the
+ * whole team (the third arrived with migration 142). Making
  * them editable — which is the point, since they are the two views everybody
  * actually lives in — could not mean letting one person reshape the row
  * everybody reads. So an edit to a built-in view is saved as that person's own
@@ -64,11 +65,65 @@ beforeAll(async () => {
   executiveId = exec!.id;
 });
 
-describe('the two built-in views', () => {
+describe('the built-in views', () => {
   it('are what the switcher opens with', async () => {
     const list = await views(adminToken);
     const builtIn = list.filter((v) => v.isSystem).map((v) => v.name).sort();
-    expect(builtIn).toEqual(['All Leads', 'My Leads']);
+    expect(builtIn).toEqual(['All Leads', 'My Leads', 'Unread Leads']);
+  });
+
+  it('count what each one would actually list', async () => {
+    /*
+      The switcher prints a number beside every view, and each is a separate
+      count run through the same filter the view carries. A view whose count
+      throws must leave the number off rather than take the whole switcher
+      down with it, so the contract is: present and numeric, or absent.
+    */
+    const res = await request(app)
+      .get('/api/views/leads?withCounts=true')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+
+    const counted = (res.body as { name: string; count?: number }[])
+      .filter((v) => ['All Leads', 'My Leads', 'Unread Leads'].includes(v.name));
+    expect(counted).toHaveLength(3);
+    for (const v of counted) {
+      expect(typeof v.count, `${v.name} has no count`).toBe('number');
+      expect(v.count).toBeGreaterThanOrEqual(0);
+    }
+
+    // "All Leads" carries no filter, so nothing narrower can out-count it.
+    const all = counted.find((v) => v.name === 'All Leads')!.count!;
+    for (const v of counted) expect(v.count!).toBeLessThanOrEqual(all);
+  });
+
+  it('filter Unread Leads to records this person has never opened', async () => {
+    /*
+      `is_unseen` is the one operator with no column behind it — it reads the
+      module watermark and the recently-viewed table. Opening a record has to
+      take it out of the list, which is the half a filter test on its own
+      cannot see.
+    */
+    const unread = (await views(adminToken)).find((v) => v.name === 'Unread Leads')!;
+    const listed = async (): Promise<{ total: number; firstId?: string }> => {
+      const res = await request(app)
+        .get(`/api/records/leads?view=${unread.id}&pageSize=1`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(res.status).toBe(200);
+      return { total: res.body.total as number, firstId: res.body.rows[0]?.id as string | undefined };
+    };
+
+    const before = await listed();
+    if (!before.firstId) return; // nothing unread for this user; the operator still ran
+
+    await request(app)
+      .get(`/api/records/leads/${before.firstId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    const after = await listed();
+    expect(after.total).toBe(before.total - 1);
+    expect(after.firstId).not.toBe(before.firstId);
   });
 
   it('cannot be deleted by anyone, administrator included', async () => {
@@ -78,8 +133,8 @@ describe('the two built-in views', () => {
       .set('Authorization', `Bearer ${adminToken}`);
     expect(res.status).toBe(403);
 
-    // Still there, and still one of two.
-    expect((await views(adminToken)).filter((v) => v.isSystem)).toHaveLength(2);
+    // Still there, and still one of three.
+    expect((await views(adminToken)).filter((v) => v.isSystem)).toHaveLength(3);
   });
 });
 
