@@ -41,7 +41,7 @@ different product surface, deliberately not a breakpoint.
 packages/app/
   android/          the Android project (committed)
   ios/              the iOS project (committed)
-  assets/           icon and splash sources; `npx @capacitor/assets generate` fans them out
+  assets/           icon and splash sources — see "Changing the icon" below
   scripts/
     make-release-key.sh   run once, ever
     publish-apk.sh        build a signed release and put it where the CRM serves it
@@ -89,6 +89,27 @@ git add packages/server/public/companion && git commit && git push
 number typed twice, checks the APK is actually signed, and writes the metadata
 the download page reads. The APK travels in git because the container has no
 Android SDK and Render has no artefact store.
+
+### Changing the icon or the splash
+
+Edit the sources in `assets/` and fan them out to every density both platforms
+want:
+
+```bash
+cd packages/web
+npx @capacitor/assets@3 generate --assetPath ../app/assets \
+  --android --androidProject ../app/android \
+  --ios --iosProject ../app/ios/App
+```
+
+`npx`, not a saved dependency, and deliberately so. That generator bundles
+Capacitor CLI 5 alongside the 8 this project uses, and with it an old `tar` and
+an old `sharp` — fourteen advisories, all of them for a tool that runs about
+once a year and whose output is committed. Installing it permanently means
+carrying those in the lockfile for ever; `npx` fetches it for the minute it is
+needed.
+
+The generated files are committed, so nobody needs this to build the app.
 
 ### Testing against a laptop rather than production
 
