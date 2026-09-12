@@ -1389,10 +1389,10 @@ export default function IntegrationsAdmin(): JSX.Element {
   return (
     <div className="p-4 sm:p-6">
       <div className="mb-4">
-        <h1 className="text-lg font-semibold tracking-tight">Integration marketplace</h1>
+        <h1 className="text-lg font-semibold tracking-tight">Integrations</h1>
         <p className="text-sm text-muted">
-          Choose what you want iPropy to do, then press Set up. We guide you one
-          short step at a time — advanced details stay out of the way.
+          Pick what you want to do and follow the steps. Nothing needs editing in
+          a config file, and nothing needs a redeploy.
         </p>
       </div>
 
@@ -1416,8 +1416,8 @@ export default function IntegrationsAdmin(): JSX.Element {
 
       <Tabs
         tabs={[
-          { key: 'connect', label: 'Plugin centre', icon: <Wand2 className="h-3.5 w-3.5" /> },
-          { key: 'providers', label: 'Advanced settings', icon: <Settings2 className="h-3.5 w-3.5" /> },
+          { key: 'connect', label: 'Connect', icon: <Wand2 className="h-3.5 w-3.5" /> },
+          { key: 'providers', label: 'All settings', icon: <Settings2 className="h-3.5 w-3.5" /> },
           { key: 'webhooks', label: 'Webhook URLs', icon: <Webhook className="h-3.5 w-3.5" /> },
           { key: 'webforms', label: 'Web forms', icon: <Globe className="h-3.5 w-3.5" /> },
           { key: 'inbox', label: 'Lead inbox', icon: <Sparkles className="h-3.5 w-3.5" /> },
@@ -1434,12 +1434,6 @@ export default function IntegrationsAdmin(): JSX.Element {
           </div>
         ) : (
           <div className="space-y-6">
-            <div className="rounded-lg border border-brand-200 bg-brand-50 p-4 text-sm text-brand-900 dark:border-brand-900 dark:bg-brand-950/30 dark:text-brand-100">
-              <p className="font-semibold">Install a plugin in three steps</p>
-              <p className="mt-1 text-xs text-brand-800/80 dark:text-brand-200/80">
-                Select what you need, follow the short wizard, then iPropy tests the connection before turning it on. You never need to edit server files or call a developer.
-              </p>
-            </div>
             <div className="grid gap-3 md:grid-cols-2">
               {JOBS.map((job) => (
                 <JobCard key={job.id} job={job} summaries={summaries} onSetup={openSetup} onManage={openManage} />
@@ -1474,9 +1468,6 @@ export default function IntegrationsAdmin(): JSX.Element {
           <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>
         ) : (
           <div className="space-y-6">
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
-              Advanced settings are for an administrator who already has provider credentials. For normal setup, return to <strong>Plugin centre</strong> and use the guided Set up button instead.
-            </div>
             {['messaging', 'telephony', 'email', 'ai', 'lead_source', 'storage'].map((kind) => {
               const list = (integrations ?? []).filter((i) => i.kind === kind && PROVIDER_FIELDS[i.provider]);
               if (!list.length) return null;
