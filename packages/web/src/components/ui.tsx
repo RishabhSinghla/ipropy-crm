@@ -171,7 +171,7 @@ export function Modal({
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className={cn('relative z-10 w-full animate-slide-up rounded-xl bg-white shadow-float dark:bg-slate-900', widths[size])}
+        className={cn('relative z-10 w-full rounded-xl bg-white shadow-float dark:bg-slate-900', widths[size])}
       >
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3.5 dark:border-slate-800">
           <h2 className="text-base font-semibold">{title}</h2>
@@ -299,7 +299,7 @@ export function Dropdown({
         <div
           ref={panelRef}
           className={cn(
-            'absolute z-40 mt-1 min-w-[12rem] max-w-[calc(100vw-1rem)] animate-slide-up overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-float dark:border-slate-700 dark:bg-slate-900',
+            'absolute z-40 mt-1 min-w-[12rem] max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-float dark:border-slate-700 dark:bg-slate-900',
             align === 'right' ? 'right-0' : 'left-0',
             className,
           )}

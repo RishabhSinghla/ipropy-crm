@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type CustomView, type FieldMeta, type FilterGroup, formatIndianPrice, formatPhoneWithCode, toInternational, type ListQuery, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Columns3, Compass, Copy, Download, Filter,
-  LayoutGrid, List, MessageCircle, Pencil, Phone, Plus, RefreshCw, Ruler, Save, Search, Settings2, Star, Trash2, Upload, Users, X,
+  LayoutGrid, List, MessageCircle, Pencil, Phone, Plus, RefreshCw, Ruler, Save, Search, Settings2, Share2, Star, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { ApiError, api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
@@ -84,6 +84,7 @@ export default function ListView(): JSX.Element {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [editingView, setEditingView] = useState<AdminView | null>(null);
   const [confirmDeleteView, setConfirmDeleteView] = useState<CustomView | null>(null);
+  const [dragColumn, setDragColumn] = useState<string | null>(null);
   const colWidths = useColumnWidths(moduleName);
 
   /**
@@ -220,6 +221,15 @@ export default function ListView(): JSX.Element {
       void queryClient.invalidateQueries({ queryKey: ['views', moduleName] });
     },
     onError: (error: Error) => toast.error('Could not delete this view', error.message),
+  });
+
+  const shareViewMutation = useMutation({
+    mutationFn: ({ id, isPublic }: { id: string; isPublic: boolean }) => api.updateView(moduleName!, id, { isPublic }),
+    onSuccess: (_, variables) => {
+      toast.success(variables.isPublic ? 'View shared with the CRM team' : 'View is now private');
+      void queryClient.invalidateQueries({ queryKey: ['views', moduleName] });
+    },
+    onError: (error: Error) => toast.error('Could not change view sharing', error.message),
   });
 
   /**
@@ -449,6 +459,18 @@ export default function ListView(): JSX.Element {
   // body scroll instead.
   const tableMinWidth = SELECT_COL_WIDTH
     + visibleColumns.reduce((sum, col) => sum + colWidths.widthOf(col, fieldMap.get(col)), 0);
+  const moveColumn = (from: string, to: string): void => {
+    if (from === to) return;
+    setColumns((previous) => {
+      const next = [...(previous.length ? previous : visibleColumns)];
+      const fromIndex = next.indexOf(from);
+      const toIndex = next.indexOf(to);
+      if (fromIndex < 0 || toIndex < 0) return previous;
+      next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, from);
+      return next;
+    });
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -504,12 +526,27 @@ export default function ListView(): JSX.Element {
               <>
                 <p className="px-3 pb-1 pt-2 text-2xs font-semibold uppercase tracking-wider text-muted">List views</p>
                 <div className="max-h-64 overflow-y-auto py-1">
-                  {(views ?? []).map((view) => (
-                    <DropdownItem key={view.id} onClick={() => { chooseView(view.id); close(); }}>
-                      <span className="min-w-0 flex-1 truncate">{view.name}</span>
-                      {view.id === activeView?.id && <span className="text-brand-600">Current</span>}
-                    </DropdownItem>
-                  ))}
+                  {(views ?? []).map((view) => {
+                    const canManage = !view.isSystem && (view.ownerId === user?.id || user?.isAdmin);
+                    return (
+                      <div key={view.id} className="flex items-center px-1">
+                        <DropdownItem onClick={() => { chooseView(view.id); close(); }}>
+                          <span className="min-w-0 flex-1 truncate">{view.name}</span>
+                          {view.id === activeView?.id && <span className="text-brand-600">Current</span>}
+                        </DropdownItem>
+                        {canManage && (
+                          <>
+                            <button className="btn-ghost shrink-0 p-1.5" title="Edit view" aria-label={`Edit ${view.name}`} onClick={(e) => { e.stopPropagation(); setEditingView(view as AdminView); close(); }}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button className="btn-ghost shrink-0 p-1.5" title={view.isPublic ? 'Make view private' : 'Share with CRM team'} aria-label={view.isPublic ? `Make ${view.name} private` : `Share ${view.name} with CRM team`} onClick={(e) => { e.stopPropagation(); shareViewMutation.mutate({ id: view.id, isPublic: !view.isPublic }); }}>
+                              <Share2 className="h-3.5 w-3.5" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
                 <div className="border-t border-slate-100 py-1 dark:border-slate-800">
                   <DropdownItem icon={<Plus className="h-3.5 w-3.5" />} onClick={() => { setEditingView(blankView(moduleName)); close(); }}>
@@ -535,32 +572,6 @@ export default function ListView(): JSX.Element {
             )}
           </Dropdown>
 
-          {displayMode === 'table' && (data?.total ?? 0) > 0 && (
-            <div className="hidden items-center gap-1 rounded-lg border border-slate-200 px-1.5 py-1 text-xs text-muted lg:flex dark:border-slate-700">
-              <button className="btn-ghost p-0.5" aria-label="Previous page" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
-                <ChevronLeft className="h-3.5 w-3.5" />
-              </button>
-              <label className="flex items-center gap-1 whitespace-nowrap">
-                <input
-                  className="h-5 w-10 rounded border border-slate-200 bg-transparent px-1 text-center text-xs dark:border-slate-700"
-                  aria-label="Go to page"
-                  type="number"
-                  min={1}
-                  max={data!.totalPages}
-                  value={page}
-                  onChange={(e) => {
-                    const next = Number(e.target.value);
-                    if (Number.isInteger(next) && next >= 1 && next <= data!.totalPages) setPage(next);
-                  }}
-                />
-                <span>/ {data!.totalPages}</span>
-              </label>
-              <button className="btn-ghost p-0.5" aria-label="Next page" disabled={page >= data!.totalPages} onClick={() => setPage((p) => Math.min(data!.totalPages, p + 1))}>
-                <ChevronRight className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          )}
-
           <div className="ml-auto flex shrink-0 items-center gap-2">
             <span className="hidden shrink-0 text-xs text-muted tnum xl:inline">
               {isFetching && !data
@@ -568,8 +579,9 @@ export default function ListView(): JSX.Element {
                 : `${(data?.total ?? 0).toLocaleString('en-IN')} records`}
             </span>
 
+            <div className="relative h-8 w-8">
             {searchOpen ? (
-              <div className="relative">
+              <div className="absolute right-0 top-0 z-30 w-64">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                 <input
                   data-testid="list-search"
@@ -588,6 +600,7 @@ export default function ListView(): JSX.Element {
                 <Search className="h-3.5 w-3.5" />
               </button>
             )}
+            </div>
 
             <button
               onClick={() => setShowFilters(true)}
@@ -664,6 +677,17 @@ export default function ListView(): JSX.Element {
                 </>
               )}
             </Dropdown>
+
+            {displayMode === 'table' && (data?.total ?? 0) > 0 && (
+              <div className="hidden items-center gap-1 rounded-lg border border-slate-200 px-1.5 py-1 text-xs text-muted lg:flex dark:border-slate-700">
+                <label className="hidden items-center gap-1 xl:flex">Rows
+                  <Select value={String(pageSize)} onChange={(value) => setPageSize(Number(value))} options={PAGE_SIZE_OPTIONS.map((n) => ({ value: String(n), label: String(n) }))} className="h-6 w-14 py-0 text-xs" />
+                </label>
+                <button className="btn-ghost p-0.5" aria-label="Previous page" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}><ChevronLeft className="h-3.5 w-3.5" /></button>
+                <label className="flex items-center gap-1 whitespace-nowrap"><input className="h-5 w-10 rounded border border-slate-200 bg-transparent px-1 text-center text-xs dark:border-slate-700" aria-label="Go to page" type="number" min={1} max={data!.totalPages} value={page} onChange={(e) => { const next = Number(e.target.value); if (Number.isInteger(next) && next >= 1 && next <= data!.totalPages) setPage(next); }} /><span>/ {data!.totalPages}</span></label>
+                <button className="btn-ghost p-0.5" aria-label="Next page" disabled={page >= data!.totalPages} onClick={() => setPage((p) => Math.min(data!.totalPages, p + 1))}><ChevronRight className="h-3.5 w-3.5" /></button>
+              </div>
+            )}
 
           </div>
         </div>
@@ -810,7 +834,7 @@ export default function ListView(): JSX.Element {
             </colgroup>
             <thead>
               <tr>
-                <th className="list-head">
+                <th className="list-head w-12 px-0 text-center">
                   <input
                     type="checkbox"
                     aria-label={`Select all ${meta.label.toLowerCase()} on this page`}
@@ -826,7 +850,7 @@ export default function ListView(): JSX.Element {
                   const field = fieldMap.get(col);
                   const canSort = field?.config.sortable !== false;
                   return (
-                    <th key={col} className="list-head relative">
+                    <th key={col} draggable onDragStart={(e) => { setDragColumn(col); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', col); }} onDragEnd={() => setDragColumn(null)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); if (dragColumn) moveColumn(dragColumn, col); setDragColumn(null); }} className={cn('list-head relative cursor-grab active:cursor-grabbing', dragColumn === col && 'opacity-50')}>
                       <button
                         className="inline-flex max-w-full items-center gap-1 truncate hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:text-slate-200"
                         disabled={!canSort}

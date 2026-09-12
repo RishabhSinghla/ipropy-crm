@@ -2,7 +2,7 @@ import { type JSX, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import {
-  AlertTriangle, ChevronDown, ChevronUp, GripVertical, ListTree, Pencil, Plus, Save, Star, Trash2,
+  ChevronDown, ChevronUp, GripVertical, ListTree, Pencil, Plus, Save, Star, Trash2,
 } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { toast } from '../../lib/store';
@@ -334,14 +334,9 @@ export default function PicklistManager(): JSX.Element {
             </div>
           </div>
 
-          {current && (current.usedBy.length > 0 || current.usedInCode) && (
+          {current && current.usedBy.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-100 bg-slate-50/60 px-4 py-2 dark:border-slate-800 dark:bg-slate-800/40">
               <span className="text-2xs text-muted">Used by</span>
-              {current.usedInCode && (
-                <span className="rounded bg-white px-1.5 py-0.5 text-2xs dark:bg-slate-900">
-                  iPropy itself — {current.usedInCode}
-                </span>
-              )}
               {current.usedBy.map((u) => (
                 <span key={`${u.module}.${u.field}`} className="rounded bg-white px-1.5 py-0.5 text-2xs dark:bg-slate-900">
                   {u.moduleLabel} → {u.fieldLabel}
@@ -466,14 +461,6 @@ export default function PicklistManager(): JSX.Element {
                         update(index, { label, ...(linked ? { value: label } : {}) });
                       }}
                     />
-                    {option.usedInCode && (
-                      <span
-                        className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300"
-                        title={`The app looks for this option by name — it drives ${option.usedInCode}. Renaming what is stored will stop that working, with no error anywhere.`}
-                      >
-                        <AlertTriangle className="h-2.5 w-2.5" />
-                      </span>
-                    )}
                   </div>
 
                   {/* The colour and its preview, right beside the name they
@@ -481,11 +468,7 @@ export default function PicklistManager(): JSX.Element {
                       when asked for above. */}
                   {showStored && (
                     <input
-                      className={cn(
-                        'input w-40 py-1 font-mono text-xs',
-                        option.usedInCode && option.previousValue !== option.value
-                          && 'border-amber-400 focus:border-amber-500 focus:ring-amber-500',
-                      )}
+                      className="input w-40 py-1 font-mono text-xs"
                       placeholder="Stored value"
                       aria-label="Stored value"
                       value={option.value}
@@ -893,22 +876,6 @@ function DeleteOptionDialog({
         </>
       }
     >
-      {/* Renaming and deleting move every record and every saved filter. What
-          they cannot move is a query in the application that matches on this
-          exact word, and a few options have those. Said plainly, before the
-          button, rather than discovered later as "the website went blank". */}
-      {usage?.usedInCode && (
-        <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs dark:border-amber-900 dark:bg-amber-950/40">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-          <p className="text-amber-900 dark:text-amber-200">
-            <strong className="font-medium">The app looks for this option by name.</strong>{' '}
-            It drives {usage.usedInCode}. Removing or renaming it will stop that working, and
-            nothing will report an error — switching it to <strong className="font-medium">inactive</strong>{' '}
-            instead keeps it working while hiding it from new records.
-          </p>
-        </div>
-      )}
-
       {!usage ? (
         <div className="flex items-center gap-2 text-sm text-muted">
           <Spinner /> Checking which records use it…
