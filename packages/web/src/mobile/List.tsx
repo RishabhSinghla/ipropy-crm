@@ -23,6 +23,8 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { FieldMeta, RecordEnvelope } from '@ipropy/shared';
 import { MessageCircle, Phone, Plus, Search as SearchIcon, X } from 'lucide-react';
 import { api } from '../lib/api';
+import { useApp } from '../lib/store';
+import { useOfflineList, useOfflineMeta } from '../lib/useOfflineList';
 import { cn } from '../lib/utils';
 import { dial, openExternal } from '../lib/nativeActions';
 import { useSwipeActions, type SwipeSide } from '../lib/swipeActions';
@@ -37,6 +39,8 @@ export default function MobileList(): JSX.Element {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
 
+  const user = useApp((s) => s.user);
+
   const [searchOpen, setSearchOpen] = useState(false);
   const [term, setTerm] = useState('');
   const [debounced, setDebounced] = useState('');
@@ -49,11 +53,19 @@ export default function MobileList(): JSX.Element {
     return () => window.clearTimeout(t);
   }, [term]);
 
-  const { data: meta } = useQuery({
+  const { data: liveMeta } = useQuery({
     queryKey: ['module', module],
     queryFn: () => api.module(module),
     staleTime: 5 * 60_000,
   });
+
+  /*
+    A list cannot render without knowing its own fields, so an unreachable
+    server leaves this screen blank however many records are cached. Field
+    labels and types change when an admin edits them, not minute to minute, so
+    an hour-old copy showing a real record is a far better answer than nothing.
+  */
+  const meta = useOfflineMeta(module, liveMeta, user?.id);
 
   const { data: views } = useQuery({
     queryKey: ['views', module],
@@ -73,7 +85,30 @@ export default function MobileList(): JSX.Element {
     getNextPageParam: (last) => (last.page < last.totalPages ? last.page + 1 : undefined),
   });
 
-  const rows = useMemo(() => list.data?.pages.flatMap((p) => p.rows) ?? [], [list.data]);
+  /*
+    The last list this person saw, handed back when the request actually fails.
+
+    Not `navigator.onLine` — that reports whether the device has a network
+    interface, not whether anything is reachable through it, and the case this
+    exists for (one bar in the basement of a half-built floor) reports online
+    while every request times out.
+
+    Only the plain first page is remembered, so a search or a saved view never
+    answers out of the cache — showing a remembered unfiltered list to somebody
+    who searched for a name would answer a question they did not ask.
+  */
+  const offline = useOfflineList(
+    module,
+    { page: 1, pageSize: PAGE_SIZE, ...(viewId ? { view: viewId } : {}), ...(debounced ? { search: debounced } : {}) },
+    list.data?.pages[0],
+    user?.id,
+    list.isError,
+  );
+
+  const rows = useMemo(
+    () => (list.data ? list.data.pages.flatMap((p) => p.rows) : offline.rows),
+    [list.data, offline.rows],
+  );
   const total = list.data?.pages[0]?.total ?? 0;
 
   const fields = useMemo(() => {
@@ -177,8 +212,19 @@ export default function MobileList(): JSX.Element {
         </div>
       )}
 
+      {/*
+        Said plainly, and only when it is true. A remembered list passed off as
+        the current one is worse than no list: a rep would ring somebody whose
+        stage changed an hour ago and not know it.
+      */}
+      {offline.stale && (
+        <div className="shrink-0 bg-amber-50 px-4 py-2 text-[13px] text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+          No connection — showing what was here {offline.asOf}.
+        </div>
+      )}
+
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        {list.isPending ? (
+        {list.isPending && !offline.rows.length ? (
           <div className="flex h-40 items-center justify-center"><Spinner className="h-6 w-6 text-brand-600" /></div>
         ) : rows.length === 0 ? (
           <div className="px-8 pt-20 text-center">

@@ -1,8 +1,8 @@
 {
   "versionName": "1.0.0",
   "versionCode": 1,
-  "minSdk": ,
-  "sizeBytes": 9861017,
-  "sha256": "1412bbcab0bfc1b5c5620e82aa813f8ea344aeb19432a14da500001b019327bf",
-  "builtAt": "2026-09-12T05:39:18Z"
+  "minSdk": 24,
+  "sizeBytes": 9993891,
+  "sha256": "78d2c8ba8cd5aa1cfeafea0f624e62c682b2354eeecdd9bbad226b26675b7cd2",
+  "builtAt": "2026-09-12T05:56:20Z"
 }

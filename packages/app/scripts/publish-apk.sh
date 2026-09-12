@@ -57,13 +57,50 @@ AAPT="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)aapt2"
 BADGING="$("$AAPT" dump badging "$BUILT")"
 VERSION_NAME="$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" <<<"$BADGING" | head -1)"
 VERSION_CODE="$(sed -n "s/.*versionCode='\([^']*\)'.*/\1/p" <<<"$BADGING" | head -1)"
-MIN_SDK="$(sed -n "s/.*sdkVersion:'\([^']*\)'.*/\1/p" <<<"$BADGING" | head -1)"
+# Anchored, and it matters twice. `.*sdkVersion:` also matches
+# `targetSdkVersion`, which would have this claim the app needs Android 16 when
+# it runs on 7 — and in practice the unanchored form matched nothing at all,
+# which wrote `"minSdk": ,` into the metadata file.
+MIN_SDK="$(sed -n "s/^minSdkVersion:'\([^']*\)'.*/\1/p" <<<"$BADGING" | head -1)"
 
 # A release APK that is not signed installs on nothing. Checking here rather
 # than discovering it on a handset.
-"$AAPT" dump badging "$BUILT" >/dev/null
 APKSIGNER="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner"
 "$APKSIGNER" verify "$BUILT" >/dev/null || { echo "The built APK is not properly signed." >&2; exit 1; }
+
+# Refuse to write a half-filled file.
+#
+# `companion.json` is read with a JSON.parse inside a try/catch, so a malformed
+# one is not an error anybody sees — `publishedBuild()` returns null and the
+# download card simply stops being drawn. An empty field here is exactly how
+# that happens, and it happened.
+for pair in "versionName=$VERSION_NAME" "versionCode=$VERSION_CODE" "minSdk=$MIN_SDK"; do
+  if [ -z "${pair#*=}" ]; then
+    echo "Could not read ${pair%%=*} out of the APK. Refusing to publish a broken metadata file." >&2
+    echo "aapt2 printed:" >&2
+    echo "$BADGING" | head -3 >&2
+    exit 1
+  fi
+done
+
+# Where does this build actually talk to?
+#
+# A release build has no VITE_API_BASE and therefore points at production. But
+# the same tree is used to build debug APKs aimed at a laptop, and a stale
+# `dist` or a leftover environment variable would ship an APK that works
+# perfectly on the machine that built it and reaches nothing on a rep's phone —
+# with no error, because an unreachable host is just a request that never
+# answers. Cheap to check, and impossible to notice otherwise.
+BUNDLED="$(unzip -p "$BUILT" 'assets/public/assets/*.js' 2>/dev/null || true)"
+if ! grep -aq 'crm\.ipropy\.com' <<<"$BUNDLED"; then
+  echo "The built app does not mention crm.ipropy.com. It is pointed somewhere else." >&2
+  exit 1
+fi
+if grep -aqE '10\.0\.2\.2|192\.168\.|localhost:[0-9]{4}' <<<"$BUNDLED"; then
+  echo "The built app still has a development server address in it." >&2
+  echo "Rebuild without VITE_API_BASE set." >&2
+  exit 1
+fi
 
 mkdir -p "$OUT_DIR"
 cp "$BUILT" "$APK_OUT"

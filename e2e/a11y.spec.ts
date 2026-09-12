@@ -206,6 +206,21 @@ test.describe('keyboard operation', () => {
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
 
+    /*
+      Wait for the form inside it, not just for the panel.
+
+      The dialog is visible before its fields are: they come from the module's
+      metadata, over the network. Start tabbing in that window and the trap has
+      almost nothing to cycle between — it keeps focus only when the active
+      element is the last focusable one, and with a single Close button in the
+      DOM the second Tab walks straight out into the page behind.
+
+      That is a race in the test, not in the app, and it failed exactly once in
+      a hundred and sixty on a loaded machine. Left alone it is a red CI run at
+      random, which here means a blocked deploy.
+    */
+    await expect(dialog.getByRole('textbox').first()).toBeVisible();
+
     // Focus must be inside the dialog, otherwise a screen reader keeps
     // reading the page behind it.
     expect(await page.evaluate(() => document.activeElement?.closest('[role="dialog"]') !== null)).toBe(true);
