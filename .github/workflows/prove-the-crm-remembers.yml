@@ -65,7 +65,8 @@ jobs:
             VALUES ('${OWNER}', 'Live write check (automated)', '${PREFIX}', '${HASH}',
                     '[\"GET /api/records\", \"POST /api/records\", \"PATCH /api/records\",
                       \"GET /api/telephony\", \"POST /api/telephony\",
-                      \"GET /api/files\", \"POST /api/files\", \"GET /api/notifications\"]'::jsonb,
+                      \"GET /api/files\", \"POST /api/files\", \"GET /api/notifications\",
+                      \"GET /api/views\", \"POST /api/views\", \"POST /api/import\"]'::jsonb,
                     now() + interval '10 minutes')
             RETURNING id" | head -1)"
           echo "KEY_ID=${KEY_ID}" >> "$GITHUB_ENV"
@@ -203,6 +204,40 @@ jobs:
           CODE="$(curl -s -o /tmp/body.json -w '%{http_code}' -H "x-api-key: ${KEY}" "${BASE_URL}/api/notifications")"
           check "notifications answer" 200 "$CODE"
 
+          echo "--- a list of their own ---"
+          # A saved view is how a rep makes the CRM theirs: "my callbacks this
+          # week". It is stored per person, and one that cannot be created is a
+          # CRM everybody uses the same way whether it suits them or not.
+          VIEW_NAME="Write Check (automated) ${STAMP}"
+          CODE="$(post POST /api/views/leads "$(printf '{"name":"%s","columns":["full_name","mobile"],"sortDir":"desc"}' "$VIEW_NAME")")"
+          check "a saved view can be created" 201 "$CODE"
+          VIEW_ID="$(field id)"
+          echo "VIEW_ID=${VIEW_ID}" >> "$GITHUB_ENV"
+          if [ -n "$VIEW_ID" ]; then
+            SEEN="$(curl -s -H "x-api-key: ${KEY}" "${BASE_URL}/api/views/leads" \
+              | python3 -c "import json,sys;print(sum(1 for v in json.load(sys.stdin) if v.get('id')=='${VIEW_ID}'))" 2>/dev/null || echo 0)"
+            check "and it appears in the tabs" 1 "$SEEN"
+          fi
+
+          echo "--- rehearsing an import before it happens ---"
+          # The dry run is the promise that nothing is written until somebody
+          # has seen what would be. It runs the importer's own preparation and
+          # rolls it back, so this is safe to point at production — and the
+          # count of records afterwards proves it.
+          BEFORE="$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM ipy_record WHERE module_name = 'leads'")"
+          printf 'Full Name,Mobile\nWrite Check Rehearsal %s,9000%s\n' "$STAMP" "${STAMP:0:6}" > /tmp/import.csv
+          CODE="$(curl -s -o /tmp/body.json -w '%{http_code}' -H "x-api-key: ${KEY}" \
+            -F "file=@/tmp/import.csv;type=text/csv" \
+            -F 'mapping={"Full Name":"full_name","Mobile":"mobile"}' \
+            -F 'valueMap={}' -F 'rowFilters=[]' -F 'importMode=create' \
+            -F 'staticValues={}' -F 'createOptions=false' \
+            "${BASE_URL}/api/import/leads/dry-run")"
+          check "a rehearsal answers" 200 "$CODE"
+          ROWS="$(python3 -c "import json;print(json.load(open('/tmp/body.json')).get('totalRows',0))" 2>/dev/null || echo 0)"
+          check "and it read the file" 1 "$ROWS"
+          AFTER="$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM ipy_record WHERE module_name = 'leads'")"
+          check "and it wrote nothing" "$BEFORE" "$AFTER"
+
           echo "--- what this key must not be able to do ---"
           CODE="$(curl -s -o /dev/null -w '%{http_code}' -X DELETE -H "x-api-key: ${KEY}" "${BASE_URL}/api/records/leads/${LEAD}")"
           check "it cannot delete a record" 401 "$CODE"
@@ -226,6 +261,8 @@ jobs:
           DELETE FROM ipy_notification
            WHERE created_at > now() - interval '30 minutes'
              AND (title LIKE '%Write Check (automated)%' OR body LIKE '%Write Check (automated)%');
+          DELETE FROM ipy_view WHERE id = '${VIEW_ID:-00000000-0000-0000-0000-000000000000}';
+          DELETE FROM ipy_view_tombstone WHERE seed_key LIKE 'Write Check (automated)%';
           DELETE FROM ipy_attachment
            WHERE record_id = '${LEAD:-00000000-0000-0000-0000-000000000000}';
           DELETE FROM ipy_share_link
