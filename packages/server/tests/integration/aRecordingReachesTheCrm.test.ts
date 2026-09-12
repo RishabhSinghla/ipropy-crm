@@ -51,6 +51,29 @@ beforeAll(async () => {
   callId = row!.id;
 });
 
+/**
+ * Fetch the recording as bytes, deterministically.
+ *
+ * supertest decides how to read a body from its content type, and for
+ * `audio/mp4` that decision is "no parser, so hand back whatever the default
+ * did" — which is a Buffer most of the time and an empty object often enough
+ * to have failed this file once in nineteen full runs, on the range assertion,
+ * with nothing to say beyond a buffer comparison coming back false.
+ *
+ * Collecting the chunks here removes the guess. Every byte assertion in this
+ * file goes through it.
+ */
+function fetchRecording(range?: string) {
+  const req = request(app).get(`/api/telephony/calls/${callId}/recording`)
+    .set('Authorization', `Bearer ${token}`);
+  if (range) req.set('Range', range);
+  return req.buffer(true).parse((res, cb) => {
+    const chunks: Buffer[] = [];
+    res.on('data', (c: Buffer) => chunks.push(Buffer.from(c)));
+    res.on('end', () => cb(null, Buffer.concat(chunks)));
+  });
+}
+
 describe('a call recording', () => {
   it('is refused when it is not audio', async () => {
     const res = await request(app).post('/api/device/recordings')
@@ -91,9 +114,8 @@ describe('a call recording', () => {
   });
 
   it('plays back exactly what was uploaded', async () => {
-    const res = await request(app).get(`/api/telephony/calls/${callId}/recording`)
-      .set('Authorization', `Bearer ${token}`);
-    expect(res.status).toBe(200);
+    const res = await fetchRecording();
+    expect(res.status, `playback answered ${res.status}`).toBe(200);
     expect(res.headers['content-type']).toContain('audio/mp4');
     expect(res.headers['accept-ranges']).toBe('bytes');
     expect(Buffer.from(res.body).equals(AUDIO), 'the audio came back changed').toBe(true);
@@ -105,19 +127,18 @@ describe('a call recording', () => {
    * phone is somebody's data allowance.
    */
   it('serves a range so the player can seek', async () => {
-    const res = await request(app).get(`/api/telephony/calls/${callId}/recording`)
-      .set('Authorization', `Bearer ${token}`)
-      .set('Range', 'bytes=10-19');
-    expect(res.status).toBe(206);
+    const res = await fetchRecording('bytes=10-19');
+    expect(res.status, `a range request answered ${res.status}`).toBe(206);
     expect(res.headers['content-range']).toBe(`bytes 10-19/${AUDIO.length}`);
-    expect(Buffer.from(res.body).equals(AUDIO.subarray(10, 20))).toBe(true);
+    expect(
+      Buffer.from(res.body).equals(AUDIO.subarray(10, 20)),
+      `asked for bytes 10-19 and got ${Buffer.from(res.body).length} byte(s)`,
+    ).toBe(true);
   });
 
   it('refuses a range that is not in the file', async () => {
-    const res = await request(app).get(`/api/telephony/calls/${callId}/recording`)
-      .set('Authorization', `Bearer ${token}`)
-      .set('Range', `bytes=${AUDIO.length + 500}-${AUDIO.length + 900}`);
-    expect(res.status).toBe(416);
+    const res = await fetchRecording(`bytes=${AUDIO.length + 500}-${AUDIO.length + 900}`);
+    expect(res.status, `an impossible range answered ${res.status}`).toBe(416);
   });
 
   /**
