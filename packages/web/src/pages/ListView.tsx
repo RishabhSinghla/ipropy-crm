@@ -1,9 +1,9 @@
 import { type JSX, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { type FieldMeta, type FilterGroup, formatIndianPrice, formatPhoneWithCode, toInternational, type ListQuery, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
+import { type CustomView, type FieldMeta, type FilterGroup, formatIndianPrice, formatPhoneWithCode, toInternational, type ListQuery, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
-  ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Columns3, Compass, Download, Filter,
+  ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Columns3, Compass, Copy, Download, Filter,
   LayoutGrid, List, MessageCircle, Pencil, Phone, Plus, RefreshCw, Ruler, Save, Search, Settings2, Star, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { ApiError, api } from '../lib/api';
@@ -26,6 +26,7 @@ import { useSwipeActions, type SwipeSide } from '../lib/swipeActions';
 import { MAX_WIDTH, MIN_WIDTH, SELECT_COL_WIDTH, useColumnWidths } from '../lib/columnWidths';
 import { useOfflineMeta } from '../lib/useOfflineList';
 import { deliverFile, dial, openExternal } from '../lib/nativeActions';
+import { blankView, type AdminView, ViewEditor } from './admin/ViewsAdmin';
 
 const EMPTY_FILTER: FilterGroup = { logic: 'AND', conditions: [] };
 
@@ -63,6 +64,7 @@ export default function ListView(): JSX.Element {
   };
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
   const [viewId, setViewId] = useState<string | undefined>(searchParams.get('view') ?? undefined);
   const [filter, setFilter] = useState<FilterGroup>(EMPTY_FILTER);
   const [sortBy, setSortBy] = useState<string | undefined>();
@@ -80,6 +82,8 @@ export default function ListView(): JSX.Element {
   const [showColumns, setShowColumns] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [editingView, setEditingView] = useState<AdminView | null>(null);
+  const [confirmDeleteView, setConfirmDeleteView] = useState<CustomView | null>(null);
   const colWidths = useColumnWidths(moduleName);
 
   /**
@@ -185,6 +189,38 @@ export default function ListView(): JSX.Element {
   });
 
   const activeView = views?.find((v) => v.id === viewId) ?? views?.find((v) => v.isDefault) ?? views?.[0];
+
+  const chooseView = (id: string): void => {
+    if (id === activeView?.id) return;
+    // A saved view owns its filter. Carrying a temporary filter or search to
+    // another view makes the selected view look broken and unlike its name.
+    setViewId(id);
+    setPage(1);
+    setFilter(EMPTY_FILTER);
+    setSearch('');
+    setSearchInput('');
+    setSelected(new Set());
+  };
+
+  const duplicateViewMutation = useMutation({
+    mutationFn: (id: string) => api.duplicateView(moduleName!, id),
+    onSuccess: () => {
+      toast.success('Personal view created');
+      void queryClient.invalidateQueries({ queryKey: ['views', moduleName] });
+    },
+    onError: (error: Error) => toast.error('Could not copy this view', error.message),
+  });
+
+  const deleteViewMutation = useMutation({
+    mutationFn: (id: string) => api.deleteView(moduleName!, id),
+    onSuccess: () => {
+      toast.success('Personal view deleted');
+      setViewId(undefined);
+      setConfirmDeleteView(null);
+      void queryClient.invalidateQueries({ queryKey: ['views', moduleName] });
+    },
+    onError: (error: Error) => toast.error('Could not delete this view', error.message),
+  });
 
   /**
    * Adopt the selected view's columns, sort and display mode.
@@ -453,23 +489,77 @@ export default function ListView(): JSX.Element {
           same problem wearing a different hat.
         */}
         <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
-          <ViewTabStrip
-            views={views ?? []}
-            activeId={activeView?.id}
-            onPick={(id) => {
-              if (id === activeView?.id) return;
-              // A view *is* a filter. Carrying an ad-hoc one across the switch
-              // leaves the new tab quietly narrowed by conditions belonging to
-              // the tab you just left. The URL is written by the sync effect
-              // above — writing it here as well is how the two disagreed.
-              setViewId(id);
-              setPage(1);
-              setFilter(EMPTY_FILTER);
-              setSearch('');
-              setSearchInput('');
-              setSelected(new Set());
-            }}
-          />
+          <Dropdown
+            align="left"
+            className="min-w-[18rem]"
+            trigger={(
+              <button className="btn-secondary btn-sm max-w-[14rem]" aria-label="Choose or manage list views">
+                <Filter className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{activeView?.name ?? `All ${meta.label}`}</span>
+                <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+              </button>
+            )}
+          >
+            {(close) => (
+              <>
+                <p className="px-3 pb-1 pt-2 text-2xs font-semibold uppercase tracking-wider text-muted">List views</p>
+                <div className="max-h-64 overflow-y-auto py-1">
+                  {(views ?? []).map((view) => (
+                    <DropdownItem key={view.id} onClick={() => { chooseView(view.id); close(); }}>
+                      <span className="min-w-0 flex-1 truncate">{view.name}</span>
+                      {view.id === activeView?.id && <span className="text-brand-600">Current</span>}
+                    </DropdownItem>
+                  ))}
+                </div>
+                <div className="border-t border-slate-100 py-1 dark:border-slate-800">
+                  <DropdownItem icon={<Plus className="h-3.5 w-3.5" />} onClick={() => { setEditingView(blankView(moduleName)); close(); }}>
+                    New personal view
+                  </DropdownItem>
+                  {activeView && (
+                    <DropdownItem icon={<Copy className="h-3.5 w-3.5" />} onClick={() => { duplicateViewMutation.mutate(activeView.id); close(); }}>
+                      Save a copy for me
+                    </DropdownItem>
+                  )}
+                  {activeView && !activeView.isSystem && (activeView.ownerId === user?.id || user?.isAdmin) && (
+                    <>
+                      <DropdownItem icon={<Pencil className="h-3.5 w-3.5" />} onClick={() => { setEditingView(activeView as AdminView); close(); }}>
+                        Edit my view
+                      </DropdownItem>
+                      <DropdownItem danger icon={<Trash2 className="h-3.5 w-3.5" />} onClick={() => { setConfirmDeleteView(activeView); close(); }}>
+                        Delete my view
+                      </DropdownItem>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+          </Dropdown>
+
+          {displayMode === 'table' && (data?.total ?? 0) > 0 && (
+            <div className="hidden items-center gap-1 rounded-lg border border-slate-200 px-1.5 py-1 text-xs text-muted lg:flex dark:border-slate-700">
+              <button className="btn-ghost p-0.5" aria-label="Previous page" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </button>
+              <label className="flex items-center gap-1 whitespace-nowrap">
+                <input
+                  className="h-5 w-10 rounded border border-slate-200 bg-transparent px-1 text-center text-xs dark:border-slate-700"
+                  aria-label="Go to page"
+                  type="number"
+                  min={1}
+                  max={data!.totalPages}
+                  value={page}
+                  onChange={(e) => {
+                    const next = Number(e.target.value);
+                    if (Number.isInteger(next) && next >= 1 && next <= data!.totalPages) setPage(next);
+                  }}
+                />
+                <span>/ {data!.totalPages}</span>
+              </label>
+              <button className="btn-ghost p-0.5" aria-label="Next page" disabled={page >= data!.totalPages} onClick={() => setPage((p) => Math.min(data!.totalPages, p + 1))}>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
 
           <div className="ml-auto flex shrink-0 items-center gap-2">
             <span className="hidden shrink-0 text-xs text-muted tnum xl:inline">
@@ -478,22 +568,26 @@ export default function ListView(): JSX.Element {
                 : `${(data?.total ?? 0).toLocaleString('en-IN')} records`}
             </span>
 
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-              <input
-                // The stable handle. The placeholder is built from the module's
-                // label, which an admin renames — "Leads & Contacts" became
-                // "Contacts" and every spec selecting on `/search leads/i` then
-                // waited out its full timeout instead of failing fast. Same
-                // lesson as `record-card-list`: a label is content, not an
-                // identifier.
-                data-testid="list-search"
-                className="input w-36 py-1.5 pl-8 text-sm lg:w-52"
-                placeholder={`Search ${meta.label.toLowerCase()}…`}
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-              />
-            </div>
+            {searchOpen ? (
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <input
+                  data-testid="list-search"
+                  autoFocus
+                  className="input w-40 py-1.5 pl-8 pr-7 text-sm lg:w-56"
+                  placeholder={`Search ${meta.label.toLowerCase()}…`}
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                />
+                <button className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-muted hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Close list search" onClick={() => { setSearchOpen(false); setSearchInput(''); }}>
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : (
+              <button className="btn-secondary btn-sm px-2" aria-label={`Search ${meta.label}`} onClick={() => setSearchOpen(true)} title={`Search ${meta.label}`}>
+                <Search className="h-3.5 w-3.5" />
+              </button>
+            )}
 
             <button
               onClick={() => setShowFilters(true)}
@@ -876,7 +970,7 @@ export default function ListView(): JSX.Element {
 
       {/* Pagination */}
       {displayMode === 'table' && (data?.total ?? 0) > 0 && (
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900 sm:px-6">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-4 py-2 lg:hidden dark:border-slate-800 dark:bg-slate-900 sm:px-6">
           <p className="text-xs text-muted tnum">
             {((data!.page - 1) * data!.pageSize + 1).toLocaleString('en-IN')}–
             {Math.min(data!.page * data!.pageSize, data!.total).toLocaleString('en-IN')} of {data!.total.toLocaleString('en-IN')}
@@ -950,6 +1044,28 @@ export default function ListView(): JSX.Element {
       )}
 
       {/* Modals */}
+      {editingView && (
+        <ViewEditor
+          view={editingView}
+          module={meta}
+          moduleName={moduleName}
+          isPublic={false}
+          onClose={() => setEditingView(null)}
+          onSaved={() => {
+            setEditingView(null);
+            void queryClient.invalidateQueries({ queryKey: ['views', moduleName] });
+          }}
+        />
+      )}
+      <ConfirmDialog
+        open={Boolean(confirmDeleteView)}
+        onClose={() => setConfirmDeleteView(null)}
+        onConfirm={() => confirmDeleteView ? deleteViewMutation.mutateAsync(confirmDeleteView.id) : Promise.resolve()}
+        title={`Delete “${confirmDeleteView?.name ?? ''}”?`}
+        body="This removes your saved view. Records are not affected."
+        confirmLabel="Delete view"
+        danger
+      />
       <Modal
         open={showFilters}
         onClose={() => setShowFilters(false)}

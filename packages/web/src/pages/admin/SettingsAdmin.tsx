@@ -96,8 +96,6 @@ const GROUPS: { id: string; title: string; blurb: string }[] = [
  * A category added to the settings table after this screen was written shows
  * above the divider, where a brand-new setting cannot be missed.
  */
-const ADVANCED = new Set(['scoring', 'whatsapp', 'telephony', 'ai', 'ai_features', 'ai_models', 'team_location']);
-
 /** Filled in once, then left alone: the one group that starts open. */
 const STARTS_OPEN = ''; // nothing open on arrival — the list IS the page
 
@@ -106,6 +104,7 @@ export default function SettingsAdmin(): JSX.Element {
   const { data, isLoading } = useQuery({ queryKey: ['admin-settings'], queryFn: () => api.settings() });
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [query, setQuery] = useState('');
+  const [activeGroup, setActiveGroup] = useState('');
   /*
     Fourteen groups drawn open at once is a page you land on and scroll, and
     the feedback on it was that it felt heavy before you had read a word. So
@@ -157,10 +156,9 @@ export default function SettingsAdmin(): JSX.Element {
 
   const dirty = Object.keys(draft).length;
 
-  // Everyday groups above the line, the once-a-year ones under it. The split
-  // is presentation only: both halves render the same rows, the same way.
-  const everyday = grouped.filter((g) => !ADVANCED.has(g.id));
-  const advanced = grouped.filter((g) => ADVANCED.has(g.id));
+  useEffect(() => {
+    if (!grouped.some((group) => group.id === activeGroup)) setActiveGroup(grouped[0]?.id ?? '');
+  }, [grouped, activeGroup]);
 
   const renderGroup = (g: Group): JSX.Element => {
     // A search opens what it found; otherwise the admin's own choice wins,
@@ -227,20 +225,33 @@ export default function SettingsAdmin(): JSX.Element {
         />
       )}
 
-      {everyday.length > 0 && <div className="space-y-3">{everyday.map(renderGroup)}</div>}
-
-      {advanced.length > 0 && (
-        <section aria-label="Advanced settings">
-          <div className="flex items-center gap-3" role="separator">
-            <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
-            <span className="shrink-0 text-2xs font-semibold uppercase tracking-wider text-muted">Advanced settings</span>
-            <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
+      {grouped.length > 0 && (
+        <>
+          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 p-1.5 dark:border-slate-700 dark:bg-slate-900" role="tablist" aria-label="Settings categories">
+            <div className="flex min-w-max gap-1">
+              {grouped.map((group) => (
+                <button
+                  key={group.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeGroup === group.id}
+                  onClick={() => setActiveGroup(group.id)}
+                  className={cn(
+                    'rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                    activeGroup === group.id
+                      ? 'bg-white text-brand-700 shadow-sm dark:bg-slate-800 dark:text-brand-300'
+                      : 'text-muted hover:bg-white/70 hover:text-slate-800 dark:hover:bg-slate-800/70 dark:hover:text-slate-100',
+                  )}
+                >
+                  {group.title}
+                </button>
+              ))}
+            </div>
           </div>
-          <p className="mt-1.5 text-center text-xs text-muted">
-            The numbers and switches most desks never open. Leave these alone and the CRM works as it should.
-          </p>
-          <div className="mt-4 space-y-3">{advanced.map(renderGroup)}</div>
-        </section>
+          <div role="tabpanel" className="space-y-3">
+            {grouped.filter((group) => group.id === activeGroup).map(renderGroup)}
+          </div>
+        </>
       )}
 
       {/* Follows the page rather than sitting at the top, because on a long
