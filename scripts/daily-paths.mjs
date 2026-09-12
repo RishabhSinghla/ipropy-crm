@@ -155,6 +155,31 @@ async function main() {
     check('and the contact moves from New to Contacted',
       (moved.body?.values?.lead_status ?? moved.body?.values?.status) === 'Contacted',
       `got "${moved.body?.values?.lead_status}"`);
+    /*
+      And the part the whole feature exists for: the CRM asks what happened,
+      and the answer sticks. This is the first thing the team does with every
+      call from 12 September 2026 onwards.
+    */
+    const pending = await call('GET', '/api/telephony/needs-disposition');
+    const mine = (pending.body ?? []).find((c) => c.record_id === called.body?.id);
+    check('the CRM asks what happened about it', Boolean(mine), `${(pending.body ?? []).length} waiting`);
+
+    if (mine) {
+      const answered = await call('POST', `/api/telephony/calls/${mine.id}/disposition`,
+        { disposition: 'Interested', notes: 'QA daily path' });
+      check('the outcome saves', answered.status === 200, `HTTP ${answered.status}`);
+
+      // An outcome that is on no list must be refused, or every report that
+      // groups by outcome grows a category nobody chose.
+      const junk = await call('POST', `/api/telephony/calls/${mine.id}/disposition`,
+        { disposition: 'NotARealOption' });
+      check('an outcome that is on no list is refused', junk.status === 400, `HTTP ${junk.status}`);
+
+      const still = await call('GET', '/api/telephony/needs-disposition');
+      const gone = !(still.body ?? []).some((c) => c.id === mine.id);
+      check('and it stops asking once answered', gone,
+        gone ? `${(still.body ?? []).length} still waiting` : 'this call is still being asked about');
+    }
     await call('DELETE', `/api/telephony/devices/${device.body.deviceId}`);
   }
 
