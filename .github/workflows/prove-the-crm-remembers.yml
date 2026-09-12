@@ -19,6 +19,11 @@
 name: Prove the CRM remembers
 
 on:
+  # Ten past nine India time, just after the read check. Both halves every
+  # morning: one says the screens load, this one says what a rep types is kept.
+  # It cleans up after itself, and the cleanup runs even when the checks fail.
+  schedule:
+    - cron: '40 3 * * *'
   workflow_dispatch:
     inputs:
       base_url:
