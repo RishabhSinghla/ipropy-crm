@@ -156,6 +156,33 @@ jobs:
             echo "  skip  no lead to open"
           fi
 
+          echo "--- getting the data back out, and keeping strangers out ---"
+          # Export is how the data leaves: a broken export is a CRM somebody
+          # cannot get their own records out of, and it is never noticed until
+          # the day somebody needs them.
+          EXPORT="$(curl -s -o /tmp/export.csv -w '%{http_code} %{time_total}' -H "x-api-key: ${KEY}" \
+            "${BASE_URL}/api/records/leads/export?limit=5")"
+          if [ "${EXPORT%% *}" = "200" ] && [ -s /tmp/export.csv ]; then
+            printf '  ok    %-34s %ss  %s\n' "leads export" "${EXPORT##* }" \
+              "$(head -c 60 /tmp/export.csv | tr -d '\r\n')…"
+          else
+            echo "  FAIL  leads export — HTTP ${EXPORT%% *}, $(wc -c < /tmp/export.csv) bytes"
+            fail=1
+          fi
+
+          # And the door is shut without a credential. Checked on a real record
+          # URL rather than a made-up one, so a 404 cannot be mistaken for a
+          # refusal.
+          if [ -n "$LEAD" ]; then
+            BARE="$(curl -s -o /dev/null -w '%{http_code}' "${BASE_URL}/api/records/leads/${LEAD}")"
+            if [ "$BARE" = "401" ]; then
+              echo "  ok    a stranger with no credential is refused"
+            else
+              echo "  FAIL  a stranger with no credential got HTTP ${BARE} for a real record"
+              fail=1
+            fi
+          fi
+
           echo "--- calls ---"
           ask "the call log"                  "/api/telephony/calls?limit=5"
           ask "what needs an outcome"         "/api/telephony/needs-disposition"
