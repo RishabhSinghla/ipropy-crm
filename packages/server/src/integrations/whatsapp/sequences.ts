@@ -468,9 +468,27 @@ export function minutesUntilAwake(quietStart: number, quietEnd: number, now = ne
   return hoursUntil * 60 - minute;
 }
 
+/**
+ * Which number to message, without naming a column that may be gone.
+ *
+ * `whatsapp_number` was retired on production with the linked-phone door, and
+ * this statement named it outright — a 42703 on the whole query, and because
+ * enrolling a new lead in a sequence happens inside lead capture, the enquiry
+ * that triggered it was lost with it. Website and portal leads, discarded, one
+ * deleted field away.
+ *
+ * It survived every guard: `columnsThatCanBeDeleted` reads `alias.column` and
+ * this query has no alias at all, which is precisely the blind spot its own
+ * comment admits to. Aliased and read through `to_jsonb` now, the way
+ * `core/workflow/tasks.ts` already does it — same answer, and a retired field
+ * simply reads as absent.
+ */
 async function handleForRecord(recordId: string): Promise<string | null> {
   const row = await db.queryOne<{ whatsapp_number: string | null; mobile: string | null }>(
-    `SELECT whatsapp_number, mobile FROM ipy_e_leads WHERE record_id = $1`, [recordId],
+    `SELECT to_jsonb(l)->>'whatsapp_number' AS whatsapp_number,
+            to_jsonb(l)->>'mobile' AS mobile
+       FROM ipy_e_leads l WHERE l.record_id = $1`,
+    [recordId],
   );
   return toInternational(null, row?.whatsapp_number || row?.mobile);
 }

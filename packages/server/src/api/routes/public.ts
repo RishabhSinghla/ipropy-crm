@@ -319,6 +319,25 @@ async function modelHas(...columns: string[]): Promise<boolean> {
   return columns.every((c) => present.has(c));
 }
 
+/**
+ * A property column, named only if it is still there.
+ *
+ * `modelHas` protects a whole route; this protects one expression inside a
+ * route that is otherwise fine. `/cities` is the case: it needs `city` and
+ * `project_name` to mean anything at all, and it also reports a price range —
+ * so guarding the route on `total_price` would blank a page that could still
+ * be shown, and not guarding it is a 42703 on the whole query the moment an
+ * admin re-creates city and leaves price where it is. Production has deleted
+ * all three, so that is not a hypothetical: it is what happens on the day the
+ * website's two missing fields are put back.
+ *
+ * The fallback is typed because Postgres will not aggregate an untyped NULL.
+ */
+async function pcol(column: string, fallback = 'NULL::text'): Promise<string> {
+  const present = await propertyColumns();
+  return present.has(column) ? `u."${column}"` : fallback;
+}
+
 async function projectFields(): Promise<string> {
   if (projectFieldsCache) return projectFieldsCache;
   const present = await propertyColumns();
@@ -371,7 +390,7 @@ publicRouter.get('/projects', asyncHandler(async (req, res) => {
       params,
     ),
     db.queryOne<{ count: number }>(
-      `SELECT COUNT(DISTINCT btrim(u.project_name))::int AS count
+      `SELECT COUNT(DISTINCT btrim(${await pcol('project_name')}))::int AS count
        FROM ipy_e_properties u WHERE ${conds.join(' AND ')}`,
       params.slice(0, -2),
     ),
@@ -396,7 +415,7 @@ publicRouter.get('/projects/:id', asyncHandler(async (req, res) => {
     `SELECT ${await propertyFields()}
      FROM ipy_e_properties u
      WHERE ${[...PROJECT_BASE_CONDS(), slug].join(' AND ')}
-     ORDER BY u.total_price ASC NULLS LAST`,
+     ORDER BY ${await pcol('total_price', 'NULL::numeric')} ASC NULLS LAST`,
     [await publicPropertyStatuses(), req.params.id],
   );
 
@@ -566,12 +585,15 @@ publicRouter.get('/filters', asyncHandler(async (_req, res) => {
 // query rather than the site looping a `city=` filter per picklist value.
 publicRouter.get('/cities', asyncHandler(async (_req, res) => {
   if (!await modelHas('city', 'project_name')) { res.json({ items: [] }); return; }
+  // Price is reported, not required — see `pcol`.
+  const city = await pcol('city');
+  const price = await pcol('total_price', 'NULL::numeric');
   const rows = await db.query<{ city: string; project_count: number; unit_count: number; price_min: number | null; price_max: number | null }>(
-    `SELECT u.city,
-            COUNT(DISTINCT btrim(u.project_name))::int AS project_count,
+    `SELECT ${city} AS city,
+            COUNT(DISTINCT btrim(${await pcol('project_name')}))::int AS project_count,
             COUNT(*)::int AS unit_count,
-            MIN(u.total_price) AS price_min,
-            MAX(u.total_price) AS price_max
+            MIN(${price}) AS price_min,
+            MAX(${price}) AS price_max
      FROM ipy_e_properties u
      -- ANY, not =. The parameter is the list of statuses an admin has made
      -- public, and node-postgres sends a JS array as the literal '{Available}'.
@@ -579,8 +601,8 @@ publicRouter.get('/cities', asyncHandler(async (_req, res) => {
      -- matches nothing, so this answered with an empty list and no error, and
      -- "Where we work" has never appeared on the website. Third instance of
      -- this exact slip in this file; the other two are fixed above.
-     WHERE u.status = ANY($1) AND ${publishClause('u')} AND u.city IS NOT NULL
-     GROUP BY u.city
+     WHERE u.status = ANY($1) AND ${publishClause('u')} AND ${city} IS NOT NULL
+     GROUP BY ${city}
      ORDER BY project_count DESC`,
     [await publicPropertyStatuses()],
   );
