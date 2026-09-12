@@ -104,6 +104,45 @@ describe('the Android call companion', () => {
     expect(status).toBe('Contacted');
   });
 
+  /**
+   * The prompt is the whole point of the morning.
+   *
+   * A rep rings somebody from their own handset; the phone uploads the log a
+   * few seconds later; the CRM has to ask what happened while they still
+   * remember. If the synced call never reaches `/needs-disposition` the
+   * feature is a call log, and the pipeline stays exactly as wrong as it was
+   * before anybody picked up a phone.
+   */
+  it('asks what happened about the call the phone just filed', async () => {
+    const pending = await request(app).get('/api/telephony/needs-disposition')
+      .set('Authorization', `Bearer ${token}`);
+    expect(pending.status).toBe(200);
+
+    const answered = pending.body.find(
+      (c: { duration_seconds: number; record_id: string | null }) =>
+        c.record_id === leadId && c.duration_seconds === 95,
+    );
+    expect(answered, 'the answered call is not being asked about').toBeTruthy();
+
+    // A missed call is not a conversation, and asking about one every morning
+    // is how a prompt gets dismissed without being read.
+    const missed = pending.body.find(
+      (c: { duration_seconds: number; record_id: string | null }) =>
+        c.record_id === leadId && c.duration_seconds === 0,
+    );
+    expect(missed, 'a missed call should not be asked about').toBeFalsy();
+
+    const answer = await request(app).post(`/api/telephony/calls/${answered.id}/disposition`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ disposition: 'Site Visit Scheduled', notes: 'Sunday 11am' });
+    expect(answer.status).toBe(200);
+
+    // And it stops asking, or the rep answers the same call all day.
+    const after = await request(app).get('/api/telephony/needs-disposition')
+      .set('Authorization', `Bearer ${token}`);
+    expect(after.body.some((c: { id: string }) => c.id === answered.id)).toBe(false);
+  });
+
   it('shows the calls in the CRM and lets one be dispositioned', async () => {
     const list = await request(app).get('/api/telephony/calls?pageSize=50')
       .set('Authorization', `Bearer ${token}`);

@@ -6,7 +6,8 @@ import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { ForbiddenError, NotFoundError } from '../../utils/errors.js';
 import { assertCapability, canAccessRecord, hasCapability } from '../../core/permissions/index.js';
-import { assertPicklistValue } from '../../core/metadata/picklists.js';
+import { activeValues, assertPicklistValue } from '../../core/metadata/picklists.js';
+import { columnsOf } from '../../core/entity/payloadColumns.js';
 import { isTelephonyConfigured, logManualCall, placeCall } from '../../integrations/telephony/service.js';
 import { recordService } from '../../core/entity/recordService.js';
 import { parseByteRange } from '../../utils/httpRange.js';
@@ -367,11 +368,14 @@ telephonyRouter.post('/calls/:id/disposition', asyncHandler(async (req, res) => 
       [req.params.id, user.id, user.isAdmin],
     );
 
-    const updated = await tx.queryOne<{ id: string; record_id: string | null; record_module: string | null; to_number: string }>(
+    const updated = await tx.queryOne<{
+      id: string; record_id: string | null; record_module: string | null;
+      to_number: string; from_number: string | null; direction: string;
+    }>(
       `UPDATE ipy_call SET disposition = $2, notes = COALESCE($3, notes),
               disposition_at = now(), follow_up_at = $4
        WHERE id = $1 AND (user_id = $5 OR $6)
-       RETURNING id, record_id, record_module, to_number`,
+       RETURNING id, record_id, record_module, to_number, from_number, direction`,
       [req.params.id, input.disposition, input.notes ?? null, input.followUpAt ?? null, user.id, user.isAdmin],
     );
     if (!updated || !before) return null;
@@ -393,34 +397,57 @@ telephonyRouter.post('/calls/:id/disposition', asyncHandler(async (req, res) => 
   });
   if (!call) throw new NotFoundError('Call not found, or it is not yours to update');
 
+  if (input.disposition === 'Do Not Call') {
+    /*
+      Store the request, do not paint a flag on the lead.
+
+      This used to write a boolean onto the lead record. That column was
+      deleted on 11 August, so the statement was a Postgres 42703 with no
+      guard and no catch, inside asyncHandler. A rep marking a call
+      "Do Not Call" got a 500 and the opt-out was persisted nowhere at all —
+      not to a column, not to the consent store. Under TRAI that is a request
+      we were legally obliged to honour and did not even record.
+
+      The number is what the request is about, so the number is what is
+      stored — and it is the customer's number, which on an inbound call is
+      the other end. Both of those were still wrong after that fix: this sat
+      inside `if (call.record_id)`, so a stranger who asked not to be rung
+      again was recorded nowhere at all, against a comment promising the
+      opposite; and it always stored `to_number`, which on an inbound call is
+      the agent's own handset. That combination opted the CRM out of ringing
+      itself and left the caller on the list.
+    */
+    await recordConsent({
+      handle: call.direction === 'inbound' ? (call.from_number ?? call.to_number) : call.to_number,
+      channel: 'call',
+      action: 'opt_out',
+      source: 'call_disposition',
+      recordId: call.record_id,
+    });
+  }
+
   if (call.record_id) {
-    if (input.disposition === 'Do Not Call') {
-      /*
-        Store the request, do not paint a flag on the lead.
-
-        This used to write a boolean onto the lead record. That column was
-        deleted on 11 August, so the statement was a Postgres 42703 with no
-        guard and no catch, inside asyncHandler. A rep marking a call
-        "Do Not Call" got a 500 and the opt-out was persisted nowhere at all —
-        not to a column, not to the consent store. Under TRAI that is a request
-        we were legally obliged to honour and did not even record.
-
-        The number is what the request is about, so the number is what is
-        stored. It is honoured even for a caller the CRM holds no record for.
-      */
-      await recordConsent({
-        handle: call.to_number,
-        channel: 'call',
-        action: 'opt_out',
-        source: 'call_disposition',
-        recordId: call.record_id,
-      });
-    }
     if (input.disposition === 'Wrong Number') {
-      await db.query(
-        `UPDATE ipy_e_leads SET status = 'Junk' WHERE record_id = $1 AND status <> 'Junk'`,
-        [call.record_id],
-      );
+      /*
+        Junk the lead — if there is still a status to set, and if Junk is
+        still one of its options.
+
+        Two literals in one statement, and an admin owns both. The column can
+        be deleted, which makes this a 42703 on the whole statement and a 500
+        for a rep who did nothing but say the number was wrong; and the option
+        can be deleted, which would store a value the dropdown no longer
+        offers and no filter matches. Neither is worth failing the
+        disposition over: the outcome is already recorded by here, and a CRM
+        that records less because a field was removed is what was asked for.
+      */
+      const present = await columnsOf('ipy_e_leads');
+      const statuses = await activeValues('lead_status');
+      if (present.has('status') && (!statuses.length || statuses.includes('Junk'))) {
+        await db.query(
+          `UPDATE ipy_e_leads SET status = 'Junk' WHERE record_id = $1 AND status <> 'Junk'`,
+          [call.record_id],
+        );
+      }
     }
     if (input.followUpAt) {
       const { scheduleFollowUp } = await import('../../core/workflow/followUp.js');
