@@ -1054,7 +1054,16 @@ function PhonesTab(): JSX.Element {
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="truncate text-xs font-medium">{d.label ?? 'Android phone'}</p>
-                      {!d.is_active && <Badge color="red">Revoked</Badge>}
+                      {!d.is_active && <Badge color="#ef4444">Revoked</Badge>}
+                      {/*
+                        A phone that has never synced looked exactly like one
+                        that synced an hour ago: the "synced …" line is simply
+                        absent, and an absence is not something anyone reads.
+                        Production had three paired handsets and not one call
+                        ever uploaded, for a month, with nothing on this screen
+                        saying so.
+                      */}
+                      {d.is_active && !d.last_sync_at && <Badge color="#f59e0b">Never synced</Badge>}
                     </div>
                     <p className="text-2xs text-muted">
                       {d.model ? `${d.model} · ` : ''}
@@ -1065,6 +1074,12 @@ function PhonesTab(): JSX.Element {
                       paired {relativeTime(d.created_at)}
                       {d.last_sync_at ? ` · synced ${relativeTime(d.last_sync_at)}` : ''}
                     </p>
+                    {d.is_active && !d.last_sync_at && (
+                      <p className="text-2xs text-muted">
+                        Nothing has been uploaded from this handset yet. Open iPropy Companion on
+                        it, allow the call log permission, and tap Sync now.
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
