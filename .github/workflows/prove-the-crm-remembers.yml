@@ -137,6 +137,43 @@ jobs:
             echo "  FAIL  a call can be logged — no call id came back"; fail=1
           fi
 
+          echo "--- the same person typed twice ---"
+          # Entering somebody who is already on the system is the most common
+          # thing that happens in a CRM, and catching it is the difference
+          # between one customer and two half-customers.
+          CODE="$(post POST /api/records/leads/check-duplicates "$(printf '{"values":{"mobile":"%s"}}' "$MOBILE")")"
+          check "the duplicate check answers" 200 "$CODE"
+          DUPES="$(python3 -c "import json;d=json.load(open('/tmp/body.json'));print(len(d if isinstance(d,list) else d.get('duplicates',[])))" 2>/dev/null || echo 0)"
+          check "and it finds the contact already there" 1 "$DUPES"
+
+          echo "--- changing several at once ---"
+          CODE="$(post POST /api/records/leads/mass-update "$(printf '{"ids":["%s"],"values":{"lead_status":"Qualified"}}' "$LEAD")")"
+          check "a bulk edit is accepted" 200 "$CODE"
+          BULK="$(psql "$DATABASE_URL" -tAc "
+            SELECT status FROM ipy_e_leads WHERE record_id = '${LEAD}'")"
+          check "and it reached the record it named" Qualified "$BULK"
+
+          echo "--- sending a unit to a buyer who has no account ---"
+          UNIT="$(psql "$DATABASE_URL" -tAc "
+            SELECT id FROM ipy_record
+             WHERE module_name = 'properties' AND NOT is_deleted
+             ORDER BY updated_at DESC LIMIT 1" | head -1)"
+          if [ -n "$UNIT" ]; then
+            CODE="$(post POST "/api/records/properties/${UNIT}/share-links" '{"label":"Write Check (automated)","expiresInDays":1}')"
+            check "a share link can be minted" 201 "$CODE"
+            TOKEN="$(field token)"
+            echo "SHARE_TOKEN=${TOKEN}" >> "$GITHUB_ENV"
+            if [ -n "$TOKEN" ]; then
+              # No key, no cookie, no account — the buyer's own browser.
+              OPEN="$(curl -s -o /dev/null -w '%{http_code}' "${BASE_URL}/api/public/share/${TOKEN}")"
+              check "and a buyer with no account can open it" 200 "$OPEN"
+            else
+              echo "  FAIL  a share link can be minted — no token came back"; fail=1
+            fi
+          else
+            echo "  skip  no unit to share"
+          fi
+
           echo "--- what this key must not be able to do ---"
           CODE="$(curl -s -o /dev/null -w '%{http_code}' -X DELETE -H "x-api-key: ${KEY}" "${BASE_URL}/api/records/leads/${LEAD}")"
           check "it cannot delete a record" 401 "$CODE"
@@ -160,6 +197,9 @@ jobs:
           DELETE FROM ipy_notification
            WHERE created_at > now() - interval '30 minutes'
              AND (title LIKE '%Write Check (automated)%' OR body LIKE '%Write Check (automated)%');
+          DELETE FROM ipy_share_link
+           WHERE label = 'Write Check (automated)'
+              OR token = '${SHARE_TOKEN:-none}';
           DELETE FROM ipy_call WHERE record_id = '${LEAD:-00000000-0000-0000-0000-000000000000}';
           DELETE FROM ipy_record WHERE id = '${LEAD:-00000000-0000-0000-0000-000000000000}';
           SQL
