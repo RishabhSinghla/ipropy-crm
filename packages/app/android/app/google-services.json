@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "915122366940",
+    "project_id": "ipropy-crm",
+    "storage_bucket": "ipropy-crm.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:915122366940:android:0f28f96b67cd73c02f4719",
+        "android_client_info": {
+          "package_name": "com.ipropy.crm"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBXh4_riJOLA4EFQIbJF6imnKamQ26y8hs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

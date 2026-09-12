@@ -8,6 +8,7 @@
  * to the report so the next fix has an address.
  */
 import { test, expect, type Page } from '@playwright/test';
+import { searchList, fieldEditor } from './helpers';
 
 type Finding = { page: string; kind: string; detail: string };
 const findings: Finding[] = [];
@@ -109,7 +110,7 @@ test.describe('lead lifecycle through the UI', () => {
     const row = (text: string) => rowIn(page, text);
     await page.goto('/leads');
     await page.waitForTimeout(1500);
-    await page.getByTestId('list-search').fill(name);
+    await searchList(page, name);
     await page.waitForTimeout(1200);
     await expect(row(name)).toBeVisible();
   });
@@ -118,7 +119,7 @@ test.describe('lead lifecycle through the UI', () => {
     const row = (text: string) => rowIn(page, text);
     await page.goto('/leads');
     await page.waitForTimeout(1200);
-    await page.getByTestId('list-search').fill(name);
+    await searchList(page, name);
     await page.waitForTimeout(1200);
     const rowClick = row(name).click();
     const detail = await page.context().waitForEvent('page');
@@ -133,8 +134,10 @@ test.describe('lead lifecycle through the UI', () => {
     */
     const renamed = `${name} II`;
     // Full Name edits in two places on this screen — the header strip and the
-    // Overview form. Either will do; take the first.
-    await detail.getByRole('button', { name: 'Edit Full Name' }).first().click();
+    // Overview form. Take the Overview one: its trigger is the value box, and
+    // the button inside it is `sr-only`, so clicking the button itself times
+    // out on a 1px clipped element.
+    await fieldEditor(detail, /^Change Full Name$/).click();
     const input = detail.getByRole('textbox', { name: /full name/i }).first();
     await input.fill(renamed);
     await input.press('Enter');
@@ -146,8 +149,7 @@ test.describe('lead lifecycle through the UI', () => {
     const row = (text: string) => rowIn(page, text);
     const renamed = `${name} II`;
     await page.goto('/leads');
-    await expect(page.getByTestId('list-search')).toBeVisible();
-    await page.getByTestId('list-search').fill(renamed);
+    await searchList(page, renamed);
     await expect(row(renamed)).toBeVisible({ timeout: 10_000 });
     const rowClick = row(renamed).click();
     const detail = await page.context().waitForEvent('page');
@@ -162,8 +164,7 @@ test.describe('lead lifecycle through the UI', () => {
     await expect(detail.getByRole('button', { name: 'Delete', exact: true })).toBeVisible({ timeout: 5_000 });
     await detail.getByRole('button', { name: 'Delete', exact: true }).click();
     await page.goto('/leads');
-    await expect(page.getByTestId('list-search')).toBeVisible({ timeout: 5_000 });
-    await page.getByTestId('list-search').fill(renamed);
+    await searchList(page, renamed);
     await expect(row(renamed)).toHaveCount(0);
   });
 });

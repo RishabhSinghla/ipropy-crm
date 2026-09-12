@@ -270,22 +270,28 @@ const MODULES: ModuleDef[] = [
       },
     ],
     relations: [],
+    /*
+      Two views, and the defaults they open with.
+
+      `columns: []` is not "no columns" — the list reads an empty array as
+      "this view has not picked any" and shows them all, which keeps meaning
+      all of them after a field is added. A written-out list would freeze
+      today's fields into data.
+
+      `sortBy` is left off so the list uses its own default, most recently
+      updated first. Naming `updated_at` here would break the same way.
+
+      `owner_id` rather than the assignment field's name: it is called
+      `assigned_to` today, `owner_id` is only its column, and it has been
+      renamed before. `owner_id` is a system field in the query builder and
+      goes on resolving whatever the field is called.
+    */
     views: [
-      {
-        name: 'All Leads', isDefault: true,
-        columns: ['lead_number', 'full_name', 'mobile', 'status', 'lead_source', 'rating', 'budget', 'owner_id'],
-        sortBy: 'created_at',
-      },
+      { name: 'All Leads', isDefault: true, columns: [] },
       {
         name: 'My Leads',
-        columns: ['full_name', 'mobile', 'status', 'next_followup_at'],
-        filter: {
-          logic: 'AND',
-          conditions: [
-            { field: 'owner_id', operator: 'is_me' },
-          ],
-        },
-        sortBy: 'updated_at',
+        columns: [],
+        filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'is_me' }] },
       },
     ],
   },
@@ -515,9 +521,14 @@ const MODULES: ModuleDef[] = [
     ],
     relations: [
     ],
+    // Same two, same reasoning as Leads above.
     views: [
-      { name: 'All Inventories', isDefault: true, columns: ['property_code', 'full_name', 'project_name', 'bedrooms', 'area', 'total_price', 'status', 'floor', 'facing'], sortBy: 'created_at' },
-      { name: 'My Inventories', columns: ['full_name', 'project_name', 'bedrooms', 'area', 'total_price', 'status'], filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'is_me' }] }, sortBy: 'updated_at' },
+      { name: 'All Inventories', isDefault: true, columns: [] },
+      {
+        name: 'My Inventories',
+        columns: [],
+        filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'is_me' }] },
+      },
     ],
   },
 

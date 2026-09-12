@@ -1,7 +1,7 @@
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
-  Brain, Check, Clock3, History, Menu, Mic, Plus, Send, Sparkles, Square,
+  Brain, Check, Clock3, History, Menu, Mic, Plus, Search, Send, Sparkles, Square,
   Trash2, X,
 } from 'lucide-react';
 import { api, type AiAssistantAction, type AiAssistantMessage, type AiMemory, type AiThreadSummary } from '../lib/api';
@@ -72,7 +72,7 @@ function ActionCard({
 export default function AiAssistant({
   open, onClose,
 }: { open: boolean; onClose: () => void }): JSX.Element | null {
-  const { aiAvailable } = useApp();
+  const { aiAvailable, sttAvailable } = useApp();
   const location = useLocation();
   const [messages, setMessages] = useState<AiAssistantMessage[]>([]);
   const [input, setInput] = useState('');
@@ -231,14 +231,23 @@ export default function AiAssistant({
    * three bugs: a stream left open on unmount, a mime type Safari refuses, and
    * a stop that never fires.
    */
+  const addToInput = useCallback((text: string) => {
+    setInput((current) => (current ? `${current.trim()} ${text}` : text));
+    setTimeout(() => inputRef.current?.focus(), 20);
+  }, []);
+
   const voice = useVoiceCapture(async (audio) => {
     try {
       const { transcript } = await api.transcribeAiAudio(audio);
-      setInput((current) => (current ? `${current.trim()} ${transcript}` : transcript));
-      setTimeout(() => inputRef.current?.focus(), 20);
+      addToInput(transcript);
     } catch (err) {
       toast.error('Could not transcribe voice', (err as Error).message);
     }
+  }, {
+    // No transcription service configured means the browser's own recogniser
+    // rather than a recording that posts and fails.
+    serverTranscription: sttAvailable,
+    onTranscript: addToInput,
   });
 
   if (!open) return null;
@@ -346,6 +355,20 @@ export default function AiAssistant({
                 <div className={cn('max-w-[92%] rounded-xl px-3.5 py-2.5', message.role === 'user' ? 'bg-brand-600 text-white' : 'bg-slate-100 dark:bg-slate-800')}>
                   {message.role === 'user' ? <p className="whitespace-pre-wrap text-sm">{message.content}</p> : (
                     <>
+                      {/* Its working, above the answer — the order somebody
+                          reads in when they want to know where a number came
+                          from. Collapsed to one line each; the detail is in
+                          the record it names, not in here. */}
+                      {message.steps?.length ? (
+                        <ul className="mb-2 space-y-0.5 border-b border-slate-200 pb-2 dark:border-slate-700">
+                          {message.steps.map((step, i) => (
+                            <li key={`${step.tool}-${i}`} className="flex items-start gap-1.5 text-2xs text-muted">
+                              <Search className="mt-0.5 h-2.5 w-2.5 shrink-0" />
+                              <span className="min-w-0">{step.label}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
                       <div className="prose-ai" dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }} />
                       {message.action && (
                         <ActionCard action={message.action} busy={actionBusy === message.action.id} onConfirm={(item) => void confirmAction(item)} onCancel={(item) => void cancelAction(item)} />
@@ -387,7 +410,14 @@ export default function AiAssistant({
         <form className="shrink-0 border-t border-slate-200 p-3 dark:border-slate-800" onSubmit={(event) => { event.preventDefault(); void send(input); }}>
           {(voice.recording || voice.busy) && (
             <p className="mb-2 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-1.5 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-300">
-              {voice.recording ? <><span className="h-2 w-2 animate-pulse rounded-full bg-red-500" /> Listening — tap stop when finished</> : <><Spinner className="h-3 w-3" /> Turning your voice into text…</>}
+              {voice.recording ? (
+                <>
+                  <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-red-500" />
+                  {/* The words as they are said. The recording path cannot show
+                      this at all, so it falls back to the old line. */}
+                  <span className="min-w-0 flex-1 truncate">{voice.interim || 'Listening — tap stop when finished'}</span>
+                </>
+              ) : <><Spinner className="h-3 w-3" /> Turning your voice into text…</>}
             </p>
           )}
           <div className="flex items-end gap-2 rounded-xl border border-slate-300 bg-white p-1.5 focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-100 dark:border-slate-700 dark:bg-slate-950 dark:focus-within:ring-brand-950">

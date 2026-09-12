@@ -90,8 +90,27 @@ async function readableMatchFields<T extends { matchedFields?: string[] }>(
 
 aiRouter.get('/status', asyncHandler(async (_req, res) => {
   const status = aiStatus();
+  /*
+    Whether the microphone has anywhere to send a recording.
+
+    The browser has its own speech recognition, and it is the *fallback* rather
+    than the default: Whisper handles the way this team actually speaks —
+    Hinglish written in Latin script — and Chrome's recogniser does not. But
+    Whisper needs a key, and without one the mic recorded, posted, and failed
+    with "not configured", which is a button that looks like it works and never
+    does. The browser knows which path to take only if we tell it.
+  */
+  const { getSettings } = await import('../../core/settings/integrations.js');
+  let speechToText = false;
+  try {
+    speechToText = isSttConfigured(getSettings().stt);
+  } catch {
+    speechToText = false;
+  }
+
   res.json({
     ...status,
+    speechToText,
     message: status.available
       ? `AI features are active (${status.provider}, ${status.model}).`
       : 'No AI provider is configured. Add a key under Admin → Integrations — Google Gemini, Groq and OpenRouter all have a free tier. Rule-based scoring and matching still work without one.',

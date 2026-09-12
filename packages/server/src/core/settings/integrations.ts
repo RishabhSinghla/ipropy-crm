@@ -710,6 +710,24 @@ function summarize(row: IntegrationRow): IntegrationSummary {
   };
 }
 
+/**
+ * One provider's credentials, decrypted.
+ *
+ * Exists because a caller that queries `ipy_integration` itself gets the
+ * ciphertext: everything in `credentials` is AES-GCM encrypted at rest and
+ * only this module holds the box. `fcm.ts` did exactly that and its
+ * `JSON.parse` of an `enc:v1:…` string failed silently, so a correctly pasted
+ * Firebase key sent nothing and reported nothing.
+ *
+ * Reads the same warmed map the resolved settings come from, so a key pasted
+ * in the admin panel is visible as soon as that save invalidates.
+ */
+export function getIntegrationCredentials(provider: string): Record<string, string> | null {
+  const row = rows.get(provider);
+  if (!row || !row.isActive) return null;
+  return row.credentials;
+}
+
 export async function listIntegrations(): Promise<IntegrationSummary[]> {
   if (!rows.size) await warmup();
   return [...rows.values()].map(summarize).sort((a, b) => a.kind.localeCompare(b.kind) || a.label.localeCompare(b.label));

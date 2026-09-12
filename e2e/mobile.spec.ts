@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
-import { inlineEditOn, unique, waitForRecords, fillRequiredFields, dashboardWithRecordRows } from './helpers';
+import { inlineEditOn, unique, waitForRecords, fillRequiredFields, dashboardWithRecordRows, searchList } from './helpers';
 
 /**
  * The critical path at phone size.
@@ -250,7 +250,7 @@ test.describe('phone', () => {
 
     // And it comes back in the card list — the mobile-only render path.
     await page.goto('/leads');
-    await page.getByTestId('list-search').fill(surname);
+    await searchList(page, surname);
     // `visible=true` matters: the desktop table is still in the DOM at this
     // width, just display:none, so the text matches twice.
     await expect(

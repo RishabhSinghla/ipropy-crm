@@ -1,4 +1,5 @@
 import { type JSX, useEffect, useMemo, useState } from 'react';
+import { byLabel } from '../lib/fields';
 /**
  * Add / edit a dashboard widget.
  *
@@ -247,7 +248,7 @@ export default function WidgetBuilder({
                   <Select
                     value={config.aggregateField ?? ''}
                     onChange={(v) => set({ aggregateField: v })}
-                    options={numericFields.map((f) => ({ value: f.name, label: f.label }))}
+                    options={byLabel(numericFields).map((f) => ({ value: f.name, label: f.label }))}
                     placeholder="Pick a numeric field"
                   />
                 </div>
@@ -259,7 +260,7 @@ export default function WidgetBuilder({
                   <Select
                     value={config.groupBy ?? ''}
                     onChange={(v) => set({ groupBy: v })}
-                    options={groupableFields.map((f) => ({ value: f.name, label: f.label }))}
+                    options={byLabel(groupableFields).map((f) => ({ value: f.name, label: f.label }))}
                     placeholder="Pick a field"
                   />
                 </div>
@@ -275,7 +276,7 @@ export default function WidgetBuilder({
                       options={[
                         { value: 'created_at', label: 'Created At' },
                         { value: 'updated_at', label: 'Modified At' },
-                        ...dateFields.map((f) => ({ value: f.name, label: f.label })),
+                        ...byLabel(dateFields).map((f) => ({ value: f.name, label: f.label })),
                       ]}
                     />
                   </div>

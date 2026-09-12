@@ -8,10 +8,12 @@ import { type JSX, useEffect, useMemo, useState } from 'react';
  */
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { collectFieldErrors, evaluateFilter, type FieldMeta, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
-import { AlertTriangle, ChevronDown, Save, TrendingUp, X } from 'lucide-react';
+import { AlertTriangle, Save, TrendingUp, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
+import { useApp } from '../lib/store';
 import { invalidateRecordQueries } from '../lib/invalidate';
+import { assignmentField } from '../lib/fields';
 import { startingValues } from '../lib/recordDefaults';
 import { cn, deepEqual } from '../lib/utils';
 import { FieldInput } from './FieldRenderer';
@@ -120,27 +122,36 @@ export default function RecordForm({
   initialValues?: Record<string, unknown>;
 }): JSX.Element {
   const isCreate = !record;
+  const me = useApp((st) => st.user);
   const queryClient = useQueryClient();
   const [values, setValues] = useState<Record<string, unknown>>(() => ({
-    ...(isCreate ? startingValues(module) : {}),
+    ...(isCreate ? startingValues(module, me?.id) : {}),
     ...(record?.values ?? {}),
     ...(initialValues ?? {}),
   }));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [duplicates, setDuplicates] = useState<{ id: string; label: string; matchedOn: string[] }[]>([]);
 
-  // The current user arrives asynchronously after a page refresh.  Keep the
-  // create form from retaining its initial “Unassigned” placeholder while
-  // that bootstrap request is in flight; never overwrite an owner a person
-  // deliberately chose.
+  /*
+    The signed-in user arrives asynchronously after a page refresh.
+
+    `startingValues` above runs once, on the first render, and on a hard reload
+    that render happens before `/api/auth/me` comes back — so the assignee
+    would be blank on exactly the path somebody takes when they open the CRM
+    and immediately add a lead. This fills it in when the user lands, and never
+    overwrites an assignee a person deliberately chose.
+
+    Keyed off the assignment field's real name rather than `owner_id`: that is
+    the column, not the field, and the mismatch is what made every new record
+    say "Unassigned" in the first place.
+  */
+  const assignee = assignmentField(module.fields);
   useEffect(() => {
-    if (isCreate && !values.owner_id && initialValues?.owner_id) {
-      setValues((current) => current.owner_id ? current : { ...current, owner_id: initialValues.owner_id });
-    }
-  }, [isCreate, initialValues?.owner_id, values.owner_id]);
+    if (!isCreate || !assignee || !me?.id) return;
+    setValues((current) => (current[assignee.name] ? current : { ...current, [assignee.name]: me.id }));
+  }, [isCreate, assignee?.name, me?.id]);
 
   const { data: layout } = useQuery({
     queryKey: ['layout', module.name, mode],
@@ -159,10 +170,6 @@ export default function RecordForm({
       fields: b.fields.map((f) => f.name),
     }));
   }, [layout, module.blocks]);
-
-  useEffect(() => {
-    setCollapsed(new Set(blocks.filter((b) => b.collapsed).map((b) => b.key)));
-  }, [blocks.length]);
 
   // Live duplicate probe on the module's declared duplicate-check fields.
   useEffect(() => {
@@ -393,7 +400,6 @@ export default function RecordForm({
       )}
 
       {blocks.map((block) => {
-        const isCollapsed = collapsed.has(block.key);
         const fields = block.fields
           .map((name) => fieldMap.get(name))
           .filter((f): f is FieldMeta => Boolean(f))
@@ -405,20 +411,20 @@ export default function RecordForm({
 
         return (
           <div key={block.key} className="card overflow-hidden">
-            <button
-              type="button"
-              onClick={() => {
-                const next = new Set(collapsed);
-                if (isCollapsed) next.delete(block.key); else next.add(block.key);
-                setCollapsed(next);
-              }}
-              className="flex w-full items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-4 py-2.5 text-left dark:border-slate-800 dark:bg-slate-800/40"
-            >
-              <ChevronDown className={cn('h-3.5 w-3.5 text-slate-400 transition-transform', isCollapsed && '-rotate-90')} />
-              <span className="text-sm font-medium">{block.label}</span>
-            </button>
+            {/*
+              A section heading, not a control.
 
-            {!isCollapsed && (
+              These were buttons with a chevron, so every section of every form
+              looked like a dropdown that had been left open — and one stray
+              click folded away the fields somebody was filling in. A form is
+              short and you are meant to read all of it; there is nothing here
+              worth hiding, so nothing here hides.
+            */}
+            <div className="flex w-full items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-4 py-2.5 dark:border-slate-800 dark:bg-slate-800/40">
+              <span className="text-sm font-medium">{block.label}</span>
+            </div>
+
+            {(
               <div className={cn(
                 'grid gap-x-4 gap-y-3 p-4',
                 block.columns === 1 ? 'grid-cols-1' : block.columns === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2',

@@ -313,6 +313,15 @@
     line-height: var(--list-line);
     color: var(--list-text);
   }
+  /* The row's checkbox cell. Deliberately not `.list-cell`: that one is
+     `truncate`, and 14px of padding on each side plus a 14px checkbox is three
+     pixels wider than the 40px column, so the browser drew an ellipsis beside
+     every checkbox in the CRM. Mirrors its own <th>, which was already right. */
+  .list-cell-select {
+    padding: var(--list-row-pad-y) 0;
+    text-align: center;
+    vertical-align: middle;
+  }
   /* The header has to read as a header. At `--text-muted` on `--surface-muted`
      it was the quietest thing on a screen full of black text, and got looked
      past — the column names are how you navigate a wide grid. Darker ground,

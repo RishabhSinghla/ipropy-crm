@@ -1,4 +1,5 @@
 import { type JSX, useEffect, useState } from 'react';
+import { byLabel } from '../../lib/fields';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FilterGroup, type ModuleMeta, relativeTime } from '@ipropy/shared';
 import {
@@ -512,7 +513,7 @@ function TaskConfigFields({
                   set({ values: Object.fromEntries(entries) });
                 }}
                 className="w-48 shrink-0"
-                options={writable.map((f) => ({ value: f.name, label: f.label }))}
+                options={byLabel(writable).map((f) => ({ value: f.name, label: f.label }))}
               />
               <input
                 className="input flex-1"
@@ -1056,7 +1057,7 @@ function WorkflowComposer({
                         value={task.delayField}
                         onChange={(v) => setTasks(tasks.map((t) => (t.key === task.key ? { ...t, delayField: v } : t)))}
                         placeholder="— field —"
-                        options={moduleMeta.fields.filter((f) => f.uitype === 'date' || f.uitype === 'datetime').map((f) => ({ value: f.name, label: f.label }))}
+                        options={byLabel(moduleMeta.fields.filter((f) => f.uitype === 'date' || f.uitype === 'datetime')).map((f) => ({ value: f.name, label: f.label }))}
                       />
                     </>
                   )}

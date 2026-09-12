@@ -18,8 +18,15 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 
+/*
+  `views` is deliberately absent: Admin → List View Tabs is gone. Curating the
+  view strip for everybody was the wrong shape once the product shipped exactly
+  two views and let each person edit their own copy — the editor moved onto the
+  list itself, next to the view being changed. `/admin/views` now redirects, so
+  leaving it here would have tested the redirect and called it a screen.
+*/
 const ADMIN_SCREENS = [
-  'modules', 'fields', 'layouts', 'views', 'header', 'picklists', 'users',
+  'modules', 'fields', 'layouts', 'header', 'picklists', 'users',
   'roles', 'sharing', 'map', 'workflows', 'import', 'matching', 'units',
   'integrations', 'settings', 'brand', 'system',
 ];

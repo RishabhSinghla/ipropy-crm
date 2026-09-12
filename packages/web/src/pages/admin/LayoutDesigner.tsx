@@ -1,4 +1,5 @@
 import { type JSX, useEffect, useMemo, useState } from 'react';
+import { byLabel } from '../../lib/fields';
 /**
  * Layout Designer — what a record page looks like, as data.
  *
@@ -67,6 +68,14 @@ export default function LayoutDesigner(): JSX.Element {
   const { modules } = useApp();
   const [moduleName, setModuleName] = useState(modules[0]?.name ?? 'leads');
   const [layoutType, setLayoutType] = useState<'detail' | 'edit' | 'quick_create'>('detail');
+  /*
+    Switching to a module that has no full-page form must not leave the picker
+    on an option it no longer offers — the Select would show blank and the next
+    save would write the layout you could not see.
+  */
+  useEffect(() => {
+    if (layoutType === 'edit' && moduleName !== 'properties') setLayoutType('detail');
+  }, [moduleName, layoutType]);
   const [blocks, setBlocks] = useState<LayoutBlock[]>([]);
   const [newSection, setNewSection] = useState(false);
   const [headerFields, setHeaderFields] = useState<string[]>([]);
@@ -307,16 +316,26 @@ export default function LayoutDesigner(): JSX.Element {
           <Select
             value={layoutType}
             onChange={(v) => setLayoutType(v as typeof layoutType)}
+            /*
+              Only the layouts this module actually has a screen for.
+
+              There are three in the database, and on Leads one of them shapes
+              a form nobody can open: "Full page form" is the second half of
+              the split New button, and that split button exists only on
+              Inventories. So an admin arranging Leads was offered a third
+              option, saved it, and saw no effect anywhere — which is what
+              "there are only 2 for us" means.
+
+              It is also named after the thing that opens it now. It read "New
+              record form" while the only door to it says "Full page form",
+              and two names for one screen is the other half of the confusion.
+            */
             options={[
               { value: 'detail', label: 'Detail view' },
-              // Named for what it actually shapes. There is no edit *form*
-              // any more — a record is edited in place on its own page — but
-              // this layout is far from dead: it is the full-page form behind
-              // New Contact / New Property, which is why removing the entry
-              // rather than renaming it would have left that form unreachable
-              // from here.
-              { value: 'edit', label: 'New record form' },
               { value: 'quick_create', label: 'Quick create' },
+              ...(moduleName === 'properties'
+                ? [{ value: 'edit', label: 'Full page form' }]
+                : []),
             ]}
             className="w-36 py-1.5 text-sm"
           />
@@ -375,8 +394,7 @@ export default function LayoutDesigner(): JSX.Element {
                 // The pipeline field is drawn as the status chip beside the
                 // record name, so putting it in the header strip too renders
                 // nothing — offering it is offering a no-op.
-                options={placeable
-                  .filter((f) => f.name !== meta?.pipelineField)
+                options={byLabel(placeable.filter((f) => f.name !== meta?.pipelineField))
                   .map((f) => ({ value: f.name, label: f.label }))}
                 defaultTab={defaultTab}
                 tabOptions={tabOptions}

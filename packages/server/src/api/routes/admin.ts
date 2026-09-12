@@ -14,7 +14,7 @@ import { verifyConnection as verifySmtpConnection } from '../../integrations/ema
 import { syncInboundEmails, testImapConnection } from '../../integrations/email/inbound.js';
 import { testAiProvider } from '../../ai/client.js';
 import {
-  getPropertyShareAdminConfig, savePropertyShareConfig,
+  getShareAdminConfig, saveShareConfig,
 } from '../../core/sharing/propertyShare.js';
 import { listIntegrationModels } from '../../ai/models.js';
 
@@ -680,9 +680,35 @@ adminRouter.delete('/sharing/rules/:id', asyncHandler(async (req, res) => {
  * callers receive only fields the server considers safe to make public, with
  * current admin-renamed labels from metadata.
  */
+/*
+  One route per module, and `property-link` kept as an alias.
+
+  This was properties-only because a share link only ever sent a unit to a
+  buyer. The matching tab shares people now — the contacts worth pitching a
+  unit to — and that asks the same question of a different module. The old
+  path stays so nothing that already calls it breaks.
+*/
+adminRouter.get('/sharing/link/:module', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.sharing');
+  await registry.requireModule(req.params.module);
+  res.json(await getShareAdminConfig(req.params.module));
+}));
+
+adminRouter.put('/sharing/link/:module', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'admin.sharing');
+  await registry.requireModule(req.params.module);
+  const input = z.object({
+    visibleFields: z.array(z.string()).max(200),
+    showPhotos: z.boolean(),
+  }).parse(req.body);
+  await saveShareConfig(req.params.module, input, user.id);
+  res.json(await getShareAdminConfig(req.params.module));
+}));
+
 adminRouter.get('/sharing/property-link', asyncHandler(async (req, res) => {
   await assertCapability(getUser(req), 'admin.sharing');
-  res.json(await getPropertyShareAdminConfig());
+  res.json(await getShareAdminConfig('properties'));
 }));
 
 adminRouter.put('/sharing/property-link', asyncHandler(async (req, res) => {
@@ -692,8 +718,8 @@ adminRouter.put('/sharing/property-link', asyncHandler(async (req, res) => {
     visibleFields: z.array(z.string()).max(200),
     showPhotos: z.boolean(),
   }).parse(req.body);
-  await savePropertyShareConfig(input, user.id);
-  res.json(await getPropertyShareAdminConfig());
+  await saveShareConfig('properties', input, user.id);
+  res.json(await getShareAdminConfig('properties'));
 }));
 
 // ---------------------------------------------------------------------------
@@ -836,14 +862,28 @@ adminRouter.put('/matching-config', asyncHandler(async (req, res) => {
       );
     }
     await tx.query(
-      `INSERT INTO ipy_setting (key, value, updated_by, updated_at) VALUES ('matching.price_grace_percent',$1,$2,now())
-       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`,
-      [JSON.stringify(input.priceGracePercent), user.id],
+      /* `category` is named because it defaults to 'general', which filed these
+         three numbers among the company's name and address on the Settings
+         page — as raw keys, since they carry no label either. See migration
+         137. `label`/`description` are set on insert only: an administrator who
+         rewords one on the Settings page keeps their wording. */
+      `INSERT INTO ipy_setting (key, value, category, label, updated_by, updated_at)
+       VALUES ('matching.price_grace_percent',$1,'matching',$3,$2,now())
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, category = 'matching',
+                                       updated_by = EXCLUDED.updated_by, updated_at = now()`,
+      [JSON.stringify(input.priceGracePercent), user.id, 'Budget headroom'],
     );
     await tx.query(
-      `INSERT INTO ipy_setting (key, value, updated_by, updated_at) VALUES ('matching.area_grace_percent',$1,$2,now())
-       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`,
-      [JSON.stringify(input.areaGracePercent), user.id],
+      /* `category` is named because it defaults to 'general', which filed these
+         three numbers among the company's name and address on the Settings
+         page — as raw keys, since they carry no label either. See migration
+         137. `label`/`description` are set on insert only: an administrator who
+         rewords one on the Settings page keeps their wording. */
+      `INSERT INTO ipy_setting (key, value, category, label, updated_by, updated_at)
+       VALUES ('matching.area_grace_percent',$1,'matching',$3,$2,now())
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, category = 'matching',
+                                       updated_by = EXCLUDED.updated_by, updated_at = now()`,
+      [JSON.stringify(input.areaGracePercent), user.id, 'Size headroom'],
     );
   });
   const { invalidateMatchingConfig } = await import('../../core/settings/matching.js');
@@ -1098,6 +1138,10 @@ async function testIntegration(provider: string): Promise<{ ok: boolean; message
         const { testOneDriveConnection } = await import('../../core/storage/onedrive.js');
         const result = await testOneDriveConnection(getOneDriveProviderSettings());
         return { ok: true, message: `Connected — ${result.name}. The iPropy root folder is writable.` };
+      }
+      case 'fcm': {
+        const { testFcm } = await import('../../core/notifications/fcm.js');
+        return testFcm();
       }
       case 'facebook_leads':
         if (!s.leadSources.facebook.pageAccessToken) return { ok: false, message: 'A page access token is required.' };

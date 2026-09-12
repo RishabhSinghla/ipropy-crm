@@ -3,8 +3,8 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type CustomView, type FieldMeta, type FilterGroup, formatIndianPrice, formatPhoneWithCode, toInternational, type ListQuery, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
-  ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Columns3, Compass, Copy, Download, Filter,
-  LayoutGrid, List, MessageCircle, Pencil, Phone, Plus, RefreshCw, Ruler, Save, Search, Settings2, Star, Trash2, Upload, Users, X,
+  ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Columns3, Compass, Download, Filter,
+  LayoutGrid, List, MapPin, MessageCircle, Pencil, Phone, Plus, RefreshCw, Ruler, Save, Search, Settings2, Star, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { ApiError, api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
@@ -13,7 +13,7 @@ import { saveListNav } from '../lib/listNav';
 import { cn, restrictionForField } from '../lib/utils';
 import { FieldInput, FieldValue } from '../components/FieldRenderer';
 import { EditableField, isInlineEditable } from '../components/EditableField';
-import { assignmentField } from '../lib/fields';
+import { assignmentField, byLabel } from '../lib/fields';
 import { DEFAULT_PAGE_SIZE, loadPageSize, PAGE_SIZE_OPTIONS, savePageSize } from '../lib/pageSize';
 import { FilterBuilder, countConditions } from '../components/FilterBuilder';
 import {
@@ -26,7 +26,7 @@ import { useSwipeActions, type SwipeSide } from '../lib/swipeActions';
 import { MAX_WIDTH, MIN_WIDTH, SELECT_COL_WIDTH, useColumnWidths } from '../lib/columnWidths';
 import { useOfflineMeta } from '../lib/useOfflineList';
 import { deliverFile, dial, openExternal } from '../lib/nativeActions';
-import { blankView, type AdminView, ViewEditor } from './admin/ViewsAdmin';
+import { blankView, type SavedView, ViewEditor } from '../components/ViewEditor';
 
 const EMPTY_FILTER: FilterGroup = { logic: 'AND', conditions: [] };
 
@@ -82,7 +82,7 @@ export default function ListView(): JSX.Element {
   const [showColumns, setShowColumns] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [editingView, setEditingView] = useState<AdminView | null>(null);
+  const [editingView, setEditingView] = useState<SavedView | null>(null);
   const [confirmDeleteView, setConfirmDeleteView] = useState<CustomView | null>(null);
   const [dragColumn, setDragColumn] = useState<string | null>(null);
   const colWidths = useColumnWidths(moduleName);
@@ -189,7 +189,18 @@ export default function ListView(): JSX.Element {
     enabled: Boolean(moduleName),
   });
 
-  const activeView = views?.find((v) => v.id === viewId) ?? views?.find((v) => v.isDefault) ?? views?.[0];
+  /*
+    Match on the built-in id as well as the view's own.
+
+    Editing a built-in view gives you your own version of it, with its own id
+    (migration 135), and the switcher then sends that id. A link made before
+    the edit — a bookmark, a dashboard drill-through, a URL somebody pasted
+    into WhatsApp — still names the built-in one, and matching only on `id`
+    would silently drop those people onto the default view instead.
+  */
+  const activeView = views?.find((v) => v.id === viewId || v.builtInId === viewId)
+    ?? views?.find((v) => v.isDefault)
+    ?? views?.[0];
 
   const chooseView = (id: string): void => {
     if (id === activeView?.id) return;
@@ -202,15 +213,6 @@ export default function ListView(): JSX.Element {
     setSearchInput('');
     setSelected(new Set());
   };
-
-  const duplicateViewMutation = useMutation({
-    mutationFn: (id: string) => api.duplicateView(moduleName!, id),
-    onSuccess: () => {
-      toast.success('Personal view created');
-      void queryClient.invalidateQueries({ queryKey: ['views', moduleName] });
-    },
-    onError: (error: Error) => toast.error('Could not copy this view', error.message),
-  });
 
   const deleteViewMutation = useMutation({
     mutationFn: (id: string) => api.deleteView(moduleName!, id),
@@ -239,20 +241,44 @@ export default function ListView(): JSX.Element {
    */
   useEffect(() => {
     if (!activeView) return;
-    const previous = adoptedView.current;
-    adoptedView.current = activeView.id;
+    /*
+      What counts as "the view changed" is its definition, not its id.
 
-    setColumns(activeView.columns?.length ? activeView.columns : defaultColumns(meta));
+      Keying on the id alone meant editing the view you were already on saved
+      fine and changed nothing on screen until a reload — the id had not moved,
+      so this never re-ran. Keying on the whole definition catches that, and
+      still treats a background refetch returning the same values as no change,
+      which is what keeps it from re-adopting the sort over one the user just
+      set by clicking a column header.
+    */
+    const signature = [
+      activeView.id,
+      (activeView.columns ?? []).join(','),
+      activeView.sortBy ?? '',
+      activeView.sortDir ?? '',
+      activeView.displayMode ?? '',
+    ].join('|');
+    const previous = adoptedView.current;
+    adoptedView.current = signature;
+
+    // Outside the guard below: on the first paint the module metadata has not
+    // arrived, so a view showing every column resolves to none of them, and
+    // this is the render that fixes it.
+    setColumns(activeView.columns?.length ? activeView.columns : allColumns(meta));
     setDisplayMode(activeView.displayMode === 'kanban' ? 'kanban' : 'table');
 
-    // Same view, later render — metadata arriving is not a view change.
-    if (previous === activeView.id) return;
+    // Same view, same definition, later render — metadata arriving is not a
+    // view change, and must not overwrite a sort the user chose since.
+    if (previous === signature) return;
     // Arriving on a link that names its own sort: the link wins.
     if (previous === null && urlNamedSort.current) return;
 
     setSortBy(activeView.sortBy ?? undefined);
     setSortDir(activeView.sortDir ?? 'desc');
-  }, [activeView?.id, meta?.id]);
+  }, [
+    activeView?.id, meta?.id, activeView?.displayMode,
+    (activeView?.columns ?? []).join(','), activeView?.sortBy, activeView?.sortDir,
+  ]);
 
   /**
    * Mirror the current state back into the URL.
@@ -467,7 +493,20 @@ export default function ListView(): JSX.Element {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="shrink-0 border-y border-slate-200 bg-slate-50/90 px-3 py-2 shadow-sm dark:border-slate-800 dark:bg-slate-950/70 sm:px-4">
+      {/*
+        The toolbar reads as a bar now, not as the top of the page.
+
+        It was a near-white strip on a near-white page with a hairline border —
+        the view name, the record count and every control on the screen sat in
+        it, and none of it caught the eye. Reported as "not very eye catching",
+        which is the right complaint: this row is where somebody looks to
+        answer "which list am I on and how many are in it".
+
+        A solid ground, a real bottom border and a little more height are the
+        whole change — no colour, because the row is a container and the
+        coloured thing in it should go on being the New button.
+      */}
+      <div className="shrink-0 border-b-2 border-slate-200 bg-white px-3 py-2.5 shadow-sm dark:border-slate-700 dark:bg-slate-900 sm:px-4">
         {/*
           No title bar.
 
@@ -517,17 +556,30 @@ export default function ListView(): JSX.Element {
             {(close) => (
               <>
                 <p className="px-3 pb-1 pt-2 text-2xs font-semibold uppercase tracking-wider text-muted">List views</p>
+                {/*
+                  Every view carries its pencil, the two built-in ones included.
+
+                  They used to be the only two anybody could not edit, which is
+                  backwards — they are the two everybody lives in. Editing one
+                  now saves your own version of it rather than reshaping the
+                  row the whole team reads (migration 135), so there is nothing
+                  left to protect by hiding the pencil.
+                */}
                 <div className="max-h-64 overflow-y-auto py-1">
                   {(views ?? []).map((view) => {
-                    const canManage = !view.isSystem && (view.ownerId === user?.id || user?.isAdmin);
+                    const mine = view.ownerId === user?.id || user?.isAdmin;
+                    const canEdit = view.isSystem || mine;
                     return (
                       <div key={view.id} className="flex items-center px-1">
                         <DropdownItem onClick={() => { chooseView(view.id); close(); }}>
                           <span className="min-w-0 flex-1 truncate">{view.name}</span>
-                          {view.id === activeView?.id && <span className="text-brand-600">Current</span>}
+                          {view.isOverride && (
+                            <span className="shrink-0 text-2xs text-muted" title="Your own version of this view">edited</span>
+                          )}
+                          {view.id === activeView?.id && <span className="shrink-0 text-brand-600">Current</span>}
                         </DropdownItem>
-                        {canManage && (
-                          <button className="btn-ghost shrink-0 p-1.5" title="Edit view" aria-label={`Edit ${view.name}`} onClick={(e) => { e.stopPropagation(); setEditingView(view as AdminView); close(); }}>
+                        {canEdit && (
+                          <button className="btn-ghost shrink-0 p-1.5" title={view.isSystem ? 'Edit — saved as your own version' : 'Edit view'} aria-label={`Edit ${view.name}`} onClick={(e) => { e.stopPropagation(); setEditingView(view as SavedView); close(); }}>
                             <Pencil className="h-3.5 w-3.5" />
                           </button>
                         )}
@@ -537,22 +589,14 @@ export default function ListView(): JSX.Element {
                 </div>
                 <div className="border-t border-slate-100 py-1 dark:border-slate-800">
                   <DropdownItem icon={<Plus className="h-3.5 w-3.5" />} onClick={() => { setEditingView(blankView(moduleName)); close(); }}>
-                    New personal view
+                    New view
                   </DropdownItem>
-                  {activeView && (
-                    <DropdownItem icon={<Copy className="h-3.5 w-3.5" />} onClick={() => { duplicateViewMutation.mutate(activeView.id); close(); }}>
-                      Save a copy for me
-                    </DropdownItem>
-                  )}
+                  {/* Only a view somebody made can be deleted. The two built-in
+                      ones are reset instead, from inside the editor. */}
                   {activeView && !activeView.isSystem && (activeView.ownerId === user?.id || user?.isAdmin) && (
-                    <>
-                      <DropdownItem icon={<Pencil className="h-3.5 w-3.5" />} onClick={() => { setEditingView(activeView as AdminView); close(); }}>
-                        Edit my view
-                      </DropdownItem>
-                      <DropdownItem danger icon={<Trash2 className="h-3.5 w-3.5" />} onClick={() => { setConfirmDeleteView(activeView); close(); }}>
-                        Delete my view
-                      </DropdownItem>
-                    </>
+                    <DropdownItem danger icon={<Trash2 className="h-3.5 w-3.5" />} onClick={() => { setConfirmDeleteView(activeView); close(); }}>
+                      Delete this view
+                    </DropdownItem>
                   )}
                 </div>
               </>
@@ -560,20 +604,33 @@ export default function ListView(): JSX.Element {
           </Dropdown>
 
           <div className="ml-auto flex shrink-0 items-center gap-2">
-            <span className="hidden shrink-0 text-xs text-muted tnum xl:inline">
+            {/* The number, not a footnote. It was the same muted 11px as the
+                labels around it; it is the one value on this row somebody
+                reads on purpose. */}
+            <span className="hidden shrink-0 text-xs font-semibold text-slate-700 tnum xl:inline dark:text-slate-200">
               {isFetching && !data
                 ? 'Loading…'
                 : `${(data?.total ?? 0).toLocaleString('en-IN')} records`}
             </span>
 
-            <div className="relative h-8 w-8">
+            {/*
+              The open box takes its own width in the row rather than floating
+              over what is to its left.
+
+              It was `absolute` inside an 8×8 box, so opening it drew a 16rem
+              panel across the neighbours — and the neighbour on that side is
+              the record count, which is the number somebody opens a search to
+              compare against. Laying it out in the flow costs the row a little
+              width, which is what the wrap is for, and nothing is hidden.
+            */}
+            <div className={cn('relative h-8 transition-[width]', searchOpen ? 'w-44 lg:w-60' : 'w-8')}>
             {searchOpen ? (
-              <div className="absolute right-0 top-0 z-30 w-64">
+              <div className="absolute inset-y-0 right-0 z-30 w-full">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                 <input
                   data-testid="list-search"
                   autoFocus
-                  className="input w-40 py-1.5 pl-8 pr-7 text-sm lg:w-56"
+                  className="input w-full py-1.5 pl-8 pr-7 text-sm"
                   placeholder={`Search ${meta.label.toLowerCase()}…`}
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
@@ -671,6 +728,64 @@ export default function ListView(): JSX.Element {
                 <label className="flex items-center gap-1 whitespace-nowrap"><input className="h-5 w-10 rounded border border-slate-200 bg-white px-1 text-center text-xs dark:border-slate-700 dark:bg-slate-900" aria-label="Go to page" type="number" min={1} max={data!.totalPages} value={page} onFocus={(e) => e.currentTarget.select()} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} onChange={(e) => { const next = Number(e.target.value); if (Number.isInteger(next) && next >= 1 && next <= data!.totalPages) setPage(next); }} /><span>/ {data!.totalPages}</span></label>
                 <button className="btn-ghost p-0.5" aria-label="Next page" disabled={page >= data!.totalPages} onClick={() => setPage((p) => Math.min(data!.totalPages, p + 1))}><ChevronRight className="h-3.5 w-3.5" /></button>
               </div>
+            )}
+
+            {canCreate && (
+              // Restored after 6467a76 removed it. The label is the admin's
+              // word for the record, so "New Lead" became "New Contact".
+              // Properties gets a split button — the second action is the
+              // gate-side capture screen, so it lives where "add a property"
+              // already lives rather than as a separate tab competing with it.
+              moduleName === 'properties' ? (
+                <div className="inline-flex" data-testid="list-create">
+                  <button
+                    onClick={() => setShowQuickCreate(true)}
+                    className="btn-primary btn-sm rounded-r-none focus:z-10"
+                    title={`New ${meta.singularLabel}`}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    New {meta.singularLabel}
+                  </button>
+                  <Dropdown
+                    align="right"
+                    trigger={(
+                      <button
+                        className="btn-primary btn-sm rounded-l-none border-l border-l-white/30 px-2 focus:z-10"
+                        aria-label={`More ways to add a ${meta.singularLabel.toLowerCase()}`}
+                        title="More ways to add"
+                      >
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  >
+                    {(close) => (
+                      <>
+                        <Link
+                          to={`/${moduleName}/new`}
+                          onClick={close}
+                          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          Full page form
+                        </Link>
+                        <Link
+                          to="/capture"
+                          onClick={close}
+                          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+                        >
+                          <MapPin className="h-3.5 w-3.5" />
+                          Capture on site
+                        </Link>
+                      </>
+                    )}
+                  </Dropdown>
+                </div>
+              ) : (
+                <button data-testid="list-create" onClick={() => setShowQuickCreate(true)} className="btn-primary btn-sm">
+                  <Plus className="h-3.5 w-3.5" />
+                  New {meta.singularLabel}
+                </button>
+              )
             )}
 
           </div>
@@ -898,7 +1013,18 @@ export default function ListView(): JSX.Element {
                   )}
                   onClick={() => openRecord(`/${moduleName}/${row.id}?return=${encodeURIComponent(returnTo)}`)}
                 >
-                  <td className="list-cell" onClick={(e) => e.stopPropagation()}>
+                  {/*
+                    The select column is not a text cell.
+
+                    `.list-cell` is 14px of padding each side plus
+                    `text-overflow: ellipsis`; the checkbox is 14px and the
+                    column is 40. Three pixels over, so every row in the CRM
+                    drew a "…" next to its checkbox — reported as mystery dots
+                    at the start of each row, and that is exactly what they
+                    were. It matches its own <th> now: no side padding, centred,
+                    nothing to truncate.
+                  */}
+                  <td className="list-cell-select" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
                       aria-label={`Select ${row.label}`}
@@ -1057,7 +1183,6 @@ export default function ListView(): JSX.Element {
           view={editingView}
           module={meta}
           moduleName={moduleName}
-          isPublic={false}
           onClose={() => setEditingView(null)}
           onSaved={() => {
             setEditingView(null);
@@ -1236,7 +1361,19 @@ function PageButton({ label, disabled, onClick, children }: {
   );
 }
 
-function defaultColumns(meta: {
+/**
+ * Every column this module has, identity first.
+ *
+ * What a view showing no columns of its own means. The two built-in views ship
+ * with an empty list on purpose (migration 135): an empty list goes on meaning
+ * "all of them" after somebody adds a field, where a written-out list would
+ * have frozen today's fields into data and quietly left the new one off.
+ *
+ * The seven-column cut that used to live here is still right for a module with
+ * no view at all — see `defaultColumns` — but it is not what "show me
+ * everything" means.
+ */
+function allColumns(meta: {
   labelFields?: string[];
   fields: { name: string; isActive: boolean; displayType: string }[];
 } | undefined): string[] {
@@ -1244,7 +1381,15 @@ function defaultColumns(meta: {
   const usable = meta.fields.filter((f) => f.isActive && f.displayType !== 'hidden');
   const identity = (meta.labelFields ?? []).filter((name) => usable.some((f) => f.name === name));
   const rest = usable.map((f) => f.name).filter((name) => !identity.includes(name));
-  return [...identity, ...rest].slice(0, 7);
+  return [...identity, ...rest];
+}
+
+/** The first handful, for a module that has no saved view to ask. */
+function defaultColumns(meta: {
+  labelFields?: string[];
+  fields: { name: string; isActive: boolean; displayType: string }[];
+} | undefined): string[] {
+  return allColumns(meta).slice(0, 7);
 }
 
 /**
@@ -1672,170 +1817,21 @@ function KanbanBoard({
   );
 }
 
-/**
- * The saved-view tabs, on the toolbar row and able to hold any number of them.
- *
- * A plain `overflow-x-auto` strip is fine with six tabs and useless with
- * twenty: on a trackpad you can flick it, with a mouse there is nothing to
- * grab, and either way there is no sign that anything is off-screen. So the
- * arrows appear only when the strip actually overflows, and each one scrolls
- * by most of a screenful rather than a fixed pixel count.
- *
- * `scrollWidth > clientWidth` is re-measured on scroll, on resize, on font
- * load, and when the view list changes — a tab added by an admin can push it
- * over the edge without the window moving at all. The arrow buttons always
- * occupy their slot so the tab row never jumps sideways when overflow appears
- * or disappears mid-session; each button dims and leaves the tab order when
- * there is nothing to scroll to in its direction.
- */
-function ViewTabStrip({
-  views, activeId, onPick,
-}: {
-  views: { id: string; name: string; count?: number }[];
-  activeId: string | undefined;
-  onPick: (id: string) => void;
-}): JSX.Element | null {
-  const strip = useRef<HTMLDivElement>(null);
-  const [overflow, setOverflow] = useState({ left: false, right: false });
-
-  const measure = (): void => {
-    const el = strip.current;
-    if (!el) return;
-    setOverflow({
-      left: el.scrollLeft > 4,
-      // The -4 absorbs sub-pixel widths, which otherwise leave the right arrow
-      // enabled for ever at the end of the strip.
-      right: el.scrollLeft + el.clientWidth < el.scrollWidth - 4,
-    });
-  };
-
-  useEffect(() => {
-    measure();
-    const el = strip.current;
-    if (!el) return undefined;
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    // The strip's own width tracks the window, but its scrollWidth also grows
-    // when webfonts swap in after first paint — without this the arrows can
-    // stay hidden on exactly the tab counts (8–10) where the fallback font
-    // happened to fit. One re-measure after fonts settle covers it, and the
-    // initial `measure()` already covers the font-blocked case.
-    let fontsDone = false;
-    if (typeof document !== 'undefined' && 'fonts' in document) {
-      document.fonts.ready.then(() => { if (!fontsDone) measure(); }).catch(() => undefined);
-    }
-    const onResize = (): void => measure();
-    window.addEventListener('resize', onResize);
-    return () => {
-      fontsDone = true;
-      observer.disconnect();
-      window.removeEventListener('resize', onResize);
-    };
-  }, [views.length]);
-
-  // Keep the selected tab in sight when the view changes from elsewhere — a
-  // dashboard drill-through can land on a tab that is scrolled out of view.
-  useEffect(() => {
-    strip.current?.querySelector('[data-active="true"]')
-      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-  }, [activeId]);
-
-  if (!views.length) return null;
-
-  const nudge = (direction: -1 | 1): void => {
-    const el = strip.current;
-    if (!el) return;
-    el.scrollBy({ left: direction * Math.max(120, el.clientWidth * 0.8), behavior: 'smooth' });
-  };
-
-  return (
-    <div className="flex min-w-0 flex-1 items-center gap-0.5">
-      {/*
-        Always in the layout, never always active. Conditionally *removing*
-        the arrow buttons moved every tab a few pixels each time overflow
-        appeared or cleared — on Contacts the strip sits near that boundary,
-        so switching tabs visibly shoved the row sideways. `invisible` keeps
-        the slot; `aria-disabled` + `tabIndex={-1}` keeps it out of the tab
-        order and honest to assistive tech.
-      */}
-      <button
-        type="button"
-        onClick={() => nudge(-1)}
-        disabled={!overflow.left}
-        aria-disabled={!overflow.left}
-        tabIndex={overflow.left ? 0 : -1}
-        className={cn(
-          'shrink-0 rounded p-0.5 transition-opacity',
-          overflow.left
-            ? 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
-            : 'invisible',
-        )}
-        aria-label="Scroll views left"
-      >
-        <ChevronLeft className="h-4 w-4" />
-      </button>
-
-      <div
-        ref={strip}
-        onScroll={measure}
-        role="tablist"
-        aria-label="Saved views"
-        // `scrollbar-none` is not available here, so the bar is simply thin and
-        // below the row; hiding it entirely would remove the only affordance a
-        // touch user has.
-        className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto scroll-smooth py-0.5"
-      >
-        {views.map((v) => (
-          <button
-            key={v.id}
-            role="tab"
-            aria-selected={activeId === v.id}
-            data-active={activeId === v.id}
-            onClick={() => onPick(v.id)}
-            className={cn(
-              'flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors',
-              activeId === v.id
-                ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
-                : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800',
-            )}
-          >
-            {v.name}
-            {v.count !== undefined && (
-              <span className={cn(
-                'rounded-full px-1.5 text-2xs tnum',
-                activeId === v.id ? 'bg-white/20' : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200',
-              )}>
-                {v.count}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      <button
-        type="button"
-        onClick={() => nudge(1)}
-        disabled={!overflow.right}
-        aria-disabled={!overflow.right}
-        tabIndex={overflow.right ? 0 : -1}
-        className={cn(
-          'shrink-0 rounded p-0.5 transition-opacity',
-          overflow.right
-            ? 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
-            : 'invisible',
-        )}
-        aria-label="Scroll views right"
-      >
-        <ChevronRight className="h-4 w-4" />
-      </button>
-    </div>
-  );
-}
 
 function ExportWizard({ open, onClose, module, fields, filter, selectedIds, allSelected }: {
   open: boolean; onClose: () => void; module: string; fields: FieldMeta[]; filter: FilterGroup; selectedIds?: string[]; allSelected: boolean;
 }): JSX.Element {
-  const available = fields.filter((f) => f.isActive && f.displayType !== 'hidden' && f.config.exportable !== false);
+  /*
+    A to Z, like every other field list in the CRM.
+
+    This one has a search box above it, which helps when you know the name and
+    not at all when you are picking eight of forty for a spreadsheet — and
+    `sequence` is the order somebody arranged a *form* in, which says nothing
+    about where to look for "Locality" in a list.
+  */
+  const available = byLabel(
+    fields.filter((f) => f.isActive && f.displayType !== 'hidden' && f.config.exportable !== false),
+  );
   type ExportChoice = { fieldId: string; header: string };
   const [columns, setColumns] = useState<ExportChoice[]>([]);
   const [format, setFormat] = useState<'xlsx' | 'csv'>('xlsx');

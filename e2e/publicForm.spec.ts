@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { unique } from './helpers';
+import { unique, searchList } from './helpers';
 
 /**
  * The website enquiry form, walked end to end by the people on both ends of it:
@@ -91,7 +91,7 @@ test.describe.serial('public form as a visitor', () => {
 test.describe('public form becomes a lead', () => {
   test('the enquiry is on the rep\'s list with the visitor\'s name', async ({ page }) => {
     await page.goto('/leads');
-    await page.getByTestId('list-search').fill(run.phone);
+    await searchList(page, run.phone);
     await page.waitForTimeout(1200);
     await expect(
       page.locator('tbody tr:visible').filter({ hasText: run.visitorName }),

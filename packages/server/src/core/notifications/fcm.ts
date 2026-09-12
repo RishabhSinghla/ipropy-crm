@@ -48,10 +48,17 @@ let cachedAccount: ServiceAccount | null | undefined;
 async function serviceAccount(): Promise<ServiceAccount | null> {
   if (cachedAccount !== undefined) return cachedAccount;
 
-  const row = await db.query<{ credentials: Record<string, unknown> }>(
-    `SELECT credentials FROM ipy_integration WHERE provider = 'fcm' AND is_active = true`,
-  );
-  const raw = row.rows[0]?.credentials;
+  /*
+    Through the settings module, never a direct query.
+
+    `credentials` is AES-GCM encrypted at rest. This used to SELECT the column
+    itself and hand the value to JSON.parse, which on an `enc:v1:…` string
+    fails — so a correctly pasted service account read back as "not configured"
+    and every app notification was silently skipped. Nothing logged, because
+    "no key" is a supported state.
+  */
+  const { getIntegrationCredentials } = await import('../settings/integrations.js');
+  const raw = getIntegrationCredentials('fcm') as Record<string, unknown> | null;
 
   /*
     Accepted two ways, because both are what a person actually has in front of
@@ -144,6 +151,49 @@ function base64url(input: string | Buffer): string {
 // ---------------------------------------------------------------------------
 // Sending
 // ---------------------------------------------------------------------------
+
+/**
+ * Prove the pasted service account actually works, without sending anything.
+ *
+ * The exchange below is the same first step every real send makes, so a pass
+ * here means the key is present, parseable, correctly signed and accepted by
+ * Google for this project. What it deliberately does not do is deliver a
+ * notification: that needs a registered device, and "no devices yet" is not a
+ * broken key — it is the normal state until somebody installs the app.
+ *
+ * Worth having because the failure it catches is otherwise silent. `sendFcm`
+ * degrades rather than throws, so a wrong key looks exactly like a quiet phone,
+ * and the first person to notice is a rep who missed a lead.
+ */
+export async function testFcm(): Promise<{ ok: boolean; message: string }> {
+  const account = await serviceAccount();
+  if (!account) {
+    return { ok: false, message: 'No service account saved, or it is missing project_id, client_email or private_key.' };
+  }
+
+  // Past the cache: a stale token would report success for a key that has
+  // since been revoked, which is the one case somebody clicks Test to find.
+  cachedToken = null;
+  const token = await accessToken(account);
+  if (!token) {
+    return { ok: false, message: `Google refused the key for ${account.client_email}. Generate a new private key in Firebase and paste it again.` };
+  }
+
+  // App subscriptions share the Web Push table and are told apart by the
+  // `fcm:` prefix on the endpoint — see FCM_PREFIX in ./index.ts. Browser
+  // subscriptions are not counted here: they never go through Firebase.
+  const devices = await db.queryOne<{ n: string }>(
+    `SELECT count(*)::text AS n FROM ipy_push_subscription WHERE endpoint LIKE 'fcm:%'`,
+  ).catch(() => null);
+  const n = Number(devices?.n ?? 0);
+
+  return {
+    ok: true,
+    message: n > 0
+      ? `Connected to ${account.project_id} — ${n} phone${n === 1 ? '' : 's'} will receive alerts.`
+      : `Connected to ${account.project_id}. No phones have registered yet, so install the app and sign in on one.`,
+  };
+}
 
 export type FcmOutcome = 'sent' | 'skipped' | 'failed' | 'expired';
 

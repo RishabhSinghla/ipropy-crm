@@ -1,4 +1,5 @@
 import { type JSX, useEffect, useState } from 'react';
+import { byLabel } from '../../lib/fields';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link2, Plus, Save, Trash2 } from 'lucide-react';
 import { api, type MatchingFieldPair } from '../../lib/api';
@@ -166,7 +167,7 @@ export default function MatchingSetupAdmin(): JSX.Element {
                       value={pair.contactFieldId ?? ''}
                       onChange={(id) => setPair(i, { contactFieldId: id, contactField: data.contactFields.find((f) => f.id === id)?.name ?? '' })}
                       placeholder="— Select a field —"
-                      options={data.contactFields.map((f) => ({ value: f.id, label: f.label }))}
+                      options={byLabel(data.contactFields).map((f) => ({ value: f.id, label: f.label }))}
                       className="w-48 py-1.5 text-sm"
                     />
                     <span className="text-xs text-muted">maps to</span>
@@ -175,7 +176,7 @@ export default function MatchingSetupAdmin(): JSX.Element {
                       value={pair.propertyFieldId ?? ''}
                       onChange={(id) => setPair(i, { propertyFieldId: id, propertyField: data.propertyFields.find((f) => f.id === id)?.name ?? '' })}
                       placeholder="— Select a field —"
-                      options={data.propertyFields.map((f) => ({ value: f.id, label: f.label }))}
+                      options={byLabel(data.propertyFields).map((f) => ({ value: f.id, label: f.label }))}
                       className="w-48 py-1.5 text-sm"
                     />
                     {isBedrooms && (

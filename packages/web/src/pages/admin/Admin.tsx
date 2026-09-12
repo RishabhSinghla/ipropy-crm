@@ -3,7 +3,7 @@ import { type JSX, lazy, Suspense } from 'react';
 import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {
   Activity, AppWindow, Blocks, Database, KeyRound, LayoutTemplate, Link2, MapPin,
-  Columns3, ListTree, Plug, Ruler, Settings2, Shield,  Sparkles, ToggleLeft, Users, Workflow,
+  ListTree, Plug, Ruler, Settings2, Shield, Sparkles, ToggleLeft, Users, Workflow,
   SlidersHorizontal,
 } from 'lucide-react';
 import { Spinner } from '../../components/ui';
@@ -24,7 +24,6 @@ const TeamMap = lazy(() => import('./TeamMap'));
 const ImportAdmin = lazy(() => import('./ImportAdmin'));
 const BrandAdmin = lazy(() => import('./BrandAdmin'));
 const HeaderTabsAdmin = lazy(() => import('./HeaderTabsAdmin'));
-const ViewsAdmin = lazy(() => import('./ViewsAdmin'));
 const MatchingSetupAdmin = lazy(() => import('./MatchingSetupAdmin'));
 const UnitMasterAdmin = lazy(() => import('./UnitMasterAdmin'));
 
@@ -49,7 +48,6 @@ const SECTIONS = [
       { path: 'modules', capability: 'admin.modules', label: 'Enable / Disable', icon: ToggleLeft, element: <ModuleManager /> },
       { path: 'fields', capability: 'admin.fields', label: 'Modules & Fields', icon: Blocks, element: <ModuleBuilder /> },
       { path: 'layouts', capability: 'admin.layouts', label: 'Layout Designer', icon: LayoutTemplate, element: <LayoutDesigner /> },
-      { path: 'views', capability: 'admin.layouts', label: 'List View Tabs', icon: Columns3, element: <ViewsAdmin /> },
       { path: 'header', capability: 'admin.layouts', label: 'Header Tabs', icon: AppWindow, element: <HeaderTabsAdmin /> },
       { path: 'picklists', capability: 'admin.picklists', label: 'Dropdowns', icon: ListTree, element: <PicklistManager /> },
     ],

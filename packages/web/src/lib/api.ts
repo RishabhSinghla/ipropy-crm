@@ -283,6 +283,29 @@ export interface SharedProperty {
   priceShared: boolean;
 }
 
+/**
+ * A set of units behind one public link.
+ *
+ * Each item is the same payload a single-property share returns, minus the
+ * things only a one-unit page uses. The server resolves `title` and `price`
+ * for the same reason it does there — the names this page would have guessed
+ * at are fields production deleted.
+ */
+export interface SharedMatches {
+  items: {
+    id: string;
+    title: string | null;
+    price: number | null;
+    priceShared: boolean;
+    fields: { name: string; label: string; uitype: string }[];
+    property: Record<string, unknown>;
+    photos: { id: string; url: string }[];
+  }[];
+  sharedAt: string;
+  /** Which module these records are, so the page can name them honestly. */
+  module: string;
+}
+
 export interface PropertyShareAdminConfig {
   fields: { name: string; label: string; uitype: string; visible: boolean }[];
   showPhotos: boolean;
@@ -391,6 +414,15 @@ export interface AiAssistantMessage {
   action?: AiAssistantAction;
   choices?: AiAssistantChoice[];
   results?: ListResult;
+  /*
+    What it looked up before answering.
+
+    Shown under the reply on purpose. An assistant that says "14 follow-ups are
+    overdue" is asking to be trusted; one that also shows it counted them is
+    showing its working — and a wrong answer becomes a wrong *step* somebody
+    can point at rather than a reason to stop believing the whole thing.
+  */
+  steps?: { tool: string; label: string }[];
 }
 
 export interface AiThreadSummary {
@@ -845,6 +877,30 @@ export const api = {
   clearMatchFeedback: (module: string, id: string, targetId: string) =>
     del(`/api/records/${module}/${id}/matches/${targetId}/feedback`),
   matchFeedbackList: (module: string, id: string) => get<{ targetId: string; decision: 'shortlisted' | 'not_suitable' | 'follow_up' }[]>(`/api/records/${module}/${id}/matches/feedback`),
+
+  /*
+    A matching somebody pinned, or null when it is running live.
+
+    Null is a real answer here, not a miss — most records have never had their
+    matching saved — so this is a 200 with a null body rather than a 404 the
+    caller would have to special-case.
+  */
+  matchSnapshot: (module: string, id: string) => get<{
+    entries: { targetId: string; score: number; matchedFields?: string[] }[];
+    filters: string[];
+    savedAt: string;
+    savedById: string | null;
+    savedByName: string;
+  } | null>(`/api/records/${module}/${id}/matches/snapshot`),
+  saveMatchSnapshot: (module: string, id: string, body: {
+    entries: { targetId: string; score: number; matchedFields?: string[] }[];
+    filters: string[];
+  }) => put(`/api/records/${module}/${id}/matches/snapshot`, body),
+  clearMatchSnapshot: (module: string, id: string) => del(`/api/records/${module}/${id}/matches/snapshot`),
+
+  /** A public link to the matches somebody ticked. Returns the token; the page builds the URL. */
+  shareMatches: (module: string, id: string, body: { targetModule: string; ids: string[]; label?: string }) =>
+    post<{ token: string; shared: number; withheld: number }>(`/api/records/${module}/${id}/matches/share`, body),
   exportTemplates: (module: string) => get<{ id: string; name: string; columns: { fieldId: string; header?: string }[]; filter: FilterGroup | null; isDefault: boolean }[]>(`/api/records/${module}/export/templates`),
   createExportTemplate: (module: string, data: Record<string, unknown>) => post<{ id: string }>(`/api/records/${module}/export/templates`, data),
   updateExportTemplate: (module: string, id: string, data: Record<string, unknown>) => patch(`/api/records/${module}/export/templates/${id}`, data),
@@ -855,7 +911,8 @@ export const api = {
     get<(CustomView & { count?: number; isActive?: boolean; isSystem?: boolean })[]>(
       `/api/views/${module}${qs({ withCounts, includeInactive })}`),
   reorderViews: (module: string, ids: string[]) => post(`/api/views/${module}/reorder`, { ids }),
-  duplicateView: (module: string, id: string) => post<{ id: string }>(`/api/views/${module}/${id}/duplicate`, {}),
+  /** Put me back on the built-in view by deleting my own version of it. */
+  resetView: (module: string, id: string) => del(`/api/views/${module}/${id}/override`),
   createView: (module: string, data: Record<string, unknown>) => post<{ id: string }>(`/api/views/${module}`, data),
   updateView: (module: string, id: string, data: Record<string, unknown>) => put(`/api/views/${module}/${id}`, data),
   deleteView: (module: string, id: string) => del(`/api/views/${module}/${id}`),
@@ -893,6 +950,18 @@ export const api = {
   sharing: () => get<{ defaults: Record<string, unknown>[]; rules: Record<string, unknown>[] }>('/api/admin/sharing'),
   saveSharingDefaults: (defaults: Record<string, string>) => put('/api/admin/sharing/defaults', { defaults }),
   propertyShareConfig: () => get<PropertyShareAdminConfig>('/api/admin/sharing/property-link'),
+  /*
+    What somebody outside the CRM may see of one module's records.
+
+    Per module now rather than properties-only: a matching tab shares contacts
+    as well as units, and that asks the same question of a different module.
+    The server decides what is even offered — a phone, an email or an owner is
+    refused before the list is drawn — and this is the admin's answer within
+    that.
+  */
+  shareLinkConfig: (module: string) => get<PropertyShareAdminConfig>(`/api/admin/sharing/link/${module}`),
+  saveShareLinkConfig: (module: string, body: { visibleFields: string[]; showPhotos: boolean }) =>
+    put<PropertyShareAdminConfig>(`/api/admin/sharing/link/${module}`, body),
   savePropertyShareConfig: (data: { visibleFields: string[]; showPhotos: boolean }) =>
     put<PropertyShareAdminConfig>('/api/admin/sharing/property-link', data),
   settings: (category?: string) => get<Record<string, unknown>[]>(`/api/admin/settings${qs({ category })}`),
@@ -976,7 +1045,7 @@ export const api = {
   callHistory: (id: string) => get<Record<string, unknown>[]>(`/api/telephony/calls/${id}/history`),
 
   // --- AI -----------------------------------------------------------------
-  aiStatus: () => get<{ available: boolean; message: string }>('/api/ai/status'),
+  aiStatus: () => get<{ available: boolean; message: string; speechToText?: boolean }>('/api/ai/status'),
   matchingFields: () => get<{ contactField: string; propertyField: string; contactLabel: string; propertyLabel: string }[]>('/api/ai/matching-fields'),
   scoreLead: (id: string) => post<Record<string, unknown>>(`/api/ai/score-lead/${id}`),
   analyseDeal: (id: string) => post<Record<string, unknown>>(`/api/ai/analyse-deal/${id}`),
@@ -1121,6 +1190,7 @@ export const api = {
     del<void>(`/api/records/${module}/${id}/share-links/${linkId}`),
   /** The public read. Deliberately not authenticated — a buyer has no account. */
   sharedProperty: (token: string) => get<SharedProperty>(`/api/public/share/${token}`),
+  sharedMatches: (token: string) => get<SharedMatches>(`/api/public/matches/${token}`),
   tags: () => get<{ id: string; name: string; color: string; usage_count: number }[]>('/api/tags'),
   importPreview: (module: string, file: File) => {
     const form = new FormData();

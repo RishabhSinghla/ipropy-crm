@@ -2,6 +2,7 @@ import { type JSX, useMemo, useState } from 'react';
 import { type FieldMeta, type FilterCondition, type FilterGroup, type FilterOperator, isFilterGroup, type ModuleMeta, OPERATOR_LABELS, operatorTakesValue, UITYPES } from '@ipropy/shared';
 import { Plus, Trash2, X } from 'lucide-react';
 import { badgeVars } from '../lib/color';
+import { fieldByKey } from '../lib/fields';
 import { cn } from '../lib/utils';
 import { FieldInput } from './FieldRenderer';
 import { Select } from './ui';
@@ -29,10 +30,27 @@ export function FilterBuilder({
   value: FilterGroup;
   onChange: (filter: FilterGroup) => void;
 }): JSX.Element {
-  const fields = [
-    ...module.fields.filter((f) => f.isActive && f.displayType !== 'hidden' && f.config.filterable !== false),
-    ...SYSTEM_FIELDS,
-  ];
+  /*
+    One entry per idea, in alphabetical order.
+
+    Two things were wrong with the old list. It offered **"Assigned To"
+    twice** — once as the module's own field and once as the `owner_id`
+    pseudo-field below, which are the same column wearing two names, so half
+    the time you picked the one that read the same and filtered the same and
+    you could not tell which you had. And it came out in `sequence`, the order
+    an admin arranged the *form* in, which is the right order on a form and no
+    order at all in a list of thirty you are scanning for one word.
+
+    So: drop a system field the module already has a real field for, then sort
+    by label. `localeCompare` rather than `<`, for the accented and non-Latin
+    labels this CRM carries.
+  */
+  const fields = useMemo(() => {
+    const own = module.fields.filter((f) => f.isActive && f.displayType !== 'hidden' && f.config.filterable !== false);
+    const covered = new Set(own.map((f) => f.columnName ?? f.name));
+    return [...own, ...SYSTEM_FIELDS.filter((f) => !covered.has(f.name))]
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [module.fields]);
 
   const update = (index: number, node: FilterCondition | FilterGroup): void => {
     const conditions = [...value.conditions];
@@ -131,13 +149,29 @@ function ConditionRow({
   condition: FilterCondition;
   onChange: (c: FilterCondition) => void;
 }): JSX.Element {
-  const field = fields.find((f) => f.name === condition.field) ?? fields[0];
+  /*
+    Resolve a saved condition by column as well as by name.
+
+    The list above drops a system pseudo-field the module already has a real
+    field for, so "Assigned To" appears once rather than twice — and the
+    built-in "My Leads" view stores its condition as `owner_id`, which is the
+    *column*. Matching on name alone therefore found nothing and fell through
+    to `fields[0]`, so opening that view in the editor showed "Alternate Phone"
+    where it should say Assigned To, and saving would have written that back.
+
+    Showing the module's own field for a saved `owner_id` is accurate and not a
+    quiet rewrite: `owner_id` is a system field in the query builder and
+    `assigned_to` carries `config.__record`, so both compile to the same
+    `r.owner_id`. Only an edit the user actually makes changes what is stored.
+  */
+  const field = fieldByKey(fields, condition.field) ?? fields[0];
   const operators = UITYPES[field.uitype]?.operators ?? ['equals'];
 
   return (
     <div className="grid flex-1 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)]">
       <Select
-        value={condition.field}
+        // The resolved field, not the raw stored key — see above.
+        value={field.name}
         onChange={(name) => {
           const next = fields.find((f) => f.name === name)!;
           onChange({ field: name, operator: defaultOperator(next), value: null });

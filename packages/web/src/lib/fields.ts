@@ -25,3 +25,26 @@ export function assignmentField(fields: FieldMeta[]): FieldMeta | undefined {
 export function fieldByKey(fields: FieldMeta[], key: string): FieldMeta | undefined {
   return fields.find((f) => f.name === key) ?? fields.find((f) => f.columnName === key);
 }
+
+/**
+ * Fields in alphabetical order by label, for anything that offers them as a
+ * list to pick from.
+ *
+ * They arrive in `sequence` — the order an admin arranged them on the form.
+ * That is the right order on a form, where you read top to bottom, and no
+ * order at all in a dropdown of forty where you are hunting for one word:
+ * "Lead Source" sat eleventh for no reason a reader could see. Alphabetical
+ * also makes type-ahead do what people expect from every other app — press
+ * "p" and land on the P's.
+ *
+ * Deliberately not applied to a *dropdown's values* (Lead Status, Category,
+ * and the rest). Those carry an order somebody chose in Admin → Dropdowns —
+ * New before Contacted before Site Visit Done — and alphabetising them would
+ * overrule a real setting with a rule of thumb.
+ *
+ * Copies rather than sorting in place: these arrays come from React Query's
+ * cache, and sorting one mutates state every other component is reading.
+ */
+export function byLabel<T extends { label: string }>(fields: readonly T[]): T[] {
+  return fields.slice().sort((a, b) => a.label.localeCompare(b.label));
+}

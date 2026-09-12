@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { columnIndex, unique, waitForRecords, fillRequiredFields, openRecordTab, inlineEditOn } from './helpers';
+import { columnIndex, unique, waitForRecords, fillRequiredFields, openRecordTab, inlineEditOn, searchList } from './helpers';
 
 /**
  * The journeys a salesperson actually performs. Each one is a path where a
@@ -45,7 +45,7 @@ test('creates a lead and finds it again in the list', async ({ page }) => {
 
   // And it is findable through search, which exercises the list query path.
   await page.goto('/leads');
-  await page.getByTestId('list-search').fill(surname);
+  await searchList(page, surname);
   // `visible=true` matters: ListView renders both a mobile card list and a
   // desktop table, so the name is in the DOM twice and only one is displayed.
   await expect(
@@ -127,7 +127,7 @@ test('inline-edits a text field on the record detail page', async ({ page, conte
   // an editor and what you type is still there after a reload. Any text field
   // demonstrates that; naming one only asserts on how this database is set up
   // today.
-  const triggers = page.locator('dd button[title="Click to edit"]:visible');
+  const triggers = page.locator('dd:visible').filter({ has: page.getByRole('button', { name: /^Change / }) });
   await expect(triggers.first()).toBeVisible({ timeout: 30_000 });
 
   let edited = false;

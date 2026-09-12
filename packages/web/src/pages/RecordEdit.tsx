@@ -56,15 +56,14 @@ export default function RecordEdit(): JSX.Element {
   );
 
   /**
-   * Everything mandatory that has an obvious answer, filled in already.
+   * Anything the URL or the metadata can answer, filled in already.
    *
-   * Picklist defaults and `default_value` come from metadata and are applied by
-   * the server. The one it cannot know is the owner: whoever is creating a lead
-   * is almost always the person who will work it, and making them pick
-   * themselves from a list on every single lead is pure friction.
+   * The assignee used to be set here too, as `{ owner_id: user.id }` — and it
+   * landed nowhere, because `owner_id` is the column and the field is named
+   * `assigned_to`. `RecordForm` resolves it by uitype now, in one place, for
+   * every way there is to add a record.
    */
   const initialValues = {
-    ...(isCreate && user ? { owner_id: user.id } : {}),
     ...defaultsFromMetadata(meta),
     ...queryDefaults,
   };

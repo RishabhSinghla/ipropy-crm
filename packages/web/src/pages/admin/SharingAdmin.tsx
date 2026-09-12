@@ -1,8 +1,8 @@
 import { type JSX, useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Eye, EyeOff, Images, KeyRound, Lock, Save, ShieldCheck, Unlock } from 'lucide-react';
+import { Eye, EyeOff, Globe, Images, KeyRound, Lock, Save, ShieldCheck, Unlock, Users } from 'lucide-react';
 import { api } from '../../lib/api';
-import { toast } from '../../lib/store';
+import { toast, useApp } from '../../lib/store';
 import { cn } from '../../lib/utils';
 import { Badge, Select, Skeleton, Spinner } from '../../components/ui';
 
@@ -48,14 +48,32 @@ export default function SharingAdmin(): JSX.Element {
 
   return (
     <div className="p-4 sm:p-6">
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight">Data Sharing</h1>
-          <p className="text-sm text-muted">
-            The organisation-wide default for each module. Roles widen this upward;
-            sharing rules open specific gaps sideways.
-          </p>
-        </div>
+      {/*
+        Two halves, and the split is the point of the screen.
+
+        This page answers two questions that have almost nothing to do with
+        each other: who **on your team** sees whose records, and what somebody
+        **with no account at all** sees when you send them a link. They were
+        stacked in one scroll with matching cards and a Save button at the top
+        that saved only the first of them — so the riskiest control on the page,
+        the one that decides what leaves the business, read as one more row of
+        settings.
+
+        They are now labelled by consequence rather than by mechanism: getting
+        the first wrong means a colleague sees too much, and getting the second
+        wrong means a stranger does.
+      */}
+      <div className="mb-5">
+        <h1 className="text-lg font-semibold tracking-tight">Data Sharing</h1>
+        <p className="text-sm text-muted">
+          Who sees what — inside your team, and outside it.
+        </p>
+      </div>
+
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <Users className="h-4 w-4 text-slate-400" />
+        <h2 className="text-sm font-semibold">Inside your team</h2>
+        <p className="text-xs text-muted">Which of each other&rsquo;s records your people can open.</p>
         <button onClick={() => void save()} disabled={!dirty || saving} className="btn-primary btn-sm ml-auto">
           {saving ? <Spinner className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />} Save
         </button>
@@ -106,7 +124,16 @@ export default function SharingAdmin(): JSX.Element {
         )}
       </div>
 
-      <PropertyLinkControls />
+      <div className="mb-2 mt-8 flex flex-wrap items-center gap-2">
+        <Globe className="h-4 w-4 text-slate-400" />
+        <h2 className="text-sm font-semibold">Outside the CRM</h2>
+        <p className="text-xs text-muted">
+          What a customer sees on a link you send them. They need no account, so anything ticked
+          here is readable by anyone who has the link.
+        </p>
+      </div>
+
+      <OutsideLinkControls />
 
       {rules.length > 0 && (
         <div className="card mt-4 overflow-hidden">
@@ -145,17 +172,35 @@ export default function SharingAdmin(): JSX.Element {
   );
 }
 
-/** Public buyer-link visibility is separate from colleague-to-colleague data sharing. */
-function PropertyLinkControls(): JSX.Element {
+/**
+ * What somebody with no account sees on a link you send them.
+ *
+ * Per module, because a matching tab shares contacts as well as units now and
+ * that asks the same question of a different record. It was properties-only,
+ * and the reason people could not be shared at all was that there was nowhere
+ * to answer this question for them.
+ *
+ * The list below is **not** every field. The server refuses to offer a mobile,
+ * an email, an owner or anything else that reads as identity or contact
+ * (`isShareable` in `core/sharing/propertyShare.ts`) — so those cannot be
+ * exposed by ticking the wrong box, and the worst an admin can do here is show
+ * a name they meant to keep back. That is a decision a business is entitled to
+ * make about its own records, and it has to be made on purpose: everything
+ * identifying starts off.
+ */
+function OutsideLinkControls(): JSX.Element {
   const queryClient = useQueryClient();
+  const { modules: allModules } = useApp();
+  const shareable = (allModules ?? []).filter((m) => m.isEntity);
+  const [moduleName, setModuleName] = useState('properties');
   const [visible, setVisible] = useState<string[]>([]);
   const [showPhotos, setShowPhotos] = useState(true);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['property-share-config'],
-    queryFn: () => api.propertyShareConfig(),
+    queryKey: ['share-config', moduleName],
+    queryFn: () => api.shareLinkConfig(moduleName),
   });
 
   useEffect(() => {
@@ -175,18 +220,27 @@ function PropertyLinkControls(): JSX.Element {
   const save = async (): Promise<void> => {
     setSaving(true);
     try {
-      await api.savePropertyShareConfig({ visibleFields: visible, showPhotos });
-      toast.success('Buyer link updated', 'New and existing links now use these visibility rules.');
+      await api.saveShareLinkConfig(moduleName, { visibleFields: visible, showPhotos });
+      toast.success('Link view updated', 'Every link already sent uses these rules from now on.');
       setDirty(false);
-      void queryClient.invalidateQueries({ queryKey: ['property-share-config'] });
+      void queryClient.invalidateQueries({ queryKey: ['share-config', moduleName] });
     } catch (err) {
-      toast.error('Could not save buyer-link controls', (err as Error).message);
+      toast.error('Could not save', (err as Error).message);
     } finally {
       setSaving(false);
     }
   };
 
-  const identifying = new Set(['name', 'project_name', 'tower', 'wing', 'unit_number', 'city', 'locality']);
+  /*
+    Fields that name or place the record. Flagged rather than blocked: a unit
+    number is how a buyer knows which floor they were shown, and a contact's
+    name is how a channel partner knows who to ring — both are legitimate to
+    share and neither should be switched on without noticing.
+  */
+  const identifying = new Set([
+    'name', 'full_name', 'project_name', 'tower', 'block_tower', 'wing',
+    'unit_number', 'unit_no', 'city', 'locality', 'preferred_locations', 'address',
+  ]);
 
   return (
     <div className="card mt-4 overflow-hidden">
@@ -195,16 +249,28 @@ function PropertyLinkControls(): JSX.Element {
           <div className="rounded-lg bg-emerald-50 p-2 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
             <ShieldCheck className="h-4 w-4" />
           </div>
-          <div>
-            <p className="text-sm font-semibold">Property links sent to buyers</p>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">Only what you tick leaves the CRM</p>
             <p className="text-xs text-muted">
-              Only checked details leave the CRM. Unit identity and location are private by default.
+              Phone numbers, email addresses and who owns the record are never offered here —
+              the server withholds them whatever is ticked. Anything that names or places a
+              record starts off.
             </p>
           </div>
         </div>
-        <button type="button" onClick={() => void save()} disabled={!dirty || saving} className="btn-primary btn-sm">
-          {saving ? <Spinner className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />} Save link view
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          {/* Which module's links these rules apply to. Both are shareable now;
+              each keeps its own answer. */}
+          <Select
+            value={moduleName}
+            onChange={(v) => { setModuleName(v); setDirty(false); }}
+            options={shareable.map((m) => ({ value: m.name, label: m.label }))}
+            className="w-40 py-1.5 text-sm"
+          />
+          <button type="button" onClick={() => void save()} disabled={!dirty || saving} className="btn-primary btn-sm">
+            {saving ? <Spinner className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />} Save
+          </button>
+        </div>
       </div>
 
       {isLoading || !data ? (
@@ -220,7 +286,7 @@ function PropertyLinkControls(): JSX.Element {
             />
             <Images className="h-4 w-4 text-slate-400" />
             <span className="min-w-0 flex-1">
-              <span className="block text-sm font-medium">Show property photos</span>
+              <span className="block text-sm font-medium">Show photos</span>
               <span className="block text-xs text-muted">Obvious blurred, dark and duplicate photos remain excluded automatically.</span>
             </span>
           </label>
@@ -270,8 +336,9 @@ function PropertyLinkControls(): JSX.Element {
           </div>
 
           <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-muted dark:bg-slate-900">
-            This rule applies immediately to every active property link, including links already sent.
-            Hidden values are removed by the server before the public page is built.
+            This applies immediately to every link already sent, not only to new ones. Hidden values
+            are removed by the server before the page is built, so they never reach the browser.
+            {visible.length === 0 && ' With nothing ticked, a link for these records answers “no longer available”.'}
           </p>
         </div>
       )}

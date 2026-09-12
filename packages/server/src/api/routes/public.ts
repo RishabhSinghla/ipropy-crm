@@ -10,7 +10,7 @@
  * webhooksRouter (see app.ts) — every handler decides its own visibility
  * instead of relying on requireAuth.
  */
-import { Router } from 'express';
+import { type Request, type Response, Router } from 'express';
 import { dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
@@ -20,7 +20,9 @@ import { NotFoundError } from '../../utils/errors.js';
 import { getDriver, getStorageSettings } from '../../core/storage/index.js';
 import { logger } from '../../utils/logger.js';
 import { recordShareView, resolveShareToken } from '../../core/sharing/shareLinks.js';
-import { getPropertyShareConfig, loadSharedProperty } from '../../core/sharing/propertyShare.js';
+import {
+  getShareConfig, loadSharedProperty, loadSharedRecord,
+} from '../../core/sharing/propertyShare.js';
 import { photoOrderBy } from '../../core/media/ordering.js';
 import { applyFileSecurityHeaders } from '../../core/media/serving.js';
 import { publicPropertyStatuses } from '../../core/settings/scoring.js';
@@ -778,6 +780,141 @@ publicRouter.get('/share/:token', asyncHandler(async (req, res) => {
 }));
 
 /**
+ * A set of units somebody picked off a matching tab.
+ *
+ * The same token machinery as a one-property link, and the same gate on what a
+ * visitor may read: every unit goes through `loadSharedProperty`, so the
+ * admin's "what a buyer sees" field list decides the content here exactly as it
+ * does there. A field switched off for share links is off on this page too,
+ * without this route knowing which fields those are.
+ *
+ * **What a visitor may read is the admin's answer, per module.** This was units
+ * only for a while, because a property's matching tab lists *people* and there
+ * was no field-visibility config for leads the way there is for properties — so
+ * a link to those would have published names and numbers to anyone the URL
+ * reached. That config exists for both modules now (Admin → Data Sharing), and
+ * the guard is the same one either way: `loadSharedRecord` returns only the
+ * fields an admin ticked, out of only the fields the server is willing to
+ * offer.
+ *
+ * The second half of that sentence is what actually protects a customer.
+ * `isShareable` refuses a phone, an email, an owner or anything matching
+ * `SENSITIVE_NAME` **before an admin ever sees the list**, so a mobile number
+ * cannot be exposed by ticking the wrong box. A name can — `full_name` is
+ * offered and withheld by default — which is a decision the business is
+ * entitled to make about its own contacts, and one it has to make on purpose.
+ *
+ * A `matches` link naming a module that is not shareable answers 404, like
+ * every other failure.
+ */
+publicRouter.get('/matches/:token', asyncHandler(async (req, res) => {
+  const link = await resolveShareToken(req.params.token);
+  if (!link || link.kind !== 'matches' || !link.payload) {
+    throw new NotFoundError('This link is no longer available');
+  }
+  const targetModule = link.payload.targetModule;
+  /*
+    An admin who has ticked nothing for this module has not set one up, and a
+    page of empty cards is worse than an honest 404 — it tells the recipient
+    there is something here and shows them none of it.
+  */
+  const shareConfig = await getShareConfig(targetModule).catch(() => null);
+  if (!shareConfig?.visibleFields.length) {
+    throw new NotFoundError('This link is no longer available');
+  }
+
+  const ids = link.payload.ids.slice(0, 50);
+
+  /*
+    Every unit's photos in one query, not one query per unit.
+
+    This route is unauthenticated and shares the `/api/public` budget of 300
+    requests a minute. A page of fifty units asking for its photos a unit at a
+    time is fifty round trips *plus* fifty for the units themselves — a hundred
+    database queries per request, which at that budget is thirty thousand a
+    minute from a single caller. The single-property route next door costs two.
+
+    `row_number()` is what keeps the per-unit cap: a bare LIMIT would take the
+    first eight photos across the whole set and leave most units with none.
+  */
+  const photosByRecord = new Map<string, { id: string }[]>();
+  if (shareConfig.showPhotos && ids.length) {
+    const { rows } = await db.query<{ id: string; record_id: string }>(
+      `SELECT id, record_id FROM (
+         SELECT id, record_id,
+                row_number() OVER (
+                  PARTITION BY record_id
+                  ORDER BY ${photoOrderBy('')}, ai_category NULLS LAST, created_at
+                ) AS n
+           FROM ipy_attachment
+          WHERE record_id = ANY($1::uuid[]) AND mime_type LIKE 'image/%'
+       ) ranked
+       WHERE n <= 8`,
+      [ids],
+    );
+    for (const row of rows) {
+      const list = photosByRecord.get(row.record_id) ?? [];
+      list.push({ id: row.id });
+      photosByRecord.set(row.record_id, list);
+    }
+  }
+
+  const items: unknown[] = [];
+  for (const id of ids) {
+    const shared = await loadSharedRecord(targetModule, id);
+    // A record deleted since the link was made drops out rather than taking the
+    // whole page down with it — the other five are still what was sent.
+    if (!shared) continue;
+
+    const photos = shared.showPhotos ? (photosByRecord.get(id) ?? []) : [];
+
+    items.push({
+      id,
+      title: shared.title,
+      price: shared.price,
+      priceShared: shared.priceShared,
+      fields: shared.fields,
+      property: shared.property,
+      photos: photos.map((p) => ({ id: p.id, url: `/api/public/matches/${link.token}/media/${p.id}` })),
+    });
+  }
+
+  if (!items.length) throw new NotFoundError('This link is no longer available');
+
+  void recordShareView(link.id).catch((err) => logger.debug({ err }, 'share: view count failed'));
+
+  /* The module goes out too. A unit with no name can be headed "3 BHK Builder
+     Floor"; a contact with their name withheld cannot, and a page of cards all
+     reading "Property" is worse than one that says what it is. */
+  res.json({ items, sharedAt: link.createdAt, module: targetModule });
+}));
+
+/**
+ * An image from a shared matching.
+ *
+ * Checked against the ids on the link itself, so a valid link for one set
+ * cannot be used to pull a photo of a unit that is not in it by swapping the
+ * attachment id — the same rule the one-property media route enforces, against
+ * a list instead of a single record.
+ */
+publicRouter.get('/matches/:token/media/:attachmentId', asyncHandler(async (req, res) => {
+  const link = await resolveShareToken(req.params.token);
+  if (!link || link.kind !== 'matches' || !link.payload) throw new NotFoundError('File not found');
+  const shareConfig = await getShareConfig(link.payload.targetModule).catch(() => null);
+  if (!shareConfig?.showPhotos) throw new NotFoundError('File not found');
+
+  const attachment = await db.queryOne<{ record_id: string }>(
+    `SELECT record_id FROM ipy_attachment WHERE id = $1 AND mime_type LIKE 'image/%'`,
+    [req.params.attachmentId],
+  );
+  if (!attachment || !link.payload.ids.includes(attachment.record_id)) {
+    throw new NotFoundError('File not found');
+  }
+
+  await serveSharedPhoto(req, res, req.params.attachmentId, link.payload.ids, link.payload.targetModule);
+}));
+
+/**
  * An image from a shared property.
  *
  * Authorised by the token in the path and checked against the attachment's own
@@ -787,7 +924,30 @@ publicRouter.get('/share/:token', asyncHandler(async (req, res) => {
 publicRouter.get('/share/:token/media/:attachmentId', asyncHandler(async (req, res) => {
   const link = await resolveShareToken(req.params.token);
   if (!link) throw new NotFoundError('File not found');
-  const shareConfig = await getPropertyShareConfig();
+  await serveSharedPhoto(req, res, req.params.attachmentId, [link.recordId]);
+}));
+
+/**
+ * A photo from a share link, whichever kind of link it is.
+ *
+ * `allowedRecordIds` is what authorises it: a one-property link passes the one
+ * record it opens, a matching link passes the units on it. Either way an
+ * attachment id belonging to a record not on that list is a 404, so a valid
+ * token for one set cannot be used to pull a photo from another by swapping
+ * the id.
+ *
+ * Extracted rather than copied when the matching link arrived. The interesting
+ * half of this function is the fallback below — the branch a hostile file
+ * lands in — and a second copy of that is a second place to get it wrong.
+ */
+async function serveSharedPhoto(
+  req: Request, res: Response, attachmentId: string, allowedRecordIds: string[],
+  /* Which module's "may a visitor see photos" switch applies. A matching link
+     can point at either module now, and checking the properties one for a
+     link full of contacts would be reading the wrong setting. */
+  moduleName = 'properties',
+): Promise<void> {
+  const shareConfig = await getShareConfig(moduleName);
   if (!shareConfig.showPhotos) throw new NotFoundError('File not found');
 
   const file = await db.queryOne<{
@@ -795,8 +955,8 @@ publicRouter.get('/share/:token/media/:attachmentId', asyncHandler(async (req, r
   }>(
     `SELECT storage_key, mime_type, variants
        FROM ipy_attachment
-      WHERE id = $1 AND record_id = $2 AND mime_type LIKE 'image/%'`,
-    [req.params.attachmentId, link.recordId],
+      WHERE id = $1 AND record_id = ANY($2::uuid[]) AND mime_type LIKE 'image/%'`,
+    [attachmentId, allowedRecordIds],
   );
   if (!file) throw new NotFoundError('File not found');
 
@@ -845,12 +1005,12 @@ publicRouter.get('/share/:token/media/:attachmentId', asyncHandler(async (req, r
       one fails to decode and arrives here, where it used to be echoed back with
       its own declared mime type. So the guard matters more here than anywhere.
     */
-    logger.debug({ err, id: req.params.attachmentId }, 'shared media: could not shrink, sending the original');
+    logger.debug({ err, id: attachmentId }, 'shared media: could not shrink, sending the original');
     applyFileSecurityHeaders(res, file.mime_type, 'photo', false);
     res.setHeader('Cache-Control', 'private, no-store');
     res.send(data);
   }
-}));
+}
 
 // ---------------------------------------------------------------------------
 // The Android companion app

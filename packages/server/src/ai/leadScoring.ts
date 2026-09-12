@@ -294,11 +294,21 @@ export async function scoreLead(recordId: string, opts: { persist?: boolean } = 
       recordId,
       module: 'leads',
       kind: 'lead_score',
-      title: `Lead score ${result.score}/100 (${result.temperature})`,
+      title: `${result.temperature} lead · ${result.score}/100`,
+      /*
+        Written as sentences, not as a labelled form.
+
+        It read "**Why:** a; b; c" — three headings and a run of
+        semicolons, which is a data structure printed on screen rather than
+        something a person reads before picking up the phone. Same facts, laid
+        out the way somebody would say them.
+      */
       body: [
-        result.reasons.length ? `**Why:** ${result.reasons.join('; ')}` : '',
-        result.risks.length ? `**Risks:** ${result.risks.join('; ')}` : '',
-        result.recommendedActions.length ? `**Do next:** ${result.recommendedActions.join('; ')}` : '',
+        result.reasons.length ? result.reasons.map((r) => `- ${r}`).join('\n') : '',
+        result.risks.length ? `**Watch out:**\n${result.risks.map((r) => `- ${r}`).join('\n')}` : '',
+        result.recommendedActions.length
+          ? `**Do next:**\n${result.recommendedActions.map((a) => `- ${a}`).join('\n')}`
+          : '',
       ].filter(Boolean).join('\n\n'),
       data: { breakdown: result.breakdown, actions: result.recommendedActions },
       score: result.score,
@@ -355,13 +365,19 @@ Component breakdown: ${JSON.stringify(rules.breakdown)}
 
 Adjust the score only if the qualitative signals justify it — stay within ±20 of the baseline unless something in the notes or conversation clearly contradicts it (for example the buyer says they already purchased, or explicitly commits to booking this week).
 
+Write every string below in plain, everyday English — the way you would say it
+out loud to a colleague. Short words, short sentences, no CRM jargon. Say "they
+have not picked up in three tries", not "low engagement across outbound
+touchpoints". Never use: engagement, pipeline, lifecycle, touchpoint, leverage,
+optimise, actionable, stakeholder, utilise, nurture.
+
 Return JSON:
 {
   "score": <integer 1-99>,
   "temperature": "Hot" | "Warm" | "Cold",
-  "reasons": [<up to 5 short, specific, evidence-based strings>],
-  "risks": [<up to 4 short strings>],
-  "recommendedActions": [<up to 4 concrete next actions a sales rep should take, each one sentence>],
+  "reasons": [<up to 4 short plain-English strings saying why, each pointing at a real fact above>],
+  "risks": [<up to 3 short plain-English strings; leave empty if nothing is actually worrying>],
+  "recommendedActions": [<up to 3 concrete things to do next, each a short sentence starting with a verb>],
   "confidence": <0-1>
 }`;
 

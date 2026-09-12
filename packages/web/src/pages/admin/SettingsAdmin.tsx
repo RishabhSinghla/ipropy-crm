@@ -25,9 +25,9 @@
  * opens everything it matches, so nothing is harder to find than before,
  * merely quieter until wanted.
  */
-import { type JSX, type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type JSX, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronRight, RotateCcw, Save, Search, SlidersHorizontal } from 'lucide-react';
+import { RotateCcw, Save, Search, SlidersHorizontal } from 'lucide-react';
 import { api } from '../../lib/api';
 import { toast } from '../../lib/store';
 import { cn } from '../../lib/utils';
@@ -42,7 +42,27 @@ interface Setting {
 interface Group { id: string; title: string; blurb: string; rows: Setting[] }
 
 /** Edited on their own screens; showing them twice invites them to disagree. */
-const OWNED_ELSEWHERE = new Set(['brand', 'social', 'branding']);
+const OWNED_ELSEWHERE = new Set(['brand', 'social', 'branding', 'matching']);
+
+/**
+ * A readable name for a setting whose row does not carry one.
+ *
+ * This page renders whatever is in the settings table, which is the whole
+ * point of it — add a row in a migration and it appears with no React and no
+ * release. The cost is that a row saved by some other screen without a label
+ * used to render as its own key: an administrator opening Settings was shown
+ * `matching.area_grace_percent` sitting among their registered address, which
+ * is not something anybody can make a decision about.
+ *
+ * The categories fixed themselves (migration 137). This is the guard for the
+ * next one: drop the prefix, split on the separators, and give it capitals. It
+ * will never be as good as a written label, and it is always better than a key.
+ */
+function readableKey(key: string): string {
+  const tail = key.includes('.') ? key.slice(key.indexOf('.') + 1) : key;
+  const words = tail.replace(/[._-]+/g, ' ').trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
 
 /**
  * Order and naming, chosen so the things somebody actually opens this page for
@@ -55,6 +75,12 @@ const GROUPS: { id: string; title: string; blurb: string }[] = [
   { id: 'scoring', title: 'Lead scoring', blurb: 'The numbers behind Hot, Warm and Cold, and how closely a property must fit a buyer.' },
   { id: 'inventory', title: 'Inventory', blurb: 'Rules for holding and booking units.' },
   { id: 'website', title: 'Public website', blurb: 'What visitors to your site can see.' },
+  {
+    id: 'interface',
+    title: 'How the CRM behaves',
+    blurb: 'What happens when somebody clicks a row or a value. Nothing here changes your data — '
+      + 'only how it is reached.',
+  },
   { id: 'sharing', title: 'Share links', blurb: 'What a buyer sees when you send them a property.' },
   { id: 'whatsapp', title: 'WhatsApp', blurb: 'Messaging rules.' },
   { id: 'telephony', title: 'Calls', blurb: 'Call recording.' },
@@ -132,7 +158,16 @@ export default function SettingsAdmin(): JSX.Element {
   const grouped = useMemo(() => {
     const known = new Set(GROUPS.map((g) => g.id));
     const extra = [...new Set(settings.map((s) => s.category))].filter((c) => !known.has(c));
-    const order = [...GROUPS, ...extra.map((id) => ({ id, title: id, blurb: '' }))];
+    /*
+      A category this screen was not written knowing about still gets a title
+      somebody can read. It used to be shown as its own id — the rail said
+      "companion" in lower case beside "Your business" and "How you sound" —
+      which is the same raw-key problem the settings themselves had.
+    */
+    const order = [
+      ...GROUPS,
+      ...extra.map((id) => ({ id, title: readableKey(id), blurb: '' })),
+    ];
     return order
       .map((g) => ({ ...g, rows: settings.filter((s) => s.category === g.id && matches(s)) }))
       .filter((g) => g.rows.length);
@@ -151,7 +186,22 @@ export default function SettingsAdmin(): JSX.Element {
           <h3 className="text-sm font-semibold">{g.title}</h3>
           {g.blurb && <p className="mt-0.5 text-xs text-muted">{g.blurb}</p>}
         </div>
-        <div className="divide-y divide-slate-100 dark:divide-slate-800">
+        {/*
+          Two columns of compact fields, not a stack of full-width rows.
+
+          Every setting used to be its own row with the name pushed left and
+          the control pushed right, so "Default Currency" and "INR" sat at
+          opposite ends of a 40rem card with nothing between them — the same
+          "the box is too big" this CRM already fixed on the record Overview.
+          A page of fourteen settings ran three screens.
+
+          The address block below was always laid out the right way, label
+          above control, two to a line; this is the rest of the page agreeing
+          with it. A setting that genuinely needs the width — business hours,
+          the address grid, a model id, a paragraph of house style — spans
+          both columns and says so itself.
+        */}
+        <div className="grid gap-x-6 p-4 sm:grid-cols-2">
           {g.rows.map((s) => (
             <Row
               key={s.key}
@@ -203,8 +253,28 @@ export default function SettingsAdmin(): JSX.Element {
 
       {grouped.length > 0 && (
         <>
-          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 p-1.5 dark:border-slate-700 dark:bg-slate-900" role="tablist" aria-label="Settings categories">
-            <div className="flex min-w-max gap-1">
+          {/*
+            The categories run down the side, not across the top.
+
+            They were a single scrolling strip, and there are fourteen of them:
+            on the width this panel actually gets — the admin area already
+            spends 14rem on its own rail — the last four sat off the right edge
+            behind a scrollbar the shell hides, so "Calls", "AI" and "How you
+            sound" simply could not be found. A strip that scrolls is a menu
+            that hides items, and a settings screen is the worst place for one.
+
+            Down the side every category is visible at once and each gets a
+            whole line, so nothing is truncated. Below `md` it becomes a
+            wrapping set of chips rather than a scrolling one — wrapping costs
+            a row of height and hides nothing.
+          */}
+          <div className="flex flex-col gap-4 md:flex-row md:items-start">
+            <div
+              role="tablist"
+              aria-label="Settings categories"
+              aria-orientation="vertical"
+              className="flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1.5 md:w-56 md:shrink-0 md:flex-col md:flex-nowrap dark:border-slate-700 dark:bg-slate-900"
+            >
               {grouped.map((group) => (
                 <button
                   key={group.id}
@@ -213,19 +283,24 @@ export default function SettingsAdmin(): JSX.Element {
                   aria-selected={activeGroup === group.id}
                   onClick={() => setActiveGroup(group.id)}
                   className={cn(
-                    'rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                    'rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors md:w-full',
                     activeGroup === group.id
                       ? 'bg-white text-brand-700 shadow-sm dark:bg-slate-800 dark:text-brand-300'
                       : 'text-muted hover:bg-white/70 hover:text-slate-800 dark:hover:bg-slate-800/70 dark:hover:text-slate-100',
                   )}
                 >
-                  {group.title}
+                  <span className="flex items-baseline justify-between gap-2">
+                    <span className="min-w-0 truncate">{group.title}</span>
+                    {/* How much is in there, so an empty-looking category is
+                        distinguishable from one you have not opened. */}
+                    <span className="shrink-0 text-2xs text-muted tnum">{group.rows.length}</span>
+                  </span>
                 </button>
               ))}
             </div>
-          </div>
-          <div role="tabpanel" className="space-y-3">
-            {grouped.filter((group) => group.id === activeGroup).map(renderGroup)}
+            <div role="tabpanel" className="min-w-0 flex-1 space-y-3">
+              {grouped.filter((group) => group.id === activeGroup).map(renderGroup)}
+            </div>
           </div>
         </>
       )}
@@ -247,209 +322,6 @@ export default function SettingsAdmin(): JSX.Element {
         </div>
       )}
     </div>
-  );
-}
-
-interface PeekPair { label: string; value: string }
-const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-
-/** A switch that is off is information too, so booleans read as words. */
-const onOff = (v: unknown): string | null => (typeof v === 'boolean' ? (v ? 'On' : 'Off') : null);
-
-/** A phrase long enough to wrap the row is cut short rather than spilled. */
-const glance = (v: unknown, max = 44): string | null => {
-  if (typeof v !== 'string') return null;
-  const t = v.trim();
-  if (!t) return null;
-  return t.length > max ? `${t.slice(0, max - 1).trimEnd()}…` : t;
-};
-
-const withDays = (v: unknown): string | null => (typeof v === 'number' ? `${v} days` : null);
-const withHours = (v: unknown): string | null => (typeof v === 'number' ? `${v} hours` : null);
-const withMinutes = (v: unknown): string | null => (typeof v === 'number' ? `${v} min` : null);
-
-/** The day the desk is shut, when there is exactly one. */
-const weekOff = (v: unknown): string | null => {
-  const days = (v as { days?: unknown } | null)?.days;
-  if (!Array.isArray(days) || days.length === 0) return null;
-  const off = DAYS.filter((d) => !days.includes(d.n));
-  return off.length === 1 ? DAY_NAMES[off[0].n] : null;
-};
-
-/** Opening hours as a shop door would write them. */
-const hoursSpan = (v: unknown): string | null => {
-  const h = (v ?? {}) as { start?: string; end?: string };
-  return h.start && h.end ? `${h.start}–${h.end}` : null;
-};
-
-const keep = (pairs: (PeekPair | null)[]): PeekPair[] =>
-  pairs.filter((p): p is PeekPair => p !== null);
-
-/** Whatever a value says in one breath — for categories this screen was not written knowing. */
-function plainValue(v: unknown): string | null {
-  if (typeof v === 'boolean') return v ? 'On' : 'Off';
-  if (typeof v === 'number') return String(v);
-  if (isStringList(v)) return v.join(', ');
-  if (typeof v === 'string') return glance(v);
-  return null;
-}
-
-/**
- * Which of a group's values are worth a glance, and what to call them.
- *
- * Known groups get the two or three settings that describe the group's
- * current behaviour — the currency the documents carry, the day the desk is
- * shut, whether the AI may answer for itself. A category this screen was
- * not written knowing falls back to whatever its rows say plainly.
- */
-function peekPairs(id: string, rows: Setting[], draft: Record<string, unknown>): PeekPair[] {
-  // The draft when there is one, so a peek matches what reopening the group
-  // would show — not the last thing that was saved.
-  const current = (key: string): unknown => {
-    const s = rows.find((r) => r.key === key);
-    if (!s) return undefined;
-    return s.key in draft ? draft[s.key] : s.value;
-  };
-  const pair = (label: string, v: unknown, fmt?: (x: unknown) => string | null): PeekPair | null => {
-    const value = fmt ? fmt(v) : plainValue(v);
-    return value ? { label, value } : null;
-  };
-
-  switch (id) {
-    case 'general':
-      return keep([
-        pair('Currency', current('org.currency')),
-        pair('Week off', current('business_hours'), weekOff),
-        pair('Hours', current('business_hours'), hoursSpan),
-      ]);
-    case 'sales':
-      return keep([
-        pair('Auto-assign', current('leads.auto_assign')),
-        pair('Duplicate window', current('leads.duplicate_window_days'), withDays),
-      ]);
-    case 'scoring':
-      return keep([
-        pair('Hot at', current('scoring.hot_at')),
-        pair('Warm at', current('scoring.warm_at')),
-        pair('Match floor', current('scoring.match_floor')),
-      ]);
-    case 'inventory':
-      return keep([
-        pair('Unit holds', current('inventory.default_hold_days'), withDays),
-        pair('Overbooking', current('inventory.allow_overbooking')),
-      ]);
-    case 'website':
-      return keep([pair('Visible statuses', current('website.public_statuses'))]);
-    case 'sharing': {
-      const link = (current('sharing.property_link') ?? null) as { visibleFields?: unknown; showPhotos?: unknown } | null;
-      return keep([
-        pair('Photos', link?.showPhotos, onOff),
-        pair('Fields shown', link?.visibleFields, (x) => (Array.isArray(x) && x.length > 0 ? String(x.length) : null)),
-      ]);
-    }
-    case 'whatsapp':
-      return keep([pair('Reply window', current('whatsapp.session_window_hours'), withHours)]);
-    case 'telephony':
-      // Masking used to be summarised here. It was never read by anything, and
-      // number visibility is now a field permission per profile — Roles &
-      // Profiles → Field permissions → Owner only. Migration 099 has the why.
-      return keep([
-        pair('Recording', current('telephony.record_calls')),
-      ]);
-    case 'ai':
-      return keep([
-        pair('WhatsApp replies', current('ai.auto_reply_whatsapp')),
-        pair('Call analysis', current('ai.call_analysis')),
-        pair('Daily digest', current('ai.daily_digest')),
-      ]);
-    case 'ai_features': {
-      // One switch each, so the honest glance is a count rather than nine Ons and Offs.
-      const switches = rows.filter((r) => typeof r.value === 'boolean');
-      if (!switches.length) return [];
-      const on = switches.filter((r) => (r.key in draft ? draft[r.key] : r.value)).length;
-      return [{ label: 'Switched on', value: `${on} of ${switches.length}` }];
-    }
-    case 'ai_models':
-      return [{ label: 'Models set', value: String(rows.length) }];
-    case 'team_location': {
-      const enabled = current('team_location.enabled');
-      const out = keep([pair('Tracking', enabled)]);
-      if (enabled) {
-        const every = pair('Every', current('team_location.every_minutes'), withMinutes);
-        if (every) out.push(every);
-      }
-      return out;
-    }
-    case 'house_style':
-      return keep([
-        pair('Captions', current('house_style.caption_tone'), (x) => glance(x, 40)),
-        pair('Voiceover', current('house_style.voice_language'), (x) => glance(x, 40)),
-      ]);
-    default:
-      return rows
-        .flatMap((s) => {
-          const value = plainValue(s.key in draft ? draft[s.key] : s.value);
-          return value ? [{ label: s.label ?? s.key, value }] : [];
-        })
-        .slice(0, 2);
-  }
-}
-
-/** The peek as one muted line, or nothing when the group has nothing to say. */
-function peekLine(id: string, rows: Setting[], draft: Record<string, unknown>): string | null {
-  const pairs = peekPairs(id, rows, draft);
-  return pairs.length ? pairs.map((p) => `${p.label}: ${p.value}`).join(' · ') : null;
-}
-
-/**
- * One group as one row.
- *
- * Shut, it answers three questions without being opened: what is this, what
- * is it for, and what does it currently say. Open, it is the group's own
- * form, exactly as it has always been.
- */
-function GroupCard({ group, peek, open, changed, onToggle, children }: {
-  group: Group; peek: string | null; open: boolean; changed: number;
-  onToggle: () => void; children: ReactNode;
-}): JSX.Element {
-  return (
-    <section className="card overflow-hidden">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={onToggle}
-        className="flex w-full items-start gap-3 p-4 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
-      >
-        <ChevronRight
-          aria-hidden
-          className={cn(
-            'mt-0.5 h-4 w-4 shrink-0 text-slate-400 transition-transform',
-            open && 'rotate-90',
-          )}
-        />
-        <span className="min-w-0 flex-1">
-          <span className="flex flex-wrap items-center gap-2 text-sm font-semibold">
-            {group.title}
-            {/* Unsaved work inside a shut group would otherwise be invisible. */}
-            {changed > 0 && (
-              <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-2xs font-normal text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-                {changed} changed
-              </span>
-            )}
-          </span>
-          {group.blurb && <span className="mt-0.5 block text-xs font-normal text-muted">{group.blurb}</span>}
-          {/* Only on a shut row: when the group is open its values are right there below. */}
-          {!open && peek && <span className="mt-1 block truncate text-2xs text-muted">{peek}</span>}
-        </span>
-        <span className="shrink-0 text-2xs text-muted tnum">{group.rows.length}</span>
-      </button>
-
-      {open && (
-        <div className="border-t border-slate-100 px-4 pb-1 dark:border-slate-800">
-          {children}
-        </div>
-      )}
-    </section>
   );
 }
 
@@ -480,14 +352,29 @@ function Row({ setting, value, changed, onChange, onReset }: {
   const controlId = `setting-${setting.key.replace(/[^a-zA-Z0-9]/g, '-')}`;
   const Name = ownsItsLabel ? 'p' : 'label';
 
+  /*
+    A switch reads beside its name, and takes the whole row.
+
+    Beside, because the control is the width of a thumb and stacking it under a
+    label wastes the line it sits on. The whole row, because these are the
+    settings that carry a paragraph explaining what turning them off does — in
+    a half-width column that paragraph wrapped to eight lines and left the
+    field next to it floating against a column of text.
+  */
+  const isSwitch = typeof setting.value === 'boolean';
+
   return (
-    <div className={cn('py-4', wide ? 'space-y-3' : 'flex items-start gap-6')}>
-      <div className="min-w-0 flex-1">
+    <div className={cn('min-w-0 py-3', (wide || isSwitch) && 'sm:col-span-2')}>
+      <div className={cn(isSwitch && 'flex items-start justify-between gap-4')}>
         <Name
           {...(ownsItsLabel ? {} : { htmlFor: controlId })}
-          className={cn('flex items-center gap-2 text-sm font-medium', !ownsItsLabel && 'cursor-pointer')}
+          className={cn(
+            'flex items-center gap-2 text-sm font-medium',
+            !ownsItsLabel && 'cursor-pointer',
+            !isSwitch && 'mb-1',
+          )}
         >
-          {setting.label ?? setting.key}
+          {setting.label ?? readableKey(setting.key)}
           {changed && (
             <button
               onClick={onReset}
@@ -498,11 +385,20 @@ function Row({ setting, value, changed, onChange, onReset }: {
             </button>
           )}
         </Name>
-        {setting.description && <p className="mt-0.5 text-xs text-muted">{setting.description}</p>}
+        <div className={cn(isSwitch && 'shrink-0 pt-0.5')}>
+          <Control setting={setting} value={value} onChange={onChange} id={ownsItsLabel ? undefined : controlId} />
+        </div>
       </div>
-      <div className={cn(wide ? '' : 'shrink-0')}>
-        <Control setting={setting} value={value} onChange={onChange} id={ownsItsLabel ? undefined : controlId} />
-      </div>
+      {/*
+        The explanation goes *under* the control, not between the name and it.
+
+        Above, a three-line paragraph pushed the box it was describing down the
+        screen and made every switch row as tall as a paragraph — so the page
+        read as prose with controls buried in it rather than as a form.
+      */}
+      {setting.description && (
+        <p className="mt-1 text-xs leading-snug text-muted">{setting.description}</p>
+      )}
     </div>
   );
 }
@@ -629,7 +525,7 @@ function Control({ setting, value, onChange, id }: {
   }
 
   if (typeof setting.value === 'boolean') {
-    return <Toggle checked={Boolean(value)} onChange={onChange} ariaLabel={setting.label ?? setting.key} />;
+    return <Toggle checked={Boolean(value)} onChange={onChange} ariaLabel={setting.label ?? readableKey(setting.key)} />;
   }
   if (typeof setting.value === 'number') {
     return (

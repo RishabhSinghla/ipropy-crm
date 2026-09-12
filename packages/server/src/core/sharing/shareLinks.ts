@@ -43,6 +43,16 @@ export interface ShareLink {
   revokedAt: Date | null;
   viewCount: number;
   lastViewedAt: Date | null;
+  /*
+    What this link shows: one record, or a set of matches picked off a record's
+    matching tab.
+
+    'record' is the default and what every link issued before migration 136 is,
+    so nothing already sent changes meaning.
+  */
+  kind: 'record' | 'matches';
+  /** For a 'matches' link: `{ targetModule, ids }`. Null on a record link. */
+  payload: { targetModule: string; ids: string[] } | null;
 }
 
 interface Row {
@@ -56,10 +66,12 @@ interface Row {
   revoked_at: Date | null;
   view_count: number;
   last_viewed_at: Date | null;
+  kind: 'record' | 'matches';
+  payload: { targetModule: string; ids: string[] } | null;
 }
 
 const COLUMNS = `id, record_id, token, label, created_by, created_at,
-                 expires_at, revoked_at, view_count, last_viewed_at`;
+                 expires_at, revoked_at, view_count, last_viewed_at, kind, payload`;
 
 function toLink(row: Row): ShareLink {
   return {
@@ -73,12 +85,17 @@ function toLink(row: Row): ShareLink {
     revokedAt: row.revoked_at,
     viewCount: row.view_count,
     lastViewedAt: row.last_viewed_at,
+    kind: row.kind,
+    payload: row.payload,
   };
 }
 
 export interface CreateShareInput {
   recordId: string;
   userId: string;
+  /** Omitted means a plain one-record link, which is what most of them are. */
+  kind?: 'record' | 'matches';
+  payload?: { targetModule: string; ids: string[] } | null;
   /** Who it is going to — the sender's own note, never shown to the visitor. */
   label?: string | null;
   expiresAt?: Date | null;
@@ -94,10 +111,14 @@ export interface CreateShareInput {
  */
 export async function createShareLink(input: CreateShareInput, conn: Tx = db): Promise<ShareLink> {
   const row = await conn.queryOne<Row>(
-    `INSERT INTO ipy_share_link (record_id, token, label, created_by, expires_at)
-     VALUES ($1,$2,$3,$4,$5)
+    `INSERT INTO ipy_share_link (record_id, token, label, created_by, expires_at, kind, payload)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)
      RETURNING ${COLUMNS}`,
-    [input.recordId, mintToken(), input.label?.trim() || null, input.userId, input.expiresAt ?? null],
+    [
+      input.recordId, mintToken(), input.label?.trim() || null, input.userId, input.expiresAt ?? null,
+      input.kind ?? 'record',
+      input.payload ? JSON.stringify(input.payload) : null,
+    ],
   );
   logger.info({ recordId: input.recordId, linkId: row!.id }, 'share: link created');
   return toLink(row!);

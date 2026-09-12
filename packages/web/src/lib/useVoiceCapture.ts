@@ -17,15 +17,70 @@ export interface VoiceCapture {
   recording: boolean;
   busy: boolean;
   supported: boolean;
+  /** What the browser has heard so far, while it is still listening. */
+  interim: string;
   /** Start, or stop and hand the recording to `onRecorded`. */
   toggle: () => void;
   /** Stop without submitting, used when its popup is dismissed. */
   cancel: () => void;
 }
 
+/*
+  Chrome's own recogniser, when there is no transcription service to post to.
+
+  Whisper is the better ear for this team — they speak Hinglish and write it in
+  Latin script, and Chrome's recogniser is poor at that — so the recording path
+  above stays the default *when a key is configured*. Without one the mic
+  recorded, posted, and came back "Speech-to-text is not configured": a button
+  that looks like it works and never does, which is how it has been on
+  production all along.
+
+  So this is the floor. It is free, needs no key, runs on the device, and shows
+  the words as they are said, which the recording path cannot do at all. Not
+  every browser has it — Firefox does not — and there the recording path is
+  still tried, which at least produces an honest error about a missing key
+  rather than silence.
+*/
+type SpeechCtor = new () => {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  start: () => void;
+  stop: () => void;
+  onresult: ((e: { resultIndex: number; results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null;
+  onerror: ((e: { error: string }) => void) | null;
+  onend: (() => void) | null;
+};
+
+function speechRecognition(): SpeechCtor | null {
+  const w = window as unknown as { SpeechRecognition?: SpeechCtor; webkitSpeechRecognition?: SpeechCtor };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+}
+
 export function useVoiceCapture(
   onRecorded: (audio: Blob) => Promise<void> | void,
+  opts: {
+    /*
+      Called with text the browser recognised itself, instead of `onRecorded`.
+      Only used on the fallback path — the caller puts it straight in the box.
+    */
+    onTranscript?: (text: string) => void;
+    /** False when no transcription service is configured, which turns the fallback on. */
+    serverTranscription?: boolean;
+  } = {},
 ): VoiceCapture {
+  const [interim, setInterim] = useState('');
+  const recogniser = useRef<InstanceType<SpeechCtor> | null>(null);
+  const heard = useRef('');
+  const onTranscript = useRef(opts.onTranscript);
+  onTranscript.current = opts.onTranscript;
+
+  // Only when there is nowhere better to send it. `undefined` means the caller
+  // has not said, and the old behaviour — post to the server — is the safer
+  // default for a caller that has not been updated.
+  const useBrowser = opts.serverTranscription === false
+    && Boolean(speechRecognition())
+    && Boolean(opts.onTranscript);
   const [recording, setRecording] = useState(false);
   const [busy, setBusy] = useState(false);
   const recorder = useRef<MediaRecorder | null>(null);
@@ -45,6 +100,8 @@ export function useVoiceCapture(
   const cancel = useCallback(() => {
     discard.current = true;
     starting.current = false;
+    setInterim('');
+    if (recogniser.current) { recogniser.current.onend = null; recogniser.current.stop(); recogniser.current = null; }
     if (recorder.current?.state === 'recording') recorder.current.stop();
     stream.current?.getTracks().forEach((track) => track.stop());
     stream.current = null;
@@ -54,18 +111,75 @@ export function useVoiceCapture(
 
   useEffect(() => () => {
     discard.current = true;
+    if (recogniser.current) { recogniser.current.onend = null; recogniser.current.stop(); }
     if (recorder.current?.state === 'recording') recorder.current.stop();
     stream.current?.getTracks().forEach((track) => track.stop());
   }, []);
 
   const toggle = useCallback(() => {
     if (recording) {
+      if (recogniser.current) { recogniser.current.stop(); return; }
       if (recorder.current?.state === 'recording') recorder.current.stop();
       return;
     }
     if (starting.current) return;
     if (!supported) {
       toast.error('This browser cannot record audio');
+      return;
+    }
+
+    /*
+      The browser's own ear, when there is no service to post to.
+
+      `en-IN` rather than `en-US`: it is what the recogniser is tuned on for
+      Indian English, and it is the difference between "Sector twenty one" and
+      "Sector 21". Interim results are on because watching the words appear is
+      how somebody knows it is listening at all — the recording path can only
+      show a pulsing dot.
+    */
+    if (useBrowser) {
+      const Ctor = speechRecognition()!;
+      const rec = new Ctor();
+      rec.lang = 'en-IN';
+      rec.continuous = true;
+      rec.interimResults = true;
+      heard.current = '';
+      rec.onresult = (event) => {
+        let live = '';
+        for (let i = event.resultIndex; i < event.results.length; i += 1) {
+          const chunk = event.results[i][0].transcript;
+          if (event.results[i].isFinal) heard.current += chunk;
+          else live += chunk;
+        }
+        setInterim((heard.current + live).trim());
+      };
+      rec.onerror = (event) => {
+        // "no-speech" is somebody thinking, not a failure worth a red toast.
+        if (event.error !== 'no-speech' && event.error !== 'aborted') {
+          toast.error('Could not hear you', event.error === 'not-allowed'
+            ? 'Allow microphone access for this site and try again.'
+            : event.error);
+        }
+      };
+      rec.onend = () => {
+        recogniser.current = null;
+        setRecording(false);
+        const text = heard.current.trim();
+        setInterim('');
+        heard.current = '';
+        if (discard.current) { discard.current = false; return; }
+        if (text) onTranscript.current?.(text);
+      };
+      recogniser.current = rec;
+      discard.current = false;
+      setRecording(true);
+      try {
+        rec.start();
+      } catch {
+        recogniser.current = null;
+        setRecording(false);
+        toast.error('Could not start the microphone');
+      }
       return;
     }
 
@@ -108,7 +222,7 @@ export function useVoiceCapture(
       stream.current = null;
       toast.error('Microphone unavailable', err.message);
     });
-  }, [recording, supported]);
+  }, [recording, supported, useBrowser]);
 
-  return { recording, busy, supported, toggle, cancel };
+  return { recording, busy, supported: supported || useBrowser, interim, toggle, cancel };
 }

@@ -61,7 +61,15 @@ export default function MobileShell(): JSX.Element {
 
   return (
     <div className="flex h-full flex-col bg-[var(--app-bg)]">
-      <main className="min-h-0 flex-1">
+      {/*
+        Centred and capped on anything wider than a phone.
+
+        The app runs on iPads too — and on an iPad the single column these
+        screens are built from would otherwise stretch to a thousand pixels,
+        which turns a contact list into a name at one edge and a time at the
+        other. A phone is narrower than the cap, so this changes nothing there.
+      */}
+      <main className="mx-auto min-h-0 w-full max-w-2xl flex-1">
         <Suspense fallback={<Loading />}>
           <Routes>
             <Route index element={<Navigate to={`/${home}`} replace />} />
@@ -167,7 +175,7 @@ function TabBar(): JSX.Element | null {
       aria-label="Primary"
       className="shrink-0 border-t border-[var(--border)] bg-[var(--surface)] pb-[env(safe-area-inset-bottom)]"
     >
-      <div className="flex items-stretch">
+      <div className="mx-auto flex w-full max-w-2xl items-stretch">
         {tabs.map((tab) => (
           <NavLink
             key={tab.to}

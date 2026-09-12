@@ -98,7 +98,7 @@ export function editableCells(page: Page) {
   // first match is a display:none card button that can never be clicked.
   // The list's own editors are behind a pencil titled "Change" — a cell's value
   // opens the record. On a record page the value itself is still the trigger.
-  return page.locator('button[title="Change"]:visible, button[title="Click to edit"]:visible');
+  return page.locator('button[title="Change"]:visible, button[aria-label^="Edit "]:visible');
 }
 
 /**
@@ -210,4 +210,38 @@ export async function dashboardWithRecordRows(page: Page): Promise<string> {
     return withRows;
   });
   return boards.length ? `/dashboard/${boards[0]}` : '/dashboard';
+}
+
+/**
+ * Type into the list's search box, opening it first if it is collapsed.
+ *
+ * The box used to sit permanently in the toolbar. It collapses to a magnifier
+ * now, so `getByTestId('list-search')` matches nothing until somebody clicks —
+ * and the symptom is a `fill` that times out after 60s, reading as "search is
+ * broken" when search is fine and the test simply never opened it.
+ */
+export async function searchList(page: Page, term: string): Promise<void> {
+  const box = page.getByTestId('list-search');
+  if (!(await box.isVisible().catch(() => false))) {
+    await page.getByRole('button', { name: /^Search / }).first().click();
+  }
+  await box.fill(term);
+}
+
+/**
+ * Open the inline editor for one named field on a record page.
+ *
+ * The trigger is not a button anybody can click. RecordDetail makes the whole
+ * value box the target and forwards the click to a nested `sr-only` button, so
+ * the button carries the accessible name ("Change Mobile") while the thing a
+ * rep actually hits is the `dd` around it — and Playwright times out clicking
+ * the button itself, because a 1px clipped element cannot receive the event.
+ *
+ * Locating by the button's name and clicking its `dd` keeps the assertion on
+ * the field somebody asked for, and performs the gesture they perform.
+ */
+export function fieldEditor(page: Page, label: RegExp) {
+  return page.locator('dd')
+    .filter({ has: page.getByRole('button', { name: label }) })
+    .first();
 }

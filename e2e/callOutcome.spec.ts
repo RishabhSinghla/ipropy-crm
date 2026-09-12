@@ -10,7 +10,7 @@
  * server test can see it.
  */
 import { expect, test } from '@playwright/test';
-import { waitForRecords } from './helpers';
+import { waitForRecords, searchList } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -28,7 +28,7 @@ test('a rep adds the lead they are about to ring', async ({ page }) => {
 test('they open it from the list', async ({ page, context }) => {
   await page.goto('/leads');
   await waitForRecords(page);
-  await page.getByTestId('list-search').fill(name);
+  await searchList(page, name);
   await page.waitForTimeout(1200);
 
   // The list opens records in a new tab on purpose, so the list is never lost.

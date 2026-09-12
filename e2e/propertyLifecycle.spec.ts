@@ -13,6 +13,7 @@
  * costs a phone call to explain and some trust to repair.
  */
 import { expect, test } from '@playwright/test';
+import { fieldEditor } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -66,31 +67,25 @@ test('putting it on the website is a decision the rep makes on the record', asyn
 
     The flag is a boolean, which EditableField renders as an instant
     save-and-flash toggle switch right on the record page — no editor to open.
-    It sits in the "Location & Media" block, which starts collapsed when its
-    fields are empty, so open the block first. The click is retried because a
-    click that lands before React finishes hydrating the block can be undone
-    by the collapsed-state initialiser running late.
+    It sits in the "Location & Media" block.
+
+    That block used to fold, and this test used to open it first. Overview is
+    the page somebody scans before picking up the phone, and a chevron on every
+    section made each one read as a closed dropdown, so the folding was removed
+    and the heading is a heading again. Clicking it by role hung for the whole
+    test timeout, which reads as "publishing is broken" and was nothing of the
+    kind.
   */
   await page.goto(recordUrl);
 
   const toggle = page.getByRole('switch', { name: 'Show on Website' });
-  const header = page.getByRole('button', { name: 'Location & Media' });
-  for (let attempt = 0; attempt < 5 && !(await toggle.isVisible().catch(() => false)); attempt++) {
-    await header.click().catch(() => undefined);
-    await page.waitForTimeout(600);
-  }
   await expect(toggle, 'there is no way to publish from the record').toBeVisible({ timeout: 15_000 });
   await toggle.click();
   // Instant save with optimistic UI. The API request fixture does not share
   // the browser's localStorage token, so persistence is proven the way the
-  // rep experiences it: reload, reopen the block (collapsed again by
-  // default), and see the switch still on.
+  // rep experiences it: reload, and see the switch still on.
   await page.waitForTimeout(1200);
   await page.reload();
-  for (let attempt = 0; attempt < 5 && !(await toggle.isVisible().catch(() => false)); attempt++) {
-    await header.click().catch(() => undefined);
-    await page.waitForTimeout(600);
-  }
   await expect(toggle).toBeVisible({ timeout: 10_000 });
   await expect(toggle, 'the publish switch did not stick').toBeChecked();
 });
@@ -102,7 +97,7 @@ test('and marking it Sold is what takes it back off', async ({ page }) => {
     terminal status is the real off switch.
   */
   await page.goto(recordUrl);
-  await page.getByRole('button', { name: /^Edit (Availability )?Status$/i }).first().click();
+  await fieldEditor(page, /^Change (Availability )?Status$/i).click();
 
   await page.getByRole('option', { name: 'Sold' }).click().catch(async () => {
     await page.locator('select').first().selectOption({ label: 'Sold' });

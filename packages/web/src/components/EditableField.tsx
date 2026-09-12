@@ -27,7 +27,7 @@ import { type CSSProperties, type JSX, type KeyboardEvent as ReactKeyboardEvent,
 import { createPortal } from 'react-dom';
 import type { FieldMeta } from '@ipropy/shared';
 import {
-  Check, ChevronDown, Loader2, Pencil,
+  Check, Loader2, Pencil,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { optionsWithValue } from '../lib/picklistOptions';
@@ -48,9 +48,6 @@ const NOT_INLINE_EDITABLE: ReadonlySet<string> = new Set([
   // even the full record-edit form) — no module currently uses it either.
   'multireference',
 ]);
-
-/** Uitypes whose read display (FieldValue) renders an <a>/Link of its own — see the render branch below for why that rules out wrapping the whole thing in a <button>. */
-const HAS_OWN_LINK: ReadonlySet<string> = new Set(['reference', 'email', 'phone', 'url']);
 
 /**
  * Whether a field can be edited where it is shown.
@@ -313,10 +310,20 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
     use. Nothing is lost — the pencil is one hover away — and the primary
     gesture does the primary thing again.
   */
-  // Detail labels describe a field; only the value control changes it. Keeping
-  // a dedicated pencil avoids a click on the left-hand label opening the
-  // editor in dense two-column detail layouts.
-  const behindPencil = true;
+  /*
+    The pencil belongs on a list, and only on a list.
+
+    On a list it is load-bearing: clicking a row opens the record, so the value
+    itself cannot also be an edit trigger without the first click on somebody's
+    name dropping a text box instead of opening them.
+
+    On a record there is no competing gesture — the value box in Overview is
+    already outlined and already says "click me" — so a second tiny target that
+    only appears on hover was a step for nothing, and on a touch screen it was
+    a step that barely exists. The whole box edits now; see the root element
+    below, which is what takes the click.
+  */
+  const behindPencil = surface === 'list';
 
   const readState = behindPencil ? (
     // For a linked uitype there is a second reason: FieldValue renders an <a>
@@ -345,16 +352,41 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
       </span>
     </StatusRing>
   ) : (
-    <EditTrigger
-      onClick={openEdit}
-      label={field.label}
-      status={status}
-      flashKey={flashKey}
-      compact={compact}
-      invisible={editing && coversValue}
-    >
-      <FieldValue field={field} value={localValue} display={localDisplay} compact={compact} />
-    </EditTrigger>
+    /*
+      On a record: the value, plainly, with no control of its own.
+
+      Deliberately not a <button> around it. `FieldValue` renders a real <a>
+      for a phone, an email, a URL and a reference, and an anchor inside a
+      button is interactive-inside-interactive — invalid HTML that behaves
+      differently in every browser and takes the link with it. The click is
+      taken by the root element below instead, which can tell "somebody
+      followed the link" from "somebody wants to edit this" by what they hit.
+    */
+    <StatusRing key={flashKey} status={status}>
+      <span className={cn('inline-flex items-center gap-1', editing && coversValue && 'invisible')}>
+        <FieldValue field={field} value={localValue} display={localDisplay} compact={compact} linkTo={linkTo} />
+        {status === 'saving' && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-slate-400" />}
+        {/*
+          A real control for anyone not using a mouse.
+
+          Hidden until focused rather than removed: a pointer gets the whole
+          box, and a keyboard needs something in the tab order that announces
+          what it does. Making the box itself `role="button"` would have been
+          the shorter route and is wrong — half these values contain a link,
+          and a button containing a link is announced as neither.
+
+          It is also what `restoreFocus` puts focus back on after the editor
+          closes, so tabbing does not restart at the top of the page.
+        */}
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); openEdit(); }}
+          className="sr-only focus:not-sr-only focus:rounded focus:bg-brand-600 focus:px-1.5 focus:py-0.5 focus:text-2xs focus:text-white"
+        >
+          Change {field.label}
+        </button>
+      </span>
+    </StatusRing>
   );
 
   return (
@@ -363,7 +395,20 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
     // measures against. The inner wrapper below cannot serve as that anchor —
     // `display: contents` produces no box at all, so its getBoundingClientRect
     // is all zeros and every popover would open in the top-left corner.
-    <div className="relative inline-block" ref={editRef} onClick={(e) => e.stopPropagation()}>
+    <div
+      className={cn('relative inline-block', !behindPencil && !editing && 'cursor-pointer')}
+      ref={editRef}
+      onClick={(e) => {
+        // Never let a record click through to the row or card underneath.
+        e.stopPropagation();
+        if (behindPencil || editing) return;
+        // A phone number and an email render as real links, and following one
+        // is what a click on them is for. Everything else in the box opens the
+        // editor.
+        if ((e.target as HTMLElement).closest('a, button, input, select, textarea')) return;
+        openEdit();
+      }}
+    >
       {/* Always rendered, even mid-edit: it is what reserves the cell's width,
           so opening an editor can't resize a table column and reflow the page. */}
       <div ref={triggerRef} className="contents">{readState}</div>
@@ -554,72 +599,6 @@ function StatusRing({ status, children }: { status: Status; children: React.Reac
   );
 }
 
-/**
- * Deliberately plain geometry: `inline-flex` sized to its content, and
- * nothing that constrains width. An earlier version wrapped the value in a
- * `truncate` span and capped the button at `max-w-full` — both are layout
- * poison here. `truncate` sets `overflow:hidden`, which per the flexbox spec
- * drops a flex item's `min-width` from `auto` to `0`, so the value could
- * shrink to nothing; `max-w-full` inside an auto-layout `<table>` then let
- * every column resolve to that new near-zero minimum ("Test" rendered as
- * "T…"). Cells already clip via `.list-cell`'s `whitespace-nowrap`, and
- * FieldValue does its own length-capping in `compact` mode, so neither is
- * this component's job.
- *
- * `invisible` renders it as a size-preserving placeholder while an overlay
- * editor sits on top — that is what keeps the table from reflowing on click.
- */
-function EditTrigger({
-  onClick, status, flashKey, compact, invisible, label, children,
-}: {
-  onClick?: () => void;
-  status: Status;
-  flashKey: number;
-  compact?: boolean;
-  invisible?: boolean;
-  /** The field this edits, so the button can say which one it is. */
-  label: string;
-  children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <button
-      type="button"
-      key={flashKey}
-      onClick={(e) => { e.stopPropagation(); onClick?.(); }}
-      disabled={status === 'saving' || invisible}
-      tabIndex={invisible ? -1 : undefined}
-      aria-hidden={invisible}
-      /*
-        Named for the field, not "Click to edit".
-
-        Every editable value on a record was a button whose only accessible name
-        was the tooltip, so a record page presented twenty identical "Click to
-        edit" buttons. A screen reader announced the same three words for the
-        mobile number, the budget and the pipeline status alike, and the value
-        beside it was decoration the button did not claim. Nothing said which
-        field was about to open.
-
-        The tooltip stays as it was for a sighted user hovering; the label is
-        what anyone not looking at the screen actually gets.
-      */
-      aria-label={invisible ? undefined : `Edit ${label}`}
-      title={invisible ? undefined : 'Click to edit'}
-      className={cn(
-        'group/ef -mx-1 inline-flex items-center gap-1 rounded px-1 py-0.5 text-left transition-colors',
-        invisible
-          ? 'invisible'
-          : 'hover:bg-slate-100 disabled:cursor-wait dark:hover:bg-slate-800/70',
-        !invisible && status === 'success' && 'animate-pulse-success',
-        !invisible && status === 'error' && 'animate-pulse-error',
-      )}
-    >
-      {children}
-      {status === 'saving'
-        ? <Loader2 className="h-3 w-3 shrink-0 animate-spin text-slate-400" />
-        : <ChevronDown className={cn('h-3 w-3 shrink-0 text-slate-300 opacity-0 transition-opacity group-hover/ef:opacity-100', compact && 'hidden sm:inline')} />}
-    </button>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Inline text-swap — scalars, dates, currency, textarea/richtext
