@@ -78,11 +78,6 @@ const INVENTORY_COLUMNS: ColumnSpec[] = [
   { key: 'unit', find: (f) => fieldByKey(f, 'unit_no') ?? fieldByKey(f, 'unit_number') },
   { key: 'contact_type', find: (f) => fieldByKey(f, 'contact_type') },
   { key: 'mobile', find: PHONE },
-  {
-    key: 'next_followup',
-    find: (f) => fieldByKey(f, 'next_followup_at')
-      ?? f.find((x) => /follow/i.test(x.name) && (x.uitype === 'date' || x.uitype === 'datetime')),
-  },
   { key: 'assigned', find: (f) => assignmentField(f) },
   { key: 'updated', system: 'updatedAt', fallbackLabel: 'Last updated' },
 ];
@@ -250,8 +245,18 @@ export function MatchingTab({
 
   const heading = isContact ? 'Matching inventory' : 'Matching leads';
 
+  /*
+    No `overflow-hidden` on the card.
+
+    The Match filters menu is positioned, not portalled, so an ancestor that
+    clips its overflow clips the menu — and this only shows itself when the
+    table is *short*: with fifty rows the card is taller than the menu and
+    nothing looks wrong, with one row the menu is sliced off halfway down its
+    list. The rounding that `overflow-hidden` was there for moves to the table
+    wrapper below, which is the thing that actually needs clipping.
+  */
   return (
-    <div className="card overflow-hidden">
+    <div className="card">
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
         <Link2 className="h-4 w-4 shrink-0 text-brand-500" />
         <span className="text-sm font-medium">
@@ -390,7 +395,7 @@ export function MatchingTab({
                 : 'No open lead fits this unit yet. It sells itself when one arrives — check back after the next enquiry.'}
         />
       ) : (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto rounded-b-xl">
           <table className="w-full">
             <thead>
               <tr>

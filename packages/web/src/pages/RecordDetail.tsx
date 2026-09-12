@@ -1,7 +1,7 @@
 import { type JSX, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { type BuyerMatch, type FieldMeta, formatIndianPrice, type ModuleMeta, type PropertyMatch, type RecordEnvelope, relativeTime, type TimelineEntry } from '@ipropy/shared';
+import { type BuyerMatch, type FieldMeta, type ModuleMeta, type PropertyMatch, type RecordEnvelope, relativeTime, type TimelineEntry } from '@ipropy/shared';
 import {
   Activity, ArrowRightLeft, Check, ChevronLeft, ChevronRight, Download, Edit3, Eye, FileQuestion, FileText, Images, LayoutDashboard, Link2, MessageCircle, Mic, MoreHorizontal, Paperclip, Pencil, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Tag, Trash2, Upload, Users, X,
 } from 'lucide-react';
@@ -31,7 +31,6 @@ import { PeekLink } from '../components/PeekLink';
 import { CallButton, CallDispositionProvider } from '../components/CallDisposition';
 import { isNative } from '../lib/native';
 import { downloadFromUrl } from '../lib/nativeActions';
-import { canShareRecords } from '../lib/sharing';
 
 export default function RecordDetail(): JSX.Element {
   const { module: moduleName, id } = useParams<{ module: string; id: string }>();
@@ -441,15 +440,20 @@ export default function RecordDetail(): JSX.Element {
                     >
                       {summarising ? 'Summarising…' : 'Summarise with AI'}
                     </DropdownItem>
-                    {/* One rule, in lib/sharing.ts, so the app and this page cannot drift. */}
-                    {canShareRecords(moduleName, meta?.settings) && (
-                      <DropdownItem
-                        icon={<Link2 className="h-3.5 w-3.5" />}
-                        onClick={() => { setSharing(true); close(); }}
-                      >
-                        Send to a buyer
-                      </DropdownItem>
-                    )}
+                    {/*
+                      "Send to a buyer" is not on this menu any more.
+
+                      Sending a unit to somebody is a thing you do *after*
+                      choosing which units — which is the matching tab, where
+                      you tick the ones you mean and share those. One link with
+                      six floors on it beats six links, and a second door to the
+                      same feature from a single record only made people wonder
+                      which one they were supposed to use.
+
+                      The share links themselves are untouched: existing ones
+                      keep working, and they are still listed and revocable on
+                      the record.
+                    */}
                     {(moduleName === 'leads' || moduleName === 'properties') && record.can?.edit && (
                       <DropdownItem
                         icon={<Users className="h-3.5 w-3.5" />}
@@ -2194,12 +2198,6 @@ function AiPanel({
     queryFn: () => api.insights(record.id),
   });
 
-  const { data: matches } = useQuery({
-    queryKey: ['matches', module, record.id],
-    queryFn: () => api.matchProperties(module, record.id, false),
-    enabled: ['leads', 'contacts'].includes(module),
-  });
-
   const rescore = async (): Promise<void> => {
     setBusy(true);
     try {
@@ -2269,34 +2267,15 @@ function AiPanel({
           </div>
         )}
 
-        {matches && matches.matches.length > 0 && (
-          <div className="p-4">
-            <p className="mb-2 text-xs font-medium text-slate-700 dark:text-slate-300">
-              Matching inventory
-            </p>
-            <ul className="space-y-2">
-              {matches.matches.slice(0, 4).map((raw) => {
-                const m = raw as unknown as { propertyId: string; propertyLabel: string; score: number; price?: number; reasons: string[] };
-                return (
-                  <li key={m.propertyId} className="rounded-lg border border-slate-200 p-2 dark:border-slate-700">
-                    <div className="flex items-start justify-between gap-2">
-                      <Link to={`/properties/${m.propertyId}`} className="truncate text-xs font-medium text-brand-600 hover:underline dark:text-brand-400">
-                        {m.propertyLabel}
-                      </Link>
-                      <ScoreChip score={m.score} />
-                    </div>
-                    {m.price && (
-                      <p className="mt-0.5 text-2xs font-semibold tnum text-muted">
-                        {formatIndianPrice(m.price)}
-                      </p>
-                    )}
-                    {m.reasons[0] && <p className="mt-1 text-2xs text-muted">{m.reasons[0]}</p>}
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        )}
+        {/*
+          The matching list is not an insight and does not belong here.
+
+          It duplicated the Matching tab beside it — the same records, four of
+          them, with no way to filter, save or send them. Two places showing
+          the same answer differently is how somebody ends up trusting the
+          wrong one, and this was the one with less in it.
+        */}
+
       </div>
     </div>
   );

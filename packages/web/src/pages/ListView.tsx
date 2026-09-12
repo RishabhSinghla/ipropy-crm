@@ -493,7 +493,20 @@ export default function ListView(): JSX.Element {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="shrink-0 border-y border-slate-200 bg-slate-50/90 px-3 py-2 shadow-sm dark:border-slate-800 dark:bg-slate-950/70 sm:px-4">
+      {/*
+        The toolbar reads as a bar now, not as the top of the page.
+
+        It was a near-white strip on a near-white page with a hairline border —
+        the view name, the record count and every control on the screen sat in
+        it, and none of it caught the eye. Reported as "not very eye catching",
+        which is the right complaint: this row is where somebody looks to
+        answer "which list am I on and how many are in it".
+
+        A solid ground, a real bottom border and a little more height are the
+        whole change — no colour, because the row is a container and the
+        coloured thing in it should go on being the New button.
+      */}
+      <div className="shrink-0 border-b-2 border-slate-200 bg-white px-3 py-2.5 shadow-sm dark:border-slate-700 dark:bg-slate-900 sm:px-4">
         {/*
           No title bar.
 
@@ -591,7 +604,10 @@ export default function ListView(): JSX.Element {
           </Dropdown>
 
           <div className="ml-auto flex shrink-0 items-center gap-2">
-            <span className="hidden shrink-0 text-xs text-muted tnum xl:inline">
+            {/* The number, not a footnote. It was the same muted 11px as the
+                labels around it; it is the one value on this row somebody
+                reads on purpose. */}
+            <span className="hidden shrink-0 text-xs font-semibold text-slate-700 tnum xl:inline dark:text-slate-200">
               {isFetching && !data
                 ? 'Loading…'
                 : `${(data?.total ?? 0).toLocaleString('en-IN')} records`}

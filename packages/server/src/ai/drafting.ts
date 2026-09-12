@@ -322,7 +322,18 @@ ${fenced(summaryFence, '## Record', summary)}
 
 ${fenced(summaryFence, '## Activity (newest first)', timeline.map((t) => `- [${new Date(t.at).toLocaleDateString('en-IN')}] ${t.title}${t.body ? `: ${t.body.slice(0, 200)}` : ''}`).join('\n'))}
 
-Write 3-5 sentences using only the facts above. For a lead, cover their buying journey, priorities, blockers and next action. For a property, cover availability, important facts, media/activity state and next action. For any other record, describe its current state and the single most useful next action. Be specific. If a fact is missing, say it is missing rather than inventing it. No preamble.`;
+Write 3 to 5 short sentences using only the facts above.
+
+Write it the way you would explain it out loud to a colleague who has not seen
+this record — plain, everyday English, short words, short sentences. No jargon,
+no CRM terms, no bullet points, no headings, no preamble.
+
+Say who or what this is, where it has got to, and what to do next. If something
+important is missing, say it is missing rather than inventing it.
+
+Avoid words like "engagement", "pipeline", "lifecycle", "leverage", "optimise",
+"stakeholder", "actionable" and "utilise". Say "call them", not "initiate
+contact".`;
 
   const result = await complete({
     feature: 'summarise_record',

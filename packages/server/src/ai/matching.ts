@@ -649,20 +649,17 @@ export async function matchProperties(
     if (narrated) matches = narrated;
   }
 
-  if (opts.persist && opts.recordId) {
-    await saveInsight({
-      recordId: opts.recordId,
-      module: null,
-      kind: 'property_match',
-      title: `${matches.length} matching properties found`,
-      body: matches
-        .map((m, i) => `${i + 1}. **${m.propertyLabel}** (${m.score}/100) — ${m.reasons[0] ?? ''}`)
-        .join('\n'),
-      data: { matches },
-      score: matches[0]?.score ?? null,
-      replace: true,
-    });
-  }
+  /*
+    Matches are not an insight and are no longer stored as one.
+
+    This wrote "10 matching properties found" with a numbered list into the AI
+    Insights panel, beside a Matching tab showing the same records with filters,
+    a saved state and a way to send them. Two places with the same answer and
+    different amounts of it, and the panel was the lesser one — it could not be
+    acted on and went stale the moment anything was repriced.
+
+    Migration 139 removes the rows already written.
+  */
 
   return matches;
 }
