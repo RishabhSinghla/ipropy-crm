@@ -7,7 +7,7 @@
  */
 import type { Server as HttpServer } from 'node:http';
 import { Server, type Socket } from 'socket.io';
-import { config } from './config.js';
+import { allowedOrigins, config } from './config.js';
 import { logger } from './utils/logger.js';
 import { verifyAccessToken, loadUser } from './middleware/auth.js';
 import { bus } from './core/events/bus.js';
@@ -18,7 +18,7 @@ let io: Server | null = null;
 export function initRealtime(server: HttpServer): Server {
   io = new Server(server, {
     cors: {
-      origin: config.isProd ? config.appUrl.split(',').map((s) => s.trim()) : true,
+      origin: config.isProd ? allowedOrigins() : true,
       credentials: true,
     },
     path: '/socket.io',

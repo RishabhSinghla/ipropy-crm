@@ -28,6 +28,8 @@ import DocumentViewer, { isPreviewable, type ViewableFile } from '../components/
 import ComposeModal from '../components/ComposeModal';
 import { PeekLink } from '../components/PeekLink';
 import { CallButton, CallDispositionProvider } from '../components/CallDisposition';
+import { isNative } from '../lib/native';
+import { downloadFromUrl } from '../lib/nativeActions';
 
 export default function RecordDetail(): JSX.Element {
   const { module: moduleName, id } = useParams<{ module: string; id: string }>();
@@ -1622,7 +1624,19 @@ function FilesTab({ module, id, canEdit }: { module: string; id: string; canEdit
                 >
                   <Eye className="h-3.5 w-3.5" />
                 </button>
-                <a href={`/api/files/${file.id}?download=1`} className="btn-ghost btn-sm" aria-label={`Download ${file.fileName}`}>
+                <a
+                  href={authedFileUrl(`/api/files/${file.id}`, { download: '1' })}
+                  className="btn-ghost btn-sm"
+                  aria-label={`Download ${file.fileName}`}
+                  onClick={(e) => {
+                    // Inert inside the app, and on a phone the relative path
+                    // would not even reach the server. Fetch and share instead.
+                    if (isNative) {
+                      e.preventDefault();
+                      void downloadFromUrl(authedFileUrl(`/api/files/${file.id}`, { download: '1' }), file.fileName).catch(() => undefined);
+                    }
+                  }}
+                >
                   <Download className="h-3.5 w-3.5" />
                 </a>
                 {canEdit && (

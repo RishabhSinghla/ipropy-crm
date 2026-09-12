@@ -17,6 +17,8 @@ import { api, type ShareLink } from '../lib/api';
 import { toast } from '../lib/store';
 import { relativeTime } from '@ipropy/shared';
 import { EmptyState, Spinner } from './ui';
+import { copyText, openExternal } from '../lib/nativeActions';
+import { isNative } from '../lib/native';
 
 /** Absolute, because it is going into a message on somebody else's phone. */
 const linkUrl = (token: string): string => `${window.location.origin}/s/${token}`;
@@ -59,7 +61,7 @@ export function ShareLinksPanel({
 
   const copy = async (token: string): Promise<void> => {
     try {
-      await navigator.clipboard.writeText(linkUrl(token));
+      await copyText(linkUrl(token));
       setCopied(token);
       window.setTimeout(() => setCopied((c) => (c === token ? null : c)), 2000);
     } catch {
@@ -197,6 +199,15 @@ function LinkRow({
           target="_blank"
           rel="noreferrer"
           className="btn-ghost btn-sm flex-1"
+          onClick={(e) => {
+            /*
+              In the app a plain anchor to wa.me loads WhatsApp's web page
+              *inside* the CRM, over the top of it, with no way back — so the
+              hand-off is taken over explicitly. On the web the default
+              target="_blank" is left to do its job.
+            */
+            if (!e.defaultPrevented && isNative) { e.preventDefault(); void openExternal(whatsapp); }
+          }}
         >
           <MessageCircle className="h-3.5 w-3.5" />
           WhatsApp

@@ -46,6 +46,7 @@ import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
 import { FieldInput } from '../components/FieldRenderer';
 import { Spinner, Toggle } from '../components/ui';
+import { watchPosition } from '../lib/nativeActions';
 
 const MODULE = 'properties';
 
@@ -93,23 +94,43 @@ function useLocation(enabled: boolean): { fix: Fix | null; state: 'off' | 'locat
   const [state, setState] = useState<'off' | 'locating' | 'ready' | 'denied'>('off');
 
   useEffect(() => {
-    if (!enabled || !navigator.geolocation) {
+    if (!enabled) {
       setFix(null);
       setState('off');
       return;
     }
     setState('locating');
-    const watch = navigator.geolocation.watchPosition(
+
+    /*
+      `watchPosition` here rather than `navigator.geolocation` directly.
+      Inside the app the browser API exists and answers nothing: the OS
+      permission belongs to the app, has to be asked for at the moment it is
+      needed, and a webview that was never granted it calls the error handler
+      with a generic denial. On the web this is the same call it always was.
+
+      Starting a watch is asynchronous now (the permission prompt is), so the
+      cleanup has to cope with unmounting before it resolves — a rep who taps
+      Capture and immediately backs out would otherwise leave the GPS running.
+    */
+    let stop: (() => void) | null = null;
+    let cancelled = false;
+
+    void watchPosition(
+      GPS_TIMEOUT_MS,
       (pos) => {
-        setFix({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy });
+        if (cancelled) return;
+        setFix({ lat: pos.latitude, lng: pos.longitude, accuracy: pos.accuracy });
         setState('ready');
       },
       // Denied, unavailable or timed out all land here. They are the same thing
       // to the person holding the phone: no coordinates, carry on without them.
-      () => setState('denied'),
-      { enableHighAccuracy: true, timeout: GPS_TIMEOUT_MS, maximumAge: 30_000 },
-    );
-    return () => navigator.geolocation.clearWatch(watch);
+      () => { if (!cancelled) setState('denied'); },
+    ).then((cancel) => {
+      if (cancelled) cancel();
+      else stop = cancel;
+    }).catch(() => { if (!cancelled) setState('denied'); });
+
+    return () => { cancelled = true; stop?.(); };
   }, [enabled]);
 
   return { fix, state };

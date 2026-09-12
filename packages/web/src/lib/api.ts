@@ -593,7 +593,20 @@ export const api = {
   // The cookie is what usually identifies the session here; the body still
   // carries an old localStorage token if this browser has not refreshed yet, so
   // signing out revokes the right session either way.
-  logout: () => post('/api/auth/logout', { refreshToken: tokenStore.getRefresh() }),
+  logout: () => post('/api/auth/logout', {
+    // The app holds its refresh token itself; the browser's is in a cookie the
+    // server reads, and `getRefresh()` is the legacy copy it may still have.
+    refreshToken: isNative ? cachedRefresh() : tokenStore.getRefresh(),
+  }),
+
+  /**
+   * Spend the stored refresh token for a fresh access token.
+   *
+   * The 401 path calls the same routine on its own; this is the door in for a
+   * caller that knows it has no access token yet — the app on a cold start
+   * after Android cleared the webview's storage.
+   */
+  tryRefresh: (): Promise<boolean> => refreshToken(),
   me: () => get<AuthUser>('/api/auth/me'),
   updateProfile: (data: Record<string, unknown>) => patch<AuthUser>('/api/auth/me', data),
   changePassword: (currentPassword: string, newPassword: string) =>

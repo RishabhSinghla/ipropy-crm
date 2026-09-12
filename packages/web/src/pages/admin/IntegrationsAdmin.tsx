@@ -9,6 +9,7 @@ import { api, type IntegrationSummary } from '../../lib/api';
 import { toast } from '../../lib/store';
 import { cn } from '../../lib/utils';
 import { Badge, EmptyState, Modal, Skeleton, Spinner, Tabs, Toggle } from '../../components/ui';
+import { copyText } from '../../lib/nativeActions';
 
 const API_BASE = window.location.origin;
 
@@ -793,7 +794,7 @@ function ConnectWizard({
   const savedPreview = field?.secret ? summary.credentialFields[field.key] : undefined;
 
   const copy = (text: string): void => {
-    void navigator.clipboard.writeText(text);
+    void copyText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
@@ -1331,7 +1332,7 @@ export default function IntegrationsAdmin(): JSX.Element {
   const openManage = (provider: string): void => setManageProvider(provider);
 
   const copy = (text: string): void => {
-    void navigator.clipboard.writeText(text);
+    void copyText(text);
     setCopied(text);
     setTimeout(() => setCopied(null), 1500);
   };

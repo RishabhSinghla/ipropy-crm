@@ -7,6 +7,7 @@ import { toast, useApp } from '../lib/store';
 import { useVoiceCapture } from '../lib/useVoiceCapture';
 import { cn } from '../lib/utils';
 import { Modal, Spinner } from './ui';
+import { dial } from '../lib/nativeActions';
 
 interface CallActions {
   startCall: (number: string) => Promise<void>;
@@ -84,7 +85,7 @@ export function CallDispositionProvider({
       } else {
         // Set the CRM state before leaving for the phone dialler. When the user
         // returns, the already-open form is ready for the outcome and notes.
-        window.location.href = `tel:${clean}`;
+        dial(clean);
       }
     } catch (err) {
       toast.error('Could not place the call', (err as Error).message);

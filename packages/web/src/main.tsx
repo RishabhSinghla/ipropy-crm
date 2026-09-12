@@ -5,6 +5,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App';
 import './styles.css';
 import { startErrorReporting } from './lib/errorReporting';
+import { boot, isNative } from './lib/native';
+import { startNativeBridges } from './lib/nativeBridges';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -29,15 +31,28 @@ const queryClient = new QueryClient({
 */
 void startErrorReporting();
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
-    </QueryClientProvider>
-  </React.StrictMode>,
-);
+/*
+  `boot()` resolves immediately in a browser. In the app it reads the server
+  address and the stored refresh token out of native storage first, and both
+  have to be in hand before the first render: the very first thing the app does
+  is ask the server who is signed in, and doing that against the wrong host —
+  or without the token that proves the session — is a login screen shown to
+  somebody who is already logged in.
+*/
+void boot().then(() => {
+  ReactDOM.createRoot(document.getElementById('root')!).render(
+    <React.StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </QueryClientProvider>
+    </React.StrictMode>,
+  );
+
+  // Back button, deep links, push, connectivity — all no-ops in a browser.
+  void startNativeBridges();
+});
 
 // Register the service worker (public/sw.js) — this is what makes the CRM
 // installable on a phone, lets the shell open instantly, and receives push
@@ -48,7 +63,12 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 // In dev it registers with `?dev=1`, which the worker reads to switch its
 // caching half off: push has to be testable before the app is deployed, but
 // caching dev bundles would serve stale code and fight Vite's HMR.
-if ('serviceWorker' in navigator) {
+//
+// Not in the app. Capacitor already serves the bundle from the device, so the
+// worker's whole job is done — and its navigation fallback would fight the
+// local server for control of every page load. Push in the app comes from
+// Firebase/APNs through the OS, not from this worker.
+if ('serviceWorker' in navigator && !isNative) {
   window.addEventListener('load', () => {
     const url = import.meta.env.PROD ? '/sw.js' : '/sw.js?dev=1';
     void navigator.serviceWorker.register(url).catch(() => undefined);

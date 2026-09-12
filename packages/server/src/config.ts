@@ -330,6 +330,31 @@ const INSECURE_JWT_SECRETS = new Set([
  * Fail-fast checks for production boot. Kept separate so both the API server
  * and the scheduler worker refuse to start with a risky configuration.
  */
+/*
+ * The origins the API answers to, in production.
+ *
+ * Two truths used to be kept here: `app.ts` computed this list for HTTP and
+ * `realtime.ts` computed it again for the socket. They agreed only by
+ * coincidence, and an origin added to one would have been rejected by the
+ * other — which presents as "the app works but live updates never arrive",
+ * about the least obvious symptom available.
+ *
+ * The two localhost entries are not a development leftover and must not be
+ * tidied away. A Capacitor app serves its own HTML from inside the installed
+ * bundle, and the origin the webview stamps on every request it makes is
+ * `https://localhost` on Android and `capacitor://localhost` on iOS. Neither
+ * is a host anybody can reach over a network — you cannot point a browser at
+ * them and you cannot claim them — so allowing them widens nothing. Removing
+ * them stops both apps dead with a CORS error at the login screen.
+ */
+export function allowedOrigins(): string[] {
+  return [
+    ...config.appUrl.split(',').map((s) => s.trim()).filter(Boolean),
+    'https://localhost',
+    'capacitor://localhost',
+  ];
+}
+
 export function validateProductionConfig(): string[] {
   const problems: string[] = [];
   if (INSECURE_JWT_SECRETS.has(config.auth.jwtSecret)) {

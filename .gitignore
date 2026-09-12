@@ -45,3 +45,15 @@ packages/server/src/scripts/vtiger/.output/
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
+
+# Native app build output. The Android/iOS projects are committed; what Gradle
+# and Xcode generate from them is not.
+packages/app/android/build/
+packages/app/android/app/build/
+packages/app/android/.gradle/
+packages/app/android/local.properties
+packages/app/android/keystore.properties
+packages/app/android/app/src/main/assets/public/
+packages/app/ios/App/build/
+packages/app/ios/App/Pods/
+packages/app/ios/App/App/public/

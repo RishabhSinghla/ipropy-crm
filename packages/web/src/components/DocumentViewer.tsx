@@ -26,6 +26,8 @@ import {
 import { api, tokenStore } from '../lib/api';
 import { cn, renderMarkdown } from '../lib/utils';
 import { Spinner } from './ui';
+import { isNative } from '../lib/native';
+import { downloadFromUrl } from '../lib/nativeActions';
 
 export interface ViewableFile {
   id: string;
@@ -184,6 +186,11 @@ export default function DocumentViewer({
           download={file.fileName}
           className="rounded-lg p-2 text-slate-300 hover:bg-white/10"
           title="Download"
+          onClick={(e) => {
+            // A webview has no downloads tray, so this anchor does nothing in
+            // the app. Fetch the bytes and offer them to the share sheet.
+            if (isNative) { e.preventDefault(); void downloadFromUrl(fileUrl(file.id, true), file.fileName).catch(() => undefined); }
+          }}
         >
           <Download className="h-4 w-4" />
         </a>
@@ -303,7 +310,16 @@ function UnsupportedBody({ file }: { file: ViewableFile }): JSX.Element {
       <p className="max-w-md text-xs leading-relaxed text-slate-400">
         {note ?? 'This format cannot be displayed in a browser.'}
       </p>
-      <a href={fileUrl(file.id, true)} download={file.fileName} className="btn-primary btn-sm">
+      <a
+        href={fileUrl(file.id, true)}
+        download={file.fileName}
+        className="btn-primary btn-sm"
+        onClick={(e) => {
+          // A webview has no downloads tray, so this anchor does nothing in
+          // the app. Fetch the bytes and offer them to the share sheet.
+          if (isNative) { e.preventDefault(); void downloadFromUrl(fileUrl(file.id, true), file.fileName).catch(() => undefined); }
+        }}
+      >
         <Download className="h-3.5 w-3.5" /> Download to open
       </a>
     </div>

@@ -6,7 +6,7 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import pinoHttp from 'pino-http';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
-import { config } from './config.js';
+import { allowedOrigins, config } from './config.js';
 import { getServiceStatus } from './core/serviceStatus.js';
 import { logger } from './utils/logger.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
@@ -127,7 +127,7 @@ export function createApp(): Express {
   }));
 
   app.use(cors({
-    origin: config.isProd ? config.appUrl.split(',').map((s) => s.trim()) : true,
+    origin: config.isProd ? allowedOrigins() : true,
     credentials: true,
   }));
 

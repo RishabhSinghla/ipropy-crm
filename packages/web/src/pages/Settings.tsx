@@ -11,6 +11,7 @@ import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { currentSubscription, disablePush, enablePush, permissionState, pushSupport } from '../lib/push';
 import { Avatar, Badge, ConfirmDialog, EmptyState, Modal, Select, Skeleton, Spinner, Tabs } from '../components/ui';
+import { copyText } from '../lib/nativeActions';
 
 /**
  * Settings opens as a translucent modal over the page you were on.
@@ -380,7 +381,7 @@ function ConnectedAppsCard(): JSX.Element {
             <button
               className="btn-secondary btn-sm shrink-0"
               onClick={() => {
-                void navigator.clipboard.writeText(fresh.key).then(() => {
+                void copyText(fresh.key).then(() => {
                   setCopied(true);
                   toast.success('Copied');
                 });
@@ -1161,7 +1162,7 @@ function PairPhoneModal({ open, onClose, onPaired }: {
   };
 
   const copy = (what: 'token' | 'server', text: string): void => {
-    void navigator.clipboard.writeText(text).then(() => {
+    void copyText(text).then(() => {
       setCopied(what);
       setTimeout(() => setCopied(null), 2000);
     }).catch(() => undefined);

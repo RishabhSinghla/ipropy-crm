@@ -12,6 +12,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { io, type Socket } from 'socket.io-client';
 import { tokenStore } from './api';
 import { invalidateRecordQueries } from './invalidate';
+import { apiBase } from './native';
 
 let socket: Socket | null = null;
 
@@ -21,11 +22,20 @@ export function getSocket(): Socket | null {
 
 function connect(token: string): Socket {
   if (socket) return socket;
-  socket = io({
+  /*
+    Same origin in dev via the Vite proxy, same origin in production behind the
+    reverse proxy — so in a browser there is no URL to give and `io()` finds
+    the server on its own.
+
+    The app is the exception: its page comes from inside the installed bundle,
+    so "same origin" is the bundle, which serves nothing. Left to guess, the
+    socket dials `https://localhost/socket.io` and retries for ever, and the
+    symptom is not an error — it is a CRM that works perfectly except that
+    nothing another person does ever appears.
+  */
+  socket = io(apiBase() || undefined, {
     path: '/socket.io',
     auth: { token },
-    // Same origin in dev via the Vite proxy, same origin in production behind
-    // the reverse proxy, so no explicit URL is needed.
     transports: ['websocket', 'polling'],
     reconnectionDelay: 1000,
     reconnectionDelayMax: 10_000,

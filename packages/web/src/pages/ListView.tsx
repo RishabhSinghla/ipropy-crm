@@ -25,6 +25,7 @@ import RecordPeek from '../components/RecordPeek';
 import { useSwipeActions, type SwipeSide } from '../lib/swipeActions';
 import { MAX_WIDTH, MIN_WIDTH, SELECT_COL_WIDTH, useColumnWidths } from '../lib/columnWidths';
 import { useOfflineMeta } from '../lib/useOfflineList';
+import { deliverFile, dial, openExternal } from '../lib/nativeActions';
 
 const EMPTY_FILTER: FilterGroup = { logic: 'AND', conditions: [] };
 
@@ -1209,9 +1210,9 @@ function MobileRecordCard({
   const swipe = useSwipeActions((side: SwipeSide) => {
     if (!isContact || !phone) return;
     if (side === 'right') {
-      window.location.href = `tel:${phone.replace(/[^\d+]/g, '')}`;
+      dial(phone);
     } else {
-      window.open(`https://wa.me/${phone.replace(/[^\d+]/g, '')}`, '_blank', 'noopener');
+      void openExternal(`https://wa.me/${phone.replace(/[^\d+]/g, '')}`);
     }
   }, isContact && Boolean(phone));
 
@@ -1785,8 +1786,10 @@ function ExportWizard({ open, onClose, module, fields, filter, selectedIds, allS
     setBusy(true);
     try {
       const response = await api.exportRecords(module, { format, columns: exportColumns, filter: scope === 'all' ? EMPTY_FILTER : filter, selectedIds: scope === 'selected' ? selectedIds : undefined });
-      const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement('a');
-      link.href = url; link.download = `${module}-export.${format}`; link.click(); URL.revokeObjectURL(url); onClose();
+      // `deliverFile`, not an <a download>: a webview has no downloads tray,
+      // so in the app that anchor is inert and the export silently vanishes.
+      await deliverFile(await response.blob(), `${module}-export.${format}`);
+      onClose();
     } catch (err) { toast.error('Export failed', (err as Error).message); } finally { setBusy(false); }
   };
   const saveTemplate = async (): Promise<void> => {

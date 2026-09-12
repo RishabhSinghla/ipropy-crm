@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { AuthUser } from '@ipropy/shared';
 import { ApiError, api, tokenStore, type ModuleSummary } from './api';
 import { forgetAll } from './offlineCache';
+import { cachedRefresh, isNative, rememberRefresh } from './native';
 
 interface AppState {
   user: AuthUser | null;
@@ -206,6 +207,12 @@ async function adoptSession(
     in the one place an attacker can reach.
   */
   tokenStore.forgetRefresh();
+  /*
+    ...except in the app, where there is no cookie to carry it. See
+    `getStoredRefresh` in native.ts. Native storage is not reachable by a
+    script on a page, which is the protection the cookie was bought for.
+  */
+  if (isNative) rememberRefresh(result.refreshToken);
   const modules = await api.modules();
   cacheUser(result.user);
   cacheModules(modules);
@@ -227,8 +234,19 @@ export const useApp = create<AppState>((set, get) => ({
     applyTheme(get().theme);
 
     if (!tokenStore.get()) {
-      set({ loading: false });
-      return;
+      /*
+        On the web an empty token means an empty session and the login screen
+        is the right answer. In the app it usually does not: Android evicts a
+        webview's localStorage under storage pressure, without warning and
+        without touching native storage. The thirty-day refresh token sitting
+        there is still perfectly good, so spend it rather than making somebody
+        who signed in last week sign in again on a site visit.
+      */
+      const revived = isNative && cachedRefresh() ? await api.tryRefresh() : false;
+      if (!revived) {
+        set({ loading: false });
+        return;
+      }
     }
     try {
       const [user, modules] = await Promise.all([api.me(), api.modules()]);
@@ -288,6 +306,7 @@ export const useApp = create<AppState>((set, get) => ({
       localStorage.removeItem(MODULES_CACHE_KEY);
     } catch { /* ignore */ }
     tokenStore.clear();
+    if (isNative) rememberRefresh(null);
     set({ user: null, modules: [] });
     window.location.href = '/login';
   },
