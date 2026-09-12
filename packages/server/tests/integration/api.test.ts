@@ -72,7 +72,19 @@ describe('authentication', () => {
 
   it('identifies the caller from their token', async () => {
     const res = await request(app)
-      .get('/api/auth/me').set('Authorization', `Bearer ${executiveToken}`).expect(200);
+      .get('/api/auth/me').set('Authorization', `Bearer ${executiveToken}`);
+
+    /*
+      Asserted with the body, not `.expect(200)`.
+
+      This has failed intermittently in CI and passes both alone and in a full
+      local run, and `.expect(200)` reports only "got 401" — which is the same
+      line whether the token was never minted, the account was deactivated, or
+      the user no longer exists. `requireAuth` distinguishes all three in the
+      message it returns, and throwing that away is what makes a rare failure
+      cost an hour of hypotheses instead of a glance.
+    */
+    expect(res.status, `GET /api/auth/me said ${res.status}: ${res.text}`).toBe(200);
     expect(res.body.email).toBe(SEEDED.executiveA);
   });
 

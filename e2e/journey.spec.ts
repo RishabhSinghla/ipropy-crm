@@ -146,23 +146,25 @@ test.describe('lead lifecycle through the UI', () => {
     const row = (text: string) => rowIn(page, text);
     const renamed = `${name} II`;
     await page.goto('/leads');
-    await page.waitForTimeout(1200);
+    await expect(page.getByTestId('list-search')).toBeVisible();
     await page.getByTestId('list-search').fill(renamed);
-    await page.waitForTimeout(1200);
+    await expect(row(renamed)).toBeVisible({ timeout: 10_000 });
     const rowClick = row(renamed).click();
     const detail = await page.context().waitForEvent('page');
     await detail.waitForLoadState('domcontentloaded');
     await rowClick;
     // Delete lives in the More-actions dropdown, and the dialog confirms with
     // a plain "Delete" button.
+    await expect(detail.getByRole('button', { name: 'More actions' })).toBeVisible({ timeout: 5_000 });
     await detail.getByRole('button', { name: 'More actions' }).click();
+    await expect(detail.getByText('Delete record')).toBeVisible({ timeout: 5_000 });
     await detail.getByText('Delete record').click();
+    await expect(detail.getByRole('button', { name: 'Delete', exact: true })).toBeVisible({ timeout: 5_000 });
     await detail.getByRole('button', { name: 'Delete', exact: true }).click();
-    await page.waitForTimeout(1500);
     await page.goto('/leads');
+    await expect(page.getByTestId('list-search')).toBeVisible({ timeout: 5_000 });
     await page.getByTestId('list-search').fill(renamed);
-    await page.waitForTimeout(1200);
-    await expect(page.getByText(renamed)).toHaveCount(0);
+    await expect(row(renamed)).toHaveCount(0);
   });
 });
 

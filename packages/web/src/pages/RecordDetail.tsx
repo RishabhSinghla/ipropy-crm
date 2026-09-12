@@ -418,13 +418,8 @@ export default function RecordDetail(): JSX.Element {
                     >
                       {summarising ? 'Summarising…' : 'Summarise with AI'}
                     </DropdownItem>
-                    {/*
-                      One rule, in lib/sharing.ts, so the app and this page
-                      cannot drift. `settings` is not on this page's local
-                      Module type; the cast asks the same question of whatever
-                      the metadata actually carries.
-                    */}
-                    {canShareRecords(moduleName, (module as { settings?: Record<string, unknown> } | undefined)?.settings) && (
+                    {/* One rule, in lib/sharing.ts, so the app and this page cannot drift. */}
+                    {canShareRecords(moduleName, meta?.settings) && (
                       <DropdownItem
                         icon={<Link2 className="h-3.5 w-3.5" />}
                         onClick={() => { setSharing(true); close(); }}

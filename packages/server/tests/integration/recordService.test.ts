@@ -437,7 +437,7 @@ describe('moving between leads and inventories', () => {
     const lead = await createRecord(admin, 'leads', leadInput({ full_name: name }));
 
     const property = await moveRecord(admin, 'leads', lead.id, 'properties');
-    expect(property.values.name).toBe(name);
+    expect(property.values.full_name).toBe(name);
     expect(property.values.status).toBe('Available');
 
     await expect(getRecord(admin, 'leads', lead.id)).rejects.toThrow(/not found/i);

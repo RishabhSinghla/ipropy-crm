@@ -573,7 +573,17 @@ export interface ModuleMeta {
   menuGroup?: string;
   /** whether to show in the main navigation */
   showInMenu?: boolean;
-  /** module-specific settings bag */
+  /**
+   * Module-specific settings bag, stored as JSON so a new switch needs no
+   * migration. `tabGroup`/`tabOrder` group modules in the menu; `shareable`
+   * says whether a record may be sent outside the CRM (see `lib/sharing.ts`).
+   *
+   * Read it directly. It is typed here and always has been, so a reader that
+   * casts is hiding something rather than helping: `(module as { settings? })`
+   * compiles perfectly against Node's ambient `module` global, which is how
+   * the share switch came to read an object with no settings on it and fall
+   * back to its default without anyone noticing.
+   */
   settings?: Record<string, unknown>;
   /** a core module cannot be disabled; this flag marks it */
   isCore?: boolean;

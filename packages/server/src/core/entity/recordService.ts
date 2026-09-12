@@ -854,8 +854,9 @@ export async function deleteRecord(
  * This deliberately creates a fresh record in the destination module instead
  * of changing `module_name` in place: each module has its own payload table,
  * required fields and defaults.  Values whose internal names exist in both
- * modules are carried over; the two name fields are the one friendly alias
- * (`full_name` ↔ `name`).  Pipeline statuses are not copied because a lead's
+ * modules are carried over — both modules share `full_name` for the person's
+ * name, and the alias block below keeps the move working if either module
+ * ever renames its side to `name`.  Pipeline statuses are not copied because a lead's
  * stages and an inventory unit's availability are different vocabularies.
  */
 export async function moveRecord(
