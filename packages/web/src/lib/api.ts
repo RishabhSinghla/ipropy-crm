@@ -1189,6 +1189,9 @@ export const api = {
   sharedProperty: (token: string) => get<SharedProperty>(`/api/public/share/${token}`),
   sharedMatches: (token: string) => get<SharedMatches>(`/api/public/matches/${token}`),
   tags: () => get<{ id: string; name: string; color: string; usage_count: number }[]>('/api/tags'),
+  createTag: (body: { name: string; color?: string }) => post<{ id: string; name: string; color: string }>('/api/tags', body),
+  updateTag: (id: string, body: { name?: string; color?: string }) => patch<{ id: string; name: string; color: string }>(`/api/tags/${id}`, body),
+  deleteTag: (id: string) => del<{ ok: true }>(`/api/tags/${id}`),
   importPreview: (module: string, file: File) => {
     const form = new FormData();
     form.append('file', file);
