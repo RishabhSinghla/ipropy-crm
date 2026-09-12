@@ -20,7 +20,9 @@ import { NotFoundError } from '../../utils/errors.js';
 import { getDriver, getStorageSettings } from '../../core/storage/index.js';
 import { logger } from '../../utils/logger.js';
 import { recordShareView, resolveShareToken } from '../../core/sharing/shareLinks.js';
-import { getPropertyShareConfig, loadSharedProperty } from '../../core/sharing/propertyShare.js';
+import {
+  getShareConfig, loadSharedProperty, loadSharedRecord,
+} from '../../core/sharing/propertyShare.js';
 import { photoOrderBy } from '../../core/media/ordering.js';
 import { applyFileSecurityHeaders } from '../../core/media/serving.js';
 import { publicPropertyStatuses } from '../../core/settings/scoring.js';
@@ -786,20 +788,38 @@ publicRouter.get('/share/:token', asyncHandler(async (req, res) => {
  * does there. A field switched off for share links is off on this page too,
  * without this route knowing which fields those are.
  *
- * **Units only, deliberately.** A property's matching tab lists *people* — name,
- * mobile, status, who owns them — and a public link is unauthenticated by
- * definition, so a link to those would publish customers' contact details to
- * anyone the URL reached. There is no field-visibility config for leads the way
- * there is for properties, and inventing one here to make a page nobody asked a
- * customer to see is the wrong order to do it in. A `matches` link naming any
- * other module answers 404, like every other failure.
+ * **What a visitor may read is the admin's answer, per module.** This was units
+ * only for a while, because a property's matching tab lists *people* and there
+ * was no field-visibility config for leads the way there is for properties — so
+ * a link to those would have published names and numbers to anyone the URL
+ * reached. That config exists for both modules now (Admin → Data Sharing), and
+ * the guard is the same one either way: `loadSharedRecord` returns only the
+ * fields an admin ticked, out of only the fields the server is willing to
+ * offer.
+ *
+ * The second half of that sentence is what actually protects a customer.
+ * `isShareable` refuses a phone, an email, an owner or anything matching
+ * `SENSITIVE_NAME` **before an admin ever sees the list**, so a mobile number
+ * cannot be exposed by ticking the wrong box. A name can — `full_name` is
+ * offered and withheld by default — which is a decision the business is
+ * entitled to make about its own contacts, and one it has to make on purpose.
+ *
+ * A `matches` link naming a module that is not shareable answers 404, like
+ * every other failure.
  */
 publicRouter.get('/matches/:token', asyncHandler(async (req, res) => {
   const link = await resolveShareToken(req.params.token);
   if (!link || link.kind !== 'matches' || !link.payload) {
     throw new NotFoundError('This link is no longer available');
   }
-  if (link.payload.targetModule !== 'properties') {
+  const targetModule = link.payload.targetModule;
+  /*
+    An admin who has ticked nothing for this module has not set one up, and a
+    page of empty cards is worse than an honest 404 — it tells the recipient
+    there is something here and shows them none of it.
+  */
+  const shareConfig = await getShareConfig(targetModule).catch(() => null);
+  if (!shareConfig?.visibleFields.length) {
     throw new NotFoundError('This link is no longer available');
   }
 
@@ -818,7 +838,6 @@ publicRouter.get('/matches/:token', asyncHandler(async (req, res) => {
     first eight photos across the whole set and leave most units with none.
   */
   const photosByRecord = new Map<string, { id: string }[]>();
-  const shareConfig = await getPropertyShareConfig();
   if (shareConfig.showPhotos && ids.length) {
     const { rows } = await db.query<{ id: string; record_id: string }>(
       `SELECT id, record_id FROM (
@@ -842,8 +861,8 @@ publicRouter.get('/matches/:token', asyncHandler(async (req, res) => {
 
   const items: unknown[] = [];
   for (const id of ids) {
-    const shared = await loadSharedProperty(id);
-    // A unit deleted since the link was made drops out rather than taking the
+    const shared = await loadSharedRecord(targetModule, id);
+    // A record deleted since the link was made drops out rather than taking the
     // whole page down with it — the other five are still what was sent.
     if (!shared) continue;
 
@@ -864,7 +883,10 @@ publicRouter.get('/matches/:token', asyncHandler(async (req, res) => {
 
   void recordShareView(link.id).catch((err) => logger.debug({ err }, 'share: view count failed'));
 
-  res.json({ items, sharedAt: link.createdAt });
+  /* The module goes out too. A unit with no name can be headed "3 BHK Builder
+     Floor"; a contact with their name withheld cannot, and a page of cards all
+     reading "Property" is worse than one that says what it is. */
+  res.json({ items, sharedAt: link.createdAt, module: targetModule });
 }));
 
 /**
@@ -878,8 +900,8 @@ publicRouter.get('/matches/:token', asyncHandler(async (req, res) => {
 publicRouter.get('/matches/:token/media/:attachmentId', asyncHandler(async (req, res) => {
   const link = await resolveShareToken(req.params.token);
   if (!link || link.kind !== 'matches' || !link.payload) throw new NotFoundError('File not found');
-  const shareConfig = await getPropertyShareConfig();
-  if (!shareConfig.showPhotos) throw new NotFoundError('File not found');
+  const shareConfig = await getShareConfig(link.payload.targetModule).catch(() => null);
+  if (!shareConfig?.showPhotos) throw new NotFoundError('File not found');
 
   const attachment = await db.queryOne<{ record_id: string }>(
     `SELECT record_id FROM ipy_attachment WHERE id = $1 AND mime_type LIKE 'image/%'`,
@@ -889,7 +911,7 @@ publicRouter.get('/matches/:token/media/:attachmentId', asyncHandler(async (req,
     throw new NotFoundError('File not found');
   }
 
-  await serveSharedPhoto(req, res, req.params.attachmentId, link.payload.ids);
+  await serveSharedPhoto(req, res, req.params.attachmentId, link.payload.ids, link.payload.targetModule);
 }));
 
 /**
@@ -920,8 +942,12 @@ publicRouter.get('/share/:token/media/:attachmentId', asyncHandler(async (req, r
  */
 async function serveSharedPhoto(
   req: Request, res: Response, attachmentId: string, allowedRecordIds: string[],
+  /* Which module's "may a visitor see photos" switch applies. A matching link
+     can point at either module now, and checking the properties one for a
+     link full of contacts would be reading the wrong setting. */
+  moduleName = 'properties',
 ): Promise<void> {
-  const shareConfig = await getPropertyShareConfig();
+  const shareConfig = await getShareConfig(moduleName);
   if (!shareConfig.showPhotos) throw new NotFoundError('File not found');
 
   const file = await db.queryOne<{

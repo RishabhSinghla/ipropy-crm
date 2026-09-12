@@ -14,7 +14,7 @@ import { verifyConnection as verifySmtpConnection } from '../../integrations/ema
 import { syncInboundEmails, testImapConnection } from '../../integrations/email/inbound.js';
 import { testAiProvider } from '../../ai/client.js';
 import {
-  getPropertyShareAdminConfig, savePropertyShareConfig,
+  getShareAdminConfig, saveShareConfig,
 } from '../../core/sharing/propertyShare.js';
 import { listIntegrationModels } from '../../ai/models.js';
 
@@ -680,9 +680,35 @@ adminRouter.delete('/sharing/rules/:id', asyncHandler(async (req, res) => {
  * callers receive only fields the server considers safe to make public, with
  * current admin-renamed labels from metadata.
  */
+/*
+  One route per module, and `property-link` kept as an alias.
+
+  This was properties-only because a share link only ever sent a unit to a
+  buyer. The matching tab shares people now — the contacts worth pitching a
+  unit to — and that asks the same question of a different module. The old
+  path stays so nothing that already calls it breaks.
+*/
+adminRouter.get('/sharing/link/:module', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.sharing');
+  await registry.requireModule(req.params.module);
+  res.json(await getShareAdminConfig(req.params.module));
+}));
+
+adminRouter.put('/sharing/link/:module', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'admin.sharing');
+  await registry.requireModule(req.params.module);
+  const input = z.object({
+    visibleFields: z.array(z.string()).max(200),
+    showPhotos: z.boolean(),
+  }).parse(req.body);
+  await saveShareConfig(req.params.module, input, user.id);
+  res.json(await getShareAdminConfig(req.params.module));
+}));
+
 adminRouter.get('/sharing/property-link', asyncHandler(async (req, res) => {
   await assertCapability(getUser(req), 'admin.sharing');
-  res.json(await getPropertyShareAdminConfig());
+  res.json(await getShareAdminConfig('properties'));
 }));
 
 adminRouter.put('/sharing/property-link', asyncHandler(async (req, res) => {
@@ -692,8 +718,8 @@ adminRouter.put('/sharing/property-link', asyncHandler(async (req, res) => {
     visibleFields: z.array(z.string()).max(200),
     showPhotos: z.boolean(),
   }).parse(req.body);
-  await savePropertyShareConfig(input, user.id);
-  res.json(await getPropertyShareAdminConfig());
+  await saveShareConfig('properties', input, user.id);
+  res.json(await getShareAdminConfig('properties'));
 }));
 
 // ---------------------------------------------------------------------------

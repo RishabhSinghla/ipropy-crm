@@ -607,6 +607,22 @@ function ShareMatchesModal({
   const [label, setLabel] = useState('');
   const [url, setUrl] = useState('');
 
+  /*
+    Whether this module has been set up for sharing at all.
+
+    Read from the same admin config the public page enforces, rather than
+    assumed from the module's name — which is what this used to do, and what
+    made "you cannot share people" a rule in the code instead of a decision the
+    business gets to make.
+  */
+  const { data: shareConfig } = useQuery({
+    queryKey: ['share-config', targetModule],
+    queryFn: () => api.shareLinkConfig(targetModule),
+    staleTime: 5 * 60_000,
+  });
+  const shareable = (shareConfig?.fields ?? []).some((f) => f.visible);
+  const targetLabel = targetModule === 'leads' ? 'Leads' : 'Inventory';
+
   const create = useMutation({
     mutationFn: () => api.shareMatches(module, recordId, { targetModule, ids, label: label.trim() || undefined }),
     onSuccess: (res) => {
@@ -634,7 +650,7 @@ function ShareMatchesModal({
       footer={(
         <>
           <button className="btn-secondary" onClick={onClose}>Close</button>
-          {!url && targetModule === 'properties' && (
+          {!url && shareable && (
             <button className="btn-primary" onClick={() => create.mutate()} disabled={create.isPending || !ids.length}>
               {create.isPending ? 'Making the link…' : 'Make a link'}
             </button>
@@ -642,22 +658,21 @@ function ShareMatchesModal({
         </>
       )}
     >
-      {targetModule !== 'properties' ? (
+      {!shareable ? (
         /*
-          Not built for people, on purpose.
+          Nothing has been ticked for this module, so there is nothing to send.
 
-          A public link is unauthenticated by definition, and this direction's
-          matches are customers — name, mobile, status, who owns them. A link
-          to those would publish contact details to anyone the URL reached,
-          and there is no "what an outsider may see" setting for leads the way
-          there is for units. Said here rather than hidden, because a Share
-          button that quietly does nothing on one tab is worse than one that
-          explains itself.
+          Both modules can be shared now — an admin decides field by field in
+          Admin → Data Sharing what somebody outside the CRM may read, and the
+          server refuses a phone, an email or an owner before that list is even
+          drawn. Until somebody has made that decision, a link would open on a
+          page of empty cards, which tells the recipient there is something
+          here and shows them none of it.
         */
         <p className="text-sm">
-          A public link can only carry inventory. These matches are people, and their names and
-          numbers are not something to put behind a link anyone can open — send the unit to the
-          buyer from the unit’s own page instead.
+          Nobody has said yet what an outsider may see of {targetLabel.toLowerCase()}.
+          An administrator sets that in Admin → Data Sharing, field by field; until then
+          there is nothing to put behind a link.
         </p>
       ) : url ? (
         <div>

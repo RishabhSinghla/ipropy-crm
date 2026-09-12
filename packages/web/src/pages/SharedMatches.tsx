@@ -26,13 +26,30 @@ import { formatIndianPrice } from '@ipropy/shared';
 import { api } from '../lib/api';
 import { Skeleton } from '../components/ui';
 
-/** A heading for a unit whose name field is blank. */
-function title(item: { title: string | null; property: Record<string, unknown> }): string {
+/**
+ * A heading for a record whose name is not being shared.
+ *
+ * The server resolves the title from the module's own `labelFields` and
+ * honestly answers null when those are withheld — which is the normal case for
+ * contacts, where the name starts off. So the fallback is built from what the
+ * reader can actually see, and only falls back to a bare noun when even that is
+ * empty. "Property" on a page of contacts was the alternative, and a page of
+ * cards all reading the same wrong word is worse than a plain number.
+ */
+function title(
+  item: { title: string | null; property: Record<string, unknown> },
+  module: string,
+  index: number,
+): string {
   if (item.title) return item.title;
-  const bedrooms = str(item.property.bedrooms);
-  return [bedrooms ? `${bedrooms} BHK` : null, str(item.property.property_type), str(item.property.locality)]
-    .filter(Boolean)
-    .join(' · ') || 'Property';
+  const parts = [
+    str(item.property.bedrooms) ? `${str(item.property.bedrooms)} BHK` : null,
+    str(item.property.property_type),
+    str(item.property.category),
+    str(item.property.locality),
+  ].filter(Boolean);
+  if (parts.length) return parts.join(' · ');
+  return module === 'leads' ? `Requirement ${index + 1}` : `Property ${index + 1}`;
 }
 
 function str(value: unknown): string | null {
@@ -81,7 +98,10 @@ export default function SharedMatchesPage(): JSX.Element {
       <header className="border-b border-slate-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900 sm:px-6">
         <div className="mx-auto max-w-3xl">
           <h1 className="text-lg font-semibold tracking-tight">
-            {data.items.length} {data.items.length === 1 ? 'property' : 'properties'} for you
+            {data.items.length}{' '}
+            {data.module === 'leads'
+              ? (data.items.length === 1 ? 'requirement' : 'requirements')
+              : (data.items.length === 1 ? 'property' : 'properties')} for you
           </h1>
           <p className="mt-0.5 text-sm text-muted">
             Shared on {new Date(data.sharedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
@@ -120,13 +140,26 @@ export default function SharedMatchesPage(): JSX.Element {
                     nothing there, so the fallback is built from what the
                     buyer can see — the same shape the single-property page
                     uses. */}
-                <h2 className="text-base font-semibold">{title(item)}</h2>
-                {/* A unit with no price reads as "on request" rather than ₹0 —
-                    an unpriced unit is the normal state of a floor somebody
-                    photographed this morning, not a free one. */}
-                <span className="text-base font-semibold text-brand-700 dark:text-brand-300">
-                  {item.priceShared && item.price ? formatIndianPrice(item.price) : 'Price on request'}
-                </span>
+                <h2 className="text-base font-semibold">{title(item, data.module, itemIndex)}</h2>
+                {/*
+                  A unit with no price reads as "on request" rather than ₹0 — an
+                  unpriced unit is the normal state of a floor somebody
+                  photographed this morning, not a free one.
+
+                  A *requirement* with no budget says nothing at all. "Price on
+                  request" against somebody's stated need is the wrong sentence:
+                  there is no price, there is a budget, and an empty one is not
+                  something the reader can ask about.
+                */}
+                {item.priceShared && item.price ? (
+                  <span className="text-base font-semibold text-brand-700 dark:text-brand-300">
+                    {formatIndianPrice(item.price)}
+                  </span>
+                ) : data.module === 'leads' ? null : (
+                  <span className="text-base font-semibold text-brand-700 dark:text-brand-300">
+                    Price on request
+                  </span>
+                )}
               </div>
 
               <dl className="mt-3 grid gap-x-6 gap-y-1.5 sm:grid-cols-2">

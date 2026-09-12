@@ -302,6 +302,8 @@ export interface SharedMatches {
     photos: { id: string; url: string }[];
   }[];
   sharedAt: string;
+  /** Which module these records are, so the page can name them honestly. */
+  module: string;
 }
 
 export interface PropertyShareAdminConfig {
@@ -939,6 +941,18 @@ export const api = {
   sharing: () => get<{ defaults: Record<string, unknown>[]; rules: Record<string, unknown>[] }>('/api/admin/sharing'),
   saveSharingDefaults: (defaults: Record<string, string>) => put('/api/admin/sharing/defaults', { defaults }),
   propertyShareConfig: () => get<PropertyShareAdminConfig>('/api/admin/sharing/property-link'),
+  /*
+    What somebody outside the CRM may see of one module's records.
+
+    Per module now rather than properties-only: a matching tab shares contacts
+    as well as units, and that asks the same question of a different module.
+    The server decides what is even offered — a phone, an email or an owner is
+    refused before the list is drawn — and this is the admin's answer within
+    that.
+  */
+  shareLinkConfig: (module: string) => get<PropertyShareAdminConfig>(`/api/admin/sharing/link/${module}`),
+  saveShareLinkConfig: (module: string, body: { visibleFields: string[]; showPhotos: boolean }) =>
+    put<PropertyShareAdminConfig>(`/api/admin/sharing/link/${module}`, body),
   savePropertyShareConfig: (data: { visibleFields: string[]; showPhotos: boolean }) =>
     put<PropertyShareAdminConfig>('/api/admin/sharing/property-link', data),
   settings: (category?: string) => get<Record<string, unknown>[]>(`/api/admin/settings${qs({ category })}`),

@@ -16,6 +16,22 @@ import { fieldExpr, quoteIdent } from '../query/builder.js';
 
 export const PROPERTY_SHARE_SETTING = 'sharing.property_link';
 
+/*
+  One setting per module, and properties keeps the key it already has.
+
+  This started as a property-only screen because a share link only ever sent a
+  unit to a buyer. A matching tab shares people too — the contacts worth
+  pitching a unit to — and that needs the same answer to the same question:
+  which of this record's fields may somebody outside the CRM read.
+
+  Reusing `sharing.property_link` for properties is not tidiness, it is the
+  difference between an admin's saved choices surviving this change and being
+  silently reset to the defaults.
+*/
+export function shareSettingKey(moduleName: string): string {
+  return moduleName === 'properties' ? PROPERTY_SHARE_SETTING : `sharing.${moduleName}_link`;
+}
+
 export interface PropertyShareConfig {
   visibleFields: string[];
   showPhotos: boolean;
@@ -108,8 +124,8 @@ function isShareable(field: FieldMeta): boolean {
     && !SENSITIVE_NAME.test(field.name);
 }
 
-async function shareableFields(): Promise<FieldMeta[]> {
-  const module = await registry.requireModule('properties');
+async function shareableFields(moduleName = 'properties'): Promise<FieldMeta[]> {
+  const module = await registry.requireModule(moduleName);
   return module.fields.filter(isShareable).sort((a, b) => a.sequence - b.sequence);
 }
 
@@ -125,21 +141,26 @@ function normaliseConfig(value: unknown, available: Set<string>): PropertyShareC
   };
 }
 
-export async function getPropertyShareConfig(conn: Tx = db): Promise<PropertyShareConfig> {
-  const fields = await shareableFields();
+export async function getShareConfig(moduleName: string, conn: Tx = db): Promise<PropertyShareConfig> {
+  const fields = await shareableFields(moduleName);
   const setting = await conn.queryOne<{ value: unknown }>(
     `SELECT value FROM ipy_setting WHERE key = $1`,
-    [PROPERTY_SHARE_SETTING],
+    [shareSettingKey(moduleName)],
   );
   return normaliseConfig(setting?.value, new Set(fields.map((field) => field.name)));
 }
 
-export async function getPropertyShareAdminConfig(conn: Tx = db): Promise<{
+/** Properties, by the name the rest of the codebase already calls it. */
+export async function getPropertyShareConfig(conn: Tx = db): Promise<PropertyShareConfig> {
+  return getShareConfig('properties', conn);
+}
+
+export async function getShareAdminConfig(moduleName: string, conn: Tx = db): Promise<{
   fields: PropertyShareField[];
   showPhotos: boolean;
 }> {
-  const fields = await shareableFields();
-  const config = await getPropertyShareConfig(conn);
+  const fields = await shareableFields(moduleName);
+  const config = await getShareConfig(moduleName, conn);
   const visible = new Set(config.visibleFields);
   return {
     fields: fields.map((field) => ({
@@ -152,19 +173,19 @@ export async function getPropertyShareAdminConfig(conn: Tx = db): Promise<{
   };
 }
 
-export async function savePropertyShareConfig(
+export async function saveShareConfig(
+  moduleName: string,
   input: PropertyShareConfig,
   userId: string,
   conn: Tx = db,
 ): Promise<PropertyShareConfig> {
-  const fields = await shareableFields();
+  const module = await registry.requireModule(moduleName);
+  const fields = await shareableFields(moduleName);
   const config = normaliseConfig(input, new Set(fields.map((field) => field.name)));
   await conn.query(
     `INSERT INTO ipy_setting
        (key, value, category, label, description, updated_by, updated_at)
-     VALUES ($1,$2::jsonb,'sharing','Property share links',
-             'Controls exactly which property details and photos a buyer can see through a private share link.',
-             $3,now())
+     VALUES ($1,$2::jsonb,'sharing',$4,$5,$3,now())
      ON CONFLICT (key) DO UPDATE SET
        value = EXCLUDED.value,
        category = EXCLUDED.category,
@@ -172,19 +193,33 @@ export async function savePropertyShareConfig(
        description = EXCLUDED.description,
        updated_by = EXCLUDED.updated_by,
        updated_at = now()`,
-    [PROPERTY_SHARE_SETTING, JSON.stringify(config), userId],
+    [
+      shareSettingKey(moduleName), JSON.stringify(config), userId,
+      `${module.label} share links`,
+      `Controls exactly which ${module.singularLabel.toLowerCase()} details somebody outside the CRM `
+      + 'can see through a private share link.',
+    ],
   );
   return config;
+}
+
+/** Properties, by the name the rest of the codebase already calls it. */
+export async function savePropertyShareConfig(
+  input: PropertyShareConfig, userId: string, conn: Tx = db,
+): Promise<PropertyShareConfig> {
+  return saveShareConfig('properties', input, userId, conn);
 }
 
 /**
  * Read only the fields the admin selected. SQL identifiers come exclusively
  * from validated metadata and still pass through quoteIdent/fieldExpr.
  */
-export async function loadSharedProperty(recordId: string, conn: Tx = db): Promise<SharedPropertyPayload | null> {
-  const module = await registry.requireModule('properties');
-  const available = (await shareableFields());
-  const config = await getPropertyShareConfig(conn);
+export async function loadSharedRecord(
+  moduleName: string, recordId: string, conn: Tx = db,
+): Promise<SharedPropertyPayload | null> {
+  const module = await registry.requireModule(moduleName);
+  const available = (await shareableFields(moduleName));
+  const config = await getShareConfig(moduleName, conn);
   const selected = new Set(config.visibleFields);
   const visible = available.filter((field) => selected.has(field.name));
 
@@ -242,4 +277,11 @@ export async function loadSharedProperty(recordId: string, conn: Tx = db): Promi
     price: priceValue !== null && Number.isFinite(priceValue) && priceValue > 0 ? priceValue : null,
     priceShared,
   };
+}
+
+/** Properties, by the name the rest of the codebase already calls it. */
+export async function loadSharedProperty(
+  recordId: string, conn: Tx = db,
+): Promise<SharedPropertyPayload | null> {
+  return loadSharedRecord('properties', recordId, conn);
 }
