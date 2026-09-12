@@ -79,7 +79,10 @@ describe('the public property catalogue with price and possession deleted', () =
   it('falls back rather than failing when the requested sort is impossible', async () => {
     for (const sort of ['price_asc', 'price_desc', 'possession', 'area_desc', 'nonsense']) {
       const res = await request(app).get(`/api/public/properties?sort=${sort}&limit=3`);
-      expect(res.status, `sort=${sort} answered ${res.status}`).toBe(200);
+      // The body, not just the status. A 400 here is a 42703 naming the column
+      // that is missing, and that name is the whole diagnosis — without it this
+      // reads only as "the catalogue broke".
+      expect(res.status, `sort=${sort} answered ${res.status}: ${res.text}`).toBe(200);
     }
   });
 

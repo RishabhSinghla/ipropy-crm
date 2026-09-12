@@ -7,7 +7,7 @@
  * here would bind the pool to the developer's real database before these
  * lines had a chance to run.
  */
-import { afterAll } from 'vitest';
+import { afterAll, beforeAll } from 'vitest';
 import { testControlDatabaseUrl, testDatabaseUrl } from './testDatabase.js';
 
 process.env.DATABASE_URL = testDatabaseUrl();
@@ -38,7 +38,52 @@ delete process.env.AI_PROVIDER;
 // limit, and only sometimes. Raised here rather than weakened in the product.
 process.env.LOGIN_RATE_LIMIT = '10000';
 
+/*
+  Six files in this suite delete a column from a shared payload table to prove
+  the product survives an administrator deleting a field, and put it back
+  afterwards. That restore is the load-bearing part: miss it and the column is
+  gone for every file that runs later, which shows up as some unrelated test
+  failing with a 42703 about a column it never mentions.
+
+  So each file's own columns are counted before and after it runs. Anything
+  that was there at the start and is not there at the end names the file that
+  lost it, at the moment it lost it, instead of the next one to trip over it.
+
+  Only removals. Creating a field is how half this suite works, and the columns
+  it adds are cleaned up by the next run's fresh database.
+*/
+const SHARED_TABLES = ['ipy_e_leads', 'ipy_e_properties', 'ipy_record', 'ipy_user'];
+let columnsAtStart: Set<string> | null = null;
+
+async function currentColumns(): Promise<Set<string>> {
+  const { db } = await import('../../src/db/pool.js');
+  const rows = await db.query<{ table_name: string; column_name: string }>(
+    `SELECT table_name, column_name FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = ANY($1)`,
+    [SHARED_TABLES],
+  );
+  return new Set(rows.rows.map((r) => `${r.table_name}.${r.column_name}`));
+}
+
+beforeAll(async () => {
+  columnsAtStart = await currentColumns().catch(() => null);
+});
+
 afterAll(async () => {
+  if (columnsAtStart) {
+    const now = await currentColumns().catch(() => null);
+    if (now) {
+      const lost = [...columnsAtStart].filter((c) => !now.has(c)).sort();
+      if (lost.length) {
+        throw new Error(
+          `This file dropped ${lost.join(', ')} and did not put it back. `
+          + 'Restore it in an afterAll — otherwise every file that runs after this '
+          + 'one fails with a 42703 about a column it never mentions.',
+        );
+      }
+    }
+  }
+
   // Without this the pool's idle clients keep the worker alive and vitest hangs.
   const { closePool } = await import('../../src/db/pool.js');
   await closePool();
