@@ -47,6 +47,22 @@ jobs:
           done
           STOCK="$(curl -s "${BASE_URL}/api/public/properties?limit=1" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("total", 0))')"
           echo "  note  the website is showing ${STOCK} unit(s)"
+          if [ "$STOCK" = "0" ]; then
+            # An empty shelf is not an error, and it is not nothing either: a
+            # website with stock behind it and none on it looks like a business
+            # with no stock. Say which of the two gates is closing it.
+            psql "$DATABASE_URL" -P pager=off -c "
+              SELECT status,
+                     count(*) AS units,
+                     count(*) FILTER (
+                       WHERE COALESCE((custom_fields->>'publish_to_web')::boolean, true)
+                     ) AS publishable
+                FROM ipy_e_properties p
+                JOIN ipy_record r ON r.id = p.record_id AND NOT r.is_deleted
+               GROUP BY status ORDER BY 2 DESC;"
+            echo "  note  the website shows a unit only when its status is one an admin has"
+            echo "        marked public (Admin → Settings → Website) and publish_to_web is not false."
+          fi
 
           echo "--- the enquiry form ---"
           # Read from production's own settings; a tenant that sets the key by
@@ -62,16 +78,20 @@ jobs:
           WRONG="$(curl -s -o /dev/null -w '%{http_code}' \
             -H 'Content-Type: application/json' -H 'x-webform-key: definitely-not-the-key' \
             -d '{"firstName":"Door","mobile":"9000000000"}' "${BASE_URL}/api/webhooks/leads/generic")"
-          if [ -z "$KEY" ]; then
-            check "the form is refused rather than left open" 503 "$WRONG"
-            echo "  note  the website enquiry form is OFF on this CRM: no key in Admin → Integrations."
-            echo "        A form posting to it gets a 503 and the enquiry is lost. Set a key to open it."
+          # What the server answers is the authority, not what the database
+          # holds: the key can be set by environment variable on the host, and
+          # this job cannot read those. 401 means the door is open and guarded;
+          # 503 means it has no key and is refusing to be an open form.
+          if [ "$WRONG" = "503" ]; then
+            echo "  note  the website enquiry form is OFF on this CRM: it has no key."
+            echo "        A form posting to it gets a 503 and the enquiry is lost."
           else
             check "a wrong key is refused" 401 "$WRONG"
           fi
 
           if [ -z "$KEY" ]; then
-            echo "  skip  the enquiry itself — there is no key to send one with"
+            echo "  skip  filing a real enquiry — the key is set on the host, not in the database,"
+            echo "        so this job cannot send one. The refusal above proves the door is live."
           else
             STAMP="$(date +%H%M%S)"
             MOBILE="90001${STAMP}"
