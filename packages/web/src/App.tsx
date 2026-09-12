@@ -1,6 +1,7 @@
 import { type JSX, lazy, Suspense, useEffect } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useApp } from './lib/store';
+import { isNative } from './lib/native';
 import { Spinner, ToastHost } from './components/ui';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import Login from './pages/Login';
@@ -12,6 +13,11 @@ import Login from './pages/Login';
 // that to /s/:token too, where a buyer with no account is looking at five
 // photos on mobile data. Nothing there ever mounts it.
 const Layout = lazy(() => import('./components/Layout'));
+/*
+  The app's own shell. Lazy like everything else, so a browser never downloads
+  it — `isNative` is false there and this chunk is never asked for.
+*/
+const MobileShell = lazy(() => import('./mobile/Shell'));
 const DashboardPage = lazy(() => import('./pages/Dashboard'));
 const ListView = lazy(() => import('./pages/ListView'));
 const RecordDetail = lazy(() => import('./pages/RecordDetail'));
@@ -71,6 +77,15 @@ export default function App(): JSX.Element {
             {/* Public too: the enquiry form a website visitor fills. */}
             <Route path="/f/:publicKey" element={<PublicFormPage />} />
 
+            {/*
+              Inside the installed app every signed-in route is the app's own
+              shell — a phone-shaped product, not the website at a narrow
+              width. A phone *browser* still gets the responsive web layout
+              below, unchanged: this is deliberately not a breakpoint.
+            */}
+            {isNative ? (
+              <Route path="/*" element={<RequireAuth><MobileShell /></RequireAuth>} />
+            ) : (
             <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="dashboard" element={<DashboardPage />} />
@@ -86,6 +101,7 @@ export default function App(): JSX.Element {
               <Route path=":module/new" element={<RecordEdit />} />
               <Route path=":module/:id" element={<RecordDetail />} />
             </Route>
+            )}
 
 
             <Route path="*" element={<Navigate to="/dashboard" replace />} />

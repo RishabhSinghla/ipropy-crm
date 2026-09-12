@@ -107,6 +107,20 @@
     overscroll-behavior-y: none;
   }
 
+  /* The bottom sheet coming up. 220ms on the curve iOS uses for exactly this
+     — fast enough not to be a wait, slow enough to show where it came from. */
+  @keyframes ipropy-sheet-up {
+    from { transform: translateY(100%); }
+    to   { transform: translateY(0); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    @keyframes ipropy-sheet-up {
+      from { transform: none; }
+      to   { transform: none; }
+    }
+  }
+
   /*
    * Installed as an app rather than opened in a browser.
    *

@@ -1,0 +1,360 @@
+/**
+ * A module, as a list you scroll — the shape of every messaging and contacts
+ * app on the phone already.
+ *
+ * What this deliberately does not have, all of which the web list does and all
+ * of which is desktop furniture: a checkbox on every row, a strip of saved-view
+ * tabs, a filter builder, a column chooser, a table/kanban toggle, and a pager
+ * reading "Rows per page 25, page 1 of 8". None of those is a thing a rep does
+ * standing up, and together they are most of why the CRM on a phone felt like a
+ * website rather than an app.
+ *
+ * What replaces them: search, scroll, and swipe. Saved views are still here —
+ * they are a real feature somebody configured — but as a quiet chip row rather
+ * than a tab bar, and only when more than one exists.
+ *
+ * The rows themselves are built from metadata, not from a hardcoded idea of
+ * what a lead looks like. The module's own list columns decide the second line,
+ * so a field renamed in the admin panel reaches this screen with no release.
+ */
+import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import type { FieldMeta, RecordEnvelope } from '@ipropy/shared';
+import { relativeTime, toInternational } from '@ipropy/shared';
+import { MessageCircle, Phone, Plus, Search as SearchIcon, X } from 'lucide-react';
+import { api } from '../lib/api';
+import { cn } from '../lib/utils';
+import { dial, openExternal } from '../lib/nativeActions';
+import { useSwipeActions, type SwipeSide } from '../lib/swipeActions';
+import { Spinner } from '../components/ui';
+import { AppBar, Avatar, Fab, Row } from './primitives';
+
+const PAGE_SIZE = 30;
+
+export default function MobileList(): JSX.Element {
+  const { module = '' } = useParams();
+  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [term, setTerm] = useState('');
+  const [debounced, setDebounced] = useState('');
+  const viewId = params.get('view') ?? undefined;
+
+  // 250ms. Long enough that typing a name is one request rather than nine,
+  // short enough that it still feels like the list is following you.
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebounced(term.trim()), 250);
+    return () => window.clearTimeout(t);
+  }, [term]);
+
+  const { data: meta } = useQuery({
+    queryKey: ['module', module],
+    queryFn: () => api.module(module),
+    staleTime: 5 * 60_000,
+  });
+
+  const { data: views } = useQuery({
+    queryKey: ['views', module],
+    queryFn: () => api.views(module),
+    staleTime: 5 * 60_000,
+  });
+
+  const list = useInfiniteQuery({
+    queryKey: ['mobile-list', module, viewId, debounced],
+    initialPageParam: 1,
+    queryFn: ({ pageParam }) => api.list(module, {
+      page: pageParam,
+      pageSize: PAGE_SIZE,
+      ...(viewId ? { view: viewId } : {}),
+      ...(debounced ? { search: debounced } : {}),
+    }),
+    getNextPageParam: (last) => (last.page < last.totalPages ? last.page + 1 : undefined),
+  });
+
+  const rows = useMemo(() => list.data?.pages.flatMap((p) => p.rows) ?? [], [list.data]);
+  const total = list.data?.pages[0]?.total ?? 0;
+
+  const fields = useMemo(() => {
+    const map = new Map<string, FieldMeta>();
+    for (const f of meta?.fields ?? []) map.set(f.name, f);
+    return map;
+  }, [meta]);
+
+  /*
+    Scroll to the end and the next page loads. No button, no page numbers.
+    `rootMargin` fires it a screen early, so on a decent connection the list
+    never actually stops — which is the difference between "fast" and "fast
+    once you have waited".
+  */
+  const sentinel = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = sentinel.current;
+    if (!el) return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting && list.hasNextPage && !list.isFetchingNextPage) {
+        void list.fetchNextPage();
+      }
+    }, { rootMargin: '600px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [list.hasNextPage, list.isFetchingNextPage, list.fetchNextPage, list]);
+
+  const label = meta?.label ?? '';
+
+  const closeSearch = useCallback(() => { setSearchOpen(false); setTerm(''); }, []);
+
+  return (
+    <div className="flex h-full flex-col bg-[var(--app-bg)]">
+      {searchOpen ? (
+        <header className="sticky top-0 z-20 shrink-0 bg-[var(--surface)]/95 px-3 py-2 backdrop-blur-xl">
+          <div className="flex items-center gap-2 rounded-full bg-slate-500/10 px-3">
+            <SearchIcon className="h-4 w-4 shrink-0 text-muted" />
+            <input
+              autoFocus
+              value={term}
+              onChange={(e) => setTerm(e.target.value)}
+              placeholder={`Search ${label.toLowerCase()}`}
+              className="h-11 min-w-0 flex-1 bg-transparent text-[16px] outline-none placeholder:text-muted"
+              // `search` puts a magnifier on the keyboard instead of a return
+              // key, which is what the rest of the phone does here.
+              type="search"
+              enterKeyHint="search"
+            />
+            <button type="button" onClick={closeSearch} aria-label="Close search" className="p-1 text-muted">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </header>
+      ) : (
+        <AppBar
+          large
+          title={label}
+          subtitle={total ? `${total.toLocaleString('en-IN')}` : undefined}
+          actions={(
+            <button
+              type="button"
+              onClick={() => setSearchOpen(true)}
+              aria-label="Search"
+              className="flex h-11 w-11 items-center justify-center rounded-full text-slate-600 active:bg-slate-500/10 dark:text-slate-300"
+            >
+              <SearchIcon className="h-5 w-5" />
+            </button>
+          )}
+        />
+      )}
+
+      {/*
+        Saved views, only when somebody has made one. A single "All" chip is a
+        control that cannot be used, and a row of tabs above every list is the
+        web app's habit, not a phone's.
+      */}
+      {(views?.length ?? 0) > 1 && !searchOpen && (
+        <div className="flex shrink-0 gap-2 overflow-x-auto px-4 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {(views ?? []).map((v) => {
+            const active = viewId ? v.id === viewId : Boolean(v.isDefault);
+            return (
+              <button
+                key={v.id}
+                type="button"
+                onClick={() => {
+                  const next = new URLSearchParams(params);
+                  next.set('view', v.id);
+                  setParams(next, { replace: true });
+                }}
+                className={cn(
+                  'shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-colors',
+                  active
+                    ? 'bg-brand-600 text-white'
+                    : 'bg-slate-500/10 text-slate-600 dark:text-slate-300',
+                )}
+              >
+                {v.name}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        {list.isPending ? (
+          <div className="flex h-40 items-center justify-center"><Spinner className="h-6 w-6 text-brand-600" /></div>
+        ) : rows.length === 0 ? (
+          <div className="px-8 pt-20 text-center">
+            <p className="text-[17px] font-medium">
+              {debounced ? 'Nothing found' : `No ${label.toLowerCase()} yet`}
+            </p>
+            <p className="mt-1 text-[15px] text-muted">
+              {debounced ? 'Try a different name or number.' : 'Tap + to add the first one.'}
+            </p>
+          </div>
+        ) : (
+          <div className="bg-[var(--surface)]">
+            {rows.map((row) => (
+              <ListRow
+                key={row.id}
+                row={row}
+                fields={fields}
+                pipelineField={meta?.pipelineField ?? null}
+                onOpen={() => navigate(`/${module}/${row.id}`)}
+              />
+            ))}
+            <div ref={sentinel} />
+            {list.isFetchingNextPage && (
+              <div className="flex justify-center py-6"><Spinner className="h-5 w-5 text-brand-600" /></div>
+            )}
+          </div>
+        )}
+        {/* Clears the tab bar and the floating button. */}
+        <div style={{ height: 'calc(var(--bottom-nav-h, 0px) + 88px)' }} />
+      </div>
+
+      <Fab label={`Add ${label.toLowerCase()}`} icon={<Plus className="h-6 w-6" />} onClick={() => navigate(`/${module}/new`)} />
+    </div>
+  );
+}
+
+/**
+ * One record.
+ *
+ * Swipe right to call, left to open WhatsApp — the Gmail gesture, and the one
+ * the owner asked for on the web list. It is armed only once the row has
+ * travelled far enough to be deliberate, so scrolling never rings anybody.
+ */
+function ListRow({
+  row, fields, pipelineField, onOpen,
+}: {
+  row: RecordEnvelope;
+  fields: Map<string, FieldMeta>;
+  pipelineField: string | null;
+  onOpen: () => void;
+}): JSX.Element {
+  const phone = phoneOf(row, fields);
+
+  const { handlers, state } = useSwipeActions((side: SwipeSide) => {
+    if (!phone) return;
+    if (side === 'right') dial(phone);
+    else void openExternal(`https://wa.me/${phone.replace(/[^\d+]/g, '')}`);
+  }, Boolean(phone));
+
+  return (
+    <div className="relative overflow-hidden">
+      {/*
+        What is revealed underneath as the row moves. Green for the call side
+        and the WhatsApp side both, because that is the colour a rep already
+        associates with both actions on this phone.
+      */}
+      {state.dx !== 0 && phone && (
+        <div
+          className={cn(
+            'absolute inset-0 flex items-center px-6 text-white',
+            state.dx > 0 ? 'justify-start bg-emerald-600' : 'justify-end bg-emerald-700',
+          )}
+        >
+          {state.dx > 0 ? <Phone className="h-5 w-5" /> : <MessageCircle className="h-5 w-5" />}
+        </div>
+      )}
+
+      <div
+        {...handlers}
+        className="relative bg-[var(--surface)]"
+        style={{ transform: `translateX(${state.dx}px)` }}
+      >
+        <Row
+          onClick={onOpen}
+          leading={<Avatar name={row.label} />}
+          title={row.label}
+          subtitle={secondLine(row, fields, pipelineField) || undefined}
+          trailing={<span className="text-[12px] text-muted">{shortTime(row.updatedAt)}</span>}
+          className="border-b border-[var(--border)]"
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The line under the name.
+ *
+ * A number and where they have got to — the two things a rep wants before
+ * deciding whether to tap. Both are found through metadata rather than named:
+ * the number is whichever field is a phone, and the stage is the module's own
+ * `pipelineField`, which is the setting that already means "the field this
+ * module's progress is tracked on". So a module with neither shows its first
+ * filled-in dropdown, and one that is renamed reaches this screen with no
+ * release.
+ *
+ * `display` before `values`, always. The raw value of a phone is national
+ * digits with no country, and of a reference is a UUID — showing either is how
+ * a list ends up with a row of identifiers under every name.
+ */
+function secondLine(
+  row: RecordEnvelope,
+  fields: Map<string, FieldMeta>,
+  pipelineField: string | null,
+): string {
+  const parts: string[] = [];
+
+  const shown = (name: string): string | null => {
+    const raw = row.display?.[name] ?? row.values[name];
+    if (raw === null || raw === undefined || raw === '') return null;
+    if (Array.isArray(raw) && !raw.length) return null;
+    const text = String(raw);
+    // The label repeated under itself reads as a rendering fault.
+    return text === row.label ? null : text;
+  };
+
+  for (const [name, field] of fields) {
+    if (field.uitype !== 'phone') continue;
+    const text = shown(name);
+    if (text) { parts.push(text); break; }
+  }
+
+  const stage = pipelineField ? shown(pipelineField) : null;
+  if (stage) parts.push(stage);
+
+  if (!parts.length) {
+    for (const [name, field] of fields) {
+      if (field.uitype !== 'picklist') continue;
+      const text = shown(name);
+      if (text) { parts.push(text); break; }
+    }
+  }
+
+  return parts.join(' · ');
+}
+
+/** The first phone-shaped field on the record, in international form. */
+function phoneOf(row: RecordEnvelope, fields: Map<string, FieldMeta>): string | null {
+  for (const [name, field] of fields) {
+    if (field.uitype !== 'phone') continue;
+    const value = row.values[name];
+    if (!value) continue;
+    /*
+      A number is two fields here — a country picklist and the national digits
+      (migration 026). `toInternational` is the one place that knows how to put
+      them back together, and writing it out by hand is how the lead-capture
+      path silently threw away every automated lead for weeks.
+    */
+    const country = String(row.values[String(field.config?.countryField ?? 'country_code')] ?? 'India');
+    return toInternational(country, String(value));
+  }
+  return null;
+}
+
+/**
+ * A time a person reads at a glance: the clock today, the day this week, a
+ * date beyond that. The same rule a messaging list uses.
+ */
+function shortTime(iso: string): string {
+  const then = new Date(iso);
+  const now = new Date();
+  const sameDay = then.toDateString() === now.toDateString();
+  if (sameDay) return then.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+  const days = (now.getTime() - then.getTime()) / 86_400_000;
+  if (days < 7) return then.toLocaleDateString('en-IN', { weekday: 'short' });
+  return then.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+}
+
+export { relativeTime };
