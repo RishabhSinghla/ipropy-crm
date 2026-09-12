@@ -9,6 +9,8 @@ import type {
   PropertyMatch, RecordEnvelope, TimelineEntry,
 } from '@ipropy/shared';
 
+import { cachedRefresh, isNative, rememberRefresh, serverUrl } from './native';
+
 const TOKEN_KEY = 'ipropy.token';
 const REFRESH_KEY = 'ipropy.refresh';
 
@@ -57,9 +59,16 @@ async function refreshToken(): Promise<boolean> {
   // No localStorage token is the normal case now: the cookie carries it and the
   // browser attaches it on its own. Only give up if there is no session at all,
   // which the server tells us by refusing the refresh.
-  const refresh = tokenStore.getRefresh();
+  /*
+    In the app there is no cookie to fall back on — see `getStoredRefresh` in
+    native.ts for why — so the token held in native storage is the whole
+    session. On the web this is still the legacy localStorage copy, handed
+    over once and then forgotten.
+  */
+  const refresh = isNative ? cachedRefresh() : tokenStore.getRefresh();
+  if (isNative && !refresh) { refreshPromise = null; return false; }
 
-  refreshPromise = fetch('/api/auth/refresh', {
+  refreshPromise = fetch(serverUrl('/api/auth/refresh'), {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
@@ -86,7 +95,15 @@ async function refreshToken(): Promise<boolean> {
         read. Clearing it here is what actually completes the migration, one
         browser at a time, without anybody signing in again.
       */
-      tokenStore.forgetRefresh();
+      /*
+        The app has no cookie, so a rotation it fails to store is a session it
+        cannot renew again — the next refresh would present the retired token
+        and the server would read that as theft and sign every device out.
+        `data.refreshToken` is deliberately absent when a concurrent refresh
+        won the race, and in that case the token already held is still live.
+      */
+      if (isNative) { if (data.refreshToken) rememberRefresh(data.refreshToken); }
+      else tokenStore.forgetRefresh();
       return true;
     })
     .catch(() => false)
@@ -108,7 +125,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   const doFetch = async (): Promise<Response> => {
     const token = tokenStore.get();
     const isFormData = body instanceof FormData;
-    return fetch(path.startsWith('/') ? path : `/api/${path}`, {
+    return fetch(serverUrl(path.startsWith('/') ? path : `/api/${path}`), {
       ...rest,
       // Required by the trusted-device PIN in split localhost deployments.
       // Its HttpOnly cookie is path-scoped to /api/auth/pin.
@@ -168,7 +185,10 @@ export function authedFileUrl(url: string, params: Record<string, string> = {}):
   const token = tokenStore.get();
   if (token) search.set('access_token', token);
   const qs = search.toString();
-  return qs ? `${url}${url.includes('?') ? '&' : '?'}${qs}` : url;
+  // `serverUrl` is a no-op in a browser; in the app it turns this into an
+  // absolute URL, without which every photo and document renders broken.
+  const abs = serverUrl(url);
+  return qs ? `${abs}${abs.includes('?') ? '&' : '?'}${qs}` : abs;
 }
 
 const get = <T>(path: string): Promise<T> => request<T>(path);
