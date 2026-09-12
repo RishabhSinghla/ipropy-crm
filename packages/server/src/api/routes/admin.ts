@@ -1139,6 +1139,10 @@ async function testIntegration(provider: string): Promise<{ ok: boolean; message
         const result = await testOneDriveConnection(getOneDriveProviderSettings());
         return { ok: true, message: `Connected — ${result.name}. The iPropy root folder is writable.` };
       }
+      case 'fcm': {
+        const { testFcm } = await import('../../core/notifications/fcm.js');
+        return testFcm();
+      }
       case 'facebook_leads':
         if (!s.leadSources.facebook.pageAccessToken) return { ok: false, message: 'A page access token is required.' };
         return { ok: true, message: 'Page access token is set. Full verification happens on the next inbound lead.' };

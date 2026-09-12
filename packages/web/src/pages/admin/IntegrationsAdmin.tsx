@@ -191,7 +191,7 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
 const TESTABLE = new Set([
   'meta_whatsapp', 'twilio', 'exotel', 'smtp', 'imap', 'facebook_leads',
   'anthropic', 'ai_gemini', 'ai_groq', 'ai_openrouter', 'ai_openai', 'ai_ollama',
-  'ai_opencode', 'stt', 'onedrive', 'sentry',
+  'ai_opencode', 'stt', 'onedrive', 'sentry', 'fcm',
 ]);
 
 /**
