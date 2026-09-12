@@ -19,6 +19,11 @@
 name: Prove the CRM remembers
 
 on:
+  # Ten past nine India time, just after the read check. Both halves every
+  # morning: one says the screens load, this one says what a rep types is kept.
+  # It cleans up after itself, and the cleanup runs even when the checks fail.
+  schedule:
+    - cron: '40 3 * * *'
   workflow_dispatch:
     inputs:
       base_url:
@@ -64,7 +69,10 @@ jobs:
             INSERT INTO ipy_api_key (user_id, name, key_prefix, key_hash, scopes, expires_at)
             VALUES ('${OWNER}', 'Live write check (automated)', '${PREFIX}', '${HASH}',
                     '[\"GET /api/records\", \"POST /api/records\", \"PATCH /api/records\",
-                      \"GET /api/telephony\", \"POST /api/telephony\"]'::jsonb,
+                      \"GET /api/telephony\", \"POST /api/telephony\",
+                      \"GET /api/files\", \"POST /api/files\", \"GET /api/notifications\",
+                      \"GET /api/views\", \"POST /api/views\", \"POST /api/import\",
+                      \"POST /api/ai\"]'::jsonb,
                     now() + interval '10 minutes')
             RETURNING id" | head -1)"
           echo "KEY_ID=${KEY_ID}" >> "$GITHUB_ENV"
@@ -137,11 +145,155 @@ jobs:
             echo "  FAIL  a call can be logged — no call id came back"; fail=1
           fi
 
+          echo "--- the same person typed twice ---"
+          # Entering somebody who is already on the system is the most common
+          # thing that happens in a CRM, and catching it is the difference
+          # between one customer and two half-customers.
+          CODE="$(post POST /api/records/leads/check-duplicates "$(printf '{"values":{"mobile":"%s"}}' "$MOBILE")")"
+          check "the duplicate check answers" 200 "$CODE"
+          DUPES="$(python3 -c "import json;d=json.load(open('/tmp/body.json'));print(len(d if isinstance(d,list) else d.get('duplicates',[])))" 2>/dev/null || echo 0)"
+          check "and it finds the contact already there" 1 "$DUPES"
+
+          echo "--- changing several at once ---"
+          CODE="$(post POST /api/records/leads/mass-update "$(printf '{"ids":["%s"],"values":{"lead_status":"Qualified"}}' "$LEAD")")"
+          check "a bulk edit is accepted" 200 "$CODE"
+          BULK="$(psql "$DATABASE_URL" -tAc "
+            SELECT status FROM ipy_e_leads WHERE record_id = '${LEAD}'")"
+          check "and it reached the record it named" Qualified "$BULK"
+
+          echo "--- sending a unit to a buyer who has no account ---"
+          UNIT="$(psql "$DATABASE_URL" -tAc "
+            SELECT id FROM ipy_record
+             WHERE module_name = 'properties' AND NOT is_deleted
+             ORDER BY updated_at DESC LIMIT 1" | head -1)"
+          if [ -n "$UNIT" ]; then
+            CODE="$(post POST "/api/records/properties/${UNIT}/share-links" '{"label":"Write Check (automated)","expiresInDays":1}')"
+            check "a share link can be minted" 201 "$CODE"
+            TOKEN="$(field token)"
+            echo "SHARE_TOKEN=${TOKEN}" >> "$GITHUB_ENV"
+            if [ -n "$TOKEN" ]; then
+              # No key, no cookie, no account — the buyer's own browser.
+              OPEN="$(curl -s -o /dev/null -w '%{http_code}' "${BASE_URL}/api/public/share/${TOKEN}")"
+              check "and a buyer with no account can open it" 200 "$OPEN"
+            else
+              echo "  FAIL  a share link can be minted — no token came back"; fail=1
+            fi
+          else
+            echo "  skip  no unit to share"
+          fi
+
+          echo "--- a document on the record, and getting it back ---"
+          # Reps attach a photo of an ID, a signed form, a floor plan. An upload
+          # that succeeds and cannot be read back is worse than one that fails:
+          # the paperwork looks filed and is not there.
+          printf 'Write Check (automated) — safe to ignore.\n' > /tmp/attach.txt
+          CODE="$(curl -s -o /tmp/body.json -w '%{http_code}' -H "x-api-key: ${KEY}" \
+            -F "file=@/tmp/attach.txt;type=text/plain" -F "recordId=${LEAD}" -F "module=leads" \
+            "${BASE_URL}/api/files")"
+          check "a document can be attached" 201 "$CODE"
+          FILE_ID="$(field id)"
+          echo "FILE_ID=${FILE_ID}" >> "$GITHUB_ENV"
+          if [ -n "$FILE_ID" ]; then
+            BACK="$(curl -s -H "x-api-key: ${KEY}" "${BASE_URL}/api/files/${FILE_ID}")"
+            case "$BACK" in
+              *"safe to ignore"*) echo "  ok    and it reads back byte for byte" ;;
+              *) echo "  FAIL  the document came back as something else"; fail=1 ;;
+            esac
+            LISTED="$(curl -s -H "x-api-key: ${KEY}" "${BASE_URL}/api/records/${LEAD}/files" \
+              | python3 -c "import json,sys;d=json.load(sys.stdin);print(len(d if isinstance(d,list) else d.get('files',[])))" 2>/dev/null || echo 0)"
+            check "and it is listed on the record" 1 "$LISTED"
+          else
+            echo "  FAIL  a document can be attached — no file id came back"; fail=1
+          fi
+
+          echo "--- being told about it ---"
+          CODE="$(curl -s -o /tmp/body.json -w '%{http_code}' -H "x-api-key: ${KEY}" "${BASE_URL}/api/notifications")"
+          check "notifications answer" 200 "$CODE"
+
+          echo "--- a list of their own ---"
+          # A saved view is how a rep makes the CRM theirs: "my callbacks this
+          # week". It is stored per person, and one that cannot be created is a
+          # CRM everybody uses the same way whether it suits them or not.
+          VIEW_NAME="Write Check (automated) ${STAMP}"
+          CODE="$(post POST /api/views/leads "$(printf '{"name":"%s","columns":["full_name","mobile"],"sortDir":"desc"}' "$VIEW_NAME")")"
+          check "a saved view can be created" 201 "$CODE"
+          VIEW_ID="$(field id)"
+          echo "VIEW_ID=${VIEW_ID}" >> "$GITHUB_ENV"
+          if [ -n "$VIEW_ID" ]; then
+            SEEN="$(curl -s -H "x-api-key: ${KEY}" "${BASE_URL}/api/views/leads" \
+              | python3 -c "import json,sys;print(sum(1 for v in json.load(sys.stdin) if v.get('id')=='${VIEW_ID}'))" 2>/dev/null || echo 0)"
+            check "and it appears in the tabs" 1 "$SEEN"
+          fi
+
+          echo "--- rehearsing an import before it happens ---"
+          # The dry run is the promise that nothing is written until somebody
+          # has seen what would be. It runs the importer's own preparation and
+          # rolls it back, so this is safe to point at production — and the
+          # count of records afterwards proves it.
+          BEFORE="$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM ipy_record WHERE module_name = 'leads'")"
+          printf 'Full Name,Mobile\nWrite Check Rehearsal %s,9000%s\n' "$STAMP" "${STAMP:0:6}" > /tmp/import.csv
+          CODE="$(curl -s -o /tmp/body.json -w '%{http_code}' -H "x-api-key: ${KEY}" \
+            -F "file=@/tmp/import.csv;type=text/csv" \
+            -F 'mapping={"Full Name":"full_name","Mobile":"mobile"}' \
+            -F 'valueMap={}' -F 'rowFilters=[]' -F 'importMode=create' \
+            -F 'staticValues={}' -F 'createOptions=false' \
+            "${BASE_URL}/api/import/leads/dry-run")"
+          check "a rehearsal answers" 200 "$CODE"
+          ROWS="$(python3 -c "import json;print(json.load(open('/tmp/body.json')).get('totalRows',0))" 2>/dev/null || echo 0)"
+          check "and it read the file" 1 "$ROWS"
+          AFTER="$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM ipy_record WHERE module_name = 'leads'")"
+          check "and it wrote nothing" "$BEFORE" "$AFTER"
+
+          echo "--- the things that think ---"
+          # Scoring reads the lead and writes a rating. On production the rating
+          # field has been deleted, which is exactly the case that used to make
+          # this raise 42703 and stop every score moving — so the answer must be
+          # a score, not an error, on a CRM without that column.
+          CODE="$(post POST "/api/ai/score-lead/${LEAD}" '{}')"
+          check "a lead can be scored" 200 "$CODE"
+          SCORE="$(python3 -c "import json;d=json.load(open('/tmp/body.json'));print('yes' if isinstance(d.get('score'), (int,float)) else 'no')" 2>/dev/null || echo no)"
+          check "and the answer is a number" yes "$SCORE"
+
+          # Ask iPropy. A free model that is rate-limited answering 503 is the
+          # documented, correct degradation — not a fault — so both are accepted
+          # and the one thing refused is a 500.
+          ASK="$(post POST /api/ai/ask '{"question":"How many contacts are in the CRM?"}')"
+          case "$ASK" in
+            200) echo "  ok    Ask iPropy answers" ;;
+            503) echo "  ok    Ask iPropy is off right now, and says so (503)" ;;
+            *)   echo "  FAIL  Ask iPropy — HTTP ${ASK}"; head -c 200 /tmp/body.json; echo; fail=1 ;;
+          esac
+
           echo "--- what this key must not be able to do ---"
           CODE="$(curl -s -o /dev/null -w '%{http_code}' -X DELETE -H "x-api-key: ${KEY}" "${BASE_URL}/api/records/leads/${LEAD}")"
           check "it cannot delete a record" 401 "$CODE"
-          CODE="$(curl -s -o /dev/null -w '%{http_code}' -H "x-api-key: ${KEY}" "${BASE_URL}/api/admin/users")"
-          check "it cannot reach the admin area" 401 "$CODE"
+
+          # The whole boundary, not one door of it. A key is a long-lived string
+          # in a config file on somebody's laptop, handed to an AI client: fine
+          # for reading and updating records, never for creating users,
+          # rewriting permissions or reshaping the model. Each of these is a
+          # separate guard in the code and each is checked separately, because
+          # "the admin area is blocked" has been true of one route and not its
+          # neighbour before.
+          for path in /api/admin/users /api/admin/roles /api/admin/profiles /api/admin/settings; do
+            CODE="$(curl -s -o /dev/null -w '%{http_code}' -H "x-api-key: ${KEY}" "${BASE_URL}${path}")"
+            check "it cannot read ${path}" 401 "$CODE"
+          done
+
+          CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "x-api-key: ${KEY}" \
+            -H 'Content-Type: application/json' -d '{"name":"nope","label":"nope"}' \
+            "${BASE_URL}/api/meta/modules/leads/fields")"
+          check "it cannot add a field to the model" 401 "$CODE"
+
+          CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "x-api-key: ${KEY}" \
+            -H 'Content-Type: application/json' -d '{"ids":["'"${LEAD}"'"]}' \
+            "${BASE_URL}/api/records/leads/mass-delete")"
+          check "it cannot empty a list" 401 "$CODE"
+
+          # And a key with no scope for a path is refused even though the key
+          # itself is perfectly valid — the scoping, not just the blocking.
+          CODE="$(curl -s -o /dev/null -w '%{http_code}' -H "x-api-key: ${KEY}" "${BASE_URL}/api/comms/messages")"
+          check "it cannot wander outside its scopes" 401 "$CODE"
 
           if [ "$fail" != "0" ]; then
             echo "::error::the CRM does not reliably keep what the team types into it"
@@ -160,6 +312,13 @@ jobs:
           DELETE FROM ipy_notification
            WHERE created_at > now() - interval '30 minutes'
              AND (title LIKE '%Write Check (automated)%' OR body LIKE '%Write Check (automated)%');
+          DELETE FROM ipy_view WHERE id = '${VIEW_ID:-00000000-0000-0000-0000-000000000000}';
+          DELETE FROM ipy_view_tombstone WHERE seed_key LIKE 'Write Check (automated)%';
+          DELETE FROM ipy_attachment
+           WHERE record_id = '${LEAD:-00000000-0000-0000-0000-000000000000}';
+          DELETE FROM ipy_share_link
+           WHERE label = 'Write Check (automated)'
+              OR token = '${SHARE_TOKEN:-none}';
           DELETE FROM ipy_call WHERE record_id = '${LEAD:-00000000-0000-0000-0000-000000000000}';
           DELETE FROM ipy_record WHERE id = '${LEAD:-00000000-0000-0000-0000-000000000000}';
           SQL
