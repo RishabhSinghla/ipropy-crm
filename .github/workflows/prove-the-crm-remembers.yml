@@ -267,8 +267,33 @@ jobs:
           echo "--- what this key must not be able to do ---"
           CODE="$(curl -s -o /dev/null -w '%{http_code}' -X DELETE -H "x-api-key: ${KEY}" "${BASE_URL}/api/records/leads/${LEAD}")"
           check "it cannot delete a record" 401 "$CODE"
-          CODE="$(curl -s -o /dev/null -w '%{http_code}' -H "x-api-key: ${KEY}" "${BASE_URL}/api/admin/users")"
-          check "it cannot reach the admin area" 401 "$CODE"
+
+          # The whole boundary, not one door of it. A key is a long-lived string
+          # in a config file on somebody's laptop, handed to an AI client: fine
+          # for reading and updating records, never for creating users,
+          # rewriting permissions or reshaping the model. Each of these is a
+          # separate guard in the code and each is checked separately, because
+          # "the admin area is blocked" has been true of one route and not its
+          # neighbour before.
+          for path in /api/admin/users /api/admin/roles /api/admin/profiles /api/admin/settings; do
+            CODE="$(curl -s -o /dev/null -w '%{http_code}' -H "x-api-key: ${KEY}" "${BASE_URL}${path}")"
+            check "it cannot read ${path}" 401 "$CODE"
+          done
+
+          CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "x-api-key: ${KEY}" \
+            -H 'Content-Type: application/json' -d '{"name":"nope","label":"nope"}' \
+            "${BASE_URL}/api/meta/modules/leads/fields")"
+          check "it cannot add a field to the model" 401 "$CODE"
+
+          CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "x-api-key: ${KEY}" \
+            -H 'Content-Type: application/json' -d '{"ids":["'"${LEAD}"'"]}' \
+            "${BASE_URL}/api/records/leads/mass-delete")"
+          check "it cannot empty a list" 401 "$CODE"
+
+          # And a key with no scope for a path is refused even though the key
+          # itself is perfectly valid — the scoping, not just the blocking.
+          CODE="$(curl -s -o /dev/null -w '%{http_code}' -H "x-api-key: ${KEY}" "${BASE_URL}/api/comms/messages")"
+          check "it cannot wander outside its scopes" 401 "$CODE"
 
           if [ "$fail" != "0" ]; then
             echo "::error::the CRM does not reliably keep what the team types into it"
