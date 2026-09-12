@@ -1,0 +1,136 @@
+# Prove the Android call sync works on production, without a handset.
+#
+# Three phones have been paired to production since August and not one has ever
+# uploaded a call. The endpoints they use are ordinary HTTPS — ping, policy,
+# calls — so the loop can be exercised from here against the live server, which
+# is the only way to know it works before a rep depends on it.
+#
+# This is a *write* to production, deliberately and briefly:
+#
+#   1. a device is paired by inserting one row (the CRM's own pairing screen is
+#      behind a login this workflow does not have);
+#   2. the live API is called with that token, exactly as the app does;
+#   3. what arrived is read back from the database;
+#   4. everything created is removed again, whether or not the test passed.
+#
+# The token is generated in this job, never printed, and never leaves it — the
+# repository is public and a key was leaked into an Actions log once already.
+# The call is filed against a number chosen because no lead has it, so nothing
+# attaches to a customer record, and the device belongs to the owner's own
+# account so any notification lands on him rather than on a rep.
+name: Prove device sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "The CRM to test"
+        default: "https://crm.ipropy.com"
+
+jobs:
+  prove:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install psql 18
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: Pair a device, sync a call, read it back
+        id: prove
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          BASE_URL: ${{ inputs.base_url }}
+        run: |
+          set -euo pipefail
+
+          # A number no lead has, so the call attaches to nobody. Checked rather
+          # than assumed: 234 contacts and a guess is not a guarantee.
+          TAIL="$(date +%H%M%S)"
+          NUMBER="90000${TAIL}"
+          TAKEN="$(psql "$DATABASE_URL" -tAc "
+            SELECT count(*) FROM ipy_e_leads
+             WHERE right(regexp_replace(coalesce(mobile,''), '\D', '', 'g'), 10) = '${NUMBER}'
+                OR right(regexp_replace(coalesce(alternate_phone,''), '\D', '', 'g'), 10) = '${NUMBER}'")"
+          if [ "$TAKEN" != "0" ]; then
+            echo "::error::${NUMBER} belongs to a contact — refusing to file a test call against a real person"
+            exit 1
+          fi
+
+          OWNER="$(psql "$DATABASE_URL" -tAc \
+            "SELECT id FROM ipy_user WHERE is_admin AND is_active ORDER BY created_at LIMIT 1")"
+          if [ -z "$OWNER" ]; then echo "::error::no active administrator to own the test device"; exit 1; fi
+
+          # Generated here, hashed here, never echoed. `openssl dgst -r` prints
+          # "<hash> *stdin", so the hash is the first field.
+          TOKEN="$(openssl rand -hex 32)"
+          HASH="$(printf '%s' "$TOKEN" | openssl dgst -sha256 -r | cut -d' ' -f1)"
+
+          # `head -1`: psql prints the command tag ("INSERT 0 1") after the
+          # returned row, and a uuid with that stuck to it is not a uuid.
+          DEVICE_ID="$(psql "$DATABASE_URL" -tAc "
+            INSERT INTO ipy_device (user_id, label, token_hash, token_preview, model)
+            VALUES ('${OWNER}', 'Sync proof (automated)', '${HASH}', 'proof', 'github-actions')
+            RETURNING id" | head -1)"
+          echo "DEVICE_ID=${DEVICE_ID}" >> "$GITHUB_ENV"
+          echo "NUMBER=${NUMBER}" >> "$GITHUB_ENV"
+          echo "::notice::paired a temporary device on ${BASE_URL}"
+
+          fail=0
+          check() { # name, expected, actual
+            if [ "$2" = "$3" ]; then echo "  ok    $1"; else echo "  FAIL  $1 — expected $2, got $3"; fail=1; fi
+          }
+
+          PING="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${TOKEN}" "${BASE_URL}/api/device/ping")"
+          check "the phone is recognised (/api/device/ping)" 200 "$PING"
+
+          POLICY="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${TOKEN}" "${BASE_URL}/api/device/policy")"
+          check "it can read its policy (/api/device/policy)" 200 "$POLICY"
+
+          EXTERNAL="proof-$(date +%s)"
+          echo "EXTERNAL=${EXTERNAL}" >> "$GITHUB_ENV"
+          BODY="$(printf '{"appVersion":"proof","entries":[{"externalId":"%s","number":"%s","type":2,"timestamp":%s,"durationSeconds":42}]}' \
+            "$EXTERNAL" "$NUMBER" "$(( $(date +%s) * 1000 - 60000 ))")"
+          SYNC="$(curl -s -H "Authorization: Bearer ${TOKEN}" -H 'Content-Type: application/json' \
+            -d "$BODY" "${BASE_URL}/api/device/calls")"
+          echo "  sync answered: ${SYNC}"
+          check "the call was accepted (/api/device/calls)" 1 "$(printf '%s' "$SYNC" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("created"))')"
+
+          # Sending the same log again is what the app does on every sync.
+          AGAIN="$(curl -s -H "Authorization: Bearer ${TOKEN}" -H 'Content-Type: application/json' \
+            -d "$BODY" "${BASE_URL}/api/device/calls")"
+          check "a repeat sync creates no duplicate" 0 "$(printf '%s' "$AGAIN" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("created"))')"
+
+          STORED="$(psql "$DATABASE_URL" -tAc "
+            SELECT source || '|' || status || '|' || duration_seconds
+              FROM ipy_call WHERE external_id = '${EXTERNAL}'")"
+          check "it is in the call log as a device call" "device|completed|42" "$STORED"
+
+          SEEN="$(psql "$DATABASE_URL" -tAc "
+            SELECT CASE WHEN last_sync_at IS NULL THEN 'NEVER' ELSE 'yes' END
+              FROM ipy_device WHERE id = '${DEVICE_ID}'")"
+          check "the phone now shows as having synced" yes "$SEEN"
+
+          if [ "$fail" != "0" ]; then
+            echo "::error::the Android sync loop does not work on ${BASE_URL}"
+            exit 1
+          fi
+          echo "::notice::the Android sync loop works end to end on ${BASE_URL}"
+
+      - name: Take it all away again
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          [ -n "${DEVICE_ID:-}" ] || { echo "nothing was created"; exit 0; }
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<SQL
+          DELETE FROM ipy_notification
+           WHERE body LIKE '%${NUMBER}%' AND created_at > now() - interval '1 hour';
+          DELETE FROM ipy_call WHERE device_id = '${DEVICE_ID}';
+          DELETE FROM ipy_device WHERE id = '${DEVICE_ID}';
+          SQL
+          LEFT="$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM ipy_device WHERE id = '${DEVICE_ID}'")"
+          echo "::notice::temporary device removed (rows left: ${LEFT})"
