@@ -1,0 +1,170 @@
+# Write to the live CRM the way a rep does, and check it stuck.
+#
+# The read side is covered by "Prove the CRM answers". This is the other half
+# and the half that matters more: adding the person you just spoke to, changing
+# something on them without leaving the page, leaving a note for whoever picks
+# them up next, logging the call and recording what happened. Every one of those
+# is a write to real data on the real server, and none of it had ever been
+# exercised there.
+#
+# The key is minted for this job, scoped to exactly the paths below, expires in
+# ten minutes and is deleted afterwards — and it cannot delete a record even if
+# something asked it to, because `recordsRouter` refuses DELETE to any API key.
+# The record this creates is therefore removed from the database directly, in a
+# step that runs whether the checks passed or failed, along with the note, the
+# call and any notification a rep was sent about it.
+#
+# Everything it creates is named "Write Check (automated)" so that anyone who
+# sees it in the seconds it exists knows what it is.
+name: Prove the CRM remembers
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "The CRM to test"
+        default: "https://crm.ipropy.com"
+
+jobs:
+  prove:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install psql 18
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: Add a contact, change it, note it, ring it
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          BASE_URL: ${{ inputs.base_url }}
+        run: |
+          set -euo pipefail
+
+          OWNER="$(psql "$DATABASE_URL" -tAc \
+            "SELECT id FROM ipy_user WHERE is_admin AND is_active ORDER BY created_at LIMIT 1" | head -1)"
+          [ -n "$OWNER" ] || { echo "::error::no active administrator to own the key"; exit 1; }
+
+          mkdir -p /tmp/hashing && cd /tmp/hashing
+          npm init -y >/dev/null 2>&1
+          npm install bcryptjs@3 >/dev/null 2>&1
+          cd - >/dev/null
+
+          KEY="ipy_$(openssl rand -hex 24)"
+          PREFIX="${KEY:0:8}"
+          HASH="$(KEY="$KEY" node -e '
+            const bcrypt = require("/tmp/hashing/node_modules/bcryptjs");
+            process.stdout.write(bcrypt.hashSync(process.env.KEY, 10));
+          ')"
+          # Narrow on purpose: records and telephony, nothing else. A key that
+          # can reach everything is a key that can do something nobody planned.
+          KEY_ID="$(psql "$DATABASE_URL" -tAc "
+            INSERT INTO ipy_api_key (user_id, name, key_prefix, key_hash, scopes, expires_at)
+            VALUES ('${OWNER}', 'Live write check (automated)', '${PREFIX}', '${HASH}',
+                    '[\"GET /api/records\", \"POST /api/records\", \"PATCH /api/records\",
+                      \"GET /api/telephony\", \"POST /api/telephony\"]'::jsonb,
+                    now() + interval '10 minutes')
+            RETURNING id" | head -1)"
+          echo "KEY_ID=${KEY_ID}" >> "$GITHUB_ENV"
+
+          fail=0
+          check() { if [ "$2" = "$3" ]; then echo "  ok    $1"; else echo "  FAIL  $1 — expected $2, got $3"; fail=1; fi; }
+          post() { curl -s -o /tmp/body.json -w '%{http_code}' -X "$1" -H "x-api-key: ${KEY}" \
+                     -H 'Content-Type: application/json' -d "$3" "${BASE_URL}$2"; }
+          field() { python3 -c "import json;print(json.load(open('/tmp/body.json')).get('$1',''))" 2>/dev/null || echo ''; }
+
+          STAMP="$(date +%H%M%S)"
+          MOBILE="90002${STAMP}"; MOBILE="${MOBILE:0:10}"
+          NAME="Write Check (automated) ${STAMP}"
+          echo "MOBILE=${MOBILE}" >> "$GITHUB_ENV"
+
+          echo "--- adding the person you just spoke to ---"
+          CODE="$(post POST /api/records/leads "$(printf '{"full_name":"%s","mobile":"%s"}' "$NAME" "$MOBILE")")"
+          check "a contact can be added" 201 "$CODE"
+          LEAD="$(field id)"
+          echo "LEAD=${LEAD}" >> "$GITHUB_ENV"
+          [ -n "$LEAD" ] || { echo "::error::no record id came back"; exit 1; }
+
+          curl -s -o /tmp/body.json -H "x-api-key: ${KEY}" "${BASE_URL}/api/records/leads/${LEAD}" >/dev/null
+          STORED="$(python3 -c "import json;print(json.load(open('/tmp/body.json'))['values'].get('mobile',''))" 2>/dev/null || echo '')"
+          check "and reading it back gives the number that was typed" "$MOBILE" "$STORED"
+
+          echo "--- changing it without leaving the page ---"
+          CODE="$(post PATCH "/api/records/leads/${LEAD}" '{"lead_status":"Contacted"}')"
+          check "an inline edit is accepted" 200 "$CODE"
+          curl -s -o /tmp/body.json -H "x-api-key: ${KEY}" "${BASE_URL}/api/records/leads/${LEAD}" >/dev/null
+          # `lead_status` is the field's name and `status` its column; which one
+          # comes back depends on how the admin has renamed it, so accept either.
+          NOW="$(python3 -c "import json;v=json.load(open('/tmp/body.json'))['values'];print(v.get('lead_status') or v.get('status') or '')" 2>/dev/null || echo '')"
+          check "and the change is what the record now says" Contacted "$NOW"
+
+          AUDITED="$(psql "$DATABASE_URL" -tAc "
+            SELECT count(*) FROM ipy_audit WHERE record_id = '${LEAD}' AND action = 'update'")"
+          check "and the edit left an audit trail" 1 "$AUDITED"
+
+          echo "--- leaving a note for whoever picks them up next ---"
+          CODE="$(post POST "/api/records/leads/${LEAD}/comments" '{"body":"Write Check (automated) — safe to ignore, removed immediately."}')"
+          check "a note can be left" 201 "$CODE"
+          curl -s -o /tmp/body.json -H "x-api-key: ${KEY}" "${BASE_URL}/api/records/leads/${LEAD}/comments" >/dev/null
+          # Counted by this note's own words, not by the contact's name: the
+          # assignment rule leaves its own note quoting the record, and the
+          # record is called "Write Check (automated) …", so matching on that
+          # found two and called a working CRM broken.
+          NOTES="$(python3 -c "import json;print(len(json.load(open('/tmp/body.json'))))" 2>/dev/null || echo 0)"
+          MINE="$(python3 -c "import json;print(sum(1 for c in json.load(open('/tmp/body.json')) if 'safe to ignore' in (c.get('body') or '')))" 2>/dev/null || echo 0)"
+          check "and it is on the record" 1 "$MINE"
+          echo "        (the record carries ${NOTES} note(s) in all)"
+
+          echo "--- the call, and what happened on it ---"
+          CODE="$(post POST /api/telephony/log "$(printf '{"to":"%s","recordId":"%s","module":"leads","direction":"outbound","durationSeconds":45}' "$MOBILE" "$LEAD")")"
+          check "a call can be logged" 201 "$CODE"
+          CALL="$(field callId)"
+          if [ -n "$CALL" ]; then
+            CODE="$(post POST "/api/telephony/calls/${CALL}/disposition" '{"disposition":"Interested","notes":"Write Check (automated)"}')"
+            check "its outcome can be recorded" 200 "$CODE"
+            OUTCOME="$(psql "$DATABASE_URL" -tAc "
+              SELECT coalesce(disposition,'none') || '|' ||
+                     CASE WHEN disposition_at IS NULL THEN 'undated' ELSE 'dated' END
+                FROM ipy_call WHERE id = '${CALL}'")"
+            check "and it is stored with the moment it was decided" "Interested|dated" "$OUTCOME"
+
+            # The outcome must be one the admin's list offers, from here too.
+            CODE="$(post POST "/api/telephony/calls/${CALL}/disposition" '{"disposition":"NotARealOption"}')"
+            check "an outcome on no list is refused" 400 "$CODE"
+          else
+            echo "  FAIL  a call can be logged — no call id came back"; fail=1
+          fi
+
+          echo "--- what this key must not be able to do ---"
+          CODE="$(curl -s -o /dev/null -w '%{http_code}' -X DELETE -H "x-api-key: ${KEY}" "${BASE_URL}/api/records/leads/${LEAD}")"
+          check "it cannot delete a record" 401 "$CODE"
+          CODE="$(curl -s -o /dev/null -w '%{http_code}' -H "x-api-key: ${KEY}" "${BASE_URL}/api/admin/users")"
+          check "it cannot reach the admin area" 401 "$CODE"
+
+          if [ "$fail" != "0" ]; then
+            echo "::error::the CRM does not reliably keep what the team types into it"
+            exit 1
+          fi
+          echo "::notice::everything a rep types into ${BASE_URL} is kept"
+
+      - name: Take it all away again
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<SQL
+          DELETE FROM ipy_api_key WHERE id = '${KEY_ID:-00000000-0000-0000-0000-000000000000}';
+          DELETE FROM ipy_notification
+           WHERE created_at > now() - interval '30 minutes'
+             AND (title LIKE '%Write Check (automated)%' OR body LIKE '%Write Check (automated)%');
+          DELETE FROM ipy_call WHERE record_id = '${LEAD:-00000000-0000-0000-0000-000000000000}';
+          DELETE FROM ipy_record WHERE id = '${LEAD:-00000000-0000-0000-0000-000000000000}';
+          SQL
+          LEFT="$(psql "$DATABASE_URL" -tAc "
+            SELECT count(*) FROM ipy_record WHERE id = '${LEAD:-00000000-0000-0000-0000-000000000000}'")"
+          KEYS="$(psql "$DATABASE_URL" -tAc "
+            SELECT count(*) FROM ipy_api_key WHERE id = '${KEY_ID:-00000000-0000-0000-0000-000000000000}'")"
+          echo "::notice::test contact removed (records left: ${LEFT}, keys left: ${KEYS})"
