@@ -415,26 +415,7 @@ export default function ListView(): JSX.Element {
     + visibleColumns.reduce((sum, col) => sum + colWidths.widthOf(col, fieldMap.get(col)), 0);
 
   return (
-    <div className="relative flex h-full flex-col lg:pl-56">
-      <aside className="absolute inset-y-0 left-0 hidden w-56 flex-col border-r border-slate-200 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-950 lg:flex">
-        <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Saved lists</p>
-          <p className="mt-0.5 truncate text-sm font-semibold">{meta.label}</p>
-        </div>
-        <ViewTabStrip
-          views={views ?? []}
-          activeId={activeView?.id}
-          page={page}
-          totalPages={data?.totalPages ?? 1}
-          total={data?.total ?? 0}
-          pageSize={data?.pageSize ?? 25}
-          onPage={setPage}
-          onPick={(id) => {
-            if (id === activeView?.id) return;
-            setViewId(id); setPage(1); setFilter(EMPTY_FILTER); setSearch(''); setSearchInput(''); setSelected(new Set());
-          }}
-        />
-      </aside>
+    <div className="flex h-full flex-col">
       {/* Header */}
       <div className="shrink-0 border-b border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-900 sm:px-4">
         {/*
@@ -458,12 +439,38 @@ export default function ListView(): JSX.Element {
           acts on the list is grouped on the right, with the search box beside
           the Filter button it belongs with.
         */}
-         <div className="flex items-center gap-2">
-           <div className="lg:hidden">
-             <select className="input h-8 max-w-40 py-1 text-sm" value={activeView?.id ?? ''} onChange={(event) => setViewId(event.target.value || undefined)} aria-label="Saved view">
-               {(views ?? []).map((view) => <option key={view.id} value={view.id}>{view.name}</option>)}
-             </select>
-           </div>
+        {/*
+          Wraps on a phone.
+
+          On one line the saved-view tabs, the search box, Filter, the two view
+          toggles, the column control and New come to more than a 360dp screen
+          holds — so New was clipped at the right edge with nothing to scroll
+          and no way to reach it. The shell is `overflow-hidden`, so the
+          overflow did not even produce a scrollbar to hint at what was missing.
+
+          Wrapping rather than scrolling, deliberately: a horizontally scrolling
+          strip would put the primary action off-screen by default, which is the
+          same problem wearing a different hat.
+        */}
+        <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
+          <ViewTabStrip
+            views={views ?? []}
+            activeId={activeView?.id}
+            onPick={(id) => {
+              if (id === activeView?.id) return;
+              // A view *is* a filter. Carrying an ad-hoc one across the switch
+              // leaves the new tab quietly narrowed by conditions belonging to
+              // the tab you just left. The URL is written by the sync effect
+              // above — writing it here as well is how the two disagreed.
+              setViewId(id);
+              setPage(1);
+              setFilter(EMPTY_FILTER);
+              setSearch('');
+              setSearchInput('');
+              setSelected(new Set());
+            }}
+          />
+
           <div className="ml-auto flex shrink-0 items-center gap-2">
             <span className="hidden shrink-0 text-xs text-muted tnum xl:inline">
               {isFetching && !data
@@ -566,15 +573,6 @@ export default function ListView(): JSX.Element {
 
           </div>
         </div>
-
-        {canCreate && (
-          <div className="mt-2 flex items-center gap-2 border-t border-slate-100 pt-2 dark:border-slate-800">
-            <button data-testid="list-create" onClick={() => setShowQuickCreate(true)} className="btn-primary btn-sm">
-              <Plus className="h-3.5 w-3.5" /> New {meta.singularLabel}
-            </button>
-            <span className="text-xs text-muted">Add from the universal create action</span>
-          </div>
-        )}
 
       </div>
 
@@ -795,8 +793,6 @@ export default function ListView(): JSX.Element {
                     // list where most rows are new it stopped meaning anything.
                     // Starred keeps its tint — that one is rare by nature.
                     row.starred && 'bg-amber-50/80 dark:bg-amber-950/25',
-                    !row.starred && 'even:bg-slate-50/80 dark:even:bg-slate-900/45',
-                    isNew && 'border-l-2 border-l-brand-500',
                   )}
                   onClick={() => openRecord(`/${moduleName}/${row.id}?return=${encodeURIComponent(returnTo)}`)}
                 >
@@ -878,6 +874,80 @@ export default function ListView(): JSX.Element {
         )}
       </div>
 
+      {/* Pagination */}
+      {displayMode === 'table' && (data?.total ?? 0) > 0 && (
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900 sm:px-6">
+          <p className="text-xs text-muted tnum">
+            {((data!.page - 1) * data!.pageSize + 1).toLocaleString('en-IN')}–
+            {Math.min(data!.page * data!.pageSize, data!.total).toLocaleString('en-IN')} of {data!.total.toLocaleString('en-IN')}
+          </p>
+          <label className="flex items-center gap-1.5 text-xs text-muted">
+            Rows per page
+            <Select
+              value={String(pageSize)}
+              onChange={(value) => setPageSize(Number(value))}
+              options={PAGE_SIZE_OPTIONS.map((size) => ({ value: String(size), label: String(size) }))}
+            />
+          </label>
+          {/*
+            A page button has to look like a button.
+
+            These were bare ghost chevrons, so "there is another page" and
+            "there is not" differed only by opacity — reported as the Next
+            button not working when it was in fact enabled and un-obvious, and
+            as being stuck on the last page when the last page was genuinely the
+            end. Enabled now carries a border and the brand colour, disabled is
+            plainly greyed, and First/Last exist so the far end of 10 pages is
+            one click rather than nine.
+          */}
+          <div className="flex items-center gap-1">
+            <PageButton
+              label="First page"
+              disabled={page <= 1}
+              onClick={() => setPage(1)}
+            >
+              <ChevronsLeft className="h-4 w-4" />
+            </PageButton>
+            <PageButton
+              label="Previous page"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </PageButton>
+            <label className="flex items-center gap-1 px-1 text-xs tnum text-muted">
+              Page
+              <input
+                className="input h-7 w-14 px-1 text-center text-xs"
+                aria-label="Go to page"
+                type="number"
+                min={1}
+                max={data!.totalPages}
+                value={page}
+                onChange={(e) => {
+                  const next = Number(e.target.value);
+                  if (Number.isInteger(next) && next >= 1 && next <= data!.totalPages) setPage(next);
+                }}
+              />
+              <span>/ {data!.totalPages}</span>
+            </label>
+            <PageButton
+              label="Next page"
+              disabled={page >= (data?.totalPages ?? 1)}
+              onClick={() => setPage((p) => Math.min(data?.totalPages ?? p, p + 1))}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </PageButton>
+            <PageButton
+              label="Last page"
+              disabled={page >= (data?.totalPages ?? 1)}
+              onClick={() => setPage(data?.totalPages ?? 1)}
+            >
+              <ChevronsRight className="h-4 w-4" />
+            </PageButton>
+          </div>
+        </div>
+      )}
 
       {/* Modals */}
       <Modal
@@ -1495,46 +1565,145 @@ function KanbanBoard({
  * there is nothing to scroll to in its direction.
  */
 function ViewTabStrip({
-  views, activeId, onPick, page, totalPages, total, pageSize, onPage,
+  views, activeId, onPick,
 }: {
   views: { id: string; name: string; count?: number }[];
   activeId: string | undefined;
   onPick: (id: string) => void;
-  page: number;
-  totalPages: number;
-  total: number;
-  pageSize: number;
-  onPage: (page: number) => void;
-}): JSX.Element {
+}): JSX.Element | null {
+  const strip = useRef<HTMLDivElement>(null);
+  const [overflow, setOverflow] = useState({ left: false, right: false });
+
+  const measure = (): void => {
+    const el = strip.current;
+    if (!el) return;
+    setOverflow({
+      left: el.scrollLeft > 4,
+      // The -4 absorbs sub-pixel widths, which otherwise leave the right arrow
+      // enabled for ever at the end of the strip.
+      right: el.scrollLeft + el.clientWidth < el.scrollWidth - 4,
+    });
+  };
+
+  useEffect(() => {
+    measure();
+    const el = strip.current;
+    if (!el) return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    // The strip's own width tracks the window, but its scrollWidth also grows
+    // when webfonts swap in after first paint — without this the arrows can
+    // stay hidden on exactly the tab counts (8–10) where the fallback font
+    // happened to fit. One re-measure after fonts settle covers it, and the
+    // initial `measure()` already covers the font-blocked case.
+    let fontsDone = false;
+    if (typeof document !== 'undefined' && 'fonts' in document) {
+      document.fonts.ready.then(() => { if (!fontsDone) measure(); }).catch(() => undefined);
+    }
+    const onResize = (): void => measure();
+    window.addEventListener('resize', onResize);
+    return () => {
+      fontsDone = true;
+      observer.disconnect();
+      window.removeEventListener('resize', onResize);
+    };
+  }, [views.length]);
+
+  // Keep the selected tab in sight when the view changes from elsewhere — a
+  // dashboard drill-through can land on a tab that is scrolled out of view.
+  useEffect(() => {
+    strip.current?.querySelector('[data-active="true"]')
+      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [activeId]);
+
+  if (!views.length) return null;
+
+  const nudge = (direction: -1 | 1): void => {
+    const el = strip.current;
+    if (!el) return;
+    el.scrollBy({ left: direction * Math.max(120, el.clientWidth * 0.8), behavior: 'smooth' });
+  };
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div role="tablist" aria-label="Saved views" className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
-        {views.map((view) => (
+    <div className="flex min-w-0 flex-1 items-center gap-0.5">
+      {/*
+        Always in the layout, never always active. Conditionally *removing*
+        the arrow buttons moved every tab a few pixels each time overflow
+        appeared or cleared — on Contacts the strip sits near that boundary,
+        so switching tabs visibly shoved the row sideways. `invisible` keeps
+        the slot; `aria-disabled` + `tabIndex={-1}` keeps it out of the tab
+        order and honest to assistive tech.
+      */}
+      <button
+        type="button"
+        onClick={() => nudge(-1)}
+        disabled={!overflow.left}
+        aria-disabled={!overflow.left}
+        tabIndex={overflow.left ? 0 : -1}
+        className={cn(
+          'shrink-0 rounded p-0.5 transition-opacity',
+          overflow.left
+            ? 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+            : 'invisible',
+        )}
+        aria-label="Scroll views left"
+      >
+        <ChevronLeft className="h-4 w-4" />
+      </button>
+
+      <div
+        ref={strip}
+        onScroll={measure}
+        role="tablist"
+        aria-label="Saved views"
+        // `scrollbar-none` is not available here, so the bar is simply thin and
+        // below the row; hiding it entirely would remove the only affordance a
+        // touch user has.
+        className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto scroll-smooth py-0.5"
+      >
+        {views.map((v) => (
           <button
-            key={view.id}
+            key={v.id}
             role="tab"
-            aria-selected={activeId === view.id}
-            onClick={() => onPick(view.id)}
+            aria-selected={activeId === v.id}
+            data-active={activeId === v.id}
+            onClick={() => onPick(v.id)}
             className={cn(
-              'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors',
-              activeId === view.id
-                ? 'bg-brand-600 text-white shadow-sm'
-                : 'text-slate-700 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-900',
+              'flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors',
+              activeId === v.id
+                ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800',
             )}
           >
-            <span className="truncate">{view.name}</span>
-            {view.count !== undefined && <span className={cn('ml-2 rounded-full px-1.5 py-0.5 text-2xs tnum', activeId === view.id ? 'bg-white/20' : 'bg-slate-200 dark:bg-slate-800')}>{view.count}</span>}
+            {v.name}
+            {v.count !== undefined && (
+              <span className={cn(
+                'rounded-full px-1.5 text-2xs tnum',
+                activeId === v.id ? 'bg-white/20' : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200',
+              )}>
+                {v.count}
+              </span>
+            )}
           </button>
         ))}
       </div>
-      <div className="border-t border-slate-200 p-3 dark:border-slate-800">
-        <p className="text-2xs text-muted">{total.toLocaleString('en-IN')} records · {pageSize} per page</p>
-        <div className="mt-2 flex items-center justify-between">
-          <button className="btn-ghost p-1.5 disabled:opacity-30" aria-label="Previous page" disabled={page <= 1} onClick={() => onPage(page - 1)}><ChevronLeft className="h-4 w-4" /></button>
-          <span className="text-xs font-medium tnum">{page} / {totalPages}</span>
-          <button className="btn-ghost p-1.5 disabled:opacity-30" aria-label="Next page" disabled={page >= totalPages} onClick={() => onPage(page + 1)}><ChevronRight className="h-4 w-4" /></button>
-        </div>
-      </div>
+
+      <button
+        type="button"
+        onClick={() => nudge(1)}
+        disabled={!overflow.right}
+        aria-disabled={!overflow.right}
+        tabIndex={overflow.right ? 0 : -1}
+        className={cn(
+          'shrink-0 rounded p-0.5 transition-opacity',
+          overflow.right
+            ? 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+            : 'invisible',
+        )}
+        aria-label="Scroll views right"
+      >
+        <ChevronRight className="h-4 w-4" />
+      </button>
     </div>
   );
 }
