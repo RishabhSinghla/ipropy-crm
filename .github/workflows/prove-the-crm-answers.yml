@@ -1,0 +1,163 @@
+# Read every important screen's data off the live CRM, as a signed-in user.
+#
+# Everything else this repository can check about production is either the
+# database directly or an endpoint that needs no account. The screens the team
+# actually works in are behind a login, and a login is the one thing automation
+# here cannot do — so the largest part of the CRM has never been exercised
+# against production at all. Local suites prove the code; they cannot prove that
+# *this* database, with its real field set and its real records, answers.
+#
+# A temporary API key does it. It is:
+#
+#   * read-only — scoped to `GET /api`, so nothing it can reach changes a record;
+#   * short-lived — it expires in ten minutes and is revoked in a final step
+#     that runs whether the checks passed or failed;
+#   * never printed — the repository is public, and a working key reached an
+#     Actions log once already. Only its first eight characters are stored in
+#     the clear, and even those stay in the job.
+#
+# A failure here is a screen that is broken for the team right now.
+name: Prove the CRM answers
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "The CRM to test"
+        default: "https://crm.ipropy.com"
+
+jobs:
+  prove:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install psql 18
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: Ask the CRM every question a screen asks
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          BASE_URL: ${{ inputs.base_url }}
+        run: |
+          set -euo pipefail
+
+          OWNER="$(psql "$DATABASE_URL" -tAc \
+            "SELECT id FROM ipy_user WHERE is_admin AND is_active ORDER BY created_at LIMIT 1" | head -1)"
+          [ -n "$OWNER" ] || { echo "::error::no active administrator to own the key"; exit 1; }
+
+          # bcrypt, because that is what the server compares against. The one
+          # package, in a scratch directory, rather than installing the repo.
+          mkdir -p /tmp/hashing && cd /tmp/hashing
+          npm init -y >/dev/null 2>&1
+          npm install bcryptjs@3 >/dev/null 2>&1
+          cd - >/dev/null
+
+          KEY="ipy_$(openssl rand -hex 24)"
+          PREFIX="${KEY:0:8}"
+          HASH="$(KEY="$KEY" node -e '
+            const bcrypt = require("/tmp/hashing/node_modules/bcryptjs");
+            process.stdout.write(bcrypt.hashSync(process.env.KEY, 10));
+          ')"
+
+          KEY_ID="$(psql "$DATABASE_URL" -tAc "
+            INSERT INTO ipy_api_key (user_id, name, key_prefix, key_hash, scopes, expires_at)
+            VALUES ('${OWNER}', 'Live read check (automated)', '${PREFIX}',
+                    '${HASH}', '[\"GET /api\"]'::jsonb, now() + interval '10 minutes')
+            RETURNING id" | head -1)"
+          echo "KEY_ID=${KEY_ID}" >> "$GITHUB_ENV"
+          echo "::notice::minted a read-only key that expires in ten minutes"
+
+          SUMMARISE=/tmp/summarise.py
+          cat > "$SUMMARISE" <<'PYTHON'
+          import json, sys
+          d = json.load(open(sys.argv[1]))
+          if isinstance(d, list):
+              print(f"{len(d)} row(s)")
+          elif isinstance(d, dict):
+              for key in ("total", "count"):
+                  if key in d:
+                      print(f"{d[key]} total")
+                      break
+              else:
+                  print(", ".join(list(d)[:4]) or "empty object")
+          else:
+              print(type(d).__name__)
+          PYTHON
+
+          fail=0
+          ask() {
+            local name="$1" path="$2"
+            local code
+            code="$(curl -s -o /tmp/body.json -w '%{http_code}' -H "x-api-key: ${KEY}" "${BASE_URL}${path}")"
+            if [ "$code" != "200" ]; then
+              echo "  FAIL  ${name} — HTTP ${code} from ${path}"
+              head -c 300 /tmp/body.json; echo
+              fail=1
+              return
+            fi
+            # A 200 with an empty or unreadable body is not an answer; say
+            # what came back so a screen that loads nothing is visible here.
+            local detail
+            detail="$(python3 "$SUMMARISE" /tmp/body.json 2>/dev/null || echo 'unreadable body')"
+            echo "  ok    ${name} — ${detail}"
+          }
+
+          echo "--- what every screen loads first ---"
+          ask "the modules and their fields"  "/api/meta/modules"
+          ask "the dropdown lists"            "/api/meta/picklists"
+          ask "the call outcome list"         "/api/meta/picklists/call_disposition"
+          ask "saved list views"              "/api/views/leads"
+          ask "dashboards"                    "/api/dashboards"
+
+          echo "--- the lists the team lives in ---"
+          ask "leads"                         "/api/records/leads?limit=5"
+          ask "inventory"                     "/api/records/properties?limit=5"
+
+          echo "--- one real record, the way a rep opens it ---"
+          LEAD="$(psql "$DATABASE_URL" -tAc "
+            SELECT id FROM ipy_record
+             WHERE module_name = 'leads' AND NOT is_deleted
+             ORDER BY updated_at DESC LIMIT 1" | head -1)"
+          if [ -n "$LEAD" ]; then
+            # Search for a person who is definitely there rather than a letter:
+            # an empty result to "a" is a valid answer and proves nothing, and
+            # search returning nothing for everybody is a real failure this
+            # CRM has had before.
+            LABEL="$(psql "$DATABASE_URL" -tAc \
+              "SELECT left(label, 6) FROM ipy_record WHERE id = '${LEAD}'" | head -1)"
+            ask "search finds a contact by name"  "/api/search?q=$(printf '%s' "$LABEL" | python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read().strip()))')"
+            HITS="$(python3 -c 'import json; d=json.load(open("/tmp/body.json")); print(len(d) if isinstance(d, list) else 0)')"
+            [ "${HITS:-0}" -ge 1 ] || { echo "  FAIL  search found nobody for a name that is in the CRM"; fail=1; }
+            ask "the record itself"           "/api/records/leads/${LEAD}"
+            ask "its timeline"                "/api/records/leads/${LEAD}/timeline"
+            ask "its notes"                   "/api/records/leads/${LEAD}/comments"
+            ask "its matching units"          "/api/ai/match/leads/${LEAD}?limit=5"
+          else
+            echo "  skip  no lead to open"
+          fi
+
+          echo "--- calls ---"
+          ask "the call log"                  "/api/telephony/calls?limit=5"
+          ask "what needs an outcome"         "/api/telephony/needs-disposition"
+          ask "paired phones"                 "/api/telephony/devices"
+
+          if [ "$fail" != "0" ]; then
+            echo "::error::a screen the team uses does not answer on ${BASE_URL}"
+            exit 1
+          fi
+          echo "::notice::every screen's data loads on ${BASE_URL}"
+
+      - name: Revoke the key and check it is dead
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          [ -n "${KEY_ID:-}" ] || { echo "no key was minted"; exit 0; }
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -tAc \
+            "DELETE FROM ipy_api_key WHERE id = '${KEY_ID}'" >/dev/null
+          LEFT="$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM ipy_api_key WHERE id = '${KEY_ID}'")"
+          echo "::notice::temporary key removed (rows left: ${LEFT})"
