@@ -90,6 +90,15 @@ describe('signing in, in the integration suite', () => {
 /**
  * Tables every other file writes to as it runs, so "whichever row comes first"
  * is decided by what happened to run before.
+ *
+ * There is a third shape this rule cannot see, and it is worth knowing about
+ * because it cost a run too: a test that creates its own records and then
+ * asserts their *position in a global list*. `recordNeighbours` made five
+ * leads at ₹100–₹500 and asserted the record either side of ₹300 was ₹400 and
+ * ₹200 — true only while nothing else in the suite owns a budget in between.
+ * It asks the database what the neighbours should be now, and no rule below
+ * could have spotted it. If a test knows the answer before it looks, ask
+ * whether it could still know it after somebody adds a fixture.
  */
 const CHURNED = /\b(ipy_record|ipy_e_leads|ipy_e_properties)\b/i;
 

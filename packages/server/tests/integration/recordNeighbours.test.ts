@@ -72,37 +72,77 @@ const neighbours = (id: string, query: string): Promise<{ status: number; body: 
     .set('Authorization', `Bearer ${adminToken}`)
     .then((r) => ({ status: r.status, body: r.body }));
 
+/**
+ * The neighbour the endpoint *must* answer with, worked out from the data.
+ *
+ * The assertions used to be the fixture numbers: ₹300 is bracketed by ₹400 and
+ * ₹200. That holds only while nothing else in the suite owns a lead with a
+ * budget in between, and the suite creates leads constantly — so this test
+ * failed once in five full runs, saying the arrows were wrong when they were
+ * right and the list had simply changed underneath it.
+ *
+ * Asking the database instead makes the assertion about the endpoint agreeing
+ * with the data, which is the actual promise, and it holds whatever else is in
+ * there. `>=` rather than `>`, excluding this record by id, so a second lead on
+ * the same budget is a legitimate neighbour rather than a failure.
+ */
+async function closestBudget(
+  self: string,
+  budget: number,
+  side: 'above' | 'below',
+): Promise<number | null> {
+  const row = await db.queryOne<{ edge: string | null }>(
+    `SELECT ${side === 'above' ? 'MIN' : 'MAX'}(b)::text AS edge
+       FROM (
+         SELECT ipy_try_numeric(to_jsonb(l)->>'budget') AS b
+           FROM ipy_e_leads l
+           JOIN ipy_record r ON r.id = l.record_id
+          WHERE r.is_deleted = false AND r.id <> $1
+       ) x
+      WHERE b IS NOT NULL AND b ${side === 'above' ? '>=' : '<='} $2`,
+    [self, budget],
+  );
+  return row?.edge === null || row?.edge === undefined ? null : Number(row.edge);
+}
+
 describe('record neighbours', () => {
   it('walks a sorted list one record at a time, both directions', async () => {
-    // Descending by budget. C (₹300) is bracketed by D (₹400) and B (₹200):
-    // the nearest values either side, however many crore leads tower above.
+    // Descending by budget: previous is the nearest budget at or above this
+    // one, next is the nearest at or below — whatever else the suite has put
+    // in the list by the time this runs.
     const res = await neighbours(made[2], '?sort=budget&dir=desc');
     expect(res.status).toBe(200);
-    expect(await budgetOf(res.body.prevId!)).toBe(400);
-    expect(await budgetOf(res.body.nextId!)).toBe(200);
+    expect(await budgetOf(res.body.prevId!)).toBe(await closestBudget(made[2], 300, 'above'));
+    expect(await budgetOf(res.body.nextId!)).toBe(await closestBudget(made[2], 300, 'below'));
   });
 
   it('reverses the answer when the list runs ascending', async () => {
     const res = await neighbours(made[2], '?sort=budget&dir=asc');
-    expect(await budgetOf(res.body.prevId!)).toBe(200);
-    expect(await budgetOf(res.body.nextId!)).toBe(400);
+    expect(await budgetOf(res.body.prevId!)).toBe(await closestBudget(made[2], 300, 'below'));
+    expect(await budgetOf(res.body.nextId!)).toBe(await closestBudget(made[2], 300, 'above'));
   });
 
   it('reaches past the fixtures into the rest of the list', async () => {
-    // ₹500 is the largest fixture, but demo leads with crore budgets sort
-    // above it in a descending list. Previous is whichever of those is
-    // closest; there is nothing at all above it.
+    // ₹500 is the largest fixture, and the demo data has leads in crores that
+    // sort above it — so the arrow must leave this test's own five records
+    // rather than stopping at the edge of them.
+    const above = await closestBudget(made[4], 500, 'above');
+    expect(above, 'the demo seed should hold a lead richer than ₹500').not.toBeNull();
+
     const top = await neighbours(made[4], '?sort=budget&dir=desc');
-    expect(await budgetOf(top.body.prevId!)).toBeGreaterThan(500);
-    expect(await budgetOf(top.body.nextId!)).toBe(400);
+    expect(await budgetOf(top.body.prevId!)).toBe(above);
+    expect(await budgetOf(top.body.nextId!)).toBe(await closestBudget(made[4], 500, 'below'));
   });
 
   it('leaves the true end of the list with one working arrow', async () => {
-    // ₹100 is the smallest budget anywhere, so a descending list ends here:
-    // the previous arrow still works (₹200 sits one step above), next is dead.
+    // A descending list ends at the smallest budget there is. Which record
+    // that is depends on what else the suite has created, so ask.
+    const below = await closestBudget(made[0], 100, 'below');
+
     const bottom = await neighbours(made[0], '?sort=budget&dir=desc');
-    expect(await budgetOf(bottom.body.prevId!)).toBe(200);
-    expect(bottom.body.nextId).toBeNull();
+    expect(await budgetOf(bottom.body.prevId!)).toBe(await closestBudget(made[0], 100, 'above'));
+    if (below === null) expect(bottom.body.nextId, 'nothing sits below the end of the list').toBeNull();
+    else expect(await budgetOf(bottom.body.nextId!)).toBe(below);
   });
 
   it('answers nothing for a record whose sort value is blank', async () => {
