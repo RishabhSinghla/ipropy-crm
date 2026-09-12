@@ -65,8 +65,48 @@ async function currentColumns(): Promise<Set<string>> {
   return new Set(rows.rows.map((r) => `${r.table_name}.${r.column_name}`));
 }
 
+/*
+  The metadata half of the same rule, and the half that was missing.
+
+  The column check above only sees `information_schema`. A test that removes or
+  renames an `ipy_field` **row** and leaves the column alone changes nothing it
+  can detect — and metadata is where the rules live, so the damage lands
+  somewhere else entirely.
+
+  Observed on 12 September 2026: two runs in six went red across **35 files and
+  80 tests**, every one of them failing in `beforeAll` with "Email is required"
+  while creating an ordinary lead. That message comes from `requireOneOf:
+  [["mobile", "email"]]` in `values.ts`, which names a single field only when
+  the other one is **not live** — so `leads.mobile` had gone from `ipy_field`,
+  by some file, with the column still in place. Polling the database through a
+  run confirmed it: the failing run *ended* with `mobile` absent and `email`
+  present.
+
+  Nothing in the failures named the file responsible, because nothing that
+  failed had anything to do with `mobile`. Hence this: a field that was there
+  when a file started and is gone when it ends makes that file say so.
+
+  Name and module, not id: a rename is as damaging as a delete here — the rule
+  above resolves `mobile` by name — and an id-keyed check would call a rename
+  clean.
+*/
+const WATCHED_MODULES = ['leads', 'properties'];
+let fieldsAtStart: Set<string> | null = null;
+
+async function currentFields(): Promise<Set<string>> {
+  const { db } = await import('../../src/db/pool.js');
+  const rows = await db.query<{ module: string; name: string }>(
+    `SELECT m.name AS module, f.name
+       FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+      WHERE m.name = ANY($1)`,
+    [WATCHED_MODULES],
+  );
+  return new Set(rows.rows.map((r) => `${r.module}.${r.name}`));
+}
+
 beforeAll(async () => {
   columnsAtStart = await currentColumns().catch(() => null);
+  fieldsAtStart = await currentFields().catch(() => null);
 });
 
 afterAll(async () => {
@@ -79,6 +119,21 @@ afterAll(async () => {
           `This file dropped ${lost.join(', ')} and did not put it back. `
           + 'Restore it in an afterAll — otherwise every file that runs after this '
           + 'one fails with a 42703 about a column it never mentions.',
+        );
+      }
+    }
+  }
+
+  if (fieldsAtStart) {
+    const now = await currentFields().catch(() => null);
+    if (now) {
+      const lost = [...fieldsAtStart].filter((f) => !now.has(f)).sort();
+      if (lost.length) {
+        throw new Error(
+          `This file removed or renamed ${lost.join(', ')} and did not put it back. `
+          + 'Restore it in an afterAll — otherwise files that run after this one fail '
+          + 'somewhere unrelated, with a validation message about a different field '
+          + 'entirely. (A missing `mobile` reads as "Email is required" on every lead.)',
         );
       }
     }
