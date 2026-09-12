@@ -7,6 +7,7 @@ import './styles.css';
 import { startErrorReporting } from './lib/errorReporting';
 import { boot, isNative } from './lib/native';
 import { startNativeBridges } from './lib/nativeBridges';
+import { fetchUpdateInBackground, markBundleHealthy } from './lib/liveUpdate';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -59,6 +60,14 @@ void boot().catch(() => undefined).then(() => {
 
   // Back button, deep links, push, connectivity — all no-ops in a browser.
   void startNativeBridges();
+
+  /*
+    This bundle has painted, so it works. Said before anything else, because
+    the plugin puts the previous bundle back if it never hears it — which is
+    what stops a bad deploy bricking a team's phones, and what makes a missing
+    call here look like an app that silently never updates.
+  */
+  void markBundleHealthy().then(() => fetchUpdateInBackground(true));
 });
 
 // Register the service worker (public/sw.js) — this is what makes the CRM

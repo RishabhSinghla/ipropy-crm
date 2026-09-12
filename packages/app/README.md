@@ -111,6 +111,39 @@ needed.
 
 The generated files are committed, so nobody needs this to build the app.
 
+### Live updates — the screens follow the server
+
+A change pushed to `crm.ipropy.com` reaches the phones on their next launch.
+Nobody installs anything.
+
+On launch the app asks `/api/public/app/bundle` what the server is serving. If
+that is not what it is running, it downloads
+`/api/public/app/bundle.zip` and switches to it — about six seconds on wifi,
+seen once, on the login or list screen where nothing is in progress. A resume
+downloads but does not switch: taking the screen away from somebody halfway
+through a note is not an improvement.
+
+**The bundle is generated from what the server is serving**, zipped on the way
+out from the same `packages/web/dist` it hands to browsers. There is no second
+artefact to publish and no way for a phone to receive a version the website is
+not already on.
+
+Two things hold this up, and both are easy to remove by accident:
+
+* `markBundleHealthy()` in `main.tsx` calls `notifyAppReady()` once React has
+  painted. A bundle that never gets there is rolled back on the next launch, so
+  a bad deploy costs one restart rather than a team of bricked phones. Delete
+  that call and updates silently stop.
+* `autoUpdate: false` in `capacitor.config.ts`. The plugin defaults to running
+  its own flow against Capgo's hosted service, which this project does not use
+  — left on, it overrules the `set()` that applies the bundle, and the app
+  reports an update while continuing to run the old one.
+
+**What live updates cannot change is the native half** — plugins, permissions,
+the call-log engine, the icon, the app name. Those are in the binary and still
+need a new APK. In practice they change rarely and the screens change
+constantly, which is what makes the split worth having.
+
 ### Testing against a laptop rather than production
 
 A release build talks to `https://crm.ipropy.com`. To point a debug build

@@ -40,6 +40,32 @@ const config: CapacitorConfig = {
       androidScaleType: 'CENTER_CROP',
     },
     PushNotifications: { presentationOptions: ['badge', 'sound', 'alert'] },
+
+    /*
+      Live updates, driven from this app rather than from anybody's cloud.
+
+      `autoUpdate` defaults to true, which starts the plugin's own flow against
+      Capgo's hosted service — a service this project does not use and has no
+      key for. Left on, it competes with the check in `lib/liveUpdate.ts`: the
+      bundle downloads, and the `next()` that should queue it is overruled, so
+      the app cheerfully reports an update and keeps running the old one.
+
+      Off means this app asks its own server what it is serving, fetches it,
+      and queues it for the next launch. Nothing leaves iPropy's own origin.
+    */
+    CapacitorUpdater: {
+      autoUpdate: false,
+      // The rollback net. If a bundle never reaches `notifyAppReady()` — which
+      // `main.tsx` calls once React has painted — the previous one comes back
+      // on the next launch. Ten seconds is long enough for a cold start on a
+      // slow handset and short enough that nobody stares at a broken screen.
+      appReadyTimeout: 10_000,
+      // Keep the tidy-up, drop the phoning home.
+      autoDeleteFailed: true,
+      autoDeletePrevious: true,
+      updateUrl: '',
+      statsUrl: '',
+    },
   },
 };
 

@@ -12,7 +12,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { db } from '../../src/db/pool.js';
-import { SEEDED, signIn } from './fixtures.js';
+import { SEEDED, asBytes, signIn } from './fixtures.js';
 
 let app: ReturnType<typeof createApp>;
 let token = '';
@@ -51,27 +51,12 @@ beforeAll(async () => {
   callId = row!.id;
 });
 
-/**
- * Fetch the recording as bytes, deterministically.
- *
- * supertest decides how to read a body from its content type, and for
- * `audio/mp4` that decision is "no parser, so hand back whatever the default
- * did" — which is a Buffer most of the time and an empty object often enough
- * to have failed this file once in nineteen full runs, on the range assertion,
- * with nothing to say beyond a buffer comparison coming back false.
- *
- * Collecting the chunks here removes the guess. Every byte assertion in this
- * file goes through it.
- */
+/** Fetch the recording as bytes. `asBytes` explains why that needs saying. */
 function fetchRecording(range?: string) {
   const req = request(app).get(`/api/telephony/calls/${callId}/recording`)
     .set('Authorization', `Bearer ${token}`);
   if (range) req.set('Range', range);
-  return req.buffer(true).parse((res, cb) => {
-    const chunks: Buffer[] = [];
-    res.on('data', (c: Buffer) => chunks.push(Buffer.from(c)));
-    res.on('end', () => cb(null, Buffer.concat(chunks)));
-  });
+  return asBytes(req);
 }
 
 describe('a call recording', () => {

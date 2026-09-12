@@ -159,3 +159,24 @@ export async function adminEmail(): Promise<string> {
 export async function adminToken(app: ReturnType<typeof createApp>): Promise<string> {
   return signIn(app, await adminEmail());
 }
+
+/**
+ * Read a binary response as bytes, deterministically.
+ *
+ * supertest picks a body parser from the content type, and it has none for
+ * `audio/mp4` or `application/zip` — so the body is whatever the default left
+ * behind, a Buffer most of the time and a plain object often enough to matter.
+ * That produced a test failing once in nineteen full runs on a byte comparison
+ * that said nothing, and then failed immediately in a second suite written the
+ * same way.
+ *
+ * Collecting the chunks removes the guess. Wrap any request whose body is not
+ * text or JSON.
+ */
+export function asBytes<T extends { buffer(v: boolean): T; parse(fn: (res: NodeJS.ReadableStream, cb: (err: Error | null, body: Buffer) => void) => void): T }>(req: T): T {
+  return req.buffer(true).parse((res, cb) => {
+    const chunks: Buffer[] = [];
+    res.on('data', (c: Buffer) => chunks.push(Buffer.from(c)));
+    res.on('end', () => cb(null, Buffer.concat(chunks)));
+  });
+}

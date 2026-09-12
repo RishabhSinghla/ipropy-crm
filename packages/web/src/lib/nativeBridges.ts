@@ -10,6 +10,7 @@
 import { useApp } from './store';
 import { isAndroid, isNative } from './native';
 import { refreshNativePermission } from './push';
+import { fetchUpdateInBackground } from './liveUpdate';
 
 let started = false;
 
@@ -117,6 +118,12 @@ async function resume(): Promise<void> {
     const { user } = useApp.getState();
     if (user) void useApp.getState().bootstrap();
     window.dispatchEvent(new Event('ipropy:resumed'));
+    /*
+      And ask whether the screens have moved on. A phone that stays open all
+      week would otherwise only notice a deploy when somebody force-quit the
+      app. The new bundle is queued, never swapped in mid-session.
+    */
+    void fetchUpdateInBackground();
   });
 }
 

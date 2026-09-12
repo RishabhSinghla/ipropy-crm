@@ -947,6 +947,134 @@ publicRouter.get('/companion/download', asyncHandler(async (req, res) => {
   });
 }));
 
+// ---------------------------------------------------------------------------
+// Live updates for the installed app
+// ---------------------------------------------------------------------------
+
+/**
+ * The app's screens, as a bundle it can fetch and swap in without being
+ * reinstalled.
+ *
+ * The app is the same React bundle this server already serves to browsers, so
+ * a change that reaches `crm.ipropy.com` is a change the app could be running
+ * — except that the copy inside the APK was frozen at build time. That meant
+ * every wording fix, every new field on a screen, needed somebody to build an
+ * APK, put it somewhere, and ask a team to install it again.
+ *
+ * These two routes close that gap. The app asks what the server is serving; if
+ * that is not what it is running, it downloads it and uses it from the next
+ * launch. Native code still needs a real release — plugins and permissions
+ * live in the binary — but the screens, which is what actually changes, do not.
+ *
+ * **The bundle is generated from what this server is serving, not from a file
+ * somebody remembered to publish.** That is the whole point: there is no second
+ * artefact to keep in step, and no way for the app to receive a version the
+ * website is not already on.
+ */
+/*
+  Anchored to this file, not to `process.cwd()`.
+
+  The container starts the server from the repository root and a developer
+  starts it from `packages/server`, so a working-directory path is correct in
+  one and silently wrong in the other — which here means the app is told there
+  is no bundle rather than being told the wrong one. `COMPANION_DIR` above
+  carries the same note for the same reason. Four levels up from both
+  `src/api/routes` and `dist/api/routes` is `packages/`.
+*/
+const WEB_DIST = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../web/dist');
+
+interface BundleInfo { version: string; bytes: number }
+
+/*
+  Computed once and kept. The files cannot change while the process is alive —
+  a deploy is a new container — so re-reading them per request would be work
+  done to reach the same answer.
+*/
+let bundleInfo: BundleInfo | null | undefined;
+
+/**
+ * A version that changes exactly when the bundle does.
+ *
+ * Vite fingerprints every asset filename, so `index.html` names a different
+ * set of files after any change to the app — hashing it is enough, and it does
+ * not require reading two megabytes of JavaScript to answer a question asked
+ * on every launch.
+ */
+async function currentBundle(): Promise<BundleInfo | null> {
+  if (bundleInfo !== undefined) return bundleInfo;
+  try {
+    const { readFile, stat } = await import('node:fs/promises');
+    const { createHash } = await import('node:crypto');
+    const index = await readFile(resolve(WEB_DIST, 'index.html'));
+    await stat(resolve(WEB_DIST, 'assets'));
+    bundleInfo = {
+      version: createHash('sha256').update(index).digest('hex').slice(0, 16),
+      bytes: index.byteLength,
+    };
+  } catch {
+    // No built web app in this image — a server running API-only. The app
+    // simply keeps the bundle it shipped with.
+    bundleInfo = null;
+  }
+  return bundleInfo;
+}
+
+/**
+ * What the server is serving, so the app can tell whether it is behind.
+ *
+ * Unauthenticated on purpose, like the APK download beside it: the app checks
+ * this before anybody has signed in, and the bundle is the same public
+ * JavaScript any browser already downloads from this origin.
+ */
+publicRouter.get('/app/bundle', asyncHandler(async (_req, res) => {
+  const bundle = await currentBundle();
+  res.json({
+    available: bundle !== null,
+    version: bundle?.version ?? null,
+    url: bundle ? '/api/public/app/bundle.zip' : null,
+  });
+}));
+
+/**
+ * The bundle itself.
+ *
+ * Zipped on the way out rather than kept on disk: it is built from the files
+ * this process is already serving, so a cached copy could only ever be the same
+ * bytes or a stale lie. `archiver` streams, so nothing holds two megabytes in
+ * memory to answer this.
+ */
+publicRouter.get('/app/bundle.zip', asyncHandler(async (_req, res) => {
+  const bundle = await currentBundle();
+  if (!bundle) throw new NotFoundError('This server has no web bundle to hand out');
+
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="ipropy-${bundle.version}.zip"`);
+  // Keyed to the version, so a phone that already has it is told so in a
+  // header rather than sent two megabytes it will throw away.
+  res.setHeader('ETag', `"${bundle.version}"`);
+
+  /*
+    `ZipArchive`, not a callable default. archiver 8 is ESM-only and the format
+    classes are the entry point now — `archiver('zip', …)` was the 7.x API and
+    fails to compile against the current types. `core/media/archive.ts` records
+    the same thing.
+  */
+  const { ZipArchive } = await import('archiver');
+  const zip = new ZipArchive({ zlib: { level: 9 } });
+  zip.on('error', (err: Error) => {
+    logger.warn({ err }, 'app bundle zip failed');
+    if (!res.headersSent) res.status(500).end();
+  });
+  zip.pipe(res);
+  /*
+    The contents of `dist`, not the directory itself. The app unpacks this over
+    its own web root and expects `index.html` at the top; a wrapping folder
+    gives it a blank screen and no error, which is the worst way this can fail.
+  */
+  zip.directory(WEB_DIST, false);
+  await zip.finalize();
+}));
+
 /**
  * An address to send the phone to instead of this server.
  *
