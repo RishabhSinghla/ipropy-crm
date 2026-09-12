@@ -12,7 +12,7 @@
  * testing one.
  */
 import { expect, test } from '@playwright/test';
-import { waitForRecords } from './helpers';
+import { waitForRecords, searchList, fieldEditor } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -42,7 +42,7 @@ test('they open it from the list', async ({ page, context }) => {
   // specs share one account, that wait is long enough to spend the whole
   // test timeout inside `fill`.
   await waitForRecords(page);
-  await page.getByTestId('list-search').fill(name);
+  await searchList(page, name);
   await page.waitForTimeout(1200);
 
   // The list opens records in a new tab on purpose, so the list is never lost.
@@ -62,7 +62,7 @@ test('they change the pipeline status without leaving the page', async ({ page }
     is what turns a thirty-second job into a reason not to bother.
   */
   await page.goto(recordUrl);
-  await page.getByRole('button', { name: /^Edit Pipeline Status$/ }).first().click();
+  await fieldEditor(page, /^Change Pipeline Status$/).click();
 
   const options = page.getByRole('option').or(page.locator('select').first());
   await expect(options.first()).toBeVisible({ timeout: 10_000 });
@@ -102,7 +102,7 @@ test('every editable field says which field it is', async ({ page }) => {
     which was the budget.
   */
   await page.goto(recordUrl);
-  await expect(page.getByRole('button', { name: /^Edit /}).first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole('button', { name: /^Change /}).first()).toBeVisible({ timeout: 15_000 });
   await expect(
     page.getByRole('button', { name: 'Click to edit', exact: true }),
     'a button named only for the gesture tells nobody what it edits',
@@ -112,6 +112,6 @@ test('every editable field says which field it is', async ({ page }) => {
 test.afterAll(async ({ browser }) => {
   const page = await browser.newPage();
   await page.goto('/leads');
-  await page.getByTestId('list-search').fill(name).catch(() => undefined);
+  await searchList(page, name).catch(() => undefined);
   await page.close();
 });

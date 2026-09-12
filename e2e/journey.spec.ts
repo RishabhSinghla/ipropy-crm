@@ -8,6 +8,7 @@
  * to the report so the next fix has an address.
  */
 import { test, expect, type Page } from '@playwright/test';
+import { searchList } from './helpers';
 
 type Finding = { page: string; kind: string; detail: string };
 const findings: Finding[] = [];
@@ -109,7 +110,7 @@ test.describe('lead lifecycle through the UI', () => {
     const row = (text: string) => rowIn(page, text);
     await page.goto('/leads');
     await page.waitForTimeout(1500);
-    await page.getByTestId('list-search').fill(name);
+    await searchList(page, name);
     await page.waitForTimeout(1200);
     await expect(row(name)).toBeVisible();
   });
@@ -118,7 +119,7 @@ test.describe('lead lifecycle through the UI', () => {
     const row = (text: string) => rowIn(page, text);
     await page.goto('/leads');
     await page.waitForTimeout(1200);
-    await page.getByTestId('list-search').fill(name);
+    await searchList(page, name);
     await page.waitForTimeout(1200);
     const rowClick = row(name).click();
     const detail = await page.context().waitForEvent('page');
@@ -146,8 +147,7 @@ test.describe('lead lifecycle through the UI', () => {
     const row = (text: string) => rowIn(page, text);
     const renamed = `${name} II`;
     await page.goto('/leads');
-    await expect(page.getByTestId('list-search')).toBeVisible();
-    await page.getByTestId('list-search').fill(renamed);
+    await searchList(page, renamed);
     await expect(row(renamed)).toBeVisible({ timeout: 10_000 });
     const rowClick = row(renamed).click();
     const detail = await page.context().waitForEvent('page');
@@ -162,8 +162,7 @@ test.describe('lead lifecycle through the UI', () => {
     await expect(detail.getByRole('button', { name: 'Delete', exact: true })).toBeVisible({ timeout: 5_000 });
     await detail.getByRole('button', { name: 'Delete', exact: true }).click();
     await page.goto('/leads');
-    await expect(page.getByTestId('list-search')).toBeVisible({ timeout: 5_000 });
-    await page.getByTestId('list-search').fill(renamed);
+    await searchList(page, renamed);
     await expect(row(renamed)).toHaveCount(0);
   });
 });
