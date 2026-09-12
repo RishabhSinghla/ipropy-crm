@@ -2,8 +2,8 @@ import { type JSX, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
 import {
-  ArrowRight, Check, CheckCircle2, ChevronDown, Copy, Download, ExternalLink, Globe, HardDrive, Loader2,
-  Mail, MessageCircle, Mic, Phone, Plug, Settings2, Sparkles, Webhook, Wand2, XCircle,
+  ArrowRight, Bell, Check, CheckCircle2, ChevronDown, Copy, Download, ExternalLink, Globe, HardDrive,
+  Loader2, Mail, MessageCircle, Mic, Phone, Plug, Settings2, Sparkles, Webhook, Wand2, XCircle,
 } from 'lucide-react';
 import { api, type IntegrationSummary } from '../../lib/api';
 import { toast } from '../../lib/store';
@@ -38,6 +38,27 @@ interface FieldDef {
 }
 
 const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
+  /*
+    Firebase, which is only ever used to reach a phone that has the app closed.
+
+    One field, because Google hands you one file. Project Settings → Service
+    accounts → Generate new private key downloads a JSON file; its whole
+    contents go in here. Nothing else about Firebase is used — no analytics, no
+    database, no hosting — and the key never leaves this server.
+
+    Without it the bell inside the CRM and browser push both still work. What
+    is missing is the notification that arrives while the app is shut, which is
+    the one that actually matters to somebody driving between site visits.
+  */
+  fcm: [
+    {
+      key: 'serviceAccount',
+      label: 'Service account JSON',
+      source: 'credentials',
+      secret: true,
+      placeholder: '{ "type": "service_account", "project_id": … }',
+    },
+  ],
   meta_whatsapp: [
     { key: 'phoneNumberId', label: 'Phone Number ID', source: 'credentials' },
     { key: 'businessAccountId', label: 'Business Account ID', source: 'credentials' },
@@ -547,6 +568,7 @@ const PLAIN_NAMES: Record<string, string> = {
   s3: 'S3 storage',
   sentry: 'Sentry',
   web_push: 'browser push',
+  fcm: 'alerts to the phone app',
 };
 
 /** The coloured badge every connector carries: honest, and three words at most. */
@@ -671,6 +693,27 @@ const JOBS: JobDef[] = [
     trouble: 'File storage is set up but failing its test, so new photos may not be saved.',
     missing: 'Cloud file storage is not set up, so photos live only on this server and are lost when the CRM is updated.',
     moreLabel: 'More storage options',
+  },
+  {
+    /*
+      Only ever about reaching a phone whose app is shut.
+
+      The bell inside the CRM and browser push both work without any of this —
+      they are the CRM talking to a page that is open. A rep driving between
+      site visits has the app closed, and on both platforms the only way to
+      reach a closed app is through the operating system's own channel:
+      Firebase on Android, and Firebase forwarding to Apple on iPhone.
+    */
+    id: 'app-alerts',
+    title: 'Alerts on the phone app',
+    blurb: 'Follow-ups and new leads reach a rep even with the app closed.',
+    icon: Bell,
+    providers: ['fcm'],
+    recommended: 'fcm',
+    wanted: true,
+    short: 'phone alerts',
+    missing: 'The phone app cannot be alerted while it is closed, so a follow-up is only seen next time somebody opens it.',
+    trouble: 'Phone alerts are set up but failing, so a rep may not hear about a lead until they open the app.',
   },
   {
     id: 'errors',
