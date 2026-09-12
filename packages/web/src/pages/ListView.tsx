@@ -13,7 +13,7 @@ import { saveListNav } from '../lib/listNav';
 import { cn, restrictionForField } from '../lib/utils';
 import { FieldInput, FieldValue } from '../components/FieldRenderer';
 import { EditableField, isInlineEditable } from '../components/EditableField';
-import { assignmentField } from '../lib/fields';
+import { assignmentField, byLabel } from '../lib/fields';
 import { DEFAULT_PAGE_SIZE, loadPageSize, PAGE_SIZE_OPTIONS, savePageSize } from '../lib/pageSize';
 import { FilterBuilder, countConditions } from '../components/FilterBuilder';
 import {
@@ -1805,7 +1805,17 @@ function KanbanBoard({
 function ExportWizard({ open, onClose, module, fields, filter, selectedIds, allSelected }: {
   open: boolean; onClose: () => void; module: string; fields: FieldMeta[]; filter: FilterGroup; selectedIds?: string[]; allSelected: boolean;
 }): JSX.Element {
-  const available = fields.filter((f) => f.isActive && f.displayType !== 'hidden' && f.config.exportable !== false);
+  /*
+    A to Z, like every other field list in the CRM.
+
+    This one has a search box above it, which helps when you know the name and
+    not at all when you are picking eight of forty for a spreadsheet — and
+    `sequence` is the order somebody arranged a *form* in, which says nothing
+    about where to look for "Locality" in a list.
+  */
+  const available = byLabel(
+    fields.filter((f) => f.isActive && f.displayType !== 'hidden' && f.config.exportable !== false),
+  );
   type ExportChoice = { fieldId: string; header: string };
   const [columns, setColumns] = useState<ExportChoice[]>([]);
   const [format, setFormat] = useState<'xlsx' | 'csv'>('xlsx');
