@@ -12,6 +12,7 @@ import { cn } from '../lib/utils';
 import { currentSubscription, disablePush, enablePush, permissionState, pushSupport } from '../lib/push';
 import { Avatar, Badge, ConfirmDialog, EmptyState, Modal, Select, Skeleton, Spinner, Tabs } from '../components/ui';
 import { copyText } from '../lib/nativeActions';
+import { isNative } from '../lib/native';
 import {
   callSyncStatus, callSyncSupported, disableCallSync, enableCallSync, openAppSettings,
   syncCallsNow, type CallSyncStatus,
@@ -937,17 +938,21 @@ function GetTheApp(): JSX.Element | null {
   // nobody reading this screen can answer.
   if (!data?.available || !data.build) return null;
 
+  // And nothing inside the app either — offering somebody a download of the
+  // thing they are currently looking at reads as a mistake, because it is one.
+  if (isNative) return null;
+
   const megabytes = (data.build.sizeBytes / 1024 / 1024).toFixed(1);
 
   return (
     <div className="card space-y-4 p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 max-w-xl">
-          <p className="text-sm font-medium">iPropy Companion for Android</p>
+          <p className="text-sm font-medium">iPropy for Android</p>
           <p className="mt-1 text-sm text-muted">
-            Install this on a rep&apos;s phone and their calls, call recordings and, if you have
-            switched it on, their position reach the CRM on their own. Open this page on the
-            handset itself and tap the button; that is the quickest way.
+            The whole CRM as an app on the phone, plus the call logging that used to need a
+            second app of its own. Open this page on the handset itself and tap the button;
+            that is the quickest way.
           </p>
           <p className="mt-2 text-2xs text-muted">
             Version {data.build.versionName} · {megabytes} MB · Android {androidNameFor(data.build.minSdk)} or newer
@@ -965,16 +970,17 @@ function GetTheApp(): JSX.Element | null {
           warning and allow your browser to install apps, then tap the downloaded file again.
         </li>
         <li>
-          <span className="font-medium text-slate-700 dark:text-slate-200">2. Pair it.</span>{' '}
-          Tap <em>Pair a phone</em> below, copy the token, and paste it into the app&apos;s
-          &quot;Pair this device&quot; screen along with this CRM&apos;s web address.
+          <span className="font-medium text-slate-700 dark:text-slate-200">2. Sign in.</span>{' '}
+          The same email and password as the website. There is no pairing token to copy any
+          more — the app mints its own the moment you switch call logging on.
         </li>
         <li>
-          <span className="font-medium text-slate-700 dark:text-slate-200">3. Say yes to the permissions.</span>{' '}
-          Call log, notifications and location. Location needs a second step that Android will not
-          let the app ask for in a pop-up: open the app&apos;s own Settings page and change location
-          from &quot;While using the app&quot; to &quot;Allow all the time&quot;. The app offers to
-          take you there.
+          <span className="font-medium text-slate-700 dark:text-slate-200">3. Turn on call logging.</span>{' '}
+          Settings &rarr; Phones &rarr; <em>Turn on call logging</em>, on the handset itself. Say yes
+          to the call-log permission when Android asks. If you also want the phone to report where
+          it is, Android will not let the app ask for that in a pop-up: open the app&apos;s own
+          Settings page and change location from &quot;While using the app&quot; to &quot;Allow all
+          the time&quot;.
         </li>
         <li>
           <span className="font-medium text-slate-700 dark:text-slate-200">4. On Xiaomi, Oppo, Vivo or Realme, turn on Autostart.</span>{' '}
@@ -1158,8 +1164,9 @@ function PhonesTab(): JSX.Element {
           <p className="text-sm font-medium">Call-logging phones</p>
           <p className="mt-1 text-sm text-muted">
             Calls made or received on these handsets appear in the CRM automatically — no one has
-            to remember to log anything. Pair with the iPropy Companion app on the phone; the
-            one-time token goes into its "Pair this device" screen.
+            to remember to log anything. The quickest way to add one is to install the app on the
+            handset and switch call logging on there; it pairs itself. <em>Pair a phone</em> below
+            still issues a token by hand, for the older companion app.
           </p>
         </div>
         <button className="btn-primary btn-sm shrink-0" onClick={() => setPairOpen(true)}>

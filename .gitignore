@@ -57,3 +57,7 @@ packages/app/android/app/src/main/assets/public/
 packages/app/ios/App/build/
 packages/app/ios/App/Pods/
 packages/app/ios/App/App/public/
+
+# The app signing key. Losing it means no handset can ever take an update.
+packages/app/android/ipropy-release.keystore
+packages/app/android/*.keystore
