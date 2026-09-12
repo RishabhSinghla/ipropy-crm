@@ -803,22 +803,51 @@ publicRouter.get('/matches/:token', asyncHandler(async (req, res) => {
     throw new NotFoundError('This link is no longer available');
   }
 
+  const ids = link.payload.ids.slice(0, 50);
+
+  /*
+    Every unit's photos in one query, not one query per unit.
+
+    This route is unauthenticated and shares the `/api/public` budget of 300
+    requests a minute. A page of fifty units asking for its photos a unit at a
+    time is fifty round trips *plus* fifty for the units themselves — a hundred
+    database queries per request, which at that budget is thirty thousand a
+    minute from a single caller. The single-property route next door costs two.
+
+    `row_number()` is what keeps the per-unit cap: a bare LIMIT would take the
+    first eight photos across the whole set and leave most units with none.
+  */
+  const photosByRecord = new Map<string, { id: string }[]>();
+  const shareConfig = await getPropertyShareConfig();
+  if (shareConfig.showPhotos && ids.length) {
+    const { rows } = await db.query<{ id: string; record_id: string }>(
+      `SELECT id, record_id FROM (
+         SELECT id, record_id,
+                row_number() OVER (
+                  PARTITION BY record_id
+                  ORDER BY ${photoOrderBy('')}, ai_category NULLS LAST, created_at
+                ) AS n
+           FROM ipy_attachment
+          WHERE record_id = ANY($1::uuid[]) AND mime_type LIKE 'image/%'
+       ) ranked
+       WHERE n <= 8`,
+      [ids],
+    );
+    for (const row of rows) {
+      const list = photosByRecord.get(row.record_id) ?? [];
+      list.push({ id: row.id });
+      photosByRecord.set(row.record_id, list);
+    }
+  }
+
   const items: unknown[] = [];
-  for (const id of link.payload.ids.slice(0, 50)) {
+  for (const id of ids) {
     const shared = await loadSharedProperty(id);
     // A unit deleted since the link was made drops out rather than taking the
     // whole page down with it — the other five are still what was sent.
     if (!shared) continue;
 
-    const photos = shared.showPhotos
-      ? (await db.query<{ id: string }>(
-        `SELECT id FROM ipy_attachment
-          WHERE record_id = $1 AND mime_type LIKE 'image/%'
-          ORDER BY ${photoOrderBy('')}, ai_category NULLS LAST, created_at
-          LIMIT 8`,
-        [id],
-      )).rows
-      : [];
+    const photos = shared.showPhotos ? (photosByRecord.get(id) ?? []) : [];
 
     items.push({
       id,

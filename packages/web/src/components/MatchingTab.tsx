@@ -233,8 +233,17 @@ export function MatchingTab({
         <Link2 className="h-4 w-4 shrink-0 text-brand-500" />
         <span className="text-sm font-medium">
           {heading}{' '}
+          {/*
+            Count the rows on screen, not the ids that were ranked.
+
+            A saved matching holds ids, and a unit deleted since it was saved is
+            an id that no longer resolves to a row. Counting `visible` would
+            have the heading say 48 above a table with 47 in it — quietly, and
+            only on the records where somebody had pinned a list weeks ago,
+            which is the hardest place to notice it.
+          */}
           <span className="tnum text-brand-600">
-            ({visible.length === ranked.length ? ranked.length : `${visible.length} of ${ranked.length}`})
+            ({rows.length === ranked.length ? ranked.length : `${rows.length} of ${ranked.length}`})
           </span>
         </span>
 
@@ -340,9 +349,14 @@ export function MatchingTab({
           title={isContact ? 'No matching inventory' : 'No matching leads'}
           body={ranked.length && !visible.length
             ? 'Every match was filtered out. Clear a match filter to see them again.'
-            : isContact
-              ? 'Nothing available fits the stated requirement right now. Add or reprice a unit, or widen the requirement.'
-              : 'No open lead fits this unit yet. It sells itself when one arrives — check back after the next enquiry.'}
+            : ranked.length && !rows.length
+              // Ids that no longer resolve: a saved matching whose records have
+              // been deleted since. Saying so is better than "nothing fits",
+              // which sends somebody looking for a pricing problem.
+              ? 'The records in this saved matching have all been deleted. Revert to run it again.'
+              : isContact
+                ? 'Nothing available fits the stated requirement right now. Add or reprice a unit, or widen the requirement.'
+                : 'No open lead fits this unit yet. It sells itself when one arrives — check back after the next enquiry.'}
         />
       ) : (
         <div className="overflow-x-auto">
