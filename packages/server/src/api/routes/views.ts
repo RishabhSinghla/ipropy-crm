@@ -80,8 +80,10 @@ viewsRouter.post('/:module', asyncHandler(async (req, res) => {
   if (!(await canAccessModule(user, module.name, 'view'))) throw new ForbiddenError();
   const input = viewSchema.parse(req.body);
 
-  // Only admins (or users with the capability) can publish a view to everyone.
-  const isPublic = input.isPublic && (user.isAdmin || module.isCustom);
+  // A view's filter is personal configuration, not a privileged schema change.
+  // Its owner may choose to share it with everyone who can already view this
+  // module; record-level permissions still apply when that view is opened.
+  const isPublic = input.isPublic;
 
   // Adding a tab back by the name of one that was deleted clears its
   // tombstone: otherwise the seed's own copy could never return, and an admin

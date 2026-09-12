@@ -130,7 +130,9 @@ export default function RecordDetail(): JSX.Element {
       sort: listQuery?.get('sort') ?? undefined,
       dir: listQuery?.get('dir') ?? undefined,
     }),
-    enabled: Boolean(moduleName && id) && navIndex === -1,
+    // The browser cache only contains one visible page. Always prefer the
+    // server's complete, permission-scoped list so the arrows cross pages.
+    enabled: Boolean(moduleName && id && listQuery),
     staleTime: 30_000,
   });
 
@@ -156,8 +158,8 @@ export default function RecordDetail(): JSX.Element {
     });
   }, [moduleName, id]);
 
-  const prevId = sessionPrev ?? (navIndex === -1 ? remote?.prevId ?? null : null);
-  const nextId = sessionNext ?? (navIndex === -1 ? remote?.nextId ?? null : null);
+  const prevId = remote?.prevId ?? sessionPrev;
+  const nextId = remote?.nextId ?? sessionNext;
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
@@ -170,12 +172,12 @@ export default function RecordDetail(): JSX.Element {
       );
       if (isEditable || document.querySelector('[role="dialog"]')) return;
 
-      if (e.key === 'ArrowLeft' && prevId) navigate(`/${moduleName}/${prevId}`);
-      else if (e.key === 'ArrowRight' && nextId) navigate(`/${moduleName}/${nextId}`);
+      if (e.key === 'ArrowLeft' && prevId) navigate(`/${moduleName}/${prevId}${returnQuery}`);
+      else if (e.key === 'ArrowRight' && nextId) navigate(`/${moduleName}/${nextId}${returnQuery}`);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [moduleName, prevId, nextId, navigate]);
+  }, [moduleName, prevId, nextId, navigate, returnQuery]);
 
   const deleteMutation = useMutation({
     mutationFn: () => api.remove(moduleName!, id!),
@@ -362,8 +364,10 @@ export default function RecordDetail(): JSX.Element {
                 >
                   <ChevronLeft className="h-3.5 w-3.5" />
                 </button>
-                {navIndex >= 0 && (
-                  <span className="px-1 text-2xs tnum text-muted">{navIndex + 1} / {navIds.length}</span>
+                {(remote?.position || navIndex >= 0) && (
+                  <span className="px-1 text-2xs tnum text-muted">
+                    {remote?.position ?? navIndex + 1} / {remote?.total ?? navIds.length}
+                  </span>
                 )}
                 <button
                   onClick={() => nextId && navigate(`/${moduleName}/${nextId}${returnQuery}`)}

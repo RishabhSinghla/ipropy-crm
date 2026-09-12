@@ -96,28 +96,12 @@ const GROUPS: { id: string; title: string; blurb: string }[] = [
  * A category added to the settings table after this screen was written shows
  * above the divider, where a brand-new setting cannot be missed.
  */
-/** Filled in once, then left alone: the one group that starts open. */
-const STARTS_OPEN = ''; // nothing open on arrival — the list IS the page
-
 export default function SettingsAdmin(): JSX.Element {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ['admin-settings'], queryFn: () => api.settings() });
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [query, setQuery] = useState('');
   const [activeGroup, setActiveGroup] = useState('');
-  /*
-    Fourteen groups drawn open at once is a page you land on and scroll, and
-    the feedback on it was that it felt heavy before you had read a word. So
-    the page opens as a list: every group is one row — its title, a line on
-    what it is for, a peek at what it currently holds — and only "Your
-    business", which is filled in once and then left alone, starts open.
-
-    Everything starts shut, including Your business: the page must read as a
-    list of headings, not a wall of forms (e2e/adminSettings.spec.ts pins
-    that). A search opens whatever it matched, and a group the admin has
-    explicitly shut stays shut.
-  */
-  const [opened, setOpened] = useState<Record<string, boolean>>({});
 
   const settings = useMemo(
     () => ((data ?? []) as unknown as Setting[])
@@ -161,20 +145,12 @@ export default function SettingsAdmin(): JSX.Element {
   }, [grouped, activeGroup]);
 
   const renderGroup = (g: Group): JSX.Element => {
-    // A search opens what it found; otherwise the admin's own choice wins,
-    // and "Your business" starts open because it is filled in once.
-    const isOpen = q ? true : (opened[g.id] ?? g.id === STARTS_OPEN);
-    const changedHere = g.rows.filter((s) => s.key in draft).length;
-
     return (
-      <GroupCard
-        key={g.id}
-        group={g}
-        peek={peekLine(g.id, g.rows, draft)}
-        open={isOpen}
-        changed={changedHere}
-        onToggle={() => setOpened((o) => ({ ...o, [g.id]: !isOpen }))}
-      >
+      <section key={g.id} className="card overflow-hidden">
+        <div className="border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+          <h3 className="text-sm font-semibold">{g.title}</h3>
+          {g.blurb && <p className="mt-0.5 text-xs text-muted">{g.blurb}</p>}
+        </div>
         <div className="divide-y divide-slate-100 dark:divide-slate-800">
           {g.rows.map((s) => (
             <Row
@@ -190,7 +166,7 @@ export default function SettingsAdmin(): JSX.Element {
             />
           ))}
         </div>
-      </GroupCard>
+      </section>
     );
   };
 
@@ -274,18 +250,7 @@ export default function SettingsAdmin(): JSX.Element {
   );
 }
 
-// ---------------------------------------------------------------------------
-// The peek on a closed group
-//
-// Two or three of the values the group currently holds, in plain words, so
-// the list answers "what is set here?" without being opened. It is read-only
-// rendering of the same values the rows show; anything missing or too
-// structured to summarise is simply left out of the line.
-// ---------------------------------------------------------------------------
-
-/** One "Label: value" phrase on a closed group's row. */
 interface PeekPair { label: string; value: string }
-
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 /** A switch that is off is information too, so booleans read as words. */

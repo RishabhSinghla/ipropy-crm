@@ -818,7 +818,29 @@ recordsRouter.get('/:module/:id/neighbours', asyncHandler(async (req, res) => {
     return result.rows[0]?.id ?? null;
   };
 
-  res.json({ prevId: await neighbour('prev'), nextId: await neighbour('next') });
+  // The header counter must describe the whole filtered result, not the 25
+  // ids that the browser happened to have rendered on the list page.
+  const all = await recordService.listRecords(scope, moduleName, {
+    ...(viewId ? { view: viewId } : {}),
+    page: 1,
+    pageSize: 1,
+    sortBy: field,
+    sortDir: dir,
+  });
+  const before = await recordService.listRecords(scope, moduleName, {
+    ...(viewId ? { view: viewId } : {}),
+    filter: atOrTie(dir === 'asc' ? 'less_than' : 'greater_than'),
+    page: 1,
+    pageSize: 1,
+    sortBy: field,
+    sortDir: dir,
+  });
+  res.json({
+    prevId: await neighbour('prev'),
+    nextId: await neighbour('next'),
+    position: before.total + 1,
+    total: all.total,
+  });
 }));
 
 // Tags, stars, sharing
