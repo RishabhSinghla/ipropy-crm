@@ -779,6 +779,7 @@ function NotificationBell(): JSX.Element {
 function GlobalSearch(): JSX.Element {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [results, setResults] = useState<SearchHit[]>([]);
   const [loading, setLoading] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -788,6 +789,7 @@ function GlobalSearch(): JSX.Element {
     const onKey = (e: KeyboardEvent): void => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
+        setExpanded(true);
         inputRef.current?.focus();
         setOpen(true);
       }
@@ -816,11 +818,23 @@ function GlobalSearch(): JSX.Element {
   }, [query]);
 
   return (
-    <div className="relative ml-auto w-full max-w-md lg:ml-2 lg:w-auto lg:max-w-xs xl:max-w-sm" ref={ref}>
+    <div className="relative ml-auto" ref={ref}>
+      {!expanded && (
+        <button
+          type="button"
+          className="btn-ghost p-2"
+          aria-label="Search everything"
+          title="Search everything (⌘K)"
+          onClick={() => { setExpanded(true); window.setTimeout(() => inputRef.current?.focus(), 0); }}
+        >
+          <Search className="h-4.5 w-4.5" />
+        </button>
+      )}
+      {expanded && <>
       <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
       <input
         ref={inputRef}
-        className="input py-1.5 pl-8 pr-12"
+        className="input w-52 py-1.5 pl-8 pr-12 sm:w-64"
         placeholder="Search everything…"
         value={query}
         onFocus={() => setOpen(true)}
@@ -878,6 +892,7 @@ function GlobalSearch(): JSX.Element {
           )))}
         </div>
       )}
+      </>}
     </div>
   );
 }

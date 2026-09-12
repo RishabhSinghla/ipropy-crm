@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type BuyerMatch, type FieldMeta, formatIndianPrice, type ModuleMeta, type PropertyMatch, type RecordEnvelope, relativeTime, type TimelineEntry } from '@ipropy/shared';
 import {
-  Activity, ArrowRightLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Edit3, ExternalLink, Eye, FileQuestion, FileText, FolderOpen, Images, LayoutDashboard, Link2, MessageCircle, Mic, MoreHorizontal, Paperclip, Pencil, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Trash2, Upload, Users, X,
+  Activity, ArrowRightLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Edit3, ExternalLink, Eye, FileQuestion, FileText, FolderOpen, Images, LayoutDashboard, Link2, MessageCircle, Mic, MoreHorizontal, Paperclip, Pencil, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Tags, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { api, authedFileUrl } from '../lib/api';
 import { compressImage, formatBytes } from '../lib/compressImage';
@@ -56,6 +56,7 @@ export default function RecordDetail(): JSX.Element {
   const [moveTarget, setMoveTarget] = useState<'leads' | 'properties' | null>(null);
   const [sharing, setSharing] = useState(false);
   const [collaborators, setCollaborators] = useState(false);
+  const [tagging, setTagging] = useState(false);
   const [compose, setCompose] = useState<'whatsapp' | 'email' | null>(null);
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [summarising, setSummarising] = useState(false);
@@ -432,6 +433,11 @@ export default function RecordDetail(): JSX.Element {
                         Send to a buyer
                       </DropdownItem>
                     )}
+                    {record.can?.edit && (
+                      <DropdownItem icon={<Tags className="h-3.5 w-3.5" />} onClick={() => { setTagging(true); close(); }}>
+                        Manage tags
+                      </DropdownItem>
+                    )}
                     {(moduleName === 'leads' || moduleName === 'properties') && record.can?.edit && (
                       <DropdownItem
                         icon={<Users className="h-3.5 w-3.5" />}
@@ -497,6 +503,11 @@ export default function RecordDetail(): JSX.Element {
                       Risk <ScoreChip score={record.values.ai_risk_score as number} invert />
                     </span>
                   )}
+                  {(record.tags ?? []).map((tag) => (
+                    <span key={tag} className="rounded-full bg-brand-50 px-2 py-0.5 text-2xs font-medium text-brand-700 dark:bg-brand-950/40 dark:text-brand-300">
+                      {tag}
+                    </span>
+                  ))}
                 </div>
 
                 {/* Header summary chips. Every chip caps its own width and
@@ -646,6 +657,15 @@ export default function RecordDetail(): JSX.Element {
         <RecordCollaboratorsPanel module={moduleName!} recordId={id!} />
       </Modal>
 
+      <Modal open={tagging} onClose={() => setTagging(false)} title={`Tags for ${record.label}`}>
+        <RecordTagEditor
+          module={moduleName!}
+          recordId={id!}
+          initialTags={record.tags ?? []}
+          onSaved={() => { void refetch(); setTagging(false); }}
+        />
+      </Modal>
+
       <Modal
         open={Boolean(aiSummary)}
         onClose={() => setAiSummary(null)}
@@ -705,6 +725,47 @@ type RecordShare = {
   access: 'read' | 'read_write';
   created_at: string;
 };
+
+function RecordTagEditor({ module, recordId, initialTags, onSaved }: {
+  module: string; recordId: string; initialTags: string[]; onSaved: () => void;
+}): JSX.Element {
+  const [tags, setTags] = useState(initialTags);
+  const [text, setText] = useState('');
+  const { data: known = [] } = useQuery({ queryKey: ['tags'], queryFn: () => api.tags() });
+  const save = useMutation({
+    mutationFn: () => api.setTags(module, recordId, tags),
+    onSuccess: () => { toast.success('Tags updated'); onSaved(); },
+    onError: (error: Error) => toast.error('Could not update tags', error.message),
+  });
+  const add = (value: string): void => {
+    const tag = value.trim().toLowerCase();
+    if (tag && !tags.includes(tag)) setTags((current) => [...current, tag]);
+    setText('');
+  };
+  const suggestions = (known as { name: string }[])
+    .map((tag) => tag.name).filter((tag) => !tags.includes(tag) && (!text || tag.includes(text.toLowerCase()))).slice(0, 8);
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted">Use tags to group and find records across your CRM. Create a new tag simply by typing it.</p>
+      <div className="flex flex-wrap gap-2">
+        {tags.length ? tags.map((tag) => (
+          <span key={tag} className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-700 dark:bg-brand-950/40 dark:text-brand-300">
+            {tag}<button type="button" aria-label={`Remove ${tag}`} onClick={() => setTags((current) => current.filter((value) => value !== tag))}><X className="h-3 w-3" /></button>
+          </span>
+        )) : <span className="text-sm text-muted">No tags yet</span>}
+      </div>
+      <div className="flex gap-2">
+        <input className="input flex-1" value={text} placeholder="Add a tag…" onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); add(text); } }} />
+        <button type="button" className="btn-secondary" disabled={!text.trim()} onClick={() => add(text)}><Plus className="h-4 w-4" /> Add</button>
+      </div>
+      {suggestions.length > 0 && <div className="flex flex-wrap gap-1.5">{suggestions.map((tag) => <button key={tag} type="button" className="rounded-full border border-slate-200 px-2 py-1 text-xs hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800" onClick={() => add(tag)}>+ {tag}</button>)}</div>}
+      <div className="flex justify-end gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
+        <button type="button" className="btn-primary" disabled={save.isPending} onClick={() => save.mutate()}>{save.isPending && <Spinner className="h-4 w-4" />} Save tags</button>
+      </div>
+    </div>
+  );
+}
 
 function RecordCollaboratorsPanel({ module, recordId }: { module: string; recordId: string }): JSX.Element {
   const [selectedUserId, setSelectedUserId] = useState('');
