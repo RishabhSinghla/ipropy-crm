@@ -424,7 +424,7 @@ export default function RecordDetail(): JSX.Element {
                       Module type; the cast asks the same question of whatever
                       the metadata actually carries.
                     */}
-                    {canShareRecords(moduleName, (module as { settings?: Record<string, unknown> } | undefined)?.settings) && (
+                    {canShareRecords(moduleName, meta?.settings) && (
                       <DropdownItem
                         icon={<Link2 className="h-3.5 w-3.5" />}
                         onClick={() => { setSharing(true); close(); }}
