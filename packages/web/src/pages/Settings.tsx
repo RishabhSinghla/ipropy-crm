@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
 import {
   Bell, BellOff, Camera, Check, Copy, Download, Fingerprint, KeyRound, Monitor,
-  Moon, Plus, Save, Smartphone, Sun, Trash2, User, X,
+  Moon, Phone, Plus, RefreshCw, Save, Smartphone, Sun, Trash2, User, X,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
@@ -12,6 +12,10 @@ import { cn } from '../lib/utils';
 import { currentSubscription, disablePush, enablePush, permissionState, pushSupport } from '../lib/push';
 import { Avatar, Badge, ConfirmDialog, EmptyState, Modal, Select, Skeleton, Spinner, Tabs } from '../components/ui';
 import { copyText } from '../lib/nativeActions';
+import {
+  callSyncStatus, callSyncSupported, disableCallSync, enableCallSync, openAppSettings,
+  syncCallsNow, type CallSyncStatus,
+} from '../lib/callSync';
 
 /**
  * Settings opens as a translucent modal over the page you were on.
@@ -989,6 +993,141 @@ function androidNameFor(minSdk: number): string {
   return names[minSdk] ?? String(minSdk);
 }
 
+
+/**
+ * Call logging for the handset this is running on.
+ *
+ * Only ever rendered inside the Android app, and only there because only there
+ * is there anything to switch on. iOS exposes no call-log API to any app at any
+ * permission level, so an iPhone gets nothing rather than a disabled switch
+ * promising something Apple does not allow.
+ *
+ * The whole flow is one button. The rep is already signed in — this screen is
+ * their own session minting a token for their own phone — so there is no code
+ * to type, nothing to send out of band, and no admin in the middle. The
+ * companion app needed all three, and three paired handsets sat on production
+ * for a month without one of them ever uploading a call.
+ */
+function ThisPhone(): JSX.Element | null {
+  const [status, setStatus] = useState<CallSyncStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [importHistory, setImportHistory] = useState(false);
+
+  const reload = (): void => { void callSyncStatus().then(setStatus); };
+  useEffect(reload, []);
+
+  if (!callSyncSupported || !status?.available) return null;
+
+  const turnOn = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      const next = await enableCallSync({ importHistory });
+      setStatus(next);
+      if (!next.callLogGranted) {
+        toast.error(
+          'Android would not allow it',
+          'Call logging needs permission to read the call log. Open Settings → Apps → iPropy → Permissions and allow Call logs.',
+        );
+      } else if (next.paired) {
+        toast.success('Call logging is on', 'Calls from this phone will reach the CRM within fifteen minutes.');
+      }
+    } catch (err) {
+      toast.error('Could not turn it on', (err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const turnOff = async (): Promise<void> => {
+    setBusy(true);
+    try { setStatus(await disableCallSync()); toast.info('Call logging is off'); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="card space-y-4 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 max-w-xl">
+          <p className="text-sm font-medium">This phone</p>
+          <p className="mt-1 text-sm text-muted">
+            {status.paired
+              ? 'Calls you make and take on this handset reach the CRM on their own, matched to the right contact. Nothing to remember, nothing to log.'
+              : 'Switch this on and every call you make or take on this phone appears in the CRM by itself, against the right contact.'}
+          </p>
+          {status.paired && (
+            <p className="mt-2 text-2xs text-muted">
+              {status.lastSyncAt
+                ? `Last checked ${relativeTime(new Date(status.lastSyncAt).toISOString())}`
+                : 'Not checked yet — the first run happens within fifteen minutes'}
+              {status.lastSyncSummary ? ` · ${status.lastSyncSummary}` : ''}
+              {` · app v${status.version}`}
+            </p>
+          )}
+        </div>
+
+        {status.paired ? (
+          <div className="flex shrink-0 gap-2">
+            <button
+              className="btn-secondary btn-sm"
+              disabled={busy}
+              onClick={() => { void syncCallsNow(); toast.info('Checking now', 'New calls will appear in a moment.'); }}
+            >
+              <RefreshCw className="h-3.5 w-3.5" /> Check now
+            </button>
+            <button className="btn-ghost btn-sm" disabled={busy} onClick={() => void turnOff()}>
+              Turn off
+            </button>
+          </div>
+        ) : (
+          <button className="btn-primary btn-sm shrink-0" disabled={busy} onClick={() => void turnOn()}>
+            {busy ? <Spinner className="h-3.5 w-3.5" /> : <Phone className="h-3.5 w-3.5" />}
+            Turn on call logging
+          </button>
+        )}
+      </div>
+
+      {/*
+        Offered before pairing and never after, because it is not a setting —
+        it decides where the very first sync starts reading from, and by the
+        time there is something to change the decision has already been acted
+        on. Off by default: a two-year-old handset holds thousands of calls,
+        most of them personal, and uploading those to an employer's CRM is not
+        a thing to do because a default was convenient.
+      */}
+      {!status.paired && (
+        <label className="flex items-start gap-2.5 border-t border-slate-100 pt-4 dark:border-slate-800">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={importHistory}
+            onChange={(e) => setImportHistory(e.target.checked)}
+          />
+          <span className="text-sm text-muted">
+            Also bring across the calls already on this phone.{' '}
+            <span className="text-2xs">
+              This can only be chosen now. It uploads whatever history the handset still holds,
+              personal calls included.
+            </span>
+          </span>
+        </label>
+      )}
+
+      {status.paired && !status.callLogGranted && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm dark:border-amber-900/50 dark:bg-amber-950/30">
+          <p className="font-medium text-amber-900 dark:text-amber-200">Permission was withdrawn</p>
+          <p className="mt-1 text-amber-800 dark:text-amber-300">
+            This phone is paired but Android is no longer letting the app read the call log, so
+            nothing is being uploaded.
+          </p>
+          <button className="btn-secondary btn-sm mt-2" onClick={() => void openAppSettings()}>
+            Open app settings
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PhonesTab(): JSX.Element {
   const { user } = useApp();
   const [pairOpen, setPairOpen] = useState(false);
@@ -1008,6 +1147,8 @@ function PhonesTab(): JSX.Element {
 
   return (
     <div className="space-y-4">
+
+    <ThisPhone />
 
     <GetTheApp />
 

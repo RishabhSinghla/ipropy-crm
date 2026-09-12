@@ -538,8 +538,38 @@ function BottomTabs({
     { to: '/settings', icon: 'settings', label: 'You' },
   ].filter(Boolean) as { to: string; icon: string; label: string; badge?: number }[];
 
+  /*
+    The bar measures itself and publishes the result as `--bottom-nav-h`.
+
+    Anything else fixed to the bottom of a phone screen has to sit above this
+    bar, and the only two ways to know how tall it is were a hardcoded pixel
+    count or this. The hardcoded version is wrong the moment a tab label wraps,
+    the phone has a gesture bar of a different depth, or somebody turns the
+    system font up — and being wrong means a Save button half-hidden behind the
+    navigation, which is what shipped on the site-visit screen.
+
+    Zero when the bar is not rendered, so a desktop layout is unaffected and a
+    consumer needs no breakpoint of its own.
+  */
+  const navRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el) return;
+    const publish = (): void => {
+      document.documentElement.style.setProperty('--bottom-nav-h', `${el.offsetHeight}px`);
+    };
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      document.documentElement.style.setProperty('--bottom-nav-h', '0px');
+    };
+  }, []);
+
   return (
     <nav
+      ref={navRef}
       aria-label="Primary"
       className="fixed inset-x-0 bottom-0 z-40 flex shrink-0 items-stretch justify-around border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] lg:hidden dark:border-slate-800 dark:bg-slate-900"
     >

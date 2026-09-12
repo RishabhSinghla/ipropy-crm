@@ -9,6 +9,7 @@
  */
 import { useApp } from './store';
 import { isAndroid, isNative } from './native';
+import { refreshNativePermission } from './push';
 
 let started = false;
 
@@ -16,7 +17,9 @@ export async function startNativeBridges(): Promise<void> {
   if (!isNative || started) return;
   started = true;
 
-  await Promise.all([backButton(), deepLinks(), connectivity(), resume(), keyboard()]);
+  await Promise.all([
+    backButton(), deepLinks(), connectivity(), resume(), keyboard(), notifications(),
+  ]);
   await hideSplash();
 }
 
@@ -114,6 +117,67 @@ async function resume(): Promise<void> {
     const { user } = useApp.getState();
     if (user) void useApp.getState().bootstrap();
     window.dispatchEvent(new Event('ipropy:resumed'));
+  });
+}
+
+async function notifications(): Promise<void> {
+  const { PushNotifications } = await import('@capacitor/push-notifications');
+
+  // What the Settings screen shows. Asked, never requested — a permission
+  // dialog on first launch, before anybody knows what the app is, is the
+  // fastest way to have it refused permanently.
+  void refreshNativePermission();
+
+  /*
+    The channel the server addresses its notifications to, created here because
+    Android will not create one for you.
+
+    From Android 8 a notification naming a channel that does not exist is
+    dropped entirely — not shown quietly, not shown without sound: dropped,
+    with nothing logged on the handset and a `sent` from Firebase. `sendFcm`
+    names `ipropy-alerts`, so this line is what stands between the server
+    reporting success and a rep never being told anything.
+
+    Creating it twice is a no-op, so this runs on every launch rather than
+    being tracked as a thing already done.
+  */
+  if (isAndroid) {
+    await PushNotifications.createChannel({
+      id: 'ipropy-alerts',
+      name: 'Leads and reminders',
+      description: 'Follow-ups, new leads assigned to you, and anything needing your attention.',
+      importance: 4, // heads-up, which a follow-up going cold warrants
+      visibility: 1, // shown on the lock screen: this is work, not a secret
+      vibration: true,
+    }).catch(() => undefined);
+  }
+
+  /*
+    Tapping a notification.
+
+    This is the whole point of a notification and the part most often left out:
+    the alert says "Priya asked for a call back" and tapping it lands on the
+    dashboard, leaving the rep to go and find Priya. `data.link` is the record
+    path the server put on it — see `sendFcm`.
+  */
+  await PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+    const link = action.notification.data?.link as string | undefined;
+    if (!link || !link.startsWith('/')) return;
+    window.history.pushState({}, '', link);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
+
+  /*
+    Arriving while the app is open.
+
+    Android does not draw a notification for an app in the foreground, so
+    without this the alert is simply lost for anybody who happens to be looking
+    at the CRM at the time. The bell and the toast already exist and come over
+    the socket — this only makes sure the counter is refreshed rather than
+    waiting for the next poll.
+  */
+  await PushNotifications.addListener('pushNotificationReceived', () => {
+    window.dispatchEvent(new Event('ipropy:notification'));
   });
 }
 

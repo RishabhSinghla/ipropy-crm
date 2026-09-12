@@ -385,8 +385,14 @@ export default function SiteCapture(): JSX.Element {
         the screen, and a Save that lives at the bottom of a nine-field form is a
         Save nobody finds with one thumb. At lg+ the form is short enough that
         the footer would only duplicate it, so the bar stays phone-only.
+
+        `bottom` is the navigation bar's measured height, not zero. Both are
+        fixed to the bottom of the same screen and the navigation has the higher
+        z-index, so at `bottom-0` this bar sits *behind* it: on every phone, the
+        Save on the one screen designed to be used one-handed at a gate was
+        half-covered by the tab bar. See `--bottom-nav-h` in Layout.
       */}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 p-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 lg:hidden">
+      <div className="fixed inset-x-0 bottom-[var(--bottom-nav-h,0px)] z-30 border-t border-slate-200 bg-white/95 p-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 lg:hidden">
         <div className="mx-auto flex max-w-lg items-center gap-2">
           <button
             type="submit"

@@ -149,8 +149,35 @@ miscRouter.post('/push/subscribe', asyncHandler(async (req, res) => {
   res.json({ ok: true });
 }));
 
+/**
+ * The installed app registering for notifications.
+ *
+ * Separate from `/push/subscribe` because the shapes genuinely differ: a
+ * browser presents an endpoint URL and a keypair, an app presents an opaque
+ * registration token and neither. Forcing one schema to cover both would mean
+ * a `.optional()` on the two fields that make browser push work at all, and a
+ * browser that posted without them would be accepted and then never notified.
+ */
+miscRouter.post('/push/app-token', asyncHandler(async (req, res) => {
+  const input = z.object({
+    token: z.string().min(10).max(512),
+    platform: z.enum(['android', 'ios']),
+    label: z.string().max(120).optional(),
+  }).parse(req.body);
+
+  const { saveAppPushToken } = await import('../../core/notifications/index.js');
+  await saveAppPushToken({ userId: getUser(req).id, ...input });
+  res.json({ ok: true });
+}));
+
 miscRouter.post('/push/unsubscribe', asyncHandler(async (req, res) => {
-  const { endpoint } = z.object({ endpoint: z.string().url() }).parse(req.body);
+  /*
+    Not `.url()`. An app's row is keyed by `fcm:<token>`, which is not a URL,
+    and the stricter rule refused every attempt by an app to turn its own
+    notifications off — leaving a device that keeps being notified with no way
+    to stop it.
+  */
+  const { endpoint } = z.object({ endpoint: z.string().min(1).max(512) }).parse(req.body);
   await deletePushSubscription(endpoint);
   res.json({ ok: true });
 }));

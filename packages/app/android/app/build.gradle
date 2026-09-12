@@ -1,4 +1,20 @@
 apply plugin: 'com.android.application'
+apply plugin: 'org.jetbrains.kotlin.android'
+
+/**
+ * Where the release signing key is, and its password.
+ *
+ * Written by `scripts/make-release-key.sh` and never committed. Android decides
+ * whether one APK may replace another by comparing signatures, so this file
+ * being absent is not a detail to shrug at: a build signed with anything else
+ * cannot install over the copy already on a rep's phone, and the only way out
+ * is uninstall-and-lose-everything on every handset.
+ */
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
 
 android {
     namespace = "com.ipropy.crm"
@@ -7,8 +23,14 @@ android {
         applicationId "com.ipropy.crm"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
+        /*
+          Bumped together, always. `versionCode` is the number Android compares
+          when deciding whether an APK is an upgrade; `versionName` is the one a
+          person reads, and the one the phone reports to the CRM so Settings →
+          Phones shows which build each handset is running.
+        */
         versionCode 1
-        versionName "1.0"
+        versionName "1.0.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,10 +38,54 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    buildFeatures {
+        // So the version has one definition rather than two that drift — the
+        // sync reports `BuildConfig.VERSION_NAME` to the CRM.
+        buildConfig = true
+    }
+
+    signingConfigs {
+        release {
+            if (keystoreProperties['storeFile']) {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
+
     buildTypes {
         release {
+            /*
+              Left unminified deliberately. R8 would save a few hundred KB and
+              cost a readable stack trace from a rep's phone, which is the only
+              debugging available once an APK is on somebody else's handset.
+            */
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+
+            /*
+              Deliberately NOT falling back to the debug key when the release
+              key is missing. A debug-signed "release" installs perfectly well
+              and then blocks every properly signed update after it — a problem
+              that surfaces months later, on somebody else's phone, with no fix
+              short of uninstalling.
+            */
+            if (keystoreProperties['storeFile']) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+
+    kotlin {
+        compilerOptions {
+            jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21
         }
     }
 }
@@ -40,6 +106,20 @@ dependencies {
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
+
+    // --- the call sync, ported from the standalone companion app ----------
+    implementation "androidx.core:core-ktx:1.17.0"
+    /*
+      WorkManager rather than a service or an alarm: it survives reboot,
+      respects Doze, and is the only scheduling API that Xiaomi's, Oppo's and
+      Vivo's battery managers reliably honour. Those are most of the handsets
+      an Indian sales desk actually uses.
+    */
+    implementation "androidx.work:work-runtime-ktx:2.10.0"
+    // Reads the recordings folder a user grants through the tree picker.
+    implementation "androidx.documentfile:documentfile:1.0.1"
+    // Keeps the device token behind the Android keystore.
+    implementation "androidx.security:security-crypto:1.1.0-alpha06"
 }
 
 apply from: 'capacitor.build.gradle'

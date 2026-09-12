@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -22,6 +22,24 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!--
+              A link to a record — pasted into WhatsApp, sitting in a
+              notification, mailed by a workflow — opens the app rather than a
+              browser the rep is not signed into.
+
+              `autoVerify` asks Android to check
+              https://crm.ipropy.com/.well-known/assetlinks.json and, if it
+              matches this APK's signing certificate, to route these links
+              without asking. Until that file is published the filter still
+              works; Android just offers a chooser the first time instead.
+            -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="crm.ipropy.com" />
+            </intent-filter>
+
         </activity>
 
         <provider
@@ -38,4 +56,72 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!--
+      Standing in front of a property with one hand free. CAMERA covers both
+      the capture screen and the file picker's "Take photo"; the READ_MEDIA_*
+      pair is Android 13's replacement for READ_EXTERNAL_STORAGE and is what
+      lets somebody attach a photo they already took.
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+    <!-- Dictating a note instead of typing it on a site visit. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!--
+      Location, and the two-step Android actually enforces.
+
+      FINE and COARSE can be asked for in a dialog. BACKGROUND cannot — from
+      Android 10 the person has to open Settings themselves and choose "Allow
+      all the time", and an app that asks for all three at once is refused the
+      third silently. A permission that was never granted and never mentioned
+      is how a feature is discovered broken weeks later.
+
+      BACKGROUND is only ever requested when an admin has switched team
+      location on, which ships off. See the Location section of the companion
+      README.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
+    <!--
+      READ_CALL_LOG is the whole of the call sync. Google Play restricts it to
+      apps whose core function is call management; sideloading to a known team
+      avoids that review entirely, and a Play listing would need a Permissions
+      Declaration. Nothing else in the app depends on it, so a refusal costs
+      the call log and nothing more.
+    -->
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+
+    <!-- Android 13+ asks before an app may notify at all. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- So the fifteen-minute sync comes back after the handset restarts. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!--
+      Android 11+ hides other apps unless they are declared. Without this the
+      WhatsApp hand-off and the dialer cannot be resolved, and both fail as a
+      silent no-op rather than an error.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+            <data android:scheme="tel" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="mailto" />
+        </intent>
+    </queries>
 </manifest>

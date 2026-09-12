@@ -113,18 +113,67 @@ export async function ensureVapidKeys(): Promise<VapidKeys> {
 }
 
 interface SubscriptionRow {
-  id: string; endpoint: string; p256dh: string; auth: string;
+  id: string; endpoint: string; p256dh: string | null; auth: string | null; platform: string;
 }
 
-async function sendPush(input: NotifyInput): Promise<void> {
-  const keys = await getVapidKeys();
-  if (!keys) return; // push not set up yet — the in-app notification still landed
+/**
+ * The prefix that marks a row as an installed app rather than a browser.
+ *
+ * App tokens share this table deliberately — one device list, one fan-out, one
+ * place a device is deleted from. Two of each is how "why did that person not
+ * get the alert" becomes unanswerable.
+ */
+const FCM_PREFIX = 'fcm:';
 
+async function sendPush(input: NotifyInput): Promise<void> {
   const subs = await db.query<SubscriptionRow>(
-    `SELECT id, endpoint, p256dh, auth FROM ipy_push_subscription WHERE user_id = $1`,
+    `SELECT id, endpoint, p256dh, auth, platform FROM ipy_push_subscription WHERE user_id = $1`,
     [input.userId],
   );
   if (!subs.rows.length) return;
+
+  const browsers = subs.rows.filter((s) => !s.endpoint.startsWith(FCM_PREFIX));
+  const apps = subs.rows.filter((s) => s.endpoint.startsWith(FCM_PREFIX));
+
+  await Promise.all([sendToBrowsers(input, browsers), sendToApps(input, apps)]);
+}
+
+/**
+ * The installed app, through Firebase.
+ *
+ * Kept beside the browser fan-out rather than inside it because the two fail
+ * differently and must not take each other down: a missing Firebase account is
+ * normal and silent, while a missing VAPID pair means browser push was never
+ * set up. Neither is a reason for the other's devices to go unnotified.
+ */
+async function sendToApps(input: NotifyInput, subs: SubscriptionRow[]): Promise<void> {
+  if (!subs.length) return;
+  const { sendFcm } = await import('./fcm.js');
+
+  await Promise.all(subs.map(async (sub) => {
+    const outcome = await sendFcm(sub.endpoint.slice(FCM_PREFIX.length), {
+      title: input.title,
+      body: input.body ?? '',
+      link: input.link ?? '/',
+      kind: input.kind,
+      tag: input.recordId ?? input.kind,
+    }).catch(() => 'failed' as const);
+
+    if (outcome === 'sent') {
+      await db.query(`UPDATE ipy_push_subscription SET last_used_at = now() WHERE id = $1`, [sub.id]);
+    } else if (outcome === 'expired') {
+      // The app was uninstalled or the token rotated. Keeping the row retries a
+      // dead handset on every notification for ever.
+      await db.query(`DELETE FROM ipy_push_subscription WHERE id = $1`, [sub.id]);
+      logger.debug({ platform: sub.platform }, 'removed expired app push token');
+    }
+  }));
+}
+
+async function sendToBrowsers(input: NotifyInput, subs: SubscriptionRow[]): Promise<void> {
+  if (!subs.length) return;
+  const keys = await getVapidKeys();
+  if (!keys) return; // push not set up yet — the in-app notification still landed
 
   webpush.setVapidDetails(config.push.subject, keys.publicKey, keys.privateKey);
 
@@ -137,10 +186,10 @@ async function sendPush(input: NotifyInput): Promise<void> {
     tag: input.recordId ?? input.kind,
   });
 
-  await Promise.all(subs.rows.map(async (sub) => {
+  await Promise.all(subs.map(async (sub) => {
     try {
       await webpush.sendNotification(
-        { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+        { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh ?? '', auth: sub.auth ?? '' } },
         payload,
       );
       await db.query(`UPDATE ipy_push_subscription SET last_used_at = now() WHERE id = $1`, [sub.id]);
@@ -160,19 +209,42 @@ async function sendPush(input: NotifyInput): Promise<void> {
 }
 
 export async function savePushSubscription(input: {
-  userId: string; endpoint: string; p256dh: string; auth: string; userAgent?: string;
+  userId: string; endpoint: string; p256dh?: string | null; auth?: string | null;
+  userAgent?: string; platform?: 'web' | 'android' | 'ios';
 }): Promise<void> {
   // The browser reissues the same endpoint for a given device+origin, so a
   // re-subscribe must update rather than pile up rows — and must re-point the
   // row if a different user signs in on that device.
   await db.query(
-    `INSERT INTO ipy_push_subscription (user_id, endpoint, p256dh, auth, user_agent)
-     VALUES ($1,$2,$3,$4,$5)
+    `INSERT INTO ipy_push_subscription (user_id, endpoint, p256dh, auth, user_agent, platform)
+     VALUES ($1,$2,$3,$4,$5,$6)
      ON CONFLICT (endpoint) DO UPDATE
        SET user_id = EXCLUDED.user_id, p256dh = EXCLUDED.p256dh,
-           auth = EXCLUDED.auth, user_agent = EXCLUDED.user_agent`,
-    [input.userId, input.endpoint, input.p256dh, input.auth, input.userAgent ?? null],
+           auth = EXCLUDED.auth, user_agent = EXCLUDED.user_agent,
+           platform = EXCLUDED.platform`,
+    [
+      input.userId, input.endpoint, input.p256dh ?? null, input.auth ?? null,
+      input.userAgent ?? null, input.platform ?? 'web',
+    ],
   );
+}
+
+/**
+ * Register the installed app on this device to receive notifications.
+ *
+ * The token is stored with an `fcm:` prefix so it shares the UNIQUE endpoint
+ * constraint with browser subscriptions — one row per device, and re-opening
+ * the app updates in place rather than piling up a row per launch.
+ */
+export async function saveAppPushToken(input: {
+  userId: string; token: string; platform: 'android' | 'ios'; label?: string;
+}): Promise<void> {
+  await savePushSubscription({
+    userId: input.userId,
+    endpoint: `fcm:${input.token}`,
+    platform: input.platform,
+    userAgent: input.label ?? `iPropy app (${input.platform})`,
+  });
 }
 
 export async function deletePushSubscription(endpoint: string): Promise<void> {

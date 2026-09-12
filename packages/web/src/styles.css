@@ -107,6 +107,49 @@
     overscroll-behavior-y: none;
   }
 
+  /*
+   * Installed as an app rather than opened in a browser.
+   *
+   * These are not phone rules — a phone browser should keep every one of these
+   * behaviours. They are the difference between an app and a web page in a box,
+   * and their absence is what people mean when they say a wrapped app "feels
+   * like a website".
+   */
+  .native {
+    /* The blue flash a webview paints on every tap. No native app does this,
+       and on a list of leads it makes each row look like a link. */
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .native body {
+    /* Long-pressing a label in a native app does not offer to copy it or
+       select the sentence around it. Inputs and record text are exempted
+       below, because there selecting is the point. */
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .native input,
+  .native textarea,
+  .native [contenteditable],
+  .native [data-selectable] {
+    -webkit-touch-callout: default;
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  /*
+   * iOS draws under the status bar and the home indicator, so the app's own
+   * header has to stand clear of the clock. Android does not: `boot()` turns
+   * the overlay off there, and adding the inset as well would leave a band of
+   * empty white above the header on every Android phone.
+   */
+  .ios header {
+    padding-top: env(safe-area-inset-top);
+    height: calc(3.5rem + env(safe-area-inset-top));
+  }
+
   /* iOS zooms the page in when a focused input's text is under 16px. Every
      .input is text-sm (14px), which made tapping any field on an iPhone jump
      the layout. Bump just the touch case; pointer devices keep the tighter

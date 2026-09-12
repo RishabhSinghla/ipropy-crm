@@ -108,13 +108,25 @@ aiRouter.get('/match/:module/:id', modelLimiter, asyncHandler(async (req, res) =
   const { module, id } = req.params;
   if (!(await canAccessRecord(scope, module, id, 'view'))) throw new NotFoundError();
 
+  /*
+    The explanation costs a model call; the matches do not.
+
+    This defaulted to *writing* one — `narrative !== 'false'` — while the
+    ad-hoc sibling twenty lines below defaults it off, and the web app has
+    always passed `narrative=false` explicitly. So the only callers paying for
+    it were the ones that did not know to ask: the MCP tool asks for matches
+    with `?limit=5` and nothing else, and on production that answer takes five
+    and a quarter seconds against four tenths for every other screen.
+
+    Off unless asked, like its sibling. `narrative=true` still returns them.
+  */
   const matches = await matchForRecord(id, {
     // Up to 50, because the tab now lets a rep widen the list and work it
     // themselves rather than trusting the top handful. The scorer reads a
     // fixed candidate pool either way, so this only changes how much of the
     // ranking is returned.
     limit: Math.min(50, Number(req.query.limit) || 6),
-    withNarrative: req.query.narrative !== 'false',
+    withNarrative: req.query.narrative === 'true',
     persist: true,
     // Matched units are properties: the caller must see the rows the scorer
     // would rank, not just the lead the matches belong to.

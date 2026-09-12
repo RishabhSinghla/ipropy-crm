@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CAPACITOR_DEBUG</key>
+	<string>$(CAPACITOR_DEBUG)</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+        <string>iPropy</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+    <false/>
+    <key>UISceneConfigurations</key>
+    <dict>
+      <key>UIWindowSceneSessionRoleApplication</key>
+      <array>
+        <dict>
+            <key>UISceneConfigurationName</key>
+            <string>Default Configuration</string>
+            <key>UISceneDelegateClassName</key>
+            <string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
+            <key>UISceneStoryboardFile</key>
+            <string>Main</string>
+        </dict>
+      </array>
+    </dict>
+	</dict>
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
+	<key>UIMainStoryboardFile</key>
+	<string>Main</string>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>armv7</string>
+	</array>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UIViewControllerBasedStatusBarAppearance</key>
+	<true/>
+	<!--
+	  iOS kills an app the instant it asks for a capability whose reason string
+	  is missing. Not a permission dialog that the person declines — an
+	  immediate crash, with a console line nobody on a phone can read. Every
+	  capability this app can reach needs one of these, and App Review rejects
+	  a build whose wording does not say what the data is actually for.
+	-->
+	<key>NSCameraUsageDescription</key>
+	<string>iPropy uses the camera so you can photograph a property while you are standing in front of it, and attach it to the record straight away.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>iPropy needs your photo library so you can attach pictures you have already taken to a property or a contact.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>iPropy saves photos you take on a site visit back to your library, so you keep your own copy.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>iPropy uses the microphone so you can dictate a note after a site visit instead of typing it.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>iPropy records where a property is when you add it on site, so it can be found on a map later.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>iPropy can unlock with Face ID so you do not have to type your password on a shared handset.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>iPropy can look up a caller in your contacts to show who is ringing before you answer.</string>
+</dict>
+</plist>

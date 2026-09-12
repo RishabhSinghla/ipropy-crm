@@ -135,6 +135,15 @@ export function rememberRefresh(token: string | null): void {
 export async function boot(): Promise<void> {
   if (!isNative) return;
 
+  /*
+    A hook for the handful of rules that are about being an installed app
+    rather than about being on a small screen — which is a different question,
+    and the reason this is not a media query. A phone browser wants the
+    long-press menu and the text selection; the app wants neither on its own
+    chrome, because there they read as the page underneath showing through.
+  */
+  document.documentElement.classList.add('native', platform);
+
   const { Preferences } = await import('@capacitor/preferences');
   const [override, refresh] = await Promise.all([
     Preferences.get({ key: OVERRIDE_KEY }),

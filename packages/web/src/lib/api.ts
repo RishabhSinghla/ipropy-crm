@@ -1067,6 +1067,9 @@ export const api = {
   pushUnsubscribe: (endpoint: string) => post('/api/push/unsubscribe', { endpoint }),
   pushTest: () => post<{ ok: boolean; message: string }>('/api/push/test', {}),
   pushDevices: () => get<Record<string, unknown>[]>('/api/push/devices'),
+  /** The installed app registering itself for notifications. */
+  registerAppPush: (data: { token: string; platform: 'android' | 'ios'; label?: string }) =>
+    post<{ ok: true }>('/api/push/app-token', data),
 
   // --- "new since you last looked" ----------------------------------------
   unseen: (module: string, ids: string[]) =>

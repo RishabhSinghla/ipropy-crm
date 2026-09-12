@@ -76,3 +76,36 @@ describe('with no AI provider configured', () => {
     expect(res.body.message).toMatch(/Admin → Integrations/);
   });
 });
+
+/**
+ * The explanation costs a model call; the list of matches does not.
+ *
+ * `GET /api/ai/match/:module/:id` defaulted to writing one, while the ad-hoc
+ * `POST /api/ai/match` defaults it off and the web app has always passed
+ * `narrative=false` by hand. So the only callers paying for it were the ones
+ * that did not know to ask — the MCP tool asks with `?limit=5` and nothing
+ * else — and on production that answer took 5.3 seconds against 0.4 for every
+ * other screen a rep opens.
+ */
+describe('the matching explanation', () => {
+  it('is off unless it is asked for', async () => {
+    const app = createApp();
+    const { db } = await import('../../src/db/pool.js');
+
+    const login = await request(app).post('/api/auth/login')
+      .send({ identifier: 'admin@ipropy.com', password: 'Admin@123' });
+    const token = login.body.token;
+
+    const lead = await db.queryOne<{ id: string }>(
+      `SELECT id FROM ipy_record WHERE module_name = 'leads' AND NOT is_deleted LIMIT 1`,
+    );
+
+    const res = await request(app).get(`/api/ai/match/leads/${lead!.id}?limit=3`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    // No narrative on any match, and the shape is otherwise untouched.
+    for (const match of res.body.matches ?? []) {
+      expect(match.narrative ?? null, 'a match explained itself without being asked').toBeNull();
+    }
+  });
+});

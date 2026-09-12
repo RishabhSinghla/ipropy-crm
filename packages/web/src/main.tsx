@@ -39,7 +39,14 @@ void startErrorReporting();
   or without the token that proves the session — is a login screen shown to
   somebody who is already logged in.
 */
-void boot().then(() => {
+/*
+  `.catch` and not just `.then`. Rendering behind a promise means anything that
+  rejects inside `boot()` — a plugin missing from an older build, storage the OS
+  refused — takes the entire app down to a blank screen with no error and no way
+  back. A server address that is merely the compiled-in default is a far better
+  outcome than no app at all.
+*/
+void boot().catch(() => undefined).then(() => {
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <QueryClientProvider client={queryClient}>
