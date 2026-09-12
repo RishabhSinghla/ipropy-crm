@@ -1,0 +1,122 @@
+# Prove an enquiry from outside actually becomes a lead on production.
+#
+# This is the business's lifeblood and the thing that has failed most quietly:
+# on 11 September every inbound enquiry was being discarded by a 42703 nobody
+# could see. A green test suite said nothing, because the suite runs on a field
+# set production has not had for months.
+#
+# So it is tested where it matters — over HTTPS, against the live server, as a
+# website form would do it. One enquiry is filed and then removed, along with
+# everything it caused: the lead, its inbox row, and any notification a rep was
+# sent about it. The name makes it obvious to anyone who sees it in the second
+# it exists.
+#
+# The webform key is read from production's own settings and never printed.
+name: Prove the front doors
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "The CRM to test"
+        default: "https://crm.ipropy.com"
+
+jobs:
+  prove:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install psql 18
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: Knock on every door
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          BASE_URL: ${{ inputs.base_url }}
+        run: |
+          set -euo pipefail
+          fail=0
+          check() { if [ "$2" = "$3" ]; then echo "  ok    $1"; else echo "  FAIL  $1 — expected $2, got $3"; fail=1; fi; }
+
+          echo "--- the website's own pages ---"
+          for path in /api/public/properties /api/public/projects /api/public/cities /api/public/filters; do
+            check "${path} answers" 200 "$(curl -s -o /dev/null -w '%{http_code}' "${BASE_URL}${path}")"
+          done
+          STOCK="$(curl -s "${BASE_URL}/api/public/properties?limit=1" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("total", 0))')"
+          echo "  note  the website is showing ${STOCK} unit(s)"
+
+          echo "--- the enquiry form ---"
+          # Read from production's own settings; a tenant that sets the key by
+          # environment variable instead has nothing here, and that is not a
+          # failure, it is a key this job cannot see.
+          KEY="$(psql "$DATABASE_URL" -tAc \
+            "SELECT config->>'key' FROM ipy_integration WHERE provider = 'webform' LIMIT 1" | head -1)"
+
+          # With no key configured the route answers 503 and names the setting,
+          # which is the CRM refusing to run an open form rather than a fault.
+          # Both answers are correct; which one is correct depends on whether
+          # the door has been given a key at all.
+          WRONG="$(curl -s -o /dev/null -w '%{http_code}' \
+            -H 'Content-Type: application/json' -H 'x-webform-key: definitely-not-the-key' \
+            -d '{"firstName":"Door","mobile":"9000000000"}' "${BASE_URL}/api/webhooks/leads/generic")"
+          if [ -z "$KEY" ]; then
+            check "the form is refused rather than left open" 503 "$WRONG"
+            echo "  note  the website enquiry form is OFF on this CRM: no key in Admin → Integrations."
+            echo "        A form posting to it gets a 503 and the enquiry is lost. Set a key to open it."
+          else
+            check "a wrong key is refused" 401 "$WRONG"
+          fi
+
+          if [ -z "$KEY" ]; then
+            echo "  skip  the enquiry itself — there is no key to send one with"
+          else
+            STAMP="$(date +%H%M%S)"
+            MOBILE="90001${STAMP}"
+            MOBILE="${MOBILE:0:10}"
+            echo "MOBILE=${MOBILE}" >> "$GITHUB_ENV"
+            BODY="$(printf '{"firstName":"Door Check (automated)","mobile":"%s","source":"Website","message":"automated check, deleted immediately"}' "$MOBILE")"
+            CODE="$(curl -s -o /tmp/enquiry.json -w '%{http_code}' -H 'Content-Type: application/json' \
+              -H "x-webform-key: ${KEY}" -d "$BODY" "${BASE_URL}/api/webhooks/leads/generic")"
+            check "an enquiry is accepted" 201 "$CODE"
+
+            LANDED="$(psql "$DATABASE_URL" -tAc "
+              SELECT count(*) FROM ipy_e_leads
+               WHERE right(regexp_replace(coalesce(mobile,''), '\D', '', 'g'), 10) = '${MOBILE}'")"
+            check "and it is a lead somebody can ring back" 1 "$LANDED"
+
+            OWNED="$(psql "$DATABASE_URL" -tAc "
+              SELECT CASE WHEN r.owner_id IS NULL THEN 'nobody' ELSE 'somebody' END
+                FROM ipy_record r JOIN ipy_e_leads l ON l.record_id = r.id
+               WHERE right(regexp_replace(coalesce(l.mobile,''), '\D', '', 'g'), 10) = '${MOBILE}'")"
+            check "and it was assigned to a person" somebody "$OWNED"
+          fi
+
+          if [ "$fail" != "0" ]; then echo "::error::a door into the CRM is not working"; exit 1; fi
+          echo "::notice::every door into ${BASE_URL} works"
+
+      - name: Take the test enquiry away again
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          [ -n "${MOBILE:-}" ] || { echo "no enquiry was filed"; exit 0; }
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<SQL
+          DELETE FROM ipy_notification
+           WHERE created_at > now() - interval '10 minutes'
+             AND (body LIKE '%Door Check (automated)%' OR title LIKE '%Door Check (automated)%');
+          DELETE FROM ipy_lead_inbox
+           WHERE received_at > now() - interval '10 minutes'
+             AND raw_payload::text LIKE '%${MOBILE}%';
+          DELETE FROM ipy_record r
+           USING ipy_e_leads l
+           WHERE l.record_id = r.id
+             AND right(regexp_replace(coalesce(l.mobile,''), '\D', '', 'g'), 10) = '${MOBILE}';
+          SQL
+          LEFT="$(psql "$DATABASE_URL" -tAc "
+            SELECT count(*) FROM ipy_e_leads
+             WHERE right(regexp_replace(coalesce(mobile,''), '\D', '', 'g'), 10) = '${MOBILE}'")"
+          echo "::notice::test enquiry removed (rows left: ${LEFT})"
