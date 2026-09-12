@@ -258,6 +258,12 @@ jobs:
                    d.last_sync_count, d.is_active
               FROM ipy_device d LEFT JOIN ipy_user u ON u.id = d.user_id
              ORDER BY d.created_at;"
+          # Where the calls came from. A device-synced call proves the loop
+          # the team is about to depend on has worked at least once; only
+          # 'manual' and 'api' rows mean it never has.
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT source, count(*), min(started_at)::date AS first, max(started_at)::date AS last
+              FROM ipy_call GROUP BY source ORDER BY 2 DESC;"
           psql "$PROD_DATABASE_URL" -tAc "
             SELECT 'calls logged: ' || count(*)
               || ' | with an outcome: ' || count(*) FILTER (WHERE disposition IS NOT NULL)
