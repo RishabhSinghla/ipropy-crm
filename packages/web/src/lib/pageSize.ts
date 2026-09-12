@@ -12,7 +12,7 @@
  * localStorage throws outright in a locked-down browser or a private window,
  * so every read and write is guarded and the list falls back to the default.
  */
-const PREFIX = 'ipropy.pagesize.';
+const KEY = 'ipropy.pagesize.global';
 
 export const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 200, 500] as const;
 export const DEFAULT_PAGE_SIZE = 25;
@@ -21,19 +21,17 @@ function clamp(value: number): number | null {
   return (PAGE_SIZE_OPTIONS as readonly number[]).includes(value) ? value : null;
 }
 
-export function loadPageSize(module: string | undefined): number {
-  if (!module) return DEFAULT_PAGE_SIZE;
+export function loadPageSize(_module?: string): number {
   try {
-    return clamp(Number(localStorage.getItem(PREFIX + module))) ?? DEFAULT_PAGE_SIZE;
+    return clamp(Number(localStorage.getItem(KEY))) ?? DEFAULT_PAGE_SIZE;
   } catch {
     return DEFAULT_PAGE_SIZE;
   }
 }
 
-export function savePageSize(module: string | undefined, size: number): void {
-  if (!module) return;
+export function savePageSize(_module: string | undefined, size: number): void {
   try {
-    if (size === DEFAULT_PAGE_SIZE) localStorage.removeItem(PREFIX + module);
-    else localStorage.setItem(PREFIX + module, String(size));
+    if (size === DEFAULT_PAGE_SIZE) localStorage.removeItem(KEY);
+    else localStorage.setItem(KEY, String(size));
   } catch { /* a browser that refuses storage still gets a working list */ }
 }

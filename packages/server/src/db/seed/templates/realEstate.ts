@@ -272,67 +272,20 @@ const MODULES: ModuleDef[] = [
     relations: [],
     views: [
       {
-        name: 'All Leads', isDefault: true, showMetrics: true,
+        name: 'All Leads', isDefault: true,
         columns: ['lead_number', 'full_name', 'mobile', 'status', 'lead_source', 'rating', 'budget', 'owner_id'],
         sortBy: 'created_at',
       },
       {
-        name: 'Open Leads', showMetrics: true,
-        columns: ['full_name', 'mobile', 'status', 'next_followup_at', 'owner_id'],
-        filter: {
-          logic: 'AND',
-          conditions: [
-            { field: 'status', operator: 'not_in', value: ['Junk', 'Lost', 'Converted'] },
-          ],
-        },
-        sortBy: 'updated_at',
-      },
-      {
-        name: 'Customers', showMetrics: true,
-        columns: ['full_name', 'mobile', 'email', 'lifetime_value', 'kyc_status', 'owner_id'],
-        filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'equals', value: 'Converted' }] },
-        sortBy: 'lifetime_value',
-      },
-      {
-        name: 'My Open Leads', showMetrics: true,
+        name: 'My Leads',
         columns: ['full_name', 'mobile', 'status', 'next_followup_at'],
         filter: {
           logic: 'AND',
           conditions: [
             { field: 'owner_id', operator: 'is_me' },
-            { field: 'status', operator: 'not_in', value: ['Junk', 'Lost'] },
           ],
         },
         sortBy: 'updated_at',
-      },
-      {
-        name: 'Hot Leads',
-        columns: ['full_name', 'mobile', 'rating', 'budget', 'next_followup_at', 'owner_id'],
-        filter: { logic: 'AND', conditions: [{ field: 'rating', operator: 'equals', value: 'Hot' }, { field: 'is_converted', operator: 'is_false' }] },
-        sortBy: 'updated_at',
-      },
-      {
-        name: 'Today’s Follow-ups',
-        columns: ['full_name', 'mobile', 'status', 'next_followup_at', 'last_contacted_at', 'owner_id'],
-        filter: { logic: 'AND', conditions: [{ field: 'next_followup_at', operator: 'today' }] },
-        sortBy: 'next_followup_at', sortDir: 'asc',
-      },
-      {
-        name: 'Overdue Follow-ups',
-        columns: ['full_name', 'mobile', 'status', 'next_followup_at', 'owner_id'],
-        filter: { logic: 'AND', conditions: [{ field: 'next_followup_at', operator: 'less_than', value: 'now' }, { field: 'is_converted', operator: 'is_false' }] },
-        sortBy: 'next_followup_at', sortDir: 'asc',
-      },
-      {
-        name: 'Uncontacted (24h+)',
-        columns: ['full_name', 'mobile', 'lead_source', 'created_at', 'owner_id'],
-        filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'equals', value: 'New' }, { field: 'created_at', operator: 'older_than_n_days', value: 1 }] },
-        sortBy: 'created_at', sortDir: 'asc',
-      },
-      {
-        name: 'Pipeline', displayMode: 'kanban', groupBy: 'status',
-        columns: ['full_name', 'mobile', 'budget', 'owner_id'],
-        filter: { logic: 'AND', conditions: [{ field: 'is_converted', operator: 'is_false' }] },
       },
     ],
   },
@@ -564,10 +517,7 @@ const MODULES: ModuleDef[] = [
     ],
     views: [
       { name: 'All Inventories', isDefault: true, columns: ['property_code', 'full_name', 'project_name', 'bedrooms', 'area', 'total_price', 'status', 'floor', 'facing'], sortBy: 'created_at' },
-      { name: 'Available Units', showMetrics: true, columns: ['full_name', 'project_name', 'bedrooms', 'area', 'total_price', 'floor', 'facing'], filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'equals', value: 'Available' }] }, sortBy: 'total_price', sortDir: 'asc' },
-      { name: 'By Status', displayMode: 'kanban', groupBy: 'status', columns: ['full_name', 'project_name', 'bedrooms', 'total_price'] },
-      { name: 'Blocked Units', columns: ['full_name', 'project_name', 'blocked_until', 'blocked_for_lead_id', 'blocked_by'], filter: { logic: 'AND', conditions: [{ field: 'status', operator: 'in', value: ['Held', 'Blocked'] }] } },
-      { name: 'Premium Units', columns: ['full_name', 'project_name', 'bedrooms', 'total_price', 'facing', 'status'], filter: { logic: 'AND', conditions: [{ field: 'total_price', operator: 'greater_or_equal', value: 20000000 }] }, sortBy: 'total_price' },
+      { name: 'My Inventories', columns: ['full_name', 'project_name', 'bedrooms', 'area', 'total_price', 'status'], filter: { logic: 'AND', conditions: [{ field: 'owner_id', operator: 'is_me' }] }, sortBy: 'updated_at' },
     ],
   },
 

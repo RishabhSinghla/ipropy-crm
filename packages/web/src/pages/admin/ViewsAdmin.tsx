@@ -277,7 +277,6 @@ export function ViewEditor({
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(view.sortDir ?? 'desc');
   const [displayMode, setDisplayMode] = useState(view.displayMode ?? 'table');
   const [groupBy, setGroupBy] = useState(view.groupBy ?? '');
-  const [showMetrics, setShowMetrics] = useState(Boolean(view.showMetrics));
   const [shareWithTeam, setShareWithTeam] = useState(Boolean(view.isPublic ?? isPublic));
 
   useEffect(() => { setName(view.name); setShareWithTeam(Boolean(view.isPublic ?? isPublic)); }, [view.id, view.isPublic, isPublic]);
@@ -298,7 +297,7 @@ export function ViewEditor({
         sortDir,
         displayMode,
         groupBy: displayMode === 'kanban' ? (groupBy || null) : null,
-        showMetrics,
+        showMetrics: false,
         isPublic: shareWithTeam,
       };
       return view.id
@@ -352,6 +351,12 @@ export function ViewEditor({
             placeholder="What this tab is for — shown as a tooltip."
           />
         </div>
+
+        <Toggle
+          checked={shareWithTeam}
+          onChange={setShareWithTeam}
+          label="Share this view with CRM users who can access this module"
+        />
 
         {displayMode === 'kanban' && (
           <div>
@@ -429,16 +434,6 @@ export function ViewEditor({
           </div>
         </div>
 
-        <Toggle
-          checked={showMetrics}
-          onChange={setShowMetrics}
-          label="Show a record count on the tab"
-        />
-        <Toggle
-          checked={shareWithTeam}
-          onChange={setShareWithTeam}
-          label="Share this view with CRM users who can access this module"
-        />
       </div>
     </Modal>
   );
