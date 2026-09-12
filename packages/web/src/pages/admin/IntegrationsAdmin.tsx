@@ -2,8 +2,7 @@ import { type JSX, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
 import {
-  ArrowRight, Bell, Check, CheckCircle2, ChevronDown, Copy, Download, ExternalLink, Globe, HardDrive,
-  Loader2, Mail, MessageCircle, Mic, Phone, Plug, Settings2, Sparkles, Webhook, Wand2, XCircle,
+  ArrowRight, Bell, Check, CheckCircle2, ChevronDown, Copy, Download, ExternalLink, Globe, HardDrive, Loader2, Mail, MessageCircle, Mic, Plug, Settings2, Sparkles, Webhook, Wand2, XCircle,
 } from 'lucide-react';
 import { api, type IntegrationSummary } from '../../lib/api';
 import { toast } from '../../lib/store';
@@ -21,9 +20,6 @@ const WEBHOOK_ENDPOINTS = [
   { label: 'MagicBricks', path: '/api/webhooks/leads/portal/magicbricks', icon: Globe },
   { label: 'Housing.com', path: '/api/webhooks/leads/portal/housing', icon: Globe },
   { label: 'NoBroker', path: '/api/webhooks/leads/portal/nobroker', icon: Globe },
-  { label: 'Twilio — call status', path: '/api/webhooks/telephony/twilio/status', icon: Phone },
-  { label: 'Twilio — incoming call', path: '/api/webhooks/telephony/twilio/incoming', icon: Phone, note: 'Set as the voice webhook on your Twilio number.' },
-  { label: 'Exotel — call status', path: '/api/webhooks/telephony/exotel/status', icon: Phone },
   { label: 'Generic lead capture', path: '/api/webhooks/leads/generic', icon: Webhook, note: 'POST JSON with an X-Webform-Key header matching the webhook key set below, under Generic Web Form Capture.' },
 ];
 
@@ -67,19 +63,6 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
     { key: 'verifyToken', label: 'Webhook Verify Token', source: 'config', placeholder: 'ipropy-verify-token' },
     { key: 'apiVersion', label: 'API Version', source: 'config', placeholder: 'v21.0' },
   ],
-  twilio: [
-    { key: 'accountSid', label: 'Account SID', source: 'credentials' },
-    { key: 'authToken', label: 'Auth Token', source: 'credentials', secret: true },
-    { key: 'callerId', label: 'Caller ID', source: 'config', placeholder: '+91...' },
-    { key: 'appSid', label: 'TwiML App SID', source: 'config' },
-  ],
-  exotel: [
-    { key: 'sid', label: 'Account SID', source: 'credentials' },
-    { key: 'apiKey', label: 'API Key', source: 'credentials', secret: true },
-    { key: 'apiToken', label: 'API Token', source: 'credentials', secret: true },
-    { key: 'subdomain', label: 'Subdomain', source: 'config', placeholder: 'api.exotel.com' },
-    { key: 'callerId', label: 'Caller ID', source: 'config', placeholder: '+91...' },
-  ],
   smtp: [
     { key: 'host', label: 'SMTP Host', source: 'config', placeholder: 'smtp.yourdomain.com' },
     { key: 'port', label: 'Port', source: 'config', placeholder: '587' },
@@ -115,21 +98,11 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
     { key: 'model', label: 'Model', source: 'config', placeholder: 'openrouter/free', model: true },
     { key: 'fastModel', label: 'Fast model', source: 'config', placeholder: 'openrouter/free', model: true },
   ],
-  ai_opencode: [
-    { key: 'apiKey', label: 'OpenCode Zen API Key', source: 'credentials', secret: true },
-    { key: 'model', label: 'Model', source: 'config', placeholder: 'nemotron-3-ultra-free', model: true },
-    { key: 'fastModel', label: 'Fast model', source: 'config', placeholder: 'deepseek-v4-flash-free', model: true },
-  ],
   ai_openai: [
     { key: 'apiKey', label: 'API Key', source: 'credentials', secret: true },
     { key: 'baseUrl', label: 'Base URL', source: 'config', placeholder: 'https://api.openai.com/v1' },
     { key: 'model', label: 'Model', source: 'config', placeholder: 'gpt-4o-mini', model: true },
     { key: 'fastModel', label: 'Fast model', source: 'config', placeholder: 'gpt-4o-mini', model: true },
-  ],
-  ai_ollama: [
-    { key: 'baseUrl', label: 'Base URL', source: 'config', placeholder: 'http://localhost:11434/v1' },
-    { key: 'model', label: 'Model', source: 'config', placeholder: 'llama3.1', model: true },
-    { key: 'fastModel', label: 'Fast model', source: 'config', placeholder: 'llama3.1', model: true },
   ],
   /*
     The Model field is back, and the comment that removed it was wrong.
@@ -189,9 +162,9 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
 };
 
 const TESTABLE = new Set([
-  'meta_whatsapp', 'twilio', 'exotel', 'smtp', 'imap', 'facebook_leads',
-  'anthropic', 'ai_gemini', 'ai_groq', 'ai_openrouter', 'ai_openai', 'ai_ollama',
-  'ai_opencode', 'stt', 'onedrive', 'sentry', 'fcm',
+  'meta_whatsapp', 'smtp', 'imap', 'facebook_leads',
+  'anthropic', 'ai_gemini', 'ai_groq', 'ai_openrouter', 'ai_openai',
+  'stt', 'onedrive', 'sentry', 'fcm',
 ]);
 
 /**
@@ -223,22 +196,10 @@ const PROVIDER_HINTS: Record<string, { text: string; href?: string; linkLabel?: 
     href: 'https://openrouter.ai/keys',
     linkLabel: 'Get a free key',
   },
-  ai_opencode: {
-    free: true,
-    text: 'OpenCode Zen gives one key access to several models. The CRM lists only models compatible with its chat API, including the free choices.',
-    href: 'https://opencode.ai/zen',
-    linkLabel: 'Get a key',
-  },
   ai_openai: {
     text: 'Any OpenAI-compatible endpoint — OpenAI, Together, Fireworks, vLLM.',
     href: 'https://platform.openai.com/api-keys',
     linkLabel: 'Get a key',
-  },
-  ai_ollama: {
-    free: true,
-    text: 'Free and fully local — nothing leaves this machine. Needs `ollama serve` running.',
-    href: 'https://ollama.com/download',
-    linkLabel: 'Install Ollama',
   },
 };
 
@@ -296,29 +257,6 @@ const GUIDES: Record<string, Guide> = {
       { title: 'Point Meta at us', help: 'WhatsApp → Configuration → Edit. Paste the URL below as the Callback URL and the verify token above as the Verify Token, then tick the "messages" field.', copyPath: '/api/webhooks/whatsapp' },
     ],
   },
-  twilio: {
-    outcome: 'Click a phone number in the CRM and your phone rings, then connects the customer. Calls are logged and recorded.',
-    minutes: 5,
-    steps: [
-      { title: 'Open your Twilio console', help: 'Sign in to Twilio. The first two values are on the dashboard you land on.', href: 'https://console.twilio.com', linkLabel: 'Open Twilio' },
-      { title: 'Copy the Account SID', help: 'On the dashboard, under Account Info.', field: 'accountSid' },
-      { title: 'Copy the Auth Token', help: 'Same panel — click Show to reveal it.', field: 'authToken' },
-      { title: 'Which number should customers see?', help: 'One of your Twilio numbers, with the country code. Phone Numbers → Manage → Active numbers.', field: 'callerId' },
-      { title: 'Tell Twilio where to report calls', help: 'Phone Numbers → your number → Voice Configuration. Paste this as the webhook for incoming calls.', copyPath: '/api/webhooks/telephony/twilio/incoming' },
-    ],
-  },
-  exotel: {
-    outcome: 'Click-to-call and call recording through Exotel, the common choice for Indian numbers.',
-    minutes: 5,
-    steps: [
-      { title: 'Open your Exotel dashboard', help: 'Sign in, then go to Settings → API Settings.', href: 'https://my.exotel.com', linkLabel: 'Open Exotel' },
-      { title: 'Copy the Account SID', help: 'On the API Settings page.', field: 'sid' },
-      { title: 'Copy the API Key', help: 'Same page. Create one if there is none yet.', field: 'apiKey' },
-      { title: 'Copy the API Token', help: 'Shown beside the key.', field: 'apiToken' },
-      { title: 'Which number should customers see?', help: 'Your Exovirtual number, with the country code.', field: 'callerId' },
-      { title: 'Tell Exotel where to report calls', help: 'Paste this as the status callback URL on your ExoPhone.', copyPath: '/api/webhooks/telephony/exotel/status' },
-    ],
-  },
   smtp: {
     outcome: 'Send email from the CRM using your own address, so replies come back to you.',
     minutes: 4,
@@ -366,14 +304,6 @@ const GUIDES: Record<string, Guide> = {
       { title: 'Paste the key', help: 'It starts with "sk-or-".', field: 'apiKey' },
     ],
   },
-  ai_opencode: {
-    outcome: 'Use OpenCode Zen free models for high-volume CRM text work, with other providers still available as fallbacks.',
-    minutes: 2,
-    steps: [
-      { title: 'Create an OpenCode Zen key', help: 'Open Zen, add a key, then copy it. Free models can be used without choosing a paid model.', href: 'https://opencode.ai/zen', linkLabel: 'Open OpenCode Zen' },
-      { title: 'Paste the key', help: 'After connecting, the detailed settings load the current compatible models directly from OpenCode.', field: 'apiKey' },
-    ],
-  },
   anthropic: {
     outcome: 'The highest-quality AI answers. Paid — billing must be set up on the Anthropic console first.',
     minutes: 2,
@@ -389,15 +319,6 @@ const GUIDES: Record<string, Guide> = {
       { title: 'Create a key', help: 'On the OpenAI platform, or on whichever compatible service you use.', href: 'https://platform.openai.com/api-keys', linkLabel: 'Get an OpenAI key' },
       { title: 'Paste the key', help: 'It starts with "sk-".', field: 'apiKey' },
       { title: 'Where does it live?', help: 'Leave blank for OpenAI itself. For another service, paste the base URL they give you.', field: 'baseUrl' },
-    ],
-  },
-  ai_ollama: {
-    outcome: 'AI that runs on this machine. Free, and nothing leaves the building.',
-    minutes: 5,
-    steps: [
-      { title: 'Install Ollama', help: 'Download it, then run "ollama serve" and "ollama pull llama3.1" in a terminal.', href: 'https://ollama.com/download', linkLabel: 'Install Ollama' },
-      { title: 'Where is it running?', help: 'Leave the default unless you moved it.', field: 'baseUrl' },
-      { title: 'Which model did you pull?', help: 'The name you used with "ollama pull", e.g. llama3.1.', field: 'model' },
     ],
   },
   sentry: {
@@ -522,8 +443,6 @@ const PRESEEDED_CONFIG: Record<string, string[]> = {
   ai_groq: ['model', 'fastModel'],
   ai_openrouter: ['model', 'fastModel'],
   ai_openai: ['model', 'fastModel'],
-  ai_ollama: ['model', 'fastModel'],
-  ai_opencode: ['model', 'fastModel'],
   onedrive: ['rootFolder'],
 };
 
@@ -549,8 +468,6 @@ function healthOf(summary: IntegrationSummary): IntegrationHealth {
 /** Card faces speak to the owner, not to the database: plain names, no provider ids. */
 const PLAIN_NAMES: Record<string, string> = {
   meta_whatsapp: 'WhatsApp Business',
-  twilio: 'Twilio',
-  exotel: 'Exotel',
   smtp: 'your own email address',
   imap: 'reading replies',
   facebook_leads: 'Facebook Lead Ads',
@@ -559,9 +476,7 @@ const PLAIN_NAMES: Record<string, string> = {
   ai_gemini: 'Google Gemini',
   ai_groq: 'Groq',
   ai_openrouter: 'OpenRouter',
-  ai_opencode: 'OpenCode Zen',
   ai_openai: 'OpenAI',
-  ai_ollama: 'Ollama on this machine',
   anthropic: 'Claude',
   stt: 'speech to text',
   onedrive: 'OneDrive',
@@ -620,19 +535,14 @@ const JOBS: JobDef[] = [
     trouble: 'WhatsApp is set up but failing its connection test, so messages will not send or arrive.',
     missing: 'WhatsApp is not set up, so you cannot message customers from the CRM.',
   },
-  {
-    id: 'calls',
-    title: 'Phone calls',
-    blurb: 'Click a number to call, with the recording saved against the lead.',
-    icon: Phone,
-    providers: ['twilio', 'exotel'],
-    recommended: 'exotel',
-    wanted: true,
-    short: 'calls',
-    trouble: 'Phone calls are set up but failing their test, so click-to-call will not dial.',
-    missing: 'Phone calls are not set up, so clicking a customer’s number will not dial anyone.',
-    moreLabel: 'More call options',
-  },
+  /*
+    "Phone calls" is not a goal this marketplace can set up any more.
+
+    It offered Exotel and Twilio — dialling from the browser with the recording
+    saved against the lead. Both are removed (migration 141); a rep rings from
+    the handset in their hand and the call comes back through the paired
+    Android app, which is set up on the phone rather than here.
+  */
   {
     id: 'leads',
     title: 'Lead capture',
@@ -664,7 +574,7 @@ const JOBS: JobDef[] = [
     title: 'Turn on AI',
     blurb: 'Lead scoring, reply drafting and the assistant. Free options available.',
     icon: Sparkles,
-    providers: ['ai_gemini', 'ai_groq', 'ai_opencode', 'ai_openrouter', 'ai_openai', 'ai_ollama', 'anthropic'],
+    providers: ['ai_gemini', 'ai_groq', 'ai_openrouter', 'ai_openai', 'anthropic'],
     recommended: 'ai_gemini',
     wanted: true,
     short: 'AI',

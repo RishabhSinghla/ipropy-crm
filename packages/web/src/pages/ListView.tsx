@@ -80,6 +80,8 @@ export default function ListView(): JSX.Element {
   const [showFilters, setShowFilters] = useState(false);
   const [showQuickCreate, setShowQuickCreate] = useState(false);
   const [showColumns, setShowColumns] = useState(false);
+  /** Open when somebody is naming a new view built from what is on screen. */
+  const [savingAsView, setSavingAsView] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [editingView, setEditingView] = useState<SavedView | null>(null);
@@ -393,6 +395,38 @@ export default function ListView(): JSX.Element {
     onError: (err: Error) => toast.error('Could not save this view', err.message),
   });
 
+  /*
+    The screen as it stands, kept under a new name.
+
+    Everything is taken from live state rather than from `activeView`, because
+    the whole point is the arrangement somebody has just made — the columns they
+    dragged, the filter they built, the column they sorted by. It starts private
+    (`isPublic: false`, nobody shared) exactly like a view made from scratch;
+    sharing it is a separate, deliberate act in the editor.
+  */
+  const saveAsNewView = useMutation({
+    mutationFn: (name: string) => api.createView(moduleName!, {
+      name,
+      columns: columns.length ? columns : [],
+      sortBy: sortBy ?? null,
+      sortDir,
+      displayMode,
+      filter: countConditions(filter) ? filter : { logic: 'AND', conditions: [] },
+      isPublic: false,
+      sharedWith: [],
+    }),
+    onSuccess: (created) => {
+      toast.success('View saved', 'It is yours until you share it.');
+      setSavingAsView(false);
+      void queryClient.invalidateQueries({ queryKey: ['views', moduleName] }).then(() => {
+        // Land on the thing that was just made, rather than leaving somebody on
+        // the old view wondering whether it worked.
+        if (created?.id) setViewId(created.id);
+      });
+    },
+    onError: (err: Error) => toast.error('Could not save this view', err.message),
+  });
+
   const stageMutation = useMutation({
     mutationFn: ({ id, values }: { id: string; values: Record<string, unknown> }) =>
       api.update(moduleName!, id, values),
@@ -702,6 +736,23 @@ export default function ListView(): JSX.Element {
                       Save this layout to “{activeView.name}”
                     </DropdownItem>
                   )}
+                  {/*
+                    Keep what is on screen as a view of its own.
+
+                    The line above overwrites the view you are standing in,
+                    which is the wrong move when the columns, filter and sort
+                    you have just arranged are a *second* way of working rather
+                    than a correction to the first — "my Facebook leads this
+                    week" is not an edit to All Leads. Without this the only
+                    route was New view, which opens an empty editor and asks
+                    you to rebuild by hand what the screen is already showing.
+                  */}
+                  <DropdownItem
+                    icon={<Plus className="h-3.5 w-3.5" />}
+                    onClick={() => { setSavingAsView(true); close(); }}
+                  >
+                    Save as a new view…
+                  </DropdownItem>
                   <DropdownItem icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => { void refetch(); close(); }}>
                     Refresh
                   </DropdownItem>
@@ -1183,6 +1234,21 @@ export default function ListView(): JSX.Element {
       )}
 
       {/* Modals */}
+      {/*
+        Just a name. Everything else about the view is already on screen, and
+        asking somebody to re-pick it in a full editor is how "save what I am
+        looking at" turns into a form.
+      */}
+      <NameNewViewDialog
+        open={savingAsView}
+        busy={saveAsNewView.isPending}
+        moduleLabel={meta.label}
+        columnCount={columns.length}
+        filterCount={countConditions(filter)}
+        onClose={() => setSavingAsView(false)}
+        onSave={(name) => saveAsNewView.mutate(name)}
+      />
+
       {editingView && (
         <ViewEditor
           view={editingView}
@@ -2123,5 +2189,65 @@ function BulkEditButton({
         </div>
       </Modal>
     </>
+  );
+}
+
+/**
+ * Name the view you are already looking at.
+ *
+ * Deliberately not the full `ViewEditor`. That screen exists to *build* a view
+ * — pick columns, write a filter, choose a sort — and every one of those is
+ * already decided by the time somebody reaches for this. Reopening them in a
+ * form would ask the question twice and invite a different answer the second
+ * time.
+ */
+function NameNewViewDialog({
+  open, busy, moduleLabel, columnCount, filterCount, onClose, onSave,
+}: {
+  open: boolean;
+  busy: boolean;
+  moduleLabel: string;
+  columnCount: number;
+  filterCount: number;
+  onClose: () => void;
+  onSave: (name: string) => void;
+}): JSX.Element | null {
+  const [name, setName] = useState('');
+  useEffect(() => { if (open) setName(''); }, [open]);
+  if (!open) return null;
+
+  const save = (): void => { if (name.trim()) onSave(name.trim()); };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Save as a new view"
+      size="sm"
+      footer={(
+        <>
+          <button className="btn-secondary" onClick={onClose}>Cancel</button>
+          <button className="btn-primary" onClick={save} disabled={busy || !name.trim()}>
+            {busy ? 'Saving…' : 'Save view'}
+          </button>
+        </>
+      )}
+    >
+      <label className="label" htmlFor="new_view_name">What should it be called?</label>
+      <input
+        id="new_view_name"
+        autoFocus
+        className="input"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } }}
+        placeholder={`My ${moduleLabel.toLowerCase()}`}
+      />
+      <p className="mt-2 text-xs text-muted">
+        Keeps the {columnCount ? `${columnCount} columns` : 'columns'} you are showing
+        {filterCount ? `, the ${filterCount} filter${filterCount === 1 ? '' : 's'} you applied` : ', no filter'} and
+        the way this list is sorted. It is yours until you share it.
+      </p>
+    </Modal>
   );
 }

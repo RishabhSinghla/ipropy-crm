@@ -410,7 +410,6 @@ export type WorkflowTaskType =
   | 'webhook'
   | 'ai_action'
   | 'add_tag'
-  | 'trigger_call'
   | 'delay';
 
 export interface Workflow {

@@ -15,8 +15,6 @@ import { asyncHandler } from '../../middleware/errorHandler.js';
 import { BadRequestError, NotFoundError, ServiceUnavailableError, UnauthorizedError } from '../../utils/errors.js';
 import * as waProvider from '../../integrations/whatsapp/provider.js';
 import * as waService from '../../integrations/whatsapp/service.js';
-import { routeInboundCall, updateCallStatus } from '../../integrations/telephony/service.js';
-import { sameSecret, verifyTelephonyWebhook } from '../../integrations/telephony/verifyWebhook.js';
 import {
   captureLead, normalizeFacebook, normalizeGoogleAds, normalizePortal, type NormalizedLead,
 } from '../../integrations/leadsources/capture.js';
@@ -123,162 +121,15 @@ webhooksRouter.post('/whatsapp', asyncHandler(async (req, res) => {
   }
 }));
 
-// ---------------------------------------------------------------------------
-// Telephony
-// ---------------------------------------------------------------------------
-
 /*
-  Every telephony route below authenticates before it acts.
+  Telephony webhooks are gone with the providers that called them.
 
-  They accepted anything at all, in a file where WhatsApp and Facebook check an
-  HMAC and n8n checks a shared secret. The worst of it was `/recording`: it takes
-  a recording URL from the request and hands it to `analyseCallRecording`, which
-  downloads it with no host, private-network or size check. Anyone could make the
-  server fetch a URL of their choosing.
-
-  These answer 200 first and work afterwards, because a telephone company that
-  gets an error retries for hours. So a refusal is logged and the work is skipped
-  — the caller cannot tell a rejected request from an accepted one, which is also
-  what stops this being an oracle for guessing the secret.
+  Twilio and Exotel signed status callbacks, recording callbacks, inbound IVR
+  routing and a softphone number lookup — none of it ever configured on this
+  business, and all of it a public surface kept alive for a feature nobody had
+  switched on. Calls here are made on a handset and arrive through the paired
+  Android app (`integrations/telephony/deviceSync.ts`), which is untouched.
 */
-webhooksRouter.post('/telephony/:provider/status', asyncHandler(async (req, res) => {
-  res.sendStatus(200);
-
-  const provider = req.params.provider;
-  const verdict = verifyTelephonyWebhook(req, provider);
-  if (!verdict.ok) {
-    logger.warn({ provider, reason: verdict.reason }, 'rejected an unauthenticated telephony status callback');
-    return;
-  }
-
-  const body = req.body as Record<string, string>;
-
-  // Providers disagree on casing and field names; normalise here.
-  const providerCallId = body.CallSid ?? body.CallUuid ?? body.Sid ?? body.call_sid ?? body.CallId;
-  const status = body.CallStatus ?? body.Status ?? body.status ?? '';
-  if (!providerCallId) return;
-
-  const duration = Number(body.CallDuration ?? body.Duration ?? body.DialCallDuration ?? 0);
-  const recordingUrl = body.RecordingUrl ?? body.RecordingUrl0 ?? body.recording_url;
-
-  await updateCallStatus({
-    providerCallId,
-    status,
-    durationSeconds: Number.isFinite(duration) && duration > 0 ? duration : undefined,
-    recordingUrl: recordingUrl || undefined,
-    endedAt: ['completed', 'failed', 'busy', 'no-answer', 'canceled'].includes(status) ? new Date() : undefined,
-  }).catch((err) => logger.error({ err, provider }, 'call status update failed'));
-}));
-
-webhooksRouter.post('/telephony/:provider/recording', asyncHandler(async (req, res) => {
-  res.sendStatus(200);
-
-  const verdict = verifyTelephonyWebhook(req, req.params.provider);
-  if (!verdict.ok) {
-    logger.warn(
-      { provider: req.params.provider, reason: verdict.reason },
-      'rejected an unauthenticated telephony recording callback',
-    );
-    return;
-  }
-
-  const body = req.body as Record<string, string>;
-  const providerCallId = body.CallSid ?? body.CallUuid ?? body.Sid;
-  const recordingUrl = body.RecordingUrl ?? body.recording_url;
-  if (!providerCallId || !recordingUrl) return;
-
-  await db.query(`UPDATE ipy_call SET recording_url = $2 WHERE provider_call_id = $1`, [providerCallId, recordingUrl]);
-
-  const call = await db.queryOne<{ id: string }>(`SELECT id FROM ipy_call WHERE provider_call_id = $1`, [providerCallId]);
-  if (call) {
-    const { analyseCallRecording } = await import('../../ai/callAnalysis.js');
-    void analyseCallRecording(call.id).catch((err) => logger.warn({ err }, 'call analysis failed'));
-  }
-}));
-
-/**
- * Inbound call routing. Returns TwiML for Twilio and Exotel's applet JSON,
- * so the provider knows which agent to bridge to.
- */
-webhooksRouter.post('/telephony/:provider/incoming', asyncHandler(async (req, res) => {
-  // This one answers with the agent's own phone number, so an unauthenticated
-  // caller was being handed staff contact details for the asking.
-  const verdict = verifyTelephonyWebhook(req, req.params.provider);
-  if (!verdict.ok) {
-    logger.warn(
-      { provider: req.params.provider, reason: verdict.reason },
-      'rejected an unauthenticated inbound-call callback',
-    );
-    throw new UnauthorizedError('Invalid telephony webhook signature');
-  }
-
-  const body = req.body as Record<string, string>;
-  const from = body.From ?? body.CallFrom ?? body.from ?? '';
-  const to = body.To ?? body.CallTo ?? body.To ?? '';
-  const providerCallId = body.CallSid ?? body.CallUuid ?? body.Sid ?? crypto.randomUUID();
-
-  if (!from) throw new BadRequestError('Missing caller number');
-
-  const routing = await routeInboundCall({ from, to, providerCallId, provider: req.params.provider });
-
-  if (req.params.provider === 'twilio') {
-    const dial = routing.routeToNumber
-      ? `<Dial timeout="25" record="record-from-answer-dual"><Number>${escapeXml(routing.routeToNumber)}</Number></Dial>`
-      : `<Say voice="alice">Thank you for calling. All our advisors are busy. We will call you back shortly.</Say>`;
-    res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response>${dial}</Response>`);
-    return;
-  }
-
-  res.json({
-    select: routing.routeToNumber ? 'agent' : 'voicemail',
-    destination: routing.routeToNumber,
-    callId: routing.callId,
-    knownContact: routing.isKnownContact,
-    contactName: routing.recordLabel,
-  });
-}));
-
-/**
- * Screen-pop: the softphone polls this to know who is calling.
- *
- * It answers a lead's name for a phone number, which made it an
- * identity-lookup oracle for anyone who could reach the URL — ask for any
- * number, learn who it belongs to, no other authentication required. The
- * fix that closed /status, /recording and /incoming missed this one.
- *
- * The softphone is configured by the same admin who configured the provider,
- * so it carries the same proof that provider's callbacks carry: the Exotel
- * webhook secret or the Twilio auth token, as a header. Nothing configured
- * means the route refuses — fail-closed, like every other webhook here.
- */
-webhooksRouter.get('/telephony/lookup', asyncHandler(async (req, res) => {
-  const telephony = getSettings().telephony;
-  const expected = telephony.provider === 'twilio'
-    ? telephony.twilio.authToken
-    : telephony.exotel.webhookSecret;
-  const provided = (req.headers['x-telephony-secret'] as string | undefined)
-    ?? (typeof req.query.secret === 'string' ? req.query.secret : '');
-
-  if (!expected || !provided || !sameSecret(expected, provided)) {
-    logger.warn('rejected an unauthenticated softphone lookup');
-    res.sendStatus(401);
-    return;
-  }
-
-  const number = String(req.query.number ?? '');
-  if (!number) throw new BadRequestError('number is required');
-  const tail = number.replace(/\D/g, '').slice(-10);
-
-  const row = await db.queryOne(
-    `SELECT r.id, r.label, r.module_name, r.owner_id
-     FROM ipy_e_leads l JOIN ipy_record r ON r.id = l.record_id
-     WHERE r.is_deleted = false AND right(regexp_replace(COALESCE(l.mobile,''), '\\D','','g'), 10) = $1
-     ORDER BY CASE l.status WHEN 'Converted' THEN 0 WHEN 'Negotiation' THEN 1 ELSE 2 END
-     LIMIT 1`,
-    [tail],
-  );
-  res.json(row ?? { found: false });
-}));
 
 // ---------------------------------------------------------------------------
 // Lead sources

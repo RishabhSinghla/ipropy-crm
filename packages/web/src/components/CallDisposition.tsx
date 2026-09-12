@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Mic, Phone, Square } from 'lucide-react';
 import { api } from '../lib/api';
 import { useCallDispositions } from '../lib/callDispositions';
-import { toast, useApp } from '../lib/store';
+import { toast } from '../lib/store';
 import { useVoiceCapture } from '../lib/useVoiceCapture';
 import { cn } from '../lib/utils';
 import { Modal, Spinner } from './ui';
@@ -29,7 +29,6 @@ export function CallDispositionProvider({
   children: ReactNode;
 }): JSX.Element {
   const queryClient = useQueryClient();
-  const { telephonyAvailable } = useApp();
   const [target, setTarget] = useState<string | null>(null);
   const [providerCallId, setProviderCallId] = useState<string | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
@@ -78,15 +77,18 @@ export function CallDispositionProvider({
     setStartedAt(Date.now());
     setPlacing(true);
     try {
-      if (telephonyAvailable) {
-        const placed = await api.call(number, recordId, module);
-        setProviderCallId(placed.callId);
-        toast.success('Calling…', `Connecting ${recordLabel} on ${number}`);
-      } else {
-        // Set the CRM state before leaving for the phone dialler. When the user
-        // returns, the already-open form is ready for the outcome and notes.
-        dial(clean);
-      }
+      /*
+        Always the phone's own dialler.
+
+        There used to be a branch here that placed the call through Twilio or
+        Exotel when one was configured. Neither ever was on this business, and
+        both are gone: a rep rings from the handset in their hand, and the call
+        comes back into the CRM through the paired Android app.
+
+        The CRM state is set before leaving for the dialler, so when they come
+        back the outcome form is already open and waiting.
+      */
+      dial(clean);
     } catch (err) {
       toast.error('Could not place the call', (err as Error).message);
       close();

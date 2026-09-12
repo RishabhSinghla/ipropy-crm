@@ -39,9 +39,7 @@ const PROVIDER_BY_ROW: Record<string, ConcreteAiProvider> = {
   ai_gemini: 'gemini',
   ai_groq: 'groq',
   ai_openrouter: 'openrouter',
-  ai_opencode: 'opencode',
   ai_openai: 'openai',
-  ai_ollama: 'ollama',
 };
 
 const FALLBACK_MODELS: Record<ConcreteAiProvider | 'stt', string[]> = {
@@ -49,14 +47,7 @@ const FALLBACK_MODELS: Record<ConcreteAiProvider | 'stt', string[]> = {
   gemini: ['gemini-flash-latest', 'gemini-flash-lite-latest'],
   groq: ['openai/gpt-oss-120b', 'llama-3.1-8b-instant'],
   openrouter: ['openrouter/free'],
-  opencode: [
-    'nemotron-3-ultra-free',
-    'deepseek-v4-flash-free',
-    'mimo-v2.5-free',
-    'north-mini-code-free',
-  ],
   openai: ['gpt-4o-mini'],
-  ollama: ['llama3.1'],
   stt: ['whisper-large-v3-turbo', 'whisper-large-v3', 'whisper-1'],
 };
 
@@ -116,14 +107,13 @@ export function isOpenCodeChatCompletionModel(raw: RawModel | string): boolean {
 
 function isGeneralChatModel(provider: ConcreteAiProvider, raw: RawModel, id: string): boolean {
   const lower = id.toLowerCase();
-  if (provider === 'opencode') return isOpenCodeChatCompletionModel(raw);
   if (provider === 'gemini') {
     const methods = Array.isArray(raw.supportedGenerationMethods)
       ? raw.supportedGenerationMethods.map(String)
       : [];
     return methods.includes('generateContent');
   }
-  if (provider === 'openrouter' || provider === 'anthropic' || provider === 'ollama') return true;
+  if (provider === 'openrouter' || provider === 'anthropic') return true;
   // OpenAI-compatible catalogues often mix chat, audio, image and embedding
   // models. Only the first category can be used by ai/client.ts today.
   return !/(?:embedding|whisper|transcri|tts|dall-e|image-|moderation|realtime|audio)/i.test(lower);
@@ -177,7 +167,7 @@ async function fetchJson(url: string, headers: Record<string, string>): Promise<
 
 async function liveAiModels(provider: ConcreteAiProvider): Promise<AiModelOption[]> {
   const settings = getAiProviderSettings(provider);
-  if (!settings) throw new Error(provider === 'ollama' ? 'Enable Ollama first.' : 'Save an API key first.');
+  if (!settings) throw new Error('Save an API key first.');
 
   if (provider === 'anthropic') {
     const body = await fetchJson('https://api.anthropic.com/v1/models?limit=1000', {

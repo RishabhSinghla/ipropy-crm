@@ -337,15 +337,6 @@ const aiAction: TaskHandler = async (config, ctx) => {
   await runAiWorkflowAction(String(config.action ?? ''), config, ctx);
 };
 
-const triggerCall: TaskHandler = async (config, ctx) => {
-  const { placeCall } = await import('../../integrations/telephony/service.js');
-  const scope = await buildMergeScope(ctx);
-  const to = await resolvePhone(String(config.to ?? '{{mobile}}'), ctx, scope);
-  const agentId = ctx.record.owner_id as string | null;
-  if (!to || !agentId) return;
-  await placeCall({ agentUserId: agentId, toNumber: to, recordId: ctx.recordId, module: ctx.module });
-};
-
 const delay: TaskHandler = async () => {
   // Delay is expressed via delay_minutes on the task row; nothing to do here.
 };
@@ -364,7 +355,6 @@ const TASK_HANDLERS: Record<string, TaskHandler> = {
   webhook,
   add_tag: addTag,
   ai_action: aiAction,
-  trigger_call: triggerCall,
   delay,
 };
 

@@ -29,7 +29,16 @@ import { db } from '../../db/pool.js';
 import { makeSecretBox } from '../secretbox.js';
 import { logger } from '../../utils/logger.js';
 
-export type AiProvider = 'none' | 'anthropic' | 'gemini' | 'groq' | 'openrouter' | 'opencode' | 'openai' | 'ollama';
+/*
+  Removed: `opencode` and `ollama`.
+
+  OpenCode Zen answered "Model is unavailable" on every call it was configured
+  for, and Ollama needs a server running on the same machine the CRM runs on —
+  which is a laptop in development and a Render container in production, where
+  nothing else is listening. Two cards that could not work were two more things
+  on a settings page to read past.
+*/
+export type AiProvider = 'none' | 'anthropic' | 'gemini' | 'groq' | 'openrouter' | 'openai';
 
 interface IntegrationRow {
   id: string;
@@ -59,13 +68,6 @@ export interface ResolvedSettings {
    * Meta. Separate from `whatsapp` above because the two are different channels
    * that happen to reach the same app, and a number can only be on one of them.
    */
-  telephony: {
-    provider: 'none' | 'twilio' | 'exotel';
-    twilio: { accountSid: string; authToken: string; callerId: string; appSid: string };
-    exotel: { sid: string; apiKey: string; apiToken: string; subdomain: string; callerId: string;
-      /** Shared secret on the callback URL. Exotel does not sign, so this is the only proof. */
-      webhookSecret: string };
-  };
   email: {
     host: string; port: number; secure: boolean; user: string; password: string; from: string;
     imap: { host: string; port: number; user: string; password: string };
@@ -191,16 +193,14 @@ function pickStored(row: IntegrationRow | undefined, source: 'config' | 'credent
  * nothing but needs a machine to run on. `AI_PROVIDER` pins one explicitly.
  */
 const AI_PROVIDER_ORDER: Exclude<AiProvider, 'none'>[] = [
-  'anthropic', 'gemini', 'groq', 'opencode', 'openrouter', 'openai', 'ollama',
+  'anthropic', 'gemini', 'groq', 'openrouter', 'openai',
 ];
 
 const AI_BASE_URLS: Record<Exclude<AiProvider, 'none' | 'anthropic'>, string> = {
   gemini: 'https://generativelanguage.googleapis.com/v1beta/openai',
   groq: 'https://api.groq.com/openai/v1',
   openrouter: 'https://openrouter.ai/api/v1',
-  opencode: 'https://opencode.ai/zen/v1',
   openai: config.ai.openaiCompatible.baseUrl,
-  ollama: config.ai.ollama.baseUrl,
 };
 
 const AI_ENV_DEFAULTS: Record<Exclude<AiProvider, 'none'>, { apiKey: string; model: string; fastModel: string }> = {
@@ -208,14 +208,12 @@ const AI_ENV_DEFAULTS: Record<Exclude<AiProvider, 'none'>, { apiKey: string; mod
   gemini: config.ai.gemini,
   groq: config.ai.groq,
   openrouter: config.ai.openrouter,
-  opencode: config.ai.opencode,
   openai: {
     apiKey: config.ai.openaiCompatible.apiKey,
     model: config.ai.openaiCompatible.model,
     fastModel: config.ai.openaiCompatible.fastModel,
   },
   // Local models authenticate with nothing; the request still wants a string.
-  ollama: { apiKey: 'ollama', model: config.ai.ollama.model, fastModel: config.ai.ollama.fastModel },
 };
 
 function aiCandidate(
@@ -228,12 +226,9 @@ function aiCandidate(
   const env = AI_ENV_DEFAULTS[provider];
   const read = ignoreToggle ? pickStored : pick;
   const apiKey = read(row, 'credentials', 'apiKey', env.apiKey);
-  // Ollama is the one provider that is legitimately keyless, so it counts as
-  // configured when its row is switched on rather than when a secret exists.
-  const configured = provider === 'ollama'
-    ? Boolean(row?.isActive) || config.ai.provider === 'ollama'
-    : Boolean(apiKey);
-  if (!configured) return null;
+  // Every remaining provider is a hosted one, so a key is what "configured"
+  // means. Ollama was the exception — legitimately keyless — and it is gone.
+  if (!apiKey) return null;
   return {
     enabled: config.ai.enabled,
     provider,
@@ -478,8 +473,6 @@ export function aiRowKey(provider: Exclude<AiProvider, 'none'>): string {
 
 function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
   const wa = map.get('meta_whatsapp');
-  const twilio = map.get('twilio');
-  const exotel = map.get('exotel');
   const smtp = map.get('smtp');
   const imap = map.get('imap');
   const sttRow = map.get('stt');
@@ -490,10 +483,6 @@ function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
   const onedrive = map.get('onedrive');
   const n8n = map.get('n8n');
 
-  let telephonyProvider: 'none' | 'twilio' | 'exotel' = config.telephony.provider === 'twilio' || config.telephony.provider === 'exotel'
-    ? config.telephony.provider : 'none';
-  if (twilio?.isActive && twilio.credentials.accountSid && twilio.credentials.authToken) telephonyProvider = 'twilio';
-  else if (exotel?.isActive && exotel.credentials.sid && exotel.credentials.apiKey && exotel.credentials.apiToken) telephonyProvider = 'exotel';
 
   const oneDriveConfigured = Boolean(
     pick(onedrive, 'config', 'tenantId', config.storage.onedrive.tenantId)
@@ -539,23 +528,6 @@ function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
       appSecret: pick(wa, 'credentials', 'appSecret', config.whatsapp.appSecret),
       apiVersion: pick(wa, 'config', 'apiVersion', config.whatsapp.apiVersion) || config.whatsapp.apiVersion,
       active: Boolean(wa?.isActive),
-    },
-    telephony: {
-      provider: telephonyProvider,
-      twilio: {
-        accountSid: pick(twilio, 'credentials', 'accountSid', config.telephony.twilio.accountSid),
-        authToken: pick(twilio, 'credentials', 'authToken', config.telephony.twilio.authToken),
-        callerId: pick(twilio, 'config', 'callerId', config.telephony.twilio.callerId),
-        appSid: pick(twilio, 'config', 'appSid', config.telephony.twilio.appSid),
-      },
-      exotel: {
-        sid: pick(exotel, 'credentials', 'sid', config.telephony.exotel.sid),
-        apiKey: pick(exotel, 'credentials', 'apiKey', config.telephony.exotel.apiKey),
-        apiToken: pick(exotel, 'credentials', 'apiToken', config.telephony.exotel.apiToken),
-        subdomain: pick(exotel, 'config', 'subdomain', config.telephony.exotel.subdomain) || config.telephony.exotel.subdomain,
-        callerId: pick(exotel, 'config', 'callerId', config.telephony.exotel.callerId),
-        webhookSecret: pick(exotel, 'credentials', 'webhookSecret', config.telephony.exotel.webhookSecret),
-      },
     },
     email: {
       host: pick(smtp, 'config', 'host', config.email.host),
@@ -664,17 +636,13 @@ export async function invalidate(): Promise<void> {
 
 const SECRET_FIELDS: Record<string, string[]> = {
   meta_whatsapp: ['accessToken', 'appSecret'],
-  twilio: ['authToken'],
-  exotel: ['apiKey', 'apiToken'],
   smtp: ['password'],
   imap: ['password'],
   anthropic: ['apiKey'],
   ai_gemini: ['apiKey'],
   ai_groq: ['apiKey'],
   ai_openrouter: ['apiKey'],
-  ai_opencode: ['apiKey'],
   ai_openai: ['apiKey'],
-  ai_ollama: [],
   stt: ['apiKey'],
   facebook_leads: ['appSecret', 'pageAccessToken'],
   google_ads: ['webhookKey'],

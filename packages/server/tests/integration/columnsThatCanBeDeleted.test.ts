@@ -130,15 +130,17 @@ const KNOWN_DIRECT_REFERENCES = new Set([
   // would have turned that page into a 42703 on the day it was fixed. They go
   // through `pcol()` now, which names the column only if it is there.
   'api/routes/public.ts u.status',
-  'api/routes/webhooks.ts l.mobile',
-  'api/routes/webhooks.ts l.status',
+  /*
+    Five entries left this list on 2026-09-13, all with the code that held them:
+    the softphone lookup in `webhooks.ts` and three in `telephony/service.ts`,
+    removed with Exotel and Twilio (migration 141). The guard named them itself
+    rather than letting a stale allow-list quietly cover a file that no longer
+    exists — which is the failure mode an allow-list usually has.
+  */
   'core/locations/index.ts p.latitude',
   'core/locations/index.ts p.longitude',
   'core/workflow/assignment.ts l.next_followup_at',
   'core/workflow/tasks.ts l.email',
-  'integrations/telephony/service.ts l.alternate_phone',
-  'integrations/telephony/service.ts l.mobile',
-  'integrations/telephony/service.ts l.status',
   'integrations/whatsapp/service.ts l.mobile',
   'integrations/whatsapp/service.ts l.status',
 ]);

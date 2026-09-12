@@ -8,42 +8,21 @@ import { ForbiddenError, NotFoundError } from '../../utils/errors.js';
 import { assertCapability, canAccessRecord, hasCapability } from '../../core/permissions/index.js';
 import { activeValues, assertPicklistValue } from '../../core/metadata/picklists.js';
 import { columnsOf } from '../../core/entity/payloadColumns.js';
-import { isTelephonyConfigured, logManualCall, placeCall } from '../../integrations/telephony/service.js';
+import { logManualCall } from '../../integrations/telephony/manualCall.js';
 import { recordService } from '../../core/entity/recordService.js';
 import { parseByteRange } from '../../utils/httpRange.js';
 
 export const telephonyRouter = Router();
 telephonyRouter.use(requireAuth);
 
-telephonyRouter.get('/status', asyncHandler(async (_req, res) => {
-  res.json({ configured: isTelephonyConfigured() });
-}));
+/*
+  No `/status` and no `/call`.
 
-/** Click-to-call from a record. */
-telephonyRouter.post('/call', asyncHandler(async (req, res) => {
-  const user = getUser(req);
-  const scope = getScope(req);
-  await assertCapability(user, 'telephony.call');
-
-  const input = z.object({
-    to: z.string().min(6),
-    recordId: z.string().uuid().nullable().optional(),
-    module: z.string().nullable().optional(),
-  }).refine((value) => !value.recordId || Boolean(value.module), {
-    message: 'The record module is required when linking a call',
-  }).parse(req.body);
-
-  if (input.recordId && input.module) {
-    if (!(await canAccessRecord(scope, input.module, input.recordId, 'view'))) throw new ForbiddenError();
-  }
-
-  res.status(201).json(await placeCall({
-    agentUserId: user.id,
-    toNumber: input.to,
-    recordId: input.recordId ?? null,
-    module: input.module ?? null,
-  }));
-}));
+  Both existed for cloud telephony — a browser that dials through Twilio or
+  Exotel — which was never configured here and is now removed. A rep rings
+  somebody from their handset; the Call button is a `tel:` link, and the call
+  comes back through the paired Android app.
+*/
 
 /** Log a call made outside the system. */
 telephonyRouter.post('/log', asyncHandler(async (req, res) => {

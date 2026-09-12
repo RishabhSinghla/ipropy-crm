@@ -55,14 +55,7 @@ export async function testAiProvider(
   provider: Exclude<AiProvider, 'none'>,
 ): Promise<{ ok: boolean; message: string }> {
   const settings = getAiProviderSettings(provider);
-  if (!settings) {
-    return {
-      ok: false,
-      message: provider === 'ollama'
-        ? 'Enable this provider first — Ollama needs no key, but it does need to be switched on and running.'
-        : 'An API key is required.',
-    };
-  }
+  if (!settings) return { ok: false, message: 'An API key is required.' };
 
   try {
     const started = Date.now();

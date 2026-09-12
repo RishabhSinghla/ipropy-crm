@@ -1081,29 +1081,6 @@ async function testIntegration(provider: string): Promise<{ ok: boolean; message
         if (!r.ok) return { ok: false, message: body.error?.message ?? `Meta returned HTTP ${r.status}` };
         return { ok: true, message: `Connected — ${body.display_phone_number ?? 'number verified'}.` };
       }
-      case 'twilio': {
-        const { accountSid, authToken } = s.telephony.twilio;
-        if (!accountSid || !authToken) return { ok: false, message: 'Account SID and auth token are required.' };
-        const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}.json`, {
-          headers: { Authorization: `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString('base64')}` },
-          signal: AbortSignal.timeout(10_000),
-        });
-        const body = await r.json().catch(() => ({})) as { friendly_name?: string; message?: string };
-        if (!r.ok) return { ok: false, message: body.message ?? `Twilio returned HTTP ${r.status}` };
-        return { ok: true, message: `Connected — ${body.friendly_name ?? 'account verified'}.` };
-      }
-      case 'exotel': {
-        const { sid, apiKey, apiToken, subdomain } = s.telephony.exotel;
-        if (!sid || !apiKey || !apiToken) return { ok: false, message: 'SID, API key and API token are required.' };
-        const r = await fetch(`https://${apiKey}:${apiToken}@${subdomain}/v1/Accounts/${sid}/Calls.json?PageSize=1`, {
-          signal: AbortSignal.timeout(10_000),
-        });
-        if (!r.ok) {
-          const body = await r.json().catch(() => ({})) as { RestException?: { Message?: string } };
-          return { ok: false, message: body.RestException?.Message ?? `Exotel returned HTTP ${r.status}` };
-        }
-        return { ok: true, message: 'Connected — credentials accepted.' };
-      }
       case 'smtp': {
         if (!s.email.host) return { ok: false, message: 'SMTP host is required.' };
         const result = await verifySmtpConnection();
@@ -1122,12 +1099,8 @@ async function testIntegration(provider: string): Promise<{ ok: boolean; message
         return testAiProvider('groq');
       case 'ai_openrouter':
         return testAiProvider('openrouter');
-      case 'ai_opencode':
-        return testAiProvider('opencode');
       case 'ai_openai':
         return testAiProvider('openai');
-      case 'ai_ollama':
-        return testAiProvider('ollama');
       case 'stt': {
         const catalogue = await listIntegrationModels('stt');
         return catalogue?.live
