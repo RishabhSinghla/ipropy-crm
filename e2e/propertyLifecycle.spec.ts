@@ -38,8 +38,8 @@ test('a rep adds a floor they have just taken on', async ({ page }) => {
   const price = page.locator('#f_base_price');
   if (await price.count()) await price.fill('14500000');
 
-  await page.getByRole('button', { name: /create property|save/i }).click();
-  await expect(page.getByText(/property created|created/i).first()).toBeVisible({ timeout: 15_000 });
+  await page.getByRole('button', { name: /create inventory|save/i }).click();
+  await expect(page.getByText(/inventory created|created/i).first()).toBeVisible({ timeout: 15_000 });
 });
 
 test('it is on the list where the team will look for it', async ({ page, context }) => {

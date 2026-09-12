@@ -235,6 +235,6 @@ test('a dead module URL says so instead of loading forever', async ({ page }) =>
   // query to resolve made this the slowest test in the file and a flaky one
   // under load — and the count is already covered by the two sweeps above.
   await page.goto('/leads');
-  await expect(page.getByRole('heading', { name: /^contacts$/i })).toBeAttached({ timeout: 30_000 });
+  await expect(page.getByRole('heading', { name: /^leads$/i })).toBeAttached({ timeout: 30_000 });
   await expect(page.getByText(/there is no .* here/i)).toHaveCount(0);
 });
