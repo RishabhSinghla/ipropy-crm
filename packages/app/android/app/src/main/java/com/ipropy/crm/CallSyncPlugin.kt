@@ -103,10 +103,25 @@ class CallSyncPlugin : Plugin() {
           accident.
         */
         if (!prefs.watermarkInitialised) {
-            if (!prefs.importExistingHistory) {
-                prefs.lastCallId = CallLogReader.currentHighestId(context)
+            if (prefs.importExistingHistory) {
+                prefs.watermarkInitialised = true
+            } else {
+                /*
+                  Refuse to pair rather than guess. The watermark is the line
+                  between "calls from now on" and "every call on this handset,
+                  personal ones included", and a failed read cannot be told from
+                  an empty call log unless this asks. Pairing anyway with a
+                  watermark of zero is how somebody who explicitly declined
+                  history gets all of it.
+                */
+                val newest = CallLogReader.currentHighestId(context)
+                if (newest == null) {
+                    call.reject("Could not read this phone's call log, so call logging was not switched on. Check that the permission is allowed and try again.")
+                    return
+                }
+                prefs.lastCallId = newest
+                prefs.watermarkInitialised = true
             }
-            prefs.watermarkInitialised = true
         }
 
         SyncWorker.schedule(context)

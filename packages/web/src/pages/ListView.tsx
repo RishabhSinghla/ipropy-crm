@@ -439,7 +439,20 @@ export default function ListView(): JSX.Element {
           acts on the list is grouped on the right, with the search box beside
           the Filter button it belongs with.
         */}
-        <div className="flex items-center gap-2">
+        {/*
+          Wraps on a phone.
+
+          On one line the saved-view tabs, the search box, Filter, the two view
+          toggles, the column control and New come to more than a 360dp screen
+          holds — so New was clipped at the right edge with nothing to scroll
+          and no way to reach it. The shell is `overflow-hidden`, so the
+          overflow did not even produce a scrollbar to hint at what was missing.
+
+          Wrapping rather than scrolling, deliberately: a horizontally scrolling
+          strip would put the primary action off-screen by default, which is the
+          same problem wearing a different hat.
+        */}
+        <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
           <ViewTabStrip
             views={views ?? []}
             activeId={activeView?.id}
