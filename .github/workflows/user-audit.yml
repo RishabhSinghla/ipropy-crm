@@ -18,9 +18,17 @@ name: Production user audit
 on:
   workflow_dispatch:
 
+# Least privilege, stated rather than inherited. The repository default is
+# already read-only, but a default is a setting somebody can change in a menu;
+# this is the guarantee travelling with the workflow. Raise it here, per job,
+# if one ever genuinely needs to write.
+permissions:
+  contents: read
+
 jobs:
   audit:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Install PostgreSQL 18 client
         run: |

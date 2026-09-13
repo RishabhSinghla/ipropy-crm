@@ -84,7 +84,12 @@ vertical video for the Reel and the Status. Photos sideways, video upright.
 
 ### 1. Start the media worker
 
-See `media-worker/README.md`. One command, no dependencies to install.
+See `media-service/README.md`. One command, no dependencies to install.
+
+(There was a second folder called `media-worker` until 13 September 2026. It was
+the earlier version of the same thing, a month stale, and these instructions
+pointed at it — so anybody following them set up the wrong worker. Deleted;
+`media-service` is the only one.)
 
 ### 2. Three credentials in n8n
 
@@ -195,7 +200,7 @@ JSON. 22 checks.
 real OneDrive paths, and the model's actual judgement — whether it calls that
 room a drawing room, and whether the caption is one you would post. Those need
 one real property. Everything else is covered, including the worker: run
-`python3 media-worker/end_to_end.py` for the pixel half.
+`python3 media-service/app.py` and the scripts beside it for the pixel half.
 
 Edit `build-workflow.py` rather than the JSON, then re-run it — the JSON is
 generated, and hand-escaping JavaScript inside JSON is how you get a workflow

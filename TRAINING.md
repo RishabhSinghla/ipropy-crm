@@ -700,7 +700,7 @@ raised**, **next actions**, and the **talk ratio** — how much you talked versu
 There's a **coaching report** per salesperson built from these.
 
 > **Honest limit:** iPropy does **not** convert audio into text. Call analysis works from a
-> transcript. That transcript comes from your telephony provider, an external speech-to-text
+> transcript. That transcript comes from an external speech-to-text
 > service, or by pasting it in by hand.
 
 ## 6.8 Outreach — messaging at scale
@@ -904,7 +904,7 @@ fields become the **summary chips** in the record header. Choose **which tab a r
 > Once you edit a layout, it's marked as yours and the seeding process **skips it forever after**.
 > Without that flag, a re-seed would silently undo the arrangement someone spent an afternoon on.
 
-**4. List View Tabs** — manage the saved views that appear as tabs above each list.
+**4. Saved views** — All, My, Unread and Favourite ship for every module, and anyone can save their own. Managed from the view switcher on the list itself; there is no admin screen for them.
 
 **5. Dropdowns** — every picklist. Create a new one, rename it, add options, reorder them (drag,
 or the arrows on a phone), colour them, and star the one new records start on. You can also set up
@@ -1123,7 +1123,6 @@ adapter that speaks the common "OpenAI-style" format** — which covers everythi
 | **Groq** | Fastest |
 | **OpenRouter** | Use `openrouter/free` — the auto-router. Individual `:free` model IDs get retired without warning |
 | **Any OpenAI-compatible endpoint** | Bring your own |
-| **Ollama** | Runs on your own machine. Nothing leaves the building |
 
 Configure them in **Admin → Integrations**, not in a file.
 
@@ -1177,22 +1176,11 @@ record in the CRM.
 sending code checks them. Tick "Do Not WhatsApp" and no workflow, no sequence, no broadcast will
 message that person.
 
-## 10.4 Telephony
-
-Supported: **Twilio** and **Exotel**. What it gives you:
-
-- **Click to call** — click the number, your phone rings, then theirs.
-- **Screen pop** — an inbound call opens that lead's record before you say hello.
-- **Recordings** — stored against the call.
-- **Virtual numbers** — a company number that routes to the right person.
-
-Without credentials, calls are logged and click-to-call does nothing.
-
-## 10.5 The Android companion app — calls from real phones
+## 10.4 The Android companion app — calls from real phones
 
 This is the pragmatic answer to call tracking, and it's genuinely clever.
 
-**The problem:** cloud telephony gives you one company number with IVR and routing. But your
+**The problem:** your
 salespeople call buyers from their **own phones**, all day, and none of that reaches the CRM.
 
 **What the app does:**
@@ -1214,7 +1202,7 @@ app finds the files. No built-in recorder means the call log still syncs, just w
 Also: recording calls has **per-state consent laws** in India. That's a legal question, not a
 technical one.
 
-## 10.6 Email
+## 10.5 Email
 
 SMTP for sending, IMAP for receiving. Templates. **Open tracking** via an invisible pixel — you
 can see who opened your price list. Without credentials, emails are logged rather than sent.
@@ -1280,7 +1268,6 @@ property they land on.
 | Integration | What it does | Without credentials |
 |---|---|---|
 | **WhatsApp** (Meta Cloud API) | Send, receive, templates, receipts | Simulated — logged and marked sent |
-| **Telephony** (Twilio / Exotel) | Click-to-call, screen pop, recordings | Calls logged, click-to-call does nothing |
 | **Facebook Lead Ads** | Leads flow in automatically | Address is live, no traffic |
 | **Google Ads** | Same | Address is live, no traffic |
 | **99acres / MagicBricks / Housing / NoBroker** | Their enquiries become leads | Address is live, no traffic |
@@ -1369,7 +1356,7 @@ This section exists so nobody is surprised. Nothing here is missing through lazi
 |---|---|
 | **WhatsApp sending** | Needs a Meta-approved business, a dedicated number, and usually a paid provider. **The code is complete and waiting.** There is no legal API that mirrors a personal WhatsApp inbox — the libraries claiming to do it get numbers permanently banned |
 | **Portal syndication** (*posting* listings to 99acres / MagicBricks / Housing) | No open API exists for posting. These are **commercial contracts, one per portal**. Note: receiving *inbound* leads from all four already works |
-| **Call recording on Android** | Android 10 closed the API. Nothing reopens it. The working routes are (a) cloud telephony recording server-side, already built, or (b) the companion app picking up your phone's own recorder's files. Per-state consent law applies either way |
+| **Call recording on Android** | Android 10 closed the API. Nothing reopens it. The only working route is the companion app picking up your phone's own recorder's files. Per-state consent law applies either way |
 | **A working AI key** | See 9.4. Configuration is deployment-specific; check Admin → Integrations rather than assuming from this guide |
 
 ## 13.2 Built but never exercised with real credentials

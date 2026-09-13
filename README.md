@@ -233,7 +233,6 @@ first-response tracking and escalation.
 | | Status without credentials |
 |---|---|
 | WhatsApp (Meta Cloud API) | Messages logged and marked sent — flows stay testable |
-| WhatsApp via a linked phone (`wa-bridge/`) | Off until a number is linked; sends fall back to the one-tap queue |
 | Facebook Lead Ads, Google Ads | Webhook endpoints live; no inbound traffic |
 | 99acres, MagicBricks, Housing, NoBroker | Generic portal normaliser per source |
 | Email (SMTP/IMAP) | Logged with open tracking |

@@ -4,9 +4,11 @@ Puts every call made or received on a salesperson's own phone into the CRM,
 matched to the right lead. **No telephony account, no virtual number, no
 per-minute cost.**
 
-This is the alternative to cloud telephony, not a replacement for it. Cloud
-telephony gives you one public number, IVR and routing; this gives you the calls
-that actually happen, on the handsets people actually use, today.
+This is the alternative to cloud telephony, and it is the route this product
+took: the Twilio and Exotel integrations were removed in September 2026 having
+never been switched on. Cloud telephony would give you one public number, IVR
+and routing; this gives you the calls that actually happen, on the handsets
+people actually use, today.
 
 ---
 
