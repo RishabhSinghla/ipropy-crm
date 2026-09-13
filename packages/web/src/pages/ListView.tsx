@@ -101,6 +101,7 @@ export default function ListView(): JSX.Element {
   const [editingView, setEditingView] = useState<SavedView | null>(null);
   const [confirmDeleteView, setConfirmDeleteView] = useState<CustomView | null>(null);
   const [dragColumn, setDragColumn] = useState<string | null>(null);
+  const [quickFilterColumn, setQuickFilterColumn] = useState<string | null>(null);
   const colWidths = useColumnWidths(moduleName);
 
   /**
@@ -1175,6 +1176,17 @@ export default function ListView(): JSX.Element {
                           : canSort ? <ArrowUpDown className="h-2.5 w-2.5 shrink-0 opacity-0 group-hover:opacity-40" /> : null}
                       </button>
                       {field && ['picklist', 'multipicklist'].includes(field.uitype) && field.options?.length ? (
+                        <>
+                        <button
+                          type="button"
+                          className="ml-1 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600 dark:hover:bg-slate-800"
+                          aria-label={`Filter ${field.label}`}
+                          title={`Filter ${field.label}`}
+                          onClick={(event) => { event.stopPropagation(); setQuickFilterColumn((current) => current === field.name ? null : field.name); }}
+                        >
+                          <Filter className="h-3 w-3" />
+                        </button>
+                        {quickFilterColumn === field.name && (
                         <select
                           aria-label={`Filter ${field.label}`}
                           className="mt-1 block max-w-full rounded border border-slate-200 bg-white px-1 py-0.5 text-2xs font-normal text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
@@ -1189,6 +1201,8 @@ export default function ListView(): JSX.Element {
                           <option value="">All</option>
                           {field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                         </select>
+                        )}
+                        </>
                       ) : null}
                       {/* Drag to resize, double-click to put it back. `role` and
                           the arrow keys are here because a column width is a

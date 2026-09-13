@@ -96,6 +96,10 @@ const PROFILES: ProfileDef[] = [
     capabilities: [
       'records.export', 'records.import', 'records.mass_edit', 'records.transfer_ownership', 'ai.use',
       'telephony.call', 'telephony.listen_recordings', 'whatsapp.send', 'inventory.block_unit',
+      // A manager's baseline is their own records plus their team. This is
+      // create-only seed data, so an admin can still turn it off later in
+      // Roles & Profiles without a subsequent seed giving it back.
+      'records.view_lower_hierarchy',
     ],
     modules: {
       ...perms(ALL, [true, true, true, false, true, false]),
