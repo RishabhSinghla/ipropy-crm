@@ -22,11 +22,13 @@ commsRouter.use(requireAuth);
 
 commsRouter.get('/conversations', asyncHandler(async (req, res) => {
   const user = getUser(req);
-  const { status, assigned, channel, search, limit, offset } = z.object({
+  const { status, assigned, channel, search, recordId, recordModule, limit, offset } = z.object({
     status: z.enum(['open', 'pending', 'resolved', 'snoozed', 'all']).default('open'),
     assigned: z.enum(['me', 'unassigned', 'all']).default('all'),
     channel: z.string().optional(),
     search: z.string().optional(),
+    recordId: z.string().uuid().optional(),
+    recordModule: z.string().optional(),
     limit: z.coerce.number().int().max(100).default(40),
     offset: z.coerce.number().int().default(0),
   }).parse(req.query);
@@ -36,6 +38,8 @@ commsRouter.get('/conversations', asyncHandler(async (req, res) => {
 
   if (status !== 'all') { params.push(status); clauses.push(`c.status = $${params.length}`); }
   if (channel) { params.push(channel); clauses.push(`c.channel = $${params.length}`); }
+  if (recordId) { params.push(recordId); clauses.push(`c.record_id = $${params.length}`); }
+  if (recordModule) { params.push(recordModule); clauses.push(`c.record_module = $${params.length}`); }
   if (assigned === 'me') { params.push(user.id); clauses.push(`c.assigned_to = $${params.length}`); }
   else if (assigned === 'unassigned') clauses.push(`c.assigned_to IS NULL`);
   if (search) {
@@ -380,6 +384,37 @@ commsRouter.get('/email/templates', asyncHandler(async (_req, res) => {
      WHERE t.is_active ORDER BY t.name`,
   );
   res.json(rows.rows);
+}));
+
+// Email templates are deliberately managed beside WhatsApp templates.  Both
+// channels use the same merge-field syntax, so an administrator should not
+// have to ask a developer to change routine outbound copy.
+commsRouter.post('/email/templates', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'whatsapp.templates');
+  const input = z.object({
+    name: z.string().regex(/^[a-z0-9_]+$/, 'Use lower case letters, numbers and underscores'),
+    subject: z.string().min(1),
+    bodyHtml: z.string().min(1),
+    category: z.string().max(60).default('general'),
+  }).parse(req.body);
+
+  const row = await db.queryOne<{ id: string }>(
+    `INSERT INTO ipy_email_template (name, subject, body_html, category, is_active)
+     VALUES ($1,$2,$3,$4,true)
+     ON CONFLICT (name) DO UPDATE SET subject = EXCLUDED.subject, body_html = EXCLUDED.body_html,
+       category = EXCLUDED.category, is_active = true
+     RETURNING id`,
+    [input.name, input.subject, input.bodyHtml, input.category],
+  );
+  res.status(201).json({ id: row?.id });
+}));
+
+commsRouter.delete('/email/templates/:id', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'whatsapp.templates');
+  // A soft delete keeps historical sent-message links valid, while immediately
+  // taking the template out of every compose picker.
+  await db.query(`UPDATE ipy_email_template SET is_active = false WHERE id = $1`, [req.params.id]);
+  res.json({ ok: true });
 }));
 
 commsRouter.get('/email/status', asyncHandler(async (req, res) => {

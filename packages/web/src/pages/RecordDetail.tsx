@@ -306,6 +306,7 @@ export default function RecordDetail(): JSX.Element {
     })),
     ...(moduleName === 'leads' && supportsCalls ? [{ key: 'calls', label: 'Calls', icon: <Phone className="h-3.5 w-3.5" /> }] : []),
     { key: 'files', label: 'Files', icon: <Paperclip className="h-3.5 w-3.5" /> },
+    { key: 'whatsapp', label: 'WhatsApp Chat', icon: <MessageCircle className="h-3.5 w-3.5" /> },
     ...(moduleName === 'properties' && supportsCalls ? [{ key: 'calls', label: 'Calls', icon: <Phone className="h-3.5 w-3.5" /> }] : []),
   ];
   const availableByKey = new Map(availableTabs.map((item) => [item.key, item]));
@@ -641,6 +642,7 @@ export default function RecordDetail(): JSX.Element {
           )}
           {activeTab === 'calls' && <CallsTab recordId={id!} />}
           {activeTab === 'files' && <FilesTab module={moduleName!} id={id!} canEdit={Boolean(record.can?.edit)} />}
+          {activeTab === 'whatsapp' && <WhatsAppChat module={moduleName!} record={record} />}
         </div>
 
         {/* Notes first, on every module.
@@ -1025,6 +1027,92 @@ function TimelineTab({ module, id }: { module: string; id: string }): JSX.Elemen
         </div>
       )}
     </div>
+  );
+}
+
+/** A record-scoped window into the real WhatsApp conversation, not a copy. */
+function WhatsAppChat({ module, record }: { module: string; record: RecordEnvelope }): JSX.Element {
+  const queryClient = useQueryClient();
+  const [text, setText] = useState('');
+  const [templateName, setTemplateName] = useState('');
+  const [sending, setSending] = useState(false);
+  const phone = String(record.values.whatsapp_number ?? record.values.mobile ?? record.values.phone ?? '').trim();
+  const { data: conversations, isLoading: conversationsLoading } = useQuery({
+    queryKey: ['record-whatsapp', module, record.id],
+    queryFn: () => api.conversations({ status: 'all', channel: 'whatsapp', recordId: record.id, recordModule: module, limit: 1 }),
+    refetchInterval: 10_000,
+  });
+  const conversation = conversations?.[0] as { id: string; windowOpen?: boolean; handle?: string } | undefined;
+  const { data: detail, isLoading: detailLoading } = useQuery({
+    queryKey: ['conversation', conversation?.id],
+    queryFn: () => api.conversation(conversation!.id),
+    enabled: Boolean(conversation?.id),
+    refetchInterval: 10_000,
+  });
+  const thread = detail as { messages?: { id: string; direction: 'inbound' | 'outbound'; body?: string | null; created_at: string; status?: string }[]; windowOpen?: boolean } | undefined;
+  const messages = thread?.messages ?? [];
+  const windowOpen = thread?.windowOpen ?? conversation?.windowOpen ?? false;
+  const { data: templates } = useQuery({ queryKey: ['wa-templates'], queryFn: api.whatsappTemplates });
+  const availableTemplates = (templates ?? []) as { name: string; body_text: string; status: string }[];
+
+  const send = async (): Promise<void> => {
+    const body = text.trim();
+    if ((!body && !templateName) || sending) return;
+    if (!phone && !conversation?.id) {
+      toast.error('No WhatsApp number', 'Add a mobile or WhatsApp number to start this chat.');
+      return;
+    }
+    setSending(true);
+    try {
+      if (conversation?.id) await api.sendMessage(conversation.id, windowOpen ? { text: body } : { templateName });
+      else await api.startConversation({ to: phone, text: body });
+      setText('');
+      setTemplateName('');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['record-whatsapp', module, record.id] }),
+        queryClient.invalidateQueries({ queryKey: ['conversation'] }),
+        queryClient.invalidateQueries({ queryKey: ['timeline', module, record.id] }),
+      ]);
+      toast.success('WhatsApp message sent');
+    } catch (err) {
+      toast.error('Could not send WhatsApp message', (err as Error).message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  if (conversationsLoading || detailLoading) return <Skeleton className="h-[30rem] w-full" />;
+  return (
+    <section className="card flex min-h-[34rem] flex-col overflow-hidden">
+      <header className="flex items-center justify-between border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+        <div className="flex items-center gap-2">
+          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"><MessageCircle className="h-4 w-4" /></span>
+          <div><h2 className="text-sm font-semibold">WhatsApp Chat</h2><p className="text-2xs text-muted">{phone || conversation?.handle || 'No WhatsApp number'} · synced automatically</p></div>
+        </div>
+        {conversation && <Badge color={windowOpen ? '#16a34a' : '#64748b'}>{windowOpen ? 'Chat open' : 'Template required'}</Badge>}
+      </header>
+      <div className="flex-1 space-y-3 bg-[#efeae2]/50 p-4 dark:bg-slate-950/40">
+        {!conversation ? (
+          <div className="flex h-full min-h-64 items-center justify-center"><EmptyState icon={<MessageCircle className="h-8 w-8" />} title="Start a WhatsApp chat" body={phone ? 'Write the first message below. Incoming replies will appear here automatically.' : 'Add a mobile or WhatsApp number to this record first.'} /></div>
+        ) : !messages.length ? (
+          <div className="flex h-full min-h-64 items-center justify-center"><EmptyState icon={<MessageCircle className="h-8 w-8" />} title="No messages yet" body="This chat stays synced as messages arrive or are sent." /></div>
+        ) : messages.map((message) => (
+          <div key={message.id} className={cn('flex', message.direction === 'outbound' ? 'justify-end' : 'justify-start')}>
+            <div className={cn('max-w-[85%] rounded-2xl px-3 py-2 text-sm shadow-sm', message.direction === 'outbound' ? 'rounded-br-md bg-emerald-100 text-slate-900 dark:bg-emerald-900 dark:text-slate-50' : 'rounded-bl-md bg-white text-slate-800 dark:bg-slate-800 dark:text-slate-100')}>
+              <p className="whitespace-pre-wrap">{message.body || 'Attachment'}</p>
+              <p className="mt-1 text-right text-2xs opacity-60">{new Date(message.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+      <footer className="border-t border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+        {!windowOpen && conversation && <div className="mb-2 flex flex-wrap items-center gap-2"><p className="text-2xs text-amber-700 dark:text-amber-300">This WhatsApp session is closed. Send an approved template.</p><select className="input h-8 min-w-48 py-1 text-xs" value={templateName} onChange={(event) => setTemplateName(event.target.value)}><option value="">Choose template…</option>{availableTemplates.filter((template) => ['APPROVED', 'LOCAL'].includes(template.status)).map((template) => <option key={template.name} value={template.name}>{template.name}</option>)}</select></div>}
+        <div className="flex items-end gap-2">
+          <textarea className="input min-h-10 flex-1 resize-none" rows={2} value={text} onChange={(event) => setText(event.target.value)} placeholder="Write a WhatsApp message…" disabled={Boolean(conversation && !windowOpen) || !phone} />
+          <button className="btn-primary btn-sm px-3" onClick={() => void send()} disabled={(!text.trim() && !(conversation && !windowOpen && templateName)) || sending || !phone} aria-label="Send WhatsApp message">{sending ? <Spinner className="h-4 w-4" /> : <Send className="h-4 w-4" />}</button>
+        </div>
+      </footer>
+    </section>
   );
 }
 

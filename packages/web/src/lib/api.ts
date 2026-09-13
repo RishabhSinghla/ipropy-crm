@@ -1014,6 +1014,8 @@ export const api = {
   replySuggestions: (id: string) => get<{ suggestions: string[] }>(`/api/comms/conversations/${id}/suggestions`),
   whatsappTemplates: () => get<Record<string, unknown>[]>('/api/comms/templates'),
   emailTemplates: () => get<Record<string, unknown>[]>('/api/comms/email/templates'),
+  createEmailTemplate: (data: Record<string, unknown>) => post<{ id: string }>('/api/comms/email/templates', data),
+  deleteEmailTemplate: (id: string) => del(`/api/comms/email/templates/${id}`),
   broadcast: (data: Record<string, unknown>) => post<{ queued: number }>('/api/comms/broadcast', data),
 
   // --- outreach: the per-record WhatsApp hand-off ---------------------------

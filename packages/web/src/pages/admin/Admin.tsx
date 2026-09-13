@@ -3,7 +3,7 @@ import { type JSX, lazy, Suspense } from 'react';
 import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {
   Activity, AppWindow, Blocks, Database, KeyRound, LayoutTemplate, Link2, MapPin,
-  ListTree, Plug, Ruler, Settings2, Shield, Sparkles, Tag, ToggleLeft, Users, Workflow,
+  ListTree, MessageSquareText, Plug, Ruler, Settings2, Shield, Sparkles, Tag, ToggleLeft, Users, Workflow,
   SlidersHorizontal,
 } from 'lucide-react';
 import { Spinner } from '../../components/ui';
@@ -27,6 +27,7 @@ const HeaderTabsAdmin = lazy(() => import('./HeaderTabsAdmin'));
 const MatchingSetupAdmin = lazy(() => import('./MatchingSetupAdmin'));
 const UnitMasterAdmin = lazy(() => import('./UnitMasterAdmin'));
 const TagsAdmin = lazy(() => import('./TagsAdmin'));
+const TemplatesAdmin = lazy(() => import('./TemplatesAdmin'));
 
 /*
   Every section names the capability that opens it.
@@ -76,6 +77,7 @@ const SECTIONS = [
     group: 'Platform',
     items: [
       { path: 'integrations', capability: 'admin.integrations', label: 'Integrations', icon: Plug, element: <IntegrationsAdmin /> },
+      { path: 'templates', capability: 'whatsapp.templates', label: 'Message Templates', icon: MessageSquareText, element: <TemplatesAdmin /> },
       { path: 'settings', capability: 'admin.access', label: 'Settings', icon: SlidersHorizontal, element: <SettingsAdmin /> },
       { path: 'brand', capability: 'admin.access', label: 'Brand & Social', icon: Sparkles, element: <BrandAdmin /> },
       { path: 'system', capability: 'admin.audit', label: 'System & Audit', icon: Activity, element: <SystemAdmin /> },
