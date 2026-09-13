@@ -29,9 +29,17 @@ data is not code:
   The projects catalogue and the cities list are consequently empty, which is the correct answer,
   and the website no longer offers those sections rather than linking to empty pages. Nothing to
   restore here.
-* **No model answers.** A provider key is saved, but the model ids in Admin → Settings → AI models
-  are OpenRouter ones and override the provider's own. Photo naming, listing copy, voiceover and
-  semantic search are all inert until that is settled — quietly, by design.
+* **The AI stack answers.** Checked against production on 13 September 2026:
+  `ipy_embedding` holds **2,011 rows** across leads and properties, written by
+  `nvidia/nemotron-3-embed-1b:free`, the newest that morning — so semantic search indexes on its
+  own. Gemini, Groq and OpenRouter are all active with keys. Every job in Admin → Settings → AI
+  models has a usable id, and the one empty box (`ai_models.copy`) falls back to the model the
+  photo-reading job already uses successfully — see `core/settings/aiModels.ts`.
+
+  This bullet said the opposite for weeks, and the claim that "the model ids are wrong" has now
+  been the wrong diagnosis five times. What has *not* been measured is output **quality**: the
+  plumbing runs, and whether the listing copy is worth publishing is a separate question nobody
+  has answered.
 * Storage, backups, always-on hosting and real accounts are deployment checks owned outside this
   repository.
 
@@ -46,7 +54,8 @@ CRM every two hours: a failure opens an issue, a recovery closes it, so the issu
 incident log.
 
 See [`DEPLOYMENT.md`](DEPLOYMENT.md) and **Admin → System & Audit → Go live** before importing real
-data.
+data. When something breaks, [`RUNBOOK.md`](RUNBOOK.md) is the shortest safe path back — written to
+be usable from a phone, by one person, at night.
 
 ---
 

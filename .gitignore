@@ -61,3 +61,23 @@ packages/app/ios/App/App/public/
 # The app signing key. Losing it means no handset can ever take an update.
 packages/app/android/ipropy-release.keystore
 packages/app/android/*.keystore
+
+# Per-machine AI agent wiring.
+#
+# `graft` regenerates these on every session from whatever agents are installed
+# on that machine, so they are local configuration, not project files. Left
+# tracked they show up as untracked clutter in every `git status` for every
+# person and every agent working here, which is how a real change gets missed
+# in the noise.
+.cursor/
+.gemini/
+.windsurf/
+.antigravity/
+.hermes/
+AGENTS.md
+GEMINI.md
+opencode.json
+
+# Xcode's own local state for Swift package resolution.
+packages/app/ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+packages/app/ios/App/App.xcodeproj/project.xcworkspace/xcuserdata/

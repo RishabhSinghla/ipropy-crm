@@ -18,8 +18,7 @@
 import { type JSX, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
-import type { FieldMeta, LayoutConfig, RecordEnvelope } from '@ipropy/shared';
-import { relativeTime, toInternational } from '@ipropy/shared';
+import { type FieldMeta, type LayoutConfig, relativeTime, toInternational } from '@ipropy/shared';
 import { FileText, ImagePlus, MessageCircle, MoreVertical, Phone, Share2, StickyNote, Trash2 } from 'lucide-react';
 import { api, ApiError, authedFileUrl } from '../lib/api';
 import { toast } from '../lib/store';

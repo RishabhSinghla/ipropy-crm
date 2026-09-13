@@ -53,6 +53,15 @@ jobs:
         run: npm ci
       - name: Typecheck
         run: npm run typecheck
+      # After typecheck, before the tests. Lint was never a gate here, and in
+      # the gap it accumulated twenty-three errors — an unused import left by
+      # the telephony removal, a duplicated `bandPrice` whose working copy is
+      # forty lines further down, a whole retired editor component nothing
+      # rendered. None of them broke anything; all of them were noise hiding
+      # the next one. Placed above the tests but below typecheck so a style
+      # error never masks a compile error.
+      - name: Lint
+        run: npm run lint
       - name: Build
         run: npm run build
       - name: Unit tests

@@ -44,6 +44,10 @@ describe('universal export engine', () => {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(file.content);
     const sheet = workbook.getWorksheet('Export')!;
+    // The hole is deliberate: ExcelJS numbers columns from 1, so `values[0]`
+    // is always empty. Writing `undefined` there would read as a column whose
+    // header we forgot rather than a column that does not exist.
+    // eslint-disable-next-line no-sparse-arrays
     expect(sheet.getRow(1).values).toEqual([, 'Asking price', 'Owner phone']);
     expect(sheet.getRow(2).getCell(1).value).toBe(16000000);
     expect(sheet.getRow(2).getCell(2).value).toBe('09876543210');

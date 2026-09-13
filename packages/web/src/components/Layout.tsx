@@ -280,7 +280,6 @@ function NewRecordButton({ modules }: { modules: ModuleSummary[] }): JSX.Element
   const creatable = modules.filter((m) => m.permissions.create);
   const [creating, setCreating] = useState<ModuleSummary | null>(null);
   const queryClient = useQueryClient();
-  const user = useApp((state) => state.user);
   const { data: createMeta, isLoading } = useQuery({
     queryKey: ['module', creating?.name],
     queryFn: () => api.module(creating!.name),

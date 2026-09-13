@@ -1,6 +1,7 @@
 # CLAUDE.md — permanent instructions for iPropy CRM
 
 Read `PROJECT_HANDOVER.md` for full context (architecture, state, roadmap, known bugs).
+Read `RUNBOOK.md` when production is misbehaving — it is the incident path, not the architecture.
 This file is the short list of rules that must hold in **every** session.
 
 ---
@@ -316,7 +317,7 @@ packages/server/src/core/query/builder.ts          filters → SQL
 packages/server/src/core/permissions/index.ts      4-layer access control
 packages/server/src/db/seed/templates/          starting data models, one file per trade
 packages/web/src/components/FieldRenderer.tsx      metadata → UI
-packages/server/src/core/capture/                  shoot sessions, EXIF matching, grouping, vision
+packages/server/src/core/media/                    images, video, transcode, ordering, archive
 packages/server/src/ai/client.ts                   two transports; `images` is what carries photos
 AI-ARCHITECTURE.md                                 what the AI stack already has, and what it must not grow
 ```
@@ -390,8 +391,12 @@ back into TypeScript would reverse that.
   subdomain is one CNAME to `ipropy-crm.onrender.com`, and `APP_URL` must list
   every origin the app answers on or the browser is refused and **passkey sign-in
   breaks**, since the relying-party check reads that list.
-* Still open: no error-reporting DSN pasted in (the Sentry code is complete and
-  applies a pasted DSN without a redeploy), and no staging environment.
+* **Error reporting is live.** `GET /api/public/client-config` on production
+  serves a real Sentry DSN, environment `production`, checked 13 September 2026.
+  This line said a DSN had never been pasted in; it had. Still open: **no
+  staging environment**, which remains the real gap — every change is proved
+  against production or against a developer's laptop, and there is nothing in
+  between.
 
 ### Two bugs the restored gate caught immediately
 
@@ -427,8 +432,14 @@ Both were mine, both invisible, and both had been live for a day or more.
 * Dashboard drag-to-resize is wired (react-grid-layout on desktop, persisted via `saveDashboardLayout`).
 * **AI answers now.** An OpenRouter key is saved and listing copy, reading photos and voiceover all
   work on production. Six of the eight model jobs pass their Test button.
-* **Two jobs still fail, and it is not the id and not the request.** Search (embed) and
-  Reorder (rerank) both go to endpoints that exist (`/embeddings` and `/rerank` answer 401
+* **Embed works; rerank is still unproven.** Search (embed) is settled —
+  `ipy_embedding` held 2,011 rows on 13 September 2026, newest that morning,
+  written by the very id this section was drafted to blame. Rerank leaves
+  nothing behind to inspect, so it is unverified rather than known-broken. The
+  original note is kept below because its *reasoning* is what matters and has
+  been right five times: do not guess replacement ids.
+
+  Search (embed) and Reorder (rerank) both go to endpoints that exist (`/embeddings` and `/rerank` answer 401
   unauthenticated, where a made-up path answers 404), with ids OpenRouter itself lists under those
   exact modalities, in the request shape its own documentation prints. All three were checked. So
   what is left is account-side — most likely the free NVIDIA endpoints needing the data-policy

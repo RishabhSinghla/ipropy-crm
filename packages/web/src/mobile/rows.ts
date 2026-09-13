@@ -5,8 +5,7 @@
  * browser — these are the rules that decide whether a rep can recognise
  * somebody at a glance, and they are worth pinning. Nothing here imports React.
  */
-import type { FieldMeta, RecordEnvelope } from '@ipropy/shared';
-import { toInternational } from '@ipropy/shared';
+import { type FieldMeta, type RecordEnvelope, toInternational } from '@ipropy/shared';
 
 /*
   Eight hues, picked by name.

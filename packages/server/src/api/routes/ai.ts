@@ -101,7 +101,7 @@ aiRouter.get('/status', asyncHandler(async (_req, res) => {
     does. The browser knows which path to take only if we tell it.
   */
   const { getSettings } = await import('../../core/settings/integrations.js');
-  let speechToText = false;
+  let speechToText: boolean;
   try {
     speechToText = isSttConfigured(getSettings().stt);
   } catch {

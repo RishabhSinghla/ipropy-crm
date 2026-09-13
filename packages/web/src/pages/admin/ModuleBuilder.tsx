@@ -792,68 +792,6 @@ function ValueInput({
   );
 }
 
-/** The editable list behind an area's units or a phone's country codes. */
-function OptionListEditor({
-  title, hint, options, onChange, valuePlaceholder, labelPlaceholder,
-}: {
-  title: string;
-  hint: string;
-  options: { value: string; label: string }[];
-  onChange: (next: { value: string; label: string }[]) => void;
-  valuePlaceholder: string;
-  labelPlaceholder: string;
-}): JSX.Element {
-  const set = (i: number, patch: Partial<{ value: string; label: string }>): void =>
-    onChange(options.map((o, j) => (j === i ? { ...o, ...patch } : o)));
-
-  return (
-    <div>
-      <label className="label">{title}</label>
-      <p className="mb-1.5 text-2xs text-muted">{hint}</p>
-      <div className="space-y-1.5">
-        {options.map((o, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <input
-              className="input w-24 py-1.5 font-mono text-xs"
-              value={o.value}
-              onChange={(e) => set(i, { value: e.target.value })}
-              placeholder={valuePlaceholder}
-              aria-label="Stored value"
-            />
-            <input
-              className="input min-w-0 flex-1 py-1.5 text-xs"
-              value={o.label}
-              onChange={(e) => set(i, { label: e.target.value })}
-              placeholder={labelPlaceholder}
-              aria-label="Shown to the user"
-            />
-            <button
-              type="button"
-              onClick={() => onChange(options.filter((_, j) => j !== i))}
-              className="btn-ghost btn-sm shrink-0 text-slate-400 hover:text-red-500"
-              aria-label={`Remove ${o.label || o.value}`}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        ))}
-        <button
-          type="button"
-          onClick={() => onChange([...options, { value: '', label: '' }])}
-          className="btn-secondary btn-sm"
-        >
-          <Plus className="h-3 w-3" /> Add
-        </button>
-        {options.length === 0 && (
-          <p className="text-2xs text-muted">
-            Empty means the built-in list is used.
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function FieldEditor({
   module, field, onClose, onSaved,
 }: {
@@ -904,11 +842,6 @@ function FieldEditor({
   const [codePrefix, setCodePrefix] = useState(
     (field?.config.codePrefix as string) ?? (field ? '' : '+91'),
   );
-  const [listOptions, setListOptions] = useState<{ value: string; label: string }[]>(
-    (field?.config.unitOptions as { value: string; label: string }[])
-      ?? (field?.config.countryCodes as { value: string; label: string }[])
-      ?? [],
-  );
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [invalidStrategy, setInvalidStrategy] = useState<'blank' | 'default' | 'keep'>('blank');
 
@@ -949,13 +882,18 @@ function FieldEditor({
     ? String(codeSourceField.config.picklist)
     : '';
 
-  /**
-   * Country codes stopped being a list an admin maintains (migration 064). A
-   * phone field now carries the one code it puts in front of the box, so this
-   * editor offers a box for that code rather than a table of countries nobody
-   * in this business dials.
-   */
-  const supportsOptionList = false;
+  /*
+    Country codes stopped being a list an admin maintains (migration 064). A
+    phone field now carries the one code it puts in front of the box, so this
+    editor offers a box for that code rather than a table of countries nobody
+    in this business dials.
+
+    This used to be `const supportsOptionList = false` guarding an
+    `OptionListEditor` below it. Neither was read by anything: the flag was
+    never tested and the editor was never rendered, so the feature had been
+    retired in fact as well as in intent. Both removed; the reason is kept
+    because it is the answer to "why can I not edit the country list".
+  */
   /** Only a scalar can be compared to another field of the same kind. */
   const comparable = COMPARABLE.includes(uitype);
 

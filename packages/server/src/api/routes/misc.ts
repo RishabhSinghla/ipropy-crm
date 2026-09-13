@@ -47,7 +47,7 @@ import {
   detectTemplate, listTemplates, recordUse, resolveMapping, resolveValues, toFieldIds,
 } from '../../core/import/templates.js';
 import {
-  DEFAULT_CONTEXT, detectDateOrder, normaliseForField,
+  DEFAULT_CONTEXT, detectDateOrder,
   type DateOrder, type NormaliseContext,
 } from '../../core/import/normalise.js';
 import { growPicklists, growableFields } from '../../core/import/picklistGrowth.js';
