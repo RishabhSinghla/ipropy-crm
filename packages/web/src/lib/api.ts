@@ -1012,6 +1012,7 @@ export const api = {
   // --- comms --------------------------------------------------------------
   conversations: (params: Record<string, unknown> = {}) =>
     get<Record<string, unknown>[]>(`/api/comms/conversations${qs(params)}`),
+  whatsappWebMessagingAccounts: () => get<{ id: string; label: string; phoneNumber: string | null; displayName: string | null }[]>('/api/comms/whatsapp-web/accounts'),
   conversation: (id: string) => get<Record<string, unknown>>(`/api/comms/conversations/${id}`),
   sendMessage: (conversationId: string, data: Record<string, unknown>) =>
     post(`/api/comms/conversations/${conversationId}/messages`, data),

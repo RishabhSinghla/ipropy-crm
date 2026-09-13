@@ -466,7 +466,18 @@ export async function sendMessage(input: SendMessageInput): Promise<{ messageId:
     ],
   );
 
-  if (webAccountId) await db.query(`UPDATE ipy_message SET whatsapp_web_account_id = $2 WHERE id = $1`, [message!.id, webAccountId]);
+  if (webAccountId) {
+    await db.query(`UPDATE ipy_message SET whatsapp_web_account_id = $2 WHERE id = $1`, [message!.id, webAccountId]);
+    // A thread may predate the Web account (for example, it contains old Meta
+    // messages). Keep the account on the conversation too, so the reply path
+    // remains deterministic after a refresh.
+    await db.query(
+      `UPDATE ipy_conversation
+       SET whatsapp_web_account_id = COALESCE(whatsapp_web_account_id, $2)
+       WHERE id = $1`,
+      [conversationId, webAccountId],
+    );
+  }
 
   await db.query(
     `UPDATE ipy_conversation SET last_message_at = now(), last_message_preview = $2, updated_at = now() WHERE id = $1`,

@@ -151,6 +151,19 @@ export async function connect(accountId: string): Promise<void> {
     if (event.type !== 'notify') return;
     for (const message of event.messages) void receiveMessage(accountId, message).catch((err) => logger.error({ err, accountId }, 'WhatsApp Web inbound message failed'));
   });
+  socket.ev.on('messages.update', (updates) => {
+    for (const { key, update } of updates) {
+      if (!key.id || typeof update.status !== 'number') continue;
+      // Baileys uses WebMessageInfo acknowledgement values. We store the
+      // human-facing state already used by the Meta connector, so timeline
+      // receipts behave identically whichever WhatsApp channel sent it.
+      const status = update.status === 5 ? 'failed'
+        : update.status >= 3 ? 'read'
+          : update.status === 2 ? 'delivered'
+            : update.status === 1 ? 'sent' : null;
+      if (status) void conversations.handleStatusUpdate(key.id, status).catch((err) => logger.warn({ err, accountId, messageId: key.id }, 'could not store WhatsApp Web receipt'));
+    }
+  });
   await log(accountId, 'connect_started');
 }
 
