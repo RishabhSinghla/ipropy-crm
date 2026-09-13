@@ -18,6 +18,28 @@ import { recordService } from '../../core/entity/recordService.js';
 export const commsRouter = Router();
 commsRouter.use(requireAuth);
 
+/**
+ * Accounts a rep may use to send a WhatsApp Web reply.  This deliberately
+ * exposes neither QR codes nor encrypted session state; those stay in Admin
+ * → Integrations.  Regular users only need an honest choice of connected
+ * business numbers when replying from a record.
+ */
+commsRouter.get('/whatsapp-web/accounts', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'whatsapp.send');
+  const rows = await db.query<{ id: string; label: string; phone_number: string | null; display_name: string | null }>(
+    `SELECT id, label, phone_number, display_name
+     FROM ipy_whatsapp_web_account
+     WHERE status = 'connected'
+     ORDER BY last_connected_at DESC, created_at ASC`,
+  );
+  res.json(rows.rows.map((row) => ({
+    id: row.id,
+    label: row.label,
+    phoneNumber: row.phone_number,
+    displayName: row.display_name,
+  })));
+}));
+
 // ---------------------------------------------------------------------------
 // Inbox
 // ---------------------------------------------------------------------------
@@ -134,6 +156,7 @@ const sendSchema = z.object({
     filename: z.string().optional(),
   }).optional(),
   buttons: z.array(z.object({ id: z.string(), title: z.string().max(20) })).max(3).optional(),
+  webAccountId: z.string().uuid().nullable().optional(),
   isAiGenerated: z.boolean().optional(),
 });
 

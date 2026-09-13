@@ -1037,6 +1037,7 @@ function WhatsAppChat({ module, record }: { module: string; record: RecordEnvelo
   const queryClient = useQueryClient();
   const [text, setText] = useState('');
   const [templateName, setTemplateName] = useState('');
+  const [webAccountId, setWebAccountId] = useState('');
   const [sending, setSending] = useState(false);
   const phone = String(record.values.whatsapp_number ?? record.values.mobile ?? record.values.phone ?? '').trim();
   const { data: conversations, isLoading: conversationsLoading } = useQuery({
@@ -1054,20 +1055,27 @@ function WhatsAppChat({ module, record }: { module: string; record: RecordEnvelo
   const thread = detail as { messages?: { id: string; direction: 'inbound' | 'outbound'; body?: string | null; created_at: string; status?: string }[]; windowOpen?: boolean } | undefined;
   const messages = thread?.messages ?? [];
   const windowOpen = thread?.windowOpen ?? conversation?.windowOpen ?? false;
+  const { data: webAccounts } = useQuery({
+    queryKey: ['whatsapp-web-messaging-accounts'], queryFn: api.whatsappWebMessagingAccounts,
+  });
+  const usingWeb = Boolean(webAccountId);
+  const recipientAvailable = Boolean(phone || conversation?.handle);
   const { data: templates } = useQuery({ queryKey: ['wa-templates'], queryFn: api.whatsappTemplates });
   const availableTemplates = (templates ?? []) as { name: string; body_text: string; status: string }[];
 
   const send = async (): Promise<void> => {
     const body = text.trim();
     if ((!body && !templateName) || sending) return;
-    if (!phone && !conversation?.id) {
+    if (!recipientAvailable) {
       toast.error('No WhatsApp number', 'Add a mobile or WhatsApp number to start this chat.');
       return;
     }
     setSending(true);
     try {
-      if (conversation?.id) await api.sendMessage(conversation.id, windowOpen ? { text: body } : { templateName });
-      else await api.startConversation({ to: phone, text: body });
+      if (conversation?.id) await api.sendMessage(conversation.id, usingWeb
+        ? { text: body, webAccountId }
+        : windowOpen ? { text: body } : { templateName });
+      else await api.startConversation({ to: phone, text: body, ...(usingWeb ? { webAccountId } : {}) });
       setText('');
       setTemplateName('');
       await Promise.all([
@@ -1091,7 +1099,10 @@ function WhatsAppChat({ module, record }: { module: string; record: RecordEnvelo
           <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"><MessageCircle className="h-4 w-4" /></span>
           <div><h2 className="text-sm font-semibold">WhatsApp Chat</h2><p className="text-2xs text-muted">{phone || conversation?.handle || 'No WhatsApp number'} · synced automatically</p></div>
         </div>
-        {conversation && <Badge color={windowOpen ? '#16a34a' : '#64748b'}>{windowOpen ? 'Chat open' : 'Template required'}</Badge>}
+        <div className="flex items-center gap-2">
+          {(webAccounts?.length ?? 0) > 0 && <select className="input h-8 max-w-48 py-1 text-xs" value={webAccountId} onChange={(event) => setWebAccountId(event.target.value)} aria-label="WhatsApp sending account"><option value="">Meta WhatsApp</option>{webAccounts?.map((account) => <option key={account.id} value={account.id}>{account.label}{account.phoneNumber ? ` (${account.phoneNumber})` : ''}</option>)}</select>}
+          {conversation && <Badge color={usingWeb || windowOpen ? '#16a34a' : '#64748b'}>{usingWeb ? 'Web WhatsApp' : windowOpen ? 'Chat open' : 'Template required'}</Badge>}
+        </div>
       </header>
       <div className="flex-1 space-y-3 bg-[#efeae2]/50 p-4 dark:bg-slate-950/40">
         {!conversation ? (
@@ -1108,10 +1119,11 @@ function WhatsAppChat({ module, record }: { module: string; record: RecordEnvelo
         ))}
       </div>
       <footer className="border-t border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-        {!windowOpen && conversation && <div className="mb-2 flex flex-wrap items-center gap-2"><p className="text-2xs text-amber-700 dark:text-amber-300">This WhatsApp session is closed. Send an approved template.</p><select className="input h-8 min-w-48 py-1 text-xs" value={templateName} onChange={(event) => setTemplateName(event.target.value)}><option value="">Choose template…</option>{availableTemplates.filter((template) => ['APPROVED', 'LOCAL'].includes(template.status)).map((template) => <option key={template.name} value={template.name}>{template.name}</option>)}</select></div>}
+        {!usingWeb && !windowOpen && conversation && <div className="mb-2 flex flex-wrap items-center gap-2"><p className="text-2xs text-amber-700 dark:text-amber-300">This WhatsApp session is closed. Send an approved template.</p><select className="input h-8 min-w-48 py-1 text-xs" value={templateName} onChange={(event) => setTemplateName(event.target.value)}><option value="">Choose template…</option>{availableTemplates.filter((template) => ['APPROVED', 'LOCAL'].includes(template.status)).map((template) => <option key={template.name} value={template.name}>{template.name}</option>)}</select></div>}
+        {usingWeb && <p className="mb-2 text-2xs text-emerald-700 dark:text-emerald-300">Sending through the linked WhatsApp Web account. Replies and receipts sync to this chat.</p>}
         <div className="flex items-end gap-2">
-          <textarea className="input min-h-10 flex-1 resize-none" rows={2} value={text} onChange={(event) => setText(event.target.value)} placeholder="Write a WhatsApp message…" disabled={Boolean(conversation && !windowOpen) || !phone} />
-          <button className="btn-primary btn-sm px-3" onClick={() => void send()} disabled={(!text.trim() && !(conversation && !windowOpen && templateName)) || sending || !phone} aria-label="Send WhatsApp message">{sending ? <Spinner className="h-4 w-4" /> : <Send className="h-4 w-4" />}</button>
+          <textarea className="input min-h-10 flex-1 resize-none" rows={2} value={text} onChange={(event) => setText(event.target.value)} placeholder={usingWeb ? 'Write a WhatsApp Web message…' : 'Write a WhatsApp message…'} disabled={Boolean(conversation && !windowOpen && !usingWeb) || !recipientAvailable} />
+          <button className="btn-primary btn-sm px-3" onClick={() => void send()} disabled={(!text.trim() && !(conversation && !windowOpen && !usingWeb && templateName)) || sending || !recipientAvailable} aria-label="Send WhatsApp message">{sending ? <Spinner className="h-4 w-4" /> : <Send className="h-4 w-4" />}</button>
         </div>
       </footer>
     </section>

@@ -982,6 +982,12 @@ export const api = {
   auditLog: (params: Record<string, unknown> = {}) => get<Record<string, unknown>[]>(`/api/admin/audit${qs(params)}`),
   systemHealth: () => get<Record<string, unknown>>('/api/admin/health'),
   integrations: () => get<IntegrationSummary[]>('/api/admin/integrations'),
+  whatsappWebAccounts: () => get<{ id: string; label: string; phoneNumber: string | null; displayName: string | null; status: string; lastConnectedAt: string | null; lastError: string | null }[]>('/api/admin/integrations/whatsapp-web/accounts'),
+  createWhatsappWebAccount: (label: string) => post('/api/admin/integrations/whatsapp-web/accounts', { label }),
+  connectWhatsappWebAccount: (id: string) => post<{ status: string; qr: string | null }>(`/api/admin/integrations/whatsapp-web/accounts/${id}/connect`, {}),
+  whatsappWebQr: (id: string) => get<{ status: string; qr: string | null }>(`/api/admin/integrations/whatsapp-web/accounts/${id}/qr`),
+  whatsappWebPairingCode: (id: string, phoneNumber: string) => post<{ code: string }>(`/api/admin/integrations/whatsapp-web/accounts/${id}/pairing-code`, { phoneNumber }),
+  disconnectWhatsappWebAccount: (id: string) => post<void>(`/api/admin/integrations/whatsapp-web/accounts/${id}/disconnect`, {}),
   integration: (provider: string) => get<IntegrationSummary>(`/api/admin/integrations/${provider}`),
   integrationModels: (provider: string) =>
     get<IntegrationModelCatalogue>(`/api/admin/integrations/${provider}/models`),
@@ -1006,6 +1012,7 @@ export const api = {
   // --- comms --------------------------------------------------------------
   conversations: (params: Record<string, unknown> = {}) =>
     get<Record<string, unknown>[]>(`/api/comms/conversations${qs(params)}`),
+  whatsappWebMessagingAccounts: () => get<{ id: string; label: string; phoneNumber: string | null; displayName: string | null }[]>('/api/comms/whatsapp-web/accounts'),
   conversation: (id: string) => get<Record<string, unknown>>(`/api/comms/conversations/${id}`),
   sendMessage: (conversationId: string, data: Record<string, unknown>) =>
     post(`/api/comms/conversations/${conversationId}/messages`, data),
