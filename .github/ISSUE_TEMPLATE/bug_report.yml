@@ -1,0 +1,32 @@
+name: Something is broken
+description: A thing in the CRM does not do what it should
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, and what the CRM did instead. A screenshot is worth a paragraph.
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Where
+      description: The page or the URL, e.g. a lead's Matching tab, or /admin/settings.
+    validations:
+      required: true
+  - type: dropdown
+    id: where_seen
+    attributes:
+      label: Where did you see it
+      options:
+        - Production (crm.ipropy.com)
+        - The phone app
+        - A local development machine
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead

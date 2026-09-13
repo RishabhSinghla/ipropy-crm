@@ -5,7 +5,8 @@ taking Vtiger's proven customisation architecture and rebuilding it on a modern 
 
 Everything an admin can change in Vtiger (modules, fields, blocks, layouts, picklists, custom views,
 role hierarchy, sharing rules, workflows, dashboards) is editable at runtime here too — plus WhatsApp,
-telephony, portal lead capture, and an AI layer that scores, matches, drafts and analyses.
+portal lead capture, call logging from the team's own Android handsets, and an AI layer that scores,
+matches, drafts and analyses.
 
 ```
 Node 20 + TypeScript + Express + PostgreSQL 16   ·   React 19 + Vite + Tailwind   ·   pluggable AI providers
@@ -233,7 +234,6 @@ first-response tracking and escalation.
 |---|---|
 | WhatsApp (Meta Cloud API) | Messages logged and marked sent — flows stay testable |
 | WhatsApp via a linked phone (`wa-bridge/`) | Off until a number is linked; sends fall back to the one-tap queue |
-| Telephony (Twilio, Exotel) | Calls logged; click-to-call is a no-op |
 | Facebook Lead Ads, Google Ads | Webhook endpoints live; no inbound traffic |
 | 99acres, MagicBricks, Housing, NoBroker | Generic portal normaliser per source |
 | Email (SMTP/IMAP) | Logged with open tracking |
@@ -288,10 +288,10 @@ packages/
       media/       watermark, image/video derivatives — the processing pipeline
       sharing/     share links (one property, one unguessable URL)
       notifications/ notify()/notifyMany() — row + socket + Web Push, never a raw INSERT
-    integrations/  whatsapp, telephony, email, lead sources
+    integrations/  whatsapp, email, lead sources, device call sync
     ai/            client (Anthropic + any OpenAI-compatible), scoring, matching, drafting,
                    call analysis, assistant
-    api/routes/    auth, metadata, records, views, dashboards, admin, comms, telephony, ai,
+    api/routes/    auth, metadata, records, views, dashboards, admin, comms, ai,
                    webhooks, capture, public, outreach, passkeys, device
   web/
     components/    FieldRenderer (the heart), RecordForm, FilterBuilder, AiAssistant,
@@ -339,7 +339,7 @@ without touching tenant data.
 ## Configuration
 
 Only `DATABASE_URL` and `JWT_SECRET` are required to boot. See `.env.example` for the rest:
-Anthropic, WhatsApp, Twilio/Exotel, SMTP/IMAP, Facebook/Google lead capture, S3 storage, scheduler.
+Anthropic, WhatsApp, SMTP/IMAP, Facebook/Google lead capture, S3 storage, scheduler.
 
 Set `SEED_DEMO_DATA=false` for a clean production install — you get all the metadata, none of the
 sample records.
@@ -367,7 +367,7 @@ before any change is finished.
 
 The engine was also exercised end-to-end against a live Postgres — 63 checks covering auth, metadata,
 list/kanban/filters, detail, timeline, the write path (create → update → audit → duplicate detection
-→ convert → delete), inbox, telephony, inventory, the full admin surface, and permission
+→ convert → delete), inbox, calls, inventory, the full admin surface, and permission
 enforcement across three profiles.
 
 Three real bugs were found and fixed during that pass, all noted in the code:

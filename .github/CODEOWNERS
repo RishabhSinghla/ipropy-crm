@@ -1,0 +1,10 @@
+# Every change is reviewed by the owner. This repository is worked on by several
+# AI agents in parallel as well as by people, so an owner on every path is what
+# stops two of them quietly editing the same file in different directions.
+*                                   @RishabhSinghla
+
+# The parts where a mistake is an outage rather than a bug.
+/packages/server/src/db/migrations/ @RishabhSinghla
+/.github/workflows/                 @RishabhSinghla
+/render.yaml                        @RishabhSinghla
+/Dockerfile                         @RishabhSinghla
