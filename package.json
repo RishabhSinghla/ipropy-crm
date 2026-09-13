@@ -24,7 +24,6 @@
     "check:prod": "npm run check:prod -w @ipropy/server",
     "secrets:generate": "bash scripts/gen-secrets.sh",
     "typecheck": "npm run typecheck -w @ipropy/shared && npm run typecheck -w @ipropy/server && npm run typecheck -w @ipropy/web && npm run typecheck -w @ipropy/mcp",
-    "lint": "eslint .",
     "pretypecheck": "npm run build:deps",
     "test": "npm run test -w @ipropy/server && npm run test -w @ipropy/web && npm run test -w @ipropy/mcp",
     "pretest": "npm run build:deps",
