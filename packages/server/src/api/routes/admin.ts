@@ -1119,6 +1119,14 @@ async function testIntegration(provider: string): Promise<{ ok: boolean; message
       case 'facebook_leads':
         if (!s.leadSources.facebook.pageAccessToken) return { ok: false, message: 'A page access token is required.' };
         return { ok: true, message: 'Page access token is set. Full verification happens on the next inbound lead.' };
+      case 'zapier':
+        return s.leadSources.zapierWebhookKey
+          ? { ok: true, message: 'Zapier webhook secret is set. Send a test lead from Zapier to verify capture.' }
+          : { ok: false, message: 'Generate or enter a Zapier webhook secret first.' };
+      case 'google_rcs': {
+        const { testGoogleRcs } = await import('../../integrations/rcs/google.js');
+        return testGoogleRcs();
+      }
       default:
         return { ok: false, message: 'This provider does not support a connectivity test — save the settings and check the webhook logs instead.' };
     }

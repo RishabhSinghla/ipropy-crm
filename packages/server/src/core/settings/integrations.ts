@@ -100,7 +100,10 @@ export interface ResolvedSettings {
     /** One secret for every property portal. None of them signs a request. */
     portalWebhookKey: string;
     webformPublicKey: string;
+    /** Zapier sends its lead payload here with this shared secret. */
+    zapierWebhookKey: string;
   };
+  rcs: { agentId: string; region: string; serviceAccountJson: string; active: boolean };
   storage: {
     driver: 'local' | 's3' | 'onedrive';
     /** Property folders live in OneDrive regardless of what serves the files. */
@@ -479,6 +482,8 @@ function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
   const fb = map.get('facebook_leads');
   const google = map.get('google_ads');
   const webform = map.get('webform');
+  const zapier = map.get('zapier');
+  const rcs = map.get('google_rcs');
   const s3 = map.get('s3');
   const onedrive = map.get('onedrive');
   const n8n = map.get('n8n');
@@ -565,6 +570,13 @@ function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
       googleAdsWebhookKey: pick(google, 'credentials', 'webhookKey', config.leadSources.googleAdsWebhookKey),
       portalWebhookKey: pick(map.get('webform'), 'credentials', 'portalWebhookKey', config.leadSources.portalWebhookKey),
       webformPublicKey: pick(webform, 'config', 'key', config.leadSources.webformPublicKey) || config.leadSources.webformPublicKey,
+      zapierWebhookKey: pick(zapier, 'credentials', 'webhookKey', ''),
+    },
+    rcs: {
+      agentId: pick(rcs, 'config', 'agentId', ''),
+      region: pick(rcs, 'config', 'region', 'us'),
+      serviceAccountJson: pick(rcs, 'credentials', 'serviceAccountJson', ''),
+      active: Boolean(rcs?.isActive),
     },
     storage: {
       driver: storageDriver,

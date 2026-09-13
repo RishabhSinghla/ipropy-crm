@@ -515,6 +515,8 @@ export async function seedIntegrations(conn: Tx): Promise<void> {
     { provider: 'knowlarity', kind: 'telephony', label: 'Knowlarity' },
     { provider: 'facebook_leads', kind: 'lead_source', label: 'Facebook Lead Ads' },
     { provider: 'google_ads', kind: 'lead_source', label: 'Google Ads Lead Form' },
+    { provider: 'zapier', kind: 'lead_source', label: 'Zapier Lead Capture' },
+    { provider: 'google_rcs', kind: 'messaging', label: 'Google RCS for Business' },
     { provider: 'housing', kind: 'lead_source', label: 'Housing.com' },
     { provider: '99acres', kind: 'lead_source', label: '99acres' },
     { provider: 'magicbricks', kind: 'lead_source', label: 'MagicBricks' },

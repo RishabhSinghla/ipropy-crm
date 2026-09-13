@@ -16,6 +16,7 @@ const WEBHOOK_ENDPOINTS = [
   { label: 'WhatsApp (Meta Cloud API)', path: '/api/webhooks/whatsapp', icon: MessageCircle, note: 'Set as the callback URL in your Meta app. The verify token is set below, under WhatsApp.' },
   { label: 'Facebook Lead Ads', path: '/api/webhooks/leads/facebook', icon: Globe, note: 'Subscribe your page to the leadgen field.' },
   { label: 'Google Ads lead form', path: '/api/webhooks/leads/google', icon: Globe, note: 'Paste as the webhook URL; the key must match what you set below, under Google Ads.' },
+  { label: 'Zapier lead capture', path: '/api/webhooks/leads/zapier', icon: Webhook, note: 'Use this in Zapier Webhooks by Zapier. Send the secret below as the X-Zapier-Secret header.' },
   { label: '99acres', path: '/api/webhooks/leads/portal/99acres', icon: Globe, note: 'Give this URL to your portal account manager.' },
   { label: 'MagicBricks', path: '/api/webhooks/leads/portal/magicbricks', icon: Globe },
   { label: 'Housing.com', path: '/api/webhooks/leads/portal/housing', icon: Globe },
@@ -140,6 +141,14 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
   google_ads: [
     { key: 'webhookKey', label: 'Webhook Key', source: 'credentials', secret: true },
   ],
+  zapier: [
+    { key: 'webhookKey', label: 'Zapier Webhook Secret', source: 'credentials', secret: true, placeholder: 'Generate a long random secret' },
+  ],
+  google_rcs: [
+    { key: 'agentId', label: 'RCS Agent ID', source: 'config', placeholder: 'Your launched Google RBM agent ID' },
+    { key: 'region', label: 'RBM Region', source: 'config', placeholder: 'us' },
+    { key: 'serviceAccountJson', label: 'Google Service Account JSON', source: 'credentials', secret: true, placeholder: '{ "client_email": "…", "private_key": "…" }' },
+  ],
   s3: [
     { key: 'driver', label: 'Where files are saved — type "s3" to use the cloud, "local" for this server', source: 'config', placeholder: 'local' },
     { key: 'bucket', label: 'Bucket name', source: 'config', placeholder: 'ipropy-files' },
@@ -164,7 +173,7 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
 const TESTABLE = new Set([
   'meta_whatsapp', 'smtp', 'imap', 'facebook_leads',
   'anthropic', 'ai_gemini', 'ai_groq', 'ai_openrouter', 'ai_openai',
-  'stt', 'onedrive', 'sentry', 'fcm',
+  'stt', 'onedrive', 'sentry', 'fcm', 'zapier', 'google_rcs',
 ]);
 
 /**
@@ -200,6 +209,14 @@ const PROVIDER_HINTS: Record<string, { text: string; href?: string; linkLabel?: 
     text: 'Any OpenAI-compatible endpoint — OpenAI, Together, Fireworks, vLLM.',
     href: 'https://platform.openai.com/api-keys',
     linkLabel: 'Get a key',
+  },
+  zapier: {
+    text: 'Create a Zap with Webhooks by Zapier → POST. Map full_name, mobile, email and message; add the secret as X-Zapier-Secret.',
+    href: 'https://zapier.com/apps/webhook/integrations', linkLabel: 'Open Zapier',
+  },
+  google_rcs: {
+    text: 'Requires a launched Google RCS for Business agent. Test devices can receive messages before the agent is launched.',
+    href: 'https://developers.google.com/business-communications/rcs-business-messaging/guides/overview', linkLabel: 'RCS setup guide',
   },
 };
 

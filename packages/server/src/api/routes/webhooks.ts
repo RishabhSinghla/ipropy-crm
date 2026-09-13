@@ -227,6 +227,30 @@ webhooksRouter.post('/leads/google', asyncHandler(async (req, res) => {
     .catch((err) => logger.error({ err }, 'google lead capture failed'));
 }));
 
+/**
+ * Zapier's Catch Hook posts a lead directly here. The shared secret is sent as
+ * X-Zapier-Secret, so the URL is safe to copy into a Zap without becoming an
+ * anonymous public lead-creation endpoint.
+ */
+webhooksRouter.post('/leads/zapier', asyncHandler(async (req, res) => {
+  const expected = getSettings().leadSources.zapierWebhookKey;
+  const supplied = String(req.header('x-zapier-secret') ?? '');
+  if (!expected || !safeEqual(expected, supplied)) throw new UnauthorizedError('Invalid Zapier webhook secret');
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const name = String(body.full_name ?? body.name ?? body.first_name ?? 'Unknown').trim();
+  const first = String(body.first_name ?? name.split(/\s+/)[0] ?? 'Unknown');
+  const last = String(body.last_name ?? name.split(/\s+/).slice(1).join(' '));
+  const externalId = String(body.id ?? body.lead_id ?? body.zapier_id ?? crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex'));
+  res.status(202).json({ received: true });
+  void captureLead('zapier', body, {
+    firstName: first, lastName: last, email: typeof body.email === 'string' ? body.email : undefined,
+    mobile: typeof body.mobile === 'string' ? body.mobile : typeof body.phone === 'string' ? body.phone : undefined,
+    source: String(body.source ?? 'Zapier'), subSource: typeof body.sub_source === 'string' ? body.sub_source : 'Zapier',
+    message: typeof body.message === 'string' ? body.message : typeof body.notes === 'string' ? body.notes : undefined,
+    externalId,
+  }, { externalId }).catch((err) => logger.error({ err }, 'zapier lead capture failed'));
+}));
+
 /** Generic portal endpoint: /webhooks/leads/portal/99acres, /magicbricks, … */
 webhooksRouter.post('/leads/portal/:portal', asyncHandler(async (req, res) => {
   const portalMap: Record<string, string> = {
@@ -827,4 +851,3 @@ function safeEqual(expected: string, provided: string): boolean {
   const b = crypto.createHash('sha256').update(provided).digest();
   return crypto.timingSafeEqual(a, b);
 }
-
