@@ -32,7 +32,7 @@
     "@capgo/capacitor-updater": "^8.51.15",
     "@ipropy/shared": "*",
     "@sentry/react": "^10.73.0",
-    "@simplewebauthn/browser": "^13.3.0",
+    "@simplewebauthn/browser": "^14.0.0",
     "@tanstack/react-query": "^5.102.8",
     "clsx": "^2.1.1",
     "leaflet": "^1.9.4",
