@@ -984,6 +984,10 @@ function TimelineTab({ module, id }: { module: string; id: string }): JSX.Elemen
   const { data, isLoading } = useQuery({
     queryKey: ['timeline', module, id, filter],
     queryFn: () => api.timeline(module, id, [filter]),
+    // Messages are a live archive as well as a history. Keep the Messages tab
+    // current while it is open so incoming WhatsApp Web traffic appears here
+    // even if the chat tab is not being viewed.
+    refetchInterval: filter === 'message' ? 3_000 : false,
   });
 
   const filters = TIMELINE_FILTERS;
