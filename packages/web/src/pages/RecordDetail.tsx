@@ -1037,20 +1037,22 @@ function WhatsAppChat({ module, record }: { module: string; record: RecordEnvelo
   const queryClient = useQueryClient();
   const [text, setText] = useState('');
   const [templateName, setTemplateName] = useState('');
+  // Empty means the default linked Web account. Meta is an explicit fallback,
+  // not the default provider for a normal CRM reply.
   const [webAccountId, setWebAccountId] = useState('');
   const [sending, setSending] = useState(false);
   const phone = String(record.values.whatsapp_number ?? record.values.mobile ?? record.values.phone ?? '').trim();
-  const { data: conversations, isLoading: conversationsLoading } = useQuery({
+  const { data: conversations, isLoading: conversationsLoading, refetch: refetchConversations } = useQuery({
     queryKey: ['record-whatsapp', module, record.id],
     queryFn: () => api.conversations({ status: 'all', channel: 'whatsapp', recordId: record.id, recordModule: module, limit: 1 }),
-    refetchInterval: 10_000,
+    refetchInterval: 3_000,
   });
   const conversation = conversations?.[0] as { id: string; windowOpen?: boolean; handle?: string } | undefined;
-  const { data: detail, isLoading: detailLoading } = useQuery({
+  const { data: detail, isLoading: detailLoading, refetch: refetchConversation } = useQuery({
     queryKey: ['conversation', conversation?.id],
     queryFn: () => api.conversation(conversation!.id),
     enabled: Boolean(conversation?.id),
-    refetchInterval: 10_000,
+    refetchInterval: 3_000,
   });
   const thread = detail as { messages?: { id: string; direction: 'inbound' | 'outbound'; body?: string | null; created_at: string; status?: string }[]; windowOpen?: boolean } | undefined;
   const messages = thread?.messages ?? [];
@@ -1058,7 +1060,11 @@ function WhatsAppChat({ module, record }: { module: string; record: RecordEnvelo
   const { data: webAccounts } = useQuery({
     queryKey: ['whatsapp-web-messaging-accounts'], queryFn: api.whatsappWebMessagingAccounts,
   });
-  const usingWeb = Boolean(webAccountId);
+  const hasWebAccount = Boolean(webAccounts?.length);
+  const usingWeb = webAccountId !== 'meta' && hasWebAccount;
+  const webDelivery = webAccountId === 'meta'
+    ? { webAccountId: null }
+    : webAccountId ? { webAccountId } : {};
   const recipientAvailable = Boolean(phone || conversation?.handle);
   const { data: templates } = useQuery({ queryKey: ['wa-templates'], queryFn: api.whatsappTemplates });
   const availableTemplates = (templates ?? []) as { name: string; body_text: string; status: string }[];
@@ -1071,11 +1077,21 @@ function WhatsAppChat({ module, record }: { module: string; record: RecordEnvelo
       return;
     }
     setSending(true);
+    const optimisticId = `sending-${Date.now()}`;
+    if (conversation?.id) {
+      queryClient.setQueryData<{ messages?: typeof messages }>(['conversation', conversation.id], (current) => ({
+        ...current,
+        messages: [...(current?.messages ?? []), {
+          id: optimisticId, direction: 'outbound', body: body || templateName,
+          created_at: new Date().toISOString(), status: 'queued',
+        }],
+      }));
+    }
     try {
       if (conversation?.id) await api.sendMessage(conversation.id, usingWeb
-        ? { text: body, webAccountId }
-        : windowOpen ? { text: body } : { templateName });
-      else await api.startConversation({ to: phone, text: body, ...(usingWeb ? { webAccountId } : {}) });
+        ? { text: body, ...webDelivery }
+        : windowOpen ? { text: body, ...webDelivery } : { templateName, ...webDelivery });
+      else await api.startConversation({ to: phone, text: body, ...webDelivery });
       setText('');
       setTemplateName('');
       await Promise.all([
@@ -1091,6 +1107,11 @@ function WhatsAppChat({ module, record }: { module: string; record: RecordEnvelo
     }
   };
 
+  const refreshChat = async (): Promise<void> => {
+    await Promise.all([refetchConversations(), conversation?.id ? refetchConversation() : Promise.resolve()]);
+    toast.success('WhatsApp chat refreshed');
+  };
+
   if (conversationsLoading || detailLoading) return <Skeleton className="h-[30rem] w-full" />;
   return (
     <section className="card flex min-h-[34rem] flex-col overflow-hidden">
@@ -1100,7 +1121,8 @@ function WhatsAppChat({ module, record }: { module: string; record: RecordEnvelo
           <div><h2 className="text-sm font-semibold">WhatsApp Chat</h2><p className="text-2xs text-muted">{phone || conversation?.handle || 'No WhatsApp number'} · synced automatically</p></div>
         </div>
         <div className="flex items-center gap-2">
-          {(webAccounts?.length ?? 0) > 0 && <select className="input h-8 max-w-48 py-1 text-xs" value={webAccountId} onChange={(event) => setWebAccountId(event.target.value)} aria-label="WhatsApp sending account"><option value="">Meta WhatsApp</option>{webAccounts?.map((account) => <option key={account.id} value={account.id}>{account.label}{account.phoneNumber ? ` (${account.phoneNumber})` : ''}</option>)}</select>}
+          {hasWebAccount && <select className="input h-8 max-w-48 py-1 text-xs" value={webAccountId} onChange={(event) => setWebAccountId(event.target.value)} aria-label="WhatsApp sending account"><option value="">Web WhatsApp (default)</option>{webAccounts?.map((account) => <option key={account.id} value={account.id}>{account.label}{account.phoneNumber ? ` (${account.phoneNumber})` : ''}</option>)}<option value="meta">Meta WhatsApp</option></select>}
+          <button type="button" className="btn-secondary btn-sm h-8 gap-1 px-2 text-xs" onClick={() => void refreshChat()} aria-label="Refresh WhatsApp chat"><RefreshCw className="h-3.5 w-3.5" />Refresh</button>
           {conversation && <Badge color={usingWeb || windowOpen ? '#16a34a' : '#64748b'}>{usingWeb ? 'Web WhatsApp' : windowOpen ? 'Chat open' : 'Template required'}</Badge>}
         </div>
       </header>

@@ -73,10 +73,28 @@ export async function getOrCreateConversation(
 ): Promise<string> {
   const e164 = toE164(handle) ?? handle;
 
-  const existing = await conn.queryOne<{ id: string }>(
+  const existing = await conn.queryOne<{ id: string; record_id: string | null }>(
     `SELECT id FROM ipy_conversation WHERE channel = $1 AND handle = $2`, [channel, e164],
   );
-  if (existing) return existing.id;
+  if (existing) {
+    // Historic conversations can predate the lead that later acquired this
+    // number. Re-link them when the detail page opens so the complete thread,
+    // rather than only newly received messages, appears on the CRM record.
+    if (!existing.record_id) {
+      const resolved = await resolveHandle(e164, conn);
+      if (resolved.recordId) {
+        await conn.query(
+          `UPDATE ipy_conversation
+           SET record_id = $2, record_module = $3,
+               contact_name = COALESCE(contact_name, $4),
+               assigned_to = COALESCE(assigned_to, $5), updated_at = now()
+           WHERE id = $1`,
+          [existing.id, resolved.recordId, resolved.module, resolved.name, resolved.ownerId],
+        );
+      }
+    }
+    return existing.id;
+  }
 
   const resolved = await resolveHandle(e164, conn);
   const row = await conn.queryOne<{ id: string }>(
@@ -299,6 +317,62 @@ export async function handleInbound(msg: InboundMessage): Promise<{ conversation
   });
 }
 
+/**
+ * Store a message sent from the linked WhatsApp phone in the same CRM thread.
+ *
+ * This deliberately does not call captureLead: a team member starting a new
+ * conversation from their phone must not manufacture a lead for the person
+ * they chose to contact. It does, however, use the same provider-id guard as
+ * inbound sync, so Baileys echoing a message that was sent from CRM cannot
+ * create a duplicate bubble.
+ */
+export async function handleWebOutbound(msg: InboundMessage): Promise<{ conversationId: string; messageId: string }> {
+  return transaction(async (tx) => {
+    const conversationId = await getOrCreateConversation(msg.from, 'whatsapp', tx);
+    const duplicate = await tx.queryOne<{ id: string }>(
+      `SELECT id FROM ipy_message WHERE provider = 'web' AND provider_message_id = $1 LIMIT 1`,
+      [msg.providerMessageId],
+    );
+    if (duplicate) return { conversationId, messageId: duplicate.id };
+
+    const now = msg.timestamp ? new Date(msg.timestamp * 1000) : new Date();
+    const body = msg.text ?? msg.caption
+      ?? (msg.location ? `📍 ${msg.location.name ?? `${msg.location.latitude}, ${msg.location.longitude}`}` : null);
+    const media = msg.location
+      ? { location: msg.location, mimeType: 'application/geo+json' }
+      : msg.mediaId ? {
+        mimeType: msg.mimeType ?? 'application/octet-stream', fileName: msg.filename,
+        caption: msg.caption, providerMediaId: msg.mediaId,
+      } : null;
+    const message = await tx.queryOne<{ id: string }>(
+      `INSERT INTO ipy_message
+        (conversation_id, direction, channel, type, body, media, status, provider_message_id, provider, created_at, sent_via)
+       VALUES ($1,'outbound','whatsapp',$2,$3,$4,'sent',$5,'web',$6,'web')
+       RETURNING id`,
+      [conversationId, msg.type, body, media ? JSON.stringify(media) : null, msg.providerMessageId, now],
+    );
+    if (msg.webAccountId) {
+      await tx.query(`UPDATE ipy_message SET whatsapp_web_account_id = $2 WHERE id = $1`, [message!.id, msg.webAccountId]);
+    }
+    await tx.query(
+      `UPDATE ipy_conversation
+       SET whatsapp_web_account_id = COALESCE(whatsapp_web_account_id, $2),
+           last_message_at = $3, last_message_preview = $4, updated_at = now()
+       WHERE id = $1`,
+      [conversationId, msg.webAccountId ?? null, now, (body ?? `[${msg.type}]`).slice(0, 200)],
+    );
+    const conv = await tx.queryOne<{ record_id: string | null }>(
+      `SELECT record_id FROM ipy_conversation WHERE id = $1`, [conversationId],
+    );
+    if (conv?.record_id) await touchActivity(conv.record_id, tx);
+    onCommit(tx, async () => { await bus.emitAsync('message.sent', {
+      conversationId, messageId: message!.id, direction: 'outbound', channel: 'whatsapp',
+      body, handle: msg.from, recordId: conv?.record_id ?? null,
+    }); });
+    return { conversationId, messageId: message!.id };
+  });
+}
+
 /** Provider delivery/read receipts. */
 export async function handleStatusUpdate(
   providerMessageId: string,
@@ -333,7 +407,7 @@ export interface SendMessageInput {
   sentBy?: string | null;
   isAiGenerated?: boolean;
   workflowId?: string | null;
-  /** Explicit WhatsApp Web account. Omit to use Meta, or the only connected Web account when Meta is not configured. */
+  /** Explicit Web account. Omit to use the newest linked Web account; use null to explicitly select Meta. */
   webAccountId?: string | null;
   /**
    * Part of a bulk send rather than a reply somebody typed.
@@ -352,11 +426,14 @@ export async function sendMessage(input: SendMessageInput): Promise<{ messageId:
   if (!handle) throw new BadRequestError('No recipient number for this message');
 
   const conversationId = input.conversationId ?? await getOrCreateConversation(handle);
-  const configuredMeta = await provider.isConfigured();
-  const webAccountId = input.webAccountId
-    ?? (!configuredMeta ? (await db.queryOne<{ id: string }>(
+  // WhatsApp Web is the day-to-day CRM channel. Meta remains available when a
+  // caller explicitly supplies `webAccountId: null`, which keeps both systems
+  // independent without making users choose a provider on every reply.
+  const webAccountId = input.webAccountId === undefined
+    ? (await db.queryOne<{ id: string }>(
       `SELECT id FROM ipy_whatsapp_web_account WHERE status = 'connected' ORDER BY last_connected_at DESC LIMIT 1`,
-    ))?.id ?? null : null);
+    ))?.id ?? null
+    : input.webAccountId;
   const viaWeb = Boolean(webAccountId);
 
   // Outside the 24h window Meta only accepts templates — surface that clearly
