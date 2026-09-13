@@ -7,7 +7,7 @@
 #
 # ffmpeg is here for video, imageio for the walkthrough builder — the one
 # dependency the scripts needed that was missing on the Mac.
-FROM python:3.12-slim-bookworm
+FROM python:3.14-slim-bookworm
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       graphicsmagick \
