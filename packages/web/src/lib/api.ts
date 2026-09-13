@@ -1301,7 +1301,7 @@ export const api = {
   /** A section of a finished import as a downloadable sheet. */
   importResultUrl: (jobId: string, section: ImportSection, name: string) =>
     authedFileUrl(`/api/import/jobs/${jobId}/result.csv`, { section, name }),
-  neighbours: (module: string, id: string, params: { view?: string; sort?: string; dir?: string } = {}) =>
+  neighbours: (module: string, id: string, params: { view?: string; sort?: string; dir?: string; search?: string; filter?: string } = {}) =>
     get<{ prevId: string | null; nextId: string | null; position?: number; total?: number }>(
       `/api/records/${module}/${id}/neighbours${qs(params as Record<string, string>)}`,
     ),

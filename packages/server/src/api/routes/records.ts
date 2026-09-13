@@ -740,9 +740,12 @@ recordsRouter.delete('/:module/:id/related/:relation/:targetId', asyncHandler(as
 recordsRouter.get('/:module/:id/neighbours', asyncHandler(async (req, res) => {
   const scope = getScope(req);
   const { module: moduleName, id } = req.params;
-  const viewId = typeof req.query.view === 'string' && req.query.view ? req.query.view : undefined;
-  const sortParam = typeof req.query.sort === 'string' && req.query.sort ? req.query.sort : undefined;
-  const dirParam = req.query.dir === 'asc' ? 'asc' as const : req.query.dir === 'desc' ? 'desc' as const : undefined;
+  const listInput = parseListInput(req);
+  const viewId = listInput.view;
+  // `sort`/`dir` are retained for old record links; list input uses the
+  // canonical sortBy/sortDir names.
+  const sortParam = listInput.sortBy ?? (typeof req.query.sort === 'string' && req.query.sort ? req.query.sort : undefined);
+  const dirParam = listInput.sortDir ?? (req.query.dir === 'asc' ? 'asc' as const : req.query.dir === 'desc' ? 'desc' as const : undefined);
 
   const current = await recordService.getRecord(scope, moduleName, id);
   const view = viewId
@@ -799,6 +802,16 @@ recordsRouter.get('/:module/:id/neighbours', asyncHandler(async (req, res) => {
     ],
   });
 
+  const queryWithCursor = (cursor: FilterGroup): ListQuery => ({
+    ...(viewId ? { view: viewId } : {}),
+    ...(listInput.search ? { search: listInput.search } : {}),
+    filter: listInput.filter ? { logic: 'AND', conditions: [...listInput.filter.conditions, ...cursor.conditions] } : cursor,
+    sortBy: field,
+    sortDir: dir,
+    page: 1,
+    pageSize: 1,
+  });
+
   const neighbour = async (which: 'prev' | 'next'): Promise<string | null> => {
     // "Next" walks the list in its own direction from the cursor; "prev"
     // walks the same list backwards, so both are one row fetches.
@@ -807,12 +820,8 @@ recordsRouter.get('/:module/:id/neighbours', asyncHandler(async (req, res) => {
       ? atOrTie(dir === 'asc' ? 'greater_than' : 'less_than')
       : atOrTie(dir === 'asc' ? 'less_than' : 'greater_than');
     const result = await recordService.listRecords(scope, moduleName, {
-      ...(viewId ? { view: viewId } : {}),
-      filter,
-      sortBy: field,
+      ...queryWithCursor(filter),
       sortDir: forward ? dir : dir === 'asc' ? 'desc' : 'asc',
-      page: 1,
-      pageSize: 1,
     });
     if (process.env.NEIGHBOUR_DEBUG) console.log("NB", which, JSON.stringify(filter), "row budget:", result.rows[0]?.values?.budget ?? null, result.rows[0]?.id ?? null);
     return result.rows[0]?.id ?? null;
@@ -822,19 +831,11 @@ recordsRouter.get('/:module/:id/neighbours', asyncHandler(async (req, res) => {
   // ids that the browser happened to have rendered on the list page.
   const all = await recordService.listRecords(scope, moduleName, {
     ...(viewId ? { view: viewId } : {}),
-    page: 1,
-    pageSize: 1,
-    sortBy: field,
-    sortDir: dir,
+    ...(listInput.search ? { search: listInput.search } : {}),
+    ...(listInput.filter ? { filter: listInput.filter } : {}),
+    page: 1, pageSize: 1, sortBy: field, sortDir: dir,
   });
-  const before = await recordService.listRecords(scope, moduleName, {
-    ...(viewId ? { view: viewId } : {}),
-    filter: atOrTie(dir === 'asc' ? 'less_than' : 'greater_than'),
-    page: 1,
-    pageSize: 1,
-    sortBy: field,
-    sortDir: dir,
-  });
+  const before = await recordService.listRecords(scope, moduleName, queryWithCursor(atOrTie(dir === 'asc' ? 'less_than' : 'greater_than')));
   res.json({
     prevId: await neighbour('prev'),
     nextId: await neighbour('next'),

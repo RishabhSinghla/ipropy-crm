@@ -1,7 +1,7 @@
 import { type JSX, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { type CustomView, type FieldMeta, type FilterGroup, formatIndianPrice, formatPhoneWithCode, toInternational, type ListQuery, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
+import { isFilterGroup, type CustomView, type FieldMeta, type FilterGroup, formatIndianPrice, formatPhoneWithCode, toInternational, type ListQuery, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Columns3, Compass, Download, Filter,
   LayoutGrid, List, MapPin, MessageCircle, Pencil, Phone, Plus, RefreshCw, Ruler, Save, Search, Settings2, Star, Tag, Trash2, Upload, Users, X,
@@ -59,6 +59,11 @@ export default function ListView(): JSX.Element {
 
 
   const [page, setPage] = useState(1);
+  // Keep the page editor separate from the committed page. A controlled
+  // number input bound straight to `page` immediately rejected its empty
+  // intermediate state, so replacing "1" with "9" required selecting the
+  // old digit first. People should be able to type a destination naturally.
+  const [pageInput, setPageInput] = useState('1');
   // A link's own page size wins for the visit it opens; otherwise the size
   // this user last chose for this module.
   const [pageSize, setPageSizeState] = useState(
@@ -169,6 +174,10 @@ export default function ListView(): JSX.Element {
   }, [moduleName]);
 
   useEffect(() => {
+    setPageInput(String(page));
+  }, [page]);
+
+  useEffect(() => {
     const timer = setTimeout(() => { setSearch(searchInput); setPage(1); }, 300);
     return () => clearTimeout(timer);
   }, [searchInput]);
@@ -223,6 +232,22 @@ export default function ListView(): JSX.Element {
     setSearch('');
     setSearchInput('');
     setSelected(new Set());
+  };
+
+  /** Apply a one-click spreadsheet-style filter without replacing other filters. */
+  const setColumnPicklistFilter = (field: FieldMeta, value: string): void => {
+    setFilter((current) => {
+      const conditions = current.conditions.filter((node) => isFilterGroup(node) || node.field !== field.name);
+      if (value) {
+        conditions.push({
+          field: field.name,
+          operator: field.uitype === 'multipicklist' ? 'has_any' : 'equals',
+          value: field.uitype === 'multipicklist' ? [value] : value,
+        });
+      }
+      return { ...current, conditions };
+    });
+    setPage(1);
   };
 
   const deleteViewMutation = useMutation({
@@ -315,9 +340,6 @@ export default function ListView(): JSX.Element {
     }
   }, [moduleName, hydratedFor, activeView?.id, search, sortBy, sortDir, page, pageSize, filter]);
 
-  /** The URL to come back to — handed to every record link and the New button. */
-  const returnTo = `/${moduleName}${searchParams.toString() ? `?${searchParams}` : ''}`;
-
   /**
    * Owner defaults to whoever is adding the record. Status and stage come from
    * their picklist defaults, which the server also applies — set here so the
@@ -375,6 +397,32 @@ export default function ListView(): JSX.Element {
     enabled: Boolean(moduleName && meta),
     placeholderData: (prev) => prev,
   });
+
+  const commitPageInput = (): void => {
+    const next = Number(pageInput);
+    if (Number.isInteger(next) && next >= 1 && next <= (data?.totalPages ?? 1)) {
+      setPage(next);
+    } else {
+      setPageInput(String(page));
+    }
+  };
+
+  /**
+   * The record detail screen must receive the list as it exists *now*, rather
+   * than wait for React Router's URL-sync effect. This makes the detail
+   * counter and arrows honour ad-hoc filters, search and task queues.
+   */
+  const returnTo = useMemo(() => {
+    const params = new URLSearchParams();
+    if (activeView?.id) params.set('view', activeView.id);
+    if (search) params.set('q', search);
+    if (sortBy) params.set('sort', sortBy);
+    if (sortBy && sortDir !== 'desc') params.set('dir', sortDir);
+    if (page > 1) params.set('page', String(page));
+    if (pageSize !== DEFAULT_PAGE_SIZE) params.set('pageSize', String(pageSize));
+    if (countConditions(effectiveFilter)) params.set('filter', JSON.stringify(effectiveFilter));
+    return `/${moduleName}${params.toString() ? `?${params}` : ''}`;
+  }, [activeView?.id, effectiveFilter, moduleName, page, pageSize, search, sortBy, sortDir]);
 
   const taskCountQuery = (queue: TaskQueue): ListQuery => ({
     view: activeView?.id,
@@ -876,7 +924,7 @@ export default function ListView(): JSX.Element {
             {displayMode === 'table' && (data?.total ?? 0) > 0 && (
               <div className="hidden items-center gap-1 rounded-lg border border-slate-200 px-1.5 py-1 text-xs text-muted lg:flex dark:border-slate-700">
                 <button className="btn-ghost p-0.5" aria-label="Previous page" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}><ChevronLeft className="h-3.5 w-3.5" /></button>
-                <label className="flex items-center gap-1 whitespace-nowrap"><input className="h-5 w-10 rounded border border-slate-200 bg-white px-1 text-center text-xs dark:border-slate-700 dark:bg-slate-900" aria-label="Go to page" type="number" min={1} max={data!.totalPages} value={page} onFocus={(e) => e.currentTarget.select()} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} onChange={(e) => { const next = Number(e.target.value); if (Number.isInteger(next) && next >= 1 && next <= data!.totalPages) setPage(next); }} /><span>/ {data!.totalPages}</span></label>
+                <label className="flex items-center gap-1 whitespace-nowrap"><input className="h-5 w-10 rounded border border-slate-200 bg-white px-1 text-center text-xs dark:border-slate-700 dark:bg-slate-900" aria-label="Go to page" type="number" min={1} max={data!.totalPages} value={pageInput} onFocus={(e) => e.currentTarget.select()} onBlur={commitPageInput} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} onChange={(e) => setPageInput(e.target.value)} /><span>/ {data!.totalPages}</span></label>
                 <button className="btn-ghost p-0.5" aria-label="Next page" disabled={page >= data!.totalPages} onClick={() => setPage((p) => Math.min(data!.totalPages, p + 1))}><ChevronRight className="h-3.5 w-3.5" /></button>
               </div>
             )}
@@ -1126,6 +1174,22 @@ export default function ListView(): JSX.Element {
                           ? <ChevronDown className={cn('h-3 w-3 shrink-0', sortDir === 'asc' && 'rotate-180')} />
                           : canSort ? <ArrowUpDown className="h-2.5 w-2.5 shrink-0 opacity-0 group-hover:opacity-40" /> : null}
                       </button>
+                      {field && ['picklist', 'multipicklist'].includes(field.uitype) && field.options?.length ? (
+                        <select
+                          aria-label={`Filter ${field.label}`}
+                          className="mt-1 block max-w-full rounded border border-slate-200 bg-white px-1 py-0.5 text-2xs font-normal text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                          value={(() => {
+                            const condition = filter.conditions.find((node) => !isFilterGroup(node) && node.field === field.name);
+                            if (!condition || isFilterGroup(condition)) return '';
+                            return Array.isArray(condition.value) ? String(condition.value[0] ?? '') : String(condition.value ?? '');
+                          })()}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={(event) => setColumnPicklistFilter(field, event.target.value)}
+                        >
+                          <option value="">All</option>
+                          {field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        </select>
+                      ) : null}
                       {/* Drag to resize, double-click to put it back. `role` and
                           the arrow keys are here because a column width is a
                           real setting and a pointer is not the only way in. */}
@@ -1318,11 +1382,10 @@ export default function ListView(): JSX.Element {
                 type="number"
                 min={1}
                 max={data!.totalPages}
-                value={page}
-                onChange={(e) => {
-                  const next = Number(e.target.value);
-                  if (Number.isInteger(next) && next >= 1 && next <= data!.totalPages) setPage(next);
-                }}
+                value={pageInput}
+                onBlur={commitPageInput}
+                onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                onChange={(e) => setPageInput(e.target.value)}
               />
               <span>/ {data!.totalPages}</span>
             </label>

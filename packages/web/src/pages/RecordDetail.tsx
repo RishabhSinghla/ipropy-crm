@@ -127,11 +127,13 @@ export default function RecordDetail(): JSX.Element {
   }, [detailParams]);
 
   const { data: remote } = useQuery({
-    queryKey: ['neighbours', moduleName, id, listQuery?.get('view'), listQuery?.get('sort'), listQuery?.get('dir')],
+    queryKey: ['neighbours', moduleName, id, listQuery?.get('view'), listQuery?.get('sort'), listQuery?.get('dir'), listQuery?.get('q'), listQuery?.get('filter')],
     queryFn: () => api.neighbours(moduleName!, id!, {
       view: listQuery?.get('view') ?? undefined,
       sort: listQuery?.get('sort') ?? undefined,
       dir: listQuery?.get('dir') ?? undefined,
+      search: listQuery?.get('q') ?? undefined,
+      filter: listQuery?.get('filter') ?? undefined,
     }),
     // The browser cache only contains one visible page. Always prefer the
     // server's complete, permission-scoped list so the arrows cross pages.
@@ -926,7 +928,7 @@ function OverviewTab({
                       (event.currentTarget.querySelector('dd button') as HTMLButtonElement | null)?.click();
                     }}
                   >
-                    <dt className="w-[38%] max-w-[10rem] shrink-0 truncate text-2xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300" title={field.label}>{field.label}</dt>
+                    <dt className="w-[38%] max-w-[10rem] shrink-0 truncate text-2xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300" title={field.label}>{field.label}{(field.isMandatory || field.config.requiredWhen) && <span className="ml-0.5 text-red-500" aria-label="required">*</span>}</dt>
                     <dd className={cn('min-w-0 flex-1 rounded-md border border-slate-200 bg-slate-50/70 px-2 py-1 text-sm text-slate-900 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-100', record.can?.edit && 'cursor-pointer hover:border-brand-300 hover:bg-brand-50/30 dark:hover:border-brand-700')}>
                       {record.can?.edit && isInlineEditable(field) ? (
                         <EditableField

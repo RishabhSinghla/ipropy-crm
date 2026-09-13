@@ -45,6 +45,7 @@ import { nextNumber } from './numbering.js';
 import { computeRollups } from './rollups.js';
 import {
   assertModuleAccess,
+  assertCapability,
   assertRecordAccess,
   filterWritableFields,
   getFieldPermissions,
@@ -883,6 +884,11 @@ export async function moveRecord(
   const validPair = (sourceModuleName === 'leads' && targetModuleName === 'properties')
     || (sourceModuleName === 'properties' && targetModuleName === 'leads');
   if (!validPair) throw new ValidationError('Records can only be moved between Leads and Inventories');
+  await assertCapability(ctx.user, 'records.move_between_modules');
+  // Moving is an edit-plus-create operation. It must not silently depend on
+  // broad delete access just because the source row disappears afterwards.
+  await assertRecordAccess(ctx, sourceModuleName, recordId, 'edit');
+  await assertModuleAccess(ctx.user, targetModuleName, 'create');
 
   const [sourceModule, targetModule] = await Promise.all([
     registry.requireModule(sourceModuleName),
@@ -919,9 +925,17 @@ export async function moveRecord(
     await Promise.all([
       tx.query(`UPDATE ipy_attachment SET record_id = $2 WHERE record_id = $1`, [recordId, moved.id]),
       tx.query(`UPDATE ipy_call SET record_id = $2, record_module = $3 WHERE record_id = $1`, [recordId, moved.id, targetModuleName]),
+      tx.query(`UPDATE ipy_comment SET record_id = $2 WHERE record_id = $1`, [recordId, moved.id]),
+      tx.query(`UPDATE ipy_email_log SET record_id = $2 WHERE record_id = $1`, [recordId, moved.id]),
+      tx.query(`UPDATE ipy_ai_insight SET record_id = $2 WHERE record_id = $1`, [recordId, moved.id]),
+      tx.query(`UPDATE ipy_conversation SET record_id = $2 WHERE record_id = $1`, [recordId, moved.id]),
+      tx.query(`UPDATE ipy_tag_link SET record_id = $2 WHERE record_id = $1`, [recordId, moved.id]),
+      tx.query(`UPDATE ipy_record_share SET record_id = $2 WHERE record_id = $1`, [recordId, moved.id]),
     ]);
-
-    await deleteRecord(ctx, sourceModuleName, recordId, { conn: tx });
+    await tx.query(
+      `UPDATE ipy_record SET is_deleted = true, deleted_at = now(), deleted_by = $2 WHERE id = $1`,
+      [recordId, ctx.user.id],
+    );
     await writeAudit(tx, {
       recordId: moved.id,
       module: targetModuleName,

@@ -326,6 +326,39 @@ export interface ScopeContext {
 }
 
 /**
+ * The hierarchy is deliberately a read setting. A manager may continue to
+ * work records explicitly shared with them, but simply being above, beside or
+ * below another person in the tree never grants data visibility unless the
+ * administrator enabled the matching switch on the role profile.
+ */
+async function hierarchyVisibleOwnerIds(ctx: ScopeContext, moduleName: string, conn: Tx = db): Promise<string[]> {
+  const { user } = ctx;
+  if (user.isAdmin || !user.roleId || !['leads', 'properties'].includes(moduleName)) return [];
+  const [lower, upper, same] = await Promise.all([
+    hasCapability(user, 'records.view_lower_hierarchy'),
+    hasCapability(user, 'records.view_upper_hierarchy'),
+    hasCapability(user, 'records.view_same_hierarchy'),
+  ]);
+  const ids = lower ? [...ctx.subordinateIds] : [];
+  if (upper) {
+    const result = await conn.query<{ id: string }>(
+      `SELECT u.id FROM ipy_user u JOIN ipy_role own_role ON own_role.id = $2
+       WHERE u.role_id = ANY(own_role.path) AND u.deleted_at IS NULL AND u.id <> $1`,
+      [user.id, user.roleId],
+    );
+    ids.push(...result.rows.map((row) => row.id));
+  }
+  if (same) {
+    const result = await conn.query<{ id: string }>(
+      `SELECT id FROM ipy_user WHERE role_id = $2 AND deleted_at IS NULL AND id <> $1`,
+      [user.id, user.roleId],
+    );
+    ids.push(...result.rows.map((row) => row.id));
+  }
+  return [...new Set(ids)];
+}
+
+/**
  * WHERE fragment restricting a list query to records the user may read.
  * Returns null when no restriction is needed (admin / public module).
  */
@@ -347,8 +380,10 @@ export async function recordScopeSql(
     return null;
   }
 
-  // Owners the user can act for: self, subordinates, and their groups.
-  const ownerIds = [user.id, ...ctx.subordinateIds, ...ctx.groupIds];
+  // Owners the user may read: self, explicitly enabled hierarchy levels, and
+  // their groups. Write access keeps its established subordinate behaviour.
+  const hierarchyIds = requireWrite ? ctx.subordinateIds : await hierarchyVisibleOwnerIds(ctx, moduleName);
+  const ownerIds = [user.id, ...hierarchyIds, ...ctx.groupIds];
 
   // Sharing rules that grant this user access to other principals' records.
   const granted = await getSharedOwnerIds(ctx, moduleName, requireWrite);
@@ -441,7 +476,9 @@ export async function canAccessRecord(
 
   if (record.owner_id === user.id || record.created_by === user.id) return true;
   if (record.owner_id && ctx.groupIds.includes(record.owner_id)) return true;
-  if (record.owner_id && ctx.subordinateIds.includes(record.owner_id)) return true;
+  if (record.owner_id && (action === 'view'
+    ? (await hierarchyVisibleOwnerIds(ctx, moduleName, conn)).includes(record.owner_id)
+    : ctx.subordinateIds.includes(record.owner_id))) return true;
 
   const orgAccess = await getOrgSharing(moduleName, conn);
   if (action === 'view' && orgAccess !== 'private') return true;

@@ -319,6 +319,7 @@ describe('canAccessRecord', () => {
   });
 
   it('lets a manager see a subordinate-owned record', async () => {
+    on('SELECT capabilities', [{ capabilities: ['records.view_lower_hierarchy'] }]);
     recordOwnedBy('u_2');
     expect(await canAccessRecord(scopeCtx(user(), { subordinateIds: ['u_2'] }), 'leads', 'rec', 'view')).toBe(true);
   });
