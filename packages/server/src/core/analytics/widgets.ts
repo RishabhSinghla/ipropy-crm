@@ -329,24 +329,44 @@ async function resolveGroupLabels(
   }
 
   if (grouped.uitype === 'reference' || grouped.uitype === 'multireference') {
-    if (!clean.length) return out;
-    const res = await conn.query<{ id: string; label: string }>(
-      `SELECT id, label FROM ipy_record WHERE id = ANY($1::uuid[])`, [clean],
-    );
-    for (const r of res.rows) out.set(r.id, { label: r.label });
-    return out;
+    if (clean.length) {
+      const res = await conn.query<{ id: string; label: string }>(
+        `SELECT id, label FROM ipy_record WHERE id = ANY($1::uuid[])`, [clean],
+      );
+      for (const r of res.rows) out.set(r.id, { label: r.label });
+    }
   }
 
   if (grouped.uitype === 'owner' || grouped.uitype === 'user') {
-    if (!clean.length) return out;
-    const [users, groups] = await Promise.all([
+    if (clean.length) {
+      const [users, groups] = await Promise.all([
+        conn.query<{ id: string; name: string }>(
+          `SELECT id, trim(first_name || ' ' || last_name) AS name FROM ipy_user WHERE id = ANY($1::uuid[])`, [clean],
+        ),
+        conn.query<{ id: string; name: string }>(`SELECT id, name FROM ipy_group WHERE id = ANY($1::uuid[])`, [clean]),
+      ]);
+      for (const r of [...users.rows, ...groups.rows]) out.set(r.id, { label: r.name });
+    }
+  }
+
+  /*
+   * Older dashboard definitions sometimes point at a core UUID column after a
+   * field was renamed or removed. A chart must never put that implementation
+   * value on screen. Resolve any remaining UUID-looking key against the three
+   * human-facing sources before falling back to the value itself.
+   */
+  const unresolved = clean.filter((key) => !out.has(key) && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(key));
+  if (unresolved.length) {
+    const [users, groups, records] = await Promise.all([
       conn.query<{ id: string; name: string }>(
-        `SELECT id, trim(first_name || ' ' || last_name) AS name FROM ipy_user WHERE id = ANY($1::uuid[])`, [clean],
+        `SELECT id, NULLIF(trim(concat_ws(' ', first_name, last_name)), '') AS name FROM ipy_user WHERE id = ANY($1::uuid[])`, [unresolved],
       ),
-      conn.query<{ id: string; name: string }>(`SELECT id, name FROM ipy_group WHERE id = ANY($1::uuid[])`, [clean]),
+      conn.query<{ id: string; name: string }>(`SELECT id, name FROM ipy_group WHERE id = ANY($1::uuid[])`, [unresolved]),
+      conn.query<{ id: string; label: string }>(`SELECT id, label FROM ipy_record WHERE id = ANY($1::uuid[])`, [unresolved]),
     ]);
-    for (const r of [...users.rows, ...groups.rows]) out.set(r.id, { label: r.name });
-    return out;
+    for (const row of users.rows) if (row.name) out.set(row.id, { label: row.name });
+    for (const row of groups.rows) out.set(row.id, { label: row.name });
+    for (const row of records.rows) out.set(row.id, { label: row.label });
   }
 
   return out;
@@ -605,4 +625,3 @@ async function runHeatmap(ctx: ScopeContext, config: WidgetConfig, conn: Tx): Pr
     meta: { dimensions: ['dayOfWeek', 'hour'] },
   };
 }
-

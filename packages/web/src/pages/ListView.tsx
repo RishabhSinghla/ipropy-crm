@@ -56,6 +56,9 @@ export default function ListView(): JSX.Element {
   };
   const queryClient = useQueryClient();
   const { user } = useApp();
+  // People without this capability can use the administrator's shared views,
+  // but cannot accidentally reshape the team's list configuration.
+  const canManageViews = Boolean(user?.isAdmin || user?.capabilities?.includes('views.manage'));
 
 
   const [page, setPage] = useState(1);
@@ -102,6 +105,8 @@ export default function ListView(): JSX.Element {
   const [confirmDeleteView, setConfirmDeleteView] = useState<CustomView | null>(null);
   const [dragColumn, setDragColumn] = useState<string | null>(null);
   const [quickFilterColumn, setQuickFilterColumn] = useState<string | null>(null);
+  const [celebrating, setCelebrating] = useState(false);
+  const hadOutstandingTasks = useRef(false);
   const colWidths = useColumnWidths(moduleName);
 
   /**
@@ -453,6 +458,20 @@ export default function ListView(): JSX.Element {
   };
   const allTaskQueuesClear = taskCounts.pending === 0 && taskCounts.today === 0 && taskCounts.tomorrow === 0;
 
+  // Celebrate a real completion, not the empty first paint while counts load.
+  // This is deliberately local to the module: clearing Leads should not make
+  // opening Inventories look like a completed inventory queue.
+  useEffect(() => {
+    if (!taskQueuesEnabled || pendingTasks === undefined || todayTasks === undefined || tomorrowTasks === undefined) return;
+    if (hadOutstandingTasks.current && allTaskQueuesClear) {
+      setCelebrating(true);
+      toast.success('🎉 Zero follow-ups — excellent work!', 'Your follow-up queue is completely clear.');
+      const timer = window.setTimeout(() => setCelebrating(false), 2600);
+      return () => window.clearTimeout(timer);
+    }
+    if (!allTaskQueuesClear) hadOutstandingTasks.current = true;
+  }, [allTaskQueuesClear, pendingTasks, taskQueuesEnabled, todayTasks, tomorrowTasks]);
+
   /*
     The list is what the server says it is, and nothing else.
 
@@ -552,8 +571,14 @@ export default function ListView(): JSX.Element {
   // rendered) so opening a record can offer prev/next through the same set
   // without threading state through every row's navigate() call.
   useEffect(() => {
-    if (moduleName && data?.rows) saveListNav(moduleName, data.rows.map((r) => r.id));
-  }, [moduleName, data]);
+    if (moduleName && data?.rows) {
+      saveListNav(moduleName, data.rows.map((r) => r.id), {
+        total: data.total,
+        page,
+        pageSize: query.pageSize ?? pageSize,
+      });
+    }
+  }, [moduleName, data, page, pageSize, query.pageSize]);
 
   // Attention is driven by the actual sales state, not a separate per-user
   // "seen" inbox. A contact is never silently cleared just because someone
@@ -714,7 +739,7 @@ export default function ListView(): JSX.Element {
                 <div className="max-h-64 overflow-y-auto py-1">
                   {(views ?? []).map((view) => {
                     const mine = view.ownerId === user?.id || user?.isAdmin;
-                    const canEdit = view.isSystem || mine;
+                    const canEdit = canManageViews && (view.isSystem || mine);
                     return (
                       <div key={view.id} className="flex items-center px-1">
                         <DropdownItem onClick={() => { chooseView(view.id); close(); }}>
@@ -742,7 +767,7 @@ export default function ListView(): JSX.Element {
                     );
                   })}
                 </div>
-                <div className="border-t border-slate-100 py-1 dark:border-slate-800">
+                {canManageViews && <div className="border-t border-slate-100 py-1 dark:border-slate-800">
                   <DropdownItem icon={<Plus className="h-3.5 w-3.5" />} onClick={() => { setEditingView(blankView(moduleName)); close(); }}>
                     New view
                   </DropdownItem>
@@ -753,17 +778,17 @@ export default function ListView(): JSX.Element {
                       Delete this view
                     </DropdownItem>
                   )}
-                </div>
+                </div>}
               </>
             )}
           </Dropdown>
 
           {taskQueuesEnabled && (
-            <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800/70" aria-label="Follow-up tasks">
+            <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1.5 shadow-sm dark:border-slate-700 dark:bg-slate-800/70" aria-label="Follow-up tasks">
               {([
-                ['pending', 'Pending', 'Past follow-ups need attention'],
-                ['today', 'Today', "Today's follow-ups"],
-                ['tomorrow', 'Tomorrow', "Tomorrow's follow-ups"],
+                ['pending', 'Pending Follow-up', 'Past follow-ups need attention'],
+                ['today', 'Today Follow up', "Today's follow-ups"],
+                ['tomorrow', 'Tomorrow Follow up', "Tomorrow's follow-ups"],
               ] as const).map(([queue, label, title]) => (
                 <button
                   key={queue}
@@ -771,18 +796,28 @@ export default function ListView(): JSX.Element {
                   title={title}
                   onClick={() => { setTaskQueue((current) => current === queue ? null : queue); setPage(1); }}
                   className={cn(
-                    'inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold transition-colors',
-                    taskQueue === queue && 'ring-1 ring-inset ring-slate-400',
-                    queue === 'pending' && taskCounts.pending > 0 && 'bg-red-100 text-red-800 hover:bg-red-200 dark:bg-red-950/60 dark:text-red-200',
-                    queue === 'pending' && taskCounts.pending === 0 && allTaskQueuesClear && 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-200',
-                    queue === 'pending' && taskCounts.pending === 0 && !allTaskQueuesClear && 'bg-white text-slate-700 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-200',
-                    queue === 'today' && 'bg-white text-slate-800 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-100',
-                    queue === 'tomorrow' && 'bg-sky-100 text-sky-800 hover:bg-sky-200 dark:bg-sky-950/60 dark:text-sky-200',
+                    'inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-extrabold shadow-sm transition-colors',
+                    taskQueue === queue && 'ring-2 ring-offset-1 ring-slate-700 dark:ring-slate-200',
+                    allTaskQueuesClear && 'bg-emerald-600 text-white hover:bg-emerald-700',
+                    !allTaskQueuesClear && queue === 'pending' && taskCounts.pending > 0 && 'bg-rose-600 text-white hover:bg-rose-700',
+                    !allTaskQueuesClear && queue === 'pending' && taskCounts.pending === 0 && 'bg-slate-600 text-white hover:bg-slate-700',
+                    !allTaskQueuesClear && queue === 'today' && 'bg-indigo-600 text-white hover:bg-indigo-700',
+                    !allTaskQueuesClear && queue === 'tomorrow' && 'bg-sky-600 text-white hover:bg-sky-700',
                   )}
                 >
-                  {label} <span className="tnum opacity-75">{taskCounts[queue]}</span>
+                  {label} <span className="rounded bg-white/20 px-1.5 py-0.5 tnum">{taskCounts[queue]}</span>
                 </button>
               ))}
+            </div>
+          )}
+
+          {celebrating && (
+            <div className="pointer-events-none fixed inset-0 z-[80] grid place-items-start pt-24" aria-live="polite">
+              <div className="rounded-2xl bg-emerald-600 px-6 py-4 text-center text-white shadow-2xl">
+                <div className="text-3xl">🎉 ✨ 🎊</div>
+                <p className="mt-1 text-base font-extrabold">Achievement unlocked: zero follow-ups!</p>
+                <p className="text-sm text-emerald-50">Great work keeping the queue clear.</p>
+              </div>
             </div>
           )}
 
@@ -877,7 +912,7 @@ export default function ListView(): JSX.Element {
                       Reset column widths
                     </DropdownItem>
                   )}
-                  {activeView && (
+                  {canManageViews && activeView && (
                     <DropdownItem
                       icon={<Save className="h-3.5 w-3.5" />}
                       onClick={() => { saveViewMutation.mutate(); close(); }}
@@ -896,12 +931,12 @@ export default function ListView(): JSX.Element {
                     route was New view, which opens an empty editor and asks
                     you to rebuild by hand what the screen is already showing.
                   */}
-                  <DropdownItem
+                  {canManageViews && <DropdownItem
                     icon={<Plus className="h-3.5 w-3.5" />}
                     onClick={() => { setSavingAsView(true); close(); }}
                   >
                     Save as a new view…
-                  </DropdownItem>
+                  </DropdownItem>}
                   <DropdownItem icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => { void refetch(); close(); }}>
                     Refresh
                   </DropdownItem>
@@ -1480,7 +1515,7 @@ export default function ListView(): JSX.Element {
         size="md"
         footer={
           <>
-            {activeView && (
+            {canManageViews && activeView && (
               <button
                 className="btn-secondary"
                 disabled={saveViewMutation.isPending}

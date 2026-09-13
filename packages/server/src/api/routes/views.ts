@@ -5,7 +5,7 @@ import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../utils/errors.js';
 import { registry } from '../../core/metadata/registry.js';
-import { canAccessModule } from '../../core/permissions/index.js';
+import { assertCapability, canAccessModule } from '../../core/permissions/index.js';
 import { recordService } from '../../core/entity/recordService.js';
 
 export const viewsRouter = Router();
@@ -161,12 +161,16 @@ viewsRouter.post('/:module', asyncHandler(async (req, res) => {
   const user = getUser(req);
   const module = await registry.requireModule(req.params.module);
   if (!(await canAccessModule(user, module.name, 'view'))) throw new ForbiddenError();
+  await assertCapability(user, 'views.manage');
   const input = viewSchema.parse(req.body);
 
   // A view's filter is personal configuration, not a privileged schema change.
   // Its owner may choose to share it with everyone who can already view this
   // module; record-level permissions still apply when that view is opened.
-  const isPublic = input.isPublic;
+  // When a team has list-view creation turned off, the administrator remains
+  // the curator. Their new views must therefore be useful to that whole team,
+  // rather than becoming another private tab nobody else can discover.
+  const isPublic = user.isAdmin ? true : input.isPublic;
 
   await refuseSystemViewName(module.id, input.name);
 
@@ -254,6 +258,7 @@ async function replaceShares(
 
 viewsRouter.put('/:module/:id', asyncHandler(async (req, res) => {
   const user = getUser(req);
+  await assertCapability(user, 'views.manage');
   const input = viewSchema.partial().parse(req.body);
 
   const view = await db.queryOne<{
@@ -366,6 +371,7 @@ viewsRouter.put('/:module/:id', asyncHandler(async (req, res) => {
  */
 viewsRouter.delete('/:module/:id/override', asyncHandler(async (req, res) => {
   const user = getUser(req);
+  await assertCapability(user, 'views.manage');
   await db.query(
     `DELETE FROM ipy_view
      WHERE owner_id = $1
@@ -394,6 +400,7 @@ viewsRouter.post('/:module/:id/default', asyncHandler(async (req, res) => {
 
 viewsRouter.delete('/:module/:id', asyncHandler(async (req, res) => {
   const user = getUser(req);
+  await assertCapability(user, 'views.manage');
   const view = await db.queryOne<{ owner_id: string | null; is_system: boolean; module_id: string; seed_key: string | null; name: string }>(
     `SELECT owner_id, is_system, module_id, seed_key, name FROM ipy_view WHERE id = $1`, [req.params.id],
   );
@@ -432,6 +439,7 @@ viewsRouter.delete('/:module/:id', asyncHandler(async (req, res) => {
  */
 viewsRouter.post('/:module/reorder', asyncHandler(async (req, res) => {
   const user = getUser(req);
+  await assertCapability(user, 'views.manage');
   if (!user.isAdmin) throw new ForbiddenError('Only an administrator can reorder the shared view tabs');
 
   const input = z.object({ ids: z.array(z.string().uuid()).max(100) }).parse(req.body);

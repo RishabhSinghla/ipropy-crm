@@ -211,6 +211,7 @@ const CAPABILITY_INFO: Record<string, { label: string; hint: string }> = {
   'records.view_lower_hierarchy': { label: 'See lower-hierarchy records', hint: 'Show records owned by people below this role.' },
   'records.view_upper_hierarchy': { label: 'See upper-hierarchy records', hint: 'Show records owned by managers above this role.' },
   'records.view_same_hierarchy': { label: 'See same-level records', hint: 'Show records owned by colleagues with the same role.' },
+  'views.manage': { label: 'Create and manage list views', hint: 'Lets this role create, edit, share and delete list views. Turn it off to use only administrator-created team views.' },
   'dashboards.share': { label: 'Share dashboards', hint: 'Publish dashboards to other users.' },
   'ai.use': { label: 'Use AI features', hint: 'AI suggestions and summaries inside the CRM.' },
   'ai.configure': { label: 'Configure AI', hint: 'Set up AI behaviour and prompts.' },
@@ -259,7 +260,7 @@ const CAP_GROUPS: { id: string; title: string; blurb: string; caps: string[]; cl
     caps: [
       'records.transfer_ownership', 'records.move_between_modules', 'records.mass_edit', 'records.mass_delete',
       'records.export', 'records.import', 'records.view_all', 'records.view_lower_hierarchy',
-      'records.view_upper_hierarchy', 'records.view_same_hierarchy',
+      'records.view_upper_hierarchy', 'records.view_same_hierarchy', 'views.manage',
     ],
   },
   {

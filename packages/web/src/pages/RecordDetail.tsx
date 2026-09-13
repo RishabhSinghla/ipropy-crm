@@ -106,7 +106,8 @@ export default function RecordDetail(): JSX.Element {
   // Prev/next through whatever list the user last viewed for this module —
   // populated by ListView, read here so opening a record doesn't need to
   // carry that list through router state.
-  const navIds = useMemo(() => (moduleName ? loadListNav(moduleName) : []), [moduleName]);
+  const nav = useMemo(() => (moduleName ? loadListNav(moduleName) : { ids: [], total: 0, page: 1, pageSize: 1 }), [moduleName]);
+  const navIds = nav.ids;
   const navIndex = id ? navIds.indexOf(id) : -1;
   const sessionPrev = navIndex > 0 ? navIds[navIndex - 1] : null;
   const sessionNext = navIndex >= 0 && navIndex < navIds.length - 1 ? navIds[navIndex + 1] : null;
@@ -163,8 +164,12 @@ export default function RecordDetail(): JSX.Element {
     });
   }, [moduleName, id]);
 
-  const prevId = remote?.prevId ?? sessionPrev;
-  const nextId = remote?.nextId ?? sessionNext;
+  // The rows the person can see are authoritative while this record belongs
+  // to that rendered page. The server is only a bridge at a page boundary or
+  // for a direct link; preferring it here was why "next" could jump to a
+  // record that was not the next row on screen.
+  const prevId = navIndex >= 0 ? sessionPrev : (remote?.prevId ?? sessionPrev);
+  const nextId = navIndex >= 0 ? sessionNext : (remote?.nextId ?? sessionNext);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
@@ -377,7 +382,7 @@ export default function RecordDetail(): JSX.Element {
                 </button>
                 {(remote?.position || navIndex >= 0) && (
                   <span className="px-1 text-2xs tnum text-muted">
-                    {remote?.position ?? navIndex + 1} / {remote?.total ?? navIds.length}
+                    {navIndex >= 0 ? ((nav.page - 1) * nav.pageSize) + navIndex + 1 : remote?.position} / {navIndex >= 0 ? nav.total : remote?.total}
                   </span>
                 )}
                 <button
