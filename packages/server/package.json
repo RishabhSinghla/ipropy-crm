@@ -32,6 +32,7 @@
     "@aws-sdk/client-s3": "^3.1126.0",
     "@ipropy/mcp": "*",
     "@ipropy/shared": "*",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@sentry/node": "^10.73.0",
     "@simplewebauthn/server": "^13.3.2",
     "archiver": "^8.0.0",
@@ -40,7 +41,6 @@
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
     "exceljs": "^4.4.0",
-    "exif-reader": "^2.0.3",
     "express": "^5.2.1",
     "express-rate-limit": "^8.7.0",
     "fluent-ffmpeg": "^2.1.3",
@@ -59,7 +59,6 @@
   },
   "devDependencies": {
     "@types/archiver": "^8.0.0",
-    "@types/bcryptjs": "^3.0.0",
     "@types/compression": "^1.7.5",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.6",

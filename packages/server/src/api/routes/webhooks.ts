@@ -12,7 +12,7 @@ import { getSettings } from '../../core/settings/integrations.js';
 import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
-import { BadRequestError, NotFoundError, ServiceUnavailableError, UnauthorizedError } from '../../utils/errors.js';
+import { NotFoundError, ServiceUnavailableError, UnauthorizedError } from '../../utils/errors.js';
 import * as waProvider from '../../integrations/whatsapp/provider.js';
 import * as waService from '../../integrations/whatsapp/service.js';
 import {
@@ -828,8 +828,3 @@ function safeEqual(expected: string, provided: string): boolean {
   return crypto.timingSafeEqual(a, b);
 }
 
-function escapeXml(s: string): string {
-  return s.replace(/[<>&'"]/g, (c) => (
-    { '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c] ?? c
-  ));
-}

@@ -12,7 +12,6 @@
  * usually the *same* call, and creating both leaves a rep looking at a
  * duplicate they have to reconcile.
  */
-import { toE164 } from '@ipropy/shared';
 import { db } from '../../db/pool.js';
 import { bus } from '../../core/events/bus.js';
 import { touchActivity } from '../../core/entity/recordService.js';
@@ -106,8 +105,3 @@ export async function logManualCall(input: {
   return { callId: row!.id };
 }
 
-function escapeXml(s: string): string {
-  return s.replace(/[<>&'"]/g, (c) => (
-    { '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c] ?? c
-  ));
-}

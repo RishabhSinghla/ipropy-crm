@@ -5,7 +5,7 @@ import { db, transaction } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { ForbiddenError, NotFoundError } from '../../utils/errors.js';
-import { assertCapability, canAccessRecord, hasCapability } from '../../core/permissions/index.js';
+import { assertCapability, hasCapability } from '../../core/permissions/index.js';
 import { activeValues, assertPicklistValue } from '../../core/metadata/picklists.js';
 import { columnsOf } from '../../core/entity/payloadColumns.js';
 import { logManualCall } from '../../integrations/telephony/manualCall.js';

@@ -59,7 +59,6 @@ async function main() {
   if (madeMoney.status === 201) created.push(madeMoney.body.id);
 
   const afterMoney = (await call('GET', '/api/meta/modules/leads?includeInactive=true')).body;
-  const moneyField = afterMoney.fields.find((f) => f.name === money);
   const moneyUnit = afterMoney.fields.find((f) => f.name === `${money}_unit`);
   check('Currency field creates its Budget/Demand unit companion', Boolean(moneyUnit),
     moneyUnit ? '' : 'no companion unit field was created');

@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ChevronLeft } from 'lucide-react';
 import type { ModuleMeta } from '@ipropy/shared';
 import { api } from '../lib/api';
-import { toast, useApp } from '../lib/store';
+import { toast } from '../lib/store';
 import RecordForm from '../components/RecordForm';
 import { Skeleton } from '../components/ui';
 
@@ -34,7 +34,6 @@ export default function RecordEdit(): JSX.Element {
   const { module: moduleName, id } = useParams<{ module: string; id?: string }>();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { user } = useApp();
   const isCreate = !id;
   const returnTo = searchParams.get('return');
 

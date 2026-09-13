@@ -13,7 +13,7 @@ import { matchingConfig, pairFor, mappedValue, type MatchingConfig } from '../co
 import { priceFieldFrom, priceSql, priceFromRow, type PriceField } from '../core/settings/priceField.js';
 import { SqlParams } from '../core/query/builder.js';
 import { db } from '../db/pool.js';
-import { completeJson, isAiAvailable, saveInsight, REAL_ESTATE_SYSTEM } from './client.js';
+import { completeJson, isAiAvailable, REAL_ESTATE_SYSTEM } from './client.js';
 import { columnsOf, fieldText, fieldJson } from '../core/entity/payloadColumns.js';
 
 /**
@@ -754,21 +754,6 @@ function revivalReason(
 ): string | null {
   if (!lostReason) return null;
   const price = property.matched_price ?? property.total_price ?? property.base_price ?? 0;
-  /*
-    Null, not zero, for the budget band.
-
-    An unpriced unit fell back to 0 here, and the band below is
-    `budget ∈ [p/(1+g), p/(1−g)]` — which at p = 0 is `budget ∈ [0, 0]`, so the
-    only buyers who could match were those with no budget at all. The forward
-    direction now keeps unpriced units in the running and scores them on their
-    other merits, and this is the same statement from the other side: an
-    unknown price is not a price of nothing, and it cannot exclude anybody.
-
-    Without this the two directions disagree again, in the way
-    `definition-of-done.mjs` exists to catch — a unit that matched a buyer
-    going one way, and no buyers at all coming back.
-  */
-  const bandPrice = property.matched_price ?? property.total_price ?? property.base_price ?? null;
   const inBudget = Boolean(req.budget && price && price <= req.budget);
 
   switch (lostReason) {
@@ -881,7 +866,6 @@ export async function matchBuyersForProperty(
   if (!propertyRaw) return [];
   const property = toPropertyRow(propertyRaw.row, propertyRaw.label, bedroomField, areaField, mappedPriceField);
 
-  const price = property.matched_price ?? property.total_price ?? property.base_price ?? 0;
   /*
     Null, not zero, for the budget band.
 

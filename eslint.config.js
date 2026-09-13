@@ -36,9 +36,21 @@ export default tseslint.config(
       // with their own conventions; this config is for the npm workspaces.
       'companion-android/**',
       'media-service/**',
-      'media-worker/**',
       'n8n/**',
       'wa-bridge/**',
+      // The web bundle, copied into the native projects by `cap sync`. It is
+      // build output that happens to live outside `dist/`, it is gitignored,
+      // and linting it produced 9,711 errors in somebody else's minified code
+      // — which made `npx eslint .` useless for finding the twenty-three real
+      // ones underneath.
+      'packages/app/android/app/src/main/assets/public/**',
+      'packages/app/ios/App/App/public/**',
+      // Per-machine agent wiring, regenerated per session. See .gitignore.
+      '.cursor/**',
+      '.gemini/**',
+      '.windsurf/**',
+      '.antigravity/**',
+      '.hermes/**',
     ],
   },
   {

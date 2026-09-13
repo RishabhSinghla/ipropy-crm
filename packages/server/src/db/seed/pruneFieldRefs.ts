@@ -222,7 +222,6 @@ export async function pruneFieldRefs(conn: Tx): Promise<PruneResult> {
       }
       if (!renamed.length && !dropped.length) continue;
       if (conditions) next.filter = { ...filter, conditions: keptConditions };
-      const droppedConditions = dropped.length;
 
       await conn.query(`UPDATE ipy_dashboard_widget SET config = $2::jsonb WHERE id = $1`,
         [widget.id, JSON.stringify(next)]);
