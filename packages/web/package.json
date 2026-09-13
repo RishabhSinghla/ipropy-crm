@@ -42,7 +42,7 @@
     "react-grid-layout": "^2.2.4",
     "react-resizable": "^3.2.0",
     "react-router-dom": "^7.18.3",
-    "recharts": "^2.14.1",
+    "recharts": "^3.10.1",
     "socket.io-client": "^4.8.1",
     "zustand": "^5.0.15"
   },
