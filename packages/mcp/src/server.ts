@@ -33,9 +33,18 @@ export function createMcpServer(crm: CrmClient): McpServer {
     { name: 'ipropy', version: '1.0.0' },
     { instructions: INSTRUCTIONS },
   );
+  // See inputSchema below. The SDK's generic overload attempts to infer every
+  // individual schema in the catalogue as one enormous union. Bind once to a
+  // deliberately erased boundary; each catalogue item remains runtime-checked
+  // by the SDK when the tool is registered and called.
+  const registerTool = server.registerTool.bind(server) as unknown as (
+    name: string,
+    config: Record<string, unknown>,
+    handler: (args: Record<string, unknown>) => Promise<unknown>,
+  ) => void;
 
   for (const tool of toolsFor(crm)) {
-    server.registerTool(
+    registerTool(
       tool.name,
       {
         title: tool.title,

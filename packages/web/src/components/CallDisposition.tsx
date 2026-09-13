@@ -34,6 +34,7 @@ export function CallDispositionProvider({
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [durationMinutes, setDurationMinutes] = useState(1);
   const [disposition, setDisposition] = useState('Call Back Later');
+  const [nextFollowUp, setNextFollowUp] = useState('');
   const [notes, setNotes] = useState('');
   const [placing, setPlacing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -66,6 +67,7 @@ export function CallDispositionProvider({
     setStartedAt(null);
     setDurationMinutes(1);
     setDisposition('Call Back Later');
+    setNextFollowUp('');
     setNotes('');
   };
 
@@ -100,6 +102,11 @@ export function CallDispositionProvider({
 
   const save = async (): Promise<void> => {
     if (!target || savingRef.current) return;
+    const today = new Date().toISOString().slice(0, 10);
+    if (nextFollowUp && nextFollowUp < today) {
+      toast.error('Choose today or a future date', 'A next follow-up is a task and cannot be scheduled in the past.');
+      return;
+    }
     savingRef.current = true;
     setSaving(true);
     try {
@@ -118,13 +125,20 @@ export function CallDispositionProvider({
           notes: notes.trim() || undefined,
         });
       }
-      toast.success('Call logged');
+      if (nextFollowUp) await api.update(module, recordId, { next_followup_at: nextFollowUp });
+      toast.success(
+        'Call logged',
+        nextFollowUp ? 'Nice work — your next follow-up is scheduled.' : 'One conversation moved forward. Keep the momentum going.',
+      );
       // Close as soon as the write succeeds. Refetching the tabs is background
       // work and must never hold the form on screen after Save.
       close();
       void Promise.all([
         queryClient.invalidateQueries({ queryKey: ['record-calls', recordId] }),
         queryClient.invalidateQueries({ queryKey: ['timeline', module, recordId] }),
+        queryClient.invalidateQueries({ queryKey: ['record', module, recordId] }),
+        queryClient.invalidateQueries({ queryKey: ['records', module] }),
+        queryClient.invalidateQueries({ queryKey: ['task-count', module] }),
       ]);
     } catch (err) {
       toast.error('Could not log the call', (err as Error).message);
@@ -168,6 +182,17 @@ export function CallDispositionProvider({
               />
             </div>
           )}
+          <div>
+            <label className="label" htmlFor="call-next-follow-up">Next follow-up (task)</label>
+            <input
+              id="call-next-follow-up"
+              className="input"
+              type="date"
+              min={new Date().toISOString().slice(0, 10)}
+              value={nextFollowUp}
+              onChange={(event) => setNextFollowUp(event.target.value)}
+            />
+          </div>
           <div>
             <div className="mb-1 flex items-center justify-between gap-2">
               <label className="label mb-0" htmlFor="call-notes">Disposition notes (optional)</label>

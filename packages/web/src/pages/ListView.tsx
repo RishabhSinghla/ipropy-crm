@@ -30,6 +30,12 @@ import { deliverFile, dial, openExternal } from '../lib/nativeActions';
 import { blankView, type SavedView, ViewEditor } from '../components/ViewEditor';
 
 const EMPTY_FILTER: FilterGroup = { logic: 'AND', conditions: [] };
+type TaskQueue = 'pending' | 'today' | 'tomorrow';
+
+/** Date-only values are stored without a time, so keep task filters date-only too. */
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 export default function ListView(): JSX.Element {
   const { module: moduleName } = useParams<{ module: string }>();
@@ -66,6 +72,7 @@ export default function ListView(): JSX.Element {
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
+  const [taskQueue, setTaskQueue] = useState<TaskQueue | null>(null);
   const [viewId, setViewId] = useState<string | undefined>(searchParams.get('view') ?? undefined);
   const [filter, setFilter] = useState<FilterGroup>(EMPTY_FILTER);
   const [sortBy, setSortBy] = useState<string | undefined>();
@@ -325,16 +332,42 @@ export default function ListView(): JSX.Element {
     ? (activeView?.groupBy ?? meta?.pipelineField ?? undefined)
     : undefined;
 
+  // Next Follow-up is the CRM's task field. These are deliberately not saved
+  // views: every person gets the same obvious work queues without an admin
+  // having to create or maintain three more views for each module.
+  const taskField = meta?.fields.find((field) => field.columnName === 'next_followup_at');
+  const taskQueuesEnabled = Boolean(taskField && (moduleName === 'leads' || moduleName === 'properties'));
+  const taskFilters = useMemo<Record<TaskQueue, FilterGroup>>(() => {
+    const today = todayIso();
+    return {
+      pending: { logic: 'AND', conditions: [
+        { field: taskField?.name ?? 'next_followup_at', operator: 'is_not_empty' },
+        { field: taskField?.name ?? 'next_followup_at', operator: 'less_than', value: today },
+      ] },
+      today: { logic: 'AND', conditions: [
+        { field: taskField?.name ?? 'next_followup_at', operator: 'today' },
+      ] },
+      tomorrow: { logic: 'AND', conditions: [
+        { field: taskField?.name ?? 'next_followup_at', operator: 'tomorrow' },
+      ] },
+    };
+  }, [taskField?.name]);
+
+  const effectiveFilter = useMemo<FilterGroup>(() => {
+    if (!taskQueue) return filter;
+    return { logic: 'AND', conditions: [...filter.conditions, ...taskFilters[taskQueue].conditions] };
+  }, [filter, taskFilters, taskQueue]);
+
   const query: ListQuery = useMemo(() => ({
     view: activeView?.id,
     page,
     pageSize: displayMode === 'kanban' ? 200 : pageSize,
     search: search || undefined,
-    filter: countConditions(filter) ? filter : undefined,
+    filter: countConditions(effectiveFilter) ? effectiveFilter : undefined,
     sortBy, sortDir,
     columns: columns.length ? columns : undefined,
     groupBy: groupByField,
-  }), [activeView?.id, page, pageSize, search, filter, sortBy, sortDir, columns, groupByField, displayMode]);
+  }), [activeView?.id, page, pageSize, search, effectiveFilter, sortBy, sortDir, columns, groupByField, displayMode]);
 
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['records', moduleName, query],
@@ -342,6 +375,34 @@ export default function ListView(): JSX.Element {
     enabled: Boolean(moduleName && meta),
     placeholderData: (prev) => prev,
   });
+
+  const taskCountQuery = (queue: TaskQueue): ListQuery => ({
+    view: activeView?.id,
+    page: 1,
+    pageSize: 1,
+    filter: taskFilters[queue],
+  });
+  const { data: pendingTasks } = useQuery({
+    queryKey: ['task-count', moduleName, activeView?.id, 'pending', taskFilters.pending],
+    queryFn: () => api.list(moduleName!, taskCountQuery('pending')),
+    enabled: Boolean(moduleName && taskQueuesEnabled),
+  });
+  const { data: todayTasks } = useQuery({
+    queryKey: ['task-count', moduleName, activeView?.id, 'today', taskFilters.today],
+    queryFn: () => api.list(moduleName!, taskCountQuery('today')),
+    enabled: Boolean(moduleName && taskQueuesEnabled),
+  });
+  const { data: tomorrowTasks } = useQuery({
+    queryKey: ['task-count', moduleName, activeView?.id, 'tomorrow', taskFilters.tomorrow],
+    queryFn: () => api.list(moduleName!, taskCountQuery('tomorrow')),
+    enabled: Boolean(moduleName && taskQueuesEnabled),
+  });
+  const taskCounts: Record<TaskQueue, number> = {
+    pending: pendingTasks?.total ?? 0,
+    today: todayTasks?.total ?? 0,
+    tomorrow: tomorrowTasks?.total ?? 0,
+  };
+  const allTaskQueuesClear = taskCounts.pending === 0 && taskCounts.today === 0 && taskCounts.tomorrow === 0;
 
   /*
     The list is what the server says it is, and nothing else.
@@ -647,6 +708,34 @@ export default function ListView(): JSX.Element {
               </>
             )}
           </Dropdown>
+
+          {taskQueuesEnabled && (
+            <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800/70" aria-label="Follow-up tasks">
+              {([
+                ['pending', 'Pending', 'Past follow-ups need attention'],
+                ['today', 'Today', "Today's follow-ups"],
+                ['tomorrow', 'Tomorrow', "Tomorrow's follow-ups"],
+              ] as const).map(([queue, label, title]) => (
+                <button
+                  key={queue}
+                  type="button"
+                  title={title}
+                  onClick={() => { setTaskQueue((current) => current === queue ? null : queue); setPage(1); }}
+                  className={cn(
+                    'inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold transition-colors',
+                    taskQueue === queue && 'ring-1 ring-inset ring-slate-400',
+                    queue === 'pending' && taskCounts.pending > 0 && 'bg-red-100 text-red-800 hover:bg-red-200 dark:bg-red-950/60 dark:text-red-200',
+                    queue === 'pending' && taskCounts.pending === 0 && allTaskQueuesClear && 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-200',
+                    queue === 'pending' && taskCounts.pending === 0 && !allTaskQueuesClear && 'bg-white text-slate-700 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-200',
+                    queue === 'today' && 'bg-white text-slate-800 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-100',
+                    queue === 'tomorrow' && 'bg-sky-100 text-sky-800 hover:bg-sky-200 dark:bg-sky-950/60 dark:text-sky-200',
+                  )}
+                >
+                  {label} <span className="tnum opacity-75">{taskCounts[queue]}</span>
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="ml-auto flex shrink-0 items-center gap-2">
             {/* The number, not a footnote. It was the same muted 11px as the

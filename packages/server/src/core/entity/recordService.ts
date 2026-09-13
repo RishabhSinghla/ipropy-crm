@@ -596,6 +596,7 @@ export async function createRecord(
     const ownerType = (input.owner_type as string) === 'group' ? 'group' : 'user';
 
     const prepared = await prepareValues(module, payload, { isCreate: true, conn });
+    if (!ctx.system) assertNextFollowUpIsNotPast(module, prepared.values);
 
     if (!opts.skipDuplicateCheck && module.duplicateCheckFields.length) {
       const dup = await findDuplicate(conn, module, prepared.values);
@@ -701,6 +702,8 @@ export async function updateRecord(
     const payload = ctx.system ? { ...input } : await filterWritableFields(ctx.user, moduleName, input);
 
     const prepared = await prepareValues(module, payload, { isCreate: false, conn, existing: before.values });
+
+    if (!ctx.system) assertNextFollowUpIsNotPast(module, prepared.values);
 
     const changes: { field: string; label: string; from: unknown; to: unknown }[] = [];
     for (const [field, to] of Object.entries(prepared.values)) {
@@ -1100,6 +1103,21 @@ async function prepareValues(
   }
 
   return out;
+}
+
+/**
+ * Next Follow-up is the CRM's task due date. Historical values remain visible
+ * (and imports/workflows may retain their history), but an interactive record
+ * edit must not create a newly overdue task.
+ */
+function assertNextFollowUpIsNotPast(module: ModuleMeta, values: Record<string, unknown>): void {
+  const field = module.fields.find((candidate) => candidate.columnName === 'next_followup_at');
+  if (!field || !(field.name in values) || values[field.name] === null || values[field.name] === '') return;
+  const due = String(values[field.name]).slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+  if (due < today) {
+    throw new ValidationError('Next Follow-up is a task: choose today or a future date.', { field: field.name });
+  }
 }
 
 async function insertPayload(conn: Tx, module: ModuleMeta, recordId: string, prepared: PreparedValues): Promise<void> {
