@@ -17,7 +17,6 @@ import {
   getShareAdminConfig, saveShareConfig,
 } from '../../core/sharing/propertyShare.js';
 import { listIntegrationModels } from '../../ai/models.js';
-import * as whatsappWeb from '../../integrations/whatsappWeb/service.js';
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth);
@@ -1032,42 +1031,6 @@ adminRouter.get('/health', asyncHandler(async (req, res) => {
 adminRouter.get('/integrations', asyncHandler(async (req, res) => {
   await assertCapability(getUser(req), 'admin.integrations');
   res.json(await listIntegrations());
-}));
-
-// WhatsApp Web is intentionally not a generic integration config. It has an
-// encrypted, stateful account session and QR/pairing lifecycle of its own.
-adminRouter.get('/integrations/whatsapp-web/accounts', asyncHandler(async (req, res) => {
-  await assertCapability(getUser(req), 'admin.integrations');
-  res.json(await whatsappWeb.listAccounts());
-}));
-
-adminRouter.post('/integrations/whatsapp-web/accounts', asyncHandler(async (req, res) => {
-  const user = getUser(req); await assertCapability(user, 'admin.integrations');
-  const input = z.object({ label: z.string().trim().min(2).max(80) }).parse(req.body);
-  res.status(201).json(await whatsappWeb.createAccount({ label: input.label, createdBy: user.id }));
-}));
-
-adminRouter.post('/integrations/whatsapp-web/accounts/:id/connect', asyncHandler(async (req, res) => {
-  await assertCapability(getUser(req), 'admin.integrations');
-  await whatsappWeb.connect(req.params.id);
-  res.json(await whatsappWeb.getQr(req.params.id));
-}));
-
-adminRouter.get('/integrations/whatsapp-web/accounts/:id/qr', asyncHandler(async (req, res) => {
-  await assertCapability(getUser(req), 'admin.integrations');
-  res.json(await whatsappWeb.getQr(req.params.id));
-}));
-
-adminRouter.post('/integrations/whatsapp-web/accounts/:id/pairing-code', asyncHandler(async (req, res) => {
-  await assertCapability(getUser(req), 'admin.integrations');
-  const input = z.object({ phoneNumber: z.string().min(8).max(24) }).parse(req.body);
-  res.json(await whatsappWeb.requestPairingCode(req.params.id, input.phoneNumber));
-}));
-
-adminRouter.post('/integrations/whatsapp-web/accounts/:id/disconnect', asyncHandler(async (req, res) => {
-  await assertCapability(getUser(req), 'admin.integrations');
-  await whatsappWeb.disconnect(req.params.id);
-  res.status(204).end();
 }));
 
 /** Live provider catalogue for the model pickers; secrets never leave here. */
