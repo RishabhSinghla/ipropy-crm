@@ -167,10 +167,17 @@ viewsRouter.post('/:module', asyncHandler(async (req, res) => {
   // A view's filter is personal configuration, not a privileged schema change.
   // Its owner may choose to share it with everyone who can already view this
   // module; record-level permissions still apply when that view is opened.
-  // When a team has list-view creation turned off, the administrator remains
-  // the curator. Their new views must therefore be useful to that whole team,
-  // rather than becoming another private tab nobody else can discover.
-  const isPublic = user.isAdmin ? true : input.isPublic;
+  // When no working role is allowed to create views, the administrator is the
+  // curator. Their new views must then be visible to the whole team. If any
+  // role has been granted the feature, preserve the normal targeted-sharing
+  // choice so an administrator can still make a view for one group only.
+  const teamCanCreateViews = user.isAdmin && Boolean((await db.queryOne<{ enabled: boolean }>(
+    `SELECT EXISTS(
+       SELECT 1 FROM ipy_profile
+       WHERE name <> 'Administrator' AND capabilities @> '["views.manage"]'::jsonb
+     ) AS enabled`,
+  ))?.enabled);
+  const isPublic = input.isPublic || (user.isAdmin && !teamCanCreateViews);
 
   await refuseSystemViewName(module.id, input.name);
 
