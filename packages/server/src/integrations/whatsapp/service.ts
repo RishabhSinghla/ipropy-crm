@@ -16,6 +16,7 @@ import * as provider from './provider.js';
 import { detectConsentKeyword, maySend, recordConsent } from './consent.js';
 import { runAutoReply } from './autoreply.js';
 import { exitAllForHandle } from './sequences.js';
+import { captureLead } from '../leadsources/capture.js';
 
 const WINDOW_HOURS = 24;
 
@@ -124,15 +125,38 @@ export interface InboundMessage {
    * conversation which channel it came in on, which is the difference between
    * a number that is fine and a number that is about to be banned.
    */
-  provider?: 'meta' | 'linked';
+  provider?: 'meta' | 'web';
+  /** Set only for a message from an explicitly linked WhatsApp Web account. */
+  webAccountId?: string;
 }
 
 export async function handleInbound(msg: InboundMessage): Promise<{ conversationId: string; messageId: string }> {
+  // An unknown WhatsApp number is a lead, not an orphaned chat. Capture goes
+  // through the normal intake path so Indian-number normalisation, duplicate
+  // prevention, assignment and SLA behaviour stay identical to every other
+  // lead source.
+  const known = await resolveHandle(msg.from);
+  if (!known.recordId) {
+    await captureLead('whatsapp', { providerMessageId: msg.providerMessageId, from: msg.from, type: msg.type }, {
+      firstName: msg.profileName?.trim() || 'WhatsApp enquiry',
+      mobile: msg.from,
+      source: 'WhatsApp',
+      message: msg.text ?? msg.caption,
+      externalId: `whatsapp:${msg.from.replace(/\D/g, '')}`,
+    });
+  }
+
   return transaction(async (tx) => {
     const conversationId = await getOrCreateConversation(msg.from, 'whatsapp', tx);
     const now = msg.timestamp ? new Date(msg.timestamp * 1000) : new Date();
 
     const source = msg.provider ?? 'meta';
+
+    const duplicate = await tx.queryOne<{ id: string }>(
+      `SELECT id FROM ipy_message WHERE provider = $1 AND provider_message_id = $2 LIMIT 1`,
+      [source, msg.providerMessageId],
+    );
+    if (duplicate) return { conversationId, messageId: duplicate.id };
 
     let media: Record<string, unknown> | null = null;
     if (msg.mediaId) {
@@ -165,6 +189,11 @@ export async function handleInbound(msg: InboundMessage): Promise<{ conversation
        RETURNING id`,
       [conversationId, msg.type, body, media ? JSON.stringify(media) : null, msg.providerMessageId, now, source],
     );
+
+    if (msg.webAccountId) {
+      await tx.query(`UPDATE ipy_message SET whatsapp_web_account_id = $2 WHERE id = $1`, [message!.id, msg.webAccountId]);
+      await tx.query(`UPDATE ipy_conversation SET whatsapp_web_account_id = COALESCE(whatsapp_web_account_id, $2) WHERE id = $1`, [conversationId, msg.webAccountId]);
+    }
     const inboundCount = await tx.queryOne<{ count: number }>(
       `SELECT count(*)::int AS count FROM ipy_message
        WHERE conversation_id = $1 AND direction = 'inbound'`,
@@ -304,6 +333,8 @@ export interface SendMessageInput {
   sentBy?: string | null;
   isAiGenerated?: boolean;
   workflowId?: string | null;
+  /** Explicit WhatsApp Web account. Omit to use Meta, or the only connected Web account when Meta is not configured. */
+  webAccountId?: string | null;
   /**
    * Part of a bulk send rather than a reply somebody typed.
    *
@@ -321,6 +352,12 @@ export async function sendMessage(input: SendMessageInput): Promise<{ messageId:
   if (!handle) throw new BadRequestError('No recipient number for this message');
 
   const conversationId = input.conversationId ?? await getOrCreateConversation(handle);
+  const configuredMeta = await provider.isConfigured();
+  const webAccountId = input.webAccountId
+    ?? (!configuredMeta ? (await db.queryOne<{ id: string }>(
+      `SELECT id FROM ipy_whatsapp_web_account WHERE status = 'connected' ORDER BY last_connected_at DESC LIMIT 1`,
+    ))?.id ?? null : null);
+  const viaWeb = Boolean(webAccountId);
 
   // Outside the 24h window Meta only accepts templates — surface that clearly
   // rather than letting the API reject it with a cryptic error.
@@ -342,7 +379,7 @@ export async function sendMessage(input: SendMessageInput): Promise<{ messageId:
     // on, and the operator needs to see that it was skipped and why.
     return { messageId: blocked?.id ?? '', status: 'blocked', error: consent.reason };
   }
-  if (!windowOpen && !input.templateName && !input.media) {
+  if (!viaWeb && !windowOpen && !input.templateName && !input.media) {
     throw new BadRequestError(
       'This conversation is outside the 24-hour WhatsApp window. Send an approved template to re-open it.',
       { requiresTemplate: true },
@@ -353,7 +390,23 @@ export async function sendMessage(input: SendMessageInput): Promise<{ messageId:
   let type: string = 'text';
   let body: string | null = input.text ?? null;
 
-  if (input.templateName) {
+  if (viaWeb && input.templateName) {
+    const template = await db.queryOne<{ body_text: string; variable_map: Record<string, string> }>(
+      `SELECT body_text, variable_map FROM ipy_whatsapp_template WHERE name = $1 ORDER BY updated_at DESC LIMIT 1`, [input.templateName],
+    );
+    if (!template) throw new NotFoundError(`Unknown WhatsApp template '${input.templateName}'`);
+    const values = input.templateParams ?? {};
+    body = renderTemplate(template.body_text, values);
+    const web = await import('../whatsappWeb/service.js');
+    result = await web.send(webAccountId!, { to: handle, text: body ?? '' });
+    type = 'template';
+    await db.query(`UPDATE ipy_whatsapp_template SET usage_count = usage_count + 1 WHERE name = $1`, [input.templateName]);
+  } else if (viaWeb) {
+    const web = await import('../whatsappWeb/service.js');
+    result = await web.send(webAccountId!, { to: handle, text: input.text, media: input.media });
+    type = input.media?.type ?? 'text';
+    body = input.media?.caption ?? input.text ?? null;
+  } else if (input.templateName) {
     const template = await db.queryOne<{
       body_text: string; header_text: string | null; header_format: string | null;
       language: string; variable_map: Record<string, string>; buttons: { type: string; url?: string }[];
@@ -401,17 +454,19 @@ export async function sendMessage(input: SendMessageInput): Promise<{ messageId:
       (conversation_id, direction, channel, type, body, template_name, template_params,
        status, error_message, provider_message_id, provider, sent_by, is_ai_generated,
        workflow_id, sent_via)
-     VALUES ($1,'outbound','whatsapp',$2,$3,$4,$5,$6,$7,$8,'meta',$9,$10,$11,'api')
+     VALUES ($1,'outbound','whatsapp',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'api')
      RETURNING id`,
     [
       conversationId, type, body,
       input.templateName ?? null,
       input.templateParams ? JSON.stringify(input.templateParams) : null,
       result.status, result.error ?? null, result.providerMessageId,
-      input.sentBy ?? null, input.isAiGenerated ?? false,
+      viaWeb ? 'web' : 'meta', input.sentBy ?? null, input.isAiGenerated ?? false,
       input.workflowId ?? null,
     ],
   );
+
+  if (webAccountId) await db.query(`UPDATE ipy_message SET whatsapp_web_account_id = $2 WHERE id = $1`, [message!.id, webAccountId]);
 
   await db.query(
     `UPDATE ipy_conversation SET last_message_at = now(), last_message_preview = $2, updated_at = now() WHERE id = $1`,
