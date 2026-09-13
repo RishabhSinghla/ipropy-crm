@@ -78,7 +78,20 @@ export function securityPolicy(isProd: boolean): string {
     "default-src 'self'",
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob:",
+    /*
+      The map tiles are named here or the Team map is a grey rectangle.
+
+      `admin/TeamMap.tsx` draws an OpenStreetMap tile layer, and a tile is an
+      ordinary `<img>` from `*.tile.openstreetmap.org`. With `img-src 'self'`
+      every one of them was refused, so the page rendered its pins, its zoom
+      buttons and its attribution line over nothing at all — which reads as a
+      broken map rather than a blocked one, because the only trace is in the
+      browser console.
+
+      Leaflet itself is bundled from npm and needs nothing here; it is the
+      tiles, and only the tiles, that come from outside.
+    */
+    "img-src 'self' data: blob: https://*.tile.openstreetmap.org",
     "font-src 'self' data:",
     "media-src 'self' blob:",
     /*

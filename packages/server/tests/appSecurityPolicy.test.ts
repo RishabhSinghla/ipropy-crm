@@ -90,6 +90,18 @@ describe('the policy on the app HTML', () => {
     expect(csp).toMatch(/img-src [^;]*blob:/);
   });
 
+  it('lets the map tiles through, or Team map is a grey rectangle', async () => {
+    /*
+      `admin/TeamMap.tsx` draws an OpenStreetMap tile layer and a tile is a
+      plain `<img>` from `*.tile.openstreetmap.org`. Under `img-src 'self'`
+      every tile was refused and the page drew its pins and its attribution
+      over nothing — which looks like a broken map, not a blocked one, because
+      the only evidence is in the browser console.
+    */
+    const csp = await directivesFor(true);
+    expect(csp).toMatch(/img-src [^;]*tile\.openstreetmap\.org/);
+  });
+
   it('upgrades insecure requests in production only', async () => {
     // Locally the app is plain http, and the directive would break every asset.
     expect(await directivesFor(true)).toContain('upgrade-insecure-requests');
