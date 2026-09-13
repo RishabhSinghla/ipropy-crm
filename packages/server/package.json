@@ -34,7 +34,7 @@
     "@ipropy/shared": "*",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@sentry/node": "^10.73.0",
-    "@simplewebauthn/server": "^13.3.2",
+    "@simplewebauthn/server": "^14.0.1",
     "archiver": "^8.0.0",
     "bcryptjs": "^3.0.3",
     "compression": "^1.7.5",
