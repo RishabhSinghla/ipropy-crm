@@ -42,7 +42,7 @@ solving it properly.
   own CRM without a deploy, and `is_customised` / `ipy_field_tombstone` mean the
   next seed does not undo their work.
 * **Per-customer configuration already exists.** `ipy_integration` holds each
-  deployment's WhatsApp, AI, storage and telephony credentials, encrypted at
+  deployment's WhatsApp, AI and storage credentials, encrypted at
   rest. In a database-per-customer world that is per-customer for free.
 
 ---

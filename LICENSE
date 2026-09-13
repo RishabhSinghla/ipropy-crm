@@ -1,0 +1,28 @@
+Copyright (c) 2026 iPropy Realty Private Limited. All rights reserved.
+
+This repository and everything in it — source code, database schema and
+migrations, configuration, documentation, designs and assets — is proprietary
+and confidential to iPropy Realty Private Limited.
+
+No licence is granted. You may not use, copy, modify, merge, publish,
+distribute, sublicense, sell, host, or create derivative works from any part of
+it, in whole or in part, without prior written permission from iPropy Realty
+Private Limited.
+
+The repository is readable on GitHub so that the people who work on this
+product can be given access quickly and without ceremony. Being able to read
+something is not permission to use it, and publishing it here does not place it
+in the public domain or make it open source.
+
+Third-party dependencies keep their own licences, which are the ones that apply
+to them. This notice covers the work in this repository only.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Enquiries: sales@ipropy.com

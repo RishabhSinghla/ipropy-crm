@@ -25,7 +25,8 @@ green (`autoDeployTrigger: checksPass`).
 iPropy is an AI-native, metadata-driven CRM for Indian real-estate developers and brokerages.
 It rebuilds Vtiger's runtime-customisation model (modules, fields, layouts, picklists, custom views,
 role hierarchy, sharing rules, workflows, dashboards are all *data*, not code) on a modern stack, and
-adds WhatsApp, telephony, portal lead capture and an AI layer.
+adds WhatsApp, portal lead capture, call logging from the team's own handsets
+and an AI layer.
 
 **Working today:**
 
@@ -37,7 +38,7 @@ adds WhatsApp, telephony, portal lead capture and an AI layer.
 | Interactive record view | Header summary, tabbed Overview/Timeline/Related/Files, AI sidebar, notes |
 | Unified timeline | Calls, WhatsApp, email, notes, follow-ups, files, field changes and AI insights on one feed |
 | WhatsApp inbox | Threads, 24-hour window enforcement, delivery receipts, templates, AI reply suggestions |
-| Telephony | Click-to-call, inbound routing/screen-pop, recordings, AI call analysis, coaching report |
+| Calls | Logged from the team's own Android handsets, matched to leads on the last ten digits; AI call analysis and coaching report |
 | Property inventory | Table/kanban views, availability, pricing, blocks, comparables and buyer matching |
 | Dashboards | 5 seeded dashboards with metrics, funnel, inventory, leaderboards and AI insight tiles |
 | Automation | Editable workflows, 14 task types, delayed scheduling, assignment rules and SLA tracking |
@@ -244,7 +245,7 @@ the resolver: it reads `ipy_integration.config`/`credentials` first and falls ba
 `.env` variable below only when no DB value is set. Credentials are encrypted at rest (AES-256-GCM,
 key derived from `JWT_SECRET` via scrypt — no new required env var). Saving a credential through the
 UI auto-activates that provider; a per-provider "Test connection" button does a real, read-only
-connectivity probe (WhatsApp/Twilio/Exotel/SMTP/Anthropic).
+connectivity probe (WhatsApp/SMTP/Anthropic).
 
 | Variable | Purpose | Current state |
 |---|---|---|
@@ -253,7 +254,6 @@ connectivity probe (WhatsApp/Twilio/Exotel/SMTP/Anthropic).
 | `ANTHROPIC_API_KEY` | Claude | **Empty → AI runs rule-based fallback**. Also settable via Admin → Integrations → Anthropic. |
 | `AI_MODEL` / `AI_MODEL_FAST` | Model selection | `claude-sonnet-5` / `claude-haiku-4-5-20251001` |
 | `WHATSAPP_*` | Meta Cloud API (phone id, token, verify token, **app secret**) | Empty → simulation mode. Editable in-UI. |
-| `TELEPHONY_PROVIDER` + `TWILIO_*` / `EXOTEL_*` | Voice | `none` → logs only. Editable in-UI (provider auto-selected from whichever of Twilio/Exotel is active). |
 | `SMTP_*` / `IMAP_*` | Email | Empty → logged with open tracking. Editable in-UI. |
 | `FACEBOOK_*`, `GOOGLE_ADS_WEBHOOK_KEY`, `WEBFORM_PUBLIC_KEY` | Lead capture | Endpoints live, no traffic. Editable in-UI (migration 005 added the `webform` provider row). |
 | `STORAGE_DRIVER` + `S3_*` | Files | `local` → `./storage`. Moved into the DB-backed settings — `local` is the fallback, S3 is editable in Admin → Integrations. |
@@ -264,7 +264,7 @@ connectivity probe (WhatsApp/Twilio/Exotel/SMTP/Anthropic).
 demoable: messages and calls are recorded in the CRM and marked sent, so workflows stay testable.
 
 Webhook URLs to hand to providers are listed in-app at **Admin → Integrations → Webhook URLs**
-(WhatsApp, Facebook Lead Ads, Google Ads, 99acres, MagicBricks, Housing, NoBroker, Twilio, Exotel,
+(WhatsApp, Facebook Lead Ads, Google Ads, 99acres, MagicBricks, Housing, NoBroker,
 generic lead capture, email open pixel).
 
 ---
@@ -333,8 +333,8 @@ iPropy-crm/
     │   │   ├── migrate.ts      forward-only migration runner
     │   │   ├── migrations/     6 × .sql
     │   │   └── seed/           modules.ts (the data model), picklists, rbac, dashboards, automation, demo
-    │   ├── api/routes/         auth, metadata, records, views, dashboards, admin, comms, telephony, ai, webhooks, misc
-    │   ├── integrations/       whatsapp, telephony, email, leadsources — all resolve credentials via
+    │   ├── api/routes/         auth, metadata, records, views, dashboards, admin, comms, ai, webhooks, misc
+    │   ├── integrations/       whatsapp, email, leadsources, device call sync — all resolve credentials via
     │   │                       core/settings/integrations.ts now, not process.env directly
     │   ├── ai/                 client, leadScoring, matching, dealRisk, callAnalysis, drafting, assistant, actions
     │   ├── app.ts / index.ts / realtime.ts / config.ts
@@ -671,7 +671,7 @@ The full account-owned checklist and rollback notes live in `DEPLOYMENT.md`.
 2. Enable daily Neon backups and a seven-day instant-restore window; perform one restore drill.
 3. Move Render off Free so scheduled workflows run overnight.
 4. Create individual accounts, deactivate demo logins and subscribe each person's phone to alerts.
-5. Configure and test only the WhatsApp, email, AI, storage and telephony providers the team will
+5. Configure and test only the WhatsApp, email, AI and storage providers the team will
    actually use.
 6. Run the real workflow with two or three people for two weeks before moving the whole desk.
 7. Field-test capture on a real property visit: sunlight, one hand, no signal, iPhone EXIF, storage,
@@ -1009,7 +1009,7 @@ Branch `feat/dashboard-ai-alerts`, three commits, all verified against the runni
 | # | Ask | State |
 |---|-----|-------|
 | 4 | Rename module to "Leads & Contacts" | Done — migration `011`; module *name* stays `leads` (URL, API path, relation target) |
-| 2 | AI without an Anthropic key | Done — Gemini/Groq/OpenRouter/OpenAI-compatible/Ollama via one adapter; migration `012` |
+| 2 | AI without an Anthropic key | Done — Gemini/Groq/OpenRouter/any OpenAI-compatible endpoint via one adapter; migration `012` |
 | 1 | Full dashboard customisation | Done — CRUD UI + widget builder + 6 previously-unrenderable widget types |
 | 5 | Mobile UI/UX | Done for `RecordDetail` and `Dashboard`; **not yet audited**: Inbox, Calls, InventoryBoard, admin pages |
 | 3 | New-lead highlighting + notifications | Done — `ipy_module_seen` watermark + Web Push; migration `013` |
@@ -1030,8 +1030,9 @@ Branch `feat/dashboard-ai-alerts`, three commits, all verified against the runni
 * **#15 (99acres/MagicBricks/Housing syndication).** No open API for *posting* listings — these are
   commercial contracts per portal. Inbound lead webhooks for all four already exist and work.
 * **#17 (call recording).** Android has blocked third-party call recording since Android 10. The
-  route that works is server-side recording via cloud telephony (Exotel/Knowlarity, already
-  scaffolded in `integrations/telephony/`). Per-state consent rules apply.
+  route that works is the companion app picking up the files the handset's own
+  recorder writes. Cloud telephony was the other option and was removed in
+  September 2026, unused. Per-state consent rules apply.
 
 ### Verification notes for whoever picks this up
 

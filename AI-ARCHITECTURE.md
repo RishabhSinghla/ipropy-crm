@@ -43,7 +43,7 @@ words instead of guessing, and then making each box offer the ids that can do it
 
 | The name you read | Where it lives | State |
 |---|---|---|
-| **LLM Gateway** | `ai/client.ts` | Done. Two transports — the Anthropic SDK, and one `fetch` adapter speaking OpenAI chat-completions, which covers Gemini, Groq, OpenRouter, OpenAI, OpenCode and a local Ollama. This is exactly what LiteLLM is for, in about a page. |
+| **LLM Gateway** | `ai/client.ts` | Done. Two transports — the Anthropic SDK, and one `fetch` adapter speaking OpenAI chat-completions, which covers Gemini, Groq, OpenRouter, OpenAI and any other OpenAI-compatible endpoint. This is exactly what LiteLLM is for, in about a page. |
 | **Model routing** | `core/settings/aiModels.ts` | Done, and better than most. Eight jobs, eight boxes in Admin. Cheap model for classification, stronger one for reasoning. Per-key fallback, so one bad box costs one job rather than all eight. |
 | **LLM Observability** | `ipy_ai_log` | Done at the level that matters: feature, model, user, record, tokens in and out, latency, success, error, cached. That is what Langfuse's dashboard shows. Missing: cost in rupees, and a trace that links the steps of one run together. |
 | **Agentic Memory** | `ipy_ai_memory`, `ai/assistantMemory.ts` | Done, and done the careful way. Memory is **opt-in and visible** — it only records when somebody says "remember that…", and they can see and delete it. Mem0's own advice is not to save everything; this refuses to by construction. |

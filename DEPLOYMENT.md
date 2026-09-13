@@ -14,7 +14,7 @@ every-two-hours check now exercises DNS and the certificate as well as the
 database. The website's `CRM_API_URL` on Vercel still names the old
 `onrender.com` host and works — when it is next changed, point it at
 `https://crm.ipropy.com`. Anything that posts webhooks to the CRM (Meta lead
-ads, WhatsApp, telephony) should carry the new host too.
+ads, WhatsApp) should carry the new host too.
 
 Both verified: health check green, DB connected, CORS allows the website's
 origin, the deployed bundle matches `main`, and the seed admin password is in
