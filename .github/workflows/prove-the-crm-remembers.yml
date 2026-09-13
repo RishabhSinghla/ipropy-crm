@@ -52,7 +52,13 @@ jobs:
       - name: Add a contact, change it, note it, ring it
         env:
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
-          BASE_URL: ${{ inputs.base_url }}
+          # `inputs` is empty on a scheduled run — a default declared under
+          # `workflow_dispatch` applies only when somebody presses the button.
+          # So this was blank every night: curl was handed an empty address and
+          # the job failed before it checked anything. Every manual run passed,
+          # every scheduled run failed, and the two daily proofs that production
+          # still works had therefore never once run on their own.
+          BASE_URL: ${{ inputs.base_url || 'https://crm.ipropy.com' }}
         run: |
           set -euo pipefail
 
