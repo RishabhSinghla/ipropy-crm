@@ -108,10 +108,16 @@ export default function TeamMap(): JSX.Element {
     if (map.current) return;
 
     const instance = L.map(node, { zoomControl: true }).setView(HOME, 12);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    // Do not use the public OpenStreetMap volunteer tile servers for the CRM.
+    // A team map loads many tiles at once and those servers correctly return
+    // 403 when that usage breaches their tile policy, leaving the screen full
+    // of error images. CARTO's public light basemap is designed for this kind
+    // of application use and keeps the map readable behind coloured pins.
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
       maxZoom: 19,
-      // Required by the tile usage policy, and fair: it is their data.
-      attribution: '&copy; OpenStreetMap contributors',
+      subdomains: 'abcd',
+      detectRetina: true,
+      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
     }).addTo(instance);
     map.current = instance;
     drawn.current = L.layerGroup().addTo(instance);

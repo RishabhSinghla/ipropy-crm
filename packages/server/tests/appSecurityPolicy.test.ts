@@ -92,14 +92,14 @@ describe('the policy on the app HTML', () => {
 
   it('lets the map tiles through, or Team map is a grey rectangle', async () => {
     /*
-      `admin/TeamMap.tsx` draws an OpenStreetMap tile layer and a tile is a
-      plain `<img>` from `*.tile.openstreetmap.org`. Under `img-src 'self'`
+      `admin/TeamMap.tsx` draws a CARTO basemap tile layer and a tile is a
+      plain `<img>` from `*.basemaps.cartocdn.com`. Under `img-src 'self'`
       every tile was refused and the page drew its pins and its attribution
       over nothing — which looks like a broken map, not a blocked one, because
       the only evidence is in the browser console.
     */
     const csp = await directivesFor(true);
-    expect(csp).toMatch(/img-src [^;]*tile\.openstreetmap\.org/);
+    expect(csp).toMatch(/img-src [^;]*basemaps\.cartocdn\.com/);
   });
 
   it('upgrades insecure requests in production only', async () => {
