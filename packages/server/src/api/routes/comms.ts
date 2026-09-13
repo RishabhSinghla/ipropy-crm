@@ -134,6 +134,7 @@ const sendSchema = z.object({
     filename: z.string().optional(),
   }).optional(),
   buttons: z.array(z.object({ id: z.string(), title: z.string().max(20) })).max(3).optional(),
+  webAccountId: z.string().uuid().nullable().optional(),
   isAiGenerated: z.boolean().optional(),
 });
 
