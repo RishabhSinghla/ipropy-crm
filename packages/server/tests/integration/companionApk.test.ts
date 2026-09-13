@@ -21,7 +21,6 @@ import request from 'supertest';
 import type { Express } from 'express';
 import { createApp } from '../../src/app.js';
 import { registry } from '../../src/core/metadata/registry.js';
-import { db } from '../../src/db/pool.js';
 
 let app: Express;
 
@@ -73,31 +72,26 @@ describe('the download', () => {
     expect(body.length).toBe(meta.body.build.sizeBytes);
   });
 
-  it('follows the setting when one names somewhere else', async () => {
-    await db.query(
-      `UPDATE ipy_setting SET value = '"https://files.example.com/ipropy.apk"'::jsonb
-        WHERE key = 'companion.apk_url'`,
-    );
-    try {
-      const res = await request(app).get('/api/public/companion/download').redirects(0);
-      expect(res.status).toBe(302);
-      expect(res.headers.location).toBe('https://files.example.com/ipropy.apk');
-    } finally {
-      await db.query(`UPDATE ipy_setting SET value = '""'::jsonb WHERE key = 'companion.apk_url'`);
-    }
-  });
+  /*
+    The two cases above this used to be three. `companion.apk_url` let an
+    administrator redirect the download to a storage bucket; it was empty from
+    the day it was added (071) to the day it was removed (143), and the whole
+    Companion section of the settings screen existed to ask for it.
 
-  it('ignores a setting that is not a web address', async () => {
-    // Otherwise a typo, or a `javascript:` line pasted in by somebody who
-    // should not have been pasting, becomes a redirect the CRM performs.
-    await db.query(
-      `UPDATE ipy_setting SET value = '"javascript:alert(1)"'::jsonb WHERE key = 'companion.apk_url'`,
-    );
-    try {
-      const res = await request(app).get('/api/public/companion/download').redirects(0);
-      expect(res.status).toBe(200);
-    } finally {
-      await db.query(`UPDATE ipy_setting SET value = '""'::jsonb WHERE key = 'companion.apk_url'`);
-    }
+    What the third test pinned is worth keeping as a note rather than a test:
+    it checked that a value which was not an http(s) address — a typo, or a
+    `javascript:` line pasted in by somebody who should not have been pasting —
+    could not become a redirect the CRM performed on a public route. There is
+    no setting to paste into now, so there is nothing to validate; if the
+    bucket day ever comes and this is rebuilt, that check comes back with it.
+  */
+  it('serves the build it shipped with, whatever is in settings', async () => {
+    const res = await request(app).get('/api/public/companion/download').redirects(0);
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe('application/vnd.android.package-archive');
+
+    // And the metadata route agrees, rather than naming somewhere else.
+    const meta = await request(app).get('/api/public/companion');
+    expect(meta.body.url).toBe('/api/public/companion/download');
   });
 });

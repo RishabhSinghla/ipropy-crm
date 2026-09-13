@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { db, transaction } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
-import { ForbiddenError, NotFoundError } from '../../utils/errors.js';
+import { BadRequestError, ForbiddenError, NotFoundError } from '../../utils/errors.js';
 import { registry } from '../../core/metadata/registry.js';
 import { canAccessModule } from '../../core/permissions/index.js';
 import { recordService } from '../../core/entity/recordService.js';
@@ -168,6 +168,8 @@ viewsRouter.post('/:module', asyncHandler(async (req, res) => {
   // module; record-level permissions still apply when that view is opened.
   const isPublic = input.isPublic;
 
+  await refuseSystemViewName(module.id, input.name);
+
   // Adding a tab back by the name of one that was deleted clears its
   // tombstone: otherwise the seed's own copy could never return, and an admin
   // who changed their mind would have no way to say so.
@@ -195,6 +197,34 @@ viewsRouter.post('/:module', asyncHandler(async (req, res) => {
   });
   res.status(201).json({ id: row?.id });
 }));
+
+/**
+ * Refuse a name a built-in view already answers to.
+ *
+ * The switcher shows a view by its name, so a second "My Leads" is two
+ * identical lines with no way to tell which is which — reported three times,
+ * migrated away twice (135, 140, 144), and each time somebody could simply
+ * make another. This is the half those migrations could not cover: they clean
+ * up what exists, and this stops the next one being created.
+ *
+ * Only built-in names are protected. Two people are free to name their own
+ * views the same thing; those are private to each of them and never appear in
+ * one list together.
+ */
+async function refuseSystemViewName(moduleId: string, name: string): Promise<void> {
+  const clash = await db.queryOne<{ name: string }>(
+    `SELECT name FROM ipy_view
+      WHERE module_id = $1 AND is_system = true AND overrides_view_id IS NULL
+        AND lower(name) = lower($2)
+      LIMIT 1`,
+    [moduleId, name],
+  );
+  if (clash) {
+    throw new BadRequestError(
+      `“${clash.name}” is one of the built-in views. Pick another name — or edit that view, which saves your own version of it.`,
+    );
+  }
+}
 
 /**
  * Set exactly who a view is shared with.
@@ -291,6 +321,11 @@ viewsRouter.put('/:module/:id', asyncHandler(async (req, res) => {
 
   if (view.owner_id !== user.id && !user.isAdmin) {
     throw new ForbiddenError('You can only edit views you created');
+  }
+
+  // Renaming into a built-in name is the same duplicate by another route.
+  if (input.name && input.name !== view.name) {
+    await refuseSystemViewName(view.module_id, input.name);
   }
 
   const map: Record<string, string> = {

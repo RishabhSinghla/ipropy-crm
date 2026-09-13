@@ -419,10 +419,20 @@ export default function RecordForm({
               click folded away the fields somebody was filling in. A form is
               short and you are meant to read all of it; there is nothing here
               worth hiding, so nothing here hides.
+
+              A heading divides a form into parts, so a form with one part has
+              nothing to divide and the heading is only saying the title again.
+              The quick-create layouts are exactly that shape: one block, named
+              after the record — so the dialog read "New Inventory" twice, once
+              in its own title bar and once immediately underneath. Worse on
+              production, where that block is still called "New Property" from
+              before the rename, so the two lines disagreed.
             */}
-            <div className="flex w-full items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-4 py-2.5 dark:border-slate-800 dark:bg-slate-800/40">
-              <span className="text-sm font-medium">{block.label}</span>
-            </div>
+            {blocks.length > 1 && (
+              <div className="flex w-full items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-4 py-2.5 dark:border-slate-800 dark:bg-slate-800/40">
+                <span className="text-sm font-medium">{block.label}</span>
+              </div>
+            )}
 
             {(
               <div className={cn(

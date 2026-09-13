@@ -31,7 +31,8 @@ import {
   type BuyerMatch, type FieldMeta, type ModuleMeta, type PropertyMatch, type RecordEnvelope,
 } from '@ipropy/shared';
 import {
-  ChevronDown, ChevronLeft, ChevronRight, Eye, Link2, Lock, RefreshCw, RotateCcw, Save, Search, Share2,
+  ChevronDown, ChevronLeft, ChevronRight, Copy, Eye, Link2, Lock, Mail, MessageCircle, MessageSquare,
+  RefreshCw, RotateCcw, Save, Search, Share2,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { assignmentField, byLabel, fieldByKey } from '../lib/fields';
@@ -83,8 +84,8 @@ const INVENTORY_COLUMNS: ColumnSpec[] = [
 ];
 
 export function MatchingTab({
-  module, id, returnQuery,
-}: { module: string; id: string; returnQuery: string }): JSX.Element {
+  module, id, returnQuery, recordLabel,
+}: { module: string; id: string; returnQuery: string; recordLabel?: string }): JSX.Element {
   const isContact = module === 'leads';
   const targetModule = isContact ? 'properties' : 'leads';
   const queryClient = useQueryClient();
@@ -508,6 +509,7 @@ export function MatchingTab({
           recordId={id}
           targetModule={targetModule}
           ids={[...selected]}
+          recordLabel={recordLabel}
           onClose={() => setSharing(false)}
         />
       )}
@@ -617,11 +619,23 @@ function MatchPeek({
  * else tomorrow. Revoking is on the record's own share list.
  */
 function ShareMatchesModal({
-  module, recordId, targetModule, ids, onClose,
+  module, recordId, targetModule, ids, recordLabel, onClose,
 }: {
-  module: string; recordId: string; targetModule: string; ids: string[]; onClose: () => void;
+  module: string; recordId: string; targetModule: string; ids: string[];
+  recordLabel?: string; onClose: () => void;
 }): JSX.Element {
-  const [label, setLabel] = useState('');
+  /*
+    Named after the person it is for, before anybody types anything.
+
+    You are standing on Vijay's record looking at Vijay's matches, and the box
+    asked who it was for. The answer was on screen the whole time, and leaving
+    it blank was easier than typing it — so the links were going out unnamed and
+    the customer's own page had no heading. Still editable: this is a default,
+    not a decision.
+  */
+  const [label, setLabel] = useState(
+    recordLabel?.trim() ? `Options for ${recordLabel.trim()}` : '',
+  );
   const [url, setUrl] = useState('');
 
   /*
@@ -639,6 +653,18 @@ function ShareMatchesModal({
   });
   const shareable = (shareConfig?.fields ?? []).some((f) => f.visible);
   const targetLabel = targetModule === 'leads' ? 'Leads' : 'Inventory';
+
+  /*
+    One sentence, three apps. Written here rather than three times inline so
+    WhatsApp, SMS and email cannot drift into saying different things.
+  */
+  const what = `${ids.length} ${targetModule === 'leads'
+    ? (ids.length === 1 ? 'requirement' : 'requirements')
+    : (ids.length === 1 ? 'property' : 'properties')}`;
+  const subject = label.trim() || `${what} for you`;
+  const shareMessage = recordLabel?.trim()
+    ? `Hi ${recordLabel.trim()}, here are ${what} I have picked out for you:`
+    : `Here are ${what} I have picked out for you:`;
 
   const create = useMutation({
     mutationFn: () => api.shareMatches(module, recordId, { targetModule, ids, label: label.trim() || undefined }),
@@ -700,10 +726,43 @@ function ShareMatchesModal({
               className="btn-secondary btn-sm"
               onClick={() => { void navigator.clipboard?.writeText(url); toast.success('Link copied'); }}
             >
-              Copy
+              <Copy className="h-3.5 w-3.5" /> Copy
             </button>
           </div>
-          <p className="mt-2 text-2xs text-muted">
+
+          {/*
+            Copy was the only way out of this dialog, and nobody sends a link by
+            copying it — they send it on WhatsApp. Copying it meant leaving the
+            CRM, finding the chat, pasting, and writing the sentence again.
+
+            Each of these opens the app with the message already written. No
+            recipient is filled in: who it goes to is the one part of this that
+            must stay a deliberate act.
+          */}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <a
+              href={`https://wa.me/?text=${encodeURIComponent(`${shareMessage}\n${url}`)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-secondary btn-sm"
+            >
+              <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
+            </a>
+            <a
+              href={`sms:?&body=${encodeURIComponent(`${shareMessage} ${url}`)}`}
+              className="btn-secondary btn-sm"
+            >
+              <MessageSquare className="h-3.5 w-3.5" /> Message
+            </a>
+            <a
+              href={`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(`${shareMessage}\n\n${url}`)}`}
+              className="btn-secondary btn-sm"
+            >
+              <Mail className="h-3.5 w-3.5" /> Email
+            </a>
+          </div>
+
+          <p className="mt-3 text-2xs text-muted">
             Revoke it any time from the record’s share links.
           </p>
         </div>

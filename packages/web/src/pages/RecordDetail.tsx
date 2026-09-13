@@ -632,7 +632,7 @@ export default function RecordDetail(): JSX.Element {
             />
           )}
           {activeTab === 'timeline' && <TimelineTab module={moduleName!} id={id!} />}
-          {activeTab === 'matching' && <MatchingTab module={moduleName!} id={id!} returnQuery={returnQuery} />}
+          {activeTab === 'matching' && <MatchingTab module={moduleName!} id={id!} returnQuery={returnQuery} recordLabel={record.label} />}
           {activeTab.startsWith('rel:') && (
             <RelatedTab
               meta={meta} module={moduleName!} id={id!}

@@ -1,8 +1,8 @@
 /**
- * The view switcher ships with three views, and editing one is personal.
+ * The view switcher ships with four views, and editing one is personal.
  *
- * "All Leads", "My Leads" and "Unread Leads" are one row each, read by the
- * whole team (the third arrived with migration 142). Making
+ * "All Leads", "My Leads", "Unread Leads" and "Favourite Leads" are one row
+ * each, read by the whole team (142 and 145 added the last two). Making
  * them editable — which is the point, since they are the two views everybody
  * actually lives in — could not mean letting one person reshape the row
  * everybody reads. So an edit to a built-in view is saved as that person's own
@@ -69,7 +69,7 @@ describe('the built-in views', () => {
   it('are what the switcher opens with', async () => {
     const list = await views(adminToken);
     const builtIn = list.filter((v) => v.isSystem).map((v) => v.name).sort();
-    expect(builtIn).toEqual(['All Leads', 'My Leads', 'Unread Leads']);
+    expect(builtIn).toEqual(['All Leads', 'Favourite Leads', 'My Leads', 'Unread Leads']);
   });
 
   it('count what each one would actually list', async () => {
@@ -85,8 +85,8 @@ describe('the built-in views', () => {
     expect(res.status).toBe(200);
 
     const counted = (res.body as { name: string; count?: number }[])
-      .filter((v) => ['All Leads', 'My Leads', 'Unread Leads'].includes(v.name));
-    expect(counted).toHaveLength(3);
+      .filter((v) => ['All Leads', 'My Leads', 'Unread Leads', 'Favourite Leads'].includes(v.name));
+    expect(counted).toHaveLength(4);
     for (const v of counted) {
       expect(typeof v.count, `${v.name} has no count`).toBe('number');
       expect(v.count).toBeGreaterThanOrEqual(0);
@@ -133,8 +133,76 @@ describe('the built-in views', () => {
       .set('Authorization', `Bearer ${adminToken}`);
     expect(res.status).toBe(403);
 
-    // Still there, and still one of three.
-    expect((await views(adminToken)).filter((v) => v.isSystem)).toHaveLength(3);
+    // Still there, and still one of four.
+    expect((await views(adminToken)).filter((v) => v.isSystem)).toHaveLength(4);
+  });
+
+  it('put a starred record into Favourite Leads and an unstarred one out', async () => {
+    /*
+      `favourite` is a system filter field over `ipy_starred`, so this view is
+      per-person the way My Leads is. Asserted through the star endpoint rather
+      than by writing the row, because the two disagreeing is the only way this
+      breaks.
+    */
+    const fav = (await views(adminToken)).find((v) => v.name === 'Favourite Leads')!;
+    const total = async (): Promise<number> => {
+      const res = await request(app)
+        .get(`/api/records/leads?view=${fav.id}&pageSize=1`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(res.status).toBe(200);
+      return res.body.total as number;
+    };
+
+    const any = await request(app)
+      .get('/api/records/leads?pageSize=1')
+      .set('Authorization', `Bearer ${adminToken}`);
+    const id = any.body.rows[0]?.id as string | undefined;
+    if (!id) return;
+
+    const before = await total();
+    await request(app).post(`/api/records/leads/${id}/star`).set('Authorization', `Bearer ${adminToken}`).expect(200);
+    expect(await total()).toBe(before + 1);
+
+    // And it is one person's star, not the team's.
+    const theirs = (await views(executiveToken)).find((v) => v.name === 'Favourite Leads')!;
+    const other = await request(app)
+      .get(`/api/records/leads?view=${theirs.id}&pageSize=1`)
+      .set('Authorization', `Bearer ${executiveToken}`);
+    expect(other.body.total).toBe(0);
+
+    // Un-starring is the same POST with `starred: false`, not a DELETE — there
+    // is no DELETE route, and calling one leaves the star in place while the
+    // request quietly 404s.
+    await request(app)
+      .post(`/api/records/leads/${id}/star`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ starred: false })
+      .expect(200);
+    expect(await total()).toBe(before);
+  });
+
+  it('refuse a new view named after one of them', async () => {
+    /*
+      The other half of migration 144. That migration deletes the duplicates
+      that exist; without this, anybody could make the next one and the
+      switcher would show two identical lines again — which is the report that
+      has now come in three times.
+    */
+    const res = await request(app)
+      .post('/api/views/leads')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: 'My Leads', columns: [], filter: { logic: 'AND', conditions: [] } });
+    expect(res.status).toBe(400);
+    expect(String(res.body.message ?? '')).toMatch(/built-in/i);
+
+    // Case is not a loophole: "my leads" reads identically in the switcher.
+    const lower = await request(app)
+      .post('/api/views/leads')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: 'my leads', columns: [], filter: { logic: 'AND', conditions: [] } });
+    expect(lower.status).toBe(400);
+
+    expect((await views(adminToken)).filter((v) => v.name.toLowerCase() === 'my leads')).toHaveLength(1);
   });
 });
 

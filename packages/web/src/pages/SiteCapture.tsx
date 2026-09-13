@@ -139,7 +139,19 @@ function useLocation(enabled: boolean): { fix: Fix | null; state: 'off' | 'locat
 /** What was added on this phone, this session — proof the tap did something. */
 interface Saved { id: string; label: string }
 
-export default function SiteCapture(): JSX.Element {
+/**
+ * `inModal` is the desk posture, not a different screen.
+ *
+ * The Inventories list opens this in a dialog now rather than navigating away,
+ * because "add one more unit" from a list you are reading should not lose the
+ * list. Same component, same save, same layout fields: what changes is the
+ * furniture a dialog already provides — its own title bar, its own scroll, and
+ * a fixed phone bar that would otherwise sit over the page behind it.
+ */
+export default function SiteCapture({ inModal, onSaved }: {
+  inModal?: boolean;
+  onSaved?: () => void;
+} = {}): JSX.Element {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -267,6 +279,10 @@ export default function SiteCapture(): JSX.Element {
       setErrors({});
       setShowAll(false);
       invalidateRecordQueries(queryClient, MODULE);
+      // The list behind the dialog refetches. Deliberately not a close: a visit
+      // is several units in a row, and the form clearing itself is the cue to
+      // type the next one.
+      onSaved?.();
 
       toast.success(
         `${label} saved`,
@@ -292,16 +308,23 @@ export default function SiteCapture(): JSX.Element {
       // reachable from a desk, and a four-field form stretched to 1400px reads as
       // a broken page rather than a deliberate one. On a wide screen it sits
       // beside a session column, so the whole visit is one glance.
-      className="mx-auto grid w-full max-w-4xl gap-6 pb-28 lg:grid-cols-[minmax(0,1fr)_20rem] lg:pb-6"
+      className={cn(
+        'grid w-full gap-6',
+        inModal
+          ? 'grid-cols-1'
+          : 'mx-auto max-w-4xl pb-28 lg:grid-cols-[minmax(0,1fr)_20rem] lg:pb-6',
+      )}
       onSubmit={(e) => { e.preventDefault(); void save(); }}
     >
       <div>
-        <header className="pt-1">
-          <h1 className="text-xl font-semibold tracking-tight">Add a property on site</h1>
-          <p className="mt-1 text-sm text-muted">
-            Fill in what you know standing there. You can finish the rest later from your desk.
-          </p>
-        </header>
+        {!inModal && (
+          <header className="pt-1">
+            <h1 className="text-xl font-semibold tracking-tight">Add a property on site</h1>
+            <p className="mt-1 text-sm text-muted">
+              Fill in what you know standing there. You can finish the rest later from your desk.
+            </p>
+          </header>
+        )}
 
         {gpsOffered && <GpsPanel enabled={useGps} onToggle={setUseGps} fix={fix} state={gpsState} />}
 
@@ -344,7 +367,7 @@ export default function SiteCapture(): JSX.Element {
           The desk's own Save. The fixed bottom bar is a phone control; on a
           wide screen the natural end of the form is where the submit belongs.
         */}
-        <div className="mt-4 hidden items-center gap-3 lg:flex">
+        <div className={cn('mt-4 items-center gap-3', inModal ? 'flex' : 'hidden lg:flex')}>
           <button
             type="submit"
             disabled={!canSave}
@@ -367,7 +390,7 @@ export default function SiteCapture(): JSX.Element {
         of the day does not scroll back to find out whether the fifth one
         took.
       */}
-      <aside className="lg:sticky lg:top-4 lg:self-start">
+      <aside className={cn('lg:sticky lg:top-4 lg:self-start', inModal && saved.length === 0 && 'hidden')}>
         {saved.length > 0 ? (
           <JustAdded saved={saved} onOpen={(id) => navigate(`/${MODULE}/${id}`)} />
         ) : (
@@ -393,7 +416,10 @@ export default function SiteCapture(): JSX.Element {
         Save on the one screen designed to be used one-handed at a gate was
         half-covered by the tab bar. See `--bottom-nav-h` in Layout.
       */}
-      <div className="fixed inset-x-0 bottom-[var(--bottom-nav-h,0px)] z-30 border-t border-slate-200 bg-white/95 p-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 lg:hidden">
+      <div className={cn(
+        'fixed inset-x-0 bottom-[var(--bottom-nav-h,0px)] z-30 border-t border-slate-200 bg-white/95 p-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95',
+        inModal ? 'hidden' : 'lg:hidden',
+      )}>
         <div className="mx-auto flex max-w-lg items-center gap-2">
           <button
             type="submit"

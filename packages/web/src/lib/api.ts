@@ -304,6 +304,17 @@ export interface SharedMatches {
   sharedAt: string;
   /** Which module these records are, so the page can name them honestly. */
   module: string;
+  /** What the rep called it when they made the link, e.g. "Options for Vijay". */
+  label: string | null;
+  /** The agency's own public details — all admin settings, never a rep's. */
+  brand: {
+    orgName: string;
+    tagline: string | null;
+    phone: string | null;
+    email: string | null;
+    logoUrl: string | null;
+    primaryColor: string | null;
+  };
 }
 
 export interface PropertyShareAdminConfig {

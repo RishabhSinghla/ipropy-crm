@@ -22,6 +22,7 @@ import {
 import { ModuleIcon } from '../components/Layout';
 import RecordForm from '../components/RecordForm';
 import RecordPeek from '../components/RecordPeek';
+import SiteCapture from './SiteCapture';
 import { useSwipeActions, type SwipeSide } from '../lib/swipeActions';
 import { MAX_WIDTH, MIN_WIDTH, SELECT_COL_WIDTH, useColumnWidths } from '../lib/columnWidths';
 import { useOfflineMeta } from '../lib/useOfflineList';
@@ -79,6 +80,7 @@ export default function ListView(): JSX.Element {
   const [columns, setColumns] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [showQuickCreate, setShowQuickCreate] = useState(false);
+  const [showCapture, setShowCapture] = useState(false);
   const [showColumns, setShowColumns] = useState(false);
   /** Open when somebody is naming a new view built from what is on screen. */
   const [savingAsView, setSavingAsView] = useState(false);
@@ -811,32 +813,43 @@ export default function ListView(): JSX.Element {
                     trigger={(
                       <button
                         className="btn-primary btn-sm rounded-l-none border-l border-l-white/30 px-2 focus:z-10"
-                        aria-label={`More ways to add a ${meta.singularLabel.toLowerCase()}`}
-                        title="More ways to add"
+                        aria-label="Another way to add one"
+                        title="Another way to add one"
                       >
                         <ChevronDown className="h-3.5 w-3.5" />
                       </button>
                     )}
                   >
                     {(close) => (
-                      <>
-                        <Link
-                          to={`/${moduleName}/new`}
-                          onClick={close}
-                          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                          Full page form
-                        </Link>
-                        <Link
-                          to="/capture"
-                          onClick={close}
-                          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
-                        >
-                          <MapPin className="h-3.5 w-3.5" />
-                          Capture on site
-                        </Link>
-                      </>
+                      /*
+                        One other way in, not two.
+
+                        "Full page form" opened the same fields as the button
+                        beside it, at a different address, with no way to tell
+                        from the menu what you would get. It is gone; the desk
+                        form is the primary button and always was.
+
+                        Capture opens here rather than navigating to /capture,
+                        because reaching it from a list you are reading should
+                        not cost you the list. The route still exists — it is
+                        the phone's own tab.
+                      */
+                      <button
+                        type="button"
+                        onClick={() => { close(); setShowCapture(true); }}
+                        className="flex w-full items-start gap-2.5 px-3 py-2 text-left hover:bg-slate-100 dark:hover:bg-slate-800"
+                      >
+                        <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-brand-600 dark:text-brand-400" />
+                        <span className="min-w-0">
+                          <span className="block text-sm font-medium text-slate-800 dark:text-slate-100">
+                            Capture on site
+                          </span>
+                          <span className="mt-0.5 block text-2xs leading-snug text-muted">
+                            Four fields and the location, for adding one while you
+                            are standing in front of it.
+                          </span>
+                        </span>
+                      </button>
                     )}
                   </Dropdown>
                 </div>
@@ -1356,6 +1369,17 @@ export default function ListView(): JSX.Element {
         selectedIds={selectedAll ? undefined : selected.size ? [...selected] : undefined}
         allSelected={selectedAll}
       />
+
+      {showCapture && (
+        <Modal
+          open
+          onClose={() => setShowCapture(false)}
+          title="Capture on site"
+          size="lg"
+        >
+          <SiteCapture inModal onSaved={() => void refetch()} />
+        </Modal>
+      )}
 
       {showQuickCreate && (
         <Modal open onClose={() => setShowQuickCreate(false)} title={`New ${meta.singularLabel}`} size="lg">

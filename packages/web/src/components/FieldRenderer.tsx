@@ -1243,7 +1243,19 @@ export function UserPicker({
       <select
         id={id}
         aria-label={id ? undefined : (label ?? 'Owner')}
-        className="input appearance-none pr-8"
+        /*
+          The left padding is a class, not a <style> tag.
+
+          This used to render `<style>{'select { padding-left: 2rem; }'}</style>`
+          whenever somebody was selected. Two things wrong with it, and the
+          visible one had been shipped for months: `.input` sets `px-3` and a
+          class beats a bare element selector, so the rule never applied and the
+          avatar sat on top of the first two letters of the name — "Rishabh
+          Singhla" read as "RSshabh Singhla" on every form in the CRM. The
+          quieter one is that the tag is not scoped to this component at all, so
+          a mounted owner field was restyling every other <select> on the page.
+        */
+        className={cn('input appearance-none pr-8', selectedName && 'pl-9')}
         value={value ?? ''}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value || null)}
@@ -1272,7 +1284,6 @@ export function UserPicker({
         </span>
       )}
       <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-      {selectedName && <style>{`select { padding-left: 2rem; }`}</style>}
     </div>
   );
 }

@@ -886,8 +886,56 @@ publicRouter.get('/matches/:token', asyncHandler(async (req, res) => {
   /* The module goes out too. A unit with no name can be headed "3 BHK Builder
      Floor"; a contact with their name withheld cannot, and a page of cards all
      reading "Property" is worse than one that says what it is. */
-  res.json({ items, sharedAt: link.createdAt, module: targetModule });
+  res.json({
+    items,
+    sharedAt: link.createdAt,
+    module: targetModule,
+    /*
+      What the rep called it — "Options for Mr Sharma" — as the page's own
+      heading. It was already being typed and then only ever read back in the
+      CRM's own list of links, so the person it was written for never saw it.
+    */
+    label: link.label,
+    brand: await publicBrand(),
+  });
 }));
+
+/**
+ * The agency's own name, number and colour, for a page a customer opens.
+ *
+ * Every value here is an admin setting from Admin → Settings, which is the
+ * point: this is the business publishing its own contact details, the same
+ * ones on its website and its board outside. Nothing about a rep, and nothing
+ * about the record — what a visitor may read of *those* is decided field by
+ * field in Admin → Data Sharing and is applied long before this.
+ *
+ * A shared link without it is a page of white cards with no name on them, which
+ * is a strange thing to receive from somebody you are buying a flat from.
+ */
+async function publicBrand(): Promise<Record<string, string | null>> {
+  const { rows } = await db.query<{ key: string; value: unknown }>(
+    `SELECT key, value FROM ipy_setting
+      WHERE key IN ('org.name', 'org.phone', 'org.email', 'org.logo_url',
+                    'org.primary_color', 'brand.tagline')`,
+  );
+  const map = new Map(rows.map((r) => [r.key, r.value]));
+  const text = (key: string): string | null => {
+    const v = map.get(key);
+    return typeof v === 'string' && v.trim() ? v.trim() : null;
+  };
+  return {
+    orgName: text('org.name') ?? 'iPropy',
+    tagline: text('brand.tagline'),
+    phone: text('org.phone'),
+    email: text('org.email'),
+    logoUrl: text('org.logo_url'),
+    // Anything but a hex colour is dropped rather than interpolated into the
+    // page's own styles. This is the one value here that reaches CSS.
+    primaryColor: /^#[0-9a-f]{6}$/i.test(text('org.primary_color') ?? '')
+      ? text('org.primary_color')
+      : null,
+  };
+}
 
 /**
  * An image from a shared matching.
@@ -1065,9 +1113,11 @@ publicRouter.get('/companion', asyncHandler(async (_req, res) => {
   res.json({
     available: build !== null,
     build,
-    // Where to send the phone. A setting wins if one is set, so moving the file
-    // to object storage later is a settings change rather than a deploy.
-    url: (await companionOverrideUrl()) ?? '/api/public/companion/download',
+    // The CRM hands out the APK it was built with. There used to be a setting
+    // that could point this somewhere else; nobody ever set it, and an admin
+    // screen asking for a storage bucket address is a question the business
+    // has no reason to answer.
+    url: '/api/public/companion/download',
   });
 }));
 
@@ -1082,12 +1132,6 @@ publicRouter.get('/companion', asyncHandler(async (_req, res) => {
  * into it. The button that leads here still sits behind a login.
  */
 publicRouter.get('/companion/download', asyncHandler(async (req, res) => {
-  const override = await companionOverrideUrl();
-  if (override) {
-    res.redirect(302, override);
-    return;
-  }
-
   const build = await publishedBuild();
   if (!build) throw new NotFoundError('No companion build has been published yet');
 
@@ -1235,18 +1279,3 @@ publicRouter.get('/app/bundle.zip', asyncHandler(async (_req, res) => {
   await zip.finalize();
 }));
 
-/**
- * An address to send the phone to instead of this server.
- *
- * Empty by default. It exists so that the day the APK outgrows living in the
- * image, or the day he wants it on a CDN, nothing in the app or the CRM has to
- * change: he pastes a URL into Admin → Settings and every download follows it.
- */
-async function companionOverrideUrl(): Promise<string | null> {
-  const row = await db.queryOne<{ value: unknown }>(
-    `SELECT value FROM ipy_setting WHERE key = 'companion.apk_url'`,
-  );
-  const raw = typeof row?.value === 'string' ? row.value : null;
-  const trimmed = raw?.trim();
-  return trimmed && /^https?:\/\//i.test(trimmed) ? trimmed : null;
-}

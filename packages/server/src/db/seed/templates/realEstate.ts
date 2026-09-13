@@ -307,6 +307,19 @@ const MODULES: ModuleDef[] = [
         columns: [],
         filter: { logic: 'AND', conditions: [{ field: 'unread', operator: 'is_true' }] },
       },
+      /*
+        The star, as a list.
+
+        Starring a record already means "come back to this" and the star was
+        the only way back to it — one record at a time, from wherever you
+        happened to be. `favourite` is a system filter field backed by
+        `ipy_starred`, so this is per-person the same way My Leads is.
+      */
+      {
+        name: 'Favourite Leads',
+        columns: [],
+        filter: { logic: 'AND', conditions: [{ field: 'favourite', operator: 'is_true' }] },
+      },
     ],
   },
 
@@ -548,6 +561,12 @@ const MODULES: ModuleDef[] = [
         name: 'Unread Inventories',
         columns: [],
         filter: { logic: 'AND', conditions: [{ field: 'unread', operator: 'is_true' }] },
+      },
+      // And the starred ones, same as Leads above.
+      {
+        name: 'Favourite Inventories',
+        columns: [],
+        filter: { logic: 'AND', conditions: [{ field: 'favourite', operator: 'is_true' }] },
       },
     ],
   },

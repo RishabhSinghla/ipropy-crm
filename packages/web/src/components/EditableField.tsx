@@ -444,7 +444,6 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
             // plain `user` field is a different thing and keeps its Clear.
             <OwnerPopover
               value={draft as string | null}
-              mandatory={field.isMandatory || field.uitype === 'owner'}
               onPick={pickAndClose}
             />
           ) : kind === 'form' ? (
@@ -807,10 +806,9 @@ function PicklistPopover({
 // ---------------------------------------------------------------------------
 
 function OwnerPopover({
-  value, mandatory, onPick,
+  value, onPick,
 }: {
   value: string | null;
-  mandatory?: boolean;
   onPick: (v: string | null) => void;
 }): JSX.Element {
   const [search, setSearch] = useState('');
@@ -853,21 +851,22 @@ function OwnerPopover({
           <p className="px-3 py-4 text-center text-xs text-muted">No matches</p>
         )}
       </div>
-      {/* Bottom, under a rule — the same place and the same gesture as every
-          other dropdown's Clear, so it is one habit rather than six. */}
-      {!mandatory && (
-        <>
-          <div className="border-t border-slate-100 dark:border-slate-800" />
-          <button
-            type="button"
-            onClick={() => onPick(null)}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-muted transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
-          >
-            <span className="h-2 w-2 shrink-0 rounded-full border border-dashed border-slate-300 dark:border-slate-600" />
-            Clear — leave unassigned
-          </button>
-        </>
-      )}
+      {/*
+        No Clear here, under any condition.
+
+        Every record in this CRM belongs to somebody: a new one starts on
+        whoever added it, and handing it over means naming the next person.
+        There is no unassigned state to return to, so a menu item offering one
+        is a one-click way to lose a lead with nothing to notice it by.
+
+        This used to be hidden behind `!mandatory`, where mandatory was
+        `isMandatory || uitype === 'owner'`. That reads as the same rule and is
+        not: the assignment field is found by column as well as by uitype (see
+        `assignmentField`), so a field carrying `owner_id` under some other
+        uitype landed here with mandatory false and offered the Clear anyway —
+        which is how it came to be sitting on production's Assigned To menu.
+        The rule is absolute, so it is written absolutely.
+      */}
     </div>
   );
 }
