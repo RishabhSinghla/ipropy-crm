@@ -151,19 +151,6 @@ export async function connect(accountId: string): Promise<void> {
     if (event.type !== 'notify') return;
     for (const message of event.messages) void receiveMessage(accountId, message).catch((err) => logger.error({ err, accountId }, 'WhatsApp Web inbound message failed'));
   });
-  socket.ev.on('messages.update', (updates) => {
-    for (const { key, update } of updates) {
-      if (!key.id || typeof update.status !== 'number') continue;
-      // Baileys uses WebMessageInfo acknowledgement values. We store the
-      // human-facing state already used by the Meta connector, so timeline
-      // receipts behave identically whichever WhatsApp channel sent it.
-      const status = update.status === 5 ? 'failed'
-        : update.status >= 3 ? 'read'
-          : update.status === 2 ? 'delivered'
-            : update.status === 1 ? 'sent' : null;
-      if (status) void conversations.handleStatusUpdate(key.id, status).catch((err) => logger.warn({ err, accountId, messageId: key.id }, 'could not store WhatsApp Web receipt'));
-    }
-  });
   await log(accountId, 'connect_started');
 }
 
@@ -202,26 +189,12 @@ async function handleConnectionUpdate(accountId: string, socket: WASocket, save:
 }
 
 async function receiveMessage(accountId: string, message: WAMessage): Promise<void> {
-  if (!message.message || !message.key.remoteJid?.endsWith('@s.whatsapp.net') || !message.key.id) return;
+  if (!message.message || message.key.fromMe || !message.key.remoteJid?.endsWith('@s.whatsapp.net') || !message.key.id) return;
   const from = `+${message.key.remoteJid.split('@')[0]!.replace(/\D/g, '')}`;
   const content = message.message;
   const text = content.conversation ?? content.extendedTextMessage?.text ?? content.imageMessage?.caption ?? content.documentMessage?.caption;
   const location = content.locationMessage ? { latitude: content.locationMessage.degreesLatitude ?? 0, longitude: content.locationMessage.degreesLongitude ?? 0, name: content.locationMessage.name ?? undefined } : undefined;
   const type = content.imageMessage ? 'image' : content.documentMessage ? 'document' : content.locationMessage ? 'location' : 'text';
-  // `fromMe` covers messages sent directly from the linked phone. Keeping
-  // those in the same thread is what makes this a real WhatsApp Web sync,
-  // rather than an inbound-only bridge. CRM-originated sends are de-duplicated
-  // by their provider message id in the conversation service.
-  if (message.key.fromMe) {
-    await conversations.handleWebOutbound({
-      from, providerMessageId: message.key.id, type, text: text ?? undefined, location,
-      mimeType: content.imageMessage?.mimetype ?? content.documentMessage?.mimetype ?? undefined,
-      filename: content.documentMessage?.fileName ?? undefined,
-      timestamp: typeof message.messageTimestamp === 'number' ? message.messageTimestamp : undefined,
-      provider: 'web', webAccountId: accountId,
-    });
-    return;
-  }
   await conversations.handleInbound({
     from, providerMessageId: message.key.id, type, text: text ?? undefined, location,
     mimeType: content.imageMessage?.mimetype ?? content.documentMessage?.mimetype ?? undefined,

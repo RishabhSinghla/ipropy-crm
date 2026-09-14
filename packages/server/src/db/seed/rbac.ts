@@ -96,7 +96,6 @@ const PROFILES: ProfileDef[] = [
     capabilities: [
       'records.export', 'records.import', 'records.mass_edit', 'records.transfer_ownership', 'ai.use',
       'telephony.call', 'telephony.listen_recordings', 'whatsapp.send', 'inventory.block_unit',
-      'views.manage',
       // A manager's baseline is their own records plus their team. This is
       // create-only seed data, so an admin can still turn it off later in
       // Roles & Profiles without a subsequent seed giving it back.
@@ -111,7 +110,7 @@ const PROFILES: ProfileDef[] = [
   {
     name: 'Sales Executive',
     description: 'Works their own leads and deals. Read-only on inventory.',
-    capabilities: ['ai.use', 'telephony.call', 'whatsapp.send', 'views.manage'],
+    capabilities: ['ai.use', 'telephony.call', 'whatsapp.send'],
     modules: {
       leads: [true, true, true, false, false, false],
       properties: [true, false, false, false, false, false],
@@ -124,7 +123,7 @@ const PROFILES: ProfileDef[] = [
   {
     name: 'Telecaller',
     description: 'Qualifies inbound leads and books site visits. No pricing visibility.',
-    capabilities: ['ai.use', 'telephony.call', 'whatsapp.send', 'views.manage'],
+    capabilities: ['ai.use', 'telephony.call', 'whatsapp.send'],
     modules: {
       leads: [true, true, true, false, false, false],
       properties: [true, false, false, false, false, false],

@@ -521,16 +521,6 @@ const MODULES: ModuleDef[] = [
         ],
       },
       {
-        // Inventory follow-ups are tasks exactly like lead follow-ups. Keeping
-        // this as the same physical field makes the three task queues, the
-        // call form and the record header agree about what is due next.
-        name: 'follow_up',
-        label: 'Follow Up',
-        fields: [
-          F.date('next_followup_at', 'Next Follow-up'),
-        ],
-      },
-      {
         name: 'location_media',
         label: 'Location & Media',
         collapsed: true,

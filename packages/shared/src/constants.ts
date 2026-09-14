@@ -200,7 +200,6 @@ export const CAPABILITIES = [
   'records.view_lower_hierarchy',
   'records.view_upper_hierarchy',
   'records.view_same_hierarchy',
-  'views.manage',
   'dashboards.share',
   'ai.use',
   'ai.configure',

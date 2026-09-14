@@ -106,8 +106,7 @@ export default function RecordDetail(): JSX.Element {
   // Prev/next through whatever list the user last viewed for this module —
   // populated by ListView, read here so opening a record doesn't need to
   // carry that list through router state.
-  const nav = useMemo(() => (moduleName ? loadListNav(moduleName) : { ids: [], total: 0, page: 1, pageSize: 1 }), [moduleName]);
-  const navIds = nav.ids;
+  const navIds = useMemo(() => (moduleName ? loadListNav(moduleName) : []), [moduleName]);
   const navIndex = id ? navIds.indexOf(id) : -1;
   const sessionPrev = navIndex > 0 ? navIds[navIndex - 1] : null;
   const sessionNext = navIndex >= 0 && navIndex < navIds.length - 1 ? navIds[navIndex + 1] : null;
@@ -164,12 +163,8 @@ export default function RecordDetail(): JSX.Element {
     });
   }, [moduleName, id]);
 
-  // The rows the person can see are authoritative while this record belongs
-  // to that rendered page. The server is only a bridge at a page boundary or
-  // for a direct link; preferring it here was why "next" could jump to a
-  // record that was not the next row on screen.
-  const prevId = navIndex >= 0 ? sessionPrev : (remote?.prevId ?? sessionPrev);
-  const nextId = navIndex >= 0 ? sessionNext : (remote?.nextId ?? sessionNext);
+  const prevId = remote?.prevId ?? sessionPrev;
+  const nextId = remote?.nextId ?? sessionNext;
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
@@ -382,7 +377,7 @@ export default function RecordDetail(): JSX.Element {
                 </button>
                 {(remote?.position || navIndex >= 0) && (
                   <span className="px-1 text-2xs tnum text-muted">
-                    {navIndex >= 0 ? ((nav.page - 1) * nav.pageSize) + navIndex + 1 : remote?.position} / {navIndex >= 0 ? nav.total : remote?.total}
+                    {remote?.position ?? navIndex + 1} / {remote?.total ?? navIds.length}
                   </span>
                 )}
                 <button
@@ -989,10 +984,6 @@ function TimelineTab({ module, id }: { module: string; id: string }): JSX.Elemen
   const { data, isLoading } = useQuery({
     queryKey: ['timeline', module, id, filter],
     queryFn: () => api.timeline(module, id, [filter]),
-    // Messages are a live archive as well as a history. Keep the Messages tab
-    // current while it is open so incoming WhatsApp Web traffic appears here
-    // even if the chat tab is not being viewed.
-    refetchInterval: filter === 'message' ? 3_000 : false,
   });
 
   const filters = TIMELINE_FILTERS;
@@ -1046,61 +1037,37 @@ function WhatsAppChat({ module, record }: { module: string; record: RecordEnvelo
   const queryClient = useQueryClient();
   const [text, setText] = useState('');
   const [templateName, setTemplateName] = useState('');
-  // Empty means the default linked Web account. Meta is an explicit fallback,
-  // not the default provider for a normal CRM reply.
-  const [webAccountId, setWebAccountId] = useState('');
   const [sending, setSending] = useState(false);
   const phone = String(record.values.whatsapp_number ?? record.values.mobile ?? record.values.phone ?? '').trim();
-  const { data: conversations, isLoading: conversationsLoading, refetch: refetchConversations } = useQuery({
+  const { data: conversations, isLoading: conversationsLoading } = useQuery({
     queryKey: ['record-whatsapp', module, record.id],
     queryFn: () => api.conversations({ status: 'all', channel: 'whatsapp', recordId: record.id, recordModule: module, limit: 1 }),
-    refetchInterval: 3_000,
+    refetchInterval: 10_000,
   });
   const conversation = conversations?.[0] as { id: string; windowOpen?: boolean; handle?: string } | undefined;
-  const { data: detail, isLoading: detailLoading, refetch: refetchConversation } = useQuery({
+  const { data: detail, isLoading: detailLoading } = useQuery({
     queryKey: ['conversation', conversation?.id],
     queryFn: () => api.conversation(conversation!.id),
     enabled: Boolean(conversation?.id),
-    refetchInterval: 3_000,
+    refetchInterval: 10_000,
   });
   const thread = detail as { messages?: { id: string; direction: 'inbound' | 'outbound'; body?: string | null; created_at: string; status?: string }[]; windowOpen?: boolean } | undefined;
   const messages = thread?.messages ?? [];
   const windowOpen = thread?.windowOpen ?? conversation?.windowOpen ?? false;
-  const { data: webAccounts } = useQuery({
-    queryKey: ['whatsapp-web-messaging-accounts'], queryFn: api.whatsappWebMessagingAccounts,
-  });
-  const hasWebAccount = Boolean(webAccounts?.length);
-  const usingWeb = webAccountId !== 'meta' && hasWebAccount;
-  const webDelivery = webAccountId === 'meta'
-    ? { webAccountId: null }
-    : webAccountId ? { webAccountId } : {};
-  const recipientAvailable = Boolean(phone || conversation?.handle);
   const { data: templates } = useQuery({ queryKey: ['wa-templates'], queryFn: api.whatsappTemplates });
   const availableTemplates = (templates ?? []) as { name: string; body_text: string; status: string }[];
 
   const send = async (): Promise<void> => {
     const body = text.trim();
     if ((!body && !templateName) || sending) return;
-    if (!recipientAvailable) {
+    if (!phone && !conversation?.id) {
       toast.error('No WhatsApp number', 'Add a mobile or WhatsApp number to start this chat.');
       return;
     }
     setSending(true);
-    const optimisticId = `sending-${Date.now()}`;
-    if (conversation?.id) {
-      queryClient.setQueryData<{ messages?: typeof messages }>(['conversation', conversation.id], (current) => ({
-        ...current,
-        messages: [...(current?.messages ?? []), {
-          id: optimisticId, direction: 'outbound', body: body || templateName,
-          created_at: new Date().toISOString(), status: 'queued',
-        }],
-      }));
-    }
     try {
-      if (conversation?.id) await api.sendMessage(conversation.id, usingWeb
-        ? { text: body, ...webDelivery }
-        : windowOpen ? { text: body, ...webDelivery } : { templateName, ...webDelivery });
-      else await api.startConversation({ to: phone, text: body, ...webDelivery });
+      if (conversation?.id) await api.sendMessage(conversation.id, windowOpen ? { text: body } : { templateName });
+      else await api.startConversation({ to: phone, text: body });
       setText('');
       setTemplateName('');
       await Promise.all([
@@ -1116,11 +1083,6 @@ function WhatsAppChat({ module, record }: { module: string; record: RecordEnvelo
     }
   };
 
-  const refreshChat = async (): Promise<void> => {
-    await Promise.all([refetchConversations(), conversation?.id ? refetchConversation() : Promise.resolve()]);
-    toast.success('WhatsApp chat refreshed');
-  };
-
   if (conversationsLoading || detailLoading) return <Skeleton className="h-[30rem] w-full" />;
   return (
     <section className="card flex min-h-[34rem] flex-col overflow-hidden">
@@ -1129,11 +1091,7 @@ function WhatsAppChat({ module, record }: { module: string; record: RecordEnvelo
           <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"><MessageCircle className="h-4 w-4" /></span>
           <div><h2 className="text-sm font-semibold">WhatsApp Chat</h2><p className="text-2xs text-muted">{phone || conversation?.handle || 'No WhatsApp number'} · synced automatically</p></div>
         </div>
-        <div className="flex items-center gap-2">
-          {hasWebAccount && <select className="input h-8 max-w-48 py-1 text-xs" value={webAccountId} onChange={(event) => setWebAccountId(event.target.value)} aria-label="WhatsApp sending account"><option value="">Web WhatsApp (default)</option>{webAccounts?.map((account) => <option key={account.id} value={account.id}>{account.label}{account.phoneNumber ? ` (${account.phoneNumber})` : ''}</option>)}<option value="meta">Meta WhatsApp</option></select>}
-          <button type="button" className="btn-secondary btn-sm h-8 gap-1 px-2 text-xs" onClick={() => void refreshChat()} aria-label="Refresh WhatsApp chat"><RefreshCw className="h-3.5 w-3.5" />Refresh</button>
-          {conversation && <Badge color={usingWeb || windowOpen ? '#16a34a' : '#64748b'}>{usingWeb ? 'Web WhatsApp' : windowOpen ? 'Chat open' : 'Template required'}</Badge>}
-        </div>
+        {conversation && <Badge color={windowOpen ? '#16a34a' : '#64748b'}>{windowOpen ? 'Chat open' : 'Template required'}</Badge>}
       </header>
       <div className="flex-1 space-y-3 bg-[#efeae2]/50 p-4 dark:bg-slate-950/40">
         {!conversation ? (
@@ -1150,11 +1108,10 @@ function WhatsAppChat({ module, record }: { module: string; record: RecordEnvelo
         ))}
       </div>
       <footer className="border-t border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-        {!usingWeb && !windowOpen && conversation && <div className="mb-2 flex flex-wrap items-center gap-2"><p className="text-2xs text-amber-700 dark:text-amber-300">This WhatsApp session is closed. Send an approved template.</p><select className="input h-8 min-w-48 py-1 text-xs" value={templateName} onChange={(event) => setTemplateName(event.target.value)}><option value="">Choose template…</option>{availableTemplates.filter((template) => ['APPROVED', 'LOCAL'].includes(template.status)).map((template) => <option key={template.name} value={template.name}>{template.name}</option>)}</select></div>}
-        {usingWeb && <p className="mb-2 text-2xs text-emerald-700 dark:text-emerald-300">Sending through the linked WhatsApp Web account. Replies and receipts sync to this chat.</p>}
+        {!windowOpen && conversation && <div className="mb-2 flex flex-wrap items-center gap-2"><p className="text-2xs text-amber-700 dark:text-amber-300">This WhatsApp session is closed. Send an approved template.</p><select className="input h-8 min-w-48 py-1 text-xs" value={templateName} onChange={(event) => setTemplateName(event.target.value)}><option value="">Choose template…</option>{availableTemplates.filter((template) => ['APPROVED', 'LOCAL'].includes(template.status)).map((template) => <option key={template.name} value={template.name}>{template.name}</option>)}</select></div>}
         <div className="flex items-end gap-2">
-          <textarea className="input min-h-10 flex-1 resize-none" rows={2} value={text} onChange={(event) => setText(event.target.value)} placeholder={usingWeb ? 'Write a WhatsApp Web message…' : 'Write a WhatsApp message…'} disabled={Boolean(conversation && !windowOpen && !usingWeb) || !recipientAvailable} />
-          <button className="btn-primary btn-sm px-3" onClick={() => void send()} disabled={(!text.trim() && !(conversation && !windowOpen && !usingWeb && templateName)) || sending || !recipientAvailable} aria-label="Send WhatsApp message">{sending ? <Spinner className="h-4 w-4" /> : <Send className="h-4 w-4" />}</button>
+          <textarea className="input min-h-10 flex-1 resize-none" rows={2} value={text} onChange={(event) => setText(event.target.value)} placeholder="Write a WhatsApp message…" disabled={Boolean(conversation && !windowOpen) || !phone} />
+          <button className="btn-primary btn-sm px-3" onClick={() => void send()} disabled={(!text.trim() && !(conversation && !windowOpen && templateName)) || sending || !phone} aria-label="Send WhatsApp message">{sending ? <Spinner className="h-4 w-4" /> : <Send className="h-4 w-4" />}</button>
         </div>
       </footer>
     </section>

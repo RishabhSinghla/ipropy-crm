@@ -1044,7 +1044,6 @@ function ChartFrame({
   title, series, format, scroll, children,
 }: { title: string; series: Series[]; format?: string; scroll?: boolean; children: ReactNode }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null);
-  const total = series.reduce((sum, item) => sum + item.value, 0);
 
   // recharts puts tabindex="0" on its own layer groups and ignores a tabIndex
   // prop, which would leave focusable elements inside an aria-hidden subtree —
@@ -1080,18 +1079,6 @@ function ChartFrame({
           rather than a fixed one — a fixed box drew its axis and its last
           weeks outside the card on any layout shorter than itself. */}
       <div ref={ref} aria-hidden="true" className={cn('min-h-0 flex-1', scroll && 'overflow-y-auto')}>{children}</div>
-      {/* A graph is faster to scan, but every key/value remains visible for
-          people comparing real counts, percentages or currency amounts. */}
-      <div className="mt-2 border-t border-slate-100 pt-2 text-2xs text-slate-600 dark:border-slate-800 dark:text-slate-300">
-        <span className="mr-2 font-semibold">Total: {formatValue(total, format)}</span>
-        <span className="inline-flex max-w-full flex-wrap gap-x-2 gap-y-1">
-          {series.slice(0, 12).map((item) => (
-            <span key={item.key} className="whitespace-nowrap">
-              {item.label}: <b>{formatValue(item.value, format)}</b>{total > 0 ? ` (${((item.value / total) * 100).toFixed(1)}%)` : ''}
-            </span>
-          ))}
-        </span>
-      </div>
       <p className="sr-only">
         {`${title}. ${series.map((s) => `${s.label}: ${formatValue(s.value, format)}`).join('. ')}`}
       </p>
