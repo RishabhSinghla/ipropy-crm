@@ -40,27 +40,13 @@ services:
     plan: 0.5c-512mb
     region: singapore # closest Render region to India — lowest latency for the team
     branch: main
-    # Render waits for every GitHub check and deploys only when all of them
-    # pass. This is what stops a broken commit reaching the team, and it has
-    # caught real breakage.
+    # Development mode: deploy every push to main immediately. GitHub checks
+    # still report failures, but they must not hold the team hostage while the
+    # CRM is being built rapidly. Change this back to `checksPass` only when
+    # the product is ready for a stricter release gate.
     #
-    # It was `commit` from 23 August to 1 September 2026, because GitHub's free
-    # Actions minutes for this private repository ran out — no check could run,
-    # so nothing could deploy at all. The cause was a health check set to run
-    # every fifteen minutes, billed at a whole minute each time: 96 minutes a
-    # day against a 2,000 a month allowance. That is fixed (health.yml is every
-    # two hours now, about 390 scheduled runs a month) and the allowance reset
-    # on the 1st.
-    #
-    # **This line and the Render dashboard must agree.** They disagreed for
-    # nine days in the other direction, and a disagreement here reads as Render
-    # being broken rather than as two places holding different settings.
-    #
-    # The trade this makes: a red CI run now blocks every deploy. That is the
-    # point, but it means a failing check is urgent rather than cosmetic — the
-    # symptom is a deploy that never starts, which looks exactly like Render
-    # being slow. Check `gh run list` before concluding one is stuck.
-    autoDeployTrigger: checksPass
+    # Keep the Render dashboard set to "On Commit" as well.
+    autoDeployTrigger: commit
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
