@@ -1092,7 +1092,7 @@ function ChartFrame({
 function SeriesSummary({ series, format }: { series: Series[]; format?: string }): JSX.Element {
   const total = series.reduce((sum, item) => sum + Number(item.value || 0), 0);
   return (
-    <div className="mt-2 flex max-h-14 flex-wrap gap-x-3 gap-y-1 overflow-y-auto border-t border-slate-100 pt-2 text-2xs text-muted dark:border-slate-800">
+    <div className="mt-2 flex max-h-14 flex-wrap gap-x-3 gap-y-1 overflow-y-auto border-t border-slate-100 pt-2 text-2xs text-muted dark:border-slate-800" role="none">
       {series.map((item) => (
         <span key={item.key} className="inline-flex max-w-full items-center gap-1">
           {item.color && <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />}
