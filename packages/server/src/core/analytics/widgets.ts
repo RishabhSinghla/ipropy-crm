@@ -101,6 +101,12 @@ export async function runWidget(
   config: WidgetConfig,
   conn: Tx = db,
 ): Promise<WidgetResult> {
+  // Dashboard configurations are meant to contain field *names*. A handful
+  // of older builders persisted field UUIDs instead, which left charts showing
+  // UUIDs or failing to resolve after a metadata refresh. Accept both shapes
+  // on read so existing dashboards immediately become understandable; all
+  // current editors continue to save the canonical names.
+  config = await normaliseConfigFieldNames(config);
   switch (type) {
     case 'metric':
     case 'gauge':
@@ -150,6 +156,23 @@ export async function runWidget(
     default:
       throw new BadRequestError(`Unknown widget type '${type}'`);
   }
+}
+
+async function normaliseConfigFieldNames(config: WidgetConfig): Promise<WidgetConfig> {
+  if (!config.module) return config;
+  const module = await registry.requireModule(config.module);
+  const resolve = (raw: unknown): unknown => {
+    if (typeof raw !== 'string') return raw;
+    return module.fields.find((field) => field.name === raw || field.id === raw)?.name ?? raw;
+  };
+  return {
+    ...config,
+    groupBy: resolve(config.groupBy) as string | undefined,
+    aggregateField: resolve(config.aggregateField) as string | undefined,
+    dateField: resolve(config.dateField) as string | undefined,
+    sortBy: resolve(config.sortBy) as string | undefined,
+    columns: Array.isArray(config.columns) ? config.columns.map(resolve) as string[] : config.columns,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -605,4 +628,3 @@ async function runHeatmap(ctx: ScopeContext, config: WidgetConfig, conn: Tx): Pr
     meta: { dimensions: ['dayOfWeek', 'hour'] },
   };
 }
-

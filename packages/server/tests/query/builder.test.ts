@@ -331,15 +331,15 @@ describe('buildSearchClause', () => {
 
 describe('buildOrderBy', () => {
   it('defaults to record updated_at descending', async () => {
-    expect(await buildOrderBy(leads(), null, 'desc', new Map())).toBe('r.updated_at DESC');
+    expect(await buildOrderBy(leads(), null, 'desc', new Map())).toBe('r.updated_at DESC, r.id DESC');
   });
 
   it('resolves system and module fields', async () => {
-    expect(await buildOrderBy(leads(), 'created_at', 'asc', new Map())).toBe('r.created_at ASC NULLS LAST');
-    expect(await buildOrderBy(leads(), 'status', 'desc', new Map())).toBe('e."status" DESC NULLS LAST');
+    expect(await buildOrderBy(leads(), 'created_at', 'asc', new Map())).toBe('r.created_at ASC NULLS LAST, r.id ASC');
+    expect(await buildOrderBy(leads(), 'status', 'desc', new Map())).toBe('e."status" DESC NULLS LAST, r.id DESC');
   });
 
   it('falls back to the default for an unknown field', async () => {
-    expect(await buildOrderBy(leads(), 'not_a_field', 'asc', new Map())).toBe('r.updated_at DESC');
+    expect(await buildOrderBy(leads(), 'not_a_field', 'asc', new Map())).toBe('r.updated_at DESC, r.id DESC');
   });
 });

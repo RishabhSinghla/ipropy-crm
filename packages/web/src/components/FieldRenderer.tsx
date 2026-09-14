@@ -400,7 +400,9 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
           value={value ? String(value).slice(0, 10) : ''}
           // Next Follow-up is the task due date. A past task can be reported
           // by the Pending queue, but no new edit may schedule work backwards.
-          min={field.columnName === 'next_followup_at' ? new Date().toISOString().slice(0, 10) : undefined}
+          min={field.columnName === 'next_followup_at' || field.columnName === 'next_follow_up'
+            ? new Date().toISOString().slice(0, 10)
+            : undefined}
           onChange={(e) => onChange(e.target.value || null)}
           disabled={readOnly}
           autoFocus={autoFocus}

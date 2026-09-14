@@ -753,7 +753,10 @@ recordsRouter.get('/:module/:id/neighbours', asyncHandler(async (req, res) => {
       `SELECT filter, sort_by, sort_dir FROM ipy_view WHERE id = $1`, [viewId])
     : null;
 
-  const field = sortParam ?? view?.sort_by ?? 'created_at';
+  // This must match buildOrderBy's list default exactly.  Using created_at
+  // here while the list defaulted to updated_at made a top-row record claim
+  // it was e.g. 28 / 22,983 and made next/previous jump to another ordering.
+  const field = sortParam ?? view?.sort_by ?? 'updated_at';
   // The direction comes from ?dir, or the view's, or the list default. (The
   // sort FIELD and the direction are two different things; conflating them
   // once produced a cursor that never matched and neighbours from the wrong

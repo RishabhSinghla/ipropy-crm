@@ -21,11 +21,13 @@ export function useCallDisposition(): CallActions | null {
 }
 
 export function CallDispositionProvider({
-  recordId, module, recordLabel, children,
+  recordId, module, recordLabel, followUpField = 'next_followup_at', children,
 }: {
   recordId: string;
   module: string;
   recordLabel: string;
+  /** Canonical for Leads; legacy Inventory workspaces still use next_follow_up. */
+  followUpField?: string;
   children: ReactNode;
 }): JSX.Element {
   const queryClient = useQueryClient();
@@ -125,7 +127,7 @@ export function CallDispositionProvider({
           notes: notes.trim() || undefined,
         });
       }
-      if (nextFollowUp) await api.update(module, recordId, { next_followup_at: nextFollowUp });
+      if (nextFollowUp) await api.update(module, recordId, { [followUpField]: nextFollowUp });
       toast.success(
         'Call logged',
         nextFollowUp ? 'Nice work — your next follow-up is scheduled.' : 'One conversation moved forward. Keep the momentum going.',

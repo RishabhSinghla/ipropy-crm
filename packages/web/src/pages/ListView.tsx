@@ -358,20 +358,25 @@ export default function ListView(): JSX.Element {
   // Next Follow-up is the CRM's task field. These are deliberately not saved
   // views: every person gets the same obvious work queues without an admin
   // having to create or maintain three more views for each module.
-  const taskField = meta?.fields.find((field) => field.columnName === 'next_followup_at');
+  // Older Inventory workspaces store the same business field as
+  // `next_follow_up` in JSON.  Prefer the canonical column, but keep that
+  // live data working rather than forcing a risky bulk rewrite before the
+  // task queues can be used.
+  const taskField = meta?.fields.find((field) => field.columnName === 'next_followup_at')
+    ?? meta?.fields.find((field) => field.name === 'next_follow_up' || field.columnName === 'next_follow_up');
   const taskQueuesEnabled = Boolean(taskField && (moduleName === 'leads' || moduleName === 'properties'));
   const taskFilters = useMemo<Record<TaskQueue, FilterGroup>>(() => {
     const today = todayIso();
     return {
       pending: { logic: 'AND', conditions: [
-        { field: taskField?.name ?? 'next_followup_at', operator: 'is_not_empty' },
-        { field: taskField?.name ?? 'next_followup_at', operator: 'less_than', value: today },
+        { field: taskField?.name ?? 'next_follow_up', operator: 'is_not_empty' },
+        { field: taskField?.name ?? 'next_follow_up', operator: 'less_than', value: today },
       ] },
       today: { logic: 'AND', conditions: [
-        { field: taskField?.name ?? 'next_followup_at', operator: 'today' },
+        { field: taskField?.name ?? 'next_follow_up', operator: 'today' },
       ] },
       tomorrow: { logic: 'AND', conditions: [
-        { field: taskField?.name ?? 'next_followup_at', operator: 'tomorrow' },
+        { field: taskField?.name ?? 'next_follow_up', operator: 'tomorrow' },
       ] },
     };
   }, [taskField?.name]);

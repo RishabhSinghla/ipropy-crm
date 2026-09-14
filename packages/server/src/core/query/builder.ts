@@ -522,11 +522,15 @@ export async function buildOrderBy(
   joins: Map<string, string>,
 ): Promise<string> {
   const dir = sortDir === 'asc' ? 'ASC' : 'DESC';
-  if (!sortBy) return `${RECORD_ALIAS}.updated_at DESC`;
+  // Every list consumer (including detail-page next/previous) needs one
+  // deterministic order.  Timestamps and picklist values legitimately tie,
+  // so make the record id the final tie breaker instead of leaving PostgreSQL
+  // free to return tied rows in a different order on each request.
+  if (!sortBy) return `${RECORD_ALIAS}.updated_at DESC, ${RECORD_ALIAS}.id DESC`;
   try {
     const resolved = await resolveFieldPath(module, sortBy, joins);
-    return `${resolved.expr} ${dir} NULLS LAST`;
+    return `${resolved.expr} ${dir} NULLS LAST, ${RECORD_ALIAS}.id ${dir}`;
   } catch {
-    return `${RECORD_ALIAS}.updated_at DESC`;
+    return `${RECORD_ALIAS}.updated_at DESC, ${RECORD_ALIAS}.id DESC`;
   }
 }

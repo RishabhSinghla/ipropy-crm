@@ -1086,6 +1086,27 @@ function ChartFrame({
   );
 }
 
+/** Visible values keep a chart useful when colour, a small tile, or a printout
+ * makes the plotted marks hard to read.  Counts get a share of the displayed
+ * total; money and averages keep their configured format. */
+function SeriesSummary({ series, format }: { series: Series[]; format?: string }): JSX.Element {
+  const total = series.reduce((sum, item) => sum + Number(item.value || 0), 0);
+  return (
+    <div className="mt-2 flex max-h-14 flex-wrap gap-x-3 gap-y-1 overflow-y-auto border-t border-slate-100 pt-2 text-2xs text-muted dark:border-slate-800">
+      {series.map((item) => (
+        <span key={item.key} className="inline-flex max-w-full items-center gap-1">
+          {item.color && <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />}
+          <span className="max-w-[9rem] truncate" title={item.label}>{item.label}</span>
+          <span className="shrink-0 font-medium text-slate-700 tnum dark:text-slate-200">
+            {formatValue(item.value, format)}
+            {format !== 'currency' && total > 0 ? ` (${((item.value / total) * 100).toFixed(1)}%)` : ''}
+          </span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function BarCard({
   widget, data, horizontal,
 }: { widget: DashboardWidget; data: Record<string, unknown>; horizontal?: boolean }): JSX.Element {
@@ -1139,6 +1160,7 @@ function BarCard({
           </BarChart>
         </ResponsiveContainer>
       </ChartFrame>
+      <SeriesSummary series={series} format={format} />
     </div>
   );
 }
@@ -1204,6 +1226,7 @@ function LineCard({
           </Chart>
         </ResponsiveContainer>
       </ChartFrame>
+      <SeriesSummary series={series} format={format} />
     </div>
   );
 }
@@ -1249,6 +1272,7 @@ function PieCard({
           </PieChart>
         </ResponsiveContainer>
       </ChartFrame>
+      <SeriesSummary series={series} format={widget.config.format as string | undefined} />
     </div>
   );
 }

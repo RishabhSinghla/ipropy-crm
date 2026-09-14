@@ -346,7 +346,14 @@ export default function RecordDetail(): JSX.Element {
   const activeTab = tabs.some((t) => t.key === tab) ? tab : tabs[0]!.key;
 
   return (
-    <CallDispositionProvider recordId={record.id} module={moduleName!} recordLabel={record.label}>
+    <CallDispositionProvider
+      recordId={record.id}
+      module={moduleName!}
+      recordLabel={record.label}
+      followUpField={meta.fields.find((field) => field.columnName === 'next_followup_at')?.name
+        ?? meta.fields.find((field) => field.name === 'next_follow_up' || field.columnName === 'next_follow_up')?.name
+        ?? 'next_followup_at'}
+    >
     <div className="mx-auto max-w-[1600px] p-4 sm:p-6">
       {/* Header */}
       <div className="card mb-4 overflow-visible">
@@ -601,6 +608,16 @@ export default function RecordDetail(): JSX.Element {
                       )}
                       {updatedChip}
                     </span>
+                  )}
+                  {(moduleName === 'leads' || moduleName === 'properties') && record.can?.edit && (
+                    <button
+                      type="button"
+                      className="btn-secondary btn-sm"
+                      onClick={() => setCollaborators(true)}
+                      title="Let one or more teammates work on this record"
+                    >
+                      <Users className="h-3.5 w-3.5" /> Team
+                    </button>
                   )}
                   {/* Nothing to hang it on — a module with no assignment field. */}
                   {!assignedField && updatedChip}
