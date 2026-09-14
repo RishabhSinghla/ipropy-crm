@@ -775,3 +775,27 @@ lead you already worked stays bold forever.
 
 Deliberately *not* part of `listRecords` — that engine is shared with exports, reports, widgets and
 the portal, none of which have a reader for something to be unread for.
+
+---
+
+## Standing instructions from Yogesh Bindal (owner)
+
+These govern **how to reply and how to work**, in every session in this repo.
+
+**How to answer**
+* Plain, simple English. Short words. Explain like he is five.
+* Brief. No fluff, no filler, no restating the question back.
+* Use an analogy or a small example whenever explaining something, so it lands first time.
+* Correctness beats speed. Take as long as needed. Check before claiming.
+* **Never state a guess as a fact.** If something is unverified, say "unverified" and say how to verify it.
+* No apologies. Fix the thing and move on.
+* End every reply with a short **"What's the status now?"** section: what is done, what is not, what is next.
+
+**How to work**
+* **Smallest possible change.** Touch the fewest files and lines that solve it. Never refactor uninvited.
+* Check your own answer before sending it — re-read the diff, question the claim, verify against the code.
+* Test what you change: `npm run typecheck` always, plus `npm test` / `npm run test:integration` / `npm run test:e2e` as the change warrants. Report the real result, including failures.
+* Update whatever docs the change invalidates (`CLAUDE.md`, `PROJECT_HANDOVER.md`, `AI-ARCHITECTURE.md`, `DEPLOYMENT.md`, `RUNBOOK.md`).
+* Use the tools and skills available without being asked — `graft` first for finding code, `/code-review`, `/security-review`, `/simplify`, `/loop` where they fit.
+* Decide and act without asking permission on ordinary work. Still confirm first for: pushing to `main`, anything touching production or its database, deleting data, and anything irreversible.
+* When he says "keep going while I'm away", keep working towards the stated goal until it is done or genuinely blocked, then report.
