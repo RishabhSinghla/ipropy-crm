@@ -5,7 +5,7 @@ import { db, transaction, type Tx } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { ForbiddenError, NotFoundError } from '../../utils/errors.js';
-import { runWidget } from '../../core/analytics/widgets.js';
+import { normaliseConfigFieldNames, runWidget } from '../../core/analytics/widgets.js';
 
 export const dashboardsRouter = Router();
 dashboardsRouter.use(requireAuth);
@@ -49,12 +49,20 @@ dashboardsRouter.get('/:id', asyncHandler(async (req, res) => {
     [req.params.id],
   );
 
+  // Return canonical field names even for dashboards created by an older UI
+  // that saved metadata ids.  The client uses this config for chart labels and
+  // drill-through filters, so normalising only the data query was not enough.
+  const canonicalWidgets = await Promise.all(widgets.rows.map(async (widget) => ({
+    ...widget,
+    config: await normaliseConfigFieldNames(widget.config as WidgetConfig),
+  })));
+
   res.json({
     id: dash.id, name: dash.name, description: dash.description,
     ownerId: dash.owner_id, isShared: dash.is_shared, isDefault: dash.is_default,
     isSystem: dash.is_system, module: dash.module_name,
     canEdit: user.isAdmin || dash.owner_id === user.id,
-    widgets: widgets.rows,
+    widgets: canonicalWidgets,
   });
 }));
 
@@ -270,4 +278,3 @@ dashboardsRouter.delete('/:id/widgets/:widgetId', asyncHandler(async (req, res) 
   ]);
   res.json({ ok: true });
 }));
-

@@ -5,7 +5,7 @@
  * into a result, so dashboards and the AI's data tools share the same code
  * path and the same permission scoping.
  */
-import type { WidgetConfig, WidgetType } from '@ipropy/shared';
+import type { FilterGroup, WidgetConfig, WidgetType } from '@ipropy/shared';
 import { db, type Tx } from '../../db/pool.js';
 import { BadRequestError } from '../../utils/errors.js';
 import { registry } from '../metadata/registry.js';
@@ -158,12 +158,29 @@ export async function runWidget(
   }
 }
 
-async function normaliseConfigFieldNames(config: WidgetConfig): Promise<WidgetConfig> {
+/**
+ * Older dashboard builders stored a metadata field id in a few config slots.
+ * The current builder has always stored field names.  Accept the older shape
+ * at the API boundary too, so the rendered dashboard and its drill-through
+ * links agree on the same canonical field names.
+ */
+export async function normaliseConfigFieldNames(config: WidgetConfig): Promise<WidgetConfig> {
   if (!config.module) return config;
   const module = await registry.requireModule(config.module);
   const resolve = (raw: unknown): unknown => {
     if (typeof raw !== 'string') return raw;
     return module.fields.find((field) => field.name === raw || field.id === raw)?.name ?? raw;
+  };
+  const normaliseFilter = (filter: FilterGroup | undefined): FilterGroup | undefined => {
+    if (!filter) return filter;
+    return {
+      ...filter,
+      conditions: filter.conditions.map((condition) => (
+        'conditions' in condition
+          ? normaliseFilter(condition as FilterGroup)!
+          : { ...condition, field: resolve(condition.field) as string }
+      )),
+    };
   };
   return {
     ...config,
@@ -172,6 +189,9 @@ async function normaliseConfigFieldNames(config: WidgetConfig): Promise<WidgetCo
     dateField: resolve(config.dateField) as string | undefined,
     sortBy: resolve(config.sortBy) as string | undefined,
     columns: Array.isArray(config.columns) ? config.columns.map(resolve) as string[] : config.columns,
+    stages: Array.isArray(config.stages) ? config.stages.map(resolve) as string[] : config.stages,
+    stackBy: resolve(config.stackBy) as string | undefined,
+    filter: normaliseFilter(config.filter),
   };
 }
 
@@ -353,26 +373,48 @@ async function resolveGroupLabels(
 
   if (grouped.uitype === 'reference' || grouped.uitype === 'multireference') {
     if (!clean.length) return out;
+    const recordIds = clean.filter(isUuid);
+    if (!recordIds.length) return out;
     const res = await conn.query<{ id: string; label: string }>(
-      `SELECT id, label FROM ipy_record WHERE id = ANY($1::uuid[])`, [clean],
+      `SELECT id, label FROM ipy_record WHERE id = ANY($1::uuid[])`, [recordIds],
     );
     for (const r of res.rows) out.set(r.id, { label: r.label });
-    return out;
   }
 
   if (grouped.uitype === 'owner' || grouped.uitype === 'user') {
     if (!clean.length) return out;
+    const principalIds = clean.filter(isUuid);
+    if (!principalIds.length) return out;
     const [users, groups] = await Promise.all([
       conn.query<{ id: string; name: string }>(
-        `SELECT id, trim(first_name || ' ' || last_name) AS name FROM ipy_user WHERE id = ANY($1::uuid[])`, [clean],
+        `SELECT id, trim(first_name || ' ' || last_name) AS name FROM ipy_user WHERE id = ANY($1::uuid[])`, [principalIds],
       ),
-      conn.query<{ id: string; name: string }>(`SELECT id, name FROM ipy_group WHERE id = ANY($1::uuid[])`, [clean]),
+      conn.query<{ id: string; name: string }>(`SELECT id, name FROM ipy_group WHERE id = ANY($1::uuid[])`, [principalIds]),
     ]);
     for (const r of [...users.rows, ...groups.rows]) out.set(r.id, { label: r.name });
-    return out;
   }
 
+  // Historic custom field metadata was not always accurate about whether an
+  // id referred to a CRM record, a user, or a team.  A raw UUID is not useful
+  // in a chart, so resolve the remaining UUID-shaped keys defensively.  Values
+  // that are not UUIDs are deliberately never sent to uuid[] SQL casts.
+  const unresolved = clean.filter((key) => isUuid(key) && !out.has(key));
+  if (!unresolved.length) return out;
+  const [users, groups, records] = await Promise.all([
+    conn.query<{ id: string; name: string }>(
+      `SELECT id, trim(first_name || ' ' || last_name) AS name FROM ipy_user WHERE id = ANY($1::uuid[])`, [unresolved],
+    ),
+    conn.query<{ id: string; name: string }>(`SELECT id, name FROM ipy_group WHERE id = ANY($1::uuid[])`, [unresolved]),
+    conn.query<{ id: string; label: string }>(`SELECT id, label FROM ipy_record WHERE id = ANY($1::uuid[])`, [unresolved]),
+  ]);
+  for (const row of users.rows) out.set(row.id, { label: row.name });
+  for (const row of groups.rows) out.set(row.id, { label: row.name });
+  for (const row of records.rows) out.set(row.id, { label: row.label });
   return out;
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 // ---------------------------------------------------------------------------
