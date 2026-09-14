@@ -127,6 +127,17 @@ describe('update', () => {
     expect(updated.label).toBe('Changed Name');
   });
 
+  it('updates Next Follow-up as the record task date', async () => {
+    const created = await createRecord(admin, 'leads', leadInput({ full_name: 'Follow-up update' }));
+    const updated = await updateRecord(admin, 'leads', created.id, { next_followup_at: '2099-12-31' });
+
+    expect(updated.values.next_followup_at).toBe('2099-12-31');
+    const stored = await db.queryOne<{ next_followup_at: string | null }>(
+      'SELECT next_followup_at FROM ipy_e_leads WHERE record_id = $1', [created.id],
+    );
+    expect(stored?.next_followup_at).toBe('2099-12-31');
+  });
+
   it('writes an audit row naming the field, the old value and the new', async () => {
     const created = await createRecord(admin, 'leads', leadInput({ company: 'Mumbai Estates' }));
     await updateRecord(admin, 'leads', created.id, { company: 'Bengaluru Estates' });

@@ -784,7 +784,7 @@ export default function ListView(): JSX.Element {
           </Dropdown>
 
           {taskQueuesEnabled && (
-            <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1.5 shadow-sm dark:border-slate-700 dark:bg-slate-800/70" aria-label="Follow-up tasks">
+            <div className="flex items-center gap-0.5 rounded-lg border border-slate-200 bg-slate-50 p-1 shadow-sm dark:border-slate-700 dark:bg-slate-800/70" aria-label="Follow-up tasks">
               {([
                 ['pending', 'Pending Follow-up', 'Past follow-ups need attention'],
                 ['today', 'Today Follow up', "Today's follow-ups"],
@@ -796,7 +796,7 @@ export default function ListView(): JSX.Element {
                   title={title}
                   onClick={() => { setTaskQueue((current) => current === queue ? null : queue); setPage(1); }}
                   className={cn(
-                    'inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-extrabold shadow-sm transition-colors',
+                    'inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-extrabold leading-none shadow-sm transition-colors',
                     taskQueue === queue && 'ring-2 ring-offset-1 ring-slate-700 dark:ring-slate-200',
                     allTaskQueuesClear && 'bg-emerald-600 text-white hover:bg-emerald-700',
                     !allTaskQueuesClear && queue === 'pending' && taskCounts.pending > 0 && 'bg-rose-600 text-white hover:bg-rose-700',
@@ -805,7 +805,7 @@ export default function ListView(): JSX.Element {
                     !allTaskQueuesClear && queue === 'tomorrow' && 'bg-sky-700 text-white hover:bg-sky-800',
                   )}
                 >
-                  {label} <span className="rounded bg-white/20 px-1.5 py-0.5 tnum">{taskCounts[queue]}</span>
+                  {label} <span className="rounded bg-white/20 px-1 py-0.5 tnum">{taskCounts[queue]}</span>
                 </button>
               ))}
             </div>
