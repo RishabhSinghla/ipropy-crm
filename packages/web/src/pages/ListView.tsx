@@ -798,7 +798,7 @@ export default function ListView(): JSX.Element {
                   className={cn(
                     'inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-extrabold leading-none shadow-sm transition-colors',
                     taskQueue === queue && 'ring-2 ring-offset-1 ring-slate-700 dark:ring-slate-200',
-                    allTaskQueuesClear && 'bg-emerald-600 text-white hover:bg-emerald-700',
+                    allTaskQueuesClear && 'bg-emerald-700 text-white hover:bg-emerald-800',
                     !allTaskQueuesClear && queue === 'pending' && taskCounts.pending > 0 && 'bg-rose-600 text-white hover:bg-rose-700',
                     !allTaskQueuesClear && queue === 'pending' && taskCounts.pending === 0 && 'bg-slate-600 text-white hover:bg-slate-700',
                     !allTaskQueuesClear && queue === 'today' && 'bg-indigo-600 text-white hover:bg-indigo-700',
