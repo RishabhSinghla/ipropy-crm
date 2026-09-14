@@ -802,7 +802,7 @@ export default function ListView(): JSX.Element {
                     !allTaskQueuesClear && queue === 'pending' && taskCounts.pending > 0 && 'bg-rose-600 text-white hover:bg-rose-700',
                     !allTaskQueuesClear && queue === 'pending' && taskCounts.pending === 0 && 'bg-slate-600 text-white hover:bg-slate-700',
                     !allTaskQueuesClear && queue === 'today' && 'bg-indigo-600 text-white hover:bg-indigo-700',
-                    !allTaskQueuesClear && queue === 'tomorrow' && 'bg-sky-600 text-white hover:bg-sky-700',
+                    !allTaskQueuesClear && queue === 'tomorrow' && 'bg-sky-700 text-white hover:bg-sky-800',
                   )}
                 >
                   {label} <span className="rounded bg-white/20 px-1.5 py-0.5 tnum">{taskCounts[queue]}</span>
