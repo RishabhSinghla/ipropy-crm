@@ -453,7 +453,12 @@ async function runFunnel(ctx: ScopeContext, config: WidgetConfig, conn: Tx): Pro
     const prev = i === 0 ? s.reached : cumulative[i - 1].reached;
     return {
       key: s.key,
-      label: field?.options?.find((o) => o.value === s.key)?.label ?? s.key,
+      // runGrouped has already resolved the display label — picklist labels,
+      // user names, referenced record labels. Re-deriving it from the field's
+      // options here only ever worked for dropdowns, so a funnel grouped by a
+      // person printed raw uuids. Fall back to options for a configured stage
+      // that no record has reached, and to the key only as a last resort.
+      label: byKey.get(s.key)?.label ?? field?.options?.find((o) => o.value === s.key)?.label ?? s.key,
       value: s.reached,
       conversionFromPrevious: prev === 0 ? 0 : Math.round((s.reached / prev) * 1000) / 10,
       conversionFromFirst: first === 0 ? 0 : Math.round((s.reached / first) * 1000) / 10,

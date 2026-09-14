@@ -131,6 +131,11 @@ export default function WidgetBuilder({
   const fields = moduleMeta?.fields.filter((f) => f.isActive && f.displayType !== 'hidden') ?? [];
   const numericFields = fields.filter((f) => NUMERIC_UITYPES.has(f.uitype));
   const groupableFields = fields.filter((f) => ['picklist', 'select', 'status', 'owner', 'user', 'reference', 'boolean', 'checkbox'].includes(f.uitype));
+  // A funnel sums each stage with every stage after it, so its group-by has to
+  // be an ordered pipeline. Grouped by a person or a referenced record the
+  // arithmetic is meaningless — the top band becomes everyone added together —
+  // so those fields are not offered here.
+  const stageFields = groupableFields.filter((f) => ['picklist', 'select', 'status'].includes(f.uitype));
   const dateFields = fields.filter((f) => ['date', 'datetime'].includes(f.uitype));
 
   // Preview against the live endpoint, debounced so dragging a number field
@@ -260,7 +265,7 @@ export default function WidgetBuilder({
                   <Select
                     value={config.groupBy ?? ''}
                     onChange={(v) => set({ groupBy: v })}
-                    options={byLabel(groupableFields).map((f) => ({ value: f.name, label: f.label }))}
+                    options={byLabel(def.needs.stages ? stageFields : groupableFields).map((f) => ({ value: f.name, label: f.label }))}
                     placeholder="Pick a field"
                   />
                 </div>
