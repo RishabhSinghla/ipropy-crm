@@ -68,7 +68,7 @@
     "@types/fluent-ffmpeg": "^2.1.28",
     "@types/jsonwebtoken": "^9.0.7",
     "@types/multer": "^2.2.0",
-    "@types/node": "^22.10.2",
+    "@types/node": "^26.5.1",
     "@types/nodemailer": "^8.0.1",
     "@types/pg": "^8.23.1",
     "@types/qrcode": "^1.5.6",
