@@ -31,6 +31,25 @@ jobs:
           sudo apt-get install -y -qq postgresql-client-18
           echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
 
+      - name: Why a record write fails when other writes do not
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          echo "--- any index left in a broken state ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -c "SELECT indexrelid::regclass AS index, indrelid::regclass AS tbl, indisvalid, indisready, indislive FROM pg_index WHERE NOT indisvalid OR NOT indisready OR NOT indislive;"
+
+          echo "--- probe: ipy_record insert, rolled back ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -c "BEGIN; INSERT INTO ipy_record (module_id, module_name, label, owner_id, owner_type, created_by, modified_by) SELECT m.id, 'leads', '__probe__', u.id, 'user', u.id, u.id FROM ipy_module m, ipy_user u WHERE m.name = 'leads' AND u.is_admin LIMIT 1; ROLLBACK;" || echo "PROBE ipy_record FAILED (error above)"
+
+          echo "--- probe: leads payload insert, rolled back ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -c "BEGIN; INSERT INTO ipy_e_leads (record_id, full_name, mobile) SELECT r.id, '__probe__', '9999999999' FROM ipy_record r WHERE r.module_name='leads' LIMIT 1; ROLLBACK;" || echo "PROBE ipy_e_leads FAILED (error above)"
+
+          echo "--- probe: audit row insert, rolled back ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -c "BEGIN; INSERT INTO ipy_audit (record_id, module_name, action, user_id, changes) SELECT r.id, 'leads', 'update', u.id, '[]'::jsonb FROM ipy_record r, ipy_user u WHERE r.module_name='leads' AND u.is_admin LIMIT 1; ROLLBACK;" || echo "PROBE ipy_audit FAILED (error above)"
+
+          echo "--- probe: a real UPDATE of a lead, rolled back ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -c "BEGIN; UPDATE ipy_e_leads SET status = status WHERE record_id IN (SELECT id FROM ipy_record WHERE module_name='leads' LIMIT 1); UPDATE ipy_record SET updated_at = now() WHERE module_name='leads' AND id IN (SELECT id FROM ipy_record WHERE module_name='leads' LIMIT 1); ROLLBACK;" || echo "PROBE update FAILED (error above)"
+
       - name: Can production accept a write, and how full is it
         env:
           PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
