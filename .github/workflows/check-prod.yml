@@ -31,6 +31,146 @@ jobs:
           sudo apt-get install -y -qq postgresql-client-18
           echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
 
+      # Saving a lead answers 422, not 500 — the write is refused by validation
+      # rather than failing in the database, and every database probe passes.
+      # 422 comes from one of two places in core/metadata/values.ts: a mandatory
+      # field left empty, or a picklist value that is not in that field's live
+      # options. A dropdown option switched off or deleted takes its option out
+      # of `field.options` while every record and every default still names it,
+      # so the value the form sends is no longer one the server will accept.
+      # Read-only: this prints metadata, never a record and never a secret.
+      - name: Why a save is refused
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          echo "--- dropdown fields whose list has no live options left ---"
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT m.name AS module, f.name AS field, f.is_mandatory, f.display_type,
+                 f.config->>'picklist' AS picklist,
+                 (SELECT count(*) FROM ipy_picklist p JOIN ipy_picklist_value v ON v.picklist_id = p.id
+                   WHERE p.name = f.config->>'picklist' AND v.is_active) AS live_options,
+                 (SELECT count(*) FROM ipy_picklist p JOIN ipy_picklist_value v ON v.picklist_id = p.id
+                   WHERE p.name = f.config->>'picklist') AS total_options
+            FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+           WHERE f.uitype IN ('picklist','radio','multipicklist') AND f.is_active
+           ORDER BY live_options, m.name, f.name;
+          SQL
+
+          echo "--- what a create must supply: mandatory, active, on screen ---"
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT m.name AS module, f.name AS field, f.uitype, f.display_type,
+                 f.default_value #>> '{}' AS default_value
+            FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+           WHERE f.is_mandatory AND f.is_active AND f.display_type <> 'hidden'
+           ORDER BY m.name, f.sequence;
+          SQL
+
+          echo "--- dropdown options deleted, newest first ---"
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT picklist_name,
+                 CASE WHEN value = '' THEN '(the whole dropdown)' ELSE value END AS option,
+                 to_char(deleted_at, 'MM-DD HH24:MI') AS deleted, had_records, replaced_with
+            FROM ipy_picklist_tombstone ORDER BY deleted_at DESC LIMIT 25;
+          SQL
+
+          echo "--- a default a record would start with that is no longer offered ---"
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT p.name AS picklist, v.value, v.is_active, v.is_default
+            FROM ipy_picklist p JOIN ipy_picklist_value v ON v.picklist_id = p.id
+           WHERE v.is_default AND NOT v.is_active;
+          SQL
+
+          echo "--- a dropdown field pointing at a list that does not exist ---"
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT m.name AS module, f.name AS field, f.config->>'picklist' AS names_picklist
+            FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+           WHERE f.uitype IN ('picklist','radio','multipicklist') AND f.is_active
+             AND NOT EXISTS (SELECT 1 FROM ipy_picklist p WHERE p.name = f.config->>'picklist');
+          SQL
+
+          echo "--- mandatory fields: is the rule plain or conditional ---"
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT m.name AS module, f.name AS field, f.is_mandatory,
+                 (f.config ? 'requiredWhen') AS conditional,
+                 (f.config ? 'visibleWhen')  AS conditionally_visible,
+                 f.config->>'requiredWhen'   AS required_when
+            FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+           WHERE f.is_active
+             AND (f.is_mandatory OR f.config ? 'requiredWhen')
+           ORDER BY m.name, f.sequence;
+          SQL
+
+          # A mandatory field is addressed by `name`; the payload table holds it
+          # under `column_name`, and the two differ — the field is `lead_status`,
+          # the column is `status`. Read the column the metadata names.
+          echo "--- what a mandatory lead field is actually stored in ---"
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT m.name AS module, f.name AS field, f.column_name, f.storage
+            FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+           WHERE f.is_active AND f.is_mandatory
+           ORDER BY m.name, f.sequence;
+          SQL
+
+          # The whole question for a create: does every mandatory dropdown have
+          # an option marked default? prepareValues fills a picklist on create
+          # only from `options.find(o => o.isDefault)`, so one without a default
+          # stays empty and validateRequired refuses the record.
+          echo "--- every mandatory dropdown, and whether it has a default ---"
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT m.name AS module, f.name AS field,
+                 f.config->>'picklist' AS picklist,
+                 (f.default_value #>> '{}') AS field_default,
+                 (SELECT count(*) FROM ipy_picklist p JOIN ipy_picklist_value v ON v.picklist_id = p.id
+                   WHERE p.name = f.config->>'picklist' AND v.is_default AND v.is_active) AS has_default_option,
+                 (SELECT string_agg(v.value, ', ' ORDER BY v.sequence)
+                    FROM ipy_picklist p JOIN ipy_picklist_value v ON v.picklist_id = p.id
+                   WHERE p.name = f.config->>'picklist' AND v.is_active) AS options
+            FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+           WHERE f.is_active AND f.is_mandatory
+             AND f.uitype IN ('picklist','radio')
+           ORDER BY has_default_option, m.name, f.name;
+          SQL
+
+          # The other half of the same question. A plain mandatory field is only
+          # checked on an update that mentions it — but a form that submits the
+          # whole record mentions all of them, so a lead imported before the
+          # field was made mandatory is refused every time anybody edits it.
+          # 22,983 leads came from Vtiger; whatever they do not carry is what
+          # the team cannot save.
+          echo "--- imported leads missing a value a mandatory field now demands ---"
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT count(*) AS live_leads,
+                 count(*) FILTER (WHERE e.full_name IS NULL OR e.full_name = '')      AS no_full_name,
+                 count(*) FILTER (WHERE e.mobile IS NULL OR e.mobile = '')            AS no_mobile,
+                 count(*) FILTER (WHERE e.status IS NULL OR e.status = '')            AS no_lead_status,
+                 count(*) FILTER (WHERE e.contact_type IS NULL OR e.contact_type = '') AS no_contact_type,
+                 count(*) FILTER (WHERE coalesce(e.custom_fields->>'category','') = '') AS no_category,
+                 count(*) FILTER (WHERE e.preferred_locations IS NULL
+                                     OR e.preferred_locations = '')                   AS no_preferred_locations
+            FROM ipy_e_leads e JOIN ipy_record r ON r.id = e.record_id
+           WHERE NOT r.is_deleted;
+          SQL
+
+          echo "--- how many existing leads sit on a value the dropdown no longer offers ---"
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT e.status AS stored_value, count(*) AS records,
+                 EXISTS (SELECT 1 FROM ipy_picklist p JOIN ipy_picklist_value v ON v.picklist_id = p.id
+                          WHERE p.name = 'lead_status' AND v.is_active AND v.value = e.status)
+                   AS still_offered
+            FROM ipy_e_leads e JOIN ipy_record r ON r.id = e.record_id
+           WHERE NOT r.is_deleted AND e.status IS NOT NULL
+           GROUP BY e.status ORDER BY still_offered, count(*) DESC LIMIT 20;
+          SQL
+
+          echo "--- metadata changed in the last 3 days ---"
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT m.name AS module, f.name AS field, f.uitype, f.is_mandatory,
+                 f.is_active, f.display_type, to_char(f.updated_at, 'MM-DD HH24:MI') AS changed
+            FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+           WHERE f.updated_at > now() - interval '3 days'
+           ORDER BY f.updated_at DESC LIMIT 30;
+          SQL
+
       - name: What production actually has configured
         env:
           PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
