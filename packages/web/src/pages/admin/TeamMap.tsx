@@ -108,16 +108,27 @@ export default function TeamMap(): JSX.Element {
     if (map.current) return;
 
     const instance = L.map(node, { zoomControl: true }).setView(HOME, 12);
-    // Do not use the public OpenStreetMap volunteer tile servers for the CRM.
-    // A team map loads many tiles at once and those servers correctly return
-    // 403 when that usage breaches their tile policy, leaving the screen full
-    // of error images. CARTO's public light basemap is designed for this kind
-    // of application use and keeps the map readable behind coloured pins.
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    /*
+      OpenStreetMap's own tiles, because CARTO's stopped being keyless.
+
+      This used to point at `basemaps.cartocdn.com`, chosen on the reasoning
+      that OSM's volunteer servers would 403 a busy application. CARTO has since
+      moved that basemap behind an API key, and what it serves without one is a
+      tile stamped API KEY REQUIRED — so the map arrived as a grid of that
+      phrase, which is what "the team map is not working" looked like.
+
+      The volunteer-server worry does not apply at this size. This is one admin
+      screen, opened occasionally, plotting a handful of reps; OSM's policy is
+      aimed at bulk scraping and high-traffic sites, not that. No key, no
+      account, no bill — which was the requirement.
+
+      If it ever does outgrow this, the fix is a keyed provider (MapTiler and
+      CARTO both have free tiers), not a second volunteer server.
+    */
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
-      subdomains: 'abcd',
-      detectRetina: true,
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+      detectRetina: false,
+      attribution: '&copy; OpenStreetMap contributors',
     }).addTo(instance);
     map.current = instance;
     drawn.current = L.layerGroup().addTo(instance);
