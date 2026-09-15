@@ -92,20 +92,33 @@ try {
       `SELECT column_name, storage FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
         WHERE m.name = $1 AND f.name = $2`, [a.module, a.unit_field]);
 
-    if (!unit || unit.storage !== 'column') {
-      console.log(`  ${a.module}.${a.field}: skipped — its unit (${a.unit_field}) is not a real column`);
+    if (!unit) {
+      console.log(`  ${a.module}.${a.field}: skipped — its unit field (${a.unit_field}) does not exist`);
       continue;
     }
 
+    /*
+      A field lives in one of two places and the metadata says which: a real
+      column, or a key in the `custom_fields` JSONB bag. Anything an admin adds
+      is json, which is why both area units on this CRM are — reading only
+      columns skipped every record there was.
+    */
     const table = ident(a.table_name);
-    const col = ident(unit.column_name);
+    const isJson = unit.storage !== 'column';
+    const read = isJson
+      ? `coalesce(e.custom_fields->>'${unit.column_name.replace(/'/g, "''")}', 'sqft')`
+      : `coalesce(e.${ident(unit.column_name)}, 'sqft')`;
+    const write = (value) => (isJson
+      ? `custom_fields = jsonb_set(coalesce(custom_fields, '{}'::jsonb), '{${unit.column_name.replace(/'/g, "''")}}', to_jsonb(${value}::text), true)`
+      : `${ident(unit.column_name)} = ${value}`);
+
     const { rows: [{ total }] } = await client.query(
       `SELECT count(*)::int AS total FROM ${table} e JOIN ipy_record r ON r.id = e.record_id
-        WHERE r.is_deleted = false AND coalesce(e.${col}, 'sqft') = $1`, [from]);
+        WHERE r.is_deleted = false AND ${read} = $1`, [from]);
 
-    console.log(`  ${a.module}.${a.field} (unit in ${a.unit_field}): ${total} record(s) tagged ${from}`);
+    console.log(`  ${a.module}.${a.field} (unit in ${a.unit_field}, ${isJson ? 'json' : 'column'}): ${total} record(s) tagged ${from}`);
     grandTotal += total;
-    if (total) targets.push({ ...a, table, col, total });
+    if (total) targets.push({ ...a, table, read, write, total });
   }
 
   if (!grandTotal) { console.log('\nNothing to do.'); process.exit(0); }
@@ -113,14 +126,13 @@ try {
   // A sample, so whoever runs this can see the numbers staying put.
   const first = targets[0];
   const { rows: sample } = await client.query(
-    `SELECT r.label, e.${ident(first.field)} AS value, coalesce(e.${first.col}, 'sqft') AS unit
+    `SELECT r.label, ${first.read} AS unit
        FROM ${first.table} e JOIN ipy_record r ON r.id = e.record_id
-      WHERE r.is_deleted = false AND coalesce(e.${first.col}, 'sqft') = $1
-        AND e.${ident(first.field)} IS NOT NULL
+      WHERE r.is_deleted = false AND ${first.read} = $1
       ORDER BY r.created_at LIMIT 5`, [from]).catch(() => ({ rows: [] }));
   if (sample.length) {
-    console.log('\nfirst few, before and after:');
-    for (const s of sample) console.log(`  ${s.label}: ${s.value} ${s.unit}  ->  ${s.value} ${to}`);
+    console.log('\nfirst few, before and after — the unit moves, the number does not:');
+    for (const s2 of sample) console.log(`  ${s2.label}: ${s2.unit}  ->  ${to}`);
   }
 
   if (!apply) {
@@ -134,10 +146,10 @@ try {
       // Batched by id so a long transaction never holds the table, and so an
       // interrupted run simply resumes: rows already moved no longer match.
       const { rowCount } = await client.query(
-        `UPDATE ${t.table} SET ${t.col} = $2
+        `UPDATE ${t.table} SET ${t.write('$2')}
           WHERE record_id IN (
             SELECT e.record_id FROM ${t.table} e JOIN ipy_record r ON r.id = e.record_id
-             WHERE r.is_deleted = false AND coalesce(e.${t.col}, 'sqft') = $1
+             WHERE r.is_deleted = false AND ${t.read} = $1
              LIMIT ${BATCH})`, [from, to]);
       if (!rowCount) break;
       moved += rowCount;
