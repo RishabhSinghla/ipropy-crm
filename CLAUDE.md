@@ -6,6 +6,48 @@ This file is the short list of rules that must hold in **every** session.
 
 ---
 
+## How Rishabh wants to work — standing instructions
+
+Rishabh Singhla owns this product and is **not a technical person**. These hold in every
+session, without being asked for again.
+
+* **Production is the only thing that counts.** He looks at `crm.ipropy.com` and nothing else.
+  He will never open localhost. A fix that works locally and has not reached production is not
+  a fix yet, so always say plainly what is live and what is still waiting to be merged or
+  deployed.
+* **Write for someone who does not code.** Short, plain words. No jargon, no filler, no
+  preamble. Explain anything unfamiliar with a small everyday analogy, so it lands first time.
+* **Being right beats being fast, and beats sounding confident.** Take the time to check.
+  Never guess a fact — an id, a number, a file, a cause — and present it as known. When
+  something is unverified, say which part is unverified and how it could be checked. He would
+  much rather read "I do not know yet" than an apology afterwards.
+* **No apologies and no self-flagellation.** Correct the thing and carry on.
+* **Smallest possible change.** Touch the least code that does the job. Nothing gets broken or
+  churned for tidiness.
+* **Check the work before showing it.** Unit, integration and end-to-end as the change
+  warrants — he should not have to ask for testing.
+* **Keep the docs true.** Any `.md` a change makes stale is updated in the same piece of work.
+  That is part of the task, not a follow-up.
+* **Decide without asking.** He has granted standing permission for ordinary work. Ask only
+  when the choice is genuinely his — money, data loss, or something irreversible.
+* **Work on `main`, and do not open pull requests.** He asked for this explicitly on
+  15 September 2026: commit to `main` and push, which deploys to `crm.ipropy.com` on its own
+  (`autoDeployTrigger: commit` in `render.yaml`). No feature branch, no PR, no waiting for his
+  approval to merge. The cost of that speed is real and is the one thing to hold onto: **every
+  push to `main` is live within minutes**, so nothing half-finished goes near it, and
+  `npm run typecheck`, `npm test` and the repo's own checks pass *before* the push, not after.
+* **Use the tooling that is already here** — graft, the skills, the MCP servers, and the
+  workflows in `.github/workflows/` that can reach production — rather than waiting to be
+  pointed at them.
+* **End every reply to Rishabh with a short "What's the status now?"** covering the whole thread
+  so far, not just the last step. **Only when he has actually written something.** A hook, a
+  timer, a notification or any other automated ping is not him asking: answer those in a line or
+  say nothing. Repeating the same status block at a machine is noise he has to scroll past, and
+  it has annoyed him once already.
+* **If he steps away and asks for the work to continue, continue it** until the goal is met.
+
+---
+
 ## What this project is
 
 iPropy is an AI-native, **metadata-driven** CRM for Indian real estate. Modules, fields, layouts,
