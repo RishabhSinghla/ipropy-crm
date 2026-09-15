@@ -1,0 +1,69 @@
+# Make every dropdown option store the words the admin typed.
+#
+# Lead Status shows "Lead Won" on records storing `Contacted`, and "Contacted"
+# on records storing `Converted`. The screen is right and the stored value is
+# something else, so the timeline, an export and a workflow condition all read
+# as though the CRM had got it wrong.
+#
+# The script is the work; this only lends it the production connection string
+# and a button. Dry run unless "apply" is typed, and it refuses outright rather
+# than merging two answers into one.
+name: Align dropdown values with their labels
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Type apply to write. Anything else lists what would change."
+        default: "dry-run"
+
+permissions:
+  contents: read
+
+jobs:
+  align:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # `@ipropy/server` imports `@ipropy/shared` and `@ipropy/mcp` through their
+      # built `dist`. A workspace has to be built before anything importing it,
+      # or this is an immediate TS2307 — see CLAUDE.md on build order.
+      - name: Build the workspaces the script imports
+        run: npm run build:deps
+
+      - name: What would change
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: npm run picklists:align
+
+      - name: Change it
+        if: ${{ inputs.apply == 'apply' }}
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: npm run picklists:align -- --apply
+
+      # The registry caches every dropdown in the process's memory, so the
+      # renamed values are invisible until it reloads. Render restarts on a
+      # deploy; this is the deploy.
+      # `if:` cannot read a step's own `env`, so the missing-secret case is
+      # handled in the script rather than in the condition — a silently skipped
+      # step here would leave production showing the old values indefinitely.
+      - name: Tell production to restart and pick the new values up
+        if: ${{ inputs.apply == 'apply' }}
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK" ]; then
+            echo "::warning::No RENDER_DEPLOY_HOOK secret — restart the service by hand, or the CRM keeps serving the old values from its cache."
+            exit 0
+          fi
+          curl -fsS -X POST "$RENDER_DEPLOY_HOOK" > /dev/null && echo "redeploy requested"
