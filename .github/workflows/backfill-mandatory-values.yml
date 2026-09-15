@@ -1,0 +1,160 @@
+# Make the leads imported from Vtiger editable again.
+#
+# Three fields on `leads` were made mandatory after 22,983 records had already
+# been imported, and the import did not carry all three. The server is not the
+# problem — a plain mandatory field is skipped on an update that does not
+# mention it, and `RecordForm.submit` sends only what changed. `RecordForm.
+# validate` is the problem: it walks every mandatory field the layout renders,
+# not the ones the rep touched, so a lead with no Category refuses to save when
+# somebody edits its phone number. The rep sees "Category is required" on a
+# field they know nothing about, on a record they did not create.
+#
+# Nothing here is invented. `lead_status` becomes New, which is what the record
+# already is — never contacted, never progressed. The other two become Unknown,
+# which is the truth, and Unknown is a real option on the locality list already.
+# Guessing "Builder Floor" for 228 people would be a lie that reads as data.
+#
+# Reversible: every row it touches is recorded first, and --revert is a matter
+# of setting those ids back to NULL. Run it once; it is idempotent, because a
+# row it has filled no longer matches.
+name: Backfill the mandatory values imported leads never carried
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Type apply to write. Anything else counts and changes nothing."
+        default: "dry-run"
+
+permissions:
+  contents: read
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Install PostgreSQL 18 client
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: Count what is missing
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT count(*) AS live_leads,
+                 count(*) FILTER (WHERE coalesce(e.status,'') = '')                        AS no_lead_status,
+                 count(*) FILTER (WHERE coalesce(e.preferred_locations,'') = '')           AS no_preferred_locations,
+                 count(*) FILTER (WHERE coalesce(e.custom_fields->>'category','') = '')    AS no_category,
+                 count(*) FILTER (WHERE coalesce(e.status,'') = ''
+                                     OR coalesce(e.preferred_locations,'') = ''
+                                     OR coalesce(e.custom_fields->>'category','') = '')    AS blocked_from_editing
+            FROM ipy_e_leads e JOIN ipy_record r ON r.id = e.record_id
+           WHERE NOT r.is_deleted;
+          SQL
+
+      - name: Fill them
+        if: ${{ inputs.apply == 'apply' }}
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          psql "$PROD_DATABASE_URL" -v ON_ERROR_STOP=1 -P pager=off <<'SQL'
+          BEGIN;
+
+          -- Category has no Unknown to reach for, so add one. A deleted option
+          -- is held down by a tombstone that upsertPicklist consults, and the
+          -- seed would otherwise resurrect or re-delete this on the next cold
+          -- start; clearing the tombstone is what makes the addition durable.
+          DELETE FROM ipy_picklist_tombstone
+           WHERE picklist_name = 'category' AND value IN ('Unknown', '');
+
+          INSERT INTO ipy_picklist_value (picklist_id, value, label, sequence, is_active, is_default)
+          SELECT p.id, 'Unknown', 'Unknown',
+                 coalesce((SELECT max(v.sequence) FROM ipy_picklist_value v WHERE v.picklist_id = p.id), 0) + 1,
+                 true, false
+            FROM ipy_picklist p
+           WHERE p.name = 'category'
+          ON CONFLICT (picklist_id, value) DO UPDATE SET is_active = true;
+
+          -- Keep a record of exactly which rows were touched, so this is
+          -- undoable without guessing which blanks were original.
+          CREATE TABLE IF NOT EXISTS ipy_backfill_mandatory_2026_09_15 (
+            record_id UUID PRIMARY KEY,
+            filled_status              BOOLEAN NOT NULL DEFAULT false,
+            filled_preferred_locations BOOLEAN NOT NULL DEFAULT false,
+            filled_category            BOOLEAN NOT NULL DEFAULT false,
+            filled_at TIMESTAMPTZ NOT NULL DEFAULT now()
+          );
+
+          INSERT INTO ipy_backfill_mandatory_2026_09_15
+                (record_id, filled_status, filled_preferred_locations, filled_category)
+          SELECT e.record_id,
+                 coalesce(e.status,'') = '',
+                 coalesce(e.preferred_locations,'') = '',
+                 coalesce(e.custom_fields->>'category','') = ''
+            FROM ipy_e_leads e JOIN ipy_record r ON r.id = e.record_id
+           WHERE NOT r.is_deleted
+             AND (coalesce(e.status,'') = ''
+               OR coalesce(e.preferred_locations,'') = ''
+               OR coalesce(e.custom_fields->>'category','') = '')
+          ON CONFLICT (record_id) DO NOTHING;
+
+          UPDATE ipy_e_leads e SET status = 'New'
+            FROM ipy_record r
+           WHERE r.id = e.record_id AND NOT r.is_deleted
+             AND coalesce(e.status,'') = '';
+
+          UPDATE ipy_e_leads e SET preferred_locations = 'Unknown'
+            FROM ipy_record r
+           WHERE r.id = e.record_id AND NOT r.is_deleted
+             AND coalesce(e.preferred_locations,'') = '';
+
+          -- category lives in custom_fields, not a column: ipy_field.storage
+          -- says 'json' for it.
+          UPDATE ipy_e_leads e
+             SET custom_fields = jsonb_set(coalesce(e.custom_fields, '{}'::jsonb),
+                                           '{category}', '"Unknown"'::jsonb, true)
+            FROM ipy_record r
+           WHERE r.id = e.record_id AND NOT r.is_deleted
+             AND coalesce(e.custom_fields->>'category','') = '';
+
+          COMMIT;
+          SQL
+
+      - name: Count again, and say whether any are still blocked
+        if: ${{ inputs.apply == 'apply' }}
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT count(*) FILTER (WHERE coalesce(e.status,'') = '')                     AS still_no_lead_status,
+                 count(*) FILTER (WHERE coalesce(e.preferred_locations,'') = '')        AS still_no_preferred_locations,
+                 count(*) FILTER (WHERE coalesce(e.custom_fields->>'category','') = '') AS still_no_category,
+                 (SELECT count(*) FROM ipy_backfill_mandatory_2026_09_15)               AS rows_recorded_for_undo
+            FROM ipy_e_leads e JOIN ipy_record r ON r.id = e.record_id
+           WHERE NOT r.is_deleted;
+          SQL
+
+          echo "--- every stored value must be one the dropdown still offers ---"
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT 'lead_status' AS field, e.status AS value, count(*) AS records,
+                 EXISTS (SELECT 1 FROM ipy_picklist p JOIN ipy_picklist_value v ON v.picklist_id = p.id
+                          WHERE p.name = 'lead_status' AND v.is_active AND v.value = e.status) AS offered
+            FROM ipy_e_leads e JOIN ipy_record r ON r.id = e.record_id
+           WHERE NOT r.is_deleted AND e.status IS NOT NULL
+           GROUP BY e.status
+          UNION ALL
+          SELECT 'category', e.custom_fields->>'category', count(*),
+                 EXISTS (SELECT 1 FROM ipy_picklist p JOIN ipy_picklist_value v ON v.picklist_id = p.id
+                          WHERE p.name = 'category' AND v.is_active
+                            AND v.value = e.custom_fields->>'category')
+            FROM ipy_e_leads e JOIN ipy_record r ON r.id = e.record_id
+           WHERE NOT r.is_deleted AND e.custom_fields->>'category' IS NOT NULL
+           GROUP BY e.custom_fields->>'category'
+           ORDER BY 4, 3 DESC;
+          SQL
