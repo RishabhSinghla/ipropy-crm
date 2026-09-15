@@ -88,6 +88,41 @@ jobs:
              AND NOT EXISTS (SELECT 1 FROM ipy_picklist p WHERE p.name = f.config->>'picklist');
           SQL
 
+          echo "--- mandatory fields: is the rule plain or conditional ---"
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT m.name AS module, f.name AS field, f.is_mandatory,
+                 (f.config ? 'requiredWhen') AS conditional,
+                 (f.config ? 'visibleWhen')  AS conditionally_visible,
+                 f.config->>'requiredWhen'   AS required_when
+            FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+           WHERE f.is_active
+             AND (f.is_mandatory OR f.config ? 'requiredWhen')
+           ORDER BY m.name, f.sequence;
+          SQL
+
+          echo "--- how many existing leads would fail a mandatory re-check ---"
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT count(*)                                              AS live_leads,
+                 count(*) FILTER (WHERE full_name    IS NULL OR full_name = '')    AS no_full_name,
+                 count(*) FILTER (WHERE mobile       IS NULL OR mobile = '')       AS no_mobile,
+                 count(*) FILTER (WHERE lead_status  IS NULL OR lead_status = '')  AS no_lead_status,
+                 count(*) FILTER (WHERE contact_type IS NULL OR contact_type = '') AS no_contact_type,
+                 count(*) FILTER (WHERE category     IS NULL OR category = '')     AS no_category
+            FROM ipy_e_leads e JOIN ipy_record r ON r.id = e.record_id
+           WHERE NOT r.is_deleted;
+          SQL
+
+          echo "--- does a stored value still match its dropdown? lead_status ---"
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT e.lead_status AS stored_value, count(*) AS records,
+                 EXISTS (SELECT 1 FROM ipy_picklist p JOIN ipy_picklist_value v ON v.picklist_id = p.id
+                          WHERE p.name = 'lead_status' AND v.is_active AND v.value = e.lead_status)
+                   AS still_offered
+            FROM ipy_e_leads e JOIN ipy_record r ON r.id = e.record_id
+           WHERE NOT r.is_deleted AND e.lead_status IS NOT NULL
+           GROUP BY e.lead_status ORDER BY still_offered, count(*) DESC;
+          SQL
+
           echo "--- metadata changed in the last 3 days ---"
           psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
           SELECT m.name AS module, f.name AS field, f.uitype, f.is_mandatory,
