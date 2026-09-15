@@ -154,21 +154,10 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   }
 
   if (!res.ok) {
-    let payload: { message?: string; error?: string; details?: unknown; requestId?: string } = {};
+    let payload: { message?: string; error?: string; details?: unknown } = {};
     try { payload = await res.json(); } catch { /* non-JSON error body */ }
-    /*
-      A server fault carries its reference into the message.
-
-      Every toast in the app shows `err.message`, so putting it here reaches all
-      of them at once rather than editing each call site. Only on 5xx: a
-      validation message is for the person to act on and reads worse with an id
-      stapled to it, while "Something went wrong on our end" is useless without
-      one — it cannot be matched to the log line that says what actually broke.
-    */
-    const requestId = payload.requestId ?? res.headers.get('x-request-id') ?? undefined;
-    const message = payload.message ?? `Request failed (${res.status})`;
     throw new ApiError(
-      res.status >= 500 && requestId ? `${message} (reference ${requestId})` : message,
+      payload.message ?? `Request failed (${res.status})`,
       res.status,
       payload.error ?? 'error',
       payload.details,

@@ -89,15 +89,6 @@ export default function PicklistManager(): JSX.Element {
   // The stored value is the rare edit; it is off unless asked for. See the
   // note beside the option name input.
   const [showStored, setShowStored] = useState(false);
-  /*
-    Values the last save refused to re-create because they were deleted before.
-
-    The server already takes `restore: [...]` and has since tombstones existed;
-    nothing ever sent it. The refusal named the values and pointed at a
-    "Deleted options" list that was never built, so the only way back was to
-    stop using the name — an admin re-adding "New Lead" was simply stuck.
-  */
-  const [restorable, setRestorable] = useState<string[]>([]);
 
   const { data: catalogue, isLoading } = useQuery({
     queryKey: ['picklist-catalogue'],
@@ -162,7 +153,7 @@ export default function PicklistManager(): JSX.Element {
     setDirty(true);
   };
 
-  const save = async (restore: string[] = []): Promise<void> => {
+  const save = async (): Promise<void> => {
     const blank = options.find((o) => !o.label.trim());
     if (blank) {
       toast.error('Every option needs a name');
@@ -179,13 +170,14 @@ export default function PicklistManager(): JSX.Element {
         ...(o.previousValue && o.previousValue !== o.value.trim()
           ? { previousValue: o.previousValue }
           : {}),
-      })), restore);
+      })));
       if (result.skipped?.length) {
         // The server refused to re-create something deleted earlier. Saying so
-        // matters: silently doing it is the bug this replaced. Offering the way
-        // back matters too — naming the values and then providing no way to
-        // restore them left the admin with nowhere to go.
-        setRestorable(result.skipped);
+        // matters: silently doing it is the bug this replaced.
+        toast.error(
+          'Deleted options were not added back',
+          `${result.skipped.join(', ')} — deleted earlier. Use “Deleted options” below to restore.`,
+        );
       }
       toast.success(
         'Dropdown saved',
@@ -593,24 +585,6 @@ export default function PicklistManager(): JSX.Element {
         label={current?.label ?? ''}
         onClose={() => setRenaming(false)}
         onSaved={refresh}
-      />
-
-      {/* The way back from a refused re-add. The values are already named by
-          the server's `skipped`, so this needs no new endpoint — it re-sends
-          the same save, this time asking for them by name. */}
-      <ConfirmDialog
-        open={restorable.length > 0}
-        onClose={() => setRestorable([])}
-        title={restorable.length === 1 ? 'Bring this option back?' : 'Bring these options back?'}
-        body={`${restorable.join(', ')} ${restorable.length === 1 ? 'was' : 'were'} deleted earlier, so `
-          + 'the save left it out. Restoring adds it back to the list and to every record that still '
-          + 'holds it.'}
-        confirmLabel="Restore"
-        onConfirm={async () => {
-          const values = restorable;
-          setRestorable([]);
-          await save(values);
-        }}
       />
 
       <DeleteOptionDialog
