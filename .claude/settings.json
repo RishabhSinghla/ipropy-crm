@@ -3,6 +3,7 @@
   "permissions": {
     "//allow": "Routine and reversible. Approving them once here saves a prompt in every session.",
     "allow": [
+      "Bash(git push origin main*)",
       "Bash(npm run dev*)",
       "Bash(npm run build*)",
       "Bash(npm run typecheck*)",
