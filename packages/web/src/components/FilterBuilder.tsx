@@ -29,11 +29,13 @@ const SYSTEM_FIELDS: FieldMeta[] = ([
 }));
 
 export function FilterBuilder({
-  module, value, onChange,
+  module, value, onChange, nested = false,
 }: {
   module: ModuleMeta;
   value: FilterGroup;
   onChange: (filter: FilterGroup) => void;
+  /** True for a group inside another group — see the panel below. */
+  nested?: boolean;
 }): JSX.Element {
   /*
     One entry per idea, in alphabetical order.
@@ -56,6 +58,9 @@ export function FilterBuilder({
     return [...own, ...SYSTEM_FIELDS.filter((f) => !covered.has(f.name))]
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [module.fields]);
+
+  /** Revealed by "Advanced"; a bracketed group is the only thing behind it. */
+  const [advanced, setAdvanced] = useState(false);
 
   const update = (index: number, node: FilterCondition | FilterGroup): void => {
     const conditions = [...value.conditions];
@@ -87,13 +92,25 @@ export function FilterBuilder({
 
   return (
     <div className="space-y-2">
+      {/*
+        A sentence, not a form label.
+
+        "Match [All|Any] of the following" is how a query builder describes
+        itself to somebody who already knows what a query builder is. Read by
+        a rep it says nothing about what is on screen or what pressing it does,
+        and it sat above three unlabelled dropdowns and a bin. The same control
+        reads as the thing it produces — "Show Contacts where all of these
+        match" — which is a sentence somebody can check against what they meant.
+      */}
       {value.conditions.length > 1 && (
-        <div className="flex items-center gap-2 text-xs">
-          <span className="text-slate-500">Match</span>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-600 dark:text-slate-300">
+          <span>{nested ? 'Within this group, match' : `Show ${module.label.toLowerCase()} where`}</span>
           <div className="inline-flex overflow-hidden rounded-md border border-slate-200 dark:border-slate-700">
             {(['AND', 'OR'] as const).map((logic) => (
               <button
                 key={logic}
+                type="button"
+                aria-pressed={value.logic === logic}
                 onClick={() => onChange({ ...value, logic })}
                 className={cn(
                   'px-2.5 py-1 text-xs font-medium transition-colors',
@@ -102,11 +119,33 @@ export function FilterBuilder({
                     : 'bg-white text-slate-600 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300',
                 )}
               >
-                {logic === 'AND' ? 'All' : 'Any'}
+                {logic === 'AND' ? 'all' : 'any'}
               </button>
             ))}
           </div>
-          <span className="text-slate-500">of the following</span>
+          <span>of these match</span>
+        </div>
+      )}
+
+      {/*
+        Something to do, rather than an empty box with two buttons under it.
+
+        Opening Filter on a list of 22,983 showed a blank panel, "+ Condition"
+        and "+ Group" — nothing saying what a condition is, what a group is for,
+        or which of the two an ordinary person wants. Ninety-nine times out of a
+        hundred the answer is one condition.
+      */}
+      {!value.conditions.length && !nested && (
+        <div className="rounded-lg border border-dashed border-slate-300 px-4 py-6 text-center dark:border-slate-700">
+          <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+            No filters — showing every {module.singularLabel.toLowerCase()}
+          </p>
+          <p className="mx-auto mt-1 max-w-sm text-xs text-muted">
+            Narrow the list by a field: a status, an owner, a locality, a date.
+          </p>
+          <button type="button" onClick={addCondition} className="btn-primary btn-sm mt-3">
+            <Plus className="h-3 w-3" /> Add a filter
+          </button>
         </div>
       )}
 
@@ -115,7 +154,7 @@ export function FilterBuilder({
           <div key={i} className="flex items-start gap-2">
             {isFilterGroup(node) ? (
               <div className="flex-1 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800/50">
-                <FilterBuilder module={module} value={node} onChange={(g) => update(i, g)} />
+                <FilterBuilder module={module} value={node} onChange={(g) => update(i, g)} nested />
               </div>
             ) : (
               <ConditionRow
@@ -135,14 +174,38 @@ export function FilterBuilder({
         ))}
       </div>
 
-      <div className="flex gap-2">
-        <button onClick={addCondition} className="btn-secondary btn-sm">
-          <Plus className="h-3 w-3" /> Condition
-        </button>
-        <button onClick={addGroup} className="btn-ghost btn-sm">
-          <Plus className="h-3 w-3" /> Group
-        </button>
-      </div>
+      {/*
+        One obvious button, and the powerful one out of the way.
+
+        "Condition" and "Group" sat side by side as equals. A group is a
+        bracket — "(A or B) and C" — which perhaps one filter in a hundred
+        needs and which nobody reaches for by accident; putting it next to the
+        button everybody wants made the panel look like it required a decision
+        before you could start. It is still here, one click further away, and
+        named for what it does rather than what it is.
+      */}
+      {/* `nested` too: a group is created empty, and hiding its own Add button
+          until it has something in it leaves a bracket nothing can go into. */}
+      {(Boolean(value.conditions.length) || nested) && (
+        <div className="flex flex-wrap items-center gap-2 pt-0.5">
+          <button type="button" onClick={addCondition} className="btn-secondary btn-sm">
+            <Plus className="h-3 w-3" /> Add filter
+          </button>
+          {advanced || value.conditions.some(isFilterGroup) ? (
+            <button type="button" onClick={addGroup} className="btn-ghost btn-sm">
+              <Plus className="h-3 w-3" /> Add a bracketed group
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setAdvanced(true)}
+              className="text-xs text-muted underline-offset-2 hover:underline"
+            >
+              Advanced
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
