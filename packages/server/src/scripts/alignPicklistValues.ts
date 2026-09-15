@@ -119,6 +119,32 @@ async function main(): Promise<void> {
     let records = 0;
     let filters = 0;
 
+    /*
+      Write down what each option used to store, before anything moves.
+
+      Once value equals label the old value is gone — it cannot be derived back
+      out of the row, unlike the mandatory-value backfill where a blank was
+      obviously a blank. Forty thousand records is not a change to make without
+      a way back, and this table is that way back.
+    */
+    await tx.query(`
+      CREATE TABLE IF NOT EXISTS ipy_picklist_value_alignment (
+        option_id     UUID PRIMARY KEY,
+        picklist_name TEXT NOT NULL,
+        was           TEXT NOT NULL,
+        became        TEXT NOT NULL,
+        aligned_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    for (const d of drift) {
+      await tx.query(
+        `INSERT INTO ipy_picklist_value_alignment (option_id, picklist_name, was, became)
+         VALUES ($1,$2,$3,$4)
+         ON CONFLICT (option_id) DO UPDATE SET was = EXCLUDED.was, became = EXCLUDED.became, aligned_at = now()`,
+        [d.id, d.picklist, d.from, d.to],
+      );
+    }
+
     // Phase one: out of the way. The scratch value carries the option's own id,
     // so it cannot collide with anything, including another scratch value.
     for (const d of drift) {
