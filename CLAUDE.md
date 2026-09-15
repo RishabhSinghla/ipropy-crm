@@ -210,11 +210,14 @@ Login: `admin@ipropy.com` / `Admin@123`. Other demo users in `PROJECT_HANDOVER.m
 
 **Verification:** three layers, fastest first.
 
-* `npm test` — 374 unit tests, no DB: 320 in `packages/server` (query builder, filter evaluator,
+* `npm test` — 783 unit tests, no DB: 656 in `packages/server` (query builder, filter evaluator,
   formula engine, permissions and role-hierarchy scoping, validation, unstorable characters, seed
   templates, billing decisions, capture time/EXIF offsets, watermark sizing, vision sampling, file
-  serving headers), 46 in `packages/web` (colour contrast and safe markdown), and 8 in
-  `packages/mcp` (tool-output formatting).
+  serving headers), 119 in `packages/web` (colour contrast, safe markdown, and the rich-text
+  sanitiser that renders the imported Vtiger notes), and 8 in `packages/mcp` (tool-output
+  formatting). The web suite runs on `node` except where a file asks for `jsdom` with a
+  `@vitest-environment` pragma — the sanitiser leans on the browser's own parser, so testing it
+  needs a DOM.
 * `npm run test:integration` — creates and drops its own `ipropy_itest` database, plus
   `ipropy_itest_control` (the customer list) and `ipropy_itest_tenant` (a customer provisioned into
   it during the control-plane suite). Never point it at a database you care about; `vitest.config.ts` deliberately excludes `tests/integration/**` from
@@ -524,8 +527,22 @@ Both were mine, both invisible, and both had been live for a day or more.
 * **Prices on the two published properties are `0`.** The public site reads that as "Price on
   request" rather than "₹0", and `propertyFacts` drops it so no reel prints ₹0 on its title card.
   Filling them in is still an admin job.
-* Branches `fix/watermark-retry-loop` and `feat/property-share-links` were squash-merged on
-  12 August but still exist on the remote — an agent session's git credentials can't delete them.
+* **A dropdown option's label and its stored value are two different things, and they have
+  drifted.** The label is what the screen shows; the value is what every record holds and what a
+  couple of dozen string literals in the code match on (`status = 'Available'`). On 15 September
+  25 options across 8 dropdowns stored something other than their label — Lead Status showed
+  "Lead Won" on records storing `Contacted`. Seventeen were aligned by
+  `npm run picklists:align`; the other eight are named in `VALUES_USED_IN_CODE` and were left
+  alone, because renaming `property_status.Available` empties the public website's catalogue.
+  **Do not align those.** The confusion they caused is fixed where it actually showed —
+  `buildTimeline` resolves a picklist value to its label now, so the feed says what the screen
+  says without any record being rewritten. `ipy_picklist_value_alignment` records what each
+  aligned option used to store, in case any of it needs putting back.
+* **The Team map's tile host is named twice, and both must agree.** `admin/TeamMap.tsx` picks the
+  tile server and `applyAppSecurityPolicy` in `app.ts` decides whether the browser may load it.
+  Changing one and not the other is a blank grey map whose only trace is the browser console:
+  that is exactly what happened moving off CARTO, which now serves a tile stamped API KEY
+  REQUIRED to anyone without a key. It is on OpenStreetMap's keyless tiles, and both files say so.
 * **Social links in `social.links` were found by web search, not supplied by the business.** Two
   iPropy Instagram accounts exist. Treat them as unverified until someone confirms each one.
 * Browser push works but **nobody has subscribed a device yet** — Settings → Alerts, per device.
