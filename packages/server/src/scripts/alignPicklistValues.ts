@@ -31,7 +31,7 @@
  * was true when it was written. Old timeline entries therefore keep the old
  * wording; everything from here on reads correctly.
  */
-import { db, transaction, type Tx } from '../db/pool.js';
+import { db, pool, transaction, type Tx } from '../db/pool.js';
 import { replaceValueInRecords } from '../core/metadata/picklists.js';
 import { logger } from '../utils/logger.js';
 
@@ -154,7 +154,18 @@ async function main(): Promise<void> {
   logger.info('restart the CRM (or redeploy) so the metadata cache picks the new values up');
 }
 
-main().catch((err) => {
-  logger.error({ err }, 'aligning dropdown values failed — nothing was written');
-  process.exit(1);
-});
+/*
+  Close the pool, or the process never exits.
+
+  `main` resolving is not the end of the program: every idle client the pool
+  holds is an open socket keeping the event loop alive, so the script simply
+  sits there — which on a runner reads as a hung job and gets killed at the
+  timeout, long after the work was done.
+*/
+main()
+  .then(async () => { await pool.end(); })
+  .catch(async (err) => {
+    logger.error({ err }, 'aligning dropdown values failed — nothing was written');
+    await pool.end().catch(() => undefined);
+    process.exit(1);
+  });
