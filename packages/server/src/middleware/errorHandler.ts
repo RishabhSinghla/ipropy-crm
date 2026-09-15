@@ -83,9 +83,20 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
 
   logger.error({ err, path: req.path, requestId: reqId(req), userId: req.user?.id }, 'unhandled error');
   reportError(err, { path: req.path, requestId: reqId(req), userId: req.user?.id });
+  /*
+    The reference is the whole point of sending one.
+
+    The real error is in the log and in Sentry, both tagged with this request
+    id, and none of that reaches the person looking at the failure. "Something
+    went wrong on our end" with nothing else is untraceable: a report of "it
+    broke this afternoon" cannot be matched to a line, so the same failure gets
+    re-reported and re-investigated from scratch. The id is already on the
+    response as x-request-id and identifies nothing but the request.
+  */
   res.status(500).json({
     error: 'internal_error',
     message: 'Something went wrong on our end.',
+    requestId: reqId(req),
     ...(config.isProd ? {} : { detail: err instanceof Error ? err.message : String(err) }),
   });
 }
