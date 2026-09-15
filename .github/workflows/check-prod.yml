@@ -144,7 +144,7 @@ jobs:
                  count(*) FILTER (WHERE e.mobile IS NULL OR e.mobile = '')            AS no_mobile,
                  count(*) FILTER (WHERE e.status IS NULL OR e.status = '')            AS no_lead_status,
                  count(*) FILTER (WHERE e.contact_type IS NULL OR e.contact_type = '') AS no_contact_type,
-                 count(*) FILTER (WHERE e.category IS NULL OR e.category = '')        AS no_category,
+                 count(*) FILTER (WHERE coalesce(e.custom_fields->>'category','') = '') AS no_category,
                  count(*) FILTER (WHERE e.preferred_locations IS NULL
                                      OR e.preferred_locations = '')                   AS no_preferred_locations
             FROM ipy_e_leads e JOIN ipy_record r ON r.id = e.record_id
