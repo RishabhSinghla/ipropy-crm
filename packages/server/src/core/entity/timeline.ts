@@ -171,6 +171,39 @@ export async function buildTimeline(
   const uitypeByField = new Map(labels.rows.map((row) => [row.key, row.uitype]));
 
   /*
+    A dropdown's stored value is not the word on screen, and the feed was
+    printing the stored one.
+
+    An option has two halves — the label everyone reads and the value every
+    record holds — and they are allowed to differ. On this CRM they had drifted
+    a long way: the screen said "Lead Won" where the record said `Contacted`,
+    so the Changes tab reported a status nobody recognised and read as the CRM
+    having got it wrong.
+
+    Resolving it here is the fix that costs nothing. The alternative — renaming
+    the stored values to match — rewrites every record and breaks the handful
+    of places that match on the word itself (`status = 'Available'` is the
+    public website's catalogue). The value stays the stable identity the code
+    relies on; the feed simply says what the screen says.
+  */
+  const optionLabels = changedFields.size
+    ? await conn.query<{ key: string; value: string; label: string }>(
+        `SELECT DISTINCT ON (k.key, v.value) k.key, v.value, v.label
+           FROM ipy_record r
+           JOIN ipy_module m ON m.name = r.module_name
+           JOIN ipy_field f ON f.module_id = m.id
+           JOIN ipy_picklist p ON p.name = f.config->>'picklist'
+           JOIN ipy_picklist_value v ON v.picklist_id = p.id
+           CROSS JOIN LATERAL (VALUES (f.name), (f.column_name)) AS k(key)
+          WHERE r.id = $1 AND k.key = ANY($2::text[])
+            AND f.uitype IN ('picklist','radio','multipicklist')`,
+        [recordId, [...changedFields]],
+      )
+    : { rows: [] as { key: string; value: string; label: string }[] };
+  /** `field value` → the label an admin typed for it. */
+  const optionLabel = new Map(optionLabels.rows.map((row) => [`${row.key} ${row.value}`, row.label]));
+
+  /*
     A budget in the feed read `17500000 → 21000000`. That is the number the
     column holds and nobody in this business thinks in it; the same value is
     ₹1.75 Cr everywhere else on the screen. Money and dates are rendered the
@@ -205,8 +238,19 @@ export async function buildTimeline(
       const change = raw as Record<string, unknown>;
       const key = typeof change.field === 'string' ? change.field : undefined;
       const uitype = key ? uitypeByField.get(key) : undefined;
-      const fromDisplay = named(change.from) ?? asTyped(uitype, change.from);
-      const toDisplay = named(change.to) ?? asTyped(uitype, change.to);
+      /** A dropdown value shown as the word the admin typed for it. */
+      const chosen = (v: unknown): string | undefined => {
+        if (!key) return undefined;
+        if (typeof v === 'string') return optionLabel.get(`${key} ${v}`);
+        // A multi-select holds several; any one of them may have a label.
+        if (Array.isArray(v)) {
+          const parts = v.map((x) => (typeof x === 'string' ? optionLabel.get(`${key} ${x}`) : undefined));
+          if (parts.some(Boolean)) return parts.map((part, i) => part ?? String(v[i])).join(', ');
+        }
+        return undefined;
+      };
+      const fromDisplay = chosen(change.from) ?? named(change.from) ?? asTyped(uitype, change.from);
+      const toDisplay = chosen(change.to) ?? named(change.to) ?? asTyped(uitype, change.to);
       const label = (key ? labelByField.get(key) : undefined) ?? change.label;
       if (fromDisplay === undefined && toDisplay === undefined && label === change.label) return change;
       return {
