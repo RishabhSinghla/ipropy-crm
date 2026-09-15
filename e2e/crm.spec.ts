@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { columnIndex, unique, waitForRecords, fillRequiredFields, openRecordTab, inlineEditOn, searchList } from './helpers';
+import { columnIndex, unique, waitForRecords, fillRequiredFields, openRecordTab, inlineEditOn, searchList, openCreateDialog } from './helpers';
 
 /**
  * The journeys a salesperson actually performs. Each one is a path where a
@@ -25,10 +25,7 @@ test('creates a lead and finds it again in the list', async ({ page }) => {
   const mobile = `9${String(Date.now()).slice(-9)}`;
 
   await page.goto('/leads');
-  await page.getByTestId('list-create').click();
-
-  const dialog = page.getByRole('dialog');
-  await expect(dialog).toBeVisible();
+  const dialog = await openCreateDialog(page, /new lead/i);
   // One name field, not two — see migration 026. `first_name`/`last_name` are
   // derived from it and were retired from every form.
   await dialog.getByLabel(/full name/i).fill(`Playwright ${surname}`);

@@ -1186,33 +1186,38 @@ export function ReferencePicker({
             {!loading && results.length === 0 && (
               <p className="px-3 py-4 text-center text-xs text-muted">No records found</p>
             )}
-            {results.map((r) => (
-              <button
-                key={r.id}
-                type="button"
-                onClick={() => { onChange(r.id); setSelectedLabel(r.label); setOpen(false); setSearch(''); }}
-                className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800"
-              >
-                <span className="truncate">{r.label}</span>
-                {r.recordNumber && <span className="shrink-0 font-mono text-2xs text-muted">{r.recordNumber}</span>}
-              </button>
-            ))}
+            {results.map((r) => {
+              // Same gesture as every other dropdown: the chosen row clears it.
+              const chosen = r.id === value;
+              return (
+                <button
+                  key={r.id}
+                  type="button"
+                  aria-selected={chosen}
+                  title={chosen ? 'Click again to clear' : undefined}
+                  onClick={() => {
+                    if (chosen) { onChange(null); setSelectedLabel(''); }
+                    else { onChange(r.id); setSelectedLabel(r.label); }
+                    setOpen(false);
+                    setSearch('');
+                  }}
+                  className={cn(
+                    'flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800',
+                    chosen && 'font-medium text-brand-700 dark:text-brand-300',
+                  )}
+                >
+                  <span className="truncate">{r.label}</span>
+                  {r.recordNumber && <span className="shrink-0 font-mono text-2xs text-muted">{r.recordNumber}</span>}
+                </button>
+              );
+            })}
           </div>
-          {/* Where every other dropdown keeps Clear. The × on the closed
-              control only appears once something is chosen and is easy to
-              miss besides. */}
+          {/* No Clear row — clicking the chosen record clears it, the same way
+              every other dropdown now works. */}
           {value && (
-            <>
-              <div className="border-t border-slate-100 dark:border-slate-800" />
-              <button
-                type="button"
-                onClick={() => { onChange(null); setSelectedLabel(''); setOpen(false); setSearch(''); }}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-muted transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
-              >
-                <span className="h-2 w-2 shrink-0 rounded-full border border-dashed border-slate-300 dark:border-slate-600" />
-                Clear
-              </button>
-            </>
+            <p className="border-t border-slate-100 px-3 py-1.5 text-center text-[11px] text-muted dark:border-slate-800">
+              Click the selected record to clear it
+            </p>
           )}
         </div>
       )}

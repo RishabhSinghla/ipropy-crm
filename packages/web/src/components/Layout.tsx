@@ -1,4 +1,4 @@
-import { type JSX, useEffect, useMemo, useRef, useState } from 'react';
+import { type JSX, Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime, type HeaderTab } from '@ipropy/shared';
@@ -17,6 +17,10 @@ import { Avatar, Badge, Dropdown, DropdownItem, Modal, Spinner } from './ui';
 import AiAssistant from './AiAssistant';
 import { PeekLink, PeekProvider } from './PeekLink';
 import RecordForm from './RecordForm';
+
+/* Lazy, because capture carries the camera and EXIF machinery and the shell is
+   on every page. Nobody pays for it until they open the menu and choose it. */
+const SiteCapture = lazy(() => import('../pages/SiteCapture'));
 
 /** Resolve a lucide icon by its kebab-case metadata name (see lib/icons.ts for why this is a registry, not a namespace lookup). */
 export function ModuleIcon({ name, className }: { name: string; className?: string }): JSX.Element {
@@ -279,6 +283,14 @@ export default function Layout(): JSX.Element {
 function NewRecordButton({ modules }: { modules: ModuleSummary[] }): JSX.Element | null {
   const creatable = modules.filter((m) => m.permissions.create);
   const [creating, setCreating] = useState<ModuleSummary | null>(null);
+  /*
+    Capture used to hang off a split button on the Properties list, which meant
+    the one way into it was a page you had to be standing on. It is a way of
+    adding a property, so it belongs with every other way of adding one — here,
+    reachable from wherever you happen to be.
+  */
+  const [capturing, setCapturing] = useState(false);
+  const canCapture = creatable.some((m) => m.name === 'properties');
   const queryClient = useQueryClient();
   const { data: createMeta, isLoading } = useQuery({
     queryKey: ['module', creating?.name],
@@ -286,6 +298,17 @@ function NewRecordButton({ modules }: { modules: ModuleSummary[] }): JSX.Element
     enabled: Boolean(creating),
   });
   if (!creatable.length) return null;
+
+  const captureModal = capturing ? (
+    <Modal open onClose={() => setCapturing(false)} title="Capture on site" size="lg">
+      <Suspense fallback={<div className="flex min-h-40 items-center justify-center"><Spinner className="h-5 w-5" /></div>}>
+        <SiteCapture
+          inModal
+          onSaved={() => void queryClient.invalidateQueries({ queryKey: ['records', 'properties'] })}
+        />
+      </Suspense>
+    </Modal>
+  ) : null;
 
   const createModal = creating ? (
     <Modal open onClose={() => setCreating(null)} title={`New ${creating.singularLabel}`} size="lg">
@@ -307,8 +330,9 @@ function NewRecordButton({ modules }: { modules: ModuleSummary[] }): JSX.Element
   ) : null;
 
   // One creatable module is a button, not a menu: a dropdown with a single
-  // entry is a click spent on confirming there was no choice to make.
-  if (creatable.length === 1) {
+  // entry is a click spent on confirming there was no choice to make. Unless
+  // that module is Properties, which carries Capture as a second way in.
+  if (creatable.length === 1 && !canCapture) {
     const only = creatable[0]!;
     return (
       <>
@@ -353,10 +377,22 @@ function NewRecordButton({ modules }: { modules: ModuleSummary[] }): JSX.Element
               New {m.singularLabel}
             </DropdownItem>
           ))}
+          {canCapture && (
+            <>
+              <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
+              <DropdownItem
+                icon={<MapPin className="h-3.5 w-3.5" />}
+                onClick={() => { close(); setCapturing(true); }}
+              >
+                Capture on site
+              </DropdownItem>
+            </>
+          )}
         </>
       )}
     </Dropdown>
     {createModal}
+    {captureModal}
     </>
   );
 }

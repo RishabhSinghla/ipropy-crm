@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
-import { inlineEditOn, unique, waitForRecords, fillRequiredFields, dashboardWithRecordRows, searchList } from './helpers';
+import { inlineEditOn, unique, waitForRecords, fillRequiredFields, dashboardWithRecordRows, searchList, openCreateDialog } from './helpers';
 
 /**
  * The critical path at phone size.
@@ -231,9 +231,7 @@ test.describe('phone', () => {
     await page.goto('/leads');
     await waitForRecords(page);
 
-    await page.getByTestId('list-create').click();
-    const dialog = page.getByRole('dialog');
-    await expect(dialog).toBeVisible();
+    const dialog = await openCreateDialog(page, /new lead/i);
 
     const surname = unique('Phone');
     // One name field since migration 026, and the mobile takes the national

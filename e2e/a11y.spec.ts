@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { inlineEditOn, waitForRecords } from './helpers';
+import { inlineEditOn, waitForRecords, openCreateDialog } from './helpers';
 
 /**
  * Automated accessibility checks on the screens people spend their day in.
@@ -124,8 +124,7 @@ test.describe('accessibility', () => {
 
   test('the new-record dialog has no violations', async ({ page }) => {
     await page.goto('/leads');
-    await page.getByTestId('list-create').click();
-    await expect(page.getByRole('dialog')).toBeVisible();
+    await openCreateDialog(page, /new lead/i);
     const { violations } = await scan(page);
     expect(violations, summarise(violations)).toEqual([]);
   });
@@ -201,10 +200,8 @@ test.describe('keyboard operation', () => {
   test('a modal traps focus and restores it on close', async ({ page }) => {
     await page.goto('/leads');
 
-    const opener = page.getByTestId('list-create');
-    await opener.click();
-    const dialog = page.getByRole('dialog');
-    await expect(dialog).toBeVisible();
+    const opener = page.getByTestId('global-create');
+    const dialog = await openCreateDialog(page, /new lead/i);
 
     /*
       Wait for the form inside it, not just for the panel.

@@ -763,7 +763,17 @@ function PicklistPopover({
             type="button"
             role="option"
             aria-selected={o.value === value}
-            onClick={() => onPick(o.value)}
+            /*
+              Picking the option that is already chosen clears it. That is what
+              replaced the Clear row at the foot of this list: one way to set a
+              value and the same gesture to undo it, instead of a second control
+              that existed only to say "none".
+
+              A mandatory field has no empty state to go to, so there the click
+              is a no-op that re-picks the same value.
+            */
+            title={o.value === value && !field.isMandatory ? 'Click again to clear' : undefined}
+            onClick={() => onPick(o.value === value && !field.isMandatory ? null : o.value)}
             onMouseEnter={() => setActive(i)}
             className={cn(
               'flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors',
@@ -784,18 +794,14 @@ function PicklistPopover({
           </p>
         )}
       </div>
-      {!field.isMandatory && (
-        <>
-          <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
-          <button
-            type="button"
-            onClick={() => onPick(null)}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-muted transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
-          >
-            <span className="h-2 w-2 shrink-0 rounded-full border border-dashed border-slate-300 dark:border-slate-600" />
-            Clear
-          </button>
-        </>
+      {/* No Clear row. Clicking the chosen option clears it, so a second
+          control saying "none" is one more thing to read past on every edit —
+          and on a 139-option Locality list it sat below the fold anyway. The
+          hint only appears once there is something to clear. */}
+      {value && !field.isMandatory && (
+        <p className="border-t border-slate-100 px-3 py-1.5 text-center text-[11px] text-muted dark:border-slate-800">
+          Click the selected option to clear it
+        </p>
       )}
     </div>
   );

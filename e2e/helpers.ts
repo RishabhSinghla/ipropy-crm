@@ -245,3 +245,21 @@ export function fieldEditor(page: Page, label: RegExp) {
     .filter({ has: page.getByRole('button', { name: label }) })
     .first();
 }
+
+/**
+ * Open the create dialog for a module.
+ *
+ * The list toolbar used to carry its own New button (`list-create`) beside the
+ * shell's. It was removed — one control, in the header, on every page — so the
+ * way in is now the shell's menu. When only one module is creatable that menu
+ * collapses to a plain button, which is why the item click is conditional
+ * rather than assumed.
+ */
+export async function openCreateDialog(page: Page, singular: RegExp): Promise<Locator> {
+  await page.getByTestId('global-create').click();
+  const item = page.getByRole('button', { name: singular });
+  if (await item.first().isVisible().catch(() => false)) await item.first().click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  return dialog;
+}

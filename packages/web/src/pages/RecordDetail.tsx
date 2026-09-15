@@ -938,15 +938,28 @@ function OverviewTab({
                       'flex min-w-0 items-baseline gap-2.5',
                       field.config.fullWidth && 'sm:col-span-2',
                     )}
-                    onClick={(event) => {
-                      // The entire value box is the edit target. Do not
-                      // re-click a nested control; it already owns the event.
-                      if (!record.can?.edit || (event.target as HTMLElement).closest('dt, button, input, select, textarea, a')) return;
-                      (event.currentTarget.querySelector('dd button') as HTMLButtonElement | null)?.click();
-                    }}
                   >
                     <dt className="w-[38%] max-w-[10rem] shrink-0 truncate text-2xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300" title={field.label}>{field.label}{(field.isMandatory || field.config.requiredWhen) && <span className="ml-0.5 text-red-500" aria-label="required">*</span>}</dt>
-                    <dd className={cn('min-w-0 flex-1 rounded-md border border-slate-200 bg-slate-50/70 px-2 py-1 text-sm text-slate-900 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-100', record.can?.edit && 'cursor-pointer hover:border-brand-300 hover:bg-brand-50/30 dark:hover:border-brand-700')}>
+                    <dd
+                      className={cn('min-w-0 flex-1 rounded-md border border-slate-200 bg-slate-50/70 px-2 py-1 text-sm text-slate-900 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-100', record.can?.edit && 'cursor-pointer hover:border-brand-300 hover:bg-brand-50/30 dark:hover:border-brand-700')}
+                      /*
+                        The box is the edit target, and only the box.
+
+                        This handler used to sit on the whole row. The guard
+                        excluded a click that landed on the `dt` itself, but the
+                        label is one short line inside a column 38% wide and a
+                        row as tall as the boxed value — so every click in the
+                        space around the label text hit the row and opened the
+                        editor for a field the reader was only looking at.
+                        Moving it onto the `dd` makes the hit area the thing
+                        that already looks clickable.
+                      */
+                      onClick={(event) => {
+                        // Do not re-click a nested control; it owns the event.
+                        if (!record.can?.edit || (event.target as HTMLElement).closest('button, input, select, textarea, a')) return;
+                        (event.currentTarget.querySelector('button') as HTMLButtonElement | null)?.click();
+                      }}
+                    >
                       {record.can?.edit && isInlineEditable(field) ? (
                         <EditableField
                           module={module}

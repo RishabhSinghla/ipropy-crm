@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { isFilterGroup, type CustomView, type FieldMeta, type FilterGroup, formatIndianPrice, formatPhoneWithCode, toInternational, type ListQuery, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Columns3, Compass, Download, Filter,
-  LayoutGrid, List, MapPin, MessageCircle, Pencil, Phone, Plus, RefreshCw, Ruler, Save, Search, Settings2, Star, Tag, Trash2, Upload, Users, X,
+  LayoutGrid, List, MessageCircle, Pencil, Phone, Plus, RefreshCw, Ruler, Save, Search, Settings2, Star, Tag, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { ApiError, api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
@@ -766,28 +766,52 @@ export default function ListView(): JSX.Element {
           {taskQueuesEnabled && (
             <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800/70" aria-label="Follow-up tasks">
               {([
-                ['pending', 'Pending', 'Past follow-ups need attention'],
-                ['today', 'Today', "Today's follow-ups"],
-                ['tomorrow', 'Tomorrow', "Tomorrow's follow-ups"],
-              ] as const).map(([queue, label, title]) => (
-                <button
-                  key={queue}
-                  type="button"
-                  title={title}
-                  onClick={() => { setTaskQueue((current) => current === queue ? null : queue); setPage(1); }}
-                  className={cn(
-                    'inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold transition-colors',
-                    taskQueue === queue && 'ring-1 ring-inset ring-slate-400',
-                    queue === 'pending' && taskCounts.pending > 0 && 'bg-red-100 text-red-800 hover:bg-red-200 dark:bg-red-950/60 dark:text-red-200',
-                    queue === 'pending' && taskCounts.pending === 0 && allTaskQueuesClear && 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-200',
-                    queue === 'pending' && taskCounts.pending === 0 && !allTaskQueuesClear && 'bg-white text-slate-700 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-200',
-                    queue === 'today' && 'bg-white text-slate-800 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-100',
-                    queue === 'tomorrow' && 'bg-sky-100 text-sky-800 hover:bg-sky-200 dark:bg-sky-950/60 dark:text-sky-200',
-                  )}
-                >
-                  {label} <span className="tnum opacity-75">{taskCounts[queue]}</span>
-                </button>
-              ))}
+                ['pending', 'Pending follow-up', 'Past follow-ups need attention'],
+                ['today', 'Today follow-up', "Today's follow-ups"],
+                ['tomorrow', 'Tomorrow follow-up', "Tomorrow's follow-ups"],
+              ] as const).map(([queue, label, title]) => {
+                /*
+                  Selected has to look selected. It used to be a 1px ring over
+                  the tab's own colour, which against the red and sky tints read
+                  as nothing at all — clicking a tab filtered 22,983 records to
+                  a handful and the control itself looked untouched, so the only
+                  feedback was the table redrawing.
+
+                  `cn` is plain clsx, not tailwind-merge, so a selected style
+                  stacked after the queue colour would leave both classes in the
+                  string and let stylesheet order decide. Selected and unselected
+                  are therefore exclusive branches, never layered.
+                */
+                const active = taskQueue === queue;
+                return (
+                  <button
+                    key={queue}
+                    type="button"
+                    title={title}
+                    aria-pressed={active}
+                    onClick={() => { setTaskQueue((current) => current === queue ? null : queue); setPage(1); }}
+                    className={cn(
+                      'inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1',
+                      active
+                        ? 'bg-slate-900 text-white shadow-sm hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100'
+                        : cn(
+                          queue === 'pending' && taskCounts.pending > 0 && 'bg-red-100 text-red-800 hover:bg-red-200 dark:bg-red-950/60 dark:text-red-200',
+                          queue === 'pending' && taskCounts.pending === 0 && allTaskQueuesClear && 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-200',
+                          queue === 'pending' && taskCounts.pending === 0 && !allTaskQueuesClear && 'bg-white text-slate-700 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-200',
+                          queue === 'today' && 'bg-white text-slate-800 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-100',
+                          queue === 'tomorrow' && 'bg-sky-100 text-sky-800 hover:bg-sky-200 dark:bg-sky-950/60 dark:text-sky-200',
+                        ),
+                    )}
+                  >
+                    {label}
+                    <span className={cn('tnum', active ? 'opacity-90' : 'opacity-75')}>{taskCounts[queue]}</span>
+                    {/* Says which way the click went, for anyone who cannot see
+                        the colour change. */}
+                    <span className="sr-only">{active ? '— showing only these, click to clear' : '— click to show only these'}</span>
+                  </button>
+                );
+              })}
             </div>
           )}
 
@@ -935,74 +959,20 @@ export default function ListView(): JSX.Element {
               </div>
             )}
 
-            {canCreate && (
-              // Restored after 6467a76 removed it. The label is the admin's
-              // word for the record, so "New Lead" became "New Contact".
-              // Properties gets a split button — the second action is the
-              // gate-side capture screen, so it lives where "add a property"
-              // already lives rather than as a separate tab competing with it.
-              moduleName === 'properties' ? (
-                <div className="inline-flex" data-testid="list-create">
-                  <button
-                    onClick={() => setShowQuickCreate(true)}
-                    className="btn-primary btn-sm rounded-r-none focus:z-10"
-                    title={`New ${meta.singularLabel}`}
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    New {meta.singularLabel}
-                  </button>
-                  <Dropdown
-                    align="right"
-                    trigger={(
-                      <button
-                        className="btn-primary btn-sm rounded-l-none border-l border-l-white/30 px-2 focus:z-10"
-                        aria-label="Another way to add one"
-                        title="Another way to add one"
-                      >
-                        <ChevronDown className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  >
-                    {(close) => (
-                      /*
-                        One other way in, not two.
+            {/*
+              No New button here any more.
 
-                        "Full page form" opened the same fields as the button
-                        beside it, at a different address, with no way to tell
-                        from the menu what you would get. It is gone; the desk
-                        form is the primary button and always was.
+              The shell's own New sits a few centimetres away in the header, on
+              every page including this one, and offers the same form for every
+              module the profile can create into — so this one was a second
+              control doing the same job, in a toolbar already carrying search,
+              filters, columns, paging and the view menu. Capture went with it,
+              into that same menu: it is a way of adding a property, not a
+              property of this screen.
 
-                        Capture opens here rather than navigating to /capture,
-                        because reaching it from a list you are reading should
-                        not cost you the list. The route still exists — it is
-                        the phone's own tab.
-                      */
-                      <button
-                        type="button"
-                        onClick={() => { close(); setShowCapture(true); }}
-                        className="flex w-full items-start gap-2.5 px-3 py-2 text-left hover:bg-slate-100 dark:hover:bg-slate-800"
-                      >
-                        <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-brand-600 dark:text-brand-400" />
-                        <span className="min-w-0">
-                          <span className="block text-sm font-medium text-slate-800 dark:text-slate-100">
-                            Capture on site
-                          </span>
-                          <span className="mt-0.5 block text-2xs leading-snug text-muted">
-                            Four fields and the location, for adding one while you
-                            are standing in front of it.
-                          </span>
-                        </span>
-                      </button>
-                    )}
-                  </Dropdown>
-                </div>
-              ) : (
-                <button data-testid="list-create" onClick={() => setShowQuickCreate(true)} className="btn-primary btn-sm">
-                  <Plus className="h-3.5 w-3.5" />
-                  New {meta.singularLabel}
-                </button>
-              )
-            )}
+              The empty state below keeps its button, because a list with
+              nothing in it and no way forward is a dead end.
+            */}
 
           </div>
         </div>
