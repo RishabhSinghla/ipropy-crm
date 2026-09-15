@@ -131,6 +131,26 @@ jobs:
            ORDER BY has_default_option, m.name, f.name;
           SQL
 
+          # The other half of the same question. A plain mandatory field is only
+          # checked on an update that mentions it — but a form that submits the
+          # whole record mentions all of them, so a lead imported before the
+          # field was made mandatory is refused every time anybody edits it.
+          # 22,983 leads came from Vtiger; whatever they do not carry is what
+          # the team cannot save.
+          echo "--- imported leads missing a value a mandatory field now demands ---"
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT count(*) AS live_leads,
+                 count(*) FILTER (WHERE e.full_name IS NULL OR e.full_name = '')      AS no_full_name,
+                 count(*) FILTER (WHERE e.mobile IS NULL OR e.mobile = '')            AS no_mobile,
+                 count(*) FILTER (WHERE e.status IS NULL OR e.status = '')            AS no_lead_status,
+                 count(*) FILTER (WHERE e.contact_type IS NULL OR e.contact_type = '') AS no_contact_type,
+                 count(*) FILTER (WHERE e.category IS NULL OR e.category = '')        AS no_category,
+                 count(*) FILTER (WHERE e.preferred_locations IS NULL
+                                     OR e.preferred_locations = '')                   AS no_preferred_locations
+            FROM ipy_e_leads e JOIN ipy_record r ON r.id = e.record_id
+           WHERE NOT r.is_deleted;
+          SQL
+
           echo "--- how many existing leads sit on a value the dropdown no longer offers ---"
           psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
           SELECT e.status AS stored_value, count(*) AS records,
