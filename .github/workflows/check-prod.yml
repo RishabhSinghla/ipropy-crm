@@ -31,6 +31,34 @@ jobs:
           sudo apt-get install -y -qq postgresql-client-18
           echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
 
+      - name: Can production accept a write, and how full is it
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          echo "--- how big is the database, and what is using it ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT pg_size_pretty(pg_database_size(current_database())) AS total_size;"
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT relname AS table, pg_size_pretty(pg_total_relation_size(c.oid)) AS size
+              FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE n.nspname = 'public' AND c.relkind = 'r'
+             ORDER BY pg_total_relation_size(c.oid) DESC LIMIT 12;"
+
+          echo "--- is this connection allowed to write at all ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT pg_is_in_recovery()                    AS is_replica,
+                   current_setting('transaction_read_only') AS read_only,
+                   current_setting('default_transaction_read_only') AS default_read_only;"
+
+          echo "--- write probe: a real INSERT, rolled straight back, nothing kept ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -v ON_ERROR_STOP=1 <<'SQL' && echo "WRITE PROBE: OK — the database accepts writes" || echo "WRITE PROBE: FAILED — the database is refusing writes (see the error above)"
+          BEGIN;
+          INSERT INTO ipy_setting (key, value)
+          VALUES ('__write_probe__', '"probe"'::jsonb)
+          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+          ROLLBACK;
+          SQL
+
       - name: What production actually has configured
         env:
           PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
