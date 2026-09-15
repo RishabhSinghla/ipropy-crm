@@ -140,21 +140,36 @@ jobs:
            WHERE NOT r.is_deleted;
           SQL
 
+          # A value the dropdown no longer offers is refused by coerceValue, so
+          # filling a blank with something unlisted would trade one blocked save
+          # for another. Grouped in a subquery first: the EXISTS reads the
+          # grouped column, which Postgres rejects if it is written against the
+          # raw row (42803, and it errored here once).
           echo "--- every stored value must be one the dropdown still offers ---"
           psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
-          SELECT 'lead_status' AS field, e.status AS value, count(*) AS records,
-                 EXISTS (SELECT 1 FROM ipy_picklist p JOIN ipy_picklist_value v ON v.picklist_id = p.id
-                          WHERE p.name = 'lead_status' AND v.is_active AND v.value = e.status) AS offered
-            FROM ipy_e_leads e JOIN ipy_record r ON r.id = e.record_id
-           WHERE NOT r.is_deleted AND e.status IS NOT NULL
-           GROUP BY e.status
-          UNION ALL
-          SELECT 'category', e.custom_fields->>'category', count(*),
-                 EXISTS (SELECT 1 FROM ipy_picklist p JOIN ipy_picklist_value v ON v.picklist_id = p.id
-                          WHERE p.name = 'category' AND v.is_active
-                            AND v.value = e.custom_fields->>'category')
-            FROM ipy_e_leads e JOIN ipy_record r ON r.id = e.record_id
-           WHERE NOT r.is_deleted AND e.custom_fields->>'category' IS NOT NULL
-           GROUP BY e.custom_fields->>'category'
-           ORDER BY 4, 3 DESC;
+          WITH stored AS (
+            SELECT 'lead_status' AS field, e.status AS value, count(*) AS records
+              FROM ipy_e_leads e JOIN ipy_record r ON r.id = e.record_id
+             WHERE NOT r.is_deleted AND e.status IS NOT NULL
+             GROUP BY e.status
+            UNION ALL
+            SELECT 'category', e.custom_fields->>'category', count(*)
+              FROM ipy_e_leads e JOIN ipy_record r ON r.id = e.record_id
+             WHERE NOT r.is_deleted AND e.custom_fields->>'category' IS NOT NULL
+             GROUP BY e.custom_fields->>'category'
+            UNION ALL
+            SELECT 'preferred_locations', e.preferred_locations, count(*)
+              FROM ipy_e_leads e JOIN ipy_record r ON r.id = e.record_id
+             WHERE NOT r.is_deleted AND e.preferred_locations IS NOT NULL
+             GROUP BY e.preferred_locations
+          )
+          SELECT s.field, s.value, s.records,
+                 EXISTS (
+                   SELECT 1 FROM ipy_picklist p JOIN ipy_picklist_value v ON v.picklist_id = p.id
+                    WHERE p.name = CASE s.field WHEN 'preferred_locations' THEN 'locality' ELSE s.field END
+                      AND v.is_active AND v.value = s.value
+                 ) AS offered
+            FROM stored s
+           ORDER BY offered, s.records DESC
+           LIMIT 30;
           SQL
