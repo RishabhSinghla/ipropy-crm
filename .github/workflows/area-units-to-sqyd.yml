@@ -1,0 +1,45 @@
+# Retag every area from square feet to square yards.
+#
+# The numbers were always gaj; the tag said sqft, so `toSqFt` multiplied by 1
+# where it should have multiplied by 9 and every area comparison ran nine times
+# small. Only the tag moves — 250 gaj stays 250.
+#
+# The script finds the area fields from metadata rather than naming a table, so
+# Leads, Inventories and anything an admin adds later are covered by one run.
+name: Retag areas as square yards
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Type apply to write. Anything else counts and changes nothing."
+        default: "dry-run"
+      revert:
+        description: "Type revert to put the tags back to square feet."
+        default: "no"
+
+permissions:
+  contents: read
+
+jobs:
+  retag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      - name: What would change
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: node scripts/area-units-to-sqyd.mjs ${{ inputs.revert == 'revert' && '--revert' || '' }}
+
+      - name: Change it
+        if: ${{ inputs.apply == 'apply' }}
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: node scripts/area-units-to-sqyd.mjs --apply ${{ inputs.revert == 'revert' && '--revert' || '' }}

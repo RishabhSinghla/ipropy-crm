@@ -13,7 +13,7 @@ import { invalidateRecordQueries } from '../lib/invalidate';
 import { useCallDispositions } from '../lib/callDispositions';
 import { useVoiceCapture } from '../lib/useVoiceCapture';
 import { loadListNav } from '../lib/listNav';
-import { cn, renderMarkdown, restrictionForField } from '../lib/utils';
+import { cn, looksLikeHtml, renderMarkdown, restrictionForField, sanitiseRichText } from '../lib/utils';
 import { resolveIcon } from '../lib/icons';
 import { FieldValue } from '../components/FieldRenderer';
 import { EditableField, isInlineEditable } from '../components/EditableField';
@@ -2713,7 +2713,14 @@ function CommentsPanel({
                   </div>
                 ) : (
                   <p className="mt-0.5 whitespace-pre-wrap text-sm text-muted">
-                    {highlightMentions(c.body, colleagues)}
+                    {looksLikeHtml(c.body)
+                      /* A note the Vtiger import carried across as HTML. Drawn
+                         as plain text it is a wall of tags with the sentence
+                         buried inside, so it is sanitised and rendered. Mentions
+                         are not highlighted in these: nobody was @-mentioned in
+                         a CRM that had no mentions. */
+                      ? <div className="prose-ai" dangerouslySetInnerHTML={{ __html: sanitiseRichText(c.body) }} />
+                      : highlightMentions(c.body, colleagues)}
                   </p>
                 )}
 

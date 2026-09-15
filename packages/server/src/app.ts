@@ -81,17 +81,23 @@ export function securityPolicy(isProd: boolean): string {
     /*
       The map tiles are named here or the Team map is a grey rectangle.
 
-      `admin/TeamMap.tsx` draws a CARTO basemap tile layer, and a tile is an
-      ordinary `<img>` from `*.basemaps.cartocdn.com`. With `img-src 'self'`
-      every one of them was refused, so the page rendered its pins, its zoom
-      buttons and its attribution line over nothing at all — which reads as a
-      broken map rather than a blocked one, because the only trace is in the
-      browser console.
+      `admin/TeamMap.tsx` draws a tile layer, and a tile is an ordinary `<img>`
+      from another origin. With `img-src 'self'` every one is refused, so the
+      page renders its pins, its zoom buttons and its attribution line over
+      nothing at all — which reads as a broken map rather than a blocked one,
+      because the only trace is in the browser console.
+
+      Both hosts are listed, and that is deliberate. CARTO put its basemap
+      behind an API key and started serving a tile stamped API KEY REQUIRED, so
+      the map moved to OpenStreetMap's own keyless tiles — and moving it while
+      leaving this line alone traded a map full of that phrase for a blank grey
+      one. Whoever changes the tile source next will find the host they need
+      already here, or this comment explaining why it is not.
 
       Leaflet itself is bundled from npm and needs nothing here; it is the
       tiles, and only the tiles, that come from outside.
     */
-    "img-src 'self' data: blob: https://*.basemaps.cartocdn.com",
+    "img-src 'self' data: blob: https://tile.openstreetmap.org https://*.tile.openstreetmap.org https://*.basemaps.cartocdn.com",
     "font-src 'self' data:",
     "media-src 'self' blob:",
     /*
