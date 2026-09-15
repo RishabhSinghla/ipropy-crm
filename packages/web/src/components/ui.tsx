@@ -238,6 +238,7 @@ export function Dropdown({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -250,6 +251,22 @@ export function Dropdown({
     return () => {
       document.removeEventListener('mousedown', onClick);
       document.removeEventListener('keydown', onKey);
+
+      /*
+        Hand focus back to the button that owns the menu.
+
+        A menu item stops existing the instant it is clicked, so anything it
+        opens — a dialog, most often — has nothing to give focus back to when
+        it closes, and a keyboard user is dropped at the top of the page. The
+        trigger is still on screen, and it is what the menu belongs to.
+
+        Only when focus is still inside the menu or nowhere at all: a click
+        that deliberately moved focus somewhere else keeps it.
+      */
+      const active = document.activeElement;
+      if (!active || active === document.body || panelRef.current?.contains(active)) {
+        triggerRef.current?.querySelector<HTMLElement>('button, a[href], [tabindex]')?.focus?.();
+      }
     };
   }, [open]);
 
@@ -294,7 +311,7 @@ export function Dropdown({
 
   return (
     <div className="relative" ref={ref}>
-      <div onClick={() => setOpen((v) => !v)}>{trigger}</div>
+      <div ref={triggerRef} onClick={() => setOpen((v) => !v)}>{trigger}</div>
       {open && (
         <div
           ref={panelRef}
