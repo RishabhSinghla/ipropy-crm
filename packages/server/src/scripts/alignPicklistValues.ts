@@ -32,7 +32,7 @@
  * wording; everything from here on reads correctly.
  */
 import { db, pool, transaction, type Tx } from '../db/pool.js';
-import { replaceValueInRecords } from '../core/metadata/picklists.js';
+import { replaceValueInRecords, valueUsedInCode } from '../core/metadata/picklists.js';
 import { logger } from '../utils/logger.js';
 
 interface Drifted {
@@ -102,7 +102,38 @@ async function main(): Promise<void> {
   logger.info(`${drift.length} option(s) store something other than their label:`);
   for (const d of drift) logger.info(`  ${d.picklist}: "${d.from}" → "${d.to}"`);
 
-  const conflicts = await findConflicts(db, drift);
+  /*
+    Some of these words are matched by the application itself.
+
+    `replaceValueInRecords` rewrites records, saved views, widgets and workflow
+    rules. What it cannot rewrite is a string literal in a query, and there are
+    a couple of dozen — `p.status = 'Available'`, `status = 'New'`. Rename one
+    and the rename succeeds, every record moves, and a feature stops dead with
+    nothing anywhere saying why: rename "Available" and the public website's
+    listings go blank.
+
+    VALUES_USED_IN_CODE is the list of those words, and the dropdown editor
+    warns an admin before touching one. A script that went around it would be
+    the same mistake with no human in the way, so these are held back and named
+    instead. Aligning them means changing the code that matches them, in the
+    same change, with the tests to prove it — not a flag on this script.
+  */
+  const risky = drift.filter((d) => valueUsedInCode(d.picklist, d.from));
+  const safe = drift.filter((d) => !valueUsedInCode(d.picklist, d.from));
+
+  if (risky.length) {
+    logger.warn(`${risky.length} of those are matched by name in the application and are being left alone:`);
+    for (const d of risky) {
+      logger.warn(`  ${d.picklist}: "${d.from}" → "${d.to}" — would break ${valueUsedInCode(d.picklist, d.from)}`);
+    }
+  }
+
+  if (!safe.length) {
+    logger.info('nothing can be aligned without also changing code that matches these words.');
+    return;
+  }
+
+  const conflicts = await findConflicts(db, safe);
   if (conflicts.length) {
     logger.error('refusing to run — these would merge two answers into one:');
     for (const c of conflicts) logger.error(`  ${c}`);
@@ -136,7 +167,7 @@ async function main(): Promise<void> {
         aligned_at    TIMESTAMPTZ NOT NULL DEFAULT now()
       )
     `);
-    for (const d of drift) {
+    for (const d of safe) {
       await tx.query(
         `INSERT INTO ipy_picklist_value_alignment (option_id, picklist_name, was, became)
          VALUES ($1,$2,$3,$4)
@@ -147,7 +178,7 @@ async function main(): Promise<void> {
 
     // Phase one: out of the way. The scratch value carries the option's own id,
     // so it cannot collide with anything, including another scratch value.
-    for (const d of drift) {
+    for (const d of safe) {
       const scratch = `__align_${d.id}`;
       const moved = await replaceValueInRecords(d.picklist, d.from, scratch, tx);
       records += moved.records;
@@ -156,7 +187,7 @@ async function main(): Promise<void> {
     }
 
     // Phase two: into place.
-    for (const d of drift) {
+    for (const d of safe) {
       const scratch = `__align_${d.id}`;
       const moved = await replaceValueInRecords(d.picklist, scratch, d.to, tx);
       records += moved.records;
