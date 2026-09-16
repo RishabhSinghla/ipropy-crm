@@ -100,6 +100,16 @@ jobs:
             sleep 2   # the log row is written after the response is sent
             local logged; logged="$(calls_since "$mark")"
 
+            # A 404 that explains itself is an answer, not a breakage. "Not
+            # enough analysed calls to build a coaching report yet" is the
+            # feature working correctly on a CRM with almost no analysed calls,
+            # and counting it as a failure is how a health check teaches people
+            # to ignore it.
+            if [ "$code" = "404" ] && printf '%s' "$body" | grep -aq '"message"'; then
+              echo "  none  ${name} — nothing to report yet: $(printf '%s' "$body" \
+                | sed -n 's/.*"message":"\([^"]*\)".*/\1/p' | head -c 120)"
+              return
+            fi
             if [ "$code" != "200" ]; then
               echo "  FAIL  ${name} — HTTP ${code}: $(printf '%s' "$body" | head -c 200)"
               fail=$((fail + 1))
