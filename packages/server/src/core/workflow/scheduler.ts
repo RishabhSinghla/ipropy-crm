@@ -337,6 +337,54 @@ async function scheduledCandidates(
   return rows.rows.map((r) => r.id);
 }
 
+/**
+ * Tasks that reach a customer. A mistake in one of these is not a wasted tick;
+ * it is a message somebody receives.
+ */
+const OUTBOUND_TASKS = ['send_whatsapp', 'send_email', 'send_sms'];
+
+/**
+ * A scheduled rule that messages people and narrows on nothing.
+ *
+ * "Every condition here narrows, so deleting one widens what the workflow acts
+ * on" — `seed/pruneFieldRefs.ts` says exactly that, and switches a workflow off
+ * rather than let it lose a condition and act on everybody. What it cannot
+ * catch is a workflow whose conditions are *already* empty: it skips those,
+ * because there is nothing left to check.
+ *
+ * That gap was live. "Birthday greeting" is seeded with
+ * `date_of_birth is today` and production's copy carried
+ * `{"logic":"AND","conditions":[]}` — no birthday check at all — on a daily
+ * schedule with a WhatsApp step. It queued one message per contact per run:
+ * 20,006 on 13 September and 20,000 on the 16th, 40,515 waiting in total. They
+ * sat harmlessly in the hand-off queue only because no WhatsApp Business
+ * account is connected. Connect one and forty thousand messages to real
+ * customers are one button from sending.
+ *
+ * So: a scheduled workflow that can message somebody and has no condition at
+ * all does not run. It is switched off and says so, which is the same answer
+ * pruneFieldRefs gives and reversible in one click by whoever meant it.
+ */
+export async function refusesToMessageEverybody(wf: Pick<ScheduledRow, 'id' | 'name' | 'conditions'>): Promise<boolean> {
+  const conditions = Array.isArray(wf.conditions?.conditions) ? wf.conditions.conditions : [];
+  if (conditions.length) return false;
+
+  const outbound = await db.queryOne<{ type: string }>(
+    `SELECT type FROM ipy_workflow_task
+      WHERE workflow_id = $1 AND is_active AND type = ANY($2::text[]) LIMIT 1`,
+    [wf.id, OUTBOUND_TASKS],
+  );
+  if (!outbound) return false;
+
+  await db.query(`UPDATE ipy_workflow SET is_active = false WHERE id = $1`, [wf.id]);
+  logger.error(
+    { workflow: wf.name, task: outbound.type },
+    'a scheduled workflow would message every record in the module — it narrows on nothing, '
+    + 'so it has been switched off rather than run. Add the condition it is missing and switch it back on.',
+  );
+  return true;
+}
+
 async function runScheduledWorkflows(): Promise<void> {
   const due = await db.query<ScheduledRow>(
     `SELECT w.id, m.name AS module_name, w.name, w.schedule, w.conditions, w.next_run_at
@@ -352,6 +400,8 @@ async function runScheduledWorkflows(): Promise<void> {
 
     // A first-ever run just schedules; it doesn't fire retroactively.
     if (!wf.next_run_at) continue;
+
+    if (await refusesToMessageEverybody(wf)) continue;
 
     try {
       const module = await import('../metadata/registry.js').then((m) => m.registry.getModule(wf.module_name));
