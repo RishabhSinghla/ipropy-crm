@@ -479,9 +479,9 @@ jobs:
           psql "$PROD_DATABASE_URL" -P pager=off -c "
             SELECT pg_size_pretty(pg_database_size(current_database())) AS total_size;"
           psql "$PROD_DATABASE_URL" -P pager=off -c "
-            SELECT relname AS table,
+            SELECT c.relname AS table_name,
                    pg_size_pretty(pg_total_relation_size(c.oid)) AS size,
-                   n_live_tup AS rows
+                   s.n_live_tup AS rows
               FROM pg_class c
               JOIN pg_namespace n ON n.oid = c.relnamespace
               LEFT JOIN pg_stat_user_tables s ON s.relid = c.oid
