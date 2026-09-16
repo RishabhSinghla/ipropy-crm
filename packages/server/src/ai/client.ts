@@ -168,12 +168,28 @@ function isCoolingDown(ai: { provider: AiProvider; apiKey: string }): boolean {
   return false;
 }
 
-function noteRateLimit(ai: { provider: AiProvider; apiKey: string }, message: string): void {
-  if (!/\b429\b|too many requests|quota|rate.?limit/i.test(message)) return;
+function noteProviderFailure(ai: { provider: AiProvider; apiKey: string }, message: string): void {
+  const rateLimited = /\b429\b|too many requests|quota|rate.?limit/i.test(message);
+  /*
+    A model that has been retired does not come back, and the configured one
+    had been: Groq's `llama-3.3-70b-versatile` and `llama-3.1-8b-instant` are
+    the defaults in config.ts and both answer "does not exist or you do not
+    have access to it". Every AI call in the CRM therefore spent a hop and a
+    second failing through Groq before Gemini answered — 400 wasted calls on
+    the daily digest alone, and a failure count that made a working feature
+    look broken.
+
+    Same ten-minute pause as a rate limit, and for the same reason: it is long
+    enough to stop the bleeding and short enough that correcting the model id
+    in Admin → Integrations takes effect while the admin is still looking at
+    the screen.
+  */
+  const modelGone = /does not exist|model_not_found|not supported|no endpoints available/i.test(message);
+  if (!rateLimited && !modelGone) return;
   cooldowns.set(cooldownKey(ai), Date.now() + COOLDOWN_MS);
   logger.warn(
-    { provider: ai.provider, minutes: COOLDOWN_MS / 60_000 },
-    'AI provider is rate-limited; pausing it and falling back to the rule engine',
+    { provider: ai.provider, minutes: COOLDOWN_MS / 60_000, reason: rateLimited ? 'rate limit' : 'model gone' },
+    'AI provider stood down; falling through to the next one',
   );
 }
 
@@ -223,7 +239,7 @@ export async function complete(opts: CompleteOptions): Promise<CompleteResult | 
         ? await callAnthropic(ai.apiKey, model, maxTokens, temperature, opts)
         : await callOpenAiCompatible(ai.baseUrl, ai.apiKey, model, maxTokens, temperature, opts);
 
-      await logCall(opts, result, Date.now() - started, true, null);
+      await logCall(opts, result, Date.now() - started, true, null, model);
       if (index > 0) {
         logger.warn({ feature: opts.feature, provider: ai.provider }, 'primary AI provider failed; answered from fallback');
       }
@@ -231,8 +247,8 @@ export async function complete(opts: CompleteOptions): Promise<CompleteResult | 
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
       logger.error({ err, feature: opts.feature, provider: ai.provider, model }, 'AI call failed');
-      await logCall(opts, null, Date.now() - started, false, lastError);
-      noteRateLimit(ai, lastError);
+      await logCall(opts, null, Date.now() - started, false, lastError, model);
+      noteProviderFailure(ai, lastError);
     }
   }
 
@@ -461,8 +477,20 @@ async function logCall(
   latencyMs: number,
   success: boolean,
   error: string | null,
+  /*
+    The model this attempt actually used.
+
+    Without it a failed row fell back to whichever model the *settings* name,
+    and the two are routinely different: `complete` walks a chain of providers,
+    so a Groq attempt that failed was filed under Gemini's model. The admin page
+    then showed 252 daily-digest failures against `gemini-flash-lite-latest`
+    whose error text read "the model `llama-3.1-8b-instant` does not exist" —
+    a table that names the wrong culprit on every row is worse than no table.
+  */
+  attemptedModel?: string,
 ): Promise<void> {
-  const model = result?.model ?? (opts.fast ? getSettings().ai.fastModel : getSettings().ai.model);
+  const model = result?.model ?? attemptedModel
+    ?? (opts.fast ? getSettings().ai.fastModel : getSettings().ai.model);
   const inputTokens = result?.inputTokens ?? 0;
   const outputTokens = result?.outputTokens ?? 0;
 

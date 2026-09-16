@@ -459,6 +459,26 @@ export interface DailyDigest {
   stats: Record<string, number>;
 }
 
+/*
+  The digest is not daily, whatever it is called.
+
+  It is written afresh on every dashboard open, every AI-panel open and every
+  morning brief — 6,246 calls in the thirty days to 16 September 2026, roughly
+  two hundred a day, and the largest consumer of tokens in the CRM by a factor
+  of six over its nearest rival. What it produces is two sentences about three
+  numbers, so the same numbers buy the same sentences over and over, each at
+  the price of a model call and a second of somebody waiting.
+
+  Keyed on the numbers rather than on the clock: log one follow-up and the
+  counts move, so the next open writes a fresh briefing. A rep who opens the
+  dashboard eight times before lunch without touching anything gets one call,
+  not eight.
+
+  Per process and in memory. A restart costs one extra call per person, which
+  is not worth a table.
+*/
+const digestCache = new Map<string, { fingerprint: string; summary: string }>();
+
 export async function dailyDigest(ctx: ServiceContext): Promise<DailyDigest | null> {
   const userId = ctx.user.id;
 
@@ -544,6 +564,14 @@ export async function dailyDigest(ctx: ServiceContext): Promise<DailyDigest | nu
     };
   }
 
+  // What the briefing is written from. Anything that would change the words
+  // belongs in here; anything that would not, must stay out of it.
+  const fingerprint = JSON.stringify([digestStats, priorities.slice(0, 8).map((p) => `${p.title}|${p.reason}`)]);
+  const cached = digestCache.get(userId);
+  if (cached?.fingerprint === fingerprint) {
+    return { greeting, priorities: priorities.slice(0, 6), summary: cached.summary, stats: digestStats };
+  }
+
   const summary = await complete({
     feature: 'daily_digest',
     system: REAL_ESTATE_SYSTEM,
@@ -561,10 +589,18 @@ Write 2-3 sentences. Open with the single most time-critical thing. Be direct an
     userId,
   });
 
+  const text = summary?.text.trim() ?? '';
+  // Only a real answer is kept: caching a failed call would hold the empty
+  // briefing until the numbers happened to move.
+  if (text) {
+    if (digestCache.size > 500) digestCache.clear();
+    digestCache.set(userId, { fingerprint, summary: text });
+  }
+
   return {
     greeting,
     priorities: priorities.slice(0, 6),
-    summary: summary?.text.trim() ?? '',
+    summary: text,
     stats: digestStats,
   };
 }

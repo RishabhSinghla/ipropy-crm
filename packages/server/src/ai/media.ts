@@ -83,6 +83,49 @@ async function logCall(
 }
 
 /**
+ * A daily quota does not come back in eight hundred milliseconds.
+ *
+ * OpenRouter's free tier allows fifty model requests a day. On 15 September the
+ * embedding job had made 4,866 attempts in thirty days — a hundred and sixty a
+ * day against a cap of fifty — and 4,318 of them came back "Rate limit
+ * exceeded: free-models-per-day". Worse, each of those attempts was retried
+ * three times, so a cap of fifty was being spent several times over before
+ * breakfast and every later call that day was doomed before it was sent.
+ *
+ * So a model that reports its daily allowance gone is held until the allowance
+ * returns. The provider says when in the `X-RateLimit-Reset` header it puts in
+ * the error body, so that is what is read rather than guessed; an hour is the
+ * fallback when it says nothing, which caps the waste at a couple of dozen
+ * wasted calls a day instead of thousands.
+ *
+ * Held per model, not per key: one job hitting its ceiling says nothing about
+ * a different model on the same account.
+ */
+const quotaHolds = new Map<string, number>();
+
+function quotaHeldUntil(model: string): number | null {
+  const until = quotaHolds.get(model);
+  if (until === undefined) return null;
+  if (until > Date.now()) return until;
+  quotaHolds.delete(model);
+  return null;
+}
+
+/** True when the answer was a ceiling, so the caller should stop trying now. */
+function noteQuota(model: string, status: number, body: string): boolean {
+  if (status !== 429) return false;
+  const perDay = /free-models-per-day|per-day/i.test(body);
+  const reset = Number(/"X-RateLimit-Reset"\s*:\s*"?(\d{10,})"?/.exec(body)?.[1] ?? 0);
+  const until = reset > Date.now() ? reset : Date.now() + (perDay ? 60 * 60 * 1000 : 60 * 1000);
+  quotaHolds.set(model, until);
+  logger.warn(
+    { model, until: new Date(until).toISOString(), perDay },
+    'model is out of quota; holding it rather than retrying into the same ceiling',
+  );
+  return perDay;
+}
+
+/**
  * One request, with the retry that matters and none of the ones that do not.
  *
  * 429 and 5xx are worth a second go; a 400 means the request was wrong and
@@ -116,6 +159,21 @@ async function request(
   const started = Date.now();
   let lastError = '';
 
+  /*
+    The row is still written. A call that did not happen is as much a gap in
+    the data as a call that failed, and hiding it would turn a stalled search
+    index into a page that looks healthy.
+  */
+  const held = quotaHeldUntil(model);
+  if (held) {
+    const when = new Date(held).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    const message = `${model} has used up its free allowance for today. It resumes around ${when}. `
+      + 'Adding credit at openrouter.ai raises the daily limit.';
+    await logCall(feature, model, 0, false, message, opts.recordId);
+    opts.onError?.(message);
+    return null;
+  }
+
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 120_000);
@@ -137,7 +195,11 @@ async function request(
         await logCall(feature, model, Date.now() - started, true, null, opts.recordId);
         return response;
       }
-      lastError = `${response.status} ${(await response.text()).slice(0, 300)}`;
+      const said = (await response.text()).slice(0, 300);
+      lastError = `${response.status} ${said}`;
+      // A day's allowance is not going to return between attempts, so the two
+      // retries would only spend what little is left of it.
+      if (noteQuota(model, response.status, said)) break;
       if (response.status < 500 && response.status !== 429) break;
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
