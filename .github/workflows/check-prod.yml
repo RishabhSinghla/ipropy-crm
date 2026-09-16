@@ -462,3 +462,34 @@ jobs:
                       FROM ipy_device_send WHERE status = 'pending'
                      GROUP BY record_id) q
              GROUP BY per_record ORDER BY per_record DESC LIMIT 10;"
+
+      # Is the paid instance actually doing what it was bought for, and is the
+      # database healthy? Both are questions the readiness panel cannot answer
+      # from inside the server: it sees its own uptime, which a deploy resets,
+      # and it cannot see Neon at all.
+      - name: The server and the database, from outside
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          echo "--- what the live site says about itself ---"
+          curl -fsS https://crm.ipropy.com/api/health || echo "(health endpoint did not answer)"
+          echo ""
+
+          echo "--- how big the database actually is ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT pg_size_pretty(pg_database_size(current_database())) AS total_size;"
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT relname AS table,
+                   pg_size_pretty(pg_total_relation_size(c.oid)) AS size,
+                   n_live_tup AS rows
+              FROM pg_class c
+              JOIN pg_namespace n ON n.oid = c.relnamespace
+              LEFT JOIN pg_stat_user_tables s ON s.relid = c.oid
+             WHERE n.nspname = 'public' AND c.relkind = 'r'
+             ORDER BY pg_total_relation_size(c.oid) DESC LIMIT 12;"
+
+          echo "--- connections in use, against the ceiling ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT count(*)::int AS in_use,
+                   current_setting('max_connections') AS ceiling
+              FROM pg_stat_activity WHERE datname = current_database();"

@@ -1,0 +1,105 @@
+# Remove the birthday greeting from production, and the messages it made.
+#
+# The owner's instruction, 16 September 2026: "get rid of this birthday thing
+# forever, we won't be using it ever in this life in the CRM."
+#
+# It is already gone from the seed, so a fresh database never gets one. This is
+# the other half: seeding is create-only, which means an existing row is never
+# rewritten — and never removed either. So the live row has to go by hand, and
+# it has to go *after* the seed change is deployed, or the next cold start
+# would put it straight back.
+#
+# Its condition — `date_of_birth is today` — was missing from the live row, so
+# a daily rule with a WhatsApp step matched every contact in the database:
+# 20,006 messages queued on 13 September, 20,000 on the 16th, 40,515 waiting,
+# 20,209 people holding two each. Nobody received one only because no WhatsApp
+# Business account is connected, which is luck rather than a safeguard.
+#
+# Nothing is deleted without a copy kept first, and looking is the default.
+name: Remove the birthday greeting
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Type remove to do it. Anything else only shows what would go."
+        default: "look"
+
+permissions:
+  contents: read
+
+jobs:
+  remove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Install PostgreSQL 18 client
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: What would go
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT w.name, w.is_active, w.run_count,
+                 coalesce(to_char(w.last_run_at, 'YYYY-MM-DD HH24:MI'), 'never') AS last_run,
+                 (SELECT count(*)::int FROM ipy_workflow_task t WHERE t.workflow_id = w.id) AS tasks
+            FROM ipy_workflow w WHERE w.name = 'Birthday greeting';
+          SQL
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT status, count(*)::int AS messages,
+                 min(created_at)::date AS oldest, max(created_at)::date AS newest
+            FROM ipy_device_send
+           WHERE reason = 'Workflow — no WhatsApp Business account connected'
+           GROUP BY status ORDER BY messages DESC;
+          SQL
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT name, category FROM ipy_whatsapp_template WHERE name = 'birthday_greeting';" || true
+
+      - name: Remove it
+        if: ${{ inputs.apply == 'remove' }}
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          # One transaction: the workflow, its tasks, the messages it queued and
+          # the template it used all go together, or none of them do. Every
+          # deleted message is copied first — 40,515 rows is not a thing to
+          # delete with no way back, even when they were never wanted.
+          psql "$PROD_DATABASE_URL" -P pager=off -v ON_ERROR_STOP=1 <<'SQL'
+          BEGIN;
+
+          CREATE TABLE IF NOT EXISTS ipy_device_send_cleared (LIKE ipy_device_send);
+          INSERT INTO ipy_device_send_cleared
+            SELECT * FROM ipy_device_send
+             WHERE status = 'pending'
+               AND reason = 'Workflow — no WhatsApp Business account connected';
+
+          DELETE FROM ipy_device_send
+           WHERE status = 'pending'
+             AND reason = 'Workflow — no WhatsApp Business account connected';
+
+          -- Tasks go with the workflow by ON DELETE CASCADE, but say so plainly
+          -- rather than rely on it.
+          DELETE FROM ipy_workflow_task
+           WHERE workflow_id IN (SELECT id FROM ipy_workflow WHERE name = 'Birthday greeting');
+          DELETE FROM ipy_workflow WHERE name = 'Birthday greeting';
+
+          -- The template existed only for this workflow.
+          DELETE FROM ipy_whatsapp_template WHERE name = 'birthday_greeting';
+
+          COMMIT;
+          SQL
+
+          echo "--- what is left ---"
+          psql "$PROD_DATABASE_URL" -tAc "
+            SELECT 'birthday workflows still here: '
+              || (SELECT count(*) FROM ipy_workflow WHERE name = 'Birthday greeting')
+              || ' | messages still waiting: '
+              || (SELECT count(*) FROM ipy_device_send WHERE status = 'pending')
+              || ' | kept safe in ipy_device_send_cleared: '
+              || (SELECT count(*) FROM ipy_device_send_cleared);"

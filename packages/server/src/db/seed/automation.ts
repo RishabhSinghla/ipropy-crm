@@ -167,26 +167,22 @@ const WORKFLOWS: WorkflowSeed[] = [
     ],
   },
 
-  // --- Contacts --------------------------------------------------------------
-  {
-    module: 'leads',
-    name: 'Birthday greeting',
-    description: 'Sends a WhatsApp greeting on a customer\'s birthday.',
-    trigger: 'scheduled',
-    schedule: { frequency: 'daily', time: '09:00' },
-    /*
-      No consent condition here. It used to check `do_not_whatsapp`, a field
-      deleted on 11 August, and a condition naming a missing field makes
-      buildWhere raise — which the scheduler catches and logs, so the workflow
-      simply stopped running for three weeks with nothing to show for it.
+  /*
+    There was a "Birthday greeting" here, and it is gone on the owner's
+    instruction: "get rid of this birthday thing forever, we won't be using it
+    ever in this life in the CRM." 16 September 2026.
 
-      Consent is checked at send time instead: every WhatsApp send goes through
-      `maySend`, which reads ipy_channel_optout. One check, in the place that
-      cannot be skipped.
-    */
-    conditions: { logic: 'AND', conditions: [{ field: 'date_of_birth', operator: 'today' }] },
-    tasks: [{ type: 'send_whatsapp', name: 'Birthday wish', config: { to: '{{mobile}}', template: 'birthday_greeting' } }],
-  },
+    Worth keeping the reason it went, because it is not a matter of taste. Its
+    condition — `date_of_birth is today` — was missing from the live row, so a
+    daily rule with a WhatsApp step matched every contact in the database. It
+    queued 20,006 messages on 13 September and 20,000 more on the 16th, 40,515
+    waiting in total, 20,209 people holding two each. Nobody received one only
+    because no WhatsApp Business account is connected, which is luck rather
+    than a safeguard.
+
+    Do not reintroduce it. A greeting nobody asked for, sent to a list this
+    size, is one empty condition away from being a broadcast.
+  */
 ];
 
 export async function seedWorkflows(conn: Tx): Promise<void> {
@@ -394,11 +390,6 @@ const WHATSAPP_TEMPLATES: TemplateSeed[] = [
     name: 'payment_overdue', category: 'UTILITY',
     body: 'Dear {{1}}, our records show {{2}} for {{3}} is overdue since {{4}}. Kindly arrange payment at the earliest to avoid late charges.\n\nContact {{5}} for assistance.',
     variables: { '1': 'contact.first_name', '2': 'record.amount_due', '3': 'record.milestone', '4': 'record.due_date', '5': 'owner.phone' },
-  },
-  {
-    name: 'birthday_greeting', category: 'MARKETING',
-    body: 'Happy birthday, {{1}}! 🎉\n\nWishing you a wonderful year ahead from all of us at {{2}}.',
-    variables: { '1': 'record.first_name', '2': 'org.name' },
   },
   {
     name: 'property_shortlist', category: 'MARKETING',

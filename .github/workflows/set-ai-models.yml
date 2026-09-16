@@ -1,0 +1,59 @@
+# Point each AI job at a better model — after checking the id really exists.
+#
+# The four chosen on 16 September 2026, from OpenRouter's own catalogue:
+#
+#   search   nvidia/nemotron-3-embed-1b:free  →  baai/bge-m3
+#            A 1B free model capped at fifty calls a day, swapped for an 8B
+#            multilingual one at $0.01 per million tokens. Indexing all 48,502
+#            records costs about twenty cents, once. The notes in this CRM are
+#            Hinglish — "Ye 3.30 pm tak aayega" — and a multilingual embedder is
+#            the difference between search finding that note and not.
+#
+#   rerank   nvidia/llama-nemotron-rerank…   →  voyageai/rerank-2.5-lite
+#            The free one caps at 10K tokens, so a long property description is
+#            truncated before it is ranked. This one takes 32K and is the most
+#            used reranker on the platform. It sees about thirty results per
+#            search, so the spend is pennies a year.
+#
+#   copy     (empty, falls back to the vision model) → z-ai/glm-5.3-flash
+#            Listing copy, captions and the voiceover script — the words a
+#            customer actually reads. Cheap, and written for the job.
+#
+#   chat     the OpenRouter card's model      →  openrouter/auto
+#            The router picks per request from what the market is actually
+#            using, on a seven-day window. Today's whole incident was retired
+#            model ids; a router is the one setting that stops that happening
+#            again without anybody noticing.
+#
+# **Nothing is written on a guessed id.** Every value is checked against
+# OpenRouter's live catalogue first and the run fails rather than save one it
+# cannot find. Four wrong defaults have shipped in this project by guessing.
+name: Set the AI models
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Type apply to save. Anything else only checks the ids exist."
+        default: "check"
+
+permissions:
+  contents: read
+
+jobs:
+  models:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      - name: Check every id against OpenRouter, then save
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          APPLY: ${{ inputs.apply }}
+        run: node scripts/set-ai-models.mjs

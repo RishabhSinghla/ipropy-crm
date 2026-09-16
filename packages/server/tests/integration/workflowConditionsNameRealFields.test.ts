@@ -86,19 +86,17 @@ describe('workflow conditions', () => {
     ).toEqual([]);
   });
 
-  it('the birthday greeting is one of the ones that runs', async () => {
-    // Pinned by name because this is the one that was broken, and because it
-    // fires once a year per person, so a regression could hide for a long time.
-    const wf = await db.queryOne<{ conditions: unknown; is_active: boolean }>(
-      `SELECT conditions, is_active FROM ipy_workflow WHERE name = 'Birthday greeting'`,
+  it('does not seed a birthday greeting any more', async () => {
+    /*
+      Removed on 16 September 2026 at the owner's instruction. Its condition
+      was missing from the live row, so a daily rule with a WhatsApp step
+      matched every contact and queued 40,515 messages. This test used to
+      assert the opposite — that the greeting runs — which is why it is
+      replaced rather than deleted: the seed must not quietly bring it back.
+    */
+    const seeded = await db.queryOne<{ id: string }>(
+      `SELECT id FROM ipy_workflow WHERE name = 'Birthday greeting'`,
     );
-    if (!wf) return; // not seeded in every environment
-
-    expect(wf.is_active).toBe(true);
-    expect(
-      fieldsIn(wf.conditions),
-      'consent is checked at send time against ipy_channel_optout; checking it '
-      + 'again here on a deleted column is what killed this workflow',
-    ).not.toContain('do_not_whatsapp');
+    expect(seeded, 'the seed re-created the birthday greeting').toBeNull();
   });
 });
