@@ -175,8 +175,13 @@ export const config = {
     },
     groq: {
       apiKey: str('GROQ_API_KEY'),
-      model: str('GROQ_MODEL', 'llama-3.3-70b-versatile'),
-      fastModel: str('GROQ_MODEL_FAST', 'llama-3.1-8b-instant'),
+      // Both previous defaults are retired: Groq answers "does not exist or you
+      // do not have access to it" for llama-3.3-70b-versatile and
+      // llama-3.1-8b-instant, so every AI call spent a hop failing here before
+      // Gemini answered. `ai/models.ts` already names gpt-oss-120b as Groq's
+      // primary. Only a default — the id is a box in Admin → Integrations.
+      model: str('GROQ_MODEL', 'openai/gpt-oss-120b'),
+      fastModel: str('GROQ_MODEL_FAST', 'openai/gpt-oss-120b'),
     },
     openrouter: {
       apiKey: str('OPENROUTER_API_KEY'),

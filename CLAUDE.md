@@ -509,15 +509,24 @@ Both were mine, both invisible, and both had been live for a day or more.
   against an NVIDIA ASR id that does not exist.
 * **Music sends only parameters its model accepts.** `modalities` and `audio` were on the request
   and are on no music model's `supported_parameters`, so the whole call was refused in 0.0s.
-* **Two configured model ids are retired, and the log names them.** `ai_models.vision` is
-  `xiaomi/mimo-v2.5`, which served twelve successful calls and now answers *"does not exist or you
-  do not have access to it"* from two different providers — so document reading, voice notes and
-  property vision are all dead on that one id. Groq's chat defaults in `config.ts`
-  (`llama-3.3-70b-versatile`, `llama-3.1-8b-instant`) are retired the same way, which is why every
-  AI call in the CRM spent a hop failing through Groq before Gemini answered. **Picking the
-  replacements is an admin job, not a guess** — the settings boxes list what each provider serves
-  and the Test button repeats the provider's own words. `complete()` now stands a provider down for
-  ten minutes when its model reports itself gone, so a dead id costs one hop rather than every call.
+* **`xiaomi/mimo-v2.5` is not retired, and the 404s were being asked of the wrong provider.**
+  OpenRouter's own catalogue lists MiMo-V2.5 at $0.119/$0.238 per million tokens, eighth-most-used
+  model for image understanding. The 404s — *"models/xiaomi/mimo-v2.5 is not found for API version
+  v1main"* — came from **Gemini**, because `complete()` handed an OpenRouter id to every provider in
+  its chain. The same table shows the same model succeeding four times under its own name, which is
+  what gave it away. Fixed by `jobModel()` and `CompleteOptions.provider`: a named id goes to the
+  provider that serves it, the rest still follow with their own model.
+  **This file said "retired" for an hour on 16 September. It was wrong, and the way it was wrong is
+  the point** — a failure log that names the wrong model produces a confident wrong diagnosis.
+* **Groq's chat defaults in `config.ts` are genuinely retired.** `llama-3.3-70b-versatile` and
+  `llama-3.1-8b-instant` both answer "does not exist or you do not have access to it" from Groq
+  itself, so every AI call spent a hop failing through Groq before Gemini answered. Defaults moved
+  to `openai/gpt-oss-120b`, which is what `ai/models.ts` already names as Groq's primary and which
+  OpenRouter lists as the fastest model it serves — **not verified against Groq's live API from
+  here**, and cheap to be wrong about: a bad default 404s once and the chain carries on exactly as
+  it does today. The id is a text box in Admin → Integrations either way. `complete()` also stands a
+  provider down for ten minutes when its model reports itself gone, so a dead id costs one hop
+  rather than every call.
 * **`ipy_ai_log.model` used to name the wrong model on every failed row.** It fell back to whichever
   model the *settings* name, but `complete()` walks a chain, so a failed Groq attempt was filed
   under Gemini — 252 daily-digest failures against `gemini-flash-lite-latest` whose error text read
