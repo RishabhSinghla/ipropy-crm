@@ -477,20 +477,23 @@ Both were mine, both invisible, and both had been live for a day or more.
 * Dashboard drag-to-resize is wired (react-grid-layout on desktop, persisted via `saveDashboardLayout`).
 * **AI answers now.** An OpenRouter key is saved and listing copy, reading photos and voiceover all
   work on production. Six of the eight model jobs pass their Test button.
-* **Embed works; rerank is still unproven.** Search (embed) is settled —
-  `ipy_embedding` held 2,011 rows on 13 September 2026, newest that morning,
-  written by the very id this section was drafted to blame. Rerank leaves
-  nothing behind to inspect, so it is unverified rather than known-broken. The
-  original note is kept below because its *reasoning* is what matters and has
-  been right five times: do not guess replacement ids.
+* **Embed and rerank both work. What is throttling them is the free tier's fifty
+  calls a day** — read off production on 16 September 2026 by
+  `.github/workflows/ai-failures.yml`, which prints `ipy_ai_log.error` grouped
+  by feature. Rerank: 157 successes to 10 failures, so the "unverified" note
+  this line used to carry is answered. Embed: 386 successes to **4,480**
+  failures, of which 4,318 read *"Rate limit exceeded: free-models-per-day. Add
+  5 credits to unlock 1000 free model requests per day"*, with
+  `X-RateLimit-Limit: 50`.
 
-  Search (embed) and Reorder (rerank) both go to endpoints that exist (`/embeddings` and `/rerank` answer 401
-  unauthenticated, where a made-up path answers 404), with ids OpenRouter itself lists under those
-  exact modalities, in the request shape its own documentation prints. All three were checked. So
-  what is left is account-side — most likely the free NVIDIA endpoints needing the data-policy
-  setting under OpenRouter's privacy page, or a key without access to them. **The Test button
-  repeats the provider's own words**, so one click names it. Do not guess replacement ids; that is
-  how the four wrong defaults shipped.
+  So the id was never the problem, twice over — the old note's reasoning holds
+  and is kept: **do not guess replacement ids.** The account is rationed, and
+  the CRM was making a hundred and sixty embed attempts a day into a cap of
+  fifty, each retried twice more. `media.ts` now holds a model whose day is
+  spent until `X-RateLimit-Reset` says otherwise, and a daily ceiling ends the
+  retry loop rather than feeding it (`tests/ai/quotaHold.test.ts`). **Five
+  dollars of credit on OpenRouter raises the cap to a thousand a day**, and is
+  the only thing standing between the search index and being current.
 * **The model boxes offer real ids now** (`ai/modelCatalogue.ts`). Each one lists what OpenRouter
   serves for that job, free first, priced in rupees. Three rules encoded there: it stays free text
   so a retired list cannot lock somebody out; "Free" is claimed only for a `:free` id, because an
@@ -499,16 +502,37 @@ Both were mine, both invisible, and both had been live for a day or more.
   deliberately absent — it does not go to OpenRouter.
 * **Transcription goes to the speech-to-text integration, not OpenRouter** (migration `079`). It was
   wrong twice: wrong service, and JSON with base64 audio where every OpenAI-compatible endpoint
-  wants multipart with a `file` part. **The `stt` row still has no API key**, so it fails with "Add
-  one in Admin → Integrations" until a Groq key is pasted in. Base URL and model are already right.
+  wants multipart with a `file` part. **The key is in now and it works** — the `stt` row reads
+  `connected` with a key against `api.groq.com`, and `whisper-large-v3-turbo` answered three calls
+  out of three. This line used to say the row had no key; that was true when written and stopped
+  being true without anything saying so. The five older `stt` failures in the log are from August,
+  against an NVIDIA ASR id that does not exist.
 * **Music sends only parameters its model accepts.** `modalities` and `audio` were on the request
   and are on no music model's `supported_parameters`, so the whole call was refused in 0.0s.
+* **Two configured model ids are retired, and the log names them.** `ai_models.vision` is
+  `xiaomi/mimo-v2.5`, which served twelve successful calls and now answers *"does not exist or you
+  do not have access to it"* from two different providers — so document reading, voice notes and
+  property vision are all dead on that one id. Groq's chat defaults in `config.ts`
+  (`llama-3.3-70b-versatile`, `llama-3.1-8b-instant`) are retired the same way, which is why every
+  AI call in the CRM spent a hop failing through Groq before Gemini answered. **Picking the
+  replacements is an admin job, not a guess** — the settings boxes list what each provider serves
+  and the Test button repeats the provider's own words. `complete()` now stands a provider down for
+  ten minutes when its model reports itself gone, so a dead id costs one hop rather than every call.
+* **`ipy_ai_log.model` used to name the wrong model on every failed row.** It fell back to whichever
+  model the *settings* name, but `complete()` walks a chain, so a failed Groq attempt was filed
+  under Gemini — 252 daily-digest failures against `gemini-flash-lite-latest` whose error text read
+  "the model `llama-3.1-8b-instant` does not exist". Fixed; the attempt carries its own model into
+  the log. **Any reading of that table from before 16 September 2026 is misattributed.**
+* **The daily digest is not daily and was the CRM's largest token consumer** — 6,253 calls in thirty
+  days, written afresh on every dashboard open, every AI-panel open and every morning brief, for two
+  sentences about three numbers. Cached in `ai/assistant.ts` on the numbers themselves, so it is
+  rewritten when a follow-up moves and not when somebody reopens a tab.
 * **Semantic search is live.** Checked on production 11 September 2026: 355 rows in
   `ipy_embedding` across both leads and properties, written by
   `nvidia/nemotron-3-embed-1b:free` — the very id the note above records as failing — with the
   newest that morning. Whatever was wrong account-side has been sorted; **do not go hunting for a
-  replacement id.** Rerank is still unverified, because it runs at query time and leaves nothing
-  behind to look at.
+  replacement id.** Rerank is verified too now, from the failure log rather than from anything it
+  leaves behind: 157 answers to 10 refusals, the refusals being the same daily cap.
 
   The model settings live in `ipy_setting` under `ai_models.*`, not `ai.model*`, and
   `scripts/../.github/workflows/check-prod.yml` prints them along with the embedding count.
