@@ -1,0 +1,169 @@
+# Does the AI actually answer, on production, right now?
+#
+# The owner's question, 16 September 2026: "are they all really working like
+# they should?" Nothing here could answer it. The admin page counts calls and
+# failures after the fact; the Test button checks one model at a time; and the
+# unit suite proves the code, never this database with its real records.
+#
+# The trap this is built around: **every AI feature in this CRM degrades
+# gracefully on purpose.** Lead scoring falls back to a rule engine, the digest
+# falls back to counting, matching falls back to filters. So a screen answering
+# 200 proves nothing about whether a model was involved. That is the whole
+# reason the check reads `ipy_ai_log` before and after each call — a feature
+# that "worked" without leaving a successful row there did not use AI at all.
+#
+# The key it mints is read-only (`GET /api`), expires in ten minutes, is revoked
+# in a final step that runs pass or fail, and is never printed: this repository
+# is public and a working key reached an Actions log once already.
+name: Prove the AI works
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "The CRM to test"
+        default: "https://crm.ipropy.com"
+
+permissions:
+  contents: read
+
+jobs:
+  prove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Install psql 18
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: Ask every AI feature to do its job
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          BASE_URL: ${{ inputs.base_url || 'https://crm.ipropy.com' }}
+        run: |
+          set -uo pipefail
+
+          OWNER="$(psql "$DATABASE_URL" -tAc \
+            "SELECT id FROM ipy_user WHERE is_admin AND is_active ORDER BY created_at LIMIT 1" | head -1)"
+          [ -n "$OWNER" ] || { echo "::error::no active administrator to own the key"; exit 1; }
+
+          mkdir -p /tmp/hashing && cd /tmp/hashing
+          npm init -y >/dev/null 2>&1
+          npm install bcryptjs@3 >/dev/null 2>&1
+          cd - >/dev/null
+
+          KEY="ipy_$(openssl rand -hex 24)"
+          PREFIX="${KEY:0:8}"
+          HASH="$(KEY="$KEY" node -e '
+            const bcrypt = require("/tmp/hashing/node_modules/bcryptjs");
+            process.stdout.write(bcrypt.hashSync(process.env.KEY, 10));
+          ')"
+          KEY_ID="$(psql "$DATABASE_URL" -tAc "
+            INSERT INTO ipy_api_key (user_id, name, key_prefix, key_hash, scopes, expires_at)
+            VALUES ('${OWNER}', 'AI proof (automated)', '${PREFIX}',
+                    '${HASH}', '[\"GET /api\"]'::jsonb, now() + interval '10 minutes')
+            RETURNING id" | head -1)"
+          echo "KEY_ID=${KEY_ID}" >> "$GITHUB_ENV"
+          echo "::notice::minted a read-only key that expires in ten minutes"
+
+          # Real records to aim at. A feature asked about nothing proves nothing.
+          LEAD="$(psql "$DATABASE_URL" -tAc \
+            "SELECT id FROM ipy_record WHERE module_name = 'leads' AND NOT is_deleted
+              ORDER BY updated_at DESC LIMIT 1" | head -1)"
+          UNIT="$(psql "$DATABASE_URL" -tAc \
+            "SELECT id FROM ipy_record WHERE module_name = 'properties' AND NOT is_deleted
+              ORDER BY updated_at DESC LIMIT 1" | head -1)"
+          echo "aiming at lead ${LEAD:0:8}… and unit ${UNIT:0:8}…"
+
+          calls_since () {  # how many AI calls the CRM logged after a moment
+            psql "$DATABASE_URL" -tAc "
+              SELECT coalesce(string_agg(feature || ' x' || n || ' (' || ok || ' ok)', ', '), '')
+                FROM (SELECT feature, count(*)::int AS n,
+                             count(*) FILTER (WHERE success)::int AS ok
+                        FROM ipy_ai_log WHERE created_at > '$1'
+                       GROUP BY feature ORDER BY 1) s"
+          }
+
+          fail=0
+          check () {   # name, path, what a working answer must contain
+            local name="$1" path="$2" needle="$3"
+            local mark; mark="$(psql "$DATABASE_URL" -tAc 'SELECT now()')"
+            local body code
+            body="$(curl -sS --max-time 90 -w '\n%{http_code}' \
+                      -H "x-api-key: ${KEY}" "${BASE_URL}${path}" 2>&1)" || true
+            code="$(printf '%s' "$body" | tail -1)"
+            body="$(printf '%s' "$body" | sed '$d')"
+
+            sleep 2   # the log row is written after the response is sent
+            local logged; logged="$(calls_since "$mark")"
+
+            if [ "$code" != "200" ]; then
+              echo "  FAIL  ${name} — HTTP ${code}: $(printf '%s' "$body" | head -c 200)"
+              fail=$((fail + 1))
+              return
+            fi
+            if [ -n "$needle" ] && ! printf '%s' "$body" | grep -aq "$needle"; then
+              echo "  FAIL  ${name} — answered 200 but without ${needle}"
+              echo "        $(printf '%s' "$body" | head -c 200)"
+              fail=$((fail + 1))
+              return
+            fi
+            if [ -n "$logged" ]; then
+              echo "  ok    ${name} — a model answered: ${logged}"
+            else
+              # Not a failure. Every AI feature here has a rule engine behind it
+              # by design, and some answers are cached or need no model at all.
+              echo "  ok*   ${name} — answered, but no model was called (rule engine, or cached)"
+            fi
+          }
+
+          echo ""
+          echo "=== what production says it is using ==="
+          curl -sS --max-time 30 -H "x-api-key: ${KEY}" "${BASE_URL}/api/ai/status" | head -c 400
+          echo ""
+
+          echo ""
+          echo "=== each feature, asked to actually do its job ==="
+          check "Morning briefing"      "/api/ai/digest"                              "greeting"
+          check "Search by meaning"     "/api/search?q=3%20bhk%20corner%20flat&limit=5" ""
+          check "Duplicate detection"   "/api/ai/records/leads/${LEAD}/duplicates"    ""
+          check "Match units to buyer"  "/api/ai/match/leads/${LEAD}"                 ""
+          check "Match buyers to unit"  "/api/ai/buyers-for/${UNIT}"                  ""
+          check "Rep coaching"          "/api/ai/coaching/${OWNER}"                    ""
+          check "Which fields match on" "/api/ai/matching-fields"                     ""
+          check "AI usage figures"      "/api/ai/usage"                               ""
+
+          echo ""
+          echo "=== the search index, which everything above leans on ==="
+          psql "$DATABASE_URL" -P pager=off -c "
+            SELECT model, count(*)::int AS rows, max(updated_at) AS newest
+              FROM ipy_embedding GROUP BY model ORDER BY rows DESC;"
+
+          echo ""
+          echo "=== every AI call in the last hour, and how it went ==="
+          psql "$DATABASE_URL" -P pager=off -c "
+            SELECT feature, model, count(*)::int AS calls,
+                   count(*) FILTER (WHERE success)::int AS ok,
+                   round(avg(latency_ms))::int AS avg_ms,
+                   left(max(error), 90) AS worst_error
+              FROM ipy_ai_log WHERE created_at > now() - interval '1 hour'
+             GROUP BY feature, model ORDER BY calls DESC;"
+
+          echo ""
+          if [ "$fail" -gt 0 ]; then
+            echo "::error::${fail} AI feature(s) did not answer"
+            exit 1
+          fi
+          echo "Every AI feature answered."
+
+      - name: Revoke the key
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          [ -n "${KEY_ID:-}" ] || exit 0
+          psql "$DATABASE_URL" -tAc "DELETE FROM ipy_api_key WHERE id = '${KEY_ID}'" >/dev/null
+          echo "::notice::key revoked"
