@@ -117,6 +117,6 @@ jobs:
           echo "--- did the re-index run, and is the search index current ---"
           psql "$PROD_DATABASE_URL" -P pager=off -c "
             SELECT model, count(*)::int AS rows,
-                   min(created_at)::date AS oldest,
-                   max(created_at) AS newest
+                   min(updated_at)::date AS oldest,
+                   max(updated_at) AS newest
               FROM ipy_embedding GROUP BY model ORDER BY rows DESC;"

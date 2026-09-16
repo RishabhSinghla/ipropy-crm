@@ -51,7 +51,8 @@ const WANTED = [
     modality: 'rerank',
     ids: ['voyageai/rerank-2.5-lite', 'voyageai/rerank-2.5', 'qwen/qwen3-reranker-8b'],
     why: '32K context against the free one\'s 10K, so a long property description is ranked whole '
-      + 'rather than cut off. It sees about thirty results per search, so the spend is pennies a year.',
+      + 'rather than cut off. Priced at $0.02/M — not free, whatever the pricing block says — but it '
+      + 'sees about thirty results per search, so the spend stays small.',
   },
   {
     key: 'ai_models.copy',
@@ -94,10 +95,19 @@ async function catalogue(modality) {
   }
 }
 
-const perMillion = (model) => {
+/**
+ * A zero in the pricing block is not the same as free.
+ *
+ * Only a `:free` id is actually free. An empty or zero pricing block means
+ * *billed elsewhere* — every rerank and video model has one — and reading it as
+ * free is a mistake this project has already made once and made again on
+ * 16 September, when this script reported `voyageai/rerank-2.5-lite` as free
+ * and OpenRouter's own catalogue page prices it at $0.02 per million.
+ */
+const perMillion = (model, id) => {
   const prompt = Number(model?.pricing?.prompt ?? NaN);
-  if (!Number.isFinite(prompt)) return 'price not stated';
-  if (prompt === 0) return 'free';
+  if (id.endsWith(':free')) return 'free';
+  if (!Number.isFinite(prompt) || prompt === 0) return 'priced, but not in the pricing block — check the model page';
   return `$${(prompt * 1_000_000).toFixed(3)} per million in`;
 };
 
@@ -132,7 +142,7 @@ try {
       continue;
     }
 
-    console.log(`  ok ${want.job}: ${current}  ->  ${chosen}  (${perMillion(served.get(chosen))})`);
+    console.log(`  ok ${want.job}: ${current}  ->  ${chosen}  (${perMillion(served.get(chosen), chosen)})`);
     console.log(`     ${want.why}`);
     if (chosen !== current) plan.push({ key: want.key, id: chosen });
   }
