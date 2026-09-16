@@ -535,7 +535,12 @@ Both were mine, both invisible, and both had been live for a day or more.
   and the OpenRouter card's chat model = **`openrouter/auto`**, a router rather than a fixed id,
   because a router cannot be stranded by a retirement. `openrouter/free` is the proven fallback —
   124 calls, 124 successes in this CRM's own log.
-  **Changing the embed model re-indexes over the following hour.**
+  **Changing the embed model does not re-index within the hour, whatever this file
+  used to say.** `refreshSemanticIndex` embedded one batch of 32 per visit, throttled to five
+  minutes: 48,502 records is five days, and sixteen once the tick moved to fifteen minutes. A
+  visit now keeps going for up to a minute of wall clock, stopping early on a short batch —
+  which covers both "nothing left" and "the model is out of quota", since a held model embeds
+  nothing. Measured before the change: 63 rows in 12 minutes.
 * **Music sends only parameters its model accepts.** `modalities` and `audio` were on the request
   and are on no music model's `supported_parameters`, so the whole call was refused in 0.0s.
 * **`xiaomi/mimo-v2.5` is not retired, and the 404s were being asked of the wrong provider.**

@@ -552,12 +552,42 @@ async function morningBriefs(): Promise<void> {
   await sendMorningBriefs();
 }
 
+/**
+ * Keep the search index fed — and get through a backlog this century.
+ *
+ * This used to embed one batch of thirty-two records per visit, throttled to
+ * once every five minutes. For keeping up with edits that is plenty. For
+ * rebuilding from scratch it is 32 records per five minutes: the 48,502 records
+ * on production would take five days, and after the tick moved to fifteen
+ * minutes on 16 September, sixteen. CLAUDE.md said "re-indexes over the
+ * following hour" and that was never true of a full rebuild.
+ *
+ * So a visit now keeps going while there is more to do, bounded by a wall-clock
+ * budget rather than a batch count — the budget is what stops a backlog from
+ * holding the tick open, and what makes this self-limiting when the provider
+ * slows down. It stops early on its own whenever a batch comes back short,
+ * which covers both "nothing left" and "the model is out of quota", since a
+ * held model embeds nothing.
+ */
+const INDEX_BUDGET_MS = 60_000;
+
 async function refreshSemanticIndex(): Promise<void> {
   if (Date.now() - lastIndexAt < 5 * 60_000) return;
   lastIndexAt = Date.now();
   const { indexPending } = await import('../search/semantic.js');
-  const result = await indexPending();
-  if (result.embedded) logger.info({ ...result }, 'semantic index refreshed');
+
+  const until = Date.now() + INDEX_BUDGET_MS;
+  let embedded = 0;
+  let rounds = 0;
+  for (;;) {
+    const result = await indexPending();
+    embedded += result.embedded;
+    rounds += 1;
+    // Nothing embedded means nothing pending, or a model that is not answering.
+    // Either way another round now would be the same answer more slowly.
+    if (!result.embedded || Date.now() >= until) break;
+  }
+  if (embedded) logger.info({ embedded, rounds }, 'semantic index refreshed');
 }
 
 let lastImapPollAt = 0;
