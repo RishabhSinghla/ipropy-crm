@@ -507,6 +507,35 @@ Both were mine, both invisible, and both had been live for a day or more.
   out of three. This line used to say the row had no key; that was true when written and stopped
   being true without anything saying so. The five older `stt` failures in the log are from August,
   against an NVIDIA ASR id that does not exist.
+* **The birthday greeting is gone, on the owner's instruction, and the reason it had to go is
+  worth keeping.** 16 September 2026: *"get rid of this birthday thing forever, we won't be using
+  it ever in this life in the CRM."* It was seeded with `date_of_birth is today`; the live row's
+  condition list was **empty**, so a daily rule with a WhatsApp step matched every contact in the
+  database. 20,006 messages queued on 13 September, 20,000 on the 16th, **40,515 waiting**, 20,209
+  people holding two each, `run_count` 80,467. Nobody received one only because no WhatsApp
+  Business account is connected — luck, not a safeguard.
+  Removed from the seed and from production (`.github/workflows/remove-birthday-greeting.yml`);
+  40,514 queued messages moved to `ipy_device_send_cleared` and deleted, the one legitimate
+  hand-queued message left alone. **Do not reintroduce it.**
+  The gap it came through is closed in `core/workflow/scheduler.ts`: `seed/pruneFieldRefs.ts`
+  already refuses to let a workflow *lose* a condition and act on everybody, but skips one whose
+  conditions are **already** empty, because there is nothing left to check. A scheduled workflow
+  with no condition at all and a task that reaches a customer is now switched off rather than run
+  (`tests/workflow/messagesEverybody.test.ts`). A scheduled rule that only changes the CRM's own
+  data is untouched — releasing expired blocks legitimately sweeps everything.
+* **The model settings were re-chosen on 16 September, and every id was checked before it was
+  saved.** `scripts/set-ai-models.mjs` asks OpenRouter's catalogue **per modality** and refuses to
+  write an id it cannot find — `/models` on its own is chat-only, so an embedding id checked
+  against it finds nothing and reads as invented, which is how four working ids got written off
+  here once. Live now:
+  `ai_models.embed` = `baai/bge-m3` ($0.010/M, 8B, multilingual — the notes here are Hinglish and
+  the old 1B free model was rationed to fifty calls a day); `ai_models.rerank` =
+  `voyageai/rerank-2.5-lite` (free, 32K against the old 10K); `ai_models.copy` =
+  `z-ai/glm-5.3-flash` ($0.100/M — it was blank, so listing copy fell back to the vision model);
+  and the OpenRouter card's chat model = **`openrouter/auto`**, a router rather than a fixed id,
+  because a router cannot be stranded by a retirement. `openrouter/free` is the proven fallback —
+  124 calls, 124 successes in this CRM's own log.
+  **Changing the embed model re-indexes over the following hour.**
 * **Music sends only parameters its model accepts.** `modalities` and `audio` were on the request
   and are on no music model's `supported_parameters`, so the whole call was refused in 0.0s.
 * **`xiaomi/mimo-v2.5` is not retired, and the 404s were being asked of the wrong provider.**
