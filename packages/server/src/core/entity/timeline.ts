@@ -14,8 +14,9 @@
  * the current one belongs — one panel, always the latest, rather than a growing
  * pile of superseded copies in the history.
  */
-import { formatIndianPrice, type TimelineEntry } from '@ipropy/shared';
+import type { TimelineEntry } from '@ipropy/shared';
 import { db, type Tx } from '../../db/pool.js';
+import { describeChanges } from './auditChanges.js';
 
 export interface TimelineOptions {
   limit?: number;
@@ -36,7 +37,7 @@ export async function buildTimeline(
     await Promise.all([
       want('audit')
         ? conn.query<AuditRow>(
-            `SELECT a.id::text, a.action, a.changes, a.created_at, a.source, a.user_id,
+            `SELECT a.id::text, a.action, a.changes, a.created_at, a.source, a.user_id, a.module_name,
                     trim(u.first_name || ' ' || u.last_name) AS user_name
              FROM ipy_audit a LEFT JOIN ipy_user u ON u.id = a.user_id
              WHERE a.record_id = $1 ORDER BY a.created_at DESC LIMIT $2`,
@@ -104,162 +105,17 @@ export async function buildTimeline(
   const entries: TimelineEntry[] = [];
 
   /*
-    Audit rows store values exactly as written, so a reference is a UUID. A
-    UUID tells a salesperson nothing, so every id in the feed is resolved to
-    the name behind it — user, group or record.
-
-    Deliberately not keyed on field names: those get renamed here constantly,
-    and a hand-listed set of "the id fields" is what breaks silently the next
-    time one moves. Anything shaped like a UUID is looked up instead, and a
-    value that matches nothing renders as it always did.
+    Audit rows store values exactly as written: a reference is a UUID, a
+    dropdown is its stored value, money is the integer in the column, and the
+    field label is whatever the field was called on the day. `describeChanges`
+    turns all four into what is on the screen now, and the org-wide change log
+    under Admin → System & Audit calls the very same function — one resolver, so
+    the two screens cannot come to disagree about the same edit.
   */
-  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  const ids = new Set<string>();
-  const collect = (v: unknown): void => {
-    if (typeof v === 'string' && UUID.test(v)) ids.add(v);
-    else if (Array.isArray(v)) v.forEach(collect);
-  };
-  for (const row of audit.rows) {
-    for (const raw of Array.isArray(row.changes) ? row.changes : []) {
-      const change = raw as { from?: unknown; to?: unknown };
-      collect(change.from);
-      collect(change.to);
-    }
-  }
-  const list = [...ids];
-  const [users, groups, records] = list.length
-    ? await Promise.all([
-        conn.query<{ id: string; name: string }>(
-          `SELECT id, trim(first_name || ' ' || last_name) AS name FROM ipy_user WHERE id = ANY($1::uuid[])`, [list]),
-        conn.query<{ id: string; name: string }>(
-          `SELECT id, name FROM ipy_group WHERE id = ANY($1::uuid[])`, [list]),
-        conn.query<{ id: string; name: string }>(
-          `SELECT id, label AS name FROM ipy_record WHERE id = ANY($1::uuid[])`, [list]),
-      ])
-    : [{ rows: [] }, { rows: [] }, { rows: [] }] as { rows: { id: string; name: string }[] }[];
-  const nameById = new Map<string, string>();
-  for (const row of [...records.rows, ...groups.rows, ...users.rows]) {
-    if (row.name?.trim()) nameById.set(row.id, row.name.trim());
-  }
-  /*
-    An audit row keeps the label the field had when the edit happened, and
-    fields get renamed here constantly — so a feed read today is captioned
-    with words that are no longer on the screen anywhere ("Owner" for what
-    the record now calls "Assigned To"). Read the current label instead,
-    matched on either the field's name or its column, since audit rows are
-    written with the column.
-  */
-  const changedFields = new Set<string>();
-  for (const row of audit.rows) {
-    for (const raw of Array.isArray(row.changes) ? row.changes : []) {
-      const field = (raw as { field?: unknown }).field;
-      if (typeof field === 'string') changedFields.add(field);
-    }
-  }
-  const labels = changedFields.size
-    ? await conn.query<{ key: string; label: string; uitype: string }>(
-        `SELECT DISTINCT ON (key) key, f.label, f.uitype
-           FROM ipy_record r
-           JOIN ipy_module m ON m.name = r.module_name
-           JOIN ipy_field f ON f.module_id = m.id
-           CROSS JOIN LATERAL (VALUES (f.name), (f.column_name)) AS k(key)
-          WHERE r.id = $1 AND k.key = ANY($2::text[])`,
-        [recordId, [...changedFields]],
-      )
-    : { rows: [] as { key: string; label: string; uitype: string }[] };
-  const labelByField = new Map(labels.rows.map((row) => [row.key, row.label]));
-  const uitypeByField = new Map(labels.rows.map((row) => [row.key, row.uitype]));
+  const described = await describeChanges(audit.rows, { conn });
 
-  /*
-    A dropdown's stored value is not the word on screen, and the feed was
-    printing the stored one.
-
-    An option has two halves — the label everyone reads and the value every
-    record holds — and they are allowed to differ. On this CRM they had drifted
-    a long way: the screen said "Lead Won" where the record said `Contacted`,
-    so the Changes tab reported a status nobody recognised and read as the CRM
-    having got it wrong.
-
-    Resolving it here is the fix that costs nothing. The alternative — renaming
-    the stored values to match — rewrites every record and breaks the handful
-    of places that match on the word itself (`status = 'Available'` is the
-    public website's catalogue). The value stays the stable identity the code
-    relies on; the feed simply says what the screen says.
-  */
-  const optionLabels = changedFields.size
-    ? await conn.query<{ key: string; value: string; label: string }>(
-        `SELECT DISTINCT ON (k.key, v.value) k.key, v.value, v.label
-           FROM ipy_record r
-           JOIN ipy_module m ON m.name = r.module_name
-           JOIN ipy_field f ON f.module_id = m.id
-           JOIN ipy_picklist p ON p.name = f.config->>'picklist'
-           JOIN ipy_picklist_value v ON v.picklist_id = p.id
-           CROSS JOIN LATERAL (VALUES (f.name), (f.column_name)) AS k(key)
-          WHERE r.id = $1 AND k.key = ANY($2::text[])
-            AND f.uitype IN ('picklist','radio','multipicklist')`,
-        [recordId, [...changedFields]],
-      )
-    : { rows: [] as { key: string; value: string; label: string }[] };
-  /** `field value` → the label an admin typed for it. */
-  const optionLabel = new Map(optionLabels.rows.map((row) => [`${row.key} ${row.value}`, row.label]));
-
-  /*
-    A budget in the feed read `17500000 → 21000000`. That is the number the
-    column holds and nobody in this business thinks in it; the same value is
-    ₹1.75 Cr everywhere else on the screen. Money and dates are rendered the
-    way the rest of the CRM renders them.
-  */
-  const asTyped = (uitype: string | undefined, v: unknown): string | undefined => {
-    if (v === null || v === undefined || v === '') return undefined;
-    if (uitype === 'currency' && Number.isFinite(Number(v))) return formatIndianPrice(Number(v));
-    if ((uitype === 'date' || uitype === 'datetime') && typeof v === 'string') {
-      const when = new Date(v);
-      if (!Number.isNaN(when.getTime())) {
-        return when.toLocaleDateString('en-IN', {
-          day: 'numeric', month: 'short', year: 'numeric',
-          ...(uitype === 'datetime' ? { hour: '2-digit', minute: '2-digit' } : {}),
-        });
-      }
-    }
-    return undefined;
-  };
-
-  const named = (v: unknown): string | undefined => {
-    if (typeof v === 'string') return nameById.get(v);
-    if (Array.isArray(v)) {
-      const parts = v.map((x) => (typeof x === 'string' ? nameById.get(x) : undefined));
-      if (parts.some(Boolean)) return parts.map((part, i) => part ?? fmt(v[i])).join(', ');
-    }
-    return undefined;
-  };
-
-  for (const r of audit.rows) {
-    const changes = (Array.isArray(r.changes) ? r.changes : []).map((raw) => {
-      const change = raw as Record<string, unknown>;
-      const key = typeof change.field === 'string' ? change.field : undefined;
-      const uitype = key ? uitypeByField.get(key) : undefined;
-      /** A dropdown value shown as the word the admin typed for it. */
-      const chosen = (v: unknown): string | undefined => {
-        if (!key) return undefined;
-        if (typeof v === 'string') return optionLabel.get(`${key} ${v}`);
-        // A multi-select holds several; any one of them may have a label.
-        if (Array.isArray(v)) {
-          const parts = v.map((x) => (typeof x === 'string' ? optionLabel.get(`${key} ${x}`) : undefined));
-          if (parts.some(Boolean)) return parts.map((part, i) => part ?? String(v[i])).join(', ');
-        }
-        return undefined;
-      };
-      const fromDisplay = chosen(change.from) ?? named(change.from) ?? asTyped(uitype, change.from);
-      const toDisplay = chosen(change.to) ?? named(change.to) ?? asTyped(uitype, change.to);
-      const label = (key ? labelByField.get(key) : undefined) ?? change.label;
-      if (fromDisplay === undefined && toDisplay === undefined && label === change.label) return change;
-      return {
-        ...change,
-        label,
-        ...(fromDisplay === undefined ? {} : { fromDisplay }),
-        ...(toDisplay === undefined ? {} : { toDisplay }),
-      };
-    });
+  for (const r of described) {
+    const changes = Array.isArray(r.changes) ? r.changes : [];
     // A create event lists every initial value — too noisy for a feed.
     /*
       Where a record came from belongs in its own history.

@@ -962,7 +962,7 @@ adminRouter.get('/audit', asyncHandler(async (req, res) => {
   if (action) { params.push(action); clauses.push(`a.action = $${params.length}`); }
   params.push(limit, offset);
 
-  const rows = await db.query(
+  const rows = await db.query<{ changes: unknown; module_name: string | null }>(
     `SELECT a.id, a.record_id, a.module_name, a.action, a.changes, a.source, a.ip_address, a.created_at,
             trim(u.first_name || ' ' || u.last_name) AS user_name, r.label AS record_label
      FROM ipy_audit a
@@ -973,7 +973,14 @@ adminRouter.get('/audit', asyncHandler(async (req, res) => {
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params,
   );
-  res.json(rows.rows);
+  /*
+    The same resolver the record's own Changes tab uses. Without it this log
+    printed "Assigned To: 671d65cc-… → 58f5465a-…" and a dropdown's stored
+    value rather than the word on screen, so the two screens disagreed about
+    the same edit.
+  */
+  const { describeChanges } = await import('../../core/entity/auditChanges.js');
+  res.json(await describeChanges(rows.rows));
 }));
 
 // ---------------------------------------------------------------------------
