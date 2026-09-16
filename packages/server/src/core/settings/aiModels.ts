@@ -133,3 +133,19 @@ export async function aiModels(): Promise<Record<AiJob, string>> {
 export async function modelFor(job: AiJob): Promise<string> {
   return (await aiModels())[job];
 }
+
+/**
+ * A job's model together with whose catalogue it came from.
+ *
+ * Every id in these boxes is an OpenRouter id — that is what the settings
+ * screen lists and what the descriptions above tell an admin to paste. Handing
+ * one to `complete()` without saying so meant it was offered to Gemini and Groq
+ * first, which answer "that model does not exist", so reading a document cost
+ * two certain failures before OpenRouter was reached.
+ *
+ * Spread this into a `complete()` call instead of passing `model` alone, and
+ * the knowledge lives here rather than at five call sites.
+ */
+export async function jobModel(job: AiJob): Promise<{ model: string; provider: 'openrouter' }> {
+  return { model: await modelFor(job), provider: 'openrouter' };
+}

@@ -132,6 +132,23 @@ export interface CompleteOptions {
    * the provider is pointed at, or there would be a second place deciding.
    */
   model?: string;
+  /**
+   * Whose catalogue `model` was taken from.
+   *
+   * A model id is only meaningful to the provider that serves it, and the job
+   * models in `core/settings/aiModels.ts` are OpenRouter ids by design — the
+   * settings boxes list OpenRouter's catalogue. Without this, `complete` offered
+   * `xiaomi/mimo-v2.5` to Gemini and then to Groq, collecting a 404 from each
+   * before OpenRouter finally answered on the third hop. Reading a document
+   * cost two guaranteed failures and about two seconds, and the failure log
+   * read as though the vision model were dead when it was working.
+   *
+   * Named here, the right provider is tried first, and the others are still
+   * tried afterwards — with their own configured model, not with an id they
+   * have never heard of. So the fallback keeps its whole point and stops
+   * manufacturing errors.
+   */
+  provider?: Exclude<AiProvider, 'none'>;
 }
 
 export interface CompleteResult {
@@ -223,13 +240,20 @@ export async function complete(opts: CompleteOptions): Promise<CompleteResult | 
   const settings = getSettings().ai;
   if (!settings.enabled) return null;
 
-  const chain = getAiFallbackChain().filter((ai) => !isCoolingDown(ai));
+  const all = getAiFallbackChain().filter((ai) => !isCoolingDown(ai));
+  // The provider that serves the named model goes first; the rest still follow.
+  const chain = opts.provider
+    ? [...all.filter((ai) => ai.provider === opts.provider), ...all.filter((ai) => ai.provider !== opts.provider)]
+    : all;
   if (!chain.length) return null;
 
   let lastError: string;
 
   for (const [index, ai] of chain.entries()) {
-    const model = opts.model ?? (opts.fast ? ai.fastModel : ai.model);
+    // A named id belongs to one provider. Anyone else gets their own model,
+    // which is the difference between a fallback and a second guaranteed 404.
+    const named = opts.model && (!opts.provider || ai.provider === opts.provider);
+    const model = named ? opts.model! : (opts.fast ? ai.fastModel : ai.model);
     const maxTokens = outputTokenLimit(opts.maxTokens, ai.maxTokens);
     const temperature = opts.temperature ?? 0.2;
     const started = Date.now();

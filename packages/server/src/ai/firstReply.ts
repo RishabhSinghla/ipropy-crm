@@ -21,7 +21,7 @@ import { priceField, priceSql } from '../core/settings/priceField.js';
 import { logger } from '../utils/logger.js';
 import { featureOn } from '../core/settings/aiFeatures.js';
 import { houseStyle } from '../core/settings/houseStyle.js';
-import { modelFor } from '../core/settings/aiModels.js';
+import { jobModel } from '../core/settings/aiModels.js';
 import { columnsOf, fieldText } from '../core/entity/payloadColumns.js';
 
 interface Lead {
@@ -158,7 +158,7 @@ export async function draftFirstReply(recordId: string): Promise<void> {
 
     const draft = await complete({
       feature: 'first_reply',
-      model: await modelFor('copy'),
+      ...(await jobModel('copy')),
       system: 'You write the first WhatsApp a property consultant sends to a new enquiry. '
         + 'You never invent a property, a price, an area or an availability. If nothing is known '
         + 'about what they want, ask rather than guess.',

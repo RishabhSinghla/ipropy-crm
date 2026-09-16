@@ -629,12 +629,12 @@ aiRouter.post('/voice-note', modelLimiter, assistantAudioUpload.single('audio'),
   const fast = req.query.fast === 'true';
   let tidied: Awaited<ReturnType<typeof complete>> = null;
   if (!fast) {
-    const { modelFor } = await import('../../core/settings/aiModels.js');
+    const { jobModel } = await import('../../core/settings/aiModels.js');
     const { houseStyle } = await import('../../core/settings/houseStyle.js');
     const style = await houseStyle();
     tidied = await complete({
     feature: 'voice_note',
-    model: await modelFor('copy'),
+    ...(await jobModel('copy')),
     system: 'You tidy spoken notes into written ones for a property CRM. You never add a fact that '
       + 'was not said, never guess a number, and never invent a next step. If something was said '
       + 'ambiguously, write it ambiguously. You never translate: a note is written in the words the '

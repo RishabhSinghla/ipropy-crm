@@ -22,7 +22,7 @@ import { logger } from '../utils/logger.js';
 import { notify } from '../core/notifications/index.js';
 import { buildScopeContext } from '../core/permissions/index.js';
 import { featureOn } from '../core/settings/aiFeatures.js';
-import { modelFor } from '../core/settings/aiModels.js';
+import { jobModel } from '../core/settings/aiModels.js';
 import { organisationTimezone } from '../core/settings/timezone.js';
 import type { AuthUser } from '@ipropy/shared';
 
@@ -75,7 +75,7 @@ async function briefFor(user: AuthUser): Promise<void> {
 
   const written = await complete({
     feature: 'morning_brief',
-    model: await modelFor('copy'),
+    ...(await jobModel('copy')),
     system: 'You write a one-paragraph morning brief for a property salesperson. Plain British '
       + 'English. Name records and numbers from the data given and nothing else. Never invent a '
       + 'name, a figure or a next step.',

@@ -612,10 +612,10 @@ webhooksRouter.post('/n8n/ai/vision', asyncHandler(async (req, res) => {
   // Photographs go to the vision model, plain questions to the copy model. Two
   // settings rather than one, because reading a picture and writing a paragraph
   // are different jobs with very different prices.
-  const { modelFor } = await import('../../core/settings/aiModels.js');
+  const { jobModel } = await import('../../core/settings/aiModels.js');
   const result = await complete({
     feature: 'property_vision',
-    model: await modelFor(input.images.length ? 'vision' : 'copy'),
+    ...(await jobModel(input.images.length ? 'vision' : 'copy')),
     system: input.system ?? 'You are a property photographer and marketer. Answer only with the JSON asked for.',
     prompt: input.prompt,
     // No pictures is a normal call, not an empty one: the pass that writes the

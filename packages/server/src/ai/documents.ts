@@ -22,7 +22,7 @@ import { complete, saveInsight } from './client.js';
 import { db } from '../db/pool.js';
 import { logger } from '../utils/logger.js';
 import { featureOn } from '../core/settings/aiFeatures.js';
-import { modelFor } from '../core/settings/aiModels.js';
+import { modelFor, jobModel } from '../core/settings/aiModels.js';
 
 /** What a model is asked to look for, and what nobody ever searches by. */
 const READABLE = /\.(pdf|png|jpe?g|webp|heic|heif)$/i;
@@ -80,7 +80,7 @@ export async function readDocument(attachmentId: string): Promise<DocumentReadin
     const isImage = IMAGE.test(file.mime_type);
     const answer = await complete({
       feature: 'document_reading',
-      model: await modelFor('vision'),
+      ...(await jobModel('vision')),
       system: 'You read property documents for an Indian real-estate CRM. You extract only what is '
         + 'written or drawn. You never infer a date, an amount or a party that is not there, and '
         + 'you never round a number. Reply with JSON only.',
