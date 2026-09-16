@@ -1,0 +1,80 @@
+# Why the AI features are failing, in the provider's own words.
+#
+# The admin page counts failures per feature and stops there: on 16 September
+# it showed embed 4,480 failures out of 4,862 and property matching 335 out of
+# 359, with no way to see why from the screen. `ipy_ai_log.error` holds the
+# message the provider actually returned, and that message names the cause —
+# a key without access, a retired model id, a wrong request shape. Guessing
+# instead is how four wrong model ids shipped.
+#
+# Read-only. Prompts are not logged unless somebody switches that on, and this
+# never selects the prompt column regardless; errors are truncated, so no
+# customer's words travel into a build log.
+name: Why AI calls fail
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  look:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install PostgreSQL 18 client
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: The failures, grouped by what the provider said
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          echo "--- every distinct error, per feature and model, last 30 days ---"
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT feature, model, count(*)::int AS times,
+                 max(created_at)::date AS newest,
+                 left(regexp_replace(coalesce(error,'(no message)'), '\s+', ' ', 'g'), 220) AS what_it_said
+            FROM ipy_ai_log
+           WHERE created_at > now() - interval '30 days' AND success = false
+           GROUP BY feature, model, left(regexp_replace(coalesce(error,'(no message)'), '\s+', ' ', 'g'), 220)
+           ORDER BY times DESC
+           LIMIT 60;
+          SQL
+
+          echo "--- which model each feature is actually reaching, and how it goes ---"
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT feature, model,
+                 count(*)::int AS calls,
+                 count(*) FILTER (WHERE success)::int AS ok,
+                 count(*) FILTER (WHERE NOT success)::int AS failed,
+                 max(created_at)::date AS newest
+            FROM ipy_ai_log
+           WHERE created_at > now() - interval '30 days'
+           GROUP BY feature, model
+           ORDER BY failed DESC, calls DESC;
+          SQL
+
+          echo "--- the model settings these features resolve through ---"
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT key, left(value #>> '{}', 120) AS value
+            FROM ipy_setting
+           WHERE key LIKE 'ai_models.%' OR key LIKE 'ai.%'
+           ORDER BY key;
+          SQL
+
+          echo "--- AI providers configured, and whether each holds a key ---"
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT provider, kind, label, is_active, status,
+                 (coalesce(credentials->>'apiKey','') <> '') AS has_key,
+                 left(coalesce(config->>'baseUrl',''), 60) AS base_url,
+                 left(coalesce(last_error,''), 120) AS last_error
+            FROM ipy_integration
+           WHERE kind IN ('ai','stt','tts')
+           ORDER BY kind, provider;
+          SQL
