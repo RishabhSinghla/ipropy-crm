@@ -78,3 +78,45 @@ jobs:
            WHERE kind IN ('ai','stt','tts')
            ORDER BY kind, provider;
           SQL
+
+      # What actually spent the OpenRouter credit.
+      #
+      # The admin page said 39p for thirty days while OpenRouter's own balance
+      # shows dollars gone. Both are right about different things: `costInPaise`
+      # is computed from token counts, and the models that cost real money here
+      # — video by the second, music by the song, embeddings by the million —
+      # report no token counts at all, so the CRM records them as zero. The call
+      # counts are honest even where the rupees are not, so count the calls.
+      - name: Where the credit went
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          echo "--- calls per feature and model since the 4th, the ones with no token count included ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT feature, model,
+                   count(*)::int AS calls,
+                   count(*) FILTER (WHERE success)::int AS ok,
+                   sum(input_tokens)::bigint AS in_tokens,
+                   sum(output_tokens)::bigint AS out_tokens,
+                   sum(cost_paise)::bigint AS paise_recorded,
+                   min(created_at)::date AS first,
+                   max(created_at)::date AS last
+              FROM ipy_ai_log
+             WHERE created_at > '2026-09-04'
+             GROUP BY feature, model
+             ORDER BY calls DESC LIMIT 30;"
+
+          echo "--- the ones billed by the second or the song, day by day ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT created_at::date AS day, feature, count(*)::int AS calls
+              FROM ipy_ai_log
+             WHERE feature IN ('video','music','tts','speech','property_vision','document_reading')
+               AND created_at > '2026-09-04'
+             GROUP BY 1, 2 ORDER BY 1 DESC, calls DESC LIMIT 25;"
+
+          echo "--- did the re-index run, and is the search index current ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT model, count(*)::int AS rows,
+                   min(created_at)::date AS oldest,
+                   max(created_at) AS newest
+              FROM ipy_embedding GROUP BY model ORDER BY rows DESC;"
