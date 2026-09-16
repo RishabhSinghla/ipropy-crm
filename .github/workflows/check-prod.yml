@@ -417,3 +417,48 @@ jobs:
               || ' | with an outcome: ' || count(*) FILTER (WHERE disposition IS NOT NULL)
               || ' | in the last 7 days: ' || count(*) FILTER (WHERE started_at > now() - interval '7 days')
               FROM ipy_call;"
+
+      # 40,515 messages "waiting to be sent" on 16 September 2026. That queue
+      # drains by a person tapping send, so a number that size is either months
+      # of backlog nobody will ever work through, or something filling it in
+      # bulk. `reason`, `broadcast_id` and `sequence_id` say which — that is a
+      # question to ask the rows, not to guess at.
+      - name: What is in the send queue
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          echo "--- the queue by state and age ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT status, count(*)::int AS rows,
+                   min(created_at)::date AS oldest,
+                   max(created_at)::date AS newest,
+                   count(*) FILTER (WHERE created_at > now() - interval '7 days')::int AS last_7_days
+              FROM ipy_device_send
+             GROUP BY status ORDER BY rows DESC;"
+
+          echo "--- what put them there ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT coalesce(reason, '(none given)') AS reason,
+                   (broadcast_id IS NOT NULL) AS from_a_broadcast,
+                   (sequence_id IS NOT NULL) AS from_a_sequence,
+                   count(*)::int AS rows,
+                   min(created_at)::date AS oldest,
+                   max(created_at)::date AS newest
+              FROM ipy_device_send
+             GROUP BY 1, 2, 3 ORDER BY rows DESC LIMIT 20;"
+
+          echo "--- rows per day, busiest fifteen ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT created_at::date AS day, count(*)::int AS rows,
+                   count(DISTINCT record_id)::int AS records,
+                   count(DISTINCT assigned_to)::int AS people
+              FROM ipy_device_send
+             GROUP BY 1 ORDER BY rows DESC LIMIT 15;"
+
+          echo "--- how many are waiting on the same person and the same record ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT per_record, count(*)::int AS records
+              FROM (SELECT record_id, count(*)::int AS per_record
+                      FROM ipy_device_send WHERE status = 'pending'
+                     GROUP BY record_id) q
+             GROUP BY per_record ORDER BY per_record DESC LIMIT 10;"
