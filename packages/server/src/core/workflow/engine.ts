@@ -265,6 +265,20 @@ async function enqueue(
      VALUES ($1,$2,$3,$4,$5,$6)`,
     [workflowId, taskId, recordId, moduleName, runAt, JSON.stringify(payload)],
   );
+
+  /*
+    A task due now runs now, not whenever the tick next comes round. Without
+    this, "Instant lead response" was instant to within a minute; with it, it is
+    instant to within a quarter of a second — and it is what lets the tick be
+    slow enough for the database to power down between visits, which is where
+    the bill actually goes.
+
+    Imported here rather than at the top: the scheduler imports this module back.
+  */
+  if (runAt.getTime() <= Date.now() + 1_000) {
+    const { nudgeQueue } = await import('./scheduler.js');
+    nudgeQueue();
+  }
 }
 
 // ---------------------------------------------------------------------------

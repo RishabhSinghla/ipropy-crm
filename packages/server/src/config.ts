@@ -287,7 +287,18 @@ export const config = {
 
   scheduler: {
     enabled: bool('ENABLE_SCHEDULER', true),
-    tickSeconds: num('SCHEDULER_TICK_SECONDS', 60),
+    /*
+      Fifteen minutes, not one.
+
+      Neon powers the database down after five minutes with no queries, so a
+      tick every sixty seconds meant it never powered down and the bill ran 24
+      hours a day for seven users — 12.58 compute hours in 1.6 days on
+      16 September 2026, about $24 a month. Nothing here needed that cadence:
+      a task due now is drained the moment it is queued (`nudgeQueue`), and
+      everything else on the tick is time-based work that is perfectly happy to
+      land within a quarter of an hour of its slot.
+    */
+    tickSeconds: num('SCHEDULER_TICK_SECONDS', 900),
   },
 
   defaults: {

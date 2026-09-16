@@ -41,6 +41,38 @@ export function startScheduler(): void {
   setTimeout(() => { void tick(); }, 5000).unref?.();
 }
 
+/**
+ * Run the queue now rather than waiting for the next tick.
+ *
+ * The tick used to be every sixty seconds, and that single number was doing two
+ * unrelated jobs: getting a just-queued task moving, and checking whether
+ * anything scheduled has come due. The first wants to be immediate. The second
+ * is happy to be late, and being cheap about it is worth real money — Neon
+ * powers the database down after five minutes with no queries, so a query every
+ * minute means it never powers down at all, and the bill is for 24 hours a day
+ * whether or not anybody is using the CRM. Measured on 16 September 2026:
+ * 12.58 compute hours in 1.6 days, about $24 a month for seven users.
+ *
+ * So the two jobs are separated. Queueing a task that is due now nudges the
+ * drain immediately — the request that queued it already has the database open,
+ * so it costs nothing — and "Instant lead response" gets faster than it was,
+ * not slower. The tick becomes the safety net for retries and for scheduled
+ * work, and can be slow enough to let the database rest between visits.
+ *
+ * Debounced, because a workflow with six tasks enqueues six times in a
+ * millisecond and that should be one drain.
+ */
+let nudgeTimer: NodeJS.Timeout | null = null;
+
+export function nudgeQueue(): void {
+  if (!config.scheduler.enabled || nudgeTimer) return;
+  nudgeTimer = setTimeout(() => {
+    nudgeTimer = null;
+    void drainQueue().catch((err) => logger.error({ err }, 'nudged queue drain failed'));
+  }, 250);
+  nudgeTimer.unref?.();
+}
+
 export function stopScheduler(): void {
   if (timer) clearInterval(timer);
   timer = null;
