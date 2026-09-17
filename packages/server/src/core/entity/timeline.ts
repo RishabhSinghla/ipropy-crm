@@ -57,12 +57,22 @@ export async function buildTimeline(
 
       want('message')
         ? conn.query<MessageRow>(
+            /*
+              `wa_account_id` carries which linked number a WhatsApp message
+              went out from. With one business number that question had no
+              answer worth printing; with a number per agent it is the first
+              thing somebody asks of a message they did not send.
+            */
             `SELECT m.id::text, m.direction, m.channel, m.type, m.body, m.status,
                     m.is_ai_generated, m.created_at, m.sent_by, m.media,
-                    trim(u.first_name || ' ' || u.last_name) AS user_name
+                    trim(u.first_name || ' ' || u.last_name) AS user_name,
+                    wa.phone_number AS wa_number,
+                    trim(wu.first_name || ' ' || wu.last_name) AS wa_agent
              FROM ipy_message m
              JOIN ipy_conversation cv ON cv.id = m.conversation_id
              LEFT JOIN ipy_user u ON u.id = m.sent_by
+             LEFT JOIN ipy_wa_account wa ON wa.id = m.wa_account_id
+             LEFT JOIN ipy_user wu ON wu.id = wa.user_id
              WHERE cv.record_id = $1 ORDER BY m.created_at DESC LIMIT $2`,
             [recordId, limit],
           )
@@ -156,13 +166,28 @@ export async function buildTimeline(
 
   for (const r of messages.rows) {
     const inbound = r.direction === 'inbound';
+    /*
+      The number this went through, when it was an agent's own. Both halves are
+      wanted: the name answers "who", and the number answers "from which of
+      their phones", which is what a customer saw and what a manager checking a
+      complaint needs.
+    */
+    const via = r.wa_agent || r.wa_number
+      ? `${r.wa_agent ?? ''}${r.wa_agent && r.wa_number ? ' ' : ''}${r.wa_number ? `(${r.wa_number})` : ''}`.trim()
+      : null;
     entries.push({
       id: `msg-${r.id}`, type: 'message', at: r.created_at,
-      actorId: r.sent_by, actorName: inbound ? 'Customer' : (r.user_name ?? (r.is_ai_generated ? 'AI Assistant' : 'System')),
-      title: `${inbound ? 'Received' : 'Sent'} ${r.channel === 'whatsapp' ? 'WhatsApp' : r.channel}`,
+      // An inbound WhatsApp is still attributed to the agent whose phone
+      // received it, so a shared record says whose conversation this was.
+      actorId: r.sent_by, actorName: inbound ? 'Customer' : (r.user_name ?? r.wa_agent ?? (r.is_ai_generated ? 'AI Assistant' : 'System')),
+      title: `${inbound ? 'Received' : 'Sent'} ${r.channel === 'whatsapp' ? 'WhatsApp' : r.channel}${
+        via ? ` · ${inbound ? 'on' : 'via'} ${via}` : ''}`,
       body: r.body ?? (r.media ? `[${r.type}]` : null),
       icon: r.channel === 'whatsapp' ? 'message-circle' : 'mail',
-      meta: { direction: r.direction, channel: r.channel, status: r.status, isAi: r.is_ai_generated, media: r.media },
+      meta: {
+        direction: r.direction, channel: r.channel, status: r.status,
+        isAi: r.is_ai_generated, media: r.media, sentVia: via,
+      },
     });
   }
 
@@ -239,7 +264,7 @@ function empty<T>(): Promise<{ rows: T[]; rowCount: number }> {
 // --- row shapes ------------------------------------------------------------
 interface AuditRow { id: string; action: string; changes: unknown[]; created_at: string; source: string; user_id: string | null; user_name: string | null }
 interface CommentRow { id: string; body: string; created_at: string; user_id: string; user_name: string; is_private: boolean }
-interface MessageRow { id: string; direction: string; channel: string; type: string; body: string | null; status: string; is_ai_generated: boolean; created_at: string; sent_by: string | null; user_name: string | null; media: unknown }
+interface MessageRow { id: string; direction: string; channel: string; type: string; body: string | null; status: string; is_ai_generated: boolean; created_at: string; sent_by: string | null; user_name: string | null; media: unknown; wa_number: string | null; wa_agent: string | null }
 interface CallRow { id: string; direction: string; status: string; duration_seconds: number; disposition: string | null; recording_url: string | null; ai_summary: string | null; ai_sentiment: string | null; started_at: string; user_id: string | null; user_name: string | null; from_number: string; to_number: string; transcript: string | null }
 interface EmailRow { id: string; subject: string | null; direction: string; status: string; to_addresses: unknown; opened_at: string | null; open_count: number; created_at: string; sent_by: string | null; user_name: string | null }
 interface AttachmentRow { id: string; file_name: string; mime_type: string; size: number; created_at: string; uploaded_by: string | null; user_name: string | null }

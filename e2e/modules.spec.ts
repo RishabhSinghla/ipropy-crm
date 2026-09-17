@@ -56,7 +56,16 @@ async function moduleRoutes(page: Page): Promise<string[]> {
   await openModuleSwitcher(page);
 
   const routes = await page.evaluate(() => {
-    const skip = new Set(['/dashboard', '/settings', '/inbox', '/calls', '/portal']);
+    /*
+      Not modules. `/chats` joins the list for the same reason as `/inbox` and
+      `/calls`: this sweep proves a *record list* opens, and waits for the
+      "N records" line to say so. A conversation screen has no such line, so it
+      would sit through the 25-second timeout and be reported as never having
+      loaded — a failure about the test's expectations, not the page.
+
+      Chats has its own coverage in whatsappLink.spec.ts and the a11y sweep.
+    */
+    const skip = new Set(['/dashboard', '/settings', '/inbox', '/calls', '/portal', '/chats']);
     // Visible links only: the same href appears in three navs — the module
     // switcher's menu, the mobile drawer and the bottom bar — and the hidden
     // ones cannot be clicked. The Site visit tab is drawer/bottom-bar-only at
