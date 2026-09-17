@@ -1,6 +1,7 @@
 import type { JSX } from 'react';
 import { MessageCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { openExternal } from '../lib/nativeActions';
 
 /** Digits only — a handle is matched on digits, never on the spacing a screen adds. */
 export function waDigits(value: string): string {
@@ -34,14 +35,29 @@ export function WhatsAppIconButton({ to, className }: { to: string; className?: 
   );
 }
 
-/** The same destination as a labelled button, for a record's action row. */
+/**
+ * The record's own WhatsApp button, which leaves the CRM.
+ *
+ * Deliberately different from the icon above, on the owner's instruction: this
+ * one hands the number to WhatsApp itself, so the rep writes there with their
+ * own history and their own keyboard. `api.whatsapp.com/send/` rather than
+ * `wa.me`: same hand-off, and it is the one the owner named. Only this button
+ * leaves — the small icon beside a number stays inside the CRM. `openExternal`
+ * rather than a plain link, because `window.open` returns null inside the phone
+ * app and nothing happens.
+ */
 export function WhatsAppButton({ to }: { to: string }): JSX.Element | null {
   const digits = waDigits(to);
   if (!digits) return null;
   return (
-    <Link to={`/chats?to=${digits}`} className="btn-secondary btn-sm" title={`WhatsApp ${to}`}>
+    <button
+      type="button"
+      className="btn-secondary btn-sm"
+      title={`WhatsApp ${to}`}
+      onClick={() => void openExternal(`https://api.whatsapp.com/send/?phone=${digits}`)}
+    >
       <MessageCircle className="h-3.5 w-3.5 text-emerald-600" />
       <span className="hidden sm:inline">WhatsApp</span>
-    </Link>
+    </button>
   );
 }

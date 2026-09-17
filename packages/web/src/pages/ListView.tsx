@@ -14,13 +14,6 @@ import { cn, restrictionForField } from '../lib/utils';
 import { FieldInput, FieldValue } from '../components/FieldRenderer';
 import { EditableField, isInlineEditable } from '../components/EditableField';
 import { assignmentField, byLabel, fieldByKey, pipelineFieldOf, subtitleFieldsOf } from '../lib/fields';
-/*
-  Shared with the phone, deliberately: `phoneOf` pairs each phone field with
-  its own country field, and a second copy here would drift from the one the
-  app ships. `dial`/`openExternal` come from nativeActions further down, which
-  already know that a webview swallows window.open.
-*/
-import { phoneOf } from '../mobile/rows';
 import { DEFAULT_PAGE_SIZE, loadPageSize, PAGE_SIZE_OPTIONS, savePageSize } from '../lib/pageSize';
 import { FilterBuilder, countConditions } from '../components/FilterBuilder';
 import {
@@ -758,14 +751,6 @@ export default function ListView(): JSX.Element {
   const visibleColumns = master?.length ? master : (columns.length ? columns : defaultColumns(meta));
   const fieldMap = new Map(meta.fields.map((f) => [f.name, f]));
 
-  /*
-    The number a quick action rings.
-
-    `phoneOf` is the mobile list's resolver, reused rather than rewritten: it
-    walks the module's phone fields in order and pairs each with its own
-    country field, so a list on a module with no phone simply shows no action.
-  */
-  const rowPhone = (row: RecordEnvelope): string | null => phoneOf(row, fieldMap);
 
   const canCreate = meta.permissions.create;
   // A fixed-layout table still shrinks its columns to fit a narrow container,
@@ -1227,7 +1212,7 @@ export default function ListView(): JSX.Element {
             </colgroup>
             <thead>
               <tr>
-                <th className="list-head w-12 px-0 text-center">
+                <th className="list-head list-stick-select w-12 px-0 text-center">
                   <input
                     type="checkbox"
                     aria-label={`Select all ${meta.label.toLowerCase()} on this page`}
@@ -1256,7 +1241,13 @@ export default function ListView(): JSX.Element {
                       onDragEnd={() => setDragColumn(null)}
                       onDragOver={(e) => { if (!master?.length) e.preventDefault(); }}
                       onDrop={(e) => { if (master?.length) return; e.preventDefault(); if (dragColumn) moveColumn(dragColumn, col); setDragColumn(null); }}
-                      className={cn('list-head relative', !master?.length && 'cursor-grab active:cursor-grabbing', dragColumn === col && 'opacity-50')}
+                      className={cn(
+                        'list-head relative',
+                        // The first column is the name; it stays while the rest scroll.
+                        col === visibleColumns[0] && 'list-stick-first',
+                        !master?.length && 'cursor-grab active:cursor-grabbing',
+                        dragColumn === col && 'opacity-50',
+                      )}
                     >
                       <button
                         className="inline-flex max-w-full items-center gap-1 truncate hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:text-slate-200"
@@ -1332,14 +1323,6 @@ export default function ListView(): JSX.Element {
                     </th>
                   );
                 })}
-                {/*
-                  The actions column has no label: a header over two icon
-                  buttons reads as a column of data that is not there, and it
-                  would be the widest thing in a cell built to stay narrow.
-                */}
-                <th className="list-head sticky right-0 z-20 w-[5.5rem] bg-[var(--surface)] px-2">
-                  <span className="sr-only">Quick actions</span>
-                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1396,7 +1379,7 @@ export default function ListView(): JSX.Element {
                     were. It matches its own <th> now: no side padding, centred,
                     nothing to truncate.
                   */}
-                  <td className="list-cell-select" onClick={(e) => e.stopPropagation()}>
+                  <td className="list-cell-select list-stick-select" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
                       aria-label={`Select ${row.label}`}
@@ -1413,7 +1396,7 @@ export default function ListView(): JSX.Element {
                   {visibleColumns.map((col, ci) => {
                     const field = fieldMap.get(col);
                     if (!field) {
-                      return <td key={col} className="list-cell text-muted">—</td>;
+                      return <td key={col} className={cn('list-cell text-muted', ci === 0 && 'list-stick-first')}>—</td>;
                     }
                     const value = meta.permissions.edit && isInlineEditable(field, 'list') ? (
                       <EditableField
@@ -1443,7 +1426,7 @@ export default function ListView(): JSX.Element {
                         key={col}
                         className={cn(
                           'list-cell',
-                          ci === 0 && 'font-medium text-slate-900 dark:text-slate-100',
+                          ci === 0 && 'list-stick-first font-medium text-slate-900 dark:text-slate-100',
                           // Unread weight, like an inbox — and now the *only*
                           // marker for it. Applied to the whole row rather than
                           // the name alone so the row reads as one unit.
@@ -1522,38 +1505,6 @@ export default function ListView(): JSX.Element {
                       </td>
                     );
                   })}
-                  {/*
-                    Call, without opening the record first.
-
-                    The thing a rep does to a row they recognise, and it used
-                    to cost an open, a read and a back. Pinned right so it
-                    lands in the same place on every row whatever the
-                    columns are, and `stopPropagation` because the row itself
-                    opens the record.
-
-                    Faded rather than hidden: `display:none` would take them
-                    out of the tab order, and somebody working a queue by
-                    keyboard needs them as much as somebody with a mouse.
-                    Focus brings them back at full strength.
-                  */}
-                  <td
-                    className="list-cell sticky right-0 z-10 w-[5.5rem] bg-[var(--surface)] px-2 text-right"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {rowPhone(row) && (
-                      <span className="inline-flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                        <button
-                          type="button"
-                          title={`Call ${row.label}`}
-                          aria-label={`Call ${row.label}`}
-                          className="rounded-md p-1.5 text-brand-600 hover:bg-brand-50 focus-visible:opacity-100 dark:text-brand-400 dark:hover:bg-brand-950/40"
-                          onClick={() => dial(rowPhone(row)!)}
-                        >
-                          <Phone className="h-4 w-4" />
-                        </button>
-                      </span>
-                    )}
-                  </td>
                 </tr>
                 );
               })}

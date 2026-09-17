@@ -869,8 +869,15 @@ take the conversation with them.
 
 **Built since:** the contact's own WhatsApp tab, timeline entries naming the number a
 message went through, and the WhatsApp icon beside every phone number (`components/
-WhatsAppButton.tsx`), which opens the CRM's own Chats screen at `/chats?to=<digits>` —
-never `wa.me`, because the conversation has to stay where a manager can read it.
+WhatsAppButton.tsx`), which opens the CRM's own Chats screen at `/chats?to=<digits>`.
+
+**Two WhatsApp controls, and they deliberately go to different places** — the owner asked
+for this on 17 September. The small **icon beside a number** stays inside the CRM
+(`/chats?to=…`), where a manager can read the thread and the timeline records it. The
+labelled **button on the record header** leaves: `https://api.whatsapp.com/send/?phone=…`
+through `openExternal`, so the rep writes in WhatsApp itself. Only that button leaves.
+`openExternal` and not a plain link, because `window.open` returns null inside the phone
+app and the tap does nothing at all.
 
 **A fixed page added to the header is invisible on production until it is appended.**
 `ui.header_tabs` is a saved arrangement, and an arrangement saved before a page existed
@@ -889,6 +896,16 @@ is invisible on most screens** — put it in the drawer too.
 
 **Not built yet:** media, voice notes, quick replies, search, the admin panel,
 property sharing.
+
+**The list's pinned quick-actions column is gone** (17 September, owner's instruction), and
+with it `e2e/quickActions.spec.ts`. It was one hover-only Call button in a column pinned to
+the right of every row. The name column is pinned to the *left* instead — a wide grid
+scrolled right left every row anonymous, because the column saying who this is scrolled
+away with the rest. `.list-stick-select` / `.list-stick-first` in `styles.css`, pinned by
+`e2e/stickyName.spec.ts`. One trap encoded there: the header cell also carries Tailwind's
+`relative`, a utility that wins on source order and quietly unsticks the column, so the
+header rule states `position: sticky` itself under two class names. The symptom was names
+that held their place under a header that scrolled away.
 
 **If it is rebuilt, the things that cost a night to learn:** history arrives exactly once
 during the handshake after a scan and cannot be re-requested; Baileys must be on the

@@ -61,6 +61,10 @@
     --list-line: 1.45;
     --list-row-pad-y: 11px;
     --list-row-pad-x: 12px;
+    /* The checkbox column's width, and therefore where the pinned name column
+       starts. It is SELECT_COL_WIDTH in `lib/columnWidths.ts`; the two have to
+       agree or the frozen name sits a few pixels off its own header. */
+    --list-select-w: 40px;
     /* Body copy, not headline copy. #111827 is near-black and every cell in a
        wide grid was competing at the same weight; slate-700 keeps a full row
        legible (10:1 on the sheet) while letting the name, the status chip and
@@ -328,6 +332,36 @@
     line-height: 1.35;
     font-weight: 400;
   }
+
+  /*
+    The name stays put when the grid scrolls sideways.
+
+    A wide table scrolled right left every row anonymous — the columns moved
+    and the one that says *who this is* went with them. The checkbox and the
+    first column are pinned instead, the way a spreadsheet freezes its first
+    column.
+
+    `background-color: inherit` is what makes it work on a row: the stripe,
+    the hover tint and the selection all live on the <tr>, and a positioned
+    cell with a transparent background would let the scrolling columns show
+    straight through it.
+  */
+  .list-stick-select { position: sticky; left: 0; z-index: 11; background-color: inherit; }
+  .list-stick-first { position: sticky; left: var(--list-select-w); z-index: 11; background-color: inherit; }
+  /* The header cells pin in both directions, and outrank the body so nothing
+     slides over the corner. Two class names on purpose: the header cell also
+     carries Tailwind's `relative`, a utility that would otherwise win on
+     source order and quietly unstick the column — which is exactly what it
+     did, leaving the names pinned under a header that scrolled away. */
+  .list-head.list-stick-select,
+  .list-head.list-stick-first {
+    position: sticky;
+    top: 0;
+    z-index: 21;
+    background-color: var(--list-head-bg);
+  }
+  .list-head.list-stick-select { left: 0; }
+  .list-head.list-stick-first { left: var(--list-select-w); }
 
   .list-cell {
     @apply truncate;
