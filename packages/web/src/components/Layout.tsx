@@ -10,6 +10,7 @@ import {
 import { applyBrandColour, toast, useApp } from '../lib/store';
 import { api, authedFileUrl, type ModuleSummary, type SearchHit } from '../lib/api';
 import { useRealtime } from '../lib/realtime';
+import { arrangeHeaderTabs } from '../lib/headerTabs';
 import { cn } from '../lib/utils';
 import { resolveIcon } from '../lib/icons';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -89,25 +90,10 @@ export default function Layout(): JSX.Element {
     default (then the desktop bar drops it — see the capture branch below).
   */
   const arrangedCapture = Boolean(user?.ui?.headerTabs?.some((t) => t.kind === 'capture'));
-  const headerTabs = useMemo(() => {
-    const arranged = user?.ui?.headerTabs;
-    // No arrangement yet: the shipped order. Dashboard first, the modules in
-    // their own sequence, Site visit last.
-    if (!arranged?.length) {
-      return [
-        { kind: 'dashboard' as const, label: undefined as string | undefined },
-        ...menuModules.map((m) => ({ kind: 'module' as const, value: m.name, label: undefined as string | undefined })),
-        { kind: 'chats' as const, label: undefined as string | undefined },
-        { kind: 'capture' as const, label: undefined as string | undefined },
-      ];
-    }
-    const placed: HeaderTab[] = arranged.map((t) => ({ ...t }));
-    const used = new Set(placed.filter((t) => t.kind === 'module').map((t) => t.value));
-    for (const m of menuModules) {
-      if (!used.has(m.name)) placed.push({ kind: 'module' as const, value: m.name });
-    }
-    return placed;
-  }, [user?.ui?.headerTabs, menuModules]);
+  const headerTabs = useMemo(
+    () => arrangeHeaderTabs(user?.ui?.headerTabs ?? null, menuModules.map((m) => m.name)),
+    [user?.ui?.headerTabs, menuModules],
+  );
 
   const socialPosition = user?.ui?.socialPosition ?? 'right';
 

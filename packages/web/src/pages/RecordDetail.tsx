@@ -31,6 +31,7 @@ import ComposeModal from '../components/ComposeModal';
 import MatchingTab from '../components/MatchingTab';
 import { PeekLink } from '../components/PeekLink';
 import { CallButton, CallDispositionProvider } from '../components/CallDisposition';
+import { WhatsAppButton } from '../components/WhatsAppButton';
 import { isNative } from '../lib/native';
 import { downloadFromUrl } from '../lib/nativeActions';
 
@@ -425,6 +426,7 @@ export default function RecordDetail(): JSX.Element {
                 <Star className={cn('h-4 w-4', record.starred && 'fill-amber-400 text-amber-400')} />
               </button>
 
+              {phone && <WhatsAppButton to={phone} />}
               {phone && <CallButton to={phone} />}
               {email && (
                 <button onClick={() => setCompose('email')} className="btn-secondary btn-sm" title="Email">

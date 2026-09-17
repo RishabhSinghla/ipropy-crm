@@ -22,6 +22,7 @@ import { cn } from '../lib/utils';
 import { Avatar, Badge, ScoreChip } from './ui';
 import { PeekLink } from './PeekLink';
 import { useCallDisposition } from './CallDisposition';
+import { WhatsAppIconButton } from './WhatsAppButton';
 
 /**
  * A plain <img src> can't carry the app's Authorization header, and
@@ -152,24 +153,33 @@ export function FieldValue({
       // Plain text colour, like the name beside it. The number used to sit in
       // the brand blue, which read as decoration on something reps dial from.
       // Still a link, still underlines on hover, no longer shouting.
+      // The WhatsApp way in sits beside the number everywhere the number is
+      // shown, and goes to the CRM's own Chats screen rather than `wa.me`.
+      const wa = <WhatsAppIconButton to={display || String(value)} />;
       return callDisposition ? (
-        <button
-          type="button"
-          onClick={(event) => { event.stopPropagation(); void callDisposition.startCall(String(value)); }}
-          className="inline-flex items-center gap-1 text-left text-slate-900 hover:underline dark:text-slate-100 tnum"
-          title={`Call ${shown}`}
-        >
-          {!compact && <Phone className="h-3 w-3" />}
-          {shown}
-        </button>
+        <span className="inline-flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={(event) => { event.stopPropagation(); void callDisposition.startCall(String(value)); }}
+            className="inline-flex items-center gap-1 text-left text-slate-900 hover:underline dark:text-slate-100 tnum"
+            title={`Call ${shown}`}
+          >
+            {!compact && <Phone className="h-3 w-3" />}
+            {shown}
+          </button>
+          {wa}
+        </span>
       ) : (
-        <a
-          href={`tel:${shown.replace(/[^\d+]/g, '') || value}`}
-          className="inline-flex items-center gap-1 text-slate-900 hover:underline dark:text-slate-100 tnum"
-        >
-          {!compact && <Phone className="h-3 w-3" />}
-          {shown}
-        </a>
+        <span className="inline-flex items-center gap-1.5">
+          <a
+            href={`tel:${shown.replace(/[^\d+]/g, '') || value}`}
+            className="inline-flex items-center gap-1 text-slate-900 hover:underline dark:text-slate-100 tnum"
+          >
+            {!compact && <Phone className="h-3 w-3" />}
+            {shown}
+          </a>
+          {wa}
+        </span>
       );
     }
 

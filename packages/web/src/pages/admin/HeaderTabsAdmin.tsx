@@ -1,6 +1,6 @@
 import { type JSX, useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Globe, GripVertical, LayoutDashboard, MapPin, Plus, Save, Trash2 } from 'lucide-react';
+import { Globe, GripVertical, LayoutDashboard, MapPin, MessageCircle, Plus, Save, Trash2 } from 'lucide-react';
 import type { HeaderTab } from '@ipropy/shared';
 import { api } from '../../lib/api';
 import { toast } from '../../lib/store';
@@ -17,7 +17,8 @@ import { Select, Skeleton, Spinner } from '../../components/ui';
  * One thing it deliberately cannot do: hide a module. Modules the arrangement
  * does not name are appended after it, because a module that could be made
  * invisible by an arrangement nobody remembers making is a support ticket
- * waiting to happen. Module order, labels and visibility live on the module
+ * waiting to happen. Chats is appended the same way, for the same reason — an
+ * arrangement saved before it existed cannot have meant to leave it out. Module order, labels and visibility live on the module
  * itself (Modules & Fields / Enable-Disable).
  */
 export default function HeaderTabsAdmin(): JSX.Element {
@@ -86,6 +87,7 @@ export default function HeaderTabsAdmin(): JSX.Element {
     switch (t.kind) {
       case 'dashboard': return t.label ?? 'Dashboard';
       case 'capture': return t.label ?? 'Site visit';
+      case 'chats': return t.label ?? 'Chats';
       case 'module': {
         const m = entityModules.find((x) => x.name === t.value);
         return t.label ?? m?.label ?? t.value ?? 'Module';
@@ -120,6 +122,7 @@ export default function HeaderTabsAdmin(): JSX.Element {
             <span key={i} className="flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1 text-sm font-medium text-slate-700 shadow-sm dark:bg-slate-900 dark:text-slate-200">
               {t.kind === 'dashboard' && <LayoutDashboard className="h-3.5 w-3.5" />}
               {t.kind === 'capture' && <MapPin className="h-3.5 w-3.5" />}
+              {t.kind === 'chats' && <MessageCircle className="h-3.5 w-3.5" />}
               {t.kind === 'module' && <Globe className="h-3.5 w-3.5 text-slate-400" />}
               {t.kind === 'link' && <Globe className="h-3.5 w-3.5 text-slate-400" />}
               {labelFor(t)}
@@ -145,6 +148,7 @@ export default function HeaderTabsAdmin(): JSX.Element {
                 options={[
                   { value: 'dashboard', label: 'Dashboard' },
                   { value: 'capture', label: 'Site visit' },
+                  { value: 'chats', label: 'Chats' },
                   { value: 'module', label: 'A module' },
                   { value: 'link', label: 'A link' },
                 ]}
@@ -190,6 +194,9 @@ export default function HeaderTabsAdmin(): JSX.Element {
           </button>
           <button className="btn-secondary btn-sm" onClick={() => add({ kind: 'capture' })}>
             <Plus className="h-3.5 w-3.5" /> Site visit
+          </button>
+          <button className="btn-secondary btn-sm" onClick={() => add({ kind: 'chats' })}>
+            <Plus className="h-3.5 w-3.5" /> Chats
           </button>
           <p className="w-full text-2xs text-muted">
             Site visit shows on phones regardless (bottom bar and menu). Placing it here also puts it

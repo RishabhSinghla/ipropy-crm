@@ -1,5 +1,5 @@
 import { type JSX, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MessageCircle, Search, Send, UserPlus } from 'lucide-react';
 import { api } from '../lib/api';
@@ -31,6 +31,9 @@ function timeOf(value: string | null): string {
 
 export default function Chats(): JSX.Element {
   const queryClient = useQueryClient();
+  const [params] = useSearchParams();
+  // `?to=<digits>` is how the WhatsApp icon beside a phone number arrives here.
+  const wanted = (params.get('to') ?? '').replace(/\D/g, '');
   const [active, setActive] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [unreadOnly, setUnreadOnly] = useState(false);
@@ -70,6 +73,19 @@ export default function Chats(): JSX.Element {
     },
     onError: (err: Error) => toast.error('Could not send', err.message),
   });
+
+  /*
+    Arriving from a number rather than from a thread. The handle is matched on
+    its last ten digits, the same rule contact matching uses, because a thread
+    stores whatever WhatsApp said and a record stores whatever a rep typed. No
+    thread yet is a normal answer: the list simply opens unselected.
+  */
+  useEffect(() => {
+    if (!wanted || active || !conversations?.length) return;
+    const tail = wanted.slice(-10);
+    const found = conversations.find((c) => c.handle.replace(/\D/g, '').endsWith(tail));
+    if (found) setActive(found.id);
+  }, [wanted, active, conversations]);
 
   // Opening a thread is what marks it read — receiving it is not.
   useEffect(() => {

@@ -210,10 +210,11 @@ Login: `admin@ipropy.com` / `Admin@123`. Other demo users in `PROJECT_HANDOVER.m
 
 **Verification:** three layers, fastest first.
 
-* `npm test` — 806 unit tests, no DB: 679 in `packages/server` (query builder, filter evaluator,
+* `npm test` — 874 unit tests, no DB: 734 in `packages/server` (query builder, filter evaluator,
   formula engine, permissions and role-hierarchy scoping, validation, unstorable characters, seed
   templates, billing decisions, capture time/EXIF offsets, watermark sizing, vision sampling, file
-  serving headers), 119 in `packages/web` (colour contrast, safe markdown, and the rich-text
+  serving headers), 132 in `packages/web` (colour contrast, safe markdown, header-tab
+  arrangement, and the rich-text
   sanitiser that renders the imported Vtiger notes), and 8 in `packages/mcp` (tool-output
   formatting). The web suite runs on `node` except where a file asks for `jsdom` with a
   `@vitest-environment` pragma — the sanitiser leans on the browser's own parser, so testing it
@@ -866,8 +867,21 @@ with `ORDER BY last_connected_at DESC LIMIT 1`, so Sheetal's message could leave
 Rahul's phone. Both new foreign keys are ON DELETE SET NULL: an agent leaving must not
 take the conversation with them.
 
-**Not built yet:** media, voice notes, the contact's WhatsApp tab, timeline entries, the
-icon beside phone numbers, quick replies, search, the admin panel, property sharing.
+**Built since:** the contact's own WhatsApp tab, timeline entries naming the number a
+message went through, and the WhatsApp icon beside every phone number (`components/
+WhatsAppButton.tsx`), which opens the CRM's own Chats screen at `/chats?to=<digits>` —
+never `wa.me`, because the conversation has to stay where a manager can read it.
+
+**A fixed page added to the header is invisible on production until it is appended.**
+`ui.header_tabs` is a saved arrangement, and an arrangement saved before a page existed
+cannot name it — the old code appended missing *modules* only, so Chats never appeared
+for anyone with a saved header, while every local run passed on the shipped default a
+fresh database gives. `arrangeHeaderTabs` in `web/src/lib/headerTabs.ts` appends it now,
+pinned by `tests/headerTabs.test.ts`. Anything fixed added to that header later needs
+the same line.
+
+**Not built yet:** media, voice notes, quick replies, search, the admin panel,
+property sharing.
 
 **If it is rebuilt, the things that cost a night to learn:** history arrives exactly once
 during the handshake after a scan and cannot be re-requested; Baileys must be on the

@@ -275,3 +275,14 @@ jobs:
                WHERE m.name = '$m' AND f.is_active AND f.display_type <> 'hidden'
                ORDER BY f.sequence;"
           done
+          echo
+          # What the header is arranged to show. An arrangement saved before a
+          # fixed page existed cannot name it, so the page is invisible on
+          # production while every local test passes on the shipped default —
+          # which is exactly how Chats went missing. Kinds and values only.
+          echo "=== header tab arrangement (kinds only) ==="
+          psql "$PROD_DATABASE_URL" -tAc \
+            "SELECT coalesce((SELECT string_agg(t->>'kind' || coalesce(':' || (t->>'value'), ''), ', ')
+                                FROM ipy_setting s, jsonb_array_elements(s.value) t
+                               WHERE s.key = 'ui.header_tabs' AND jsonb_typeof(s.value) = 'array'),
+                            '(not arranged)');"
