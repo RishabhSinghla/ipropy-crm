@@ -747,47 +747,20 @@ export default function ListView(): JSX.Element {
           >
             {(close) => (
               <>
-                <p className="px-3 pb-1 pt-2 text-2xs font-semibold uppercase tracking-wider text-muted">List views</p>
-                {/*
-                  Every view carries its pencil, the two built-in ones included.
-
-                  They used to be the only two anybody could not edit, which is
-                  backwards — they are the two everybody lives in. Editing one
-                  now saves your own version of it rather than reshaping the
-                  row the whole team reads (migration 135), so there is nothing
-                  left to protect by hiding the pencil.
-                */}
-                <div className="max-h-64 overflow-y-auto py-1">
-                  {(views ?? []).map((view) => {
-                    const mine = view.ownerId === user?.id || user?.isAdmin;
-                    const canEdit = view.isSystem || mine;
-                    return (
-                      <div key={view.id} className="flex items-center px-1">
-                        <DropdownItem onClick={() => { chooseView(view.id); close(); }}>
-                          <span className="min-w-0 flex-1 truncate">{view.name}</span>
-                          {view.isOverride && (
-                            <span className="shrink-0 text-2xs text-muted" title="Your own version of this view">edited</span>
-                          )}
-                          {/* How many are in it — the question somebody opens
-                              this menu to answer. Undefined while it loads, or
-                              when the count failed; no number beats a wrong
-                              one. */}
-                          {typeof view.count === 'number' && (
-                            <span className="shrink-0 text-2xs text-muted tnum">
-                              {view.count.toLocaleString('en-IN')}
-                            </span>
-                          )}
-                          {view.id === activeView?.id && <span className="shrink-0 text-brand-600">Current</span>}
-                        </DropdownItem>
-                        {canEdit && (
-                          <button className="btn-ghost shrink-0 p-1.5" title={view.isSystem ? 'Edit — saved as your own version' : 'Edit view'} aria-label={`Edit ${view.name}`} onClick={(e) => { e.stopPropagation(); setEditingView(view as SavedView); close(); }}>
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                <ViewMenu
+                  views={views ?? []}
+                  activeViewId={activeView?.id ?? null}
+                  canEditView={(view) => {
+                    const full = (views ?? []).find((v) => v.id === view.id);
+                    return Boolean(view.isSystem || full?.ownerId === user?.id || user?.isAdmin);
+                  }}
+                  onChoose={(id) => { chooseView(id); close(); }}
+                  onEdit={(id) => {
+                    const full = (views ?? []).find((v) => v.id === id);
+                    if (full) setEditingView(full as SavedView);
+                    close();
+                  }}
+                />
                 <div className="border-t border-slate-100 py-1 dark:border-slate-800">
                   <DropdownItem icon={<Plus className="h-3.5 w-3.5" />} onClick={() => { setEditingView(blankView(moduleName)); close(); }}>
                     New view
@@ -1364,8 +1337,14 @@ export default function ListView(): JSX.Element {
                             aria-label="Favourite"
                           />
                         )}
+                        {/* `role="img"` on the tag icon below because a bare
+                            <span> may not carry an aria-label — axe calls it
+                            aria-prohibited-attr and a screen reader announces
+                            nothing, so the icon was silent to anyone not
+                            looking at it. The span is a picture of the record's
+                            tags, which is what the role says. */}
                         {ci === 0 && (row.tags?.length ?? 0) > 0 && (
-                          <span className="mr-1.5 inline-block align-middle" title={`Tags: ${row.tags?.join(', ')}`} aria-label={`Tagged: ${row.tags?.join(', ')}`}>
+                          <span role="img" className="mr-1.5 inline-block align-middle" title={`Tags: ${row.tags?.join(', ')}`} aria-label={`Tagged: ${row.tags?.join(', ')}`}>
                             <Tag className="h-3.5 w-3.5 fill-blue-100 text-blue-600 dark:fill-blue-950 dark:text-blue-400" />
                           </span>
                         )}
@@ -1719,6 +1698,92 @@ export default function ListView(): JSX.Element {
  * for the fallback being decent rather than merely present.
  */
 /** One pager control: obviously live when there is somewhere to go, obviously not when there isn't. */
+/**
+ * The list of saved views, with a way to find one.
+ *
+ * A component rather than markup inside the dropdown's render prop, because it
+ * holds search state: a render prop is called during another component's
+ * render, so a hook there belongs to that component and its count changes with
+ * whatever decides to call it. That is the same fault that took the whole list
+ * to an error boundary once already.
+ *
+ * The search box appears only once there are enough views to hunt through. Over
+ * three of them it is a box asking a question nobody had.
+ */
+function ViewMenu({
+  views, activeViewId, canEditView, onChoose, onEdit,
+}: {
+  views: { id: string; name: string; isSystem?: boolean; isOverride?: boolean; count?: number }[];
+  activeViewId: string | null;
+  canEditView: (view: { id: string; isSystem?: boolean }) => boolean;
+  onChoose: (id: string) => void;
+  onEdit: (id: string) => void;
+}): JSX.Element {
+  const [query, setQuery] = useState('');
+  const WORTH_SEARCHING = 6;
+  const needle = query.trim().toLowerCase();
+  const shown = needle ? views.filter((v) => v.name.toLowerCase().includes(needle)) : views;
+
+  return (
+    <>
+      {views.length >= WORTH_SEARCHING && (
+        <div className="px-2 pb-1 pt-2">
+          <input
+            type="search"
+            className="input h-7 w-full text-xs"
+            placeholder="Search views"
+            aria-label="Search list views"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+      <p className="px-3 pb-1 pt-2 text-2xs font-semibold uppercase tracking-wider text-muted">List views</p>
+      {/*
+        Every view carries its pencil, the two built-in ones included.
+
+        They used to be the only two anybody could not edit, which is backwards
+        — they are the two everybody lives in. Editing one now saves your own
+        version of it rather than reshaping the row the whole team reads
+        (migration 135), so there is nothing left to protect by hiding it.
+      */}
+      <div className="max-h-64 overflow-y-auto py-1">
+        {shown.length === 0 && (
+          <p className="px-3 py-2 text-xs text-muted">No view matches “{query.trim()}”.</p>
+        )}
+        {shown.map((view) => (
+          <div key={view.id} className="flex items-center px-1">
+            <DropdownItem onClick={() => onChoose(view.id)}>
+              <span className="min-w-0 flex-1 truncate">{view.name}</span>
+              {view.isOverride && (
+                <span className="shrink-0 text-2xs text-muted" title="Your own version of this view">edited</span>
+              )}
+              {/* How many are in it — the question somebody opens this menu to
+                  answer. Undefined while it loads, or when the count failed;
+                  no number beats a wrong one. */}
+              {typeof view.count === 'number' && (
+                <span className="shrink-0 text-2xs text-muted tnum">{view.count.toLocaleString('en-IN')}</span>
+              )}
+              {view.id === activeViewId && <span className="shrink-0 text-brand-600">Current</span>}
+            </DropdownItem>
+            {canEditView(view) && (
+              <button
+                className="btn-ghost shrink-0 p-1.5"
+                title={view.isSystem ? 'Edit — saved as your own version' : 'Edit view'}
+                aria-label={`Edit ${view.name}`}
+                onClick={(e) => { e.stopPropagation(); onEdit(view.id); }}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 function PageButton({ label, disabled, onClick, children }: {
   label: string; disabled: boolean; onClick: () => void; children: JSX.Element;
 }): JSX.Element {
