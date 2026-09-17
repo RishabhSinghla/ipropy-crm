@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FieldMeta } from '@ipropy/shared';
-import { assignmentField, byLabel, fieldByKey, pipelineFieldOf } from '../src/lib/fields';
+import { assignmentField, byLabel, fieldByKey, pipelineFieldOf, subtitleFieldsOf } from '../src/lib/fields';
 
 /**
  * Finding a field without hard-coding its name.
@@ -112,5 +112,47 @@ describe('pipelineFieldOf', () => {
 
   it('is undefined when the field it names is gone entirely', () => {
     expect(pipelineFieldOf({ pipelineField: 'stage', fields: leads.fields })).toBeUndefined();
+  });
+});
+
+
+/**
+ * The line under a name reads the same way round on every module.
+ *
+ * Leads and Inventory both carry Contact Type and Unit Number, and their field
+ * sequences put them in opposite orders — so the same two facts appeared as
+ * "Builder — B-118" on one screen and "B-118 — Builder" on the other.
+ */
+describe('subtitleFieldsOf', () => {
+  const contactType = (seq: number, order: unknown) =>
+    field({ name: 'contact_type', label: 'Contact Type', sequence: seq, config: { listSubtitle: order } });
+  const unitNumber = (seq: number, order: unknown) =>
+    field({ name: 'unit_no', label: 'Unit Number', sequence: seq, config: { listSubtitle: order } });
+
+  it('puts them in the same order however the module sequences them', () => {
+    const leads = subtitleFieldsOf([contactType(3, 1), unitNumber(9, 2)]);
+    const inventory = subtitleFieldsOf([unitNumber(2, 2), contactType(8, 1)]);
+    expect(leads.map((f) => f.name)).toEqual(['contact_type', 'unit_no']);
+    expect(inventory.map((f) => f.name)).toEqual(['contact_type', 'unit_no']);
+  });
+
+  it('still includes a field left at the old `true`, first', () => {
+    const out = subtitleFieldsOf([unitNumber(1, 2), contactType(2, true)]);
+    expect(out.map((f) => f.name)).toEqual(['contact_type', 'unit_no']);
+  });
+
+  it('falls back to field order when two carry the same position', () => {
+    const out = subtitleFieldsOf([unitNumber(9, true), contactType(2, true)]);
+    expect(out.map((f) => f.name)).toEqual(['contact_type', 'unit_no']);
+  });
+
+  it('leaves out anything not flagged, hidden or switched off', () => {
+    const out = subtitleFieldsOf([
+      contactType(1, 1),
+      field({ name: 'plain', sequence: 2, config: {} }),
+      field({ name: 'hidden', sequence: 3, displayType: 'hidden', config: { listSubtitle: 2 } }),
+      field({ name: 'off', sequence: 4, isActive: false, config: { listSubtitle: 3 } }),
+    ]);
+    expect(out.map((f) => f.name)).toEqual(['contact_type']);
   });
 });

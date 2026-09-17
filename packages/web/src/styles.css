@@ -52,10 +52,14 @@
       bigger" is a five-second change here and a find-and-replace across four
       files otherwise.
     */
-    --list-font: 13px;
-    --list-head-font: 11.5px;
-    --list-line: 1.4;
-    --list-row-pad-y: 7px;
+    --list-font: 14.5px;
+    --list-head-font: 12px;
+    /* The line under the name. Close enough to the name to be read in the same
+       glance, far enough to stay secondary — at 11px it was a footnote nobody
+       noticed was there. */
+    --list-sub-font: 12.5px;
+    --list-line: 1.45;
+    --list-row-pad-y: 11px;
     --list-row-pad-x: 12px;
     /* Body copy, not headline copy. #111827 is near-black and every cell in a
        wide grid was competing at the same weight; slate-700 keeps a full row
@@ -318,6 +322,13 @@
      a divider, so the cell no longer carries a max-width of its own — a cap
      here would silently override a column somebody widened on purpose.
      `truncate` still holds the single-line rule. */
+  /* The second line in the identity cell: who this is, under their name. */
+  .list-subtitle {
+    font-size: var(--list-sub-font);
+    line-height: 1.35;
+    font-weight: 400;
+  }
+
   .list-cell {
     @apply truncate;
     padding: var(--list-row-pad-y) var(--list-row-pad-x);

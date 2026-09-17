@@ -39,6 +39,26 @@ export function pipelineFieldOf(module: {
   return module.pipelineField ? fieldByKey(module.fields, module.pipelineField) : undefined;
 }
 
+/**
+ * The fields that make up the line under a record's name in a list.
+ *
+ * Ordered by the flag itself, not by where each field happens to sit in its
+ * module. Leads and Inventory both carry Contact Type and Unit Number, and
+ * field sequence put them in opposite orders — "Builder — B-118" on one screen
+ * and "B-118 — Builder" on the other, which reads as two different facts to
+ * somebody moving between them.
+ *
+ * `config.listSubtitle` carries the position: a number is that position, and
+ * `true` still means "include me" and sorts first. Field sequence breaks a tie,
+ * so two fields left at `true` keep the order the module gives them.
+ */
+export function subtitleFieldsOf(fields: FieldMeta[]): FieldMeta[] {
+  const rank = (value: unknown): number => (typeof value === 'number' ? value : 0);
+  return fields
+    .filter((f) => f.config?.listSubtitle && f.isActive && f.displayType !== 'hidden')
+    .sort((a, b) => rank(a.config?.listSubtitle) - rank(b.config?.listSubtitle) || a.sequence - b.sequence);
+}
+
 /** A field by name, tolerating a rename that left the column alone. */
 export function fieldByKey(fields: FieldMeta[], key: string): FieldMeta | undefined {
   return fields.find((f) => f.name === key) ?? fields.find((f) => f.columnName === key);

@@ -103,10 +103,13 @@ const MODULES: ModuleDef[] = [
           // Defaulted, because it is mandatory: every lead that arrives without
           // somebody choosing one — which is every automated source — is
           // otherwise rejected by validation.
-          // `listSubtitle` puts this under the name in a list. Buyer vs seller
+          // `listSubtitle` puts this under the name in a list, and its number
+          // is the position: the same two facts must read in the same order on
+          // every module, or "Builder — B-118" here and "B-118 — Builder" there
+          // look like two different things. Buyer vs seller
           // is the first thing a rep needs about a contact and it was costing a
           // whole column to say.
-          F.pick('contact_type', 'Type', 'contact_type', { default: 'Buyer', config: { listSubtitle: true } }),
+          F.pick('contact_type', 'Type', 'contact_type', { default: 'Buyer', config: { listSubtitle: 1 } }),
           /*
             Read-only because the scorer sets it, not a person. When it was
             editable an edit was accepted, answered 200, written into the audit
@@ -400,7 +403,7 @@ const MODULES: ModuleDef[] = [
           F.num('floor', 'Floor'),
           // Which unit, under the property's name — the one fact that tells
           // two floors of the same block apart at a glance.
-          F.text('unit_number', 'Unit Number', { config: { listSubtitle: true } }),
+          F.text('unit_number', 'Unit Number', { config: { listSubtitle: 2 } }),
           F.pick('facing', 'Facing', 'facing'),
           F.text('view_description', 'View'),
           F.bool('corner_unit', 'Corner Unit'),

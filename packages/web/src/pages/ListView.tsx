@@ -13,7 +13,7 @@ import { saveListNav } from '../lib/listNav';
 import { cn, restrictionForField } from '../lib/utils';
 import { FieldInput, FieldValue } from '../components/FieldRenderer';
 import { EditableField, isInlineEditable } from '../components/EditableField';
-import { assignmentField, byLabel, pipelineFieldOf } from '../lib/fields';
+import { assignmentField, byLabel, pipelineFieldOf, subtitleFieldsOf } from '../lib/fields';
 /*
   Shared with the phone, deliberately: `phoneOf` pairs each phone field with
   its own country field, and a second copy here would drift from the one the
@@ -727,12 +727,10 @@ export default function ListView(): JSX.Element {
 
     Flagged per field (`config.listSubtitle`) rather than chosen here, for the
     same reason the rest of this screen reads from metadata: which two facts
-    identify a record is this business's decision. Columns already on screen
-    are skipped — the same value twice in one row reads as a rendering fault.
+    identify a record is this business's decision. The order comes from the
+    flag too, so both modules read the same way round.
   */
-  const subtitleFields = meta.fields.filter(
-    (f) => f.config?.listSubtitle && f.isActive && f.displayType !== 'hidden',
-  );
+  const subtitleFields = subtitleFieldsOf(meta.fields);
 
   const visibleColumns = columns.length ? columns : defaultColumns(meta);
   const fieldMap = new Map(meta.fields.map((f) => [f.name, f]));
@@ -1314,7 +1312,7 @@ export default function ListView(): JSX.Element {
                     return text === row.label ? null : text;
                   })
                   .filter(Boolean)
-                  .join(' · ');
+                  .join(' — ');
                 return (
                 <tr
                   key={row.id}
@@ -1436,7 +1434,7 @@ export default function ListView(): JSX.Element {
                                     silent to anyone not looking at it. */}
                                 {(row.tags?.length ?? 0) > 0 && (
                                   <span role="img" className="inline-flex shrink-0" title={`Tags: ${row.tags?.join(', ')}`} aria-label={`Tagged: ${row.tags?.join(', ')}`}>
-                                    <Tag className="h-3.5 w-3.5 fill-blue-100 text-blue-600 dark:fill-blue-950 dark:text-blue-400" />
+                                    <Tag className="h-3 w-3 text-blue-700 dark:text-blue-400" />
                                   </span>
                                 )}
                                 {isNew && (
@@ -1458,7 +1456,7 @@ export default function ListView(): JSX.Element {
                                   the admin's choice rather than a list of names
                                   compiled into this file.
                                 */
-                                <span className="mt-0.5 block truncate text-[11px] font-normal text-muted">
+                                <span className="list-subtitle mt-0.5 block truncate text-muted">
                                   {subtitle}
                                 </span>
                               )}
