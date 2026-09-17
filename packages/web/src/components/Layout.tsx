@@ -599,6 +599,9 @@ function MobileNav({
                 badge={unseenCounts?.[m.name]}
               />
             ))}
+            {/* Below `lg` the header's switcher is hidden, so this drawer is the
+                only way to Chats on a laptop or a phone. */}
+            <DrawerLink to="/chats" icon="message-circle" label="Chats" />
             <DrawerLink to="/capture" icon="map-pin" label="Site visit" />
           </div>
           <div className="space-y-0.5">

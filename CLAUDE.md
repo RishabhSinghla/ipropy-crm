@@ -880,6 +880,13 @@ fresh database gives. `arrangeHeaderTabs` in `web/src/lib/headerTabs.ts` appends
 pinned by `tests/headerTabs.test.ts`. Anything fixed added to that header later needs
 the same line.
 
+**That was not why Chats was missing, though — production reads `(not arranged)`.** The
+real reason is narrower and easy to repeat: the header's module switcher is `lg:block`,
+so below 1024px it is not on the screen at all, and the drawer that replaces it listed
+Dashboard, the modules and Site visit only. On a laptop or a phone there was no way to
+reach Chats. The drawer carries it now. **A destination that lives only in the switcher
+is invisible on most screens** — put it in the drawer too.
+
 **Not built yet:** media, voice notes, quick replies, search, the admin panel,
 property sharing.
 
