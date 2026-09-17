@@ -856,7 +856,7 @@ tell:
   on the way: dropping a `to_jsonb` read often drops the last reference to a bound
   parameter, and Postgres refuses a statement with a parameter it never names.
 
-**The shape to watch for**, which has now been found four times in this codebase: a
+**The shape to watch for**, which has now been found **five** times in this codebase: a
 bounded slice, ordered by something unrelated to what is done with it afterwards.
 
 * `matchBuyersForProperty` — `ORDER BY ai_score DESC LIMIT 400`. At 99 leads that is
@@ -871,6 +871,16 @@ bounded slice, ordered by something unrelated to what is done with it afterwards
   outside it stopped threading. Now resolved per sender, memoised per poll.
 * `candidateInventory` — the sixty *cheapest* units in budget, then scored. Now ordered
   by configuration and locality first, price as tiebreak.
+* **The semantic index backfill** — `candidates()` took the thirty-two most recently
+  *updated* records needing work, so the backlog was permanently last: a record nobody has
+  touched for months is exactly the one missing from the index, and every nudge from a
+  workflow or a rep jumped ahead of it with text that had not changed, so the batch embedded
+  nothing and asked again. Measured on production 17 September 2026: **27,376 rows for 47
+  minutes with no growth and 17,061 records still unembedded**, while `updated_at` kept
+  moving — not slow, going nowhere. And a database kept awake going nowhere is where the Neon
+  bill goes: the burn rose from 0.32 CU to 0.50 CU average across that window. Now
+  `ORDER BY (e.id IS NULL) DESC, r.updated_at DESC`, pinned by
+  `tests/search/backlogFirst.test.ts`.
 
 The rule: if a query takes `LIMIT n` and the rows are then filtered or scored in memory,
 the ORDER BY must encode relevance to *that specific decision*, and the cap must log when

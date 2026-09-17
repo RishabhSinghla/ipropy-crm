@@ -99,7 +99,23 @@ async function candidates(limit: number, conn: Tx = db): Promise<Candidate[]> {
        LEFT JOIN ipy_embedding e ON e.kind = 'record' AND e.source_id = r.id::text
       WHERE r.is_deleted = false
         AND (e.id IS NULL OR e.updated_at < r.updated_at)
-      ORDER BY r.updated_at DESC
+      /*
+        Never-embedded first, and only then the stale ones.
+
+        This used to be ORDER BY r.updated_at DESC alone, which is the shape
+        this codebase has now been bitten by five times: a bounded slice ordered
+        by something unrelated to the decision being made. A record nobody has
+        touched for months is exactly the one missing from the index, and
+        updated_at DESC puts it last — behind every record a workflow or a rep
+        nudged in the last few minutes, whose text usually has not changed at
+        all, so the batch embeds nothing and asks again.
+
+        Measured on production 17 September 2026: the index sat at 27,376 rows
+        for 47 minutes while updated_at kept moving, with 17,061 records still
+        unembedded. It was not slow, it was going nowhere — and a database kept
+        awake going nowhere is the whole Neon bill.
+      */
+      ORDER BY (e.id IS NULL) DESC, r.updated_at DESC
       LIMIT $1`,
     [limit],
   );
