@@ -118,12 +118,15 @@ describe('what still enforces consent', () => {
       format is findable by nothing — which would make this test pass against a
       broken system and fail against a working one.
     */
-    await recordConsent({ handle: '+919000000001', action: 'opt_out', source: 'manual' });
+    // `core/consent/` is keyed on (handle, channel) and names the channel
+    // explicitly. The WhatsApp copy this import used to point at defaulted it,
+    // which is exactly how the CRM ended up unable to honour a do-not-call.
+    await recordConsent({ handle: '+919000000001', channel: 'call', action: 'opt_out', source: 'manual' });
     try {
-      expect(await isOptedOut('+919000000001'), 'somebody who opted out stays blocked').toBe(true);
-      expect(await isOptedOut('+919000000002')).toBe(false);
+      expect(await isOptedOut('+919000000001', 'call'), 'somebody who opted out stays blocked').toBe(true);
+      expect(await isOptedOut('+919000000002', 'call')).toBe(false);
     } finally {
-      await recordConsent({ handle: '+919000000001', action: 'opt_in', source: 'manual' });
+      await recordConsent({ handle: '+919000000001', channel: 'call', action: 'opt_in', source: 'manual' });
       await db.query(`DELETE FROM ipy_consent_event WHERE handle LIKE '%919000000001'`);
     }
   });
