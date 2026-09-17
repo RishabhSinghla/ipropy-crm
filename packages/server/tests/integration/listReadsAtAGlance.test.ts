@@ -54,13 +54,16 @@ describe('the line under a name in a list', () => {
   it('names the contact type on leads', async () => {
     const contactType = (await describeModule('leads')).find((f) => f.name === 'contact_type');
     expect(contactType, 'leads should still carry a contact type').toBeDefined();
-    expect(contactType!.config?.listSubtitle).toBe(true);
+    // The flag carries a position now — a number is that position, `true` still
+    // means "include me". Asserting `=== true` pinned the shape the seed had
+    // before it named an order, not the promise this file is about.
+    expect(contactType!.config?.listSubtitle).toBeTruthy();
   });
 
   it('names the unit number on properties', async () => {
     const unit = (await describeModule('properties')).find((f) => f.name === 'unit_number');
     expect(unit, 'properties should still carry a unit number').toBeDefined();
-    expect(unit!.config?.listSubtitle).toBe(true);
+    expect(unit!.config?.listSubtitle).toBeTruthy();
   });
 
   it('stays a short line — two facts, not a second row of the record', async () => {

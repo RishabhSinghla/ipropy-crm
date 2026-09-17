@@ -26,8 +26,11 @@ async function openPicker(page: Page) {
 
 test('lists and tags are both in the one picker', async ({ page }) => {
   await openPicker(page);
-  await expect(page.getByText('Shared tags')).toBeVisible();
-  await expect(page.getByText('My tags')).toBeVisible();
+  // `exact` on both: with no shared tags saved, the empty state reads "No
+  // shared tags yet" and a loose match hits the heading and the empty line at
+  // once, which Playwright refuses rather than picking one.
+  await expect(page.getByText('Shared tags', { exact: true })).toBeVisible();
+  await expect(page.getByText('My tags', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: /^All Leads/ })).toBeVisible();
 });
 
