@@ -815,6 +815,29 @@ queue, `private_to_user_id` on conversations, the bridge endpoints, the WhatsApp
 page and the `whatsapp_linked` provider. The owner asked for a clean slate so it can be
 rebuilt deliberately later.
 
+### The rebuild has been asked for, and has started
+
+**2026-09-17, hours after the removal above:** the owner sent a full specification for
+*Agent Linked WhatsApp* — each rep links their own number, sends and receives inside the
+CRM, conversations attach to the existing Contact. So the "do not rebuild without being
+asked" condition is met; this is that ask, and the removal above was the clean slate it
+starts from.
+
+**One thing in the specification cannot be satisfied as written, and the owner has been
+told:** it asks for an *officially supported* connection *and* each agent linking their
+own personal WhatsApp by QR. Those are different things. Meta's Cloud API sends only from
+one approved business number; QR-linking a personal account is the linked-device
+mechanism, which is against WhatsApp's terms and risks the rep's own number. Nothing
+beyond the abstraction gets built until he picks: personal numbers and the risk, one
+official business number, or both.
+
+**What exists so far:** `integrations/whatsapp/providers/types.ts` — a `WhatsAppProvider`
+contract with a capability set, which the specification asks for in its own §27 and which
+is needed whichever route wins. It is types only, wired to nothing, and no behaviour
+changed. A provider asked for a capability it lacks throws `NotSupportedError` rather than
+returning quietly: a send that silently does nothing is the failure mode that let 40,000
+birthday messages queue unnoticed.
+
 **If it is rebuilt, the things that cost a night to learn:** history arrives exactly once
 during the handshake after a scan and cannot be re-requested; Baileys must be on the
 `latest` dist-tag, since a year-old client is refused the moment it asks for a full sync
