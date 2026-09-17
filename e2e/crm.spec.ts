@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { columnIndex, unique, waitForRecords, fillRequiredFields, openRecordTab, inlineEditOn, searchList, openCreateDialog, waitForShell, firstPicklistColumn } from './helpers';
+import { unique, waitForRecords, fillRequiredFields, openRecordTab, inlineEditOn, searchList, openCreateDialog, waitForShell, firstPicklistColumn } from './helpers';
 
 /**
  * The journeys a salesperson actually performs. Each one is a path where a

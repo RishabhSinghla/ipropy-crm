@@ -1,4 +1,4 @@
-import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type JSX, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { isFilterGroup, type CustomView, type FieldMeta, type FilterGroup, formatIndianPrice, formatPhoneWithCode, toInternational, type ListQuery, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
@@ -1512,11 +1512,11 @@ export default function ListView(): JSX.Element {
                     );
                   })}
                   {/*
-                    Call and WhatsApp, without opening the record first.
+                    Call, without opening the record first.
 
-                    The two things a rep does to a row they recognise, and both
-                    used to cost an open, a read and a back. Pinned right so
-                    they land in the same place on every row whatever the
+                    The thing a rep does to a row they recognise, and it used
+                    to cost an open, a read and a back. Pinned right so it
+                    lands in the same place on every row whatever the
                     columns are, and `stopPropagation` because the row itself
                     opens the record.
 
