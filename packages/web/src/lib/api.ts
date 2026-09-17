@@ -1153,9 +1153,10 @@ export const api = {
   /** The public read. Deliberately not authenticated — a buyer has no account. */
   sharedProperty: (token: string) => get<SharedProperty>(`/api/public/share/${token}`),
   sharedMatches: (token: string) => get<SharedMatches>(`/api/public/matches/${token}`),
-  tags: () => get<{ id: string; name: string; color: string; created_by: string | null; usage_count: number }[]>('/api/tags'),
-  createTag: (body: { name: string; color?: string }) => post<{ id: string; name: string; color: string }>('/api/tags', body),
-  updateTag: (id: string, body: { name?: string; color?: string }) => patch<{ id: string; name: string; color: string }>(`/api/tags/${id}`, body),
+  /** `module` narrows to the tags that module offers; omit it for the whole vocabulary. */
+  tags: (module?: string) => get<{ id: string; name: string; color: string; created_by: string | null; modules: string[]; usage_count: number }[]>(`/api/tags${qs({ module })}`),
+  createTag: (body: { name: string; color?: string; modules?: string[] }) => post<{ id: string; name: string; color: string }>('/api/tags', body),
+  updateTag: (id: string, body: { name?: string; color?: string; modules?: string[] }) => patch<{ id: string; name: string; color: string }>(`/api/tags/${id}`, body),
   deleteTag: (id: string) => del<{ ok: true }>(`/api/tags/${id}`),
   importPreview: (module: string, file: File) => {
     const form = new FormData();

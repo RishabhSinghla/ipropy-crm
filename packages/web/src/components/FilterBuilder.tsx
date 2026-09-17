@@ -159,6 +159,7 @@ export function FilterBuilder({
             ) : (
               <ConditionRow
                 fields={fields}
+                moduleName={module.name}
                 condition={node}
                 onChange={(c) => update(i, c)}
               />
@@ -211,9 +212,11 @@ export function FilterBuilder({
 }
 
 function ConditionRow({
-  fields, condition, onChange,
+  fields, moduleName, condition, onChange,
 }: {
   fields: FieldMeta[];
+  /** Which module's tags the record_tags editor may offer (migration 154). */
+  moduleName: string;
   condition: FilterCondition;
   onChange: (c: FilterCondition) => void;
 }): JSX.Element {
@@ -272,7 +275,7 @@ function ConditionRow({
               onChange={(e) => onChange({ ...condition, value: Number(e.target.value) })}
             />
           ) : ['in', 'not_in', 'has_any', 'has_all'].includes(condition.operator) ? (
-            <MultiValueEditor field={field} value={condition.value} onChange={(v) => onChange({ ...condition, value: v })} />
+            <MultiValueEditor field={field} moduleName={moduleName} value={condition.value} onChange={(v) => onChange({ ...condition, value: v })} />
           ) : (
             <ValueEditor field={field} value={condition.value} onChange={(v) => onChange({ ...condition, value: v })} />
           )}
@@ -325,12 +328,15 @@ function ValueEditor({
 }
 
 function MultiValueEditor({
-  field, value, onChange,
-}: { field: FieldMeta; value: unknown; onChange: (v: unknown) => void }): JSX.Element {
+  field, moduleName, value, onChange,
+}: { field: FieldMeta; moduleName: string; value: unknown; onChange: (v: unknown) => void }): JSX.Element {
   const list = Array.isArray(value) ? value : (value ? [value] : []);
   const [text, setText] = useState('');
+  // Scoped to this module: filtering Inventories by a tag only Contacts offers
+  // can only ever match nothing, so offering it is offering a dead end.
   const { data: recordTags } = useQuery({
-    queryKey: ['tags'], queryFn: api.tags, enabled: field.name === 'record_tags', staleTime: 60_000,
+    queryKey: ['tags', moduleName], queryFn: () => api.tags(moduleName),
+    enabled: field.name === 'record_tags', staleTime: 60_000,
   });
 
   if (field.name === 'record_tags') {

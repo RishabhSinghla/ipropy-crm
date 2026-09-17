@@ -33,9 +33,13 @@ export interface PickerTag {
  * split available: every tag name is unique across the CRM and everybody can
  * read every tag, so "my tags" means the ones you created, not the ones only
  * you can see.
+ *
+ * Which tags appear at all is a different question, and it is the module's:
+ * since migration 154 a tag may be narrowed to Contacts or to Inventories, and
+ * a tag that names nothing on this module would filter to an empty list.
  */
 export function ListPicker({
-  views, activeViewId, activeTag, userId, isAdmin, moduleLabel,
+  views, activeViewId, activeTag, userId, isAdmin, moduleLabel, moduleName,
   onChooseView, onChooseTag, onEdit, onNew, onDuplicate, onShare, onDelete, onSetDefault,
 }: {
   views: PickerView[];
@@ -44,6 +48,7 @@ export function ListPicker({
   userId: string | undefined;
   isAdmin: boolean;
   moduleLabel: string;
+  moduleName: string;
   onChooseView: (id: string) => void;
   onChooseTag: (name: string | null) => void;
   onEdit: (id: string) => void;
@@ -56,7 +61,7 @@ export function ListPicker({
   const [query, setQuery] = useState('');
   const [menuFor, setMenuFor] = useState<string | null>(null);
 
-  const { data: tags } = useQuery({ queryKey: ['tags'], queryFn: () => api.tags() });
+  const { data: tags } = useQuery({ queryKey: ['tags', moduleName], queryFn: () => api.tags(moduleName) });
 
   const needle = query.trim().toLowerCase();
   const matches = (name: string): boolean => !needle || name.toLowerCase().includes(needle);

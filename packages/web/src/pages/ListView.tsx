@@ -859,6 +859,7 @@ export default function ListView(): JSX.Element {
                 }))}
                 activeViewId={activeView?.id ?? null}
                 activeTag={tagPick}
+                moduleName={meta.name}
                 userId={user?.id}
                 isAdmin={Boolean(user?.isAdmin)}
                 moduleLabel={meta.label}

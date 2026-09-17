@@ -74,7 +74,11 @@ export default function RecordDetail(): JSX.Element {
     queryFn: () => api.record(moduleName!, id!),
     enabled: Boolean(moduleName && id),
   });
-  const { data: tagOptions } = useQuery({ queryKey: ['tags'], queryFn: api.tags, staleTime: 60_000 });
+  // Only the tags this module offers: "Site Visit Done" is not a thing a
+  // builder floor can be, and "Corner Unit" is not a thing a person can be.
+  const { data: tagOptions } = useQuery({
+    queryKey: ['tags', moduleName], queryFn: () => api.tags(moduleName), staleTime: 60_000,
+  });
 
   // Join this record's realtime room so workflow/AI writes that land after the
   // response (lead scoring, lifecycle promotion) appear without a refresh.

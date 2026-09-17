@@ -258,15 +258,23 @@ miscRouter.post('/notifications/read', asyncHandler(async (req, res) => {
 // Tags
 // ---------------------------------------------------------------------------
 
-miscRouter.get('/tags', asyncHandler(async (_req, res) => {
+miscRouter.get('/tags', asyncHandler(async (req, res) => {
   // `created_by` so a screen can separate the tags you made from the rest.
   // Tag names are unique across the whole CRM and everybody can read every
   // tag, so this is authorship, not access — the list picker says "my tags"
   // and "shared tags" with it, and nothing is hidden either way.
+  //
+  // `?module=` narrows to what that module may offer (migration 154). An empty
+  // `modules` array means "everywhere", which is what every tag that predates
+  // the column carries — so asking without a module, as the admin screen does,
+  // still returns the whole vocabulary.
+  const module = typeof req.query.module === 'string' ? req.query.module : null;
   const rows = await db.query(
-    `SELECT t.id, t.name, t.color, t.created_by, COUNT(l.record_id)::int AS usage_count
+    `SELECT t.id, t.name, t.color, t.created_by, t.modules, COUNT(l.record_id)::int AS usage_count
      FROM ipy_tag t LEFT JOIN ipy_tag_link l ON l.tag_id = t.id
+     WHERE $1::text IS NULL OR cardinality(t.modules) = 0 OR t.modules @> ARRAY[$1::text]
      GROUP BY t.id ORDER BY usage_count DESC, t.name LIMIT 200`,
+    [module],
   );
   res.json(rows.rows);
 }));
@@ -277,26 +285,35 @@ miscRouter.get('/tags', asyncHandler(async (_req, res) => {
 const tagInput = z.object({
   name: z.string().trim().min(1).max(40),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Colour must be a hex value').optional(),
+  // Which modules offer this tag. `[]` is a value meaning "all of them", not a
+  // missing answer — see migration 154.
+  modules: z.array(z.string().min(1).max(60)).max(20).optional(),
 });
 
 miscRouter.post('/tags', asyncHandler(async (req, res) => {
   await assertCapability(getUser(req), 'admin.picklists');
-  const { name, color } = tagInput.parse(req.body ?? {});
-  const row = await db.queryOne<{ id: string; name: string; color: string }>(
-    `INSERT INTO ipy_tag (name, color, created_by) VALUES ($1,$2,$3)
-     RETURNING id, name, color`,
-    [name.toLowerCase(), color ?? '#2563eb', getUser(req).id],
+  const { name, color, modules } = tagInput.parse(req.body ?? {});
+  const row = await db.queryOne<{ id: string; name: string; color: string; modules: string[] }>(
+    `INSERT INTO ipy_tag (name, color, created_by, modules) VALUES ($1,$2,$3,$4::text[])
+     RETURNING id, name, color, modules`,
+    [name.toLowerCase(), color ?? '#2563eb', getUser(req).id, modules ?? []],
   );
   res.status(201).json(row);
 }));
 
 miscRouter.patch('/tags/:id', asyncHandler(async (req, res) => {
   await assertCapability(getUser(req), 'admin.picklists');
-  const { name, color } = tagInput.partial().refine((value) => value.name !== undefined || value.color !== undefined).parse(req.body ?? {});
-  const row = await db.queryOne<{ id: string; name: string; color: string }>(
-    `UPDATE ipy_tag SET name = COALESCE($2, name), color = COALESCE($3, color)
-     WHERE id = $1 RETURNING id, name, color`,
-    [req.params.id, name?.toLowerCase(), color],
+  const { name, color, modules } = tagInput.partial()
+    .refine((value) => value.name !== undefined || value.color !== undefined || value.modules !== undefined)
+    .parse(req.body ?? {});
+  // `modules` is COALESCEd on the parameter being null rather than on the
+  // array being empty: an admin clearing every module is choosing "offer this
+  // everywhere", and treating that as "no answer" would silently ignore them.
+  const row = await db.queryOne<{ id: string; name: string; color: string; modules: string[] }>(
+    `UPDATE ipy_tag SET name = COALESCE($2, name), color = COALESCE($3, color),
+            modules = COALESCE($4::text[], modules)
+     WHERE id = $1 RETURNING id, name, color, modules`,
+    [req.params.id, name?.toLowerCase(), color, modules ?? null],
   );
   if (!row) throw new NotFoundError('Tag not found');
   res.json(row);
