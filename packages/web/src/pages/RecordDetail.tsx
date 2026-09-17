@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type BuyerMatch, type FieldMeta, type ModuleMeta, type PropertyMatch, type RecordEnvelope, relativeTime, type TimelineEntry } from '@ipropy/shared';
 import {
-  Activity, ArrowRightLeft, Check, ChevronLeft, ChevronRight, Download, Edit3, Eye, FileQuestion, FileText, Images, LayoutDashboard, Link2, Mic, MoreHorizontal, Paperclip, Pencil, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Tag, Trash2, Upload, Users, X,
+  Activity, ArrowRightLeft, Check, ChevronLeft, ChevronRight, Download, Edit3, Eye, FileQuestion, FileText, Images, LayoutDashboard, Link2, MessageCircle, Mic, MoreHorizontal, Paperclip, Pencil, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Tag, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { api, authedFileUrl } from '../lib/api';
 import { compressImage, formatBytes } from '../lib/compressImage';
@@ -17,6 +17,7 @@ import { cn, looksLikeHtml, renderMarkdown, restrictionForField, sanitiseRichTex
 import { resolveIcon } from '../lib/icons';
 import { FieldValue } from '../components/FieldRenderer';
 import { StrengthRing } from '../components/StrengthRing';
+import { WhatsAppTab } from '../components/WhatsAppTab';
 import { EditableField, isInlineEditable } from '../components/EditableField';
 import { assignmentField } from '../lib/fields';
 import { ShareLinksPanel } from '../components/ShareLinks';
@@ -312,6 +313,10 @@ export default function RecordDetail(): JSX.Element {
       icon: <Link2 className="h-3.5 w-3.5" />,
     })),
     ...(moduleName === 'leads' && supportsCalls ? [{ key: 'calls', label: 'Calls', icon: <Phone className="h-3.5 w-3.5" /> }] : []),
+    /* Offered wherever the record has a phone. The tab shows the history
+       whoever sent it, which is the CRM's own question of who may read this
+       record — not a question about whose phone it came from. */
+    ...(supportsCalls ? [{ key: 'whatsapp', label: 'WhatsApp', icon: <MessageCircle className="h-3.5 w-3.5" /> }] : []),
     { key: 'files', label: 'Files', icon: <Paperclip className="h-3.5 w-3.5" /> },
     ...(moduleName === 'properties' && supportsCalls ? [{ key: 'calls', label: 'Calls', icon: <Phone className="h-3.5 w-3.5" /> }] : []),
   ];
@@ -651,6 +656,19 @@ export default function RecordDetail(): JSX.Element {
             />
           )}
           {activeTab === 'calls' && <CallsTab recordId={id!} />}
+          {activeTab === 'whatsapp' && (
+            <WhatsAppTab
+              module={moduleName!}
+              recordId={id!}
+              /* The number the CRM holds, through the module's own phone field
+                 rather than a hardcoded name — `mobile` on leads, but a module
+                 an admin reshapes may call it something else. */
+              mobile={(() => {
+                const phone = meta.fields.find((f) => f.uitype === 'phone' && record.values[f.name]);
+                return phone ? String(record.values[phone.name]) : null;
+              })()}
+            />
+          )}
           {activeTab === 'files' && <FilesTab module={moduleName!} id={id!} canEdit={Boolean(record.can?.edit)} />}
         </div>
 

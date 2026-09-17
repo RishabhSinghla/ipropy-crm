@@ -137,7 +137,11 @@ commsRouter.post('/rcs/messages', asyncHandler(async (req, res) => {
   const conversation = await db.queryOne<{ id: string }>(
     `INSERT INTO ipy_conversation (channel, handle, record_id, record_module, assigned_to, last_message_at, last_message_preview)
      VALUES ('rcs',$1,$2,$3,$4,now(),$5)
-     ON CONFLICT (channel, handle) DO UPDATE SET last_message_at = now(), last_message_preview = EXCLUDED.last_message_preview
+     -- The predicate is required, not decoration: since migration 156 the old
+     -- (channel, handle) unique is a *partial* index, and Postgres will not
+     -- infer a partial index unless the statement repeats its WHERE clause.
+     ON CONFLICT (channel, handle) WHERE wa_account_id IS NULL
+       DO UPDATE SET last_message_at = now(), last_message_preview = EXCLUDED.last_message_preview
      RETURNING id`, [input.to, input.recordId ?? null, input.module ?? null, user.id, input.text.slice(0, 240)],
   );
   await db.query(

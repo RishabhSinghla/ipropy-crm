@@ -421,7 +421,7 @@ async function seedConversations(conn: Tx, leadIds: string[], customerIds: strin
          unread_count, last_message_at, last_message_preview, last_inbound_at,
          window_expires_at, ai_intent, sentiment, ai_summary)
        VALUES ('whatsapp',$1,$2,$3,$4,$5,'open',$6,$7,$8,$7,$9,$10,$11,$12)
-       ON CONFLICT (channel, handle) DO NOTHING
+       ON CONFLICT (channel, handle) WHERE wa_account_id IS NULL DO NOTHING
        RETURNING id`,
       [
         handle, rec.label, recordId, rec.module_name, rec.owner_id,

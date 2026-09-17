@@ -5,6 +5,7 @@ import { asyncHandler } from '../../middleware/errorHandler.js';
 import { blockApiKey, getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import * as agent from '../../integrations/whatsapp/agent/service.js';
 import * as claim from '../../integrations/whatsapp/agent/claim.js';
+import { recordService } from '../../core/entity/recordService.js';
 import QRCode from 'qrcode';
 
 /**
@@ -148,4 +149,55 @@ whatsappAgentRouter.post('/unmatched/:id/create', asyncHandler(async (req, res) 
 whatsappAgentRouter.post('/unmatched/:id/ignore', asyncHandler(async (req, res) => {
   await claim.ignore(getUser(req).id, req.params.id);
   res.json({ ok: true });
+}));
+
+// ---------------------------------------------------------------------------
+// A contact's WhatsApp history
+// ---------------------------------------------------------------------------
+
+/**
+ * Everything said to this person on WhatsApp, by anybody.
+ *
+ * Deliberately *not* scoped to the reader's own linked account. This is the
+ * contact's history, and who may read it is the CRM's own question — so the
+ * record is fetched through `recordService`, which applies the profile, the
+ * role hierarchy and the sharing rules before a single message is read. A
+ * manager who can open the lead can read its conversation; somebody who cannot
+ * open the lead gets the same 404 they would get anywhere else.
+ *
+ * That is how §12's manager visibility works without anybody borrowing an
+ * agent's session: authority comes from the contact, never from the phone.
+ */
+whatsappAgentRouter.get('/contacts/:module/:id/messages', asyncHandler(async (req, res) => {
+  const scope = getScope(req);
+  // Throws NotFound/Forbidden exactly as opening the record would.
+  await recordService.getRecord(scope, req.params.module, req.params.id);
+
+  const { rows } = await db.query(
+    `SELECT m.id, m.direction, m.body, m.type, m.status, m.created_at, m.media,
+            m.sent_by, u.first_name, u.last_name,
+            a.label AS account_label, a.phone_number AS account_number
+       FROM ipy_message m
+       JOIN ipy_conversation c ON c.id = m.conversation_id
+       LEFT JOIN ipy_wa_account a ON a.id = m.wa_account_id
+       LEFT JOIN ipy_user u ON u.id = a.user_id
+      WHERE c.record_id = $1 AND c.channel = 'whatsapp'
+      ORDER BY m.created_at
+      LIMIT 500`,
+    [req.params.id],
+  );
+
+  res.json(rows.map((row) => {
+    const r = row as Record<string, unknown>;
+    const first = (r.first_name as string | null) ?? '';
+    const last = (r.last_name as string | null) ?? '';
+    const agent = `${first} ${last}`.trim();
+    return {
+      id: r.id, direction: r.direction, body: r.body, type: r.type,
+      status: r.status, createdAt: r.created_at, media: r.media,
+      // "Sent via Sheetal's WhatsApp" — who it went out as, which is the whole
+      // point of per-agent numbers and the one thing a shared inbox cannot say.
+      sentVia: agent ? `${agent}${r.account_number ? ` (${r.account_number})` : ''}` : (r.account_label as string | null),
+    };
+  }));
 }));

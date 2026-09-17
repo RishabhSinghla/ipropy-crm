@@ -1192,6 +1192,11 @@ export const api = {
     post<{ recordId: string }>(`/api/whatsapp/unmatched/${conversationId}/create`, { values }),
   whatsappClaimIgnore: (conversationId: string) =>
     post<{ ok: true }>(`/api/whatsapp/unmatched/${conversationId}/ignore`, {}),
+  /** A contact's whole WhatsApp history, whoever sent it. Gated by record access. */
+  whatsappContactMessages: (module: string, id: string) => get<{
+    id: string; direction: 'inbound' | 'outbound'; body: string | null; type: string;
+    status: string; createdAt: string; media: unknown; sentVia: string | null;
+  }[]>(`/api/whatsapp/contacts/${module}/${id}/messages`),
 
   tags: (module?: string) => get<{ id: string; name: string; color: string; created_by: string | null; modules: string[]; usage_count: number }[]>(`/api/tags${qs({ module })}`),
   createTag: (body: { name: string; color?: string; modules?: string[] }) => post<{ id: string; name: string; color: string }>('/api/tags', body),
