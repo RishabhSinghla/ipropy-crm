@@ -29,6 +29,7 @@ import {
 import { ModuleIcon } from '../components/Layout';
 import RecordForm from '../components/RecordForm';
 import RecordPeek from '../components/RecordPeek';
+import { StrengthRing } from '../components/StrengthRing';
 import SiteCapture from './SiteCapture';
 import { useSwipeActions, type SwipeSide } from '../lib/swipeActions';
 import { MAX_WIDTH, MIN_WIDTH, SELECT_COL_WIDTH, useColumnWidths } from '../lib/columnWidths';
@@ -1358,9 +1359,22 @@ export default function ListView(): JSX.Element {
                             class would sit alongside Avatar's own `flex` and
                             the winner would come down to stylesheet order.
                           */
-                          <span className="mr-2 inline-flex align-middle">
+                          /*
+                            The ring is how full the record is. No number beside
+                            it here: the percentage next to every one of 22,983
+                            rows cost the name column the width it needs and
+                            truncated real names to "Riya Shar…". Hovering the
+                            ring gives the number and what is missing, and the
+                            record's own header prints it in full.
+                          */
+                          <StrengthRing
+                            fields={meta.fields}
+                            values={row.values}
+                            size={22}
+                            className="mr-2"
+                          >
                             <Avatar name={row.label} size={22} className="text-[9px]" />
-                          </span>
+                          </StrengthRing>
                         )}
                         {ci === 0 && row.starred && (
                           <Star

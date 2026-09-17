@@ -16,6 +16,7 @@ import { loadListNav } from '../lib/listNav';
 import { cn, looksLikeHtml, renderMarkdown, restrictionForField, sanitiseRichText } from '../lib/utils';
 import { resolveIcon } from '../lib/icons';
 import { FieldValue } from '../components/FieldRenderer';
+import { StrengthRing } from '../components/StrengthRing';
 import { EditableField, isInlineEditable } from '../components/EditableField';
 import { assignmentField } from '../lib/fields';
 import { ShareLinksPanel } from '../components/ShareLinks';
@@ -500,7 +501,11 @@ export default function RecordDetail(): JSX.Element {
           </div>
 
             <div className="flex min-w-0 items-start gap-3">
-              <Avatar name={record.label} size={44} />
+              {/* The ring and the number say how much of this record is
+                  filled in; hovering either names what is still missing. */}
+              <StrengthRing fields={meta.fields} values={record.values} size={44} showPercent>
+                <Avatar name={record.label} size={44} />
+              </StrengthRing>
 
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">

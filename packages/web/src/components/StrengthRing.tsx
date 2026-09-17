@@ -1,0 +1,78 @@
+import { type JSX, type ReactNode } from 'react';
+import { recordStrength, type FieldMeta } from '@ipropy/shared';
+import { cn } from '../lib/utils';
+
+/**
+ * How full a record is, drawn as a ring around whatever it wraps.
+ *
+ * Three bands rather than a gradient: a rep needs to know whether this record
+ * is worth calling, not its exact score. The colours are the same three the
+ * follow-up chips use, so red always means "this needs you".
+ *
+ * Fixed hues rather than tokens on purpose — like the due chips, this is the
+ * app's own vocabulary, not a colour an admin chose, so there is no hex to
+ * push through `badgeVars`.
+ */
+const BANDS = [
+  { min: 80, stroke: '#16a34a', text: 'text-emerald-700 dark:text-emerald-400', word: 'Strong' },
+  { min: 50, stroke: '#d97706', text: 'text-amber-700 dark:text-amber-400', word: 'Partly filled' },
+  { min: 0, stroke: '#dc2626', text: 'text-red-700 dark:text-red-400', word: 'Thin' },
+] as const;
+
+function band(percent: number): typeof BANDS[number] {
+  return BANDS.find((b) => percent >= b.min) ?? BANDS[BANDS.length - 1];
+}
+
+/** The spoken and hovered description: the number, then what would raise it. */
+function describe(percent: number, missing: { label: string }[]): string {
+  if (!missing.length) return `Form strength ${percent}% — nothing left to fill in`;
+  const names = missing.slice(0, 5).map((m) => m.label).join(', ');
+  const more = missing.length > 5 ? `, and ${missing.length - 5} more` : '';
+  return `Form strength ${percent}% — still missing ${names}${more}`;
+}
+
+export function StrengthRing({
+  fields, values, size = 22, showPercent = false, className, children,
+}: {
+  fields: FieldMeta[];
+  values: Record<string, unknown>;
+  /** The diameter of what sits inside the ring, not of the ring itself. */
+  size?: number;
+  showPercent?: boolean;
+  className?: string;
+  children?: ReactNode;
+}): JSX.Element {
+  const { percent, missing } = recordStrength(fields, values);
+  const tone = band(percent);
+  const label = describe(percent, missing);
+
+  // The ring sits outside the avatar, so the drawing is wider than the thing
+  // it measures. Stroke on the centre line of the circle, hence the half.
+  const stroke = Math.max(3, Math.round(size / 8));
+  const outer = size + stroke * 2 + 2;
+  const r = (outer - stroke) / 2;
+  const circumference = 2 * Math.PI * r;
+
+  return (
+    <span className={cn('inline-flex items-center gap-1 align-middle', className)}>
+      <span className="relative inline-flex shrink-0 items-center justify-center" style={{ width: outer, height: outer }}>
+        <svg width={outer} height={outer} viewBox={`0 0 ${outer} ${outer}`} role="img" aria-label={label} className="absolute inset-0">
+          <title>{label}</title>
+          <circle cx={outer / 2} cy={outer / 2} r={r} fill="none" strokeWidth={stroke} className="stroke-slate-200 dark:stroke-slate-700" />
+          <circle
+            cx={outer / 2} cy={outer / 2} r={r} fill="none" strokeWidth={stroke} stroke={tone.stroke} strokeLinecap="round"
+            strokeDasharray={`${(circumference * percent) / 100} ${circumference}`}
+            transform={`rotate(-90 ${outer / 2} ${outer / 2})`}
+          />
+        </svg>
+        <span className="relative inline-flex">{children}</span>
+      </span>
+      {showPercent && (
+        <span className={cn('text-xs font-semibold tabular-nums', tone.text)} title={label}>
+          {percent}%
+          <span className="sr-only"> form strength, {tone.word}</span>
+        </span>
+      )}
+    </span>
+  );
+}

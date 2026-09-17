@@ -4,3 +4,4 @@ export * from './constants.js';
 export * from './format.js';
 export * from './evaluate.js';
 export * from './redact.js';
+export * from './strength.js';
