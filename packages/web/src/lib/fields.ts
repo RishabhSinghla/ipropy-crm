@@ -21,6 +21,24 @@ export function assignmentField(fields: FieldMeta[]): FieldMeta | undefined {
     ?? fields.find((f) => f.columnName === 'owner_id' || f.name === 'owner_id');
 }
 
+/**
+ * The field a module's pipeline is measured on — the kanban's columns and the
+ * list's stage breakdown.
+ *
+ * `pipeline_field` is a stored name, and a rename changes a field's name while
+ * leaving its column alone, so the two drift apart with nothing to show for
+ * it. Production's leads module says `status` and has called the field
+ * `lead_status` for some time: matching on the name alone lost the kanban's
+ * grouping and hid the stage breakdown entirely, both without an error,
+ * because the column was still there and nothing asked for it.
+ */
+export function pipelineFieldOf(module: {
+  pipelineField: string | null;
+  fields: FieldMeta[];
+}): FieldMeta | undefined {
+  return module.pipelineField ? fieldByKey(module.fields, module.pipelineField) : undefined;
+}
+
 /** A field by name, tolerating a rename that left the column alone. */
 export function fieldByKey(fields: FieldMeta[], key: string): FieldMeta | undefined {
   return fields.find((f) => f.name === key) ?? fields.find((f) => f.columnName === key);

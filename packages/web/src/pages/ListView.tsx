@@ -13,7 +13,7 @@ import { saveListNav } from '../lib/listNav';
 import { cn, restrictionForField } from '../lib/utils';
 import { FieldInput, FieldValue } from '../components/FieldRenderer';
 import { EditableField, isInlineEditable } from '../components/EditableField';
-import { assignmentField, byLabel } from '../lib/fields';
+import { assignmentField, byLabel, pipelineFieldOf } from '../lib/fields';
 /*
   Shared with the phone, deliberately: `phoneOf` pairs each phone field with
   its own country field, and a second copy here would drift from the one the
@@ -355,8 +355,20 @@ export default function ListView(): JSX.Element {
     [user?.id],
   );
 
+  /*
+    The module's pipeline field, resolved by name *or* column.
+
+    A rename changes a field's name and leaves its column alone, while
+    `pipeline_field` keeps the old name — and on production that has already
+    happened: leads says `status` and the field has been `lead_status` for
+    some time. Matching on the name alone is why the kanban groups by nothing
+    and the stage breakdown does not appear, both without an error, because
+    the column is still there and nothing asks for it.
+  */
+  const stageField = meta ? pipelineFieldOf(meta) : undefined;
+
   const groupByField = displayMode === 'kanban'
-    ? (activeView?.groupBy ?? meta?.pipelineField ?? undefined)
+    ? (activeView?.groupBy ?? stageField?.name ?? undefined)
     : undefined;
 
   // Next Follow-up is the CRM's task field. These are deliberately not saved
@@ -379,13 +391,13 @@ export default function ListView(): JSX.Element {
       ...(taskQueue ? taskFilters[taskQueue].conditions : []),
       // `in` rather than one condition per stage: the breakdown is a single
       // question — which of these stages — and an AND of equals matches nothing.
-      ...(stagePick.length && meta?.pipelineField
-        ? [{ field: meta.pipelineField, operator: 'in' as const, value: stagePick }]
+      ...(stagePick.length && stageField
+        ? [{ field: stageField.name, operator: 'in' as const, value: stagePick }]
         : []),
     ];
     if (!extra.length) return filter;
     return { logic: 'AND', conditions: [...filter.conditions, ...extra] };
-  }, [filter, taskFilters, taskQueue, stagePick, meta?.pipelineField]);
+  }, [filter, taskFilters, taskQueue, stagePick, stageField?.name]);
 
   /*
     What the breakdown counts is the view and the ad-hoc filter, but never the
@@ -856,12 +868,12 @@ export default function ListView(): JSX.Element {
               </button>
               <button
                 onClick={() => setDisplayMode('kanban')}
-                disabled={!meta.pipelineField && !activeView?.groupBy}
+                disabled={!stageField && !activeView?.groupBy}
                 className={cn(
                   'px-2 py-1.5 disabled:opacity-30',
                   displayMode === 'kanban' ? 'bg-slate-100 dark:bg-slate-800' : 'hover:bg-slate-50 dark:hover:bg-slate-800',
                 )}
-                title={meta.pipelineField ? 'Kanban' : 'This module has no pipeline field'}
+                title={stageField ? 'Kanban' : 'This module has no pipeline field'}
               >
                 <LayoutGrid className="h-3.5 w-3.5" />
               </button>

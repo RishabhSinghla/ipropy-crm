@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FieldMeta } from '@ipropy/shared';
-import { assignmentField, byLabel, fieldByKey } from '../src/lib/fields';
+import { assignmentField, byLabel, fieldByKey, pipelineFieldOf } from '../src/lib/fields';
 
 /**
  * Finding a field without hard-coding its name.
@@ -72,5 +72,45 @@ describe('byLabel', () => {
     // These arrays come out of React Query's cache; sorting one in place
     // mutates state every other component is reading.
     expect(original.map((f) => f.label)).toEqual(['Zebra', 'Apple']);
+  });
+});
+
+
+/**
+ * Production's own drift, pinned.
+ *
+ * `ipy_module.pipeline_field` on leads reads `status`, and the field has been
+ * called `lead_status` since somebody renamed it — the column never moved.
+ * Matching on the name alone returned undefined, which is not an error: the
+ * kanban grouped by nothing and the stage breakdown did not render, silently,
+ * on the module that carries 22,983 records.
+ */
+describe('pipelineFieldOf', () => {
+  const leads = {
+    pipelineField: 'status',
+    fields: [
+      field({ name: 'lead_status', label: 'Lead Status', uitype: 'picklist', columnName: 'status' }),
+      field({ name: 'full_name', label: 'Full Name', columnName: 'full_name' }),
+    ],
+  };
+
+  it('finds the field through a rename, by its column', () => {
+    expect(pipelineFieldOf(leads)?.name).toBe('lead_status');
+  });
+
+  it('still prefers a field that answers to the stored name', () => {
+    const properties = {
+      pipelineField: 'status',
+      fields: [field({ name: 'status', label: 'Status', uitype: 'picklist', columnName: 'status' })],
+    };
+    expect(pipelineFieldOf(properties)?.name).toBe('status');
+  });
+
+  it('is undefined when the module has no pipeline at all', () => {
+    expect(pipelineFieldOf({ pipelineField: null, fields: leads.fields })).toBeUndefined();
+  });
+
+  it('is undefined when the field it names is gone entirely', () => {
+    expect(pipelineFieldOf({ pipelineField: 'stage', fields: leads.fields })).toBeUndefined();
   });
 });

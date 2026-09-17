@@ -5,6 +5,7 @@ import type { FieldMeta, FilterGroup, ModuleMeta } from '@ipropy/shared';
 import { api } from '../lib/api';
 import { cn } from '../lib/utils';
 import { badgeVars } from '../lib/color';
+import { pipelineFieldOf } from '../lib/fields';
 import { Dropdown } from './ui';
 
 /**
@@ -29,9 +30,14 @@ export function StatusBreakdown({
   selected: string[];
   onApply: (values: string[]) => void;
 }): JSX.Element | null {
-  const fieldName = meta.pipelineField;
-  const field = fieldName ? meta.fields.find((f) => f.name === fieldName) : undefined;
-  if (!fieldName || !field) return null;
+  /*
+    Through `fieldByKey`, not a name match. A rename changes a field's name and
+    never its column, while `pipeline_field` keeps the old name — so a module
+    somebody renamed the status field on loses the kanban and this panel at
+    once, silently: the column is untouched, nothing errors, nothing appears.
+  */
+  const field = pipelineFieldOf(meta);
+  if (!field) return null;
 
   return (
     <Dropdown
