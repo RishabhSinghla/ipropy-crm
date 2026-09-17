@@ -232,3 +232,19 @@ jobs:
             "SELECT coalesce(string_agg(table_name || '.' || column_name || '=' || n, ', '), '(none)')
                FROM (SELECT table_name, column_name, count(*)::text AS n
                        FROM ipy_dropped_column GROUP BY 1,2) t;"
+          echo
+          # The pipeline field is what the kanban groups by and what the list's
+          # stage breakdown is built from. A module whose `pipeline_field` names
+          # a field that has since been renamed shows neither, silently — the
+          # column is still there, so nothing errors and nothing appears.
+          echo "=== pipeline field per module, and whether a field still answers to that name ==="
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT m.name AS module,
+                   coalesce(m.pipeline_field, '(null)') AS pipeline_field,
+                   EXISTS (SELECT 1 FROM ipy_field f
+                            WHERE f.module_id = m.id AND f.name = m.pipeline_field
+                              AND f.is_active) AS field_by_name,
+                   coalesce((SELECT f.name FROM ipy_field f
+                              WHERE f.module_id = m.id AND f.column_name = m.pipeline_field
+                                AND f.is_active LIMIT 1), '(none)') AS field_by_column
+              FROM ipy_module m WHERE m.is_active ORDER BY m.name;"
