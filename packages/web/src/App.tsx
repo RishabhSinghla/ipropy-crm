@@ -24,6 +24,7 @@ const RecordDetail = lazy(() => import('./pages/RecordDetail'));
 const RecordEdit = lazy(() => import('./pages/RecordEdit'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const SharedPropertyPage = lazy(() => import('./pages/SharedProperty'));
+const ChatsPage = lazy(() => import('./pages/Chats'));
 const SharedMatchesPage = lazy(() => import('./pages/SharedMatches'));
 const PublicFormPage = lazy(() => import('./pages/PublicForm'));
 const SiteCapture = lazy(() => import('./pages/SiteCapture'));
@@ -102,6 +103,9 @@ export default function App(): JSX.Element {
               <Route path="capture" element={<SiteCapture />} />
 
               <Route path="settings" element={<SettingsPage />} />
+              {/* Above the generic `:module` route, which would otherwise treat
+                  "chats" as a module name and 404 on the metadata lookup. */}
+              <Route path="chats" element={<ChatsPage />} />
               <Route path="admin/*" element={<AdminPage />} />
 
               {/* Generic module routes — every module, seeded or custom, uses these. */}

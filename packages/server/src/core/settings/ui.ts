@@ -69,7 +69,7 @@ export async function uiSettings(): Promise<UiSettings> {
       headerTabs: Array.isArray(tabs)
         ? (tabs as unknown[]).filter((t): t is HeaderTab =>
           Boolean(t) && typeof t === 'object'
-          && ['dashboard', 'capture', 'reports', 'module', 'link'].includes((t as HeaderTab).kind))
+          && ['dashboard', 'capture', 'chats', 'reports', 'module', 'link'].includes((t as HeaderTab).kind))
         : null,
       socialPosition: position === 'brand' || position === 'right' || position === 'hidden'
         ? position

@@ -4,10 +4,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { relativeTime } from '@ipropy/shared';
 import {
   Bell, BellOff, Camera, Check, Copy, Download, Fingerprint, KeyRound, Monitor,
-  Moon, Phone, Plus, RefreshCw, Save, Smartphone, Sun, Trash2, User, X,
+  MessageCircle, Moon, Phone, Plus, RefreshCw, Save, Smartphone, Sun, Trash2, User, X,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { loadPageSize, PAGE_SIZE_OPTIONS, savePageSize } from '../lib/pageSize';
+import { WhatsAppLink } from '../components/WhatsAppLink';
 import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { currentSubscription, disablePush, enablePush, permissionState, pushSupport } from '../lib/push';
@@ -77,6 +78,7 @@ export default function SettingsPage(): JSX.Element {
               { key: 'alerts', label: 'Alerts', icon: <Bell className="h-3.5 w-3.5" /> },
               { key: 'security', label: 'Security', icon: <KeyRound className="h-3.5 w-3.5" /> },
               { key: 'phones', label: 'Phones', icon: <Smartphone className="h-3.5 w-3.5" /> },
+              { key: 'whatsapp', label: 'WhatsApp', icon: <MessageCircle className="h-3.5 w-3.5" /> },
             ]}
             active={tab}
             onChange={setTab}
@@ -88,6 +90,7 @@ export default function SettingsPage(): JSX.Element {
           {tab === 'alerts' && <AlertsTab />}
           {tab === 'security' && <SecurityTab />}
           {tab === 'phones' && <PhonesTab />}
+          {tab === 'whatsapp' && <WhatsAppLink />}
         </div>
       </div>
     </div>

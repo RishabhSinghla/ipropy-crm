@@ -1154,6 +1154,45 @@ export const api = {
   sharedProperty: (token: string) => get<SharedProperty>(`/api/public/share/${token}`),
   sharedMatches: (token: string) => get<SharedMatches>(`/api/public/matches/${token}`),
   /** `module` narrows to the tags that module offers; omit it for the whole vocabulary. */
+  // ---------------------------------------------------------------------
+  // Agent-linked WhatsApp. Not one of these takes an account id: every call
+  // resolves the signed-in user's own linked number, server-side.
+  // ---------------------------------------------------------------------
+  whatsappMe: () => get<{
+    account: {
+      id: string; label: string; phoneNumber: string | null; displayName: string | null;
+      status: 'disconnected' | 'connecting' | 'qr' | 'pairing' | 'connected' | 'error';
+      isEnabled: boolean; lastConnectedAt: string | null; lastSyncedAt: string | null; lastError: string | null;
+    } | null;
+    qr: string | null;
+  }>('/api/whatsapp/me'),
+  whatsappLink: (label?: string) => post<{ account: unknown; qr: string | null }>('/api/whatsapp/link', { label }),
+  whatsappUnlink: () => post<{ ok: true }>('/api/whatsapp/unlink', {}),
+  whatsappSend: (to: string, text: string) =>
+    post<{ providerMessageId: string }>('/api/whatsapp/send', { to, text }),
+  whatsappConversations: (unread = false) => get<{
+    id: string; handle: string; contact_name: string | null; record_id: string | null;
+    record_module: string | null; record_label: string | null;
+    unread_count: number; last_message_at: string | null; last_message_preview: string | null;
+  }[]>(`/api/whatsapp/conversations${unread ? '?unread=true' : ''}`),
+  whatsappMessages: (conversationId: string) => get<{
+    id: string; direction: 'inbound' | 'outbound'; body: string | null; type: string;
+    status: string; created_at: string; media: unknown; sent_by: string | null;
+  }[]>(`/api/whatsapp/conversations/${conversationId}/messages`),
+  whatsappMarkRead: (conversationId: string) =>
+    post<{ ok: true }>(`/api/whatsapp/conversations/${conversationId}/read`, {}),
+  whatsappUnmatched: () => get<{
+    conversationId: string; handle: string; contactName: string | null;
+    lastMessageAt: string | null; lastMessagePreview: string | null; unreadCount: number;
+    candidates: { recordId: string; label: string }[];
+  }[]>('/api/whatsapp/unmatched'),
+  whatsappClaimLink: (conversationId: string, recordId: string) =>
+    post<{ ok: true }>(`/api/whatsapp/unmatched/${conversationId}/link`, { recordId }),
+  whatsappClaimCreate: (conversationId: string, values: Record<string, unknown>) =>
+    post<{ recordId: string }>(`/api/whatsapp/unmatched/${conversationId}/create`, { values }),
+  whatsappClaimIgnore: (conversationId: string) =>
+    post<{ ok: true }>(`/api/whatsapp/unmatched/${conversationId}/ignore`, {}),
+
   tags: (module?: string) => get<{ id: string; name: string; color: string; created_by: string | null; modules: string[]; usage_count: number }[]>(`/api/tags${qs({ module })}`),
   createTag: (body: { name: string; color?: string; modules?: string[] }) => post<{ id: string; name: string; color: string }>('/api/tags', body),
   updateTag: (id: string, body: { name?: string; color?: string; modules?: string[] }) => patch<{ id: string; name: string; color: string }>(`/api/tags/${id}`, body),

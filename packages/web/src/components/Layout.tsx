@@ -97,6 +97,7 @@ export default function Layout(): JSX.Element {
       return [
         { kind: 'dashboard' as const, label: undefined as string | undefined },
         ...menuModules.map((m) => ({ kind: 'module' as const, value: m.name, label: undefined as string | undefined })),
+        { kind: 'chats' as const, label: undefined as string | undefined },
         { kind: 'capture' as const, label: undefined as string | undefined },
       ];
     }
@@ -391,6 +392,12 @@ function ModuleSwitcher({
       return [{
         key, to: '/dashboard', label: t.label ?? 'Dashboard',
         icon: <LayoutDashboard className="h-4 w-4" />, badge: undefined as number | undefined, external: false,
+      }];
+    }
+    if (t.kind === 'chats') {
+      return [{
+        key, to: '/chats', label: t.label ?? 'Chats',
+        icon: <MessageCircle className="h-4 w-4" />, badge: undefined, external: false,
       }];
     }
     if (t.kind === 'capture') {

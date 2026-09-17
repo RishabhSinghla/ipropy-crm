@@ -130,6 +130,21 @@ test.describe('accessibility', () => {
     expect(violations, summarise(violations)).toEqual([]);
   });
 
+  test('the WhatsApp link screen has no violations', async ({ page }) => {
+    await page.goto('/settings');
+    await page.getByRole('button', { name: 'WhatsApp' }).click();
+    await expect(page.getByText('My WhatsApp')).toBeVisible();
+    const { violations } = await scan(page);
+    expect(violations, summarise(violations)).toEqual([]);
+  });
+
+  test('Chats has no violations', async ({ page }) => {
+    await page.goto('/chats');
+    await expect(page.getByText(/Link your WhatsApp first|Pick a conversation/)).toBeVisible({ timeout: 20_000 });
+    const { violations } = await scan(page);
+    expect(violations, summarise(violations)).toEqual([]);
+  });
+
   test('record detail has no violations', async ({ page, context }) => {
     await page.goto('/leads');
     await waitForRecords(page);

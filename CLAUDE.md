@@ -831,12 +831,43 @@ mechanism, which is against WhatsApp's terms and risks the rep's own number. Not
 beyond the abstraction gets built until he picks: personal numbers and the risk, one
 official business number, or both.
 
-**What exists so far:** `integrations/whatsapp/providers/types.ts` — a `WhatsAppProvider`
-contract with a capability set, which the specification asks for in its own §27 and which
-is needed whichever route wins. It is types only, wired to nothing, and no behaviour
-changed. A provider asked for a capability it lacks throws `NotSupportedError` rather than
-returning quietly: a send that silently does nothing is the failure mode that let 40,000
-birthday messages queue unnoticed.
+**What exists so far**, all under `integrations/whatsapp/`:
+
+* `providers/types.ts` — the `WhatsAppProvider` contract the specification asks for
+  in its §27. A provider asked for a capability it lacks throws `NotSupportedError`
+  rather than returning quietly: a send that silently does nothing is the failure mode
+  that let 40,000 birthday messages queue unnoticed.
+* `agent/historyPolicy.ts` — **the rule both previous attempts lacked, and why both were
+  torn out.** History is strictly numbers the CRM already knows, asked once per
+  conversation before any message is read. A message arriving *now* from an unknown
+  number is different and deliberately so: somebody contacting a number the rep linked
+  on purpose is a lead, so it is kept unattached for a person to claim.
+* `agent/authState.ts` — the linked device's keys, in the database, encrypted under
+  their own salt. `useMultiFileAuthState` is useless here: Render replaces the container,
+  so the folder is gone on the next deploy and everybody re-scans. `BufferJSON` is not
+  optional — signal keys are Buffers and plain JSON breaks them.
+* `agent/session.ts` — one socket per agent, keyed by account, with **no "current"
+  socket**. History and live traffic have separate handlers and the history one cannot
+  reach the live one. A logout is honoured, not retried; a dropped connection retries
+  once after five seconds.
+* `agent/matchContact.ts` — last ten digits, read from the module's `phone` fields.
+  Answers one record, nobody, or "more than one and I will not choose".
+* `agent/store.ts` — idempotent by database, not by hope: `ON CONFLICT DO NOTHING`
+  against a partial unique index on (account, provider message id).
+* `agent/claim.ts` — the three ways out of an unknown number: create, link, ignore.
+* `agent/service.ts` and `api/routes/whatsappAgent.ts` — **no function or route takes
+  an account id.** Every call resolves the signed-in user's own account, so there is no
+  request shape that reaches a colleague's session.
+* `web/src/components/WhatsAppLink.tsx` (My Profile → WhatsApp) and
+  `web/src/pages/Chats.tsx`.
+
+Migration `155`. `user_id` is NOT NULL and unique — the previous build picked an account
+with `ORDER BY last_connected_at DESC LIMIT 1`, so Sheetal's message could leave from
+Rahul's phone. Both new foreign keys are ON DELETE SET NULL: an agent leaving must not
+take the conversation with them.
+
+**Not built yet:** media, voice notes, the contact's WhatsApp tab, timeline entries, the
+icon beside phone numbers, quick replies, search, the admin panel, property sharing.
 
 **If it is rebuilt, the things that cost a night to learn:** history arrives exactly once
 during the handshake after a scan and cannot be re-requested; Baileys must be on the
