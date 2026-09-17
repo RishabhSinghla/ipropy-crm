@@ -1,0 +1,139 @@
+# The three things the WhatsApp removal deliberately kept, removed on request.
+#
+# `remove-whatsapp.yml` took out the integration and left the customer data
+# behind on purpose: real conversations, and anyone's record of having asked not
+# to be messaged. The owner asked for those too, on 17 September 2026, and for
+# the "Instant lead response" rule with them.
+#
+# READ THIS BEFORE RUNNING IT. Unlike the first removal, this one deletes
+# things a person created and a customer said:
+#
+#   * WhatsApp conversations and every message in them. These are real
+#     exchanges with real buyers. They disappear from the Inbox and from each
+#     contact's timeline.
+#   * `whatsapp` opt-out rows — people who asked not to be messaged. Production
+#     held 0 of these when this was written, so this likely deletes nothing,
+#     but it is the list you would point at if anyone ever asked.
+#   * The "Instant lead response" workflow **entirely**. Its WhatsApp step was
+#     already gone; what remains is lead scoring and the "call this lead within
+#     30 minutes" task. New leads will get neither. That was said plainly and
+#     chosen anyway.
+#
+# Everything is copied to a `*_removed` table first, in one transaction, and
+# looking is still the default.
+name: Remove the WhatsApp leftovers
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Type remove to do it. Anything else only shows what would go."
+        default: "look"
+
+permissions:
+  contents: read
+
+jobs:
+  remove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Install PostgreSQL 18 client
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: What would go
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT c.handle, c.contact_name, c.status,
+                 (SELECT count(*)::int FROM ipy_message m WHERE m.conversation_id = c.id) AS messages,
+                 c.last_message_at::date AS last_message
+            FROM ipy_conversation c WHERE c.channel = 'whatsapp'
+           ORDER BY c.last_message_at DESC NULLS LAST;
+          SQL
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT channel, count(*)::int AS opt_outs FROM ipy_channel_optout
+           WHERE channel = 'whatsapp' GROUP BY channel;
+          SQL
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT w.name, w.is_active, w.run_count, t.type AS step, t.name AS step_name
+            FROM ipy_workflow w LEFT JOIN ipy_workflow_task t ON t.workflow_id = w.id
+           WHERE w.name = 'Instant lead response' ORDER BY t.sequence;
+          SQL
+          echo "--- staying put ---"
+          psql "$PROD_DATABASE_URL" -tAc "
+            SELECT 'call/email opt-outs kept: '
+              || (SELECT count(*) FROM ipy_channel_optout WHERE channel <> 'whatsapp')
+              || ' | non-whatsapp conversations kept: '
+              || (SELECT count(*) FROM ipy_conversation WHERE channel <> 'whatsapp')
+              || ' | other workflows kept: '
+              || (SELECT count(*) FROM ipy_workflow WHERE name <> 'Instant lead response');"
+
+      - name: Remove it
+        if: ${{ inputs.apply == 'remove' }}
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          # One transaction. Messages go before their conversations so the copy
+          # is complete either way and no foreign key decides the order for us.
+          psql "$PROD_DATABASE_URL" -P pager=off -v ON_ERROR_STOP=1 <<'SQL'
+          BEGIN;
+
+          CREATE TABLE IF NOT EXISTS ipy_message_removed (LIKE ipy_message);
+          INSERT INTO ipy_message_removed
+            SELECT m.* FROM ipy_message m JOIN ipy_conversation c ON c.id = m.conversation_id
+             WHERE c.channel = 'whatsapp';
+          DELETE FROM ipy_message m USING ipy_conversation c
+           WHERE c.id = m.conversation_id AND c.channel = 'whatsapp';
+
+          CREATE TABLE IF NOT EXISTS ipy_conversation_removed (LIKE ipy_conversation);
+          INSERT INTO ipy_conversation_removed
+            SELECT * FROM ipy_conversation WHERE channel = 'whatsapp';
+          DELETE FROM ipy_conversation WHERE channel = 'whatsapp';
+
+          -- The consent trail in `ipy_consent_event` is deliberately NOT
+          -- touched: it is the evidence of when and why somebody asked, which
+          -- is the part that may have to be produced under DPDP. Only the
+          -- live "do not message" flag goes.
+          CREATE TABLE IF NOT EXISTS ipy_channel_optout_removed (LIKE ipy_channel_optout);
+          INSERT INTO ipy_channel_optout_removed
+            SELECT * FROM ipy_channel_optout WHERE channel = 'whatsapp';
+          DELETE FROM ipy_channel_optout WHERE channel = 'whatsapp';
+
+          CREATE TABLE IF NOT EXISTS ipy_workflow_removed (LIKE ipy_workflow);
+          INSERT INTO ipy_workflow_removed
+            SELECT * FROM ipy_workflow WHERE name = 'Instant lead response';
+          CREATE TABLE IF NOT EXISTS ipy_workflow_task_removed (LIKE ipy_workflow_task);
+          INSERT INTO ipy_workflow_task_removed
+            SELECT t.* FROM ipy_workflow_task t JOIN ipy_workflow w ON w.id = t.workflow_id
+             WHERE w.name = 'Instant lead response';
+          DELETE FROM ipy_workflow_task
+           WHERE workflow_id IN (SELECT id FROM ipy_workflow WHERE name = 'Instant lead response');
+          DELETE FROM ipy_workflow WHERE name = 'Instant lead response';
+
+          COMMIT;
+          SQL
+
+          echo "--- what is left ---"
+          psql "$PROD_DATABASE_URL" -tAc "
+            SELECT 'whatsapp conversations: '
+              || (SELECT count(*) FROM ipy_conversation WHERE channel = 'whatsapp')
+              || ' | whatsapp opt-outs: '
+              || (SELECT count(*) FROM ipy_channel_optout WHERE channel = 'whatsapp')
+              || ' | Instant lead response: '
+              || (SELECT count(*) FROM ipy_workflow WHERE name = 'Instant lead response');"
+          psql "$PROD_DATABASE_URL" -tAc "
+            SELECT 'kept safe — conversations: '
+              || (SELECT count(*) FROM ipy_conversation_removed)
+              || ' | messages: ' || (SELECT count(*) FROM ipy_message_removed)
+              || ' | opt-outs: ' || (SELECT count(*) FROM ipy_channel_optout_removed)
+              || ' | workflow steps: ' || (SELECT count(*) FROM ipy_workflow_task_removed);"
+          echo "--- the consent trail, deliberately untouched ---"
+          psql "$PROD_DATABASE_URL" -tAc "
+            SELECT 'consent events still on record: ' || count(*) FROM ipy_consent_event;"

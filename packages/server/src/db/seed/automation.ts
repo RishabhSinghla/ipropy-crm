@@ -30,33 +30,16 @@ interface WorkflowSeed {
 
 const WORKFLOWS: WorkflowSeed[] = [
   // --- Lead intake -----------------------------------------------------------
-  {
-    module: 'leads',
-    name: 'Instant lead response',
-    description: 'Scores a new lead the moment it arrives and tells the rep to call. Speed-to-lead is the single biggest conversion lever.',
-    trigger: 'on_create',
-    executionMode: 'once',
-    tasks: [
-      {
-        type: 'ai_action', name: 'Score the lead',
-        config: { action: 'score_lead' },
-      },
-      {
-        type: 'create_task', name: 'Create first-call task',
-        config: {
-          subject: 'Call new lead: {{full_name}}',
-          activity_type: 'Call',
-          priority: 'High',
-          dueInMinutes: 30,
-          assignTo: 'record_owner',
-        },
-      },
-      {
-        type: 'notify_user', name: 'Ping the owner',
-        config: { to: 'record_owner', title: 'New lead assigned', body: '{{full_name}} — {{lead_source}} — {{mobile}}' },
-      },
-    ],
-  },
+  /*
+    "Instant lead response" was here and was removed on 17 September 2026, on
+    the owner's instruction, along with the WhatsApp leftovers of the day.
+
+    Worth recording what went with it, because it was more than its WhatsApp
+    step: the rule also scored each new enquiry and raised a "call this lead
+    within 30 minutes" task for its owner. New leads get neither now. That was
+    stated plainly and chosen anyway — it is not an oversight to be helpfully
+    restored by the next person reading this file.
+  */
   {
     module: 'leads',
     name: 'Auto-assign inbound leads',

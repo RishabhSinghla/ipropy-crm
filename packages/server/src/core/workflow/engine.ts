@@ -268,8 +268,8 @@ async function enqueue(
 
   /*
     A task due now runs now, not whenever the tick next comes round. Without
-    this, "Instant lead response" was instant to within a minute; with it, it is
-    instant to within a quarter of a second — and it is what lets the tick be
+    this, a rule that fires the moment a lead arrives was instant to within a
+    minute; with it, it is instant to within a quarter of a second — and it is what lets the tick be
     slow enough for the database to power down between visits, which is where
     the bill actually goes.
 

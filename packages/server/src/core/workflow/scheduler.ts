@@ -55,8 +55,8 @@ export function startScheduler(): void {
  *
  * So the two jobs are separated. Queueing a task that is due now nudges the
  * drain immediately — the request that queued it already has the database open,
- * so it costs nothing — and "Instant lead response" gets faster than it was,
- * not slower. The tick becomes the safety net for retries and for scheduled
+ * so it costs nothing — and an on-create rule gets faster than it was, not
+ * slower. The tick becomes the safety net for retries and for scheduled
  * work, and can be slow enough to let the database rest between visits.
  *
  * Debounced, because a workflow with six tasks enqueues six times in a

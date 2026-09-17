@@ -10,8 +10,8 @@
  * a month for seven users.
  *
  * These pin the half that makes slowing the tick safe. Without the nudge,
- * raising the tick to fifteen minutes would have made "Instant lead response"
- * instant to within a quarter of an hour.
+ * raising the tick to fifteen minutes would have made a rule that fires the
+ * moment a lead arrives instant to within a quarter of an hour.
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
