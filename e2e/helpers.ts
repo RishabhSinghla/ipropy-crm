@@ -295,3 +295,22 @@ export async function openModuleSwitcher(page: Page): Promise<Locator> {
   }
   return page.getByRole('link', { name: /\S/ });
 }
+
+/**
+ * The first column in the table whose first row carries a dropdown editor.
+ *
+ * Which columns a list shows is an admin's arrangement (Admin → Table View),
+ * so a spec that needs "a picklist column" has to find one rather than name
+ * one. Returns -1 when the table has none, which is a skip and not a failure:
+ * an arrangement of text and numbers is a legitimate table.
+ */
+export async function firstPicklistColumn(page: Page): Promise<number> {
+  const cells = page.locator('tbody tr').first().locator('td');
+  const count = await cells.count();
+  for (let i = 0; i < count; i++) {
+    // `title="Change"` is what the inline editor's trigger carries, and only a
+    // field the list can edit in place has one.
+    if (await cells.nth(i).locator('button[title="Change"]').count()) return i;
+  }
+  return -1;
+}

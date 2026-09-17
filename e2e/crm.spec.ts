@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { columnIndex, unique, waitForRecords, fillRequiredFields, openRecordTab, inlineEditOn, searchList, openCreateDialog, waitForShell } from './helpers';
+import { columnIndex, unique, waitForRecords, fillRequiredFields, openRecordTab, inlineEditOn, searchList, openCreateDialog, waitForShell, firstPicklistColumn } from './helpers';
 
 /**
  * The journeys a salesperson actually performs. Each one is a path where a
@@ -56,12 +56,22 @@ test('inline-edits a picklist in the list and the change survives a reload', asy
   await page.goto('/leads');
   await waitForRecords(page);
 
-  // Find the Pipeline Status column by its header rather than by a fixed
-  // index: the default view's columns are metadata an admin can reorder, and a
-  // hardcoded nth() turns any such change into a mystery test failure.
-  const statusIndex = await columnIndex(page, 'Pipeline Status');
-  const statusCell = page.locator('tbody tr').first().locator('td').nth(statusIndex);
+  /*
+    Whichever picklist is on screen, not one named here.
+
+    Which columns a list shows is an admin's arrangement now (Admin → Table
+    View), so naming "Pipeline Status" made this spec assert on one
+    installation's choices: it broke the day the columns were arranged, and the
+    failure read as a broken inline edit rather than as a column that had moved.
+    What is being tested is that a dropdown in a list edits and persists — any
+    dropdown will prove it.
+  */
+  // Asked first, because with inline editing off there are no editors to find
+  // and "no dropdown column" would be a true statement about the wrong thing.
   test.skip(!(await inlineEditOn(page)), 'inline editing is switched off');
+  const statusIndex = await firstPicklistColumn(page);
+  test.skip(statusIndex < 0, 'no dropdown column in this table');
+  const statusCell = page.locator('tbody tr').first().locator('td').nth(statusIndex);
   /*
     On a list the value is not the trigger — the pencil beside it is.
 
