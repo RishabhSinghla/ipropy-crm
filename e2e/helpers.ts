@@ -263,3 +263,35 @@ export async function openCreateDialog(page: Page, singular: RegExp): Promise<Lo
   await expect(dialog).toBeVisible();
   return dialog;
 }
+
+/**
+ * The header's module switcher.
+ *
+ * The desktop header used to carry a visible link per module, and half a dozen
+ * specs leaned on `a[href="/leads"]` being on screen — as a click target, and
+ * as proof that module metadata had loaded at all. Both moved inside one
+ * control, so both go through here.
+ */
+export function moduleSwitcher(page: Page): Locator {
+  return page.getByRole('button', { name: 'Switch module' });
+}
+
+/**
+ * Wait until the app has its modules.
+ *
+ * The switcher is named from module metadata, so it carrying a module's label
+ * is the same proof the visible tab used to be — a shell that rendered without
+ * its metadata shows no switcher at all.
+ */
+export async function waitForShell(page: Page): Promise<void> {
+  await expect(moduleSwitcher(page)).toBeVisible({ timeout: 30_000 });
+}
+
+/** Open the switcher and hand back its menu links. */
+export async function openModuleSwitcher(page: Page): Promise<Locator> {
+  await waitForShell(page);
+  if (!(await page.getByRole('link', { name: /Dashboard/ }).count())) {
+    await moduleSwitcher(page).click();
+  }
+  return page.getByRole('link', { name: /\S/ });
+}

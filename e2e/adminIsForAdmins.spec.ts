@@ -16,6 +16,7 @@
  * capability at all, and Import Data lives in here.
  */
 import { expect, test } from '@playwright/test';
+import { waitForShell } from './helpers';
 
 // A fresh context each time: the stored admin session must not leak in.
 test.use({ storageState: { cookies: [], origins: [] } });
@@ -25,7 +26,9 @@ async function signIn(page: import('@playwright/test').Page, email: string) {
   await page.getByRole('textbox', { name: /you@ipropy|email or mobile/i }).fill(email);
   await page.getByRole('textbox', { name: /password/i }).fill('Admin@123');
   await page.getByRole('button', { name: /^sign in$/i }).click();
-  await expect(page.getByRole('link', { name: /dashboard/i }).first()).toBeVisible({ timeout: 20_000 });
+  // The header's module switcher, not a dashboard link: the links moved
+  // inside it and are not on screen until it is opened.
+  await waitForShell(page);
 }
 
 test('a rep who types the admin address is told plainly there is nothing there', async ({ page }) => {

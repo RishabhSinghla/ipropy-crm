@@ -1,4 +1,5 @@
 import { expect, test, type ConsoleMessage, type Page } from '@playwright/test';
+import { openModuleSwitcher, waitForShell } from './helpers';
 
 /**
  * Every module a user can actually reach, opened and checked.
@@ -49,15 +50,18 @@ function watchConsole(page: Page): string[] {
 /** Every one-segment route in the sidebar: the modules, and the tool pages when they are rendered. */
 async function moduleRoutes(page: Page): Promise<string[]> {
   await page.goto('/dashboard');
-  await expect(page.locator('a[href="/leads"]').first()).toBeVisible();
+  await waitForShell(page);
+  // The switcher holds the module links now and is closed by default, so the
+  // sweep has to open it before reading what is on screen.
+  await openModuleSwitcher(page);
 
   const routes = await page.evaluate(() => {
     const skip = new Set(['/dashboard', '/settings', '/inbox', '/calls', '/portal']);
-    // Visible links only: since the header became a top bar the same href
-    // appears in three navs (top tabs, drawer, bottom bar), and the hidden
-    // ones cannot be clicked — the Site visit tab is drawer/bottom-bar-only
-    // at desktop width, so including invisible copies made this sweep click
-    // a link that never appears on screen.
+    // Visible links only: the same href appears in three navs — the module
+    // switcher's menu, the mobile drawer and the bottom bar — and the hidden
+    // ones cannot be clicked. The Site visit tab is drawer/bottom-bar-only at
+    // desktop width, so including invisible copies made this sweep click a
+    // link that never appears on screen.
     return [...document.querySelectorAll<HTMLAnchorElement>('nav a[href]')]
       .filter((a) => a.offsetParent !== null)
       .map((a) => new URL(a.href).pathname)
@@ -128,7 +132,7 @@ function hitErrorBoundary(page: Page): Promise<boolean> {
   return page.getByText(/something went wrong on this screen/i).isVisible().catch(() => false);
 }
 
-test('every module in the sidebar opens without breaking', async ({ page }) => {
+test('every module in the switcher opens without breaking', async ({ page }) => {
   test.slow();
 
   const errors = watchConsole(page);
@@ -143,10 +147,11 @@ test('every module in the sidebar opens without breaking', async ({ page }) => {
     // them cost well over a hundred API calls, and the suite as a whole then
     // trips the 600/min limiter in app.ts and fails with an empty shell that
     // looks like a render bug. Clicking is also what a user actually does.
-    // `.first()` because three navs carry the same href since the sidebar
-    // became a top bar — top tabs, the mobile drawer, the bottom tab bar —
-    // and the top bar is first in the DOM and the one visible at this width.
-    await page.locator(`nav a[href="${route}"]`).first().click();
+    // Through the switcher, which is where the module links live now. It
+    // closes on a choice, so it is reopened for each hop — which is also what
+    // a person does.
+    await openModuleSwitcher(page);
+    await page.locator(`a[href="${route}"]:visible`).first().click();
     // Match the *path*, not the end of the URL: a list restores its last view
     // and sort into the query string on arrival, so `/properties$` never matches
     // once `?view=…&sort=…` lands — a race that passed locally and failed in CI.

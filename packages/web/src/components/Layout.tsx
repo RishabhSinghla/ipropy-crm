@@ -462,7 +462,9 @@ function ModuleSwitcher({
         )}
       >
         {(close) => (
-          <div className="py-0.5">
+          /* A landmark, like the row of tabs it replaces: this is still the
+             app's main navigation, it is just folded up until asked for. */
+          <nav aria-label="Modules" className="py-0.5">
             {entries.map((entry) => (
               entry.external ? (
                 <a
@@ -494,7 +496,7 @@ function ModuleSwitcher({
                 </NavLink>
               )
             ))}
-          </div>
+          </nav>
         )}
       </Dropdown>
     </div>

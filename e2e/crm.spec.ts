@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { columnIndex, unique, waitForRecords, fillRequiredFields, openRecordTab, inlineEditOn, searchList, openCreateDialog } from './helpers';
+import { columnIndex, unique, waitForRecords, fillRequiredFields, openRecordTab, inlineEditOn, searchList, openCreateDialog, waitForShell } from './helpers';
 
 /**
  * The journeys a salesperson actually performs. Each one is a path where a
@@ -13,8 +13,10 @@ test('signs in and lands on a working dashboard', async ({ page }) => {
   // session lands on a working dashboard.
   await page.goto('/dashboard');
   await expect(page.getByRole('heading', { name: /command centre|dashboard/i }).first()).toBeVisible();
-  // The sidebar proves module metadata loaded, not just that a shell rendered.
-  await expect(page.locator('a[href="/leads"]').first()).toBeVisible();
+  // The switcher proves module metadata loaded, not just that a shell
+  // rendered: it is named from the modules, so a shell without them shows
+  // nothing. It replaced the row of tabs this used to look for.
+  await waitForShell(page);
 });
 
 test('creates a lead and finds it again in the list', async ({ page }) => {
@@ -162,7 +164,7 @@ test('keeps the app usable when a page throws', async ({ page }) => {
   await page.goto('/leads/00000000-0000-0000-0000-000000000000');
 
   // Something must be rendered, and the shell must survive.
-  await expect(page.locator('a[href="/leads"]').first()).toBeVisible({ timeout: 30_000 });
+  await waitForShell(page);
   const body = await page.locator('body').innerText();
   expect(body.trim().length).toBeGreaterThan(0);
 });
