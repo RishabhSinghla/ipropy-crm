@@ -152,58 +152,24 @@ export default function Layout(): JSX.Element {
           {/* Social beside the brand — the admin's choice of where they sit. */}
           {socialPosition === 'brand' && <div className="hidden shrink-0 lg:block"><SocialBar /></div>}
 
-          {/* Primary tabs. The admin's arrangement decides the order, names and
-              extras (Admin → Header Tabs); modules still appear here on their
-              own, and a disabled one disappears. */}
-          <nav aria-label="Main" className="hidden min-w-0 flex-1 items-center gap-1 overflow-x-auto lg:flex">
-            {headerTabs.map((t, i) => {
-              const key = `${t.kind}-${t.value ?? ''}-${i}`;
-              if (t.kind === 'dashboard') {
-                return <TabItem key={key} to="/dashboard" icon={<LayoutDashboard className="h-4 w-4" />} label={t.label ?? 'Dashboard'} />;
-              }
-              if (t.kind === 'capture') {
-                /*
-                  Phone-only by default. At a desk the capture form is two clicks
-                  from Properties ("New Property" → "Capture on site"), so the
-                  tab there duplicated a path and read as a fifth destination;
-                  on a phone it *is* the destination — one tap from the bottom
-                  bar, standing at the gate — so the drawer and bottom tabs keep
-                  it unconditionally. An admin who explicitly places the tab in
-                  Admin → Header Tabs overrides this and it shows at every width.
-                */
-                if (!arrangedCapture) return null;
-                return <TabItem key={key} to="/capture" icon={<MapPin className="h-4 w-4" />} label={t.label ?? 'Site visit'} />;
-              }
-              if (t.kind === 'link') {
-                return (
-                  <a
-                    key={key}
-                    href={t.value}
-                    target={t.value?.startsWith('http') ? '_blank' : undefined}
-                    rel="noreferrer"
-                    className="flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-                  >
-                    <Globe className="h-4 w-4" />
-                    <span className="whitespace-nowrap">{t.label ?? t.value}</span>
-                  </a>
-                );
-              }
-              const m = menuModules.find((x) => x.name === t.value);
-              // A module the admin hid from the menu, or one this user cannot
-              // open, is not rendered — the arrangement merely names what
-              // would appear anyway.
-              if (!m) return null;
-              return (
-                <TabItem
-                  key={key}
-                  to={`/${m.name}`}
-                  icon={<ModuleIcon name={m.icon} />}
-                  label={t.label ?? m.label}
-                  badge={unseenCounts?.[m.name]}
-                />
-              );
-            })}
-          </nav>
+          {/*
+            One switcher rather than a row of tabs.
+
+            The tabs stretched across the header and grew with every module,
+            pushing search and the actions right and turning the bar into a
+            queue of destinations. The switcher says where you are and opens
+            everywhere you could go, in the space of one tab.
+
+            It is built from exactly the same `headerTabs` the row was, so the
+            admin's arrangement — order, renames, extra links, Admin → Header
+            Tabs — still decides what is in it.
+          */}
+          <ModuleSwitcher
+            tabs={headerTabs}
+            modules={menuModules}
+            unseen={unseenCounts}
+            arrangedCapture={arrangedCapture}
+          />
 
           {/* Search sits beside the tabs, and shrinks before the tabs do. */}
           <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 lg:flex-none">
@@ -397,23 +363,141 @@ function NewRecordButton({ modules }: { modules: ModuleSummary[] }): JSX.Element
   );
 }
 
-function TabItem({
-  to, icon, label, badge,
-}: { to: string; icon: JSX.Element; label: string; badge?: number }): JSX.Element {
+/**
+ * Where you are, and everywhere you could go, in one control.
+ *
+ * Built from the same `headerTabs` the old row of tabs was built from, so the
+ * admin's arrangement still decides the order, the names, and any extra links
+ * (Admin → Header Tabs). Nothing here is a list of destinations compiled into
+ * this file.
+ *
+ * Desktop only. A phone already has the drawer and the bottom bar, and putting
+ * a third way to change screen on a 360px header is how a header stops fitting.
+ */
+function ModuleSwitcher({
+  tabs, modules, unseen, arrangedCapture,
+}: {
+  tabs: HeaderTab[];
+  modules: ModuleSummary[];
+  unseen: Record<string, number> | undefined;
+  arrangedCapture: boolean;
+}): JSX.Element {
+  const location = useLocation();
+
+  /** One entry per destination, in the admin's order, with the extras filtered out. */
+  const entries = tabs.flatMap((t, i) => {
+    const key = `${t.kind}-${t.value ?? ''}-${i}`;
+    if (t.kind === 'dashboard') {
+      return [{
+        key, to: '/dashboard', label: t.label ?? 'Dashboard',
+        icon: <LayoutDashboard className="h-4 w-4" />, badge: undefined as number | undefined, external: false,
+      }];
+    }
+    if (t.kind === 'capture') {
+      // Same rule as the row it replaces: at a desk the capture form is two
+      // clicks from Properties, so it only appears when an admin places it.
+      if (!arrangedCapture) return [];
+      return [{
+        key, to: '/capture', label: t.label ?? 'Site visit',
+        icon: <MapPin className="h-4 w-4" />, badge: undefined, external: false,
+      }];
+    }
+    if (t.kind === 'link') {
+      return [{
+        key, to: t.value ?? '#', label: t.label ?? t.value ?? '',
+        icon: <Globe className="h-4 w-4" />, badge: undefined, external: true,
+      }];
+    }
+    const m = modules.find((x) => x.name === t.value);
+    // A module the admin hid, or one this user cannot open, is not offered —
+    // the arrangement only names what would appear anyway.
+    if (!m) return [];
+    return [{
+      key, to: `/${m.name}`, label: t.label ?? m.label,
+      icon: <ModuleIcon name={m.icon} />, badge: unseen?.[m.name], external: false,
+    }];
+  });
+
+  /*
+    Longest path first. `/leads` is a prefix of nothing here, but a future
+    `/leads/import` under a tab of its own would match `/leads` too, and the
+    switcher naming the wrong place is worse than naming none.
+  */
+  const current = [...entries]
+    .filter((e) => !e.external)
+    .sort((a, b) => b.to.length - a.to.length)
+    .find((e) => location.pathname === e.to || location.pathname.startsWith(`${e.to}/`));
+
+  const waiting = entries.reduce((sum, e) => sum + (e.badge ?? 0), 0) - (current?.badge ?? 0);
+
   return (
-    <NavLink
-      to={to}
-      className={({ isActive }) => cn(
-        'flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition-colors',
-        isActive
-          ? 'bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300'
-          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200',
-      )}
-    >
-      {icon}
-      <span className="whitespace-nowrap">{label}</span>
-      {badge ? <UnseenBadge count={badge} module={to.slice(1)} /> : undefined}
-    </NavLink>
+    <div className="hidden shrink-0 lg:block">
+      <Dropdown
+        align="left"
+        className="w-56"
+        trigger={(
+          <button
+            type="button"
+            aria-label="Switch module"
+            title="Switch module"
+            className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-100 dark:hover:bg-slate-800"
+          >
+            <span className="text-brand-600 dark:text-brand-400">{current?.icon ?? <LayoutDashboard className="h-4 w-4" />}</span>
+            <span className="max-w-[10rem] truncate">{current?.label ?? 'Dashboard'}</span>
+            <span className="rounded bg-slate-200/80 px-1.5 py-px text-[10px] font-bold uppercase tracking-wide text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+              CRM
+            </span>
+            {/* What is waiting somewhere else. Without it, closing the row of
+                tabs would hide every unseen count behind a click. */}
+            {waiting > 0 && (
+              <span
+                className="rounded-full bg-brand-600 px-1.5 py-0.5 text-2xs font-semibold text-white"
+                title={`${waiting} waiting on other screens`}
+              >
+                {waiting > 99 ? '99+' : waiting}
+              </span>
+            )}
+            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+          </button>
+        )}
+      >
+        {(close) => (
+          <div className="py-0.5">
+            {entries.map((entry) => (
+              entry.external ? (
+                <a
+                  key={entry.key}
+                  href={entry.to}
+                  target={entry.to.startsWith('http') ? '_blank' : undefined}
+                  rel="noreferrer"
+                  onClick={close}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm text-slate-700 transition-colors hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  {entry.icon}
+                  <span className="min-w-0 flex-1 truncate">{entry.label}</span>
+                </a>
+              ) : (
+                <NavLink
+                  key={entry.key}
+                  to={entry.to}
+                  onClick={close}
+                  className={({ isActive }) => cn(
+                    'flex items-center gap-2 px-3 py-1.5 text-sm transition-colors',
+                    isActive
+                      ? 'bg-brand-50 font-semibold text-brand-700 dark:bg-brand-950 dark:text-brand-300'
+                      : 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800',
+                  )}
+                >
+                  {entry.icon}
+                  <span className="min-w-0 flex-1 truncate">{entry.label}</span>
+                  {entry.badge ? <UnseenBadge count={entry.badge} module={entry.to.slice(1)} /> : null}
+                </NavLink>
+              )
+            ))}
+          </div>
+        )}
+      </Dropdown>
+    </div>
   );
 }
 
