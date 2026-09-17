@@ -607,16 +607,9 @@ export default function RecordDetail(): JSX.Element {
                       {updatedChip}
                     </span>
                   )}
-                  {(moduleName === 'leads' || moduleName === 'properties') && record.can?.edit && (
-                    <button
-                      type="button"
-                      className="btn-secondary btn-sm"
-                      onClick={() => setCollaborators(true)}
-                      title="Let one or more teammates work on this record"
-                    >
-                      <Users className="h-3.5 w-3.5" /> Team
-                    </button>
-                  )}
+                  {/* "Team" was a second button here, opening the same panel
+                      as "Share with team" in the ⋯ menu — same handler, same
+                      condition, same icon. One door, and it is the menu. */}
                   {/* Nothing to hang it on — a module with no assignment field. */}
                   {!assignedField && updatedChip}
                 </div>
