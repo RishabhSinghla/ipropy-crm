@@ -391,11 +391,18 @@ export default function LayoutDesigner(): JSX.Element {
             {layoutType === 'detail' && (
               <HeaderStripEditor
                 value={headerFields}
-                // The pipeline field is drawn as the status chip beside the
-                // record name, so putting it in the header strip too renders
-                // nothing — offering it is offering a no-op.
-                options={byLabel(placeable.filter((f) => f.name !== meta?.pipelineField))
-                  .map((f) => ({ value: f.name, label: f.label }))}
+                /*
+                  The pipeline field belongs here like any other.
+
+                  It used to be filtered out, because it was once drawn as a
+                  status chip beside the record name and offering it twice
+                  would have been offering a no-op. That chip was removed — the
+                  header is the record name now — so the filter was hiding
+                  Property Status from the one list that could put it back, and
+                  the detail header skipped drawing it for the same dead
+                  reason. Both are gone.
+                */
+                options={byLabel(placeable).map((f) => ({ value: f.name, label: f.label }))}
                 defaultTab={defaultTab}
                 tabOptions={tabOptions}
                 tabs={detailTabOptions}

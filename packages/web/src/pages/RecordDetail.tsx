@@ -543,8 +543,6 @@ export default function RecordDetail(): JSX.Element {
                     // A field that no longer exists, or that a profile hides,
                     // genuinely has nothing to show.
                     if (!field || !field.isActive || field.displayType === 'hidden') return null;
-                    // The pipeline field is already the status chip above.
-                    if (name === meta.pipelineField) return null;
                     /*
                       An empty one still renders, as a dash.
 
