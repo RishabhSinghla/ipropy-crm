@@ -146,7 +146,7 @@ function BreakdownPanel({
 
   return (
     <div className="text-xs">
-      <div className="flex items-start justify-between gap-3 border-b border-slate-100 bg-slate-50/90 p-3 dark:border-slate-800 dark:bg-slate-800/50">
+      <div className="flex items-start justify-between gap-3 border-b border-slate-100 bg-slate-50/90 px-3 py-2 dark:border-slate-800 dark:bg-slate-800/50">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h4 className="text-xs font-bold tracking-tight text-slate-800 dark:text-slate-100">{fieldLabel} breakdown</h4>
@@ -167,7 +167,7 @@ function BreakdownPanel({
         )}
       </div>
 
-      <div className="space-y-1 p-2">
+      <div className="space-y-1 p-2 pt-1.5">
         {users.length > 1 && (
           <div className="border-b border-slate-100 px-1 pb-2 pt-0.5 dark:border-slate-800">
             <div className="mb-1.5 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-muted">
@@ -183,7 +183,9 @@ function BreakdownPanel({
                 All
               </button>
             </div>
-            <div className="grid grid-cols-3 gap-1">
+            {/* Two rows of agents, then it scrolls. Nine people is three rows
+                of chips, which pushed the stages themselves off the screen. */}
+            <div className="grid max-h-[3.4rem] grid-cols-3 gap-1 overflow-y-auto">
               {users.slice(0, 9).map((user) => {
                 const mine = agent === user.id;
                 return (
@@ -216,7 +218,7 @@ function BreakdownPanel({
           aria-pressed={picked.length === 0}
           onClick={() => { setPicked([]); onApply([]); }}
           className={cn(
-            'flex w-full items-center justify-between rounded-lg p-2 font-semibold transition-colors',
+            'flex w-full items-center justify-between rounded-lg px-2 py-1.5 font-semibold transition-colors',
             picked.length === 0
               ? 'border border-brand-200/50 bg-brand-50/80 text-brand-800 dark:border-brand-800/60 dark:bg-brand-950/50 dark:text-brand-100'
               : 'text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800',
@@ -240,6 +242,15 @@ function BreakdownPanel({
           <p className="p-3 text-center text-[11px] text-muted">Nothing to break down yet.</p>
         )}
 
+        {/*
+          The stages scroll; the panel does not grow with them.
+
+          A module with ten stages made this taller than most laptop screens,
+          which puts Apply and the agent chips below the fold — the two things
+          somebody opens it to reach. Roughly six rows are visible, so the
+          seventh peeking is what says there are more.
+        */}
+        <div className="max-h-[11rem] space-y-0.5 overflow-y-auto">
         {groups.map((group) => {
           const share = total ? (group.count / total) * 100 : 0;
           const on = picked.includes(group.key);
@@ -251,7 +262,7 @@ function BreakdownPanel({
               aria-pressed={on}
               onClick={() => choose(group.key)}
               className={cn(
-                'group flex w-full items-center justify-between rounded-lg p-2 font-medium transition-colors',
+                'group flex w-full items-center justify-between rounded-lg px-2 py-1.5 font-medium transition-colors',
                 on
                   ? 'border border-brand-200/50 bg-brand-50/80 text-brand-800 dark:border-brand-800/60 dark:bg-brand-950/50 dark:text-brand-100'
                   : 'text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800',
@@ -279,6 +290,7 @@ function BreakdownPanel({
             </button>
           );
         })}
+        </div>
       </div>
 
       <div className="flex items-center justify-between gap-2 border-t border-slate-100 bg-slate-50/90 px-2.5 py-2 dark:border-slate-800 dark:bg-slate-800/50">
