@@ -248,3 +248,17 @@ jobs:
                               WHERE f.module_id = m.id AND f.column_name = m.pipeline_field
                                 AND f.is_active LIMIT 1), '(none)') AS field_by_column
               FROM ipy_module m WHERE m.is_active ORDER BY m.name;"
+          echo
+          # What the list can say under a name, and whether a column is already
+          # saying it. The subtitle skips a field the row shows as a column, so
+          # "the subtitle is missing" and "both are columns" look identical.
+          echo "=== fields flagged for the list, and the columns each saved list shows ==="
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT m.name AS module, f.name, f.label, f.config
+              FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+             WHERE f.config ?| array['listSubtitle','dueDate'] AND f.is_active
+             ORDER BY m.name, f.name;"
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT v.name, v.is_system, v.is_default, v.columns
+              FROM ipy_view v JOIN ipy_module m ON m.id = v.module_id
+             WHERE m.name = 'leads' ORDER BY v.sequence LIMIT 12;"
