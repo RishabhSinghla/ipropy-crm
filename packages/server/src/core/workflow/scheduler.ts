@@ -500,7 +500,6 @@ function computeNextRun(schedule: ScheduledRow['schedule']): Date {
 async function housekeeping(): Promise<void> {
   await Promise.allSettled([
     checkSlaBreaches(),
-    expireWhatsAppWindows(),
     pruneOldQueueRows(),
     pollInboundEmail(),
     // Make each property's OneDrive folder without the person adding it waiting
@@ -631,16 +630,20 @@ async function checkSlaBreaches(): Promise<void> {
   }
 }
 
-/**
- * WhatsApp only allows free-form replies inside a 24h window. Clearing expired
- * windows makes the composer switch to template-only, matching Meta's rules.
- */
-async function expireWhatsAppWindows(): Promise<void> {
-  await db.query(
-    `UPDATE ipy_conversation SET window_expires_at = NULL
-     WHERE channel = 'whatsapp' AND window_expires_at IS NOT NULL AND window_expires_at < now()`,
-  );
-}
+/*
+  `expireWhatsAppWindows` was here and went on 17 September 2026.
+
+  It cleared the 24-hour reply window Meta enforces, so the composer would
+  switch itself to template-only. Both ends of that are gone — the composer and
+  every `whatsapp` conversation — so the UPDATE matched nothing and ran on
+  every tick regardless. Harmless in effect and not harmless in cost: a query
+  on a loop is what keeps a scale-to-zero database awake, which is the bill
+  this scheduler was slowed down to control in the first place.
+
+  `ipy_conversation.window_expires_at` stays. It is a column on rows that no
+  longer exist rather than something to migrate away, and a rebuild would want
+  it back.
+*/
 
 async function pruneOldQueueRows(): Promise<void> {
   await db.query(

@@ -1485,8 +1485,7 @@ export function mergeFilters(a: FilterGroup | undefined, b: FilterGroup | undefi
  * this working and this "not working out well". Setting Lead Status to New
  * across a desk's whole list is a tidy-up, not five hundred new leads arriving
  * — but every one of those saves fires the new-lead rules through the workflow
- * engine, which queues a WhatsApp greeting each, re-scores each, and raises a
- * first-call task each. It is also where nearly all the time goes: the same
+ * engine, one run per record. It is also where nearly all the time goes: the same
  * hundred records take about a fifth as long with the engine out of the loop,
  * which is the difference between a request that answers and one that is still
  * running when the browser gives up.
