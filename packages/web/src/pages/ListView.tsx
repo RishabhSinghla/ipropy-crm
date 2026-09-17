@@ -31,6 +31,7 @@ import RecordForm from '../components/RecordForm';
 import RecordPeek from '../components/RecordPeek';
 import { StrengthRing } from '../components/StrengthRing';
 import { FollowUpQueue, followUpFilters, type TaskQueue } from '../components/FollowUpQueue';
+import { StatusBreakdown } from '../components/StatusBreakdown';
 import SiteCapture from './SiteCapture';
 import { useSwipeActions, type SwipeSide } from '../lib/swipeActions';
 import { MAX_WIDTH, MIN_WIDTH, SELECT_COL_WIDTH, useColumnWidths } from '../lib/columnWidths';
@@ -80,6 +81,7 @@ export default function ListView(): JSX.Element {
   const [searchInput, setSearchInput] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [taskQueue, setTaskQueue] = useState<TaskQueue | null>(null);
+  const [stagePick, setStagePick] = useState<string[]>([]);
   const [viewId, setViewId] = useState<string | undefined>(searchParams.get('view') ?? undefined);
   const [filter, setFilter] = useState<FilterGroup>(EMPTY_FILTER);
   const [sortBy, setSortBy] = useState<string | undefined>();
@@ -373,8 +375,26 @@ export default function ListView(): JSX.Element {
   );
 
   const effectiveFilter = useMemo<FilterGroup>(() => {
-    if (!taskQueue) return filter;
-    return { logic: 'AND', conditions: [...filter.conditions, ...taskFilters[taskQueue].conditions] };
+    const extra = [
+      ...(taskQueue ? taskFilters[taskQueue].conditions : []),
+      // `in` rather than one condition per stage: the breakdown is a single
+      // question — which of these stages — and an AND of equals matches nothing.
+      ...(stagePick.length && meta?.pipelineField
+        ? [{ field: meta.pipelineField, operator: 'in' as const, value: stagePick }]
+        : []),
+    ];
+    if (!extra.length) return filter;
+    return { logic: 'AND', conditions: [...filter.conditions, ...extra] };
+  }, [filter, taskFilters, taskQueue, stagePick, meta?.pipelineField]);
+
+  /*
+    What the breakdown counts is the view and the ad-hoc filter, but never the
+    stage choice itself — a bar that shrank to 100% of itself the moment it was
+    clicked would make the shape of the pipeline unreadable from inside it.
+  */
+  const breakdownFilter = useMemo<FilterGroup | undefined>(() => {
+    const conditions = [...filter.conditions, ...(taskQueue ? taskFilters[taskQueue].conditions : [])];
+    return conditions.length ? { logic: 'AND', conditions } : undefined;
   }, [filter, taskFilters, taskQueue]);
 
   /*
@@ -751,6 +771,15 @@ export default function ListView(): JSX.Element {
               </>
             )}
           </Dropdown>
+
+          <StatusBreakdown
+            moduleName={moduleName}
+            meta={meta}
+            viewId={activeView?.id}
+            baseFilter={breakdownFilter}
+            selected={stagePick}
+            onApply={(values) => { setStagePick(values); setPage(1); }}
+          />
 
           {taskQueuesEnabled && (
             <FollowUpQueue

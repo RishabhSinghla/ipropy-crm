@@ -112,6 +112,15 @@ test.describe('accessibility', () => {
     expect(violations, summarise(violations)).toEqual([]);
   });
 
+  test('the pipeline breakdown panel has no violations', async ({ page }) => {
+    await page.goto('/leads');
+    await waitForRecords(page);
+    await page.getByRole('button', { name: /stages\)|picked\)/ }).first().click();
+    await expect(page.getByRole('heading', { name: /^Filter by / })).toBeVisible();
+    const { violations } = await scan(page);
+    expect(violations, summarise(violations)).toEqual([]);
+  });
+
   test('record detail has no violations', async ({ page, context }) => {
     await page.goto('/leads');
     await waitForRecords(page);
