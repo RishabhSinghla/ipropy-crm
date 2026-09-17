@@ -444,9 +444,6 @@ function ModuleSwitcher({
           >
             <span className="text-brand-600 dark:text-brand-400">{current?.icon ?? <LayoutDashboard className="h-4 w-4" />}</span>
             <span className="max-w-[10rem] truncate">{current?.label ?? 'Dashboard'}</span>
-            <span className="rounded bg-slate-200/80 px-1.5 py-px text-[10px] font-bold uppercase tracking-wide text-slate-600 dark:bg-slate-700 dark:text-slate-300">
-              CRM
-            </span>
             {/* What is waiting somewhere else. Without it, closing the row of
                 tabs would hide every unseen count behind a click. */}
             {waiting > 0 && (

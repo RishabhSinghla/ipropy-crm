@@ -484,6 +484,30 @@ async function rowToEnvelope(
 }
 
 /**
+ * A price and its qualifier, read as one value — "₹1.85 Cr Lumpsum".
+ *
+ * Exported because both halves of this were wrong on screen and neither is
+ * visible to a typecheck: the label came from a hardcoded ladder, and an
+ * unstored unit printed nothing while the editor's dropdown showed a default.
+ * `tests/entity/priceCarriesItsUnit.test.ts` pins both.
+ */
+export function priceWithUnit(
+  amount: number,
+  field: FieldMeta,
+  companion: FieldMeta | null,
+  stored: unknown,
+): string {
+  // The editor falls back to the unit field's own default when a record
+  // predates the field, so the read-only value has to fall back the same way
+  // or the screen contradicts itself.
+  const unit = String(stored ?? companion?.defaultValue ?? '');
+  const options = (field.config.unitOptions ?? companion?.config.unitOptions ?? []) as
+    { value: string; label: string }[];
+  const label = options.find((o) => o.value === unit)?.label;
+  return label ? `${formatIndianPrice(amount)} ${label}` : formatIndianPrice(amount);
+}
+
+/**
  * Resolve human labels for reference/owner/user fields in one batched query so
  * a 100-row list view doesn't fan out into hundreds of lookups.
  */
@@ -514,12 +538,25 @@ async function resolveDisplayValues(
     } else if (f.uitype === 'area' && f.config.unitField) {
       display[f.name] = formatArea(Number(v), String(values[String(f.config.unitField)] ?? f.config.unit ?? 'sqft'));
     } else if (f.uitype === 'currency' && f.config.unitField) {
-      // Budget / demand: the price and its qualifier (per Sq.ft., per Sq.yd.,
-      // total) read as one value, exactly the area+unit pair above.
-      const unit = String(values[String(f.config.unitField)] ?? '');
-      display[f.name] = unit
-        ? `${formatIndianPrice(Number(v))} ${unit === 'total' ? 'total' : `per ${unit === 'sqft' ? 'Sq.ft.' : 'Sq.yd.'}`}`
-        : formatIndianPrice(Number(v));
+      /*
+        The price and its qualifier read as one value, exactly the area+unit
+        pair above. Two things this used to get wrong, both visible on the
+        record's own screen:
+
+        The qualifier was spelled from a hardcoded ladder — `total`, else
+        `sqft`, else assume `sqyd`. A Budget/Demand master offering "Per Sq.
+        Mtr." therefore printed "per Sq.yd.", which is a different number.
+        The unit master already carries the label somebody chose, so it is
+        read from there and the ladder is gone.
+
+        And an unset unit printed nothing, while the editor's dropdown falls
+        back to the unit field's own default and shows "Lumpsum". So Market
+        Price read back as a bare amount on every record created before the
+        field existed — 25,545 of them — and the screen disagreed with itself.
+        The same default answers both now.
+      */
+      const companion = module.fields.find((x) => x.name === f.config.unitField);
+      display[f.name] = priceWithUnit(Number(v), f, companion ?? null, values[String(f.config.unitField)]);
     } else display[f.name] = formatValue(f, v);
   }
   if (values.owner_id) userIds.add(String(values.owner_id));
