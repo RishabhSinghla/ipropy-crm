@@ -1207,8 +1207,18 @@ export default function ListView(): JSX.Element {
               each column needs a declared width, which the <colgroup> supplies
               — a stored one if this user has dragged it, otherwise a default
               derived from the field type. The table can now be wider than the
-              viewport, so the body scrolls horizontally, as it did on Vtiger. */}
-          <table className="hidden w-full table-fixed border-collapse lg:table" style={{ minWidth: tableMinWidth }}>
+              viewport, so the body scrolls horizontally, as it did on Vtiger.
+
+              `border-separate` with zero spacing, **not** `border-collapse`,
+              and that is what keeps the column headers pinned while the rows
+              scroll under them. A collapsed border belongs to the table rather
+              than to the cell it was declared on, so a `position: sticky`
+              header gives up its bottom border the moment it detaches — and in
+              several Chrome and Safari builds gives up the sticking with it.
+              Nothing here declares a border on a body cell (rows are separated
+              by the zebra stripe, not a rule), so separating them costs no
+              doubled lines and changes nothing on screen. */}
+          <table className="hidden w-full table-fixed border-separate border-spacing-0 lg:table" style={{ minWidth: tableMinWidth }}>
             <colgroup>
               <col style={{ width: SELECT_COL_WIDTH }} />
               {visibleColumns.map((col) => (
