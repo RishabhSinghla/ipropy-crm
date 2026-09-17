@@ -262,3 +262,16 @@ jobs:
             SELECT v.name, v.is_system, v.is_default, v.columns
               FROM ipy_view v JOIN ipy_module m ON m.id = v.module_id
              WHERE m.name = 'leads' ORDER BY v.sequence LIMIT 12;"
+          echo
+          # Every field a list could show, with the label somebody would name it
+          # by. A column order agreed in words — "Bedrooms, Area/Size, Budget" —
+          # has to be turned into field names, and guessing which field carries
+          # a label is how a column order ends up pointing at nothing.
+          echo "=== every active field, by module, with its label ==="
+          for m in leads properties; do
+            psql "$PROD_DATABASE_URL" -P pager=off -c "
+              SELECT f.sequence, f.name, f.label, f.uitype, f.storage
+                FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+               WHERE m.name = '$m' AND f.is_active AND f.display_type <> 'hidden'
+               ORDER BY f.sequence;"
+          done
