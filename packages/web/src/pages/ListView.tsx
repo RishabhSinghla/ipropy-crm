@@ -30,6 +30,7 @@ import { ModuleIcon } from '../components/Layout';
 import RecordForm from '../components/RecordForm';
 import RecordPeek from '../components/RecordPeek';
 import { StrengthRing } from '../components/StrengthRing';
+import { FollowUpQueue, followUpFilters, type TaskQueue } from '../components/FollowUpQueue';
 import SiteCapture from './SiteCapture';
 import { useSwipeActions, type SwipeSide } from '../lib/swipeActions';
 import { MAX_WIDTH, MIN_WIDTH, SELECT_COL_WIDTH, useColumnWidths } from '../lib/columnWidths';
@@ -38,13 +39,6 @@ import { deliverFile, dial, openExternal } from '../lib/nativeActions';
 import { blankView, type SavedView, ViewEditor } from '../components/ViewEditor';
 
 const EMPTY_FILTER: FilterGroup = { logic: 'AND', conditions: [] };
-type TaskQueue = 'pending' | 'today' | 'tomorrow';
-
-/** Date-only values are stored without a time, so keep task filters date-only too. */
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 export default function ListView(): JSX.Element {
   const { module: moduleName } = useParams<{ module: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -373,21 +367,10 @@ export default function ListView(): JSX.Element {
   const taskField = meta?.fields.find((field) => field.columnName === 'next_followup_at')
     ?? meta?.fields.find((field) => field.name === 'next_follow_up' || field.columnName === 'next_follow_up');
   const taskQueuesEnabled = Boolean(taskField && (moduleName === 'leads' || moduleName === 'properties'));
-  const taskFilters = useMemo<Record<TaskQueue, FilterGroup>>(() => {
-    const today = todayIso();
-    return {
-      pending: { logic: 'AND', conditions: [
-        { field: taskField?.name ?? 'next_follow_up', operator: 'is_not_empty' },
-        { field: taskField?.name ?? 'next_follow_up', operator: 'less_than', value: today },
-      ] },
-      today: { logic: 'AND', conditions: [
-        { field: taskField?.name ?? 'next_follow_up', operator: 'today' },
-      ] },
-      tomorrow: { logic: 'AND', conditions: [
-        { field: taskField?.name ?? 'next_follow_up', operator: 'tomorrow' },
-      ] },
-    };
-  }, [taskField?.name]);
+  const taskFilters = useMemo(
+    () => followUpFilters(taskField?.name ?? 'next_follow_up'),
+    [taskField?.name],
+  );
 
   const effectiveFilter = useMemo<FilterGroup>(() => {
     if (!taskQueue) return filter;
@@ -456,33 +439,6 @@ export default function ListView(): JSX.Element {
     return `/${moduleName}${params.toString() ? `?${params}` : ''}`;
   }, [activeView?.id, effectiveFilter, effectiveSort, moduleName, page, pageSize, search]);
 
-  const taskCountQuery = (queue: TaskQueue): ListQuery => ({
-    view: activeView?.id,
-    page: 1,
-    pageSize: 1,
-    filter: taskFilters[queue],
-  });
-  const { data: pendingTasks } = useQuery({
-    queryKey: ['task-count', moduleName, activeView?.id, 'pending', taskFilters.pending],
-    queryFn: () => api.list(moduleName!, taskCountQuery('pending')),
-    enabled: Boolean(moduleName && taskQueuesEnabled),
-  });
-  const { data: todayTasks } = useQuery({
-    queryKey: ['task-count', moduleName, activeView?.id, 'today', taskFilters.today],
-    queryFn: () => api.list(moduleName!, taskCountQuery('today')),
-    enabled: Boolean(moduleName && taskQueuesEnabled),
-  });
-  const { data: tomorrowTasks } = useQuery({
-    queryKey: ['task-count', moduleName, activeView?.id, 'tomorrow', taskFilters.tomorrow],
-    queryFn: () => api.list(moduleName!, taskCountQuery('tomorrow')),
-    enabled: Boolean(moduleName && taskQueuesEnabled),
-  });
-  const taskCounts: Record<TaskQueue, number> = {
-    pending: pendingTasks?.total ?? 0,
-    today: todayTasks?.total ?? 0,
-    tomorrow: tomorrowTasks?.total ?? 0,
-  };
-  const allTaskQueuesClear = taskCounts.pending === 0 && taskCounts.today === 0 && taskCounts.tomorrow === 0;
 
   /*
     The list is what the server says it is, and nothing else.
@@ -797,65 +753,14 @@ export default function ListView(): JSX.Element {
           </Dropdown>
 
           {taskQueuesEnabled && (
-            <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800/70" aria-label="Follow-up tasks">
-              {([
-                ['pending', 'Overdue', 'Follow-ups whose date has passed'],
-                ['today', 'Today', "Follow-ups due today"],
-                ['tomorrow', 'Tomorrow', "Follow-ups due tomorrow"],
-              ] as const).map(([queue, label, title]) => {
-                /*
-                  Selected has to look selected. It used to be a 1px ring over
-                  the tab's own colour, which against the red and sky tints read
-                  as nothing at all — clicking a tab filtered 22,983 records to
-                  a handful and the control itself looked untouched, so the only
-                  feedback was the table redrawing.
-
-                  `cn` is plain clsx, not tailwind-merge, so a selected style
-                  stacked after the queue colour would leave both classes in the
-                  string and let stylesheet order decide. Selected and unselected
-                  are therefore exclusive branches, never layered.
-                */
-                const active = taskQueue === queue;
-                return (
-                  <button
-                    key={queue}
-                    type="button"
-                    title={title}
-                    aria-pressed={active}
-                    onClick={() => { setTaskQueue((current) => current === queue ? null : queue); setPage(1); }}
-                    className={cn(
-                      'inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors',
-                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1',
-                      active
-                        ? 'bg-slate-900 text-white shadow-sm hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100'
-                        : cn(
-                          /*
-                            The same three colours the row chips use, because
-                            they are the same three facts. A row said "Overdue"
-                            in red while the button above it said "Pending" in
-                            red and "Today" in white — one language for when
-                            something is due, spoken twice with different words
-                            and different colours.
-                          */
-                          queue === 'pending' && taskCounts.pending > 0 && 'bg-red-100 text-red-800 hover:bg-red-200 dark:bg-red-950/60 dark:text-red-200',
-                          queue === 'pending' && taskCounts.pending === 0 && allTaskQueuesClear && 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-200',
-                          queue === 'pending' && taskCounts.pending === 0 && !allTaskQueuesClear && 'bg-white text-slate-700 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-200',
-                          queue === 'today' && taskCounts.today > 0 && 'bg-amber-100 text-amber-900 hover:bg-amber-200 dark:bg-amber-950/60 dark:text-amber-200',
-                          queue === 'today' && taskCounts.today === 0 && 'bg-white text-slate-700 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-200',
-                          queue === 'tomorrow' && taskCounts.tomorrow > 0 && 'bg-blue-100 text-blue-800 hover:bg-blue-200 dark:bg-blue-950/60 dark:text-blue-200',
-                          queue === 'tomorrow' && taskCounts.tomorrow === 0 && 'bg-white text-slate-700 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-200',
-                        ),
-                    )}
-                  >
-                    {label}
-                    <span className={cn('tnum', active ? 'opacity-90' : 'opacity-75')}>{taskCounts[queue]}</span>
-                    {/* Says which way the click went, for anyone who cannot see
-                        the colour change. */}
-                    <span className="sr-only">{active ? '— showing only these, click to clear' : '— click to show only these'}</span>
-                  </button>
-                );
-              })}
-            </div>
+            <FollowUpQueue
+              moduleName={moduleName}
+              fieldName={taskField!.name}
+              viewId={activeView?.id}
+              fieldMap={fieldMap}
+              active={taskQueue}
+              onPick={(queue) => { setTaskQueue(queue); setPage(1); }}
+            />
           )}
 
           <div className="ml-auto flex shrink-0 items-center gap-2">

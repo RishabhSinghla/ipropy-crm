@@ -101,6 +101,17 @@ test.describe('accessibility', () => {
     expect(violations, summarise(violations)).toEqual([]);
   });
 
+  test('the follow-up queue panel has no violations', async ({ page }) => {
+    // Opened, not just present: the panel is the screen a rep starts the day
+    // on and none of its colours are scanned while it is shut.
+    await page.goto('/leads');
+    await waitForRecords(page);
+    await page.getByRole('button', { name: /^Follow-ups/ }).click();
+    await expect(page.getByRole('heading', { name: 'Follow-up Queue' })).toBeVisible();
+    const { violations } = await scan(page);
+    expect(violations, summarise(violations)).toEqual([]);
+  });
+
   test('record detail has no violations', async ({ page, context }) => {
     await page.goto('/leads');
     await waitForRecords(page);
