@@ -56,7 +56,7 @@ export async function runAiWorkflowAction(
 
     case 'draft_message': {
       const draft = await draftMessage({
-        channel: (config.channel as 'whatsapp' | 'email' | 'sms') ?? 'whatsapp',
+        channel: (config.channel as 'email' | 'sms') ?? 'sms',
         recordId: ctx.recordId,
         module: ctx.module,
         goal: config.goal ? String(config.goal) : undefined,
@@ -72,7 +72,7 @@ export async function runAiWorkflowAction(
           kind: 'next_best_action',
           title: 'Suggested message',
           body: draft.body,
-          data: { channel: config.channel ?? 'whatsapp', subject: draft.subject },
+          data: { channel: config.channel ?? 'sms', subject: draft.subject },
         });
       }
       break;

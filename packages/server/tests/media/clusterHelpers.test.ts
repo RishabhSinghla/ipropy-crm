@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildWaLink } from '../../src/integrations/whatsapp/deviceSend.js';
-import { minutesUntilAwake } from '../../src/integrations/whatsapp/sequences.js';
+import { minutesUntilAwake } from '../../src/integrations/outreach/sequences.js';
 import { parseByteRange } from '../../src/utils/httpRange.js';
 
 describe('parseByteRange', () => {
@@ -16,18 +15,6 @@ describe('parseByteRange', () => {
     expect(parseByteRange('bytes=100-101', 100)).toEqual({ ok: false });
     expect(parseByteRange('bytes=20-10', 100)).toEqual({ ok: false });
     expect(parseByteRange('bytes=0-1,5-6', 100)).toEqual({ ok: false });
-  });
-});
-
-describe('buildWaLink', () => {
-  it('normalises Indian mobile numbers and percent-encodes the exact message', () => {
-    expect(buildWaLink('98123 45678', 'Hi Riya — 2 BHK & terrace'))
-      .toBe('https://wa.me/919812345678?text=Hi%20Riya%20%E2%80%94%202%20BHK%20%26%20terrace');
-  });
-
-  it('never lets an oversized prefill spill past the safety limit', () => {
-    const link = buildWaLink('+91 98123 45678', 'x'.repeat(2_000));
-    expect(decodeURIComponent(link.split('text=')[1])).toHaveLength(1_500);
   });
 });
 

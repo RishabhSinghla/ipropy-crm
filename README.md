@@ -4,7 +4,7 @@ An AI-native, metadata-driven CRM for real-estate developers and brokerages — 
 taking Vtiger's proven customisation architecture and rebuilding it on a modern stack.
 
 Everything an admin can change in Vtiger (modules, fields, blocks, layouts, picklists, custom views,
-role hierarchy, sharing rules, workflows, dashboards) is editable at runtime here too — plus WhatsApp,
+role hierarchy, sharing rules, workflows, dashboards) is editable at runtime here too — plus
 portal lead capture, call logging from the team's own Android handsets, and an AI layer that scores,
 matches, drafts and analyses.
 
@@ -166,7 +166,7 @@ Lead  →  Prospect  →  Customer  →  Past Customer
 ```
 
 Conversion doesn't copy the person into a second module — it advances the same record's stage. The
-consequence is that every call, WhatsApp thread, note and file stays on **one id** for the whole
+consequence is that every call, message thread, note and file stays on **one id** for the whole
 relationship, instead of splitting at conversion.
 
 Migration `004` performs this merge on an existing database: it widens the leads table, moves each
@@ -189,9 +189,9 @@ because the rest of the CRM reads from it.
 |---|---|
 | **Dashboard** | 5 seeded dashboards. Metric tiles with period-over-period deltas, funnel with cumulative conversion, stacked inventory, leaderboards, AI insight tiles. |
 | **List view** | Metadata-driven table + drag-and-drop kanban, saved views with live counts, nested AND/OR filter builder, column chooser, bulk edit/reassign/delete, CSV export. |
-| **Record detail** | Header summary (fields chosen per module in the layout designer), tabbed Overview / Timeline / Calls / Files, notes and AI sidebar, one-click call and WhatsApp. |
-| **Timeline** | Calls, WhatsApp, email, notes, files, field changes and AI insights merged into one feed. |
-| **Inbox** | WhatsApp threads with the 24-hour window enforced, delivery receipts, AI reply suggestions. |
+| **Record detail** | Header summary (fields chosen per module in the layout designer), tabbed Overview / Timeline / Calls / Files, notes and AI sidebar, one-click call. |
+| **Timeline** | Calls, messages, email, notes, files, field changes and AI insights merged into one feed. |
+| **Inbox** | Message threads with delivery receipts and AI reply suggestions. |
 | **Calls** | Call log with recordings, AI summary/sentiment/objections, and a coaching report. |
 | **Capture** | Built for standing at a gate: name the property, tap Start, shoot with the normal camera. Writes to IndexedDB and returns — it never waits for the network, so a visit with no signal still lands. Details can be **spoken** rather than typed. |
 | **Shoots** | The evening list of visits that still have no name — thumbnails first, because nobody can tell "9:03–9:21, 12 photos" from "9:48–10:04, 14 photos", but everybody recognises their own pictures. One box both finds a property and creates one. |
@@ -228,7 +228,7 @@ has been opened four times"*.
 
 17 seeded workflows, all editable. Triggers: `on_create`, `on_modify`, `on_field_change`,
 `on_delete`, `scheduled`, `on_inbound_message`, `on_call_end`. 14 task types including
-`update_fields`, `create_record`, `send_whatsapp`, `send_email`, `assign_owner`, `webhook` and
+`update_fields`, `create_record`, `send_email`, `assign_owner`, `webhook` and
 `ai_action`.
 
 Tasks can be delayed absolutely (`after 30 minutes`) or **relative to a field**
@@ -241,7 +241,6 @@ first-response tracking and escalation.
 
 | | Status without credentials |
 |---|---|
-| WhatsApp (Meta Cloud API) | Messages logged and marked sent — flows stay testable |
 | Facebook Lead Ads, Google Ads | Webhook endpoints live; no inbound traffic |
 | 99acres, MagicBricks, Housing, NoBroker | Generic portal normaliser per source |
 | Email (SMTP/IMAP) | Logged with open tracking |
@@ -263,7 +262,7 @@ rule engines still run** — scoring, matching and routing keep working, you jus
 | Deal risk | Stage ageing, silence, discount pressure, missing site visit, unit taken | Explains and picks the single highest-leverage action |
 | Call analysis | — | Summary, sentiment, objections, next actions, talk ratio; extracts stated budget/timeline into empty fields only |
 | Ask your CRM | — | Natural language → a real, permission-scoped `FilterGroup`, validated against metadata before it runs |
-| Drafting | — | WhatsApp / email / call scripts from the record's actual history |
+| Drafting | — | Email / SMS / call scripts from the record's actual history |
 
 The NL query path is worth calling out: the model produces a filter, the server **discards any field
 that doesn't exist in metadata**, then runs it through the normal permission-scoped query engine. The
@@ -296,7 +295,7 @@ packages/
       media/       watermark, image/video derivatives — the processing pipeline
       sharing/     share links (one property, one unguessable URL)
       notifications/ notify()/notifyMany() — row + socket + Web Push, never a raw INSERT
-    integrations/  whatsapp, email, lead sources, device call sync
+    integrations/  email, outreach sequences, lead sources, device call sync
     ai/            client (Anthropic + any OpenAI-compatible), scoring, matching, drafting,
                    call analysis, assistant
     api/routes/    auth, metadata, records, views, dashboards, admin, comms, ai,
@@ -347,14 +346,14 @@ without touching tenant data.
 ## Configuration
 
 Only `DATABASE_URL` and `JWT_SECRET` are required to boot. See `.env.example` for the rest:
-Anthropic, WhatsApp, SMTP/IMAP, Facebook/Google lead capture, S3 storage, scheduler.
+Anthropic, SMTP/IMAP, Facebook/Google lead capture, S3 storage, scheduler.
 
 Set `SEED_DEMO_DATA=false` for a clean production install — you get all the metadata, none of the
 sample records.
 
 **Before deploying:** set a real `JWT_SECRET` (the server refuses to start in production with the dev
-default), set `WHATSAPP_APP_SECRET` (webhook signatures are only skipped outside production), and put
-the API behind TLS.
+default), set the Facebook app secret if you take lead ads (webhook signatures are only skipped
+outside production), and put the API behind TLS.
 
 ---
 

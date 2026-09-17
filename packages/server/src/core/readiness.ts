@@ -211,29 +211,22 @@ async function alertsReachPhones(): Promise<ReadinessCheck> {
 
 /** Can the CRM answer an enquiry by itself, or does a person have to? */
 async function sendingChannels(): Promise<ReadinessCheck> {
-  const settings = getSettings();
-  const whatsapp = Boolean(settings.whatsapp?.accessToken);
-  const email = Boolean(settings.email?.host);
-
-  if (whatsapp && email) {
+  // WhatsApp was removed on 17 September 2026, so email is the only door the
+  // CRM can send through on its own. Everything else is written for a person.
+  if (getSettings().email?.host) {
     return {
       id: 'channels',
       title: 'The CRM can send on its own',
       status: 'ok',
-      detail: 'WhatsApp and email are both connected.',
+      detail: 'Email is connected.',
     };
   }
-  const queued = await db.queryOne<{ n: string }>(
-    `SELECT count(*) AS n FROM ipy_device_send WHERE status IN ('pending','opened')`,
-  );
   return {
     id: 'channels',
     title: 'The CRM can send on its own',
     status: 'warn',
-    detail: whatsapp || email
-      ? `Only ${whatsapp ? 'WhatsApp' : 'email'} is connected.`
-      : `Neither WhatsApp nor email is connected, so replies are written for a person to send. ${Number(queued?.n ?? 0)} waiting now.`,
-    fix: 'This is not blocking — messages are queued for one-tap sending. Connect a WhatsApp Business account or an SMTP server when you have one.',
+    detail: 'Email is not connected, so replies are written for a person to send.',
+    fix: 'This is not blocking. Connect an SMTP server when you have one.',
   };
 }
 

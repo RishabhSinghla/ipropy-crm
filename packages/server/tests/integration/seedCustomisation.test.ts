@@ -267,28 +267,12 @@ describe('seed preserves admin customisation', () => {
     await db.query(`UPDATE ipy_view SET columns = $2::jsonb WHERE id = $1`, [view!.id, JSON.stringify(view!.columns)]);
   });
 
-  it('keeps rewritten message templates', async () => {
-    const original = await db.queryOne<{ body_text: string }>(
-      `SELECT body_text FROM ipy_whatsapp_template WHERE name = 'lead_welcome' AND language = 'en'`,
-    );
-    expect(original).toBeTruthy();
-
-    await db.query(
-      `UPDATE ipy_whatsapp_template SET body_text = $1 WHERE name = 'lead_welcome' AND language = 'en'`,
-      ['Our own wording, approved by Meta'],
-    );
-    await reseed();
-
-    const after = await db.queryOne<{ body_text: string }>(
-      `SELECT body_text FROM ipy_whatsapp_template WHERE name = 'lead_welcome' AND language = 'en'`,
-    );
-    expect(after?.body_text, 'the seed overwrote an approved template body').toBe('Our own wording, approved by Meta');
-
-    await db.query(
-      `UPDATE ipy_whatsapp_template SET body_text = $1 WHERE name = 'lead_welcome' AND language = 'en'`,
-      [original!.body_text],
-    );
-  });
+  /*
+    There was a 'keeps rewritten message templates' case here, against the
+    WhatsApp starter templates. Both the templates and WhatsApp went on
+    17 September 2026, and nothing seeds `ipy_whatsapp_template` any more.
+    Email templates are covered by the create-only assertions above.
+  */
 
   it('does not hand back permissions an admin removed', async () => {
     const perm = await db.queryOne<{ profile_id: string; module_id: string; can_delete: boolean }>(

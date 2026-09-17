@@ -1,19 +1,18 @@
 /**
- * The Facebook lead-ads webhook, and the WhatsApp hello a new enquiry gets.
+ * The Facebook lead-ads webhook.
  *
  * The webhook has to be public — Meta cannot hold a secret of ours — so its
  * signature is the only thing separating a real lead from an invented one. Until
  * now nothing checked it: anyone who learned the URL could post a leadgen id and
- * have the CRM fetch, create, assign, score and greet a lead that never existed.
+ * have the CRM fetch, create, assign and score a lead that never existed.
  */
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import crypto from 'node:crypto';
 import request from 'supertest';
 import type { Express } from 'express';
 import { createApp } from '../../src/app.js';
 import { registry } from '../../src/core/metadata/registry.js';
 import { db } from '../../src/db/pool.js';
-import { greetingSettings, invalidateGreeting } from '../../src/integrations/whatsapp/greetNewLead.js';
 import { invalidate as reloadIntegrationSettings } from '../../src/core/settings/integrations.js';
 
 let app: Express;
@@ -26,14 +25,6 @@ function sign(body: string): string {
 const leadgenBody = (id: string): string => JSON.stringify({
   entry: [{ changes: [{ value: { leadgen_id: id, form_id: 'f1', page_id: 'p1' } }] }],
 });
-
-async function setSetting(key: string, value: unknown): Promise<void> {
-  await db.query(
-    `INSERT INTO ipy_setting (key, value) VALUES ($1, $2::jsonb)
-     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
-    [key, JSON.stringify(value)],
-  );
-}
 
 beforeAll(async () => {
   await registry.warmup();
@@ -49,12 +40,8 @@ beforeAll(async () => {
   await reloadIntegrationSettings();
 });
 
-afterEach(() => { invalidateGreeting(); });
-
 afterAll(async () => {
   await db.query(`DELETE FROM ipy_lead_inbox WHERE source = 'facebook'`);
-  await setSetting('whatsapp.greet_new_leads', false);
-  invalidateGreeting();
 });
 
 describe('the facebook lead webhook', () => {
@@ -111,31 +98,5 @@ describe('the facebook lead webhook', () => {
       `SELECT 1 FROM ipy_lead_inbox WHERE source = 'facebook' AND external_id = 'should-not-exist'`,
     );
     expect(row, 'a rejected webhook must leave no trace of a lead').toBeNull();
-  });
-});
-
-describe('greeting a new lead on WhatsApp', () => {
-  it('is off until somebody turns it on', async () => {
-    await setSetting('whatsapp.greet_new_leads', false);
-    invalidateGreeting();
-    expect((await greetingSettings()).on).toBe(false);
-  });
-
-  it('stays off when switched on with no template named', async () => {
-    // Naming no template and naming an unapproved one both fail at Meta's end
-    // and look like success from in here, so the empty case is refused loudly.
-    await setSetting('whatsapp.greet_new_leads', true);
-    await setSetting('whatsapp.greeting_template', '');
-    invalidateGreeting();
-    const s = await greetingSettings();
-    expect(s.on).toBe(true);
-    expect(s.template).toBe('');
-  });
-
-  it('reads the template an admin named', async () => {
-    await setSetting('whatsapp.greet_new_leads', true);
-    await setSetting('whatsapp.greeting_template', 'new_enquiry_greeting');
-    invalidateGreeting();
-    expect((await greetingSettings()).template).toBe('new_enquiry_greeting');
   });
 });

@@ -400,7 +400,6 @@ const TASK_TYPE_LABELS: Record<string, string> = {
   create_event: 'Create an event',
   assign_owner: 'Assign an owner',
   notify_user: 'Notify a user',
-  send_whatsapp: 'Send WhatsApp message',
   send_email: 'Send email',
   send_sms: 'Send SMS',
   webhook: 'Call a webhook',
@@ -418,7 +417,7 @@ const AI_ACTIONS: { value: string; label: string; hint: string }[] = [
   { value: 'score_lead', label: 'Score the lead', hint: 'Writes an AI score and the reasons behind it.' },
   { value: 'match_properties', label: 'Match properties to this buyer', hint: 'Ranks available inventory against the requirement and tells the owner.' },
   { value: 'match_buyers', label: 'Match buyers to this unit', hint: 'Tells each rep which of their buyers were waiting for this unit. Only alerts a buyer once per unit.' },
-  { value: 'draft_message', label: 'Draft a message', hint: 'Writes a WhatsApp, email or SMS draft a following send step can use.' },
+  { value: 'draft_message', label: 'Draft a message', hint: 'Writes an email or SMS draft a following send step can use.' },
   { value: 'summarise_record', label: 'Summarise the record', hint: 'Writes a short summary into the insights panel, and optionally a field.' },
   { value: 'summarise_visit', label: 'Summarise a site visit', hint: 'Turns the visit feedback and objections into a summary and a sentiment.' },
   { value: 'classify', label: 'Classify', hint: 'Answers a question you set with one of the options you list, and writes it to a field.' },
@@ -683,22 +682,6 @@ function TaskConfigFields({
           <input className="input" value={(task.config.title as string) ?? ''} onChange={(e) => set({ title: e.target.value })} />
           <label className="label mt-2">Body</label>
           <textarea className="input" rows={2} value={(task.config.body as string) ?? ''} onChange={(e) => set({ body: e.target.value })} placeholder="Supports {{merge_field}}" />
-        </div>
-      );
-
-    case 'send_whatsapp':
-      return (
-        <div className="space-y-2">
-          <label className="label">To</label>
-          <input className="input" value={(task.config.to as string) ?? '{{mobile}}'} onChange={(e) => set({ to: e.target.value })} />
-          <label className="label mt-2">Approved template name (optional)</label>
-          <input className="input" value={(task.config.template as string) ?? ''} onChange={(e) => set({ template: e.target.value || undefined })} />
-          <label className="label mt-2">Fallback text (used outside the 24h window with no template)</label>
-          <textarea className="input" rows={2} value={(task.config.fallbackText as string) ?? ''} onChange={(e) => set({ fallbackText: e.target.value })} />
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={Boolean(task.config.useAiDraft)} onChange={(e) => set({ useAiDraft: e.target.checked })} />
-            Let AI draft the message from the record's context
-          </label>
         </div>
       );
 

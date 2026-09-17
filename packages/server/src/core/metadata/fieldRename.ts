@@ -49,8 +49,8 @@ export async function fieldImpact(moduleId: string, moduleName: string, fieldNam
  *
  * `renameFieldEverywhere` puts back every reference that lives in the database.
  * What it cannot rewrite is a name written into the source — `l.mobile`, a
- * scoring rule that reads the follow-up dates, the WhatsApp sender that looks
- * for `whatsapp_number`, the public catalogue that filters on `status`. Rename
+ * scoring rule that reads the follow-up dates, the caller lookup that checks
+ * `whatsapp_number`, the public catalogue that filters on `status`. Rename
  * one of those and the rename succeeds, every view and workflow follows, and a
  * feature silently stops with nothing anywhere saying why.
  *
@@ -63,7 +63,7 @@ export async function fieldImpact(moduleId: string, moduleName: string, fieldNam
 export const FIELDS_USED_IN_CODE: Record<string, string> = {
   'leads.full_name': 'the name shown on every lead, and what duplicate checking and lead capture write',
   'leads.mobile': 'every call, WhatsApp send, duplicate check and lead-capture import',
-  'leads.whatsapp_number': 'which number a WhatsApp message is sent to',
+  'leads.whatsapp_number': 'a second number the phone app matches an incoming call against',
   'leads.email': 'inbound email threading, and what lead capture writes',
   'leads.status': 'lead scoring, the rule that moves a lead to Contacted, and open-lead counts',
   'leads.lead_source': 'source attribution on every captured lead and every source report',
@@ -76,9 +76,8 @@ export const FIELDS_USED_IN_CODE: Record<string, string> = {
   // because somebody can text STOP from a number the CRM holds no lead for,
   // and that still has to be honoured. Nothing reads the column now, so
   // refusing the rename was refusing it for a reason that had stopped
-  // existing. `do_not_whatsapp` stays: `integrations/whatsapp/broadcast.ts`
-  // still reads it by name as a second gate beside the consent store.
-  'leads.do_not_whatsapp': 'the consent check that stops a broadcast reaching someone who opted out',
+  // existing. `do_not_whatsapp` went the same way when WhatsApp was removed on
+  // 17 September 2026 — its only reader was the broadcast engine.
   'leads.preferred_locations': 'buyer matching against inventory, and the first reply that names a locality',
   'leads.possession_timeline': 'buyer matching, and how soon a lead is chased',
   'leads.purpose': 'buyer matching — whether they are buying to live in or to let',

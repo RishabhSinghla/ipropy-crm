@@ -82,7 +82,6 @@ const GROUPS: { id: string; title: string; blurb: string }[] = [
       + 'only how it is reached.',
   },
   { id: 'sharing', title: 'Share links', blurb: 'What a buyer sees when you send them a property.' },
-  { id: 'whatsapp', title: 'WhatsApp', blurb: 'Messaging rules.' },
   { id: 'telephony', title: 'Calls', blurb: 'Call recording.' },
   { id: 'ai', title: 'AI', blurb: 'Which parts of the CRM the AI is allowed to do on its own.' },
   {
@@ -114,7 +113,7 @@ const GROUPS: { id: string; title: string; blurb: string }[] = [
 
 /**
  * Groups a desk opens once a year, if ever: the scoring numbers, what the AI
- * may do on its own, the WhatsApp and call rules, and tracking the team's
+ * may do on its own, the call rules, and tracking the team's
  * phones. They stay on this page — nothing has been taken away — but they
  * render under the "Advanced settings" divider, below the groups a desk
  * actually lives in.

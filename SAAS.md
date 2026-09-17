@@ -42,7 +42,7 @@ solving it properly.
   own CRM without a deploy, and `is_customised` / `ipy_field_tombstone` mean the
   next seed does not undo their work.
 * **Per-customer configuration already exists.** `ipy_integration` holds each
-  deployment's WhatsApp, AI and storage credentials, encrypted at
+  deployment's email, AI and storage credentials, encrypted at
   rest. In a database-per-customer world that is per-customer for free.
 
 ---
@@ -204,10 +204,11 @@ Roughly in the order it will hurt.
    Before a customer is charged: create the merchant account, run
    `billing-setup`, point a test-mode webhook at the control plane and put one
    real subscription through the whole cycle.
-3. **WhatsApp at scale.** This is the underestimated one. Every customer needs
-   their own WhatsApp Business number approved by Meta. Doing that without a
-   human in the loop means Meta Embedded Signup and becoming a Tech Provider.
-   WhatsApp is the heart of this product, so this is on the critical path.
+3. **WhatsApp at scale, if it ever comes back.** WhatsApp was removed from the
+   CRM on 17 September 2026 and is not part of the product today. If it returns,
+   this is the underestimated piece: every customer needs their own WhatsApp
+   Business number approved by Meta, and doing that without a human in the loop
+   means Meta Embedded Signup and becoming a Tech Provider.
 4. **Becoming a data processor.** Holding another builder's leads makes iPropy
    legally responsible for other people's customers under the DPDP Act:
    contracts, breach notification, deletion on request. Worth an hour with a

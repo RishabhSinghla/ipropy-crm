@@ -87,7 +87,6 @@ async function tick(): Promise<void> {
       drainMediaQueue(),
       runScheduledWorkflows(),
       runSequences(),
-      startDueBroadcasts(),
       housekeeping(),
     ]);
   } catch (err) {
@@ -105,7 +104,7 @@ async function tick(): Promise<void> {
  */
 async function runSequences(): Promise<void> {
   try {
-    const { runDueEnrolments } = await import('../../integrations/whatsapp/sequences.js');
+    const { runDueEnrolments } = await import('../../integrations/outreach/sequences.js');
     const result = await runDueEnrolments();
     if (result.ran || result.exited) {
       logger.debug({ ...result }, 'sequences advanced');
@@ -115,15 +114,12 @@ async function runSequences(): Promise<void> {
   }
 }
 
-/** Kick off broadcasts whose scheduled time has arrived. */
-async function startDueBroadcasts(): Promise<void> {
-  try {
-    const { runDueBroadcasts } = await import('../../integrations/whatsapp/broadcast.js');
-    await runDueBroadcasts();
-  } catch (err) {
-    logger.error({ err }, 'scheduled broadcast dispatch failed');
-  }
-}
+/*
+  Broadcasts went with WhatsApp on 17 September 2026. They were WhatsApp-only —
+  channel_mode was 'api' or 'device', both of them WhatsApp doors — so there was
+  nothing left to send once the doors were removed. `startDueBroadcasts` is gone
+  from the tick with them.
+*/
 
 // ---------------------------------------------------------------------------
 // 1. Deferred task queue
@@ -373,7 +369,7 @@ async function scheduledCandidates(
  * Tasks that reach a customer. A mistake in one of these is not a wasted tick;
  * it is a message somebody receives.
  */
-const OUTBOUND_TASKS = ['send_whatsapp', 'send_email', 'send_sms'];
+const OUTBOUND_TASKS = ['send_email', 'send_sms'];
 
 /**
  * A scheduled rule that messages people and narrows on nothing.

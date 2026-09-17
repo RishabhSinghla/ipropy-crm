@@ -62,10 +62,6 @@ claude-memory/   The notes Claude Code has built up about this project. Copying
 
 What is deliberately NOT in here
 --------------------------------
-The linked WhatsApp session files. Those are the keys to a real WhatsApp
-account, and anyone holding a copy can read and send messages as that person.
-The new laptop must scan its own QR code instead.
-
 The production database. The new laptop runs its own local copy with demo data.
 Real customer records stay in production.
 

@@ -218,17 +218,6 @@ export const config = {
     model: str('STT_MODEL', 'whisper-1'),
   },
 
-  whatsapp: {
-    provider: str('WHATSAPP_PROVIDER', 'meta'),
-    phoneNumberId: str('WHATSAPP_PHONE_NUMBER_ID'),
-    businessAccountId: str('WHATSAPP_BUSINESS_ACCOUNT_ID'),
-    accessToken: str('WHATSAPP_ACCESS_TOKEN'),
-    verifyToken: str('WHATSAPP_VERIFY_TOKEN', 'ipropy-verify-token'),
-    appSecret: str('WHATSAPP_APP_SECRET'),
-    apiVersion: str('WHATSAPP_API_VERSION', 'v21.0'),
-  },
-
-
   email: {
     host: str('SMTP_HOST'),
     port: num('SMTP_PORT', 587),
@@ -359,9 +348,6 @@ export function validateProductionConfig(): string[] {
   }
   if (config.seed.demoData) {
     problems.push('SEED_DEMO_DATA must be false in production (it would create demo users)');
-  }
-  if (config.whatsapp.provider === 'meta' && config.whatsapp.accessToken && !config.whatsapp.appSecret) {
-    problems.push('WHATSAPP_APP_SECRET is required in production to verify Meta webhook signatures');
   }
   return problems;
 }

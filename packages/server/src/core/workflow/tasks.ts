@@ -240,33 +240,11 @@ const notifyUser: TaskHandler = async (config, ctx) => {
   });
 };
 
-const sendWhatsApp: TaskHandler = async (config, ctx) => {
-  const { sendWhatsAppForWorkflow } = await import('../../integrations/whatsapp/service.js');
-  const scope = await buildMergeScope(ctx);
-
-  if (config.skipIf) {
-    const { evaluateFilter } = await import('@ipropy/shared');
-    if (evaluateFilter(config.skipIf as never, ctx.record)) return;
-  }
-
-  const to = await resolvePhone(String(config.to ?? '{{mobile}}'), ctx, scope);
-  if (!to) {
-    logger.debug({ recordId: ctx.recordId }, 'whatsapp task skipped — no phone number');
-    return;
-  }
-
-  await sendWhatsAppForWorkflow({
-    to,
-    templateName: config.template ? String(config.template) : undefined,
-    fallbackText: config.fallbackText ? render(String(config.fallbackText), scope) : undefined,
-    useAiDraft: Boolean(config.useAiDraft),
-    recordId: ctx.recordId,
-    module: ctx.module,
-    scope,
-    workflowId: ctx.workflowId,
-  });
-};
-
+/*
+  `send_whatsapp` was here and went with WhatsApp on 17 September 2026. A
+  workflow still carrying that step is safe: `runTask` logs an unknown type and
+  carries on, so the rest of the workflow's steps still run.
+*/
 const sendEmail: TaskHandler = async (config, ctx) => {
   const { sendTemplatedEmail } = await import('../../integrations/email/service.js');
   const scope = await buildMergeScope(ctx);
@@ -349,7 +327,6 @@ const TASK_HANDLERS: Record<string, TaskHandler> = {
   create_event: createTaskAction,
   assign_owner: assignOwnerTask,
   notify_user: notifyUser,
-  send_whatsapp: sendWhatsApp,
   send_email: sendEmail,
   send_sms: sendSms,
   webhook,

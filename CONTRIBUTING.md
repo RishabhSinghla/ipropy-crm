@@ -25,7 +25,7 @@ demo data. Nobody else sees it, and it is not connected to production. Break it
 freely — `npm run db:reset` rebuilds it from scratch.
 
 You do **not** need any API keys, cloud accounts or production credentials to
-develop. AI, WhatsApp and email all degrade to deterministic
+develop. AI and email both degrade to deterministic
 fallbacks when their keys are missing — that is deliberate, not broken.
 
 ---

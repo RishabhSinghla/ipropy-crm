@@ -216,8 +216,11 @@ const CAPABILITY_INFO: Record<string, { label: string; hint: string }> = {
   'ai.configure': { label: 'Configure AI', hint: 'Set up AI behaviour and prompts.' },
   'telephony.call': { label: 'Click-to-call', hint: 'Place calls from the CRM.' },
   'telephony.listen_recordings': { label: 'Listen to call recordings', hint: 'Play back recorded calls.' },
-  'whatsapp.send': { label: 'Send WhatsApp messages', hint: 'Message contacts over WhatsApp.' },
-  'whatsapp.templates': { label: 'Manage WhatsApp templates', hint: 'Create and edit message templates.' },
+  // The keys still read `whatsapp.` because they are stored on live profile
+  // rows; renaming them would mean rewriting those rows to keep access. They
+  // gate SMS, RCS and email templates now.
+  'whatsapp.send': { label: 'Send messages', hint: 'Message contacts by SMS or RCS.' },
+  'whatsapp.templates': { label: 'Manage message templates', hint: 'Create and edit email templates.' },
   'inventory.block_unit': { label: 'Block inventory units', hint: 'Hold a property unit for a customer.' },
   'inventory.change_price': { label: 'Change inventory prices', hint: 'Edit the price of a property unit.' },
   'bookings.approve_discount': { label: 'Approve booking discounts', hint: 'Sign off discounts on bookings.' },
@@ -243,7 +246,7 @@ const CAPABILITY_INFO: Record<string, { label: string; hint: string }> = {
  *
  * They were one flat list ordered by a hand-written array of seven with
  * everything else trailing alphabetically, which put "Manage numbering" next
- * to "Send WhatsApp messages" and left an administrator scanning all of them
+ * to "Send messages" and left an administrator scanning all of them
  * to find the one they came for. The prefixes were already the grouping —
  * `records.`, `admin.`, `whatsapp.` — this just says so out loud.
  *

@@ -50,7 +50,7 @@ describe('a scheduled workflow that narrows on nothing', () => {
   afterEach(() => { vi.restoreAllMocks(); });
 
   it('is switched off rather than run, when it can message somebody', async () => {
-    const { refused, updates } = await guardWith('send_whatsapp', NARROWS_ON_NOTHING);
+    const { refused, updates } = await guardWith('send_email', NARROWS_ON_NOTHING);
     expect(refused).toBe(true);
     const off = updates.find((u) => u.sql.includes('is_active = false'));
     expect(off, 'the workflow should have been switched off').toBeTruthy();
@@ -63,7 +63,7 @@ describe('a scheduled workflow that narrows on nothing', () => {
   });
 
   it('leaves a workflow alone when it does narrow', async () => {
-    const { refused, updates } = await guardWith('send_whatsapp', CHECKS_THE_BIRTHDAY);
+    const { refused, updates } = await guardWith('send_email', CHECKS_THE_BIRTHDAY);
     expect(refused).toBe(false);
     expect(updates.find((u) => u.sql.includes('is_active = false'))).toBeUndefined();
   });
@@ -79,6 +79,6 @@ describe('a scheduled workflow that narrows on nothing', () => {
 
   it('treats a missing conditions object as narrowing on nothing', async () => {
     // Null is the same promise as an empty list: act on every record.
-    expect((await guardWith('send_whatsapp', null)).refused).toBe(true);
+    expect((await guardWith('send_email', null)).refused).toBe(true);
   });
 });

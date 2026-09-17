@@ -122,7 +122,6 @@ and it is worth waking someone up for. The script is `npm run db:restore`, and
 | One person cannot sign in | Their password, or their account was switched off | **Actions → "Set admin password"**, or Admin → Users |
 | Photos are not being processed | Your Mac is off, or Docker is not running | Start Docker Desktop, then `bash scripts/automation-up.sh`. Nothing is lost — the queue waits. |
 | AI features return nothing | A provider key expired or ran out | Admin → Integrations → the provider card → **Test connection**. It repeats the provider's own error message, which usually names the problem. |
-| WhatsApp messages not sending | Expected — messages queue for one-tap sending | Not an incident |
 | A number is not searchable | The search index for that record | Not urgent; it will reindex |
 | The public website shows nothing | Properties are unpublished, or their status is not a public one | Check one property's **Show on Website** switch |
 

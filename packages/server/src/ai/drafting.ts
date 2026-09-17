@@ -1,5 +1,5 @@
 /**
- * AI content drafting: WhatsApp replies, emails, call openers, pitch decks.
+ * AI content drafting: message replies, emails, call openers, pitch decks.
  * Always drafts *from the record's real context* so the output references the
  * actual project, price and conversation history rather than generic filler.
  */
@@ -11,7 +11,7 @@ import { matchForRecord } from './matching.js';
 import { fenceId, fenced, untrustedRule } from './untrusted.js';
 
 export interface DraftInput {
-  channel: 'whatsapp' | 'email' | 'sms' | 'call_script';
+  channel: 'email' | 'sms' | 'call_script';
   recordId: string;
   module: string;
   /** what the rep wants to achieve */
@@ -144,11 +144,6 @@ export async function buildRecordSummary(
 }
 
 const CHANNEL_RULES: Record<string, string> = {
-  whatsapp: `Write for WhatsApp:
-- Under 60 words. Short lines. No greeting block, no signature.
-- One clear ask at the end (a question or a specific next step).
-- Plain text. At most one emoji, and only if it genuinely fits.
-- Never use marketing clichés ("dream home", "luxury living", "don't miss out").`,
   sms: `Write for SMS: under 160 characters, one sentence of value plus one call to action.`,
   email: `Write a business email:
 - Subject line under 60 characters, specific, no clickbait.
@@ -201,7 +196,7 @@ ${input.goal ?? 'Move the conversation to the next step of the sales process.'}
 Tone: ${input.tone ?? 'warm'} but businesslike. From ${ctx.ownerName} at ${ctx.orgName}.
 ${input.language && input.language !== 'English' ? `Write in ${input.language}.` : ''}
 
-${CHANNEL_RULES[input.channel] ?? CHANNEL_RULES.whatsapp}
+${CHANNEL_RULES[input.channel] ?? CHANNEL_RULES.sms}
 
 Reference specifics from the data above — the project name, price, or something they actually said. A generic message is a failed message.
 
@@ -252,7 +247,7 @@ export async function suggestReplies(conversationId: string, userId?: string): P
 
   const replyFence = fenceId();
 
-  const prompt = `A sales rep is replying on WhatsApp. Suggest three distinct short replies.
+  const prompt = `A sales rep is replying to a customer message. Suggest three distinct short replies.
 
 ${summary ? `${fenced(replyFence, '## Contact', summary)}\n` : ''}
 ${fenced(replyFence, '## Conversation (newest first)', messages.rows.map((m) => `${m.direction === 'inbound' ? 'Customer' : 'Rep'}: ${m.body}`).join('\n'))}

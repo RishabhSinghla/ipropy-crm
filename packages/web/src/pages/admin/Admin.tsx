@@ -79,7 +79,7 @@ const SECTIONS = [
     group: 'Platform',
     items: [
       { path: 'integrations', capability: 'admin.integrations', label: 'Integrations', icon: Plug, element: <IntegrationsAdmin /> },
-      { path: 'templates', capability: 'whatsapp.templates', label: 'Message Templates', icon: MessageSquareText, element: <TemplatesAdmin /> },
+      { path: 'templates', capability: 'whatsapp.templates', label: 'Email Templates', icon: MessageSquareText, element: <TemplatesAdmin /> },
       { path: 'settings', capability: 'admin.access', label: 'Settings', icon: SlidersHorizontal, element: <SettingsAdmin /> },
       { path: 'brand', capability: 'admin.access', label: 'Brand & Social', icon: Sparkles, element: <BrandAdmin /> },
       { path: 'system', capability: 'admin.audit', label: 'System & Audit', icon: Activity, element: <SystemAdmin /> },

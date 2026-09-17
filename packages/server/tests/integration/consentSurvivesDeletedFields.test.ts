@@ -110,7 +110,7 @@ describe('what still enforces consent', () => {
     );
     expect(table, 'consent must not live only on a deletable field').toBeTruthy();
 
-    const { isOptedOut, recordConsent } = await import('../../src/integrations/whatsapp/consent.js');
+    const { isOptedOut, recordConsent } = await import('../../src/core/consent/index.js');
 
     /*
       Recorded through the real path rather than by inserting a row. The lookup

@@ -63,7 +63,7 @@ the website expects to find the CRM next to it, so keep that arrangement.
 ### 5. Get the keys from Rishabh
 
 The passwords and keys the CRM needs are not stored on GitHub, on purpose. Anyone who reads them
-can send WhatsApp messages as the business and read the customer database, so they never go near
+can send email as the business and read the customer database, so they never go near
 a place a stranger could reach.
 
 Ask Rishabh to run this on his Mac:
@@ -105,7 +105,7 @@ project in a place named after the folder you open, so opening the wrong one giv
 that knows nothing about iPropy.
 
 To check it worked, ask it: **"what do you remember about this project?"** A correct answer
-mentions specific things, the WhatsApp door, the media pipeline, the two removed property fields.
+mentions specific things: the media pipeline, the two removed property fields, why WhatsApp went.
 A vague answer means the notes did not install, so run `install-handover.sh` again and reopen
 Claude Code.
 

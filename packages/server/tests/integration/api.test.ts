@@ -438,52 +438,6 @@ describe('public API', () => {
   });
 });
 
-describe('outreach automation API', () => {
-  it('prepares and completes a one-tap WhatsApp queue item', async () => {
-    const prepared = await request(app)
-      .post('/api/outreach/device-link')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ handle: '+91 99999 91234', body: 'Hi there, shall I share the floor plan?', render: false });
-    expect(prepared.status, prepared.text).toBe(200);
-    expect(prepared.body.link).toBe(
-      'https://wa.me/919999991234?text=Hi%20there%2C%20shall%20I%20share%20the%20floor%20plan%3F',
-    );
-
-    const queued = await request(app)
-      .post('/api/outreach/device-queue')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ handle: '+91 99999 91234', body: 'Queue integration message', reason: 'Integration test' })
-      .expect(201);
-    const id = queued.body.id as string;
-    expect(id).toBeTruthy();
-
-    const pending = await request(app)
-      .get('/api/outreach/device-queue')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
-    expect(pending.body.some((item: { id: string; link: string }) => (
-      item.id === id && item.link.startsWith('https://wa.me/919999991234?text=')
-    ))).toBe(true);
-
-    await request(app)
-      .post(`/api/outreach/device-queue/${id}/opened`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
-    const sent = await request(app)
-      .post(`/api/outreach/device-queue/${id}/sent`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
-    expect(sent.body).toHaveProperty('messageId');
-
-    const after = await request(app)
-      .get('/api/outreach/device-queue')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
-    expect(after.body.some((item: { id: string }) => item.id === id)).toBe(false);
-  });
-
-});
-
 describe('Android companion API', () => {
   it('pairs, authenticates, deduplicates call logs and revokes a phone', async () => {
     const paired = await request(app)

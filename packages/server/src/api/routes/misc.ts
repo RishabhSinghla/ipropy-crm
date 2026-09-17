@@ -1521,11 +1521,10 @@ miscRouter.post('/import/:module', upload.single('file'), asyncHandler(async (re
     delete rows in Excel first, which loses the file somebody was sent.
   */
   const rowFilters = parseFilters(JSON.parse(String(req.body.rowFilters ?? '[]')));
-  // Automations (instant greeting → the outreach queue, scoring, first-call
-  // tasks) fire per record through the workflow engine. On a bulk import that
-  // meant a queue of hundreds of WhatsApp greetings nobody asked for, and a
-  // row-by-row crawl while each one was evaluated. Off by default now; the
-  // import form opts in explicitly.
+  // Automations (scoring, first-call tasks) fire per record through the
+  // workflow engine. On a bulk import that meant hundreds of notifications
+  // nobody asked for, and a row-by-row crawl while each one was evaluated. Off
+  // by default now; the import form opts in explicitly.
   const runWorkflows = String(req.body.runWorkflows ?? 'false') === 'true';
   // Which template this run came from, so the list can order by what the team
   // actually uses rather than by when somebody first saved one.

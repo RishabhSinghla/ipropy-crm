@@ -54,20 +54,6 @@ interface IntegrationRow {
 }
 
 export interface ResolvedSettings {
-  whatsapp: {
-    phoneNumberId: string;
-    businessAccountId: string;
-    accessToken: string;
-    verifyToken: string;
-    appSecret: string;
-    apiVersion: string;
-    active: boolean;
-  };
-  /**
-   * WhatsApp through a phone that is already signed in, rather than through
-   * Meta. Separate from `whatsapp` above because the two are different channels
-   * that happen to reach the same app, and a number can only be on one of them.
-   */
   email: {
     host: string; port: number; secure: boolean; user: string; password: string; from: string;
     imap: { host: string; port: number; user: string; password: string };
@@ -475,7 +461,6 @@ export function aiRowKey(provider: Exclude<AiProvider, 'none'>): string {
 }
 
 function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
-  const wa = map.get('meta_whatsapp');
   const smtp = map.get('smtp');
   const imap = map.get('imap');
   const sttRow = map.get('stt');
@@ -525,15 +510,6 @@ function resolve(map: Map<string, IntegrationRow>): ResolvedSettings {
         : 'local';
 
   return {
-    whatsapp: {
-      phoneNumberId: pick(wa, 'credentials', 'phoneNumberId', config.whatsapp.phoneNumberId),
-      businessAccountId: pick(wa, 'credentials', 'businessAccountId', config.whatsapp.businessAccountId),
-      accessToken: pick(wa, 'credentials', 'accessToken', config.whatsapp.accessToken),
-      verifyToken: pick(wa, 'config', 'verifyToken', config.whatsapp.verifyToken) || config.whatsapp.verifyToken,
-      appSecret: pick(wa, 'credentials', 'appSecret', config.whatsapp.appSecret),
-      apiVersion: pick(wa, 'config', 'apiVersion', config.whatsapp.apiVersion) || config.whatsapp.apiVersion,
-      active: Boolean(wa?.isActive),
-    },
     email: {
       host: pick(smtp, 'config', 'host', config.email.host),
       port: Number(pick(smtp, 'config', 'port', String(config.email.port))) || config.email.port,
@@ -647,7 +623,6 @@ export async function invalidate(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 const SECRET_FIELDS: Record<string, string[]> = {
-  meta_whatsapp: ['accessToken', 'appSecret'],
   smtp: ['password'],
   imap: ['password'],
   anthropic: ['apiKey'],

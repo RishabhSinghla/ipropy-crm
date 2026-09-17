@@ -14,7 +14,7 @@ every-two-hours check now exercises DNS and the certificate as well as the
 database. The website's `CRM_API_URL` on Vercel still names the old
 `onrender.com` host and works — when it is next changed, point it at
 `https://crm.ipropy.com`. Anything that posts webhooks to the CRM (Meta lead
-ads, WhatsApp) should carry the new host too.
+ads, portals) should carry the new host too.
 
 Both verified: health check green, DB connected, CORS allows the website's
 origin, the deployed bundle matches `main`, and the seed admin password is in
@@ -150,7 +150,7 @@ features silently stop working:
 | Path | Why it is public |
 |---|---|
 | `/api/public/*` | The website's catalogue — `Available`, published units only |
-| `/api/webhooks/*` | Inbound leads, WhatsApp delivery receipts, portal enquiries |
+| `/api/webhooks/*` | Inbound leads, portal enquiries |
 | `/s/:token` and `/api/public/share/:token` | **Property share links.** One property, one unguessable token, sent to one buyer |
 
 Share links are the one to understand before you go live. A link is created

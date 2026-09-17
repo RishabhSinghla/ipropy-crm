@@ -61,12 +61,6 @@ export const AI_FEATURES = {
     fallback: true,
     description: 'Pulls dates, amounts and numbers out of agreements and certificates, and makes floor plans findable by what is on them.',
   },
-  firstReply: {
-    key: 'ai_features.first_reply',
-    label: 'Draft the first reply',
-    fallback: true,
-    description: 'A new enquiry arrives with a WhatsApp already written, waiting for somebody to tap send.',
-  },
   replySuggestions: {
     key: 'ai_features.reply_suggestions',
     label: 'Suggest replies in the Inbox',

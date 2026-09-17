@@ -17,7 +17,6 @@ import {
   getShareAdminConfig, saveShareConfig,
 } from '../../core/sharing/propertyShare.js';
 import { listIntegrationModels } from '../../ai/models.js';
-import * as whatsappWeb from '../../integrations/whatsappWeb/service.js';
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth);
@@ -929,9 +928,7 @@ adminRouter.put('/settings', asyncHandler(async (req, res) => {
   const { invalidateAiFeatures } = await import('../../core/settings/aiFeatures.js');
   const { invalidateLocationSettings } = await import('../../core/locations/index.js');
   const { invalidateUiSettings } = await import('../../core/settings/ui.js');
-  const { invalidateGreeting } = await import('../../integrations/whatsapp/greetNewLead.js');
   const { invalidateMatchingConfig } = await import('../../core/settings/matching.js');
-  invalidateGreeting();
   invalidateLocationSettings();
   invalidateUiSettings();
   invalidateAiModels();
@@ -1041,42 +1038,6 @@ adminRouter.get('/integrations', asyncHandler(async (req, res) => {
   res.json(await listIntegrations());
 }));
 
-// WhatsApp Web is intentionally not a generic integration config. It has an
-// encrypted, stateful account session and QR/pairing lifecycle of its own.
-adminRouter.get('/integrations/whatsapp-web/accounts', asyncHandler(async (req, res) => {
-  await assertCapability(getUser(req), 'admin.integrations');
-  res.json(await whatsappWeb.listAccounts());
-}));
-
-adminRouter.post('/integrations/whatsapp-web/accounts', asyncHandler(async (req, res) => {
-  const user = getUser(req); await assertCapability(user, 'admin.integrations');
-  const input = z.object({ label: z.string().trim().min(2).max(80) }).parse(req.body);
-  res.status(201).json(await whatsappWeb.createAccount({ label: input.label, createdBy: user.id }));
-}));
-
-adminRouter.post('/integrations/whatsapp-web/accounts/:id/connect', asyncHandler(async (req, res) => {
-  await assertCapability(getUser(req), 'admin.integrations');
-  await whatsappWeb.connect(req.params.id);
-  res.json(await whatsappWeb.getQr(req.params.id));
-}));
-
-adminRouter.get('/integrations/whatsapp-web/accounts/:id/qr', asyncHandler(async (req, res) => {
-  await assertCapability(getUser(req), 'admin.integrations');
-  res.json(await whatsappWeb.getQr(req.params.id));
-}));
-
-adminRouter.post('/integrations/whatsapp-web/accounts/:id/pairing-code', asyncHandler(async (req, res) => {
-  await assertCapability(getUser(req), 'admin.integrations');
-  const input = z.object({ phoneNumber: z.string().min(8).max(24) }).parse(req.body);
-  res.json(await whatsappWeb.requestPairingCode(req.params.id, input.phoneNumber));
-}));
-
-adminRouter.post('/integrations/whatsapp-web/accounts/:id/disconnect', asyncHandler(async (req, res) => {
-  await assertCapability(getUser(req), 'admin.integrations');
-  await whatsappWeb.disconnect(req.params.id);
-  res.status(204).end();
-}));
-
 /** Live provider catalogue for the model pickers; secrets never leave here. */
 adminRouter.get('/integrations/:provider/models', asyncHandler(async (req, res) => {
   await assertCapability(getUser(req), 'admin.integrations');
@@ -1115,16 +1076,6 @@ async function testIntegration(provider: string): Promise<{ ok: boolean; message
   const s = getSettings();
   try {
     switch (provider) {
-      case 'meta_whatsapp': {
-        const { phoneNumberId, accessToken, apiVersion } = s.whatsapp;
-        if (!phoneNumberId || !accessToken) return { ok: false, message: 'Phone number ID and access token are required.' };
-        const r = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}?fields=display_phone_number`, {
-          headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000),
-        });
-        const body = await r.json().catch(() => ({})) as { display_phone_number?: string; error?: { message?: string } };
-        if (!r.ok) return { ok: false, message: body.error?.message ?? `Meta returned HTTP ${r.status}` };
-        return { ok: true, message: `Connected — ${body.display_phone_number ?? 'number verified'}.` };
-      }
       case 'smtp': {
         if (!s.email.host) return { ok: false, message: 'SMTP host is required.' };
         const result = await verifySmtpConnection();

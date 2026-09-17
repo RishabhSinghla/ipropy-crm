@@ -141,8 +141,6 @@ const KNOWN_DIRECT_REFERENCES = new Set([
   'core/locations/index.ts p.longitude',
   'core/workflow/assignment.ts l.next_followup_at',
   'core/workflow/tasks.ts l.email',
-  'integrations/whatsapp/service.ts l.mobile',
-  'integrations/whatsapp/service.ts l.status',
 ]);
 
 /** Columns nobody can delete, so naming them is always correct. */

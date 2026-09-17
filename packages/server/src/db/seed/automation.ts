@@ -33,22 +33,13 @@ const WORKFLOWS: WorkflowSeed[] = [
   {
     module: 'leads',
     name: 'Instant lead response',
-    description: 'Greets a new lead on WhatsApp within seconds and tells the rep to call. Speed-to-lead is the single biggest conversion lever.',
+    description: 'Scores a new lead the moment it arrives and tells the rep to call. Speed-to-lead is the single biggest conversion lever.',
     trigger: 'on_create',
     executionMode: 'once',
     tasks: [
       {
         type: 'ai_action', name: 'Score the lead',
         config: { action: 'score_lead' },
-      },
-      {
-        type: 'send_whatsapp', name: 'Send welcome message',
-        config: {
-          to: '{{mobile}}',
-          template: 'lead_welcome',
-          fallbackText: 'Hi {{first_name|there}}, thanks for your interest in {{interested_project|our properties}}. I am {{owner_name}} from iPropy. When would be a good time to call you?',
-          skipIf: { logic: 'AND', conditions: [{ field: 'mobile', operator: 'is_empty' }] },
-        },
       },
       {
         type: 'create_task', name: 'Create first-call task',
@@ -110,9 +101,8 @@ const WORKFLOWS: WorkflowSeed[] = [
     tasks: [
       {
         type: 'ai_action', name: 'Draft a personalised nudge',
-        config: { action: 'draft_message', channel: 'whatsapp', tone: 'warm', goal: 'revive interest with a relevant new inventory or price update' },
+        config: { action: 'draft_message', channel: 'sms', tone: 'warm', goal: 'revive interest with a relevant new inventory or price update' },
       },
-      { type: 'send_whatsapp', name: 'Send nurture message', config: { to: '{{mobile}}', useAiDraft: true, template: 'lead_nurture' } },
     ],
   },
   {
@@ -325,99 +315,9 @@ export async function seedSlaPolicies(conn: Tx): Promise<void> {
 // Message templates
 // ---------------------------------------------------------------------------
 
-interface TemplateSeed {
-  name: string;
-  category: 'MARKETING' | 'UTILITY' | 'AUTHENTICATION';
-  header?: string;
-  body: string;
-  footer?: string;
-  buttons?: { type: string; text: string; url?: string }[];
-  variables: Record<string, string>;
-}
-
-const WHATSAPP_TEMPLATES: TemplateSeed[] = [
-  {
-    name: 'lead_welcome', category: 'UTILITY',
-    header: 'Thanks for your interest!',
-    body: 'Hi {{1}}, thank you for enquiring about {{2}}. I\'m {{3}} from {{4}} and I\'ll be helping you find the right home.\n\nCould you share a good time to call you today?',
-    footer: 'Reply STOP to opt out',
-    buttons: [{ type: 'QUICK_REPLY', text: 'Call me now' }, { type: 'QUICK_REPLY', text: 'Send details' }],
-    variables: { '1': 'record.first_name', '2': 'record.interested_project', '3': 'owner.first_name', '4': 'org.name' },
-  },
-  {
-    name: 'lead_nurture', category: 'MARKETING',
-    body: 'Hi {{1}}, just checking in on your home search. We have new inventory in {{2}} that fits your budget of {{3}}.\n\nWould you like to see the latest options?',
-    footer: 'Reply STOP to opt out',
-    buttons: [{ type: 'QUICK_REPLY', text: 'Yes, share options' }, { type: 'QUICK_REPLY', text: 'Not right now' }],
-    variables: { '1': 'record.first_name', '2': 'record.preferred_locations', '3': 'record.budget' },
-  },
-  {
-    name: 'site_visit_confirmation', category: 'UTILITY',
-    header: 'Site visit confirmed',
-    body: 'Hi {{1}}, your site visit to {{2}} is confirmed for {{3}}.\n\nAddress: {{4}}\nYour host: {{5}} ({{6}})\n\nSee you there!',
-    buttons: [{ type: 'URL', text: 'Get directions', url: 'https://maps.google.com/?q={{1}}' }],
-    variables: { '1': 'contact.first_name', '2': 'record.project_name', '3': 'record.scheduled_at', '4': 'project.address', '5': 'owner.full_name', '6': 'owner.phone' },
-  },
-  {
-    name: 'site_visit_reminder', category: 'UTILITY',
-    body: 'Reminder: your visit to {{1}} is in 2 hours, at {{2}}. {{3}} will meet you at the site office.\n\nNeed to reschedule?',
-    buttons: [{ type: 'QUICK_REPLY', text: 'On my way' }, { type: 'QUICK_REPLY', text: 'Reschedule' }],
-    variables: { '1': 'record.project_name', '2': 'record.scheduled_at', '3': 'owner.first_name' },
-  },
-  {
-    name: 'site_visit_thankyou', category: 'UTILITY',
-    body: 'Hi {{1}}, thank you for visiting {{2}} today. I hope you liked what you saw.\n\nHow would you rate the property?',
-    buttons: [
-      { type: 'QUICK_REPLY', text: 'Loved it' },
-      { type: 'QUICK_REPLY', text: 'Need to think' },
-      { type: 'QUICK_REPLY', text: 'Not for me' },
-    ],
-    variables: { '1': 'contact.first_name', '2': 'record.project_name' },
-  },
-  {
-    name: 'booking_confirmation', category: 'UTILITY',
-    header: 'Congratulations on your new home!',
-    body: 'Dear {{1}}, your booking for {{2}} at {{3}} is confirmed.\n\nBooking ID: {{4}}\nAgreement value: {{5}}\n\nOur CRM team will reach out with the documentation checklist shortly.',
-    variables: { '1': 'contact.first_name', '2': 'record.property_id__display', '3': 'record.project_name', '4': 'record.booking_number', '5': 'record.agreement_value' },
-  },
-  {
-    name: 'payment_reminder', category: 'UTILITY',
-    body: 'Dear {{1}}, a payment of {{2}} for {{3}} is due on {{4}}.\n\nPlease ignore if already paid.',
-    buttons: [{ type: 'QUICK_REPLY', text: 'Already paid' }, { type: 'QUICK_REPLY', text: 'Need help' }],
-    variables: { '1': 'contact.first_name', '2': 'record.amount_due', '3': 'record.milestone', '4': 'record.due_date' },
-  },
-  {
-    name: 'payment_overdue', category: 'UTILITY',
-    body: 'Dear {{1}}, our records show {{2}} for {{3}} is overdue since {{4}}. Kindly arrange payment at the earliest to avoid late charges.\n\nContact {{5}} for assistance.',
-    variables: { '1': 'contact.first_name', '2': 'record.amount_due', '3': 'record.milestone', '4': 'record.due_date', '5': 'owner.phone' },
-  },
-  {
-    name: 'property_shortlist', category: 'MARKETING',
-    header: 'Handpicked for you',
-    body: 'Hi {{1}}, based on your requirement ({{2}}, {{3}}) I\'ve shortlisted {{4}} options for you.\n\nShall I send the details?',
-    buttons: [{ type: 'QUICK_REPLY', text: 'Yes please' }, { type: 'QUICK_REPLY', text: 'Call me' }],
-    variables: { '1': 'record.first_name', '2': 'record.configuration', '3': 'record.budget', '4': 'ai.match_count' },
-  },
-];
-
 export async function seedTemplates(conn: Tx): Promise<void> {
-  for (const t of WHATSAPP_TEMPLATES) {
-    // Create-only: the wording is starter copy the business is expected to
-    // rewrite in its own voice, and a template already submitted to Meta must
-    // not have its body silently changed underneath the approved version.
-    await conn.query(
-      `INSERT INTO ipy_whatsapp_template
-        (name, language, category, status, header_text, header_format, body_text, footer_text, buttons, variable_map)
-       VALUES ($1,'en',$2,'LOCAL',$3,$4,$5,$6,$7,$8)
-       ON CONFLICT (name, language) DO NOTHING`,
-      [
-        t.name, t.category, t.header ?? null, t.header ? 'TEXT' : null,
-        t.body, t.footer ?? null,
-        JSON.stringify(t.buttons ?? []), JSON.stringify(t.variables),
-      ],
-    );
-  }
-
+  // The WhatsApp starter templates that used to be seeded here went with the
+  // rest of WhatsApp on 17 September 2026. Email templates below stay.
   const emailTemplates = [
     {
       name: 'booking_welcome',
@@ -482,11 +382,9 @@ export async function seedSettings(conn: Tx): Promise<void> {
     { key: 'leads.auto_score', value: true, category: 'ai', label: 'Auto-score new leads with AI' },
     { key: 'inventory.default_hold_days', value: 7, category: 'inventory', label: 'Default unit hold period (days)' },
     { key: 'inventory.allow_overbooking', value: false, category: 'inventory', label: 'Allow booking an already-booked unit' },
-    { key: 'ai.auto_reply_whatsapp', value: false, category: 'ai', label: 'Let AI auto-reply on WhatsApp', description: 'When off, AI drafts a reply for the rep to approve' },
     { key: 'ai.call_analysis', value: true, category: 'ai', label: 'Analyse call recordings with AI' },
     { key: 'ai.daily_digest', value: true, category: 'ai', label: 'Send AI daily digest to reps' },
     { key: 'telephony.record_calls', value: true, category: 'telephony', label: 'Record calls' },
-    { key: 'whatsapp.session_window_hours', value: 24, category: 'whatsapp', label: 'Customer service window (hours)' },
   ];
 
   for (const s of settings) {
@@ -502,7 +400,6 @@ export async function seedSettings(conn: Tx): Promise<void> {
 /** Register the integration slots so the admin UI has something to configure. */
 export async function seedIntegrations(conn: Tx): Promise<void> {
   const integrations = [
-    { provider: 'meta_whatsapp', kind: 'messaging', label: 'WhatsApp Business (Meta Cloud API)' },
     { provider: 'knowlarity', kind: 'telephony', label: 'Knowlarity' },
     { provider: 'facebook_leads', kind: 'lead_source', label: 'Facebook Lead Ads' },
     { provider: 'google_ads', kind: 'lead_source', label: 'Google Ads Lead Form' },

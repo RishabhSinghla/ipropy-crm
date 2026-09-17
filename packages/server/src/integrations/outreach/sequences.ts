@@ -15,19 +15,21 @@
  *    survives.
  *
  * The fifth stop condition is the one people forget: a step that cannot send
- * *must not* silently vanish. Outside the 24-hour window, with no approved
- * template, the step falls back to the device queue so a human finishes the
- * job. A sequence that quietly drops half its steps looks like it is working.
+ * *must not* silently vanish. It is logged by name, because a sequence that
+ * quietly drops half its steps looks exactly like one that is working.
+ *
+ * This file was `integrations/whatsapp/sequences.ts` until 17 September 2026.
+ * It was never WhatsApp's — steps are email, SMS or a task for the owner — so
+ * it moved here when WhatsApp was removed. A stored `whatsapp` step is kept in
+ * the type and logged rather than run, so nobody's saved sequence loses its
+ * shape.
  */
 import { db } from '../../db/pool.js';
 import { toInternational } from '@ipropy/shared';
 import { logger } from '../../utils/logger.js';
-import { withNameParts } from '../../core/entity/nameParts.js';
 import { NotFoundError } from '../../utils/errors.js';
-import { isOptedOut } from './consent.js';
-import { getOrCreateConversation, isWindowOpen, sendMessage } from './service.js';
-import { queueDeviceSend, renderForRecord } from './deviceSend.js';
-import * as provider from './provider.js';
+import { isOptedOut } from '../../core/consent/index.js';
+import { renderForRecord } from './merge.js';
 
 interface SequenceRow {
   id: string;
@@ -73,9 +75,9 @@ export async function enrol(input: {
   if (!sequence) return { enrolled: false, reason: 'Sequence not found or inactive' };
 
   const handle = input.handle ?? await handleForRecord(input.recordId);
-  if (!handle) return { enrolled: false, reason: 'No WhatsApp number on this record' };
+  if (!handle) return { enrolled: false, reason: 'No phone number on this record' };
 
-  if (await isOptedOut(handle)) {
+  if (await isOptedOut(handle, 'call')) {
     return { enrolled: false, reason: 'This number has opted out' };
   }
 
@@ -227,7 +229,7 @@ async function advance(enrolment: {
     }
   }
 
-  if (await isOptedOut(enrolment.handle)) {
+  if (await isOptedOut(enrolment.handle, 'call')) {
     await exitEnrolment(enrolment.id, 'Opted out');
     return 'exited';
   }
@@ -324,10 +326,16 @@ async function runStep(
     : '';
 
   switch (step.channel) {
-    case 'whatsapp': {
-      await sendWhatsAppStep(step, enrolment, sequence, body);
+    /*
+      There was a 'whatsapp' case here, removed with the rest of WhatsApp on
+      17 September 2026 at the owner's instruction. A sequence step still
+      carrying that channel is skipped rather than silently retried: the column
+      is not narrowed, so an old enrolment keeps its history and a future
+      WhatsApp build can pick the channel back up without a migration.
+    */
+    case 'whatsapp':
+      logger.info({ step: step.id }, 'sequence whatsapp step skipped — WhatsApp has been removed');
       break;
-    }
     case 'email': {
       if (!enrolment.record_id) break;
       const lead = await db.queryOne<{ email: string | null }>(
@@ -363,73 +371,6 @@ async function runStep(
       logger.info({ step: step.id }, 'sequence sms step skipped — no SMS provider configured');
       break;
   }
-}
-
-/**
- * Send one WhatsApp step, choosing the path that will actually work.
- *
- * Order matters and encodes the real constraints: a free-form message inside an
- * open window is the best outcome, an approved template is the fallback outside
- * it, and a device hand-off is what keeps the step from evaporating when
- * neither is available.
- */
-async function sendWhatsAppStep(
-  step: StepRow,
-  enrolment: { id: string; handle: string; record_id: string | null; enrolled_by: string | null },
-  sequence: SequenceRow,
-  body: string,
-): Promise<void> {
-  const apiReady = await provider.isConfigured();
-
-  if (apiReady) {
-    const conversationId = await getOrCreateConversation(enrolment.handle);
-    const windowOpen = await isWindowOpen(conversationId);
-
-    if (windowOpen && body) {
-      await sendMessage({
-        conversationId,
-        text: body,
-        buttons: step.buttons?.length ? step.buttons : undefined,
-      });
-      return;
-    }
-    if (step.template_name) {
-      const { bindTemplateParams } = await import('./service.js');
-      const params = await bindTemplateParams(step.template_name, await mergeScope(enrolment.record_id, sequence.module_name));
-      await sendMessage({ conversationId, templateName: step.template_name, templateParams: params });
-      return;
-    }
-  }
-
-  if (step.fallback_to_device && body) {
-    await queueDeviceSend({
-      handle: enrolment.handle,
-      body,
-      recordId: enrolment.record_id,
-      module: sequence.module_name,
-      reason: `${sequence.name} — step ${step.sequence}`,
-      sequenceId: sequence.id,
-      assignedTo: enrolment.enrolled_by,
-    });
-    return;
-  }
-
-  logger.info(
-    { step: step.id, handle: enrolment.handle },
-    'sequence whatsapp step skipped — window closed, no template, device fallback off',
-  );
-}
-
-async function mergeScope(recordId: string | null, module: string): Promise<Record<string, unknown>> {
-  if (!recordId) return {};
-  const { registry } = await import('../../core/metadata/registry.js');
-  const meta = await registry.requireModule(module);
-  const row = await db.queryOne<Record<string, unknown>>(
-    `SELECT r.label, e.* FROM ipy_record r JOIN ${meta.tableName} e ON e.record_id = r.id WHERE r.id = $1`,
-    [recordId],
-  );
-  if (!row) return {};
-  return withNameParts(row);
 }
 
 /** Any inbound message from this number since it was enrolled counts as a reply. */
@@ -469,28 +410,22 @@ export function minutesUntilAwake(quietStart: number, quietEnd: number, now = ne
 }
 
 /**
- * Which number to message, without naming a column that may be gone.
+ * Which number this person is reached on, without naming a column that may be gone.
  *
- * `whatsapp_number` was retired on production with the linked-phone door, and
- * this statement named it outright — a 42703 on the whole query, and because
- * enrolling a new lead in a sequence happens inside lead capture, the enquiry
- * that triggered it was lost with it. Website and portal leads, discarded, one
- * deleted field away.
- *
- * It survived every guard: `columnsThatCanBeDeleted` reads `alias.column` and
- * this query has no alias at all, which is precisely the blind spot its own
- * comment admits to. Aliased and read through `to_jsonb` now, the way
- * `core/workflow/tasks.ts` already does it — same answer, and a retired field
- * simply reads as absent.
+ * Read through `to_jsonb` with an alias rather than named outright. The version
+ * that named a column directly took a 42703 on the whole query the day that
+ * field was retired — and because enrolling a new lead in a sequence happens
+ * inside lead capture, the enquiry that triggered it was lost with it. Website
+ * and portal leads, discarded, one deleted field away. It survived every guard:
+ * `columnsThatCanBeDeleted` reads `alias.column` and that query had no alias at
+ * all. A retired field simply reads as absent this way.
  */
 async function handleForRecord(recordId: string): Promise<string | null> {
-  const row = await db.queryOne<{ whatsapp_number: string | null; mobile: string | null }>(
-    `SELECT to_jsonb(l)->>'whatsapp_number' AS whatsapp_number,
-            to_jsonb(l)->>'mobile' AS mobile
-       FROM ipy_e_leads l WHERE l.record_id = $1`,
+  const row = await db.queryOne<{ mobile: string | null }>(
+    `SELECT to_jsonb(l)->>'mobile' AS mobile FROM ipy_e_leads l WHERE l.record_id = $1`,
     [recordId],
   );
-  return toInternational(null, row?.whatsapp_number || row?.mobile);
+  return toInternational(null, row?.mobile ?? null);
 }
 
 export async function requireSequence(id: string): Promise<SequenceRow> {

@@ -69,7 +69,7 @@ describe('with no AI provider configured', () => {
   it('refuses to draft, honestly — 503 and where to fix it, not a 400', async () => {
     const res = await request(app).post('/api/ai/draft')
       .set('Authorization', `Bearer ${token}`)
-      .send({ channel: 'whatsapp', module: 'leads', recordId: leadId });
+      .send({ channel: 'email', module: 'leads', recordId: leadId });
 
     expect(res.status, 'a 400 says the rep typed something wrong; they did not').toBe(503);
     expect(res.body.message).toMatch(/Admin → Integrations/);

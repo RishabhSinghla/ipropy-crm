@@ -13,7 +13,6 @@ import { copyText } from '../../lib/nativeActions';
 const API_BASE = window.location.origin;
 
 const WEBHOOK_ENDPOINTS = [
-  { label: 'WhatsApp (Meta Cloud API)', path: '/api/webhooks/whatsapp', icon: MessageCircle, note: 'Set as the callback URL in your Meta app. The verify token is set below, under WhatsApp.' },
   { label: 'Facebook Lead Ads', path: '/api/webhooks/leads/facebook', icon: Globe, note: 'Subscribe your page to the leadgen field.' },
   { label: 'Google Ads lead form', path: '/api/webhooks/leads/google', icon: Globe, note: 'Paste as the webhook URL; the key must match what you set below, under Google Ads.' },
   { label: 'Zapier lead capture', path: '/api/webhooks/leads/zapier', icon: Webhook, note: 'Use this in Zapier Webhooks by Zapier. Send the secret below as the X-Zapier-Secret header.' },
@@ -55,14 +54,6 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
       secret: true,
       placeholder: '{ "type": "service_account", "project_id": … }',
     },
-  ],
-  meta_whatsapp: [
-    { key: 'phoneNumberId', label: 'Phone Number ID', source: 'credentials' },
-    { key: 'businessAccountId', label: 'Business Account ID', source: 'credentials' },
-    { key: 'accessToken', label: 'Access Token', source: 'credentials', secret: true },
-    { key: 'appSecret', label: 'App Secret', source: 'credentials', secret: true },
-    { key: 'verifyToken', label: 'Webhook Verify Token', source: 'config', placeholder: 'ipropy-verify-token' },
-    { key: 'apiVersion', label: 'API Version', source: 'config', placeholder: 'v21.0' },
   ],
   smtp: [
     { key: 'host', label: 'SMTP Host', source: 'config', placeholder: 'smtp.yourdomain.com' },
@@ -171,7 +162,7 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
 };
 
 const TESTABLE = new Set([
-  'meta_whatsapp', 'smtp', 'imap', 'facebook_leads',
+  'smtp', 'imap', 'facebook_leads',
   'anthropic', 'ai_gemini', 'ai_groq', 'ai_openrouter', 'ai_openai',
   'stt', 'onedrive', 'sentry', 'fcm', 'zapier', 'google_rcs',
 ]);
@@ -256,24 +247,6 @@ interface Guide {
 }
 
 const GUIDES: Record<string, Guide> = {
-  meta_whatsapp: {
-    outcome: 'Send and receive WhatsApp messages from the Inbox, and run broadcasts.',
-    minutes: 10,
-    steps: [
-      {
-        title: 'Open your WhatsApp account on Meta',
-        help: 'Sign in to Meta for Developers, open your app, and go to WhatsApp → API Setup. Everything below is on that one screen.',
-        href: 'https://developers.facebook.com/apps',
-        linkLabel: 'Open Meta for Developers',
-      },
-      { title: 'Copy the Phone Number ID', help: 'On the API Setup screen, under "From", copy the long number labelled Phone number ID.', field: 'phoneNumberId' },
-      { title: 'Copy the Business Account ID', help: 'Just below it, labelled WhatsApp Business Account ID.', field: 'businessAccountId' },
-      { title: 'Create a permanent access token', help: 'Business Settings → Users → System Users → Add, give it the whatsapp_business_messaging permission, then Generate token. The temporary token on the API Setup screen expires in 24 hours — do not use that one.', field: 'accessToken' },
-      { title: 'Copy the App Secret', help: 'App Settings → Basic → App Secret → Show. This lets us verify that messages really came from Meta.', field: 'appSecret' },
-      { title: 'We made you a verify token', help: 'Meta asks for a password of your choosing when you set up the webhook. Here is one — you will paste it into Meta in the next step.', field: 'verifyToken', generate: true },
-      { title: 'Point Meta at us', help: 'WhatsApp → Configuration → Edit. Paste the URL below as the Callback URL and the verify token above as the Verify Token, then tick the "messages" field.', copyPath: '/api/webhooks/whatsapp' },
-    ],
-  },
   smtp: {
     outcome: 'Send email from the CRM using your own address, so replies come back to you.',
     minutes: 4,
@@ -484,7 +457,6 @@ function healthOf(summary: IntegrationSummary): IntegrationHealth {
 
 /** Card faces speak to the owner, not to the database: plain names, no provider ids. */
 const PLAIN_NAMES: Record<string, string> = {
-  meta_whatsapp: 'WhatsApp Business',
   smtp: 'your own email address',
   imap: 'reading replies',
   facebook_leads: 'Facebook Lead Ads',
@@ -541,17 +513,6 @@ interface JobDef {
 }
 
 const JOBS: JobDef[] = [
-  {
-    id: 'whatsapp',
-    title: 'WhatsApp',
-    blurb: 'Two-way chat in the Inbox, plus templates and broadcasts.',
-    icon: MessageCircle,
-    providers: ['meta_whatsapp'],
-    wanted: true,
-    short: 'WhatsApp',
-    trouble: 'WhatsApp is set up but failing its connection test, so messages will not send or arrive.',
-    missing: 'WhatsApp is not set up, so you cannot message customers from the CRM.',
-  },
   /*
     "Phone calls" is not a goal this marketplace can set up any more.
 
@@ -933,72 +894,6 @@ function ConnectWizard({
   );
 }
 
-function WhatsAppWebAccounts(): JSX.Element {
-  const client = useQueryClient();
-  const [label, setLabel] = useState('CRM WhatsApp');
-  const [pairingFor, setPairingFor] = useState<string | null>(null);
-  const [phone, setPhone] = useState('');
-  const [code, setCode] = useState<string | null>(null);
-  const { data: accounts, isLoading } = useQuery({
-    queryKey: ['whatsapp-web-accounts'], queryFn: () => api.whatsappWebAccounts(), refetchInterval: 4000,
-  });
-  const refresh = (): void => { void client.invalidateQueries({ queryKey: ['whatsapp-web-accounts'] }); };
-  const add = async (): Promise<void> => {
-    try { await api.createWhatsappWebAccount(label); toast.success('WhatsApp account added'); refresh(); }
-    catch (err) { toast.error((err as Error).message); }
-  };
-  const connect = async (id: string): Promise<void> => {
-    try { await api.connectWhatsappWebAccount(id); toast.success('Scan the QR code with WhatsApp on your phone'); refresh(); }
-    catch (err) { toast.error((err as Error).message); }
-  };
-  const pairing = async (): Promise<void> => {
-    if (!pairingFor) return;
-    try { const result = await api.whatsappWebPairingCode(pairingFor, phone); setCode(result.code); refresh(); }
-    catch (err) { toast.error((err as Error).message); }
-  };
-  const disconnect = async (id: string): Promise<void> => {
-    try { await api.disconnectWhatsappWebAccount(id); toast.success('WhatsApp Web disconnected'); refresh(); }
-    catch (err) { toast.error((err as Error).message); }
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="card p-4">
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="flex-1 text-xs font-medium">Account label
-            <input className="input mt-1 w-full" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Sales desk" />
-          </label>
-          <button className="btn-primary" onClick={() => void add()} disabled={!label.trim()}>Add WhatsApp account</button>
-        </div>
-        <p className="mt-2 text-xs text-muted">This links an existing business phone. Meta Cloud API accounts stay separate and continue to work independently.</p>
-      </div>
-      {isLoading ? <Skeleton className="h-28" /> : !accounts?.length ? (
-        <EmptyState icon={<MessageCircle className="h-8 w-8" />} title="No WhatsApp Web accounts" body="Add an account, then connect it by QR code or phone pairing." />
-      ) : accounts.map((account) => (
-        <WhatsAppWebAccountCard key={account.id} account={account} onConnect={connect} onDisconnect={disconnect} onPair={(id) => { setPairingFor(id); setCode(null); setPhone(''); }} />
-      ))}
-      {pairingFor && (
-        <Modal open onClose={() => setPairingFor(null)} title="Link by phone number" size="sm">
-          <p className="text-sm text-muted">Enter the WhatsApp number. On the phone, choose Linked devices → Link with phone number, then enter this code.</p>
-          <input className="input mt-3 w-full" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91 98765 43210" />
-          {code && <div className="mt-3 rounded-lg bg-brand-50 p-4 text-center font-mono text-2xl font-semibold tracking-[0.25em] text-brand-700 dark:bg-brand-950">{code}</div>}
-          <div className="mt-4 flex justify-end gap-2"><button className="btn-secondary" onClick={() => setPairingFor(null)}>Close</button><button className="btn-primary" onClick={() => void pairing()} disabled={!phone.trim()}>Get pairing code</button></div>
-        </Modal>
-      )}
-    </div>
-  );
-}
-
-function WhatsAppWebAccountCard({ account, onConnect, onDisconnect, onPair }: {
-  account: { id: string; label: string; phoneNumber: string | null; displayName: string | null; status: string; lastConnectedAt: string | null; lastError: string | null };
-  onConnect: (id: string) => Promise<void>; onDisconnect: (id: string) => Promise<void>; onPair: (id: string) => void;
-}): JSX.Element {
-  const { data: qr } = useQuery({ queryKey: ['whatsapp-web-qr', account.id], queryFn: () => api.whatsappWebQr(account.id), enabled: account.status === 'qr' || account.status === 'connecting', refetchInterval: 3000 });
-  const connected = account.status === 'connected';
-  return <div className="card p-4"><div className="flex flex-wrap items-center gap-2"><div><p className="font-medium">{account.label}</p><p className="text-xs text-muted">{account.displayName ?? account.phoneNumber ?? 'Not linked yet'}</p></div><Badge color={connected ? '#22c55e' : account.status === 'error' ? '#ef4444' : '#64748b'}>{account.status}</Badge><div className="ml-auto flex gap-2">{connected ? <button className="btn-secondary btn-sm" onClick={() => void onDisconnect(account.id)}>Disconnect</button> : <><button className="btn-secondary btn-sm" onClick={() => onPair(account.id)}>Pair by number</button><button className="btn-primary btn-sm" onClick={() => void onConnect(account.id)}>Connect</button></>}</div></div>{(qr?.qr && !connected) && <div className="mt-4 flex flex-col items-center rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900"><img src={qr.qr} alt="WhatsApp connection QR code" className="h-48 w-48" /><p className="mt-2 text-xs text-muted">WhatsApp → Linked devices → Link a device</p></div>}{account.lastError && <p className="mt-2 text-xs text-danger">{account.lastError}</p>}</div>;
-}
-
-/** One alternative option under a collapsed job card. */
 function ProviderRow({ summary, onSetup, onManage }: {
   summary: IntegrationSummary;
   onSetup: (provider: string) => void;
@@ -1373,7 +1268,7 @@ export default function IntegrationsAdmin(): JSX.Element {
   };
 
   const KIND_LABELS: Record<string, string> = {
-    messaging: 'WhatsApp', telephony: 'Telephony', lead_source: 'Lead sources', email: 'Email', ai: 'AI', storage: 'Storage',
+    messaging: 'Messaging', telephony: 'Telephony', lead_source: 'Lead sources', email: 'Email', ai: 'AI', storage: 'Storage',
   };
 
   const attention = buildAttentionItems(summaries);
@@ -1409,7 +1304,6 @@ export default function IntegrationsAdmin(): JSX.Element {
       <Tabs
         tabs={[
           { key: 'connect', label: 'Connect', icon: <Wand2 className="h-3.5 w-3.5" /> },
-          { key: 'whatsapp-web', label: 'WhatsApp Web', icon: <MessageCircle className="h-3.5 w-3.5" /> },
           { key: 'providers', label: 'All settings', icon: <Settings2 className="h-3.5 w-3.5" /> },
           { key: 'webhooks', label: 'Webhook URLs', icon: <Webhook className="h-3.5 w-3.5" /> },
           { key: 'webforms', label: 'Web forms', icon: <Globe className="h-3.5 w-3.5" /> },
@@ -1445,8 +1339,6 @@ export default function IntegrationsAdmin(): JSX.Element {
           </div>
         )
       )}
-
-      {tab === 'whatsapp-web' && <WhatsAppWebAccounts />}
 
       {connecting && (
         <ConnectWizard summary={connecting} onClose={() => setConnecting(null)} />

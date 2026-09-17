@@ -240,7 +240,7 @@ record called **Lifecycle Stage**:
 ```
 
 Converting someone doesn't copy them anywhere. It just **moves the stage forward on the same
-record**. Every call, every WhatsApp, every note, every file from day one stays on one ID for the
+record**. Every call, every message, every note, every file from day one stays on one ID for the
 entire relationship. That is a genuinely big deal for a business where a happy buyer refers three
 more.
 
@@ -303,7 +303,7 @@ Nationality, NRI, Preferred Language, Preferred Contact Method, Photo.
 **KYC** *(collapsed)* — KYC Status, PAN, Aadhaar (masked — store only the last 4 digits),
 Passport Number.
 
-**Communication Preferences** *(collapsed)* — Do Not Call, Do Not WhatsApp, Email Opt Out.
+**Communication Preferences** *(collapsed)* — Do Not Call, Email Opt Out.
 These are honoured by the system, not just recorded. (See Part 10.3.)
 
 **Relationship Value** *(collapsed)* — Engagement Score, Lifetime Value, Converted, Converted On,
@@ -386,7 +386,7 @@ does three things at once, from one piece of code:
 3. sends a notification.
 
 One action, one place, one truth. Every part of the system that used to create an Activity —
-workflows, call analysis, WhatsApp sequences — now goes through that single door.
+workflows, call analysis, drip sequences — now goes through that single door.
 
 **Honest consequence:** the old data wasn't thrown away (it was copied to archive tables first),
 but the public website has holes where Projects used to be. Fields a Project owned by itself —
@@ -623,7 +623,7 @@ that module. *You choose which chips* in Admin → Layout Designer.
 
 **The sidebar** holds notes and the AI panel (score, reasons, matching units, drafted messages).
 
-**Buttons** — one click to call, one click to WhatsApp.
+**Buttons** — one click to call, one click to email.
 
 **Prev / next** — arrow buttons, or just press ← and → to walk through the list you came from,
 without going back to it. Works on every module.
@@ -635,7 +635,7 @@ Everything that ever happened with this person, in one merged feed, newest first
 ```
   ┌ Today
   │  📞  Call, 4m 12s, answered — "wants a corner unit, budget stretched to 1.2 Cr"
-  │  💬  WhatsApp sent: floor plan for Tower A-1204          ✓✓ read
+  │  💬  Message sent: floor plan for Tower A-1204           ✓✓ read
   │  🤖  AI: score moved 62 → 78. Reason: answered call + asked for floor plan
   ├ Yesterday
   │  ✏️  Pipeline Status changed: Contacted → Qualified   (by Aisha Khan)
@@ -645,7 +645,7 @@ Everything that ever happened with this person, in one merged feed, newest first
      📧  Email opened: "Greenfield Phase 2 — price list"
 ```
 
-Calls, WhatsApp, emails, notes, files, **every field that changed and who changed it**, and AI
+Calls, messages, emails, notes, files, **every field that changed and who changed it**, and AI
 insights — all on one strip. Nobody has to ask "what's the status on Ravi?" ever again.
 
 ## 6.5 Inline editing — click any value, change it, done
@@ -675,18 +675,16 @@ found in testing: the phone column's dial link stopped working.)*
 edit would be unbearable at this frequency. **On failure**, the old value snaps back and a toast
 explains why, because that *does* need your attention.
 
-## 6.6 Inbox — WhatsApp conversations
+## 6.6 Inbox — message conversations
 
 Threads down the left, the conversation on the right.
 
-**The 24-hour window is enforced, visibly.** WhatsApp's rule: once a customer messages you, you
-may reply freely for 24 hours. After that you may only send a **pre-approved template**. The Inbox
-shows you which side of that line you're on, so you don't write a lovely paragraph that WhatsApp
-refuses to deliver.
+Here you get delivery receipts (sent / delivered / read) and **AI reply suggestions** — draft
+replies written from what this person has actually said and what they're actually looking at.
 
-Also here: delivery receipts (sent / delivered / read), your template library, and **AI reply
-suggestions** — draft replies written from what this person has actually said and what they're
-actually looking at.
+Old WhatsApp threads are still readable here. WhatsApp itself was switched off on
+17 September 2026 (see 10.1), so you can read those conversations but not reply on that
+channel.
 
 ## 6.7 Calls
 
@@ -713,7 +711,7 @@ Four tabs.
 **Broadcasts** — send one message to a whole saved view. Start, pause, cancel. Progress bar.
 
 **Sequences** — a drip campaign. Step 1 today, step 2 in 2 days, step 3 in a week. Each step can
-be a **WhatsApp message**, an **email**, or a **task for the owner**. Delays offered: 5 min, 1 hr,
+be an **email** or a **task for the owner**. Delays offered: 5 min, 1 hr,
 6 hr, 1 day, 2 days, 3 days, 1 week, 2 weeks, 1 month. Enrol people; they exit automatically when
 they reply or convert.
 
@@ -978,12 +976,12 @@ A workflow is a sentence: **"When *this* happens, if *these things* are true, do
 | `on_field_change` | One *specific* field changes (status becomes "Qualified") |
 | `on_delete` | A record is deleted |
 | `scheduled` | On a timetable — hourly, daily |
-| `on_inbound_message` | A WhatsApp message arrives |
+| `on_inbound_message` | A message arrives from a customer |
 | `on_call_end` | A call finishes |
 
 ## 8.2 The fourteen actions — the "do that"
 
-`update_fields` · `create_record` · `send_email` · `send_whatsapp` · `send_sms` · `create_task` ·
+`update_fields` · `create_record` · `send_email` · `send_sms` · `create_task` ·
 `create_event` · `assign_owner` · `notify_user` · `webhook` · `ai_action` · `add_tag` ·
 `trigger_call` · `delay`
 
@@ -1075,7 +1073,7 @@ make a product that can't be demoed and can't be trusted.
 | **Deal risk** | Flags: stuck too long in a stage, gone silent, pushing hard on discount, never did a site visit, the unit they wanted got taken | Explains it, and picks the single highest-leverage thing to do |
 | **Call analysis** | — | Summary, sentiment, objections, next actions, talk ratio. **Pulls stated budget and timeline into empty fields — and only empty ones**, so it can never overwrite what a human typed |
 | **Ask your CRM** | — | Type a question in English, get real records back. See 9.3 |
-| **Drafting** | — | Writes a WhatsApp message, an email or a call script from this person's real history |
+| **Drafting** | — | Writes an email, an SMS or a call script from this person's real history |
 
 > When Site Visits were deleted, they had been worth up to 28 of the 100 scoring points and no
 > longer had anywhere to live. Simply removing that input would have deflated every score by a
@@ -1142,41 +1140,31 @@ A background loop ticks every 60 seconds and:
 
 ---
 
-# PART 10 — Talking to people: WhatsApp, phone, email
+# PART 10 — Talking to people: phone and email
 
-## 10.1 WhatsApp — the honest situation
+## 10.1 WhatsApp is switched off
 
-**Built and ready:** the whole Meta Cloud API integration — sending, receiving, templates, the
-24-hour window, delivery receipts, broadcasts, sequences, auto-replies, consent enforcement.
+On **17 September 2026** WhatsApp was removed from the CRM completely, on the owner's
+instruction, to be started again properly at some later point. Nothing in the CRM sends a
+WhatsApp message any more.
 
-**What's missing is not code.** To send a single WhatsApp message through the official API you
-need:
-- a business verified by Meta,
-- a dedicated phone number registered to that business,
-- usually a paid provider in between.
+What that means in practice:
 
-Until then, the system runs in **simulation**: messages are recorded in the CRM and marked as sent,
-so every workflow and sequence stays fully testable. The moment real credentials are pasted in,
-the same code starts sending for real.
+- There is no WhatsApp tab on a record, no WhatsApp compose box, and no WhatsApp templates.
+- Old WhatsApp conversations are **still there and still readable** in the Inbox and on the
+  timeline. Nothing was deleted.
+- Anyone who asked not to be messaged is **still on record as having asked**. That does not
+  expire with the feature.
+- The green **share buttons still work** — on a property, on a match list, on the phone. Those
+  open WhatsApp on *your* phone with the link already written. You press send. The CRM is not
+  sending anything; you are.
 
-**A warning worth repeating:** there is no legal API that mirrors your *personal* WhatsApp inbox.
-The libraries that claim to do this get phone numbers **permanently banned**. This is why the CRM
-does not offer it.
+## 10.2 Consent is enforced, not just recorded
 
-## 10.2 Device-send — the workaround that actually works
+**Do Not Call** and **Email Opt Out** aren't decorative checkboxes. The sending code checks
+them. Tick one and no workflow, no sequence will message that person on that channel.
 
-Because the official API is gated, there's a second path: **link a phone**, and messages queue up
-on it for a human to send from their own WhatsApp. The Outreach → Queue tab tracks each one
-(opened / sent / skipped). It's not automation, but it's legal, it works today, and it keeps the
-record in the CRM.
-
-## 10.3 Consent is enforced, not just recorded
-
-**Do Not Call**, **Do Not WhatsApp** and **Email Opt Out** aren't decorative checkboxes. The
-sending code checks them. Tick "Do Not WhatsApp" and no workflow, no sequence, no broadcast will
-message that person.
-
-## 10.4 The Android companion app — calls from real phones
+## 10.3 The Android companion app — calls from real phones
 
 This is the pragmatic answer to call tracking, and it's genuinely clever.
 
@@ -1202,7 +1190,7 @@ app finds the files. No built-in recorder means the call log still syncs, just w
 Also: recording calls has **per-state consent laws** in India. That's a legal question, not a
 technical one.
 
-## 10.5 Email
+## 10.4 Email
 
 SMTP for sending, IMAP for receiving. Templates. **Open tracking** via an invisible pixel — you
 can see who opened your price list. Without credentials, emails are logged rather than sent.
@@ -1267,7 +1255,6 @@ property they land on.
 
 | Integration | What it does | Without credentials |
 |---|---|---|
-| **WhatsApp** (Meta Cloud API) | Send, receive, templates, receipts | Simulated — logged and marked sent |
 | **Facebook Lead Ads** | Leads flow in automatically | Address is live, no traffic |
 | **Google Ads** | Same | Address is live, no traffic |
 | **99acres / MagicBricks / Housing / NoBroker** | Their enquiries become leads | Address is live, no traffic |
@@ -1354,7 +1341,6 @@ This section exists so nobody is surprised. Nothing here is missing through lazi
 
 | Item | The real blocker |
 |---|---|
-| **WhatsApp sending** | Needs a Meta-approved business, a dedicated number, and usually a paid provider. **The code is complete and waiting.** There is no legal API that mirrors a personal WhatsApp inbox — the libraries claiming to do it get numbers permanently banned |
 | **Portal syndication** (*posting* listings to 99acres / MagicBricks / Housing) | No open API exists for posting. These are **commercial contracts, one per portal**. Note: receiving *inbound* leads from all four already works |
 | **Call recording on Android** | Android 10 closed the API. Nothing reopens it. The only working route is the companion app picking up your phone's own recorder's files. Per-state consent law applies either way |
 | **A working AI key** | See 9.4. Configuration is deployment-specific; check Admin → Integrations rather than assuming from this guide |
@@ -1624,7 +1610,7 @@ counts toward the "least busy" assignment strategy.
 Outreach → Broadcasts → choose a saved view → write the message → Start. Pause or cancel any time.
 
 **Build a drip campaign**
-Outreach → Sequences → new → add steps (WhatsApp / email / task for the owner) with delays →
+Outreach → Sequences → new → add steps (email / task for the owner) with delays →
 enrol people. They exit automatically when they reply or convert.
 
 **Answer common questions automatically**
@@ -1716,7 +1702,7 @@ tokens and webhook keys are generated for you. Saving runs a real connection tes
 11. What happens the moment someone merges to the main branch?
 12. Why must a workflow never fire before a save has finished?
 
-*Answers: 2.2 · 3.1 · 3.1 · Part 4 · 4.1 · 9.1 · 9.3 · 3.4 · 10.5 · 12.3 · 14.3 · 8.7*
+*Answers: 2.2 · 3.1 · 3.1 · Part 4 · 4.1 · 9.1 · 9.3 · 3.4 · 10.4 · 12.3 · 14.3 · 8.7*
 
 ---
 
@@ -1728,7 +1714,7 @@ flat, the ad spend — and it deliberately stores *only* three, because the seve
 existed to hold one fact that the person or the flat could hold by itself. It knows who may see
 what through four gates checked in order, enforced in the database rather than hidden in the
 browser. Everything smart in it has a boring backup, so nothing ever breaks because the AI was
-unavailable. And what it can't do — send WhatsApp, post to property portals, record Android calls
+unavailable. And what it can't do — post to property portals, record Android calls
 — it can't do because of Meta's approval process, commercial contracts, and Android 10, not
 because someone ran out of time.
 

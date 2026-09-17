@@ -1,0 +1,134 @@
+# Take WhatsApp out of production.
+#
+# The owner's instruction, 17 September 2026: "whatever whatsapp thing we have
+# in our codebase and over in crm.ipropy.com just completely rip it off... I
+# will later on begin working at it after a fresh start some time later."
+#
+# The code half is done and deployed. This is the other half: seeding is
+# create-only, so a row that already exists in the live database is never
+# rewritten and never removed. The WhatsApp workflow steps, the templates, the
+# integration slot holding the Meta credentials and the two WhatsApp settings
+# are all still there until somebody deletes them, and they have to go *after*
+# the code change is live, or the next cold start would put them back.
+#
+# What is deliberately left alone:
+#   * `ipy_conversation` / `ipy_message` rows with channel = 'whatsapp'. Those
+#     are real conversations with real customers. They stay readable.
+#   * `ipy_channel_optout` rows with channel = 'whatsapp'. Somebody asked not to
+#     be messaged. That request outlives the integration.
+#   * The tables themselves. No migration drops anything, so a rebuild later
+#     starts from data rather than from nothing.
+#
+# Nothing is deleted without a copy kept first, and looking is the default.
+name: Remove WhatsApp
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Type remove to do it. Anything else only shows what would go."
+        default: "look"
+
+permissions:
+  contents: read
+
+jobs:
+  remove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Install PostgreSQL 18 client
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: What would go
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT w.name AS workflow, w.is_active, t.type AS step, t.name AS step_name
+            FROM ipy_workflow_task t JOIN ipy_workflow w ON w.id = t.workflow_id
+           WHERE t.type LIKE '%whatsapp%' ORDER BY w.name;
+          SQL
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT count(*)::int AS whatsapp_templates FROM ipy_whatsapp_template;
+          SQL
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT provider, is_active, status FROM ipy_integration
+           WHERE provider IN ('meta_whatsapp', 'whatsapp_web');
+          SQL
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT key, value FROM ipy_setting
+           WHERE key LIKE 'whatsapp.%' OR key = 'ai.auto_reply_whatsapp';
+          SQL
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT status, count(*)::int AS queued FROM ipy_device_send GROUP BY status;
+          SQL
+          echo "--- staying put, on purpose ---"
+          psql "$PROD_DATABASE_URL" -tAc "
+            SELECT 'whatsapp conversations kept: '
+              || (SELECT count(*) FROM ipy_conversation WHERE channel = 'whatsapp')
+              || ' | opt-outs kept: '
+              || (SELECT count(*) FROM ipy_channel_optout WHERE channel = 'whatsapp');"
+
+      - name: Remove it
+        if: ${{ inputs.apply == 'remove' }}
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          # One transaction, and every deleted row is copied to a `_removed`
+          # table first. The Meta credentials are encrypted at rest and the copy
+          # keeps them that way, so reconnecting later is a restore rather than
+          # a hunt through Meta's console.
+          psql "$PROD_DATABASE_URL" -P pager=off -v ON_ERROR_STOP=1 <<'SQL'
+          BEGIN;
+
+          CREATE TABLE IF NOT EXISTS ipy_whatsapp_template_removed (LIKE ipy_whatsapp_template);
+          INSERT INTO ipy_whatsapp_template_removed SELECT * FROM ipy_whatsapp_template;
+          DELETE FROM ipy_whatsapp_template;
+
+          CREATE TABLE IF NOT EXISTS ipy_integration_removed (LIKE ipy_integration);
+          INSERT INTO ipy_integration_removed
+            SELECT * FROM ipy_integration WHERE provider IN ('meta_whatsapp', 'whatsapp_web');
+          DELETE FROM ipy_integration WHERE provider IN ('meta_whatsapp', 'whatsapp_web');
+
+          -- A workflow step the server no longer has a handler for is logged and
+          -- skipped, so these are harmless. They are still removed, because a
+          -- rule whose steps do nothing is a rule that lies about what it does.
+          CREATE TABLE IF NOT EXISTS ipy_workflow_task_removed (LIKE ipy_workflow_task);
+          INSERT INTO ipy_workflow_task_removed
+            SELECT * FROM ipy_workflow_task WHERE type LIKE '%whatsapp%';
+          DELETE FROM ipy_workflow_task WHERE type LIKE '%whatsapp%';
+
+          DELETE FROM ipy_setting
+           WHERE key LIKE 'whatsapp.%' OR key = 'ai.auto_reply_whatsapp';
+
+          -- The hand-off queue had exactly one writer and it is gone, so nothing
+          -- will ever open these. Kept, not dropped.
+          CREATE TABLE IF NOT EXISTS ipy_device_send_cleared (LIKE ipy_device_send);
+          INSERT INTO ipy_device_send_cleared SELECT * FROM ipy_device_send;
+          DELETE FROM ipy_device_send;
+
+          COMMIT;
+          SQL
+
+          echo "--- what is left ---"
+          psql "$PROD_DATABASE_URL" -tAc "
+            SELECT 'whatsapp workflow steps: '
+              || (SELECT count(*) FROM ipy_workflow_task WHERE type LIKE '%whatsapp%')
+              || ' | templates: ' || (SELECT count(*) FROM ipy_whatsapp_template)
+              || ' | integration slots: '
+              || (SELECT count(*) FROM ipy_integration WHERE provider IN ('meta_whatsapp','whatsapp_web'))
+              || ' | settings: '
+              || (SELECT count(*) FROM ipy_setting WHERE key LIKE 'whatsapp.%')
+              || ' | queued messages: ' || (SELECT count(*) FROM ipy_device_send);"
+          psql "$PROD_DATABASE_URL" -tAc "
+            SELECT 'kept safe — templates: '
+              || (SELECT count(*) FROM ipy_whatsapp_template_removed)
+              || ' | integrations: ' || (SELECT count(*) FROM ipy_integration_removed)
+              || ' | steps: ' || (SELECT count(*) FROM ipy_workflow_task_removed)
+              || ' | messages: ' || (SELECT count(*) FROM ipy_device_send_cleared);"

@@ -8,12 +8,10 @@ import { registry } from './core/metadata/registry.js';
 import { warmup as warmupIntegrationSettings, getSettings } from './core/settings/integrations.js';
 import { configureSentry } from './core/observability/sentry.js';
 import { registerWorkflowHandlers } from './core/workflow/engine.js';
-import { registerLeadGreeting } from './integrations/whatsapp/greetNewLead.js';
 import { startScheduler, stopScheduler } from './core/workflow/scheduler.js';
 import { initRealtime, closeRealtime } from './realtime.js';
 import { aiStatus } from './ai/client.js';
 import { recoverOrphanedImports } from './core/import/recover.js';
-import { restoreConnections as restoreWhatsAppWebConnections } from './integrations/whatsappWeb/service.js';
 
 async function main(): Promise<void> {
   logger.info('starting iPropy CRM server…');
@@ -57,11 +55,6 @@ async function main(): Promise<void> {
   }
 
   registerWorkflowHandlers();
-  // A new enquiry gets its WhatsApp hello before anybody picks up the phone.
-  registerLeadGreeting();
-  // Encrypted WhatsApp Web auth is durable; restore only sessions that an
-  // administrator previously connected, never every historical account.
-  await restoreWhatsAppWebConnections();
 
   // Imports live in this process. Anything still marked running at boot died
   // with the previous container — say so on the import screen rather than

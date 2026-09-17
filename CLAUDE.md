@@ -210,7 +210,7 @@ Login: `admin@ipropy.com` / `Admin@123`. Other demo users in `PROJECT_HANDOVER.m
 
 **Verification:** three layers, fastest first.
 
-* `npm test` — 783 unit tests, no DB: 656 in `packages/server` (query builder, filter evaluator,
+* `npm test` — 806 unit tests, no DB: 679 in `packages/server` (query builder, filter evaluator,
   formula engine, permissions and role-hierarchy scoping, validation, unstorable characters, seed
   templates, billing decisions, capture time/EXIF offsets, watermark sizing, vision sampling, file
   serving headers), 119 in `packages/web` (colour contrast, safe markdown, and the rich-text
@@ -468,7 +468,7 @@ Both were mine, both invisible, and both had been live for a day or more.
   Production generates its own `JWT_SECRET` and sets `SEED_DEMO_DATA=false` — that gate must stay
   false, since the demo seed creates ~12 users sharing a password published in this repo. **Local
   dev still uses the committed defaults**, so never point a dev `.env` at the deployed database.
-* `WHATSAPP_APP_SECRET` is unset. **Scheduled backups of the deployed database are not on** — the
+* **Scheduled backups of the deployed database are not on** — the
   launchd timer covers a developer's local Postgres only. The intended fix is Neon's own scheduled
   backups + instant restore (paid Launch plan), *not* a dump job in this repo; that was shipped once
   and deliberately removed. See `DEPLOYMENT.md` §7 before building anything here.
@@ -767,16 +767,43 @@ can set a header.
 
 ---
 
-## WhatsApp: two doors, one queue
+## WhatsApp is gone. Do not rebuild it without being asked.
 
-1. **Meta Cloud API** (`integrations/whatsapp/provider.ts`) — sanctioned, unconfigured,
-   needs approval and a paid BSP. Templates only outside the 24-hour window.
-2. **`wa.me` hand-off** (`integrations/whatsapp/deviceSend.ts`) — the CRM writes the
-   message, a person taps send. The floor, and it never goes away.
+**Removed on 2026-09-17, on the owner's instruction:** *"whatever whatsapp thing we have
+in our codebase and over in crm.ipropy.com just completely rip it off and I will later on
+begin working at it after a fresh start some time later."*
 
-Both fill and drain `ipy_device_send`.
+All three doors are now shut. What went: the Meta Cloud API provider and service, the
+`wa.me` hand-off and its `ipy_device_send` queue, the auto-reply, the broadcast engine,
+the new-lead greeting, the WhatsApp Web accounts, the record's WhatsApp Chat tab, the
+compose modal's WhatsApp side, the template editor's WhatsApp tab, the `meta_whatsapp`
+integration card and guide, the `send_whatsapp` workflow step, the `whatsapp.*` settings
+and the `WHATSAPP_*` environment variables. `.github/workflows/remove-whatsapp.yml` is the
+production half — seeding is create-only, so the live rows had to be deleted by hand,
+and it copies everything to `*_removed` tables before it does.
 
-**A third door existed and was removed on 2026-08-18 (migration `060`).** A linked phone,
+**What deliberately stayed, and why:**
+
+* **`ipy_conversation` / `ipy_message` rows on channel `whatsapp`.** Real conversations
+  with real customers. The Inbox still reads them; it just cannot send on that channel.
+  `Channel` in `shared/src/types.ts` therefore still lists `'whatsapp'`.
+* **`ipy_channel_optout` rows on channel `whatsapp`.** Somebody asked not to be messaged.
+  That request outlives the integration, and `ConsentChannel` keeps the value.
+* **The capabilities `whatsapp.send` and `whatsapp.templates`.** They gate SMS, RCS and
+  email templates too, and they are stored on live profile rows — renaming the keys would
+  mean rewriting those rows to keep the team's access. The *labels* say "Send messages"
+  and "Manage message templates" now.
+* **The `whatsapp_number` field on leads**, and the "WhatsApp" options in Lead Source and
+  Activity Type. Those are a phone number and two business facts, not the integration.
+  Deleting a seeded field drops its column; deleting a dropdown option orphans every
+  record that chose it.
+* **`wa.me` share buttons** — Share Links, the matching tab, the shared-matches page and
+  the mobile swipe. Those are a link a *person* taps to send a property from their own
+  phone; nothing in the CRM sends anything. Say so before removing them, because that is
+  how a unit reaches a buyer today.
+* **Every table.** No migration drops anything, so a rebuild later starts from data.
+
+**A door was already removed once before, on 2026-08-18 (migration `060`).** A linked phone,
 the WhatsApp Web mechanism, run through a `wa-bridge/` process: the rep's own number, no
 approval, no fee, against WhatsApp's terms. It worked, and working is what killed it —
 pointed at a real handset it imported 821 chats, which is a person's private life in a

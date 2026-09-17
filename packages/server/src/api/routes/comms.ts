@@ -1,17 +1,12 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { db } from '../../db/pool.js';
-import { toInternational } from '@ipropy/shared';
-import { withNameParts } from '../../core/entity/nameParts.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { ForbiddenError, NotFoundError } from '../../utils/errors.js';
 import { assertCapability } from '../../core/permissions/index.js';
-import * as wa from '../../integrations/whatsapp/service.js';
-import * as waProvider from '../../integrations/whatsapp/provider.js';
 import { sendEmail, sendTemplatedEmail, verifyConnection } from '../../integrations/email/service.js';
 import { suggestReplies, draftMessage } from '../../ai/drafting.js';
-import { notify } from '../../core/notifications/index.js';
 import * as googleRcs from '../../integrations/rcs/google.js';
 import { recordService } from '../../core/entity/recordService.js';
 
@@ -123,43 +118,10 @@ commsRouter.get('/conversations/:id', asyncHandler(async (req, res) => {
   });
 }));
 
-const sendSchema = z.object({
-  text: z.string().max(4096).optional(),
-  templateName: z.string().optional(),
-  templateParams: z.record(z.string()).optional(),
-  media: z.object({
-    type: z.enum(['image', 'document', 'audio', 'video']),
-    link: z.string().url(),
-    caption: z.string().optional(),
-    filename: z.string().optional(),
-  }).optional(),
-  buttons: z.array(z.object({ id: z.string(), title: z.string().max(20) })).max(3).optional(),
-  webAccountId: z.string().uuid().nullable().optional(),
-  isAiGenerated: z.boolean().optional(),
-});
-
-commsRouter.post('/conversations/:id/messages', asyncHandler(async (req, res) => {
-  const user = getUser(req);
-  await assertCapability(user, 'whatsapp.send');
-  const input = sendSchema.parse(req.body);
-
-  const result = await wa.sendMessage({
-    conversationId: req.params.id,
-    ...input,
-    sentBy: user.id,
-  });
-  res.status(201).json(result);
-}));
-
-/** Start a thread from a record's detail page. */
-commsRouter.post('/messages', asyncHandler(async (req, res) => {
-  const user = getUser(req);
-  await assertCapability(user, 'whatsapp.send');
-  const input = sendSchema.extend({ to: z.string().min(6) }).parse(req.body);
-
-  const result = await wa.sendMessage({ ...input, sentBy: user.id });
-  res.status(201).json(result);
-}));
+// WhatsApp sending was removed on 17 September 2026 on the owner's
+// instruction, and with it the two routes that posted a message into a
+// conversation. The Inbox still reads every thread; RCS and email below still
+// send. See CLAUDE.md.
 
 /** Send a transactional/promotional message through the connected Google RBM agent. */
 commsRouter.post('/rcs/messages', asyncHandler(async (req, res) => {
@@ -232,7 +194,7 @@ commsRouter.get('/conversations/:id/suggestions', asyncHandler(async (req, res) 
 commsRouter.post('/draft', asyncHandler(async (req, res) => {
   const user = getUser(req);
   const input = z.object({
-    channel: z.enum(['whatsapp', 'email', 'sms', 'call_script']).default('whatsapp'),
+    channel: z.enum(['email', 'sms', 'call_script']).default('sms'),
     recordId: z.string().uuid(),
     module: z.string(),
     goal: z.string().optional(),
@@ -245,115 +207,6 @@ commsRouter.post('/draft', asyncHandler(async (req, res) => {
   const draft = await draftMessage({ ...input, userId: user.id });
   if (!draft) throw new NotFoundError('Could not generate a draft — check that the AI key is configured');
   res.json(draft);
-}));
-
-// ---------------------------------------------------------------------------
-// WhatsApp templates
-// ---------------------------------------------------------------------------
-
-commsRouter.get('/templates', asyncHandler(async (_req, res) => {
-  const rows = await db.query(
-    `SELECT id, name, language, category, status, header_format, header_text,
-            body_text, footer_text, buttons, variable_map, usage_count
-     FROM ipy_whatsapp_template ORDER BY name`,
-  );
-  res.json(rows.rows);
-}));
-
-commsRouter.post('/templates', asyncHandler(async (req, res) => {
-  await assertCapability(getUser(req), 'whatsapp.templates');
-  const input = z.object({
-    name: z.string().regex(/^[a-z0-9_]+$/, 'Use lower case letters, numbers and underscores'),
-    language: z.string().default('en'),
-    category: z.enum(['MARKETING', 'UTILITY', 'AUTHENTICATION']).default('UTILITY'),
-    headerText: z.string().nullable().optional(),
-    headerFormat: z.enum(['TEXT', 'IMAGE', 'DOCUMENT', 'VIDEO']).nullable().optional(),
-    bodyText: z.string().min(1),
-    footerText: z.string().nullable().optional(),
-    buttons: z.array(z.record(z.unknown())).default([]),
-    variableMap: z.record(z.string()).default({}),
-  }).parse(req.body);
-
-  const row = await db.queryOne<{ id: string }>(
-    `INSERT INTO ipy_whatsapp_template
-      (name, language, category, header_format, header_text, body_text, footer_text, buttons, variable_map, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-     ON CONFLICT (name, language) DO UPDATE SET
-       category = EXCLUDED.category, header_text = EXCLUDED.header_text,
-       body_text = EXCLUDED.body_text, footer_text = EXCLUDED.footer_text,
-       buttons = EXCLUDED.buttons, variable_map = EXCLUDED.variable_map
-     RETURNING id`,
-    [
-      input.name, input.language, input.category, input.headerFormat ?? null, input.headerText ?? null,
-      input.bodyText, input.footerText ?? null, JSON.stringify(input.buttons),
-      JSON.stringify(input.variableMap), getUser(req).id,
-    ],
-  );
-  res.status(201).json({ id: row?.id });
-}));
-
-commsRouter.post('/templates/sync', asyncHandler(async (req, res) => {
-  await assertCapability(getUser(req), 'whatsapp.templates');
-  res.json(await waProvider.syncTemplates());
-}));
-
-commsRouter.delete('/templates/:id', asyncHandler(async (req, res) => {
-  await assertCapability(getUser(req), 'whatsapp.templates');
-  await db.query(`DELETE FROM ipy_whatsapp_template WHERE id = $1`, [req.params.id]);
-  res.json({ ok: true });
-}));
-
-// ---------------------------------------------------------------------------
-// Broadcast (bulk template sends)
-// ---------------------------------------------------------------------------
-
-commsRouter.post('/broadcast', asyncHandler(async (req, res) => {
-  const user = getUser(req);
-  await assertCapability(user, 'whatsapp.send');
-  const input = z.object({
-    templateName: z.string(),
-    module: z.string(),
-    recordIds: z.array(z.string().uuid()).min(1).max(2000),
-    ratePerSecond: z.number().min(1).max(50).default(10),
-  }).parse(req.body);
-
-  const { registry } = await import('../../core/metadata/registry.js');
-  const meta = await registry.requireModule(input.module);
-
-  // Resolve each recipient's number and merge params from the record itself.
-  const recipients: { handle: string; params: Record<string, string>; recordId: string }[] = [];
-  for (const recordId of input.recordIds) {
-    const row = await db.queryOne<Record<string, unknown>>(
-      `SELECT r.label, e.* FROM ipy_record r JOIN ${meta.tableName} e ON e.record_id = r.id WHERE r.id = $1`,
-      [recordId],
-    );
-    if (!row) continue;
-    const handle = toInternational(null, String(row.whatsapp_number ?? row.mobile ?? '')) ?? '';
-    if (!handle) continue;
-    if (row.do_not_whatsapp === true) continue;
-
-    const params = await wa.bindTemplateParams(input.templateName, withNameParts(row));
-    recipients.push({ handle, params, recordId });
-  }
-
-  // Respond immediately; the send runs in the background at the given rate.
-  res.status(202).json({ queued: recipients.length, skipped: input.recordIds.length - recipients.length });
-
-  void wa.broadcast({
-    templateName: input.templateName,
-    recipients,
-    sentBy: user.id,
-    ratePerSecond: input.ratePerSecond,
-  }).then(async (result) => {
-    // The whole point of answering 202 is that you can walk away, so the result
-    // has to find you rather than wait in a tab you closed.
-    await notify({
-      userId: user.id,
-      kind: 'broadcast',
-      title: 'Broadcast complete',
-      body: `${result.sent} sent, ${result.failed} failed.`,
-    });
-  }).catch(() => undefined);
 }));
 
 // ---------------------------------------------------------------------------
@@ -414,9 +267,12 @@ commsRouter.get('/email/templates', asyncHandler(async (_req, res) => {
   res.json(rows.rows);
 }));
 
-// Email templates are deliberately managed beside WhatsApp templates.  Both
-// channels use the same merge-field syntax, so an administrator should not
-// have to ask a developer to change routine outbound copy.
+// Email templates carry the same merge-field syntax as the rest of outbound
+// copy, so an administrator should not have to ask a developer to change it.
+//
+// The capability is still called `whatsapp.templates`. It gates message
+// templates of every channel and is stored on live profile rows; renaming it
+// would mean rewriting those rows to keep the team's access.
 commsRouter.post('/email/templates', asyncHandler(async (req, res) => {
   await assertCapability(getUser(req), 'whatsapp.templates');
   const input = z.object({

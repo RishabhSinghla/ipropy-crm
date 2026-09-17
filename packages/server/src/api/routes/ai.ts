@@ -235,7 +235,7 @@ aiRouter.post('/draft', modelLimiter, asyncHandler(async (req, res) => {
   const user = getUser(req);
   const scope = getScope(req);
   const input = z.object({
-    channel: z.enum(['whatsapp', 'email', 'sms', 'call_script']).default('whatsapp'),
+    channel: z.enum(['email', 'sms', 'call_script']).default('sms'),
     recordId: z.string().uuid(),
     module: z.string(),
     goal: z.string().optional(),

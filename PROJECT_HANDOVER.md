@@ -25,8 +25,13 @@ green (`autoDeployTrigger: checksPass`).
 iPropy is an AI-native, metadata-driven CRM for Indian real-estate developers and brokerages.
 It rebuilds Vtiger's runtime-customisation model (modules, fields, layouts, picklists, custom views,
 role hierarchy, sharing rules, workflows, dashboards are all *data*, not code) on a modern stack, and
-adds WhatsApp, portal lead capture, call logging from the team's own handsets
+adds portal lead capture, call logging from the team's own handsets
 and an AI layer.
+
+> **WhatsApp was removed on 17 September 2026**, on the owner's instruction, to be
+> rebuilt deliberately later from a fresh start. Anything below dated before then that
+> describes a WhatsApp feature is history, not current state. What stayed and why is in
+> CLAUDE.md under "WhatsApp is gone".
 
 **Working today:**
 
@@ -36,8 +41,8 @@ and an AI layer.
 | Runtime customisation | Add modules/fields/blocks/layouts/dropdowns/views without a deploy or DDL |
 | Kanban + table + filters | Drag-drop pipeline, nested AND/OR filter builder, saved views with live counts |
 | Interactive record view | Header summary, tabbed Overview/Timeline/Related/Files, AI sidebar, notes |
-| Unified timeline | Calls, WhatsApp, email, notes, follow-ups, files, field changes and AI insights on one feed |
-| WhatsApp inbox | Threads, 24-hour window enforcement, delivery receipts, templates, AI reply suggestions |
+| Unified timeline | Calls, messages, email, notes, follow-ups, files, field changes and AI insights on one feed |
+| Inbox | Message threads, delivery receipts, AI reply suggestions |
 | Calls | Logged from the team's own Android handsets, matched to leads on the last ten digits; AI call analysis and coaching report |
 | Property inventory | Table/kanban views, availability, pricing, blocks, comparables and buyer matching |
 | Dashboards | 5 seeded dashboards with metrics, funnel, inventory, leaderboards and AI insight tiles |
@@ -245,7 +250,7 @@ the resolver: it reads `ipy_integration.config`/`credentials` first and falls ba
 `.env` variable below only when no DB value is set. Credentials are encrypted at rest (AES-256-GCM,
 key derived from `JWT_SECRET` via scrypt — no new required env var). Saving a credential through the
 UI auto-activates that provider; a per-provider "Test connection" button does a real, read-only
-connectivity probe (WhatsApp/SMTP/Anthropic).
+connectivity probe (SMTP/Anthropic).
 
 | Variable | Purpose | Current state |
 |---|---|---|
@@ -253,7 +258,6 @@ connectivity probe (WhatsApp/SMTP/Anthropic).
 | `JWT_SECRET` | Token signing | **Dev default. Server refuses to start in production with it.** Also the source key for integration-credential encryption. |
 | `ANTHROPIC_API_KEY` | Claude | **Empty → AI runs rule-based fallback**. Also settable via Admin → Integrations → Anthropic. |
 | `AI_MODEL` / `AI_MODEL_FAST` | Model selection | `claude-sonnet-5` / `claude-haiku-4-5-20251001` |
-| `WHATSAPP_*` | Meta Cloud API (phone id, token, verify token, **app secret**) | Empty → simulation mode. Editable in-UI. |
 | `SMTP_*` / `IMAP_*` | Email | Empty → logged with open tracking. Editable in-UI. |
 | `FACEBOOK_*`, `GOOGLE_ADS_WEBHOOK_KEY`, `WEBFORM_PUBLIC_KEY` | Lead capture | Endpoints live, no traffic. Editable in-UI (migration 005 added the `webform` provider row). |
 | `STORAGE_DRIVER` + `S3_*` | Files | `local` → `./storage`. Moved into the DB-backed settings — `local` is the fallback, S3 is editable in Admin → Integrations. |
@@ -264,7 +268,7 @@ connectivity probe (WhatsApp/SMTP/Anthropic).
 demoable: messages and calls are recorded in the CRM and marked sent, so workflows stay testable.
 
 Webhook URLs to hand to providers are listed in-app at **Admin → Integrations → Webhook URLs**
-(WhatsApp, Facebook Lead Ads, Google Ads, 99acres, MagicBricks, Housing, NoBroker,
+(Facebook Lead Ads, Google Ads, 99acres, MagicBricks, Housing, NoBroker,
 generic lead capture, email open pixel).
 
 ---
@@ -334,7 +338,7 @@ iPropy-crm/
     │   │   ├── migrations/     6 × .sql
     │   │   └── seed/           modules.ts (the data model), picklists, rbac, dashboards, automation, demo
     │   ├── api/routes/         auth, metadata, records, views, dashboards, admin, comms, ai, webhooks, misc
-    │   ├── integrations/       whatsapp, email, leadsources, device call sync — all resolve credentials via
+    │   ├── integrations/       email, outreach, leadsources, device call sync — all resolve credentials via
     │   │                       core/settings/integrations.ts now, not process.env directly
     │   ├── ai/                 client, leadScoring, matching, dealRisk, callAnalysis, drafting, assistant, actions
     │   ├── app.ts / index.ts / realtime.ts / config.ts
@@ -508,10 +512,10 @@ session — the sole real bug is gone.)
    integration-credential encryption key, so rotating it in production means re-entering every
    credential saved through the admin UI. Set the final value before real credentials go in. (The
    server does refuse to boot in production with the dev default.)
-2. **`WHATSAPP_APP_SECRET` is unset, so WhatsApp inbound does not work in production.** It fails
-   closed, which is the right way round — `verifyWebhookSignature` returns `!config.isProd` when no
+2. **The Facebook app secret is unset, so Facebook lead ads do not arrive in production.** It fails
+   closed, which is the right way round — `verifyMetaSignature` returns `!config.isProd` when no
    secret is configured, so a deployed server rejects every unsigned webhook rather than trusting it.
-   Nothing is exposed; the messages simply never arrive until the secret is set.
+   Nothing is exposed; the leads simply never arrive until the secret is set.
 3. **The free Render instance sleeps, and the scheduler sleeps with it.** One service runs the API,
    the web app and `ENABLE_SCHEDULER=true`, so overnight and at weekends no follow-up reminder, lead
    escalation or birthday message fires. No error is logged, because nothing runs. The $7/mo Starter
@@ -671,7 +675,7 @@ The full account-owned checklist and rollback notes live in `DEPLOYMENT.md`.
 2. Enable daily Neon backups and a seven-day instant-restore window; perform one restore drill.
 3. Move Render off Free so scheduled workflows run overnight.
 4. Create individual accounts, deactivate demo logins and subscribe each person's phone to alerts.
-5. Configure and test only the WhatsApp, email, AI and storage providers the team will
+5. Configure and test only the email, AI and storage providers the team will
    actually use.
 6. Run the real workflow with two or three people for two weeks before moving the whole desk.
 7. Field-test capture on a real property visit: sunlight, one hand, no signal, iPhone EXIF, storage,

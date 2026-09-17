@@ -13,11 +13,10 @@ import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { NotFoundError, ServiceUnavailableError, UnauthorizedError } from '../../utils/errors.js';
-import * as waProvider from '../../integrations/whatsapp/provider.js';
-import * as waService from '../../integrations/whatsapp/service.js';
 import {
   captureLead, normalizeFacebook, normalizeGoogleAds, normalizePortal, type NormalizedLead,
 } from '../../integrations/leadsources/capture.js';
+import { verifyMetaSignature } from '../../integrations/leadsources/metaSignature.js';
 import { recordOpen } from '../../integrations/email/service.js';
 import { complete } from '../../ai/client.js';
 import { aiModels, mediaAiStatus, music, speak } from '../../ai/media.js';
@@ -27,112 +26,12 @@ export const webhooksRouter = Router();
 
 // ---------------------------------------------------------------------------
 // WhatsApp (Meta Cloud API)
-// ---------------------------------------------------------------------------
+//
+// Removed on 17 September 2026 with the rest of WhatsApp, on the owner's
+// instruction. Meta will keep POSTing here if the app is still subscribed;
+// there is no route to receive it now, so those deliveries 404 and Meta
+// eventually unsubscribes itself. Nothing in the CRM waits on them.
 
-/** Meta's subscription handshake. */
-webhooksRouter.get('/whatsapp', (req, res) => {
-  const mode = req.query['hub.mode'];
-  const token = req.query['hub.verify_token'];
-  const challenge = req.query['hub.challenge'];
-
-  if (mode === 'subscribe' && token === getSettings().whatsapp.verifyToken) {
-    logger.info('whatsapp webhook verified');
-    res.status(200).send(challenge);
-    return;
-  }
-  res.sendStatus(403);
-});
-
-interface MetaWebhookBody {
-  entry?: {
-    changes?: {
-      value?: {
-        metadata?: { phone_number_id?: string };
-        contacts?: { profile?: { name?: string }; wa_id?: string }[];
-        messages?: {
-          from: string; id: string; timestamp: string; type: string;
-          text?: { body: string };
-          image?: { id: string; mime_type: string; caption?: string };
-          document?: { id: string; mime_type: string; filename?: string; caption?: string };
-          audio?: { id: string; mime_type: string };
-          video?: { id: string; mime_type: string; caption?: string };
-          location?: { latitude: number; longitude: number; name?: string };
-          button?: { payload?: string; text?: string };
-          interactive?: {
-            type: string;
-            button_reply?: { id: string; title: string };
-            list_reply?: { id: string; title: string };
-          };
-        }[];
-        statuses?: { id: string; status: string; timestamp: string; errors?: { title?: string }[] }[];
-      };
-    }[];
-  }[];
-}
-
-webhooksRouter.post('/whatsapp', asyncHandler(async (req, res) => {
-  const raw = (req as Request & { rawBody?: Buffer }).rawBody ?? Buffer.from(JSON.stringify(req.body));
-  if (!waProvider.verifyWebhookSignature(raw, req.headers['x-hub-signature-256'] as string | undefined)) {
-    logger.warn('rejected whatsapp webhook with an invalid signature');
-    res.sendStatus(401);
-    return;
-  }
-
-  // Acknowledge immediately; Meta retries aggressively on slow responses.
-  res.sendStatus(200);
-
-  const body = req.body as MetaWebhookBody;
-  for (const entry of body.entry ?? []) {
-    for (const change of entry.changes ?? []) {
-      const value = change.value;
-      if (!value) continue;
-
-      const profileName = value.contacts?.[0]?.profile?.name;
-
-      for (const msg of value.messages ?? []) {
-        try {
-          await waService.handleInbound({
-            from: msg.from,
-            providerMessageId: msg.id,
-            type: msg.type,
-            timestamp: Number(msg.timestamp),
-            profileName,
-            text: msg.text?.body,
-            mediaId: msg.image?.id ?? msg.document?.id ?? msg.audio?.id ?? msg.video?.id,
-            mimeType: msg.image?.mime_type ?? msg.document?.mime_type ?? msg.audio?.mime_type ?? msg.video?.mime_type,
-            caption: msg.image?.caption ?? msg.document?.caption ?? msg.video?.caption,
-            filename: msg.document?.filename,
-            buttonPayload: msg.button?.text
-              ?? msg.interactive?.button_reply?.title
-              ?? msg.interactive?.list_reply?.title,
-            location: msg.location,
-          });
-          await waProvider.markRead(msg.id).catch(() => undefined);
-        } catch (err) {
-          logger.error({ err, messageId: msg.id }, 'failed to process inbound whatsapp message');
-        }
-      }
-
-      for (const status of value.statuses ?? []) {
-        await waService.handleStatusUpdate(status.id, status.status, Number(status.timestamp))
-          .catch((err) => logger.warn({ err }, 'whatsapp status update failed'));
-      }
-    }
-  }
-}));
-
-/*
-  Telephony webhooks are gone with the providers that called them.
-
-  Twilio and Exotel signed status callbacks, recording callbacks, inbound IVR
-  routing and a softphone number lookup — none of it ever configured on this
-  business, and all of it a public surface kept alive for a feature nobody had
-  switched on. Calls here are made on a handset and arrive through the paired
-  Android app (`integrations/telephony/deviceSync.ts`), which is untouched.
-*/
-
-// ---------------------------------------------------------------------------
-// Lead sources
 // ---------------------------------------------------------------------------
 
 webhooksRouter.get('/leads/facebook', (req, res) => {
@@ -151,12 +50,11 @@ webhooksRouter.post('/leads/facebook', asyncHandler(async (req, res) => {
     signature is the only thing separating a real lead from an invented one.
     Without it, anyone who learned this URL could post a leadgen id and have the
     CRM fetch, create, assign, score and greet a lead that never existed. The
-    same check the WhatsApp webhook has had all along, against the Facebook app's
-    own secret.
+    The check is against the Facebook app's own secret.
   */
   const raw = (req as Request & { rawBody?: Buffer }).rawBody ?? Buffer.from(JSON.stringify(req.body));
   const appSecret = getSettings().leadSources.facebook.appSecret;
-  if (!waProvider.verifySignature(raw, req.headers['x-hub-signature-256'] as string | undefined, appSecret)) {
+  if (!verifyMetaSignature(raw, req.headers['x-hub-signature-256'] as string | undefined, appSecret)) {
     logger.warn('rejected a facebook lead webhook with an invalid signature');
     res.sendStatus(401);
     return;

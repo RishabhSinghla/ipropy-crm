@@ -148,7 +148,7 @@ export default function ImportAdmin(): JSX.Element {
   // leaves the desk with two of the same person.
   const [duplicateHandling, setDuplicateHandling] = useState('review');
   const [importMode, setImportMode] = useState('create');
-  // Off on purpose: an import that queues five hundred WhatsApp greetings is
+  // Off on purpose: an import that fires five hundred automations is
   // the failure this checkbox exists to prevent. Automations stay one tick
   // away for the day they are wanted.
   const [runWorkflows, setRunWorkflows] = useState(false);

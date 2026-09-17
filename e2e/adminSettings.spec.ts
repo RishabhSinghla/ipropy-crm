@@ -55,8 +55,8 @@ test('opens a group when you click it, and closes it again', async ({ page }) =>
   await expect(tab(page, /Your business/)).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByLabel('Street')).toBeVisible();
 
-  await tab(page, /WhatsApp/).click();
-  await expect(tab(page, /WhatsApp/)).toHaveAttribute('aria-selected', 'true');
+  await tab(page, /Calls/).click();
+  await expect(tab(page, /Calls/)).toHaveAttribute('aria-selected', 'true');
   // Picking another category is what puts this one away.
   await expect(page.getByLabel('Street')).toBeHidden();
   await expect(openCategories(page)).toHaveCount(1);
@@ -69,7 +69,7 @@ test('a search opens whatever it found', async ({ page }) => {
 
   await expect(page.getByText('Default Currency')).toBeVisible();
   // And the categories that do not match are gone rather than merely unpicked.
-  await expect(tab(page, /WhatsApp/)).toBeHidden();
+  await expect(tab(page, /Calls/)).toBeHidden();
 });
 
 test('says which group holds an unsaved change, even while it is shut', async ({ page }) => {
@@ -81,7 +81,7 @@ test('says which group holds an unsaved change, even while it is shut', async ({
   // ask of a collapsed group header.
   await expect(page.getByText('1 unsaved change', { exact: true })).toBeVisible();
 
-  await tab(page, /WhatsApp/).click();
+  await tab(page, /Calls/).click();
   await expect(page.getByText('1 unsaved change', { exact: true })).toBeVisible();
 
   // And it is still there, still marked, when you come back to it.

@@ -62,7 +62,7 @@ words instead of guessing, and then making each box offer the ids that can do it
 The word did not appear in the AI code. Everything else injection-shaped was handled well — SQL,
 CSV formulas, `ORDER BY`, `data:` URLs — and not this one.
 
-Untrusted text reaches a model on several paths: a website enquiry, a portal lead, a WhatsApp
+Untrusted text reaches a model on several paths: a website enquiry, a portal lead, an inbound
 message, a call transcript, and the photographs the media worker sends for captioning. Every prompt
 here is markdown with `##` headings, so a lead whose notes read
 

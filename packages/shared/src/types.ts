@@ -412,7 +412,6 @@ export type WorkflowTaskType =
   | 'update_fields'
   | 'create_record'
   | 'send_email'
-  | 'send_whatsapp'
   | 'send_sms'
   | 'create_task'
   | 'create_event'
@@ -486,7 +485,7 @@ export interface Conversation {
   unreadCount: number;
   lastMessageAt: string | null;
   lastMessagePreview: string | null;
-  /** WhatsApp 24h customer service window */
+  /** Left over from the WhatsApp 24h customer service window; unused now. */
   windowExpiresAt: string | null;
   aiAutoReply: boolean;
   /** AI-maintained rolling summary of the thread */
@@ -521,28 +520,6 @@ export interface MessageMedia {
   size?: number;
   /** AI transcription of a voice note */
   transcript?: string;
-}
-
-export interface WhatsAppTemplate {
-  id: string;
-  name: string;
-  language: string;
-  category: 'MARKETING' | 'UTILITY' | 'AUTHENTICATION';
-  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'LOCAL';
-  bodyText: string;
-  headerText: string | null;
-  headerFormat: 'TEXT' | 'IMAGE' | 'DOCUMENT' | 'VIDEO' | null;
-  footerText: string | null;
-  buttons: WhatsAppButton[];
-  /** {{1}} → CRM merge field, e.g. "contact.first_name" */
-  variableMap: Record<string, string>;
-}
-
-export interface WhatsAppButton {
-  type: 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER';
-  text: string;
-  url?: string;
-  phoneNumber?: string;
 }
 
 // ---------------------------------------------------------------------------

@@ -22,7 +22,6 @@ import { viewsRouter } from './api/routes/views.js';
 import { dashboardsRouter } from './api/routes/dashboards.js';
 import { adminRouter } from './api/routes/admin.js';
 import { commsRouter } from './api/routes/comms.js';
-import { outreachRouter } from './api/routes/outreach.js';
 import { deviceRouter } from './api/routes/device.js';
 import { telephonyRouter } from './api/routes/telephony.js';
 import { aiRouter } from './api/routes/ai.js';
@@ -301,9 +300,6 @@ export function createApp(): Express {
   app.use('/api/dashboards', dashboardsRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api/comms', commsRouter);
-  // Only the per-record WhatsApp hand-off now — the queue page, broadcasts and
-  // sequences are gone, and each remaining route exists for the lead's own page.
-  app.use('/api/outreach', outreachRouter);
   app.use('/api/telephony', telephonyRouter);
   app.use('/api/ai', aiRouter);
   // Connected assistants. Mounted before miscRouter's catch-all /api paths.

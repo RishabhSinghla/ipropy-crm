@@ -550,26 +550,6 @@ export interface IntegrationModelCatalogue {
   warning?: string;
 }
 
-/** A message the CRM composed, waiting for a human to send it from their phone. */
-export interface DeviceSend {
-  id: string; handle: string; name: string | null; body: string;
-  reason: string | null; recordId: string | null; module: string | null;
-  link: string; createdAt: string;
-}
-
-/** A rep's own WhatsApp, linked to the CRM the way WhatsApp Web links a laptop. */
-export interface WaLink {
-  id: string; userId: string; userName: string | null;
-  handle: string | null; label: string | null;
-  status: 'pending' | 'connected' | 'logged_out' | 'disabled';
-  /** A PNG data URI while waiting to be scanned, null once connected. */
-  qr: string | null; qrExpiresAt: string | null;
-  linkedAt: string | null; lastSeenAt: string | null; lastSentAt: string | null;
-  lastError: string | null;
-  sentToday: number; sentTotal: number; dailyCap: number;
-  takesUnassigned: boolean;
-}
-
 export interface PinStatus {
   available: boolean;
   label?: string | null;
@@ -982,12 +962,6 @@ export const api = {
   auditLog: (params: Record<string, unknown> = {}) => get<Record<string, unknown>[]>(`/api/admin/audit${qs(params)}`),
   systemHealth: () => get<Record<string, unknown>>('/api/admin/health'),
   integrations: () => get<IntegrationSummary[]>('/api/admin/integrations'),
-  whatsappWebAccounts: () => get<{ id: string; label: string; phoneNumber: string | null; displayName: string | null; status: string; lastConnectedAt: string | null; lastError: string | null }[]>('/api/admin/integrations/whatsapp-web/accounts'),
-  createWhatsappWebAccount: (label: string) => post('/api/admin/integrations/whatsapp-web/accounts', { label }),
-  connectWhatsappWebAccount: (id: string) => post<{ status: string; qr: string | null }>(`/api/admin/integrations/whatsapp-web/accounts/${id}/connect`, {}),
-  whatsappWebQr: (id: string) => get<{ status: string; qr: string | null }>(`/api/admin/integrations/whatsapp-web/accounts/${id}/qr`),
-  whatsappWebPairingCode: (id: string, phoneNumber: string) => post<{ code: string }>(`/api/admin/integrations/whatsapp-web/accounts/${id}/pairing-code`, { phoneNumber }),
-  disconnectWhatsappWebAccount: (id: string) => post<void>(`/api/admin/integrations/whatsapp-web/accounts/${id}/disconnect`, {}),
   integration: (provider: string) => get<IntegrationSummary>(`/api/admin/integrations/${provider}`),
   integrationModels: (provider: string) =>
     get<IntegrationModelCatalogue>(`/api/admin/integrations/${provider}/models`),
@@ -1013,39 +987,11 @@ export const api = {
   conversations: (params: Record<string, unknown> = {}) =>
     get<Record<string, unknown>[]>(`/api/comms/conversations${qs(params)}`),
   conversation: (id: string) => get<Record<string, unknown>>(`/api/comms/conversations/${id}`),
-  sendMessage: (conversationId: string, data: Record<string, unknown>) =>
-    post(`/api/comms/conversations/${conversationId}/messages`, data),
-  startConversation: (data: Record<string, unknown>) => post('/api/comms/messages', data),
   updateConversation: (id: string, data: Record<string, unknown>) => patch(`/api/comms/conversations/${id}`, data),
   replySuggestions: (id: string) => get<{ suggestions: string[] }>(`/api/comms/conversations/${id}/suggestions`),
-  whatsappTemplates: () => get<Record<string, unknown>[]>('/api/comms/templates'),
   emailTemplates: () => get<Record<string, unknown>[]>('/api/comms/email/templates'),
   createEmailTemplate: (data: Record<string, unknown>) => post<{ id: string }>('/api/comms/email/templates', data),
   deleteEmailTemplate: (id: string) => del(`/api/comms/email/templates/${id}`),
-  broadcast: (data: Record<string, unknown>) => post<{ queued: number }>('/api/comms/broadcast', data),
-
-  // --- outreach: the per-record WhatsApp hand-off ---------------------------
-  /** Whether WhatsApp can send by itself, or needs a human to tap send. */
-  outreachChannel: () => get<{ apiReady: boolean; mode: 'api' | 'device'; message: string }>('/api/outreach/channel'),
-  deviceQueue: () => get<DeviceSend[]>('/api/outreach/device-queue'),
-
-  // --- WhatsApp linked to a rep's own phone -------------------------------
-  deviceLink: (data: { handle: string; body: string; recordId?: string | null; module?: string; render?: boolean }) =>
-    post<{ link: string; body: string }>('/api/outreach/device-link', data),
-  queueDeviceSend: (data: Record<string, unknown>) =>
-    post<{ id: string; skipped?: string }>('/api/outreach/device-queue', data),
-  editDeviceSend: (id: string, body: string) =>
-    patch<DeviceSend>(`/api/outreach/device-queue/${id}`, { body }),
-  deviceSendOpened: (id: string) => post(`/api/outreach/device-queue/${id}/opened`),
-  deviceSendDone: (id: string) => post<{ messageId: string | null }>(`/api/outreach/device-queue/${id}/sent`),
-  deviceSendSkip: (id: string, reason?: string) => post(`/api/outreach/device-queue/${id}/skip`, { reason }),
-  logDeviceSent: (data: { handle: string; body: string; recordId?: string | null; module?: string }) =>
-    post<{ messageId: string | null }>('/api/outreach/device-sent', data),
-
-  createWhatsappTemplate: (data: Record<string, unknown>) => post<{ id: string }>('/api/comms/templates', data),
-  deleteWhatsappTemplate: (id: string) => del(`/api/comms/templates/${id}`),
-  syncWhatsappTemplates: () => post<{ synced: number }>('/api/comms/templates/sync', {}),
-
   // --- telephony ----------------------------------------------------------
   setDisposition: (id: string, data: { disposition: string; notes?: string; followUpAt?: string | null }) =>
     post(`/api/telephony/calls/${id}/disposition`, data),
