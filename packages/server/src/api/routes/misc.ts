@@ -259,8 +259,12 @@ miscRouter.post('/notifications/read', asyncHandler(async (req, res) => {
 // ---------------------------------------------------------------------------
 
 miscRouter.get('/tags', asyncHandler(async (_req, res) => {
+  // `created_by` so a screen can separate the tags you made from the rest.
+  // Tag names are unique across the whole CRM and everybody can read every
+  // tag, so this is authorship, not access — the list picker says "my tags"
+  // and "shared tags" with it, and nothing is hidden either way.
   const rows = await db.query(
-    `SELECT t.id, t.name, t.color, COUNT(l.record_id)::int AS usage_count
+    `SELECT t.id, t.name, t.color, t.created_by, COUNT(l.record_id)::int AS usage_count
      FROM ipy_tag t LEFT JOIN ipy_tag_link l ON l.tag_id = t.id
      GROUP BY t.id ORDER BY usage_count DESC, t.name LIMIT 200`,
   );

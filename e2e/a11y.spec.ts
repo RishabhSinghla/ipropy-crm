@@ -121,6 +121,15 @@ test.describe('accessibility', () => {
     expect(violations, summarise(violations)).toEqual([]);
   });
 
+  test('the list and tag picker has no violations', async ({ page }) => {
+    await page.goto('/leads');
+    await waitForRecords(page);
+    await page.getByRole('button', { name: /Choose or manage list views/ }).click();
+    await expect(page.getByText('Select list or tag')).toBeVisible();
+    const { violations } = await scan(page);
+    expect(violations, summarise(violations)).toEqual([]);
+  });
+
   test('record detail has no violations', async ({ page, context }) => {
     await page.goto('/leads');
     await waitForRecords(page);

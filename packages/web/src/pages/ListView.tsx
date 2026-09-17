@@ -29,6 +29,7 @@ import {
 import { ModuleIcon } from '../components/Layout';
 import RecordForm from '../components/RecordForm';
 import RecordPeek from '../components/RecordPeek';
+import { ListPicker } from '../components/ListPicker';
 import { StrengthRing } from '../components/StrengthRing';
 import { FollowUpQueue, followUpFilters, type TaskQueue } from '../components/FollowUpQueue';
 import { StatusBreakdown } from '../components/StatusBreakdown';
@@ -83,6 +84,7 @@ export default function ListView(): JSX.Element {
   const [taskQueue, setTaskQueue] = useState<TaskQueue | null>(null);
   const [stagePick, setStagePick] = useState<string[]>([]);
   const [agentPick, setAgentPick] = useState<string | null>(null);
+  const [tagPick, setTagPick] = useState<string | null>(null);
   const [viewId, setViewId] = useState<string | undefined>(searchParams.get('view') ?? undefined);
   const [filter, setFilter] = useState<FilterGroup>(EMPTY_FILTER);
   const [sortBy, setSortBy] = useState<string | undefined>();
@@ -399,10 +401,13 @@ export default function ListView(): JSX.Element {
       ...(agentPick && ownerField
         ? [{ field: ownerField.name, operator: 'equals' as const, value: agentPick }]
         : []),
+      // `record_tags` is the builder's own name for the tags on a record; a tag
+      // is not a field on the module, so it cannot be resolved as one.
+      ...(tagPick ? [{ field: 'record_tags', operator: 'has_any' as const, value: [tagPick] }] : []),
     ];
     if (!extra.length) return filter;
     return { logic: 'AND', conditions: [...filter.conditions, ...extra] };
-  }, [filter, taskFilters, taskQueue, stagePick, stageField?.name, agentPick, ownerField?.name]);
+  }, [filter, taskFilters, taskQueue, stagePick, stageField?.name, agentPick, ownerField?.name, tagPick]);
 
   /*
     What the breakdown counts is the view and the ad-hoc filter, but never the
@@ -549,6 +554,63 @@ export default function ListView(): JSX.Element {
     (`isPublic: false`, nobody shared) exactly like a view made from scratch;
     sharing it is a separate, deliberate act in the editor.
   */
+  /*
+    The three actions the list picker offers beyond choosing one.
+
+    Duplicate copies the whole shape rather than the name — a copy that opened
+    on different columns would be a different list wearing the same name. It
+    starts private, like anything made from scratch, because a copy of a shared
+    list is not automatically the team's.
+  */
+  const duplicateView = useMutation({
+    mutationFn: async (id: string) => {
+      const source = (views ?? []).find((v) => v.id === id);
+      if (!source) throw new Error('That list is no longer here.');
+      return api.createView(moduleName!, {
+        name: `${source.name} copy`,
+        columns: source.columns ?? [],
+        sortBy: source.sortBy ?? null,
+        sortDir: source.sortDir ?? 'desc',
+        displayMode: source.displayMode ?? 'table',
+        groupBy: source.groupBy ?? null,
+        filter: source.filter ?? { logic: 'AND', conditions: [] },
+        isPublic: false,
+        sharedWith: [],
+      });
+    },
+    onSuccess: (created) => {
+      toast.success('List copied', 'It is yours until you share it.');
+      void queryClient.invalidateQueries({ queryKey: ['views', moduleName] }).then(() => {
+        if (created?.id) setViewId(created.id);
+      });
+    },
+    onError: (err: Error) => toast.error('Could not copy this list', err.message),
+  });
+
+  /** Sharing a list in this CRM means making it public to the team. */
+  const shareView = useMutation({
+    mutationFn: async (id: string) => {
+      const source = (views ?? []).find((v) => v.id === id);
+      if (!source) throw new Error('That list is no longer here.');
+      return api.updateView(moduleName!, id, { isPublic: !source.isPublic });
+    },
+    onSuccess: (_result, id) => {
+      const source = (views ?? []).find((v) => v.id === id);
+      toast.success(source?.isPublic ? 'List is private again' : 'List shared with the team');
+      void queryClient.invalidateQueries({ queryKey: ['views', moduleName] });
+    },
+    onError: (err: Error) => toast.error('Could not change who can see this list', err.message),
+  });
+
+  const setDefaultView = useMutation({
+    mutationFn: async (id: string) => {
+      const source = (views ?? []).find((v) => v.id === id);
+      return api.updateView(moduleName!, id, { isDefault: !source?.isDefault });
+    },
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['views', moduleName] }); },
+    onError: (err: Error) => toast.error('Could not set the default list', err.message),
+  });
+
   const saveAsNewView = useMutation({
     mutationFn: (name: string) => api.createView(moduleName!, {
       name,
@@ -760,41 +822,42 @@ export default function ListView(): JSX.Element {
             className="min-w-[18rem]"
             trigger={(
               <button className="btn-secondary btn-sm max-w-[14rem]" aria-label="Choose or manage list views">
-                <Filter className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{activeView?.name ?? `All ${meta.label}`}</span>
+                {tagPick ? <Tag className="h-3.5 w-3.5 shrink-0" /> : <Filter className="h-3.5 w-3.5 shrink-0" />}
+                <span className="truncate">{tagPick ?? activeView?.name ?? `All ${meta.label}`}</span>
                 <ChevronDown className="h-3.5 w-3.5 shrink-0" />
               </button>
             )}
           >
             {(close) => (
-              <>
-                <ViewMenu
-                  views={views ?? []}
-                  activeViewId={activeView?.id ?? null}
-                  canEditView={(view) => {
-                    const full = (views ?? []).find((v) => v.id === view.id);
-                    return Boolean(view.isSystem || full?.ownerId === user?.id || user?.isAdmin);
-                  }}
-                  onChoose={(id) => { chooseView(id); close(); }}
-                  onEdit={(id) => {
-                    const full = (views ?? []).find((v) => v.id === id);
-                    if (full) setEditingView(full as SavedView);
-                    close();
-                  }}
-                />
-                <div className="border-t border-slate-100 py-1 dark:border-slate-800">
-                  <DropdownItem icon={<Plus className="h-3.5 w-3.5" />} onClick={() => { setEditingView(blankView(moduleName)); close(); }}>
-                    New view
-                  </DropdownItem>
-                  {/* Only a view somebody made can be deleted. The two built-in
-                      ones are reset instead, from inside the editor. */}
-                  {activeView && !activeView.isSystem && (activeView.ownerId === user?.id || user?.isAdmin) && (
-                    <DropdownItem danger icon={<Trash2 className="h-3.5 w-3.5" />} onClick={() => { setConfirmDeleteView(activeView); close(); }}>
-                      Delete this view
-                    </DropdownItem>
-                  )}
-                </div>
-              </>
+              <ListPicker
+                views={(views ?? []).map((v) => ({
+                  id: v.id, name: v.name, isSystem: v.isSystem, isPublic: v.isPublic,
+                  isDefault: v.isDefault, ownerId: v.ownerId,
+                  isOverride: (v as { isOverride?: boolean }).isOverride,
+                  count: (v as { count?: number }).count,
+                }))}
+                activeViewId={activeView?.id ?? null}
+                activeTag={tagPick}
+                userId={user?.id}
+                isAdmin={Boolean(user?.isAdmin)}
+                moduleLabel={meta.label}
+                onChooseView={(id) => { setTagPick(null); chooseView(id); close(); }}
+                onChooseTag={(name) => { setTagPick(name); setPage(1); close(); }}
+                onNew={() => { setEditingView(blankView(moduleName)); close(); }}
+                onEdit={(id) => {
+                  const full = (views ?? []).find((v) => v.id === id);
+                  if (full) setEditingView(full as SavedView);
+                  close();
+                }}
+                onDuplicate={(id) => { duplicateView.mutate(id); close(); }}
+                onShare={(id) => { shareView.mutate(id); close(); }}
+                onSetDefault={(id) => { setDefaultView.mutate(id); close(); }}
+                onDelete={(id) => {
+                  const full = (views ?? []).find((v) => v.id === id);
+                  if (full) setConfirmDeleteView(full);
+                  close();
+                }}
+              />
             )}
           </Dropdown>
 
@@ -1705,92 +1768,6 @@ export default function ListView(): JSX.Element {
  * for the fallback being decent rather than merely present.
  */
 /** One pager control: obviously live when there is somewhere to go, obviously not when there isn't. */
-/**
- * The list of saved views, with a way to find one.
- *
- * A component rather than markup inside the dropdown's render prop, because it
- * holds search state: a render prop is called during another component's
- * render, so a hook there belongs to that component and its count changes with
- * whatever decides to call it. That is the same fault that took the whole list
- * to an error boundary once already.
- *
- * The search box appears only once there are enough views to hunt through. Over
- * three of them it is a box asking a question nobody had.
- */
-function ViewMenu({
-  views, activeViewId, canEditView, onChoose, onEdit,
-}: {
-  views: { id: string; name: string; isSystem?: boolean; isOverride?: boolean; count?: number }[];
-  activeViewId: string | null;
-  canEditView: (view: { id: string; isSystem?: boolean }) => boolean;
-  onChoose: (id: string) => void;
-  onEdit: (id: string) => void;
-}): JSX.Element {
-  const [query, setQuery] = useState('');
-  const WORTH_SEARCHING = 6;
-  const needle = query.trim().toLowerCase();
-  const shown = needle ? views.filter((v) => v.name.toLowerCase().includes(needle)) : views;
-
-  return (
-    <>
-      {views.length >= WORTH_SEARCHING && (
-        <div className="px-2 pb-1 pt-2">
-          <input
-            type="search"
-            className="input h-7 w-full text-xs"
-            placeholder="Search views"
-            aria-label="Search list views"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
-      )}
-      <p className="px-3 pb-1 pt-2 text-2xs font-semibold uppercase tracking-wider text-muted">List views</p>
-      {/*
-        Every view carries its pencil, the two built-in ones included.
-
-        They used to be the only two anybody could not edit, which is backwards
-        — they are the two everybody lives in. Editing one now saves your own
-        version of it rather than reshaping the row the whole team reads
-        (migration 135), so there is nothing left to protect by hiding it.
-      */}
-      <div className="max-h-64 overflow-y-auto py-1">
-        {shown.length === 0 && (
-          <p className="px-3 py-2 text-xs text-muted">No view matches “{query.trim()}”.</p>
-        )}
-        {shown.map((view) => (
-          <div key={view.id} className="flex items-center px-1">
-            <DropdownItem onClick={() => onChoose(view.id)}>
-              <span className="min-w-0 flex-1 truncate">{view.name}</span>
-              {view.isOverride && (
-                <span className="shrink-0 text-2xs text-muted" title="Your own version of this view">edited</span>
-              )}
-              {/* How many are in it — the question somebody opens this menu to
-                  answer. Undefined while it loads, or when the count failed;
-                  no number beats a wrong one. */}
-              {typeof view.count === 'number' && (
-                <span className="shrink-0 text-2xs text-muted tnum">{view.count.toLocaleString('en-IN')}</span>
-              )}
-              {view.id === activeViewId && <span className="shrink-0 text-brand-600">Current</span>}
-            </DropdownItem>
-            {canEditView(view) && (
-              <button
-                className="btn-ghost shrink-0 p-1.5"
-                title={view.isSystem ? 'Edit — saved as your own version' : 'Edit view'}
-                aria-label={`Edit ${view.name}`}
-                onClick={(e) => { e.stopPropagation(); onEdit(view.id); }}
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
-    </>
-  );
-}
-
 function PageButton({ label, disabled, onClick, children }: {
   label: string; disabled: boolean; onClick: () => void; children: JSX.Element;
 }): JSX.Element {

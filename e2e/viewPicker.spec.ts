@@ -19,23 +19,23 @@ test.beforeEach(async ({ page }) => {
 
 test('the view picker opens and lists views', async ({ page }) => {
   await page.getByRole('button', { name: 'Choose or manage list views' }).click();
-  await expect(page.getByText('List views')).toBeVisible();
-  // Every module ships at least one view, so an empty menu is a real failure.
-  await expect(page.getByRole('menuitem').or(page.locator('[role="menuitem"]')).first()
-    .or(page.getByText(/Current/))).toBeVisible();
+  await expect(page.getByText('Select list or tag')).toBeVisible();
+  // Every module ships at least one view, so an empty picker is a real failure.
+  await expect(page.getByRole('button', { name: /^All Leads/ })).toBeVisible();
 });
 
 test('choosing a view still applies it', async ({ page }) => {
   const trigger = page.getByRole('button', { name: 'Choose or manage list views' });
   await trigger.click();
   /*
-    The menu is built from plain buttons — `DropdownItem` renders a <button>
-    with no menu role — so it is found by what it says, not by a role a
-    screen-reader menu would have. Worth knowing before writing `menuitem`
-    here again and watching it match nothing.
+    The picker's rows are plain buttons — there is no menu role to ask for — so
+    they are addressed through the landmark around them. Matching "every button
+    inside the panel" instead catches the create button and each row's action
+    menu, which is how this spec silently skipped itself.
   */
-  const panel = page.locator('div').filter({ hasText: /^List views/ }).last();
-  const options = panel.getByRole('button');
+  const options = page.getByRole('navigation', { name: 'Lists and tags' })
+    .getByRole('button', { name: /\S/ })
+    .filter({ hasNotText: /^Actions for/ });
   test.skip((await options.count()) < 2, 'needs a second view to switch to');
 
   const label = (await options.first().innerText()).split('\n')[0].trim();
@@ -72,13 +72,13 @@ test('the search box narrows the list once there are enough views', async ({ pag
   await expect(page.getByText(/^[\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
 
   await page.getByRole('button', { name: 'Choose or manage list views' }).click();
-  const search = page.getByLabel('Search list views');
-  await expect(search, 'six views is past the point the box should appear').toBeVisible();
+  const search = page.getByLabel('Search lists and tags');
+  await expect(search).toBeVisible();
 
   /*
     Anchored to the start of the name. Every row carries two buttons whose
-    accessible name contains the view's — the row itself, and its edit pencil,
-    which reads "Edit <name>" — so an unanchored match counts each view twice.
+    accessible name contains the view's — the row itself, and its action menu,
+    which reads "Actions for <name>" — so an unanchored match counts twice.
   */
   const marked = page.getByRole('button', { name: new RegExp(`^${marker}`) });
 
@@ -88,7 +88,7 @@ test('the search box narrows the list once there are enough views', async ({ pag
 
   // …says so plainly when nothing matches…
   await search.fill('zzzz-no-such-view');
-  await expect(page.getByText(/No view matches/)).toBeVisible();
+  await expect(page.getByText(/Nothing matches/)).toBeVisible();
   await expect(marked).toHaveCount(0);
 
   // …and clearing it brings them back.
@@ -104,6 +104,13 @@ test('the search box narrows the list once there are enough views', async ({ pag
   */
   await page.keyboard.press('Escape');
   for (const id of created) {
-    await request.delete(`/api/views/${id}`, { headers: auth });
+    /*
+      The module is part of the path. Without it this is a 404 that the loop
+      never looks at, so the six views stayed — thirty of them had built up in
+      the developer database before anybody noticed the picker was full of
+      "zqa… view 3".
+    */
+    const gone = await request.delete(`/api/views/leads/${id}`, { headers: auth });
+    expect(gone.ok(), `could not remove a view this spec made: ${gone.status()}`).toBeTruthy();
   }
 });
