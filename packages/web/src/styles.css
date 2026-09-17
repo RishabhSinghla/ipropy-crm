@@ -52,23 +52,32 @@
       bigger" is a five-second change here and a find-and-replace across four
       files otherwise.
     */
-    --list-font: 14.5px;
-    --list-head-font: 12px;
-    --list-line: 1.45;
-    --list-row-pad-y: 8px;
-    --list-row-pad-x: 14px;
-    --list-text: #111827;
+    --list-font: 13px;
+    --list-head-font: 11.5px;
+    --list-line: 1.4;
+    --list-row-pad-y: 7px;
+    --list-row-pad-x: 12px;
+    /* Body copy, not headline copy. #111827 is near-black and every cell in a
+       wide grid was competing at the same weight; slate-700 keeps a full row
+       legible (10:1 on the sheet) while letting the name, the status chip and
+       the due date be the things that carry weight. */
+    --list-text: #334155;
     --list-row: #ffffff;
     /* The stripe is a hint, not a band. At #f4f6f8 every second row read as
-       grey paper and the whole grid looked switched off; this is the same
-       stripe two thirds lighter and with a blue cast, so the sheet stays
-       white and the eye still tracks across a wide row. */
-    --list-row-alt: #f7faff;
-    --list-row-hover: #e8f1ff;
+       grey paper and the whole grid looked switched off. Kept that lightness
+       and dropped the blue cast: the blue read as a selection on a screen
+       where selection is also blue, and a neutral sheet lets the coloured
+       things in a row — status, overdue, avatar — be the only colour. */
+    --list-row-alt: #fafafa;
+    --list-row-hover: #f1f5f9;
+    /* Selection stays blue on purpose: it is the one row state that means
+       something a person chose, and it has to beat both stripe and hover. */
     --list-row-selected: #d8e8ff;
-    --list-head-bg: #eef3fa;
+    --list-head-bg: #f8fafc;
+    /* Left near-black deliberately. A muted header was tried here and got
+       looked past — the column names are how anybody navigates a wide grid. */
     --list-head-text: #0f172a;
-    --list-head-border: #d5deea;
+    --list-head-border: #e2e8f0;
   }
 
   .dark {
@@ -84,12 +93,15 @@
 
     --list-text: #e2e8f0;
     --list-row: #0f172a;
-    --list-row-alt: #16213a;
-    --list-row-hover: #1e3a5f;
+    /* Same move as the light sheet: the stripe and the hover lose their blue
+       so that selection is the only blue row, and each state is still a step
+       lighter than the one under it — stripe, then hover, then selected. */
+    --list-row-alt: #151c2b;
+    --list-row-hover: #1e293b;
     --list-row-selected: #24456e;
-    --list-head-bg: #263449;
+    --list-head-bg: #1e293b;
     --list-head-text: #f1f5f9;
-    --list-head-border: #3b4b63;
+    --list-head-border: #334155;
   }
 
   html, body, #root { height: 100%; }
