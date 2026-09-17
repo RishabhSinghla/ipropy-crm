@@ -1,0 +1,37 @@
+# Ask the running site whether the code just pushed is the code being served.
+#
+# scripts/verify-deploy.sh already knows how to do this — it crawls the lazy
+# route chunks rather than trusting index.html, which is the trap that makes a
+# good deploy read as a failed one. What it needs is somewhere with a route to
+# crm.ipropy.com; a development container does not always have one.
+#
+# Read-only: it fetches the site and greps what it is serving. No secrets, no
+# database, no writes.
+name: Verify deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      markers:
+        description: "Strings the new code has and the old code did not, one per line"
+        required: true
+      base_url:
+        description: "The CRM to ask"
+        default: "https://crm.ipropy.com"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ask the site
+        env:
+          CRM_URL: ${{ inputs.base_url }}
+          MARKERS: ${{ inputs.markers }}
+        run: |
+          mapfile -t needles < <(printf '%s' "$MARKERS" | sed '/^[[:space:]]*$/d')
+          bash scripts/verify-deploy.sh "${needles[@]}"
