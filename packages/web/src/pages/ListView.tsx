@@ -17,7 +17,7 @@ import { assignmentField, byLabel } from '../lib/fields';
 import { DEFAULT_PAGE_SIZE, loadPageSize, PAGE_SIZE_OPTIONS, savePageSize } from '../lib/pageSize';
 import { FilterBuilder, countConditions } from '../components/FilterBuilder';
 import {
-  Badge, ConfirmDialog, Dropdown, DropdownItem, EmptyState, Modal, Select, Skeleton, Spinner,
+  Avatar, Badge, ConfirmDialog, Dropdown, DropdownItem, EmptyState, Modal, Select, Skeleton, Spinner,
 } from '../components/ui';
 import { ModuleIcon } from '../components/Layout';
 import RecordForm from '../components/RecordForm';
@@ -620,6 +620,21 @@ export default function ListView(): JSX.Element {
     );
   }
 
+  /*
+    Fields an admin has marked to appear under the name in a list.
+
+    Flagged per field (`config.listSubtitle`) rather than chosen here, for the
+    same reason the rest of this screen reads from metadata: which two facts
+    identify a record is this business's decision. Columns already on screen
+    are skipped — the same value twice in one row reads as a rendering fault.
+  */
+  const subtitleFields = useMemo(
+    () => (meta?.fields ?? []).filter(
+      (f) => f.config?.listSubtitle && f.isActive && f.displayType !== 'hidden',
+    ),
+    [meta?.fields],
+  );
+
   const visibleColumns = columns.length ? columns : defaultColumns(meta);
   const fieldMap = new Map(meta.fields.map((f) => [f.name, f]));
   const canCreate = meta.permissions.create;
@@ -1212,6 +1227,24 @@ export default function ListView(): JSX.Element {
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {rows.map((row) => {
                 const isNew = unseen.has(row.id);
+                /*
+                  `display` before `values`, always: a reference's raw value is
+                  a uuid and a picklist's is its stored value, and either one
+                  under a name is how a list ends up showing identifiers to a
+                  salesperson. Columns already visible are skipped so the
+                  subtitle never repeats what the row already shows.
+                */
+                const subtitle = subtitleFields
+                  .filter((f) => !visibleColumns.includes(f.name))
+                  .map((f) => {
+                    const raw = row.display?.[f.name] ?? row.values[f.name];
+                    if (raw === null || raw === undefined || raw === '') return null;
+                    if (Array.isArray(raw)) return raw.length ? raw.join(', ') : null;
+                    const text = String(raw);
+                    return text === row.label ? null : text;
+                  })
+                  .filter(Boolean)
+                  .join(' · ');
                 return (
                 <tr
                   key={row.id}
@@ -1270,6 +1303,27 @@ export default function ListView(): JSX.Element {
                           isNew && 'font-bold text-slate-900 dark:text-white',
                         )}
                       >
+                        {/*
+                          A face for the row.
+
+                          Initials on a colour derived from the name, so the
+                          same person is the same colour on every screen. It
+                          sits inline with the name rather than in a column of
+                          its own: a list that is mostly names reads faster
+                          with an anchor on the left, and a new column would
+                          have cost width every row actually uses.
+                        */}
+                        {ci === 0 && (
+                          /*
+                            Wrapped rather than given `inline-flex` directly:
+                            `cn` is plain clsx with no tailwind-merge, so that
+                            class would sit alongside Avatar's own `flex` and
+                            the winner would come down to stylesheet order.
+                          */
+                          <span className="mr-2 inline-flex align-middle">
+                            <Avatar name={row.label} size={22} className="text-[9px]" />
+                          </span>
+                        )}
                         {ci === 0 && row.starred && (
                           <Star
                             className="mr-1.5 inline-block h-3.5 w-3.5 fill-amber-400 text-amber-500 align-middle"
@@ -1309,6 +1363,21 @@ export default function ListView(): JSX.Element {
                             compact
                             linkTo={field.uitype === 'reference' ? row.display?.[`${col}__module`] : undefined}
                           />
+                        )}
+                        {ci === 0 && subtitle && (
+                          /*
+                            Who this is, under their name.
+
+                            A rep recognises "Prateek Ahuja / Buyer · B-118"
+                            faster than a name alone, and the alternative was
+                            two more columns competing for the same width.
+                            Which fields appear is `config.listSubtitle` on the
+                            field, so it is the admin's choice rather than a
+                            list of names compiled into this file.
+                          */
+                          <span className="mt-0.5 block truncate text-[11px] font-normal text-muted">
+                            {subtitle}
+                          </span>
                         )}
                       </td>
                     );

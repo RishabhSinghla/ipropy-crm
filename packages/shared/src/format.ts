@@ -263,6 +263,60 @@ export function formatDateTime(value: string | Date | null | undefined, locale =
   });
 }
 
+/** How a due date reads against today, and how urgently it should be dressed. */
+export type DueTone = 'overdue' | 'today' | 'tomorrow' | 'soon' | 'later' | 'past';
+
+export interface DueDay {
+  label: string;
+  tone: DueTone;
+  /** Whole calendar days from today: negative is behind, 0 is today. */
+  days: number;
+  /** The date itself, for the tooltip — the chip says urgency, not which Tuesday. */
+  raw: Date;
+}
+
+/**
+ * A follow-up date said the way a rep thinks about it.
+ *
+ * "12 Sept 2026" makes somebody count on their fingers; "Overdue (2d)" does not.
+ * Only ever applied to fields an admin has marked as a due date — a birthday is
+ * a date too, and "Overdue" is the wrong word for one.
+ *
+ * Compared by **calendar day, not by elapsed hours**. A date column arrives as
+ * `YYYY-MM-DD`, which `new Date()` reads as midnight UTC — 5:30am the same day
+ * in India, so an hours-based diff calls this morning's follow-up "tomorrow"
+ * for the first five and a half hours of every day. Both sides are reduced to
+ * their local Y/M/D before subtracting, which is the comparison a person makes.
+ */
+export function relativeDueDay(
+  value: string | Date | null | undefined,
+  now: Date = new Date(),
+): DueDay | null {
+  if (!value) return null;
+  // A bare date is a calendar day with no time and no zone. Read its parts
+  // directly rather than through Date, which would place it in UTC.
+  let target: Date;
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [y, m, d] = value.split('-').map(Number);
+    target = new Date(y, m - 1, d);
+  } else {
+    const parsed = typeof value === 'string' ? new Date(value) : value;
+    if (Number.isNaN(parsed.getTime())) return null;
+    target = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+  }
+  if (Number.isNaN(target.getTime())) return null;
+
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const days = Math.round((target.getTime() - today.getTime()) / 86_400_000);
+
+  if (days === 0) return { label: 'Today', tone: 'today', days, raw: target };
+  if (days === 1) return { label: 'Tomorrow', tone: 'tomorrow', days, raw: target };
+  if (days === -1) return { label: 'Overdue (1d)', tone: 'overdue', days, raw: target };
+  if (days < -1) return { label: `Overdue (${Math.abs(days)}d)`, tone: 'overdue', days, raw: target };
+  if (days <= 7) return { label: `In ${days} days`, tone: 'soon', days, raw: target };
+  return { label: formatDate(target), tone: 'later', days, raw: target };
+}
+
 export function relativeTime(value: string | Date | null | undefined): string {
   if (!value) return '—';
   const d = typeof value === 'string' ? new Date(value) : value;

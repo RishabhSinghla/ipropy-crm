@@ -10,6 +10,7 @@ import { type JSX, useEffect, useMemo, useRef, useState } from 'react';
 import {
   expectedDigits, formatArea, formatDate, formatDateTime, formatIndianPrice, formatPhone,
   type FieldMeta,
+  relativeDueDay, type DueDay, type DueTone,
 } from '@ipropy/shared';
 import {
   Check, ChevronDown, ExternalLink, ImagePlus, Loader2, Mail, MapPin, Phone, Search, Video, X,
@@ -41,6 +42,37 @@ function authedImageUrl(url: string, size?: 'thumb' | 'medium' | 'large'): strin
 // ---------------------------------------------------------------------------
 // Read-only display
 // ---------------------------------------------------------------------------
+
+/** How each tone is dressed. Explicit per tone so nothing reads as a guess. */
+const DUE_TONE: Record<DueTone, string> = {
+  overdue: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-900',
+  today: 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900',
+  tomorrow: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-900',
+  soon: 'bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700',
+  later: 'bg-transparent text-muted border-transparent',
+  past: 'bg-transparent text-muted border-transparent',
+};
+
+/**
+ * A due date as a chip.
+ *
+ * The exact date stays in the tooltip: "Overdue (2d)" is what a rep acts on,
+ * and "which Tuesday" is what they ask next.
+ */
+function DueChip({ due }: { due: DueDay }): JSX.Element {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold',
+        DUE_TONE[due.tone],
+      )}
+      title={formatDate(due.raw)}
+    >
+      {due.tone === 'overdue' && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" />}
+      {due.label}
+    </span>
+  );
+}
 
 export function FieldValue({
   field, value, display, compact, linkTo,
@@ -85,10 +117,24 @@ export function FieldValue({
         : <span className="text-slate-300 dark:text-slate-700">—</span>;
 
     case 'date':
-      return <span className="tnum">{formatDate(String(value))}</span>;
+    case 'datetime': {
+      /*
+        A date an admin has marked as a due date reads as a chip.
 
-    case 'datetime':
-      return <span className="tnum">{formatDateTime(String(value))}</span>;
+        "12 Sept 2026" makes a rep count on their fingers; "Overdue (2d)" does
+        not. Gated on `config.dueDate` rather than on the field's name, because
+        a birthday is a date too and "Overdue" is the wrong word for one — and
+        because which dates chase somebody is the admin's decision, not a list
+        of names in this file.
+      */
+      const due = field.config.dueDate ? relativeDueDay(String(value)) : null;
+      if (due) return <DueChip due={due} />;
+      return (
+        <span className="tnum">
+          {field.uitype === 'date' ? formatDate(String(value)) : formatDateTime(String(value))}
+        </span>
+      );
+    }
 
     case 'email':
       return (
