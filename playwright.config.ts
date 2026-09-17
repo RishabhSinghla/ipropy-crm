@@ -34,6 +34,16 @@ export default defineConfig({
   reporter: process.env.CI ? [['html', { open: 'never' }], ['list']] : [['list']],
   use: {
     baseURL: `http://localhost:${WEB_PORT}`,
+    /*
+      An agent container ships its own Chromium and does not always ship the
+      exact build this Playwright version would download. Unset everywhere
+      else — CI and a developer's machine keep resolving the browser the usual
+      way — so this costs nothing and makes the suite runnable where the
+      browser is already on disk.
+    */
+    launchOptions: process.env.PW_CHROMIUM_PATH
+      ? { executablePath: process.env.PW_CHROMIUM_PATH }
+      : {},
     // Only kept for failures — traces are large and uninteresting when green.
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',

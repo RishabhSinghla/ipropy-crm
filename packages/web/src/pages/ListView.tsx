@@ -1,4 +1,4 @@
-import { type JSX, useEffect, useMemo, useRef, useState } from 'react';
+import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { isFilterGroup, type CustomView, type FieldMeta, type FilterGroup, formatIndianPrice, formatPhoneWithCode, toInternational, type ListQuery, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
@@ -14,6 +14,13 @@ import { cn, restrictionForField } from '../lib/utils';
 import { FieldInput, FieldValue } from '../components/FieldRenderer';
 import { EditableField, isInlineEditable } from '../components/EditableField';
 import { assignmentField, byLabel } from '../lib/fields';
+/*
+  Shared with the phone, deliberately: `phoneOf` pairs each phone field with
+  its own country field, and a second copy here would drift from the one the
+  app ships. `dial`/`openExternal` come from nativeActions further down, which
+  already know that a webview swallows window.open.
+*/
+import { phoneOf } from '../mobile/rows';
 import { DEFAULT_PAGE_SIZE, loadPageSize, PAGE_SIZE_OPTIONS, savePageSize } from '../lib/pageSize';
 import { FilterBuilder, countConditions } from '../components/FilterBuilder';
 import {
@@ -621,6 +628,18 @@ export default function ListView(): JSX.Element {
   }
 
   /*
+    Everything below this point runs only once `meta` has arrived, which is
+    why none of it may be a hook.
+
+    The guards above return early while the module is loading, so a `useMemo`
+    here runs on some renders and not others — React counts hooks per render
+    and throws "Rendered more hooks than during the previous render", which
+    takes the whole list to an error boundary the moment the data lands. Both
+    of these are a filter and a lookup over a list of fields; plain
+    expressions cost nothing and cannot get the order wrong.
+  */
+
+  /*
     Fields an admin has marked to appear under the name in a list.
 
     Flagged per field (`config.listSubtitle`) rather than chosen here, for the
@@ -628,15 +647,22 @@ export default function ListView(): JSX.Element {
     identify a record is this business's decision. Columns already on screen
     are skipped — the same value twice in one row reads as a rendering fault.
   */
-  const subtitleFields = useMemo(
-    () => (meta?.fields ?? []).filter(
-      (f) => f.config?.listSubtitle && f.isActive && f.displayType !== 'hidden',
-    ),
-    [meta?.fields],
+  const subtitleFields = meta.fields.filter(
+    (f) => f.config?.listSubtitle && f.isActive && f.displayType !== 'hidden',
   );
 
   const visibleColumns = columns.length ? columns : defaultColumns(meta);
   const fieldMap = new Map(meta.fields.map((f) => [f.name, f]));
+
+  /*
+    The number a quick action rings.
+
+    `phoneOf` is the mobile list's resolver, reused rather than rewritten: it
+    walks the module's phone fields in order and pairs each with its own
+    country field, so a list on a module with no phone simply shows no action.
+  */
+  const rowPhone = (row: RecordEnvelope): string | null => phoneOf(row, fieldMap);
+
   const canCreate = meta.permissions.create;
   // A fixed-layout table still shrinks its columns to fit a narrow container,
   // which would quietly undo a drag. Declaring the sum as a minimum makes the
@@ -1222,6 +1248,14 @@ export default function ListView(): JSX.Element {
                     </th>
                   );
                 })}
+                {/*
+                  The actions column has no label: a header over two icon
+                  buttons reads as a column of data that is not there, and it
+                  would be the widest thing in a cell built to stay narrow.
+                */}
+                <th className="list-head sticky right-0 z-20 w-[5.5rem] bg-[var(--surface)] px-2">
+                  <span className="sr-only">Quick actions</span>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1382,6 +1416,38 @@ export default function ListView(): JSX.Element {
                       </td>
                     );
                   })}
+                  {/*
+                    Call and WhatsApp, without opening the record first.
+
+                    The two things a rep does to a row they recognise, and both
+                    used to cost an open, a read and a back. Pinned right so
+                    they land in the same place on every row whatever the
+                    columns are, and `stopPropagation` because the row itself
+                    opens the record.
+
+                    Faded rather than hidden: `display:none` would take them
+                    out of the tab order, and somebody working a queue by
+                    keyboard needs them as much as somebody with a mouse.
+                    Focus brings them back at full strength.
+                  */}
+                  <td
+                    className="list-cell sticky right-0 z-10 w-[5.5rem] bg-[var(--surface)] px-2 text-right"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {rowPhone(row) && (
+                      <span className="inline-flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                        <button
+                          type="button"
+                          title={`Call ${row.label}`}
+                          aria-label={`Call ${row.label}`}
+                          className="rounded-md p-1.5 text-brand-600 hover:bg-brand-50 focus-visible:opacity-100 dark:text-brand-400 dark:hover:bg-brand-950/40"
+                          onClick={() => dial(rowPhone(row)!)}
+                        >
+                          <Phone className="h-4 w-4" />
+                        </button>
+                      </span>
+                    )}
+                  </td>
                 </tr>
                 );
               })}
