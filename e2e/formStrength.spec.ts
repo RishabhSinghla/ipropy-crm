@@ -44,3 +44,27 @@ test('the number is spoken, not only drawn', async ({ page }) => {
   // Either it is complete, or it names what would raise it — never a bare number.
   expect(label).toMatch(/Form strength \d+% — (nothing left to fill in|still missing .+)/);
 });
+
+test('the number rides on the face, and the second line says who they are', async ({ page }) => {
+  await page.goto('/leads');
+  await expect(page.getByText(/^[\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
+
+  const cell = page.locator('tbody tr').first().locator('td').nth(1);
+
+  // Either a percentage in the ring's corner, or the tick that replaces it at
+  // 100% — never nothing, because "no badge" and "0%" would look the same.
+  const badge = cell.locator('[title^="Form strength"]');
+  await expect(badge).toBeVisible();
+
+  /*
+    The second line under the name.
+
+    This is the case that shipped broken: the subtitle used to skip any field
+    the row already showed as a column, and every saved leads list on
+    production carries Contact Type and Unit Number among its columns — so it
+    was skipped every time and the line was always empty.
+  */
+  const lines = (await cell.innerText()).split('\n').map((l) => l.trim()).filter(Boolean);
+  expect(lines.length, `expected a name and a second line, got ${JSON.stringify(lines)}`)
+    .toBeGreaterThan(1);
+});

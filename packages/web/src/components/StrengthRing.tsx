@@ -1,5 +1,6 @@
 import { type JSX, type ReactNode } from 'react';
 import { recordStrength, type FieldMeta } from '@ipropy/shared';
+import { Check } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 /**
@@ -14,9 +15,18 @@ import { cn } from '../lib/utils';
  * push through `badgeVars`.
  */
 const BANDS = [
-  { min: 80, stroke: '#16a34a', text: 'text-emerald-700 dark:text-emerald-400', word: 'Strong' },
-  { min: 50, stroke: '#d97706', text: 'text-amber-700 dark:text-amber-400', word: 'Partly filled' },
-  { min: 0, stroke: '#dc2626', text: 'text-red-700 dark:text-red-400', word: 'Thin' },
+  {
+    min: 80, stroke: '#16a34a', text: 'text-emerald-700 dark:text-emerald-400', word: 'Strong',
+    badge: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300',
+  },
+  {
+    min: 50, stroke: '#d97706', text: 'text-amber-700 dark:text-amber-400', word: 'Partly filled',
+    badge: 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300',
+  },
+  {
+    min: 0, stroke: '#dc2626', text: 'text-red-700 dark:text-red-400', word: 'Thin',
+    badge: 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300',
+  },
 ] as const;
 
 function band(percent: number): typeof BANDS[number] {
@@ -32,13 +42,19 @@ function describe(percent: number, missing: { label: string }[]): string {
 }
 
 export function StrengthRing({
-  fields, values, size = 22, showPercent = false, className, children,
+  fields, values, size = 22, showPercent = false, cornerBadge = false, className, children,
 }: {
   fields: FieldMeta[];
   values: Record<string, unknown>;
   /** The diameter of what sits inside the ring, not of the ring itself. */
   size?: number;
   showPercent?: boolean;
+  /**
+   * The number tucked into the ring's bottom-right corner rather than beside
+   * it — how a rep reads a whole column of them without the name losing width.
+   * A finished record shows a tick: 100% needs no arithmetic.
+   */
+  cornerBadge?: boolean;
   className?: string;
   children?: ReactNode;
 }): JSX.Element {
@@ -66,6 +82,30 @@ export function StrengthRing({
           />
         </svg>
         <span className="relative inline-flex">{children}</span>
+        {cornerBadge && (
+          percent === 100 ? (
+            <span
+              className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-emerald-500 text-white ring-1 ring-white dark:ring-slate-900"
+              title={label}
+            >
+              <Check className="h-2 w-2" strokeWidth={4} />
+              <span className="sr-only">{label}</span>
+            </span>
+          ) : (
+            <span
+              className={cn(
+                'absolute -bottom-1 -right-1 rounded-full border px-1 py-px text-[8px] font-bold leading-none tabular-nums ring-1 ring-white dark:ring-slate-900',
+                tone.badge,
+              )}
+              title={label}
+            >
+              {/* The % sign stays: a bare "17" in the corner of a face reads
+                  as a count of something, not as how full the record is. */}
+              {percent}%
+              <span className="sr-only"> — {label}</span>
+            </span>
+          )
+        )}
       </span>
       {showPercent && (
         <span className={cn('text-xs font-semibold tabular-nums', tone.text)} title={label}>

@@ -1295,11 +1295,17 @@ export default function ListView(): JSX.Element {
                   `display` before `values`, always: a reference's raw value is
                   a uuid and a picklist's is its stored value, and either one
                   under a name is how a list ends up showing identifiers to a
-                  salesperson. Columns already visible are skipped so the
-                  subtitle never repeats what the row already shows.
+                  salesperson.
+
+                  It used to skip a field the row already showed as a column,
+                  to avoid saying the same thing twice. On production that made
+                  the second line disappear entirely: every saved leads list
+                  carries `contact_type` and `unit_no` among its columns, so
+                  both were skipped and the line was always empty — which reads
+                  as "the feature never shipped". The line is what somebody
+                  asked for; the duplicate column is theirs to remove.
                 */
                 const subtitle = subtitleFields
-                  .filter((f) => !visibleColumns.includes(f.name))
                   .map((f) => {
                     const raw = row.display?.[f.name] ?? row.values[f.name];
                     if (raw === null || raw === undefined || raw === '') return null;
@@ -1355,6 +1361,29 @@ export default function ListView(): JSX.Element {
                     if (!field) {
                       return <td key={col} className="list-cell text-muted">—</td>;
                     }
+                    const value = meta.permissions.edit && isInlineEditable(field, 'list') ? (
+                      <EditableField
+                        surface="list"
+                        module={moduleName}
+                        recordId={row.id}
+                        field={field}
+                        value={row.values[col]}
+                        display={row.display?.[col]}
+                        compact
+                        siblings={row.values}
+                        restrictTo={restrictionForField(meta.picklistDependencies, row.values, field.name)}
+                        linkTo={field.uitype === 'reference' ? row.display?.[`${col}__module`] : undefined}
+                        onSaved={() => invalidateRecordQueries(queryClient, moduleName, row.id)}
+                      />
+                    ) : (
+                      <FieldValue
+                        field={field}
+                        value={row.values[col]}
+                        display={row.display?.[col]}
+                        compact
+                        linkTo={field.uitype === 'reference' ? row.display?.[`${col}__module`] : undefined}
+                      />
+                    );
                     return (
                       <td
                         key={col}
@@ -1367,101 +1396,75 @@ export default function ListView(): JSX.Element {
                           isNew && 'font-bold text-slate-900 dark:text-white',
                         )}
                       >
-                        {/*
-                          A face for the row.
+                        {ci === 0 ? (
+                          /*
+                            The identity cell: a face on the left, and two lines
+                            beside it — who they are, then what they are.
 
-                          Initials on a colour derived from the name, so the
-                          same person is the same colour on every screen. It
-                          sits inline with the name rather than in a column of
-                          its own: a list that is mostly names reads faster
-                          with an anchor on the left, and a new column would
-                          have cost width every row actually uses.
-                        */}
-                        {ci === 0 && (
-                          /*
-                            Wrapped rather than given `inline-flex` directly:
-                            `cn` is plain clsx with no tailwind-merge, so that
-                            class would sit alongside Avatar's own `flex` and
-                            the winner would come down to stylesheet order.
+                            Laid out as a flex row rather than inline content,
+                            because the second line has to sit under the *name*
+                            and not under the avatar as well. Inline, the
+                            subtitle started at the left edge of the cell and
+                            read as a caption for the picture.
                           */
-                          /*
-                            The ring is how full the record is. No number beside
-                            it here: the percentage next to every one of 22,983
-                            rows cost the name column the width it needs and
-                            truncated real names to "Riya Shar…". Hovering the
-                            ring gives the number and what is missing, and the
-                            record's own header prints it in full.
-                          */
-                          <StrengthRing
-                            fields={meta.fields}
-                            values={row.values}
-                            size={22}
-                            className="mr-2"
-                          >
-                            <Avatar name={row.label} size={22} className="text-[9px]" />
-                          </StrengthRing>
-                        )}
-                        {ci === 0 && row.starred && (
-                          <Star
-                            className="mr-1.5 inline-block h-3.5 w-3.5 fill-amber-400 text-amber-500 align-middle"
-                            aria-label="Favourite"
-                          />
-                        )}
-                        {/* `role="img"` on the tag icon below because a bare
-                            <span> may not carry an aria-label — axe calls it
-                            aria-prohibited-attr and a screen reader announces
-                            nothing, so the icon was silent to anyone not
-                            looking at it. The span is a picture of the record's
-                            tags, which is what the role says. */}
-                        {ci === 0 && (row.tags?.length ?? 0) > 0 && (
-                          <span role="img" className="mr-1.5 inline-block align-middle" title={`Tags: ${row.tags?.join(', ')}`} aria-label={`Tagged: ${row.tags?.join(', ')}`}>
-                            <Tag className="h-3.5 w-3.5 fill-blue-100 text-blue-600 dark:fill-blue-950 dark:text-blue-400" />
-                          </span>
-                        )}
-                        {ci === 0 && isNew && (
-                          <span
-                            className="mr-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-brand-600 align-middle dark:bg-brand-400"
-                            title="New — you haven’t opened this yet"
-                          />
-                        )}
-                        {meta.permissions.edit && isInlineEditable(field, 'list') ? (
-                          <EditableField
-                            surface="list"
-                            module={moduleName}
-                            recordId={row.id}
-                            field={field}
-                            value={row.values[col]}
-                            display={row.display?.[col]}
-                            compact
-                            siblings={row.values}
-                            restrictTo={restrictionForField(meta.picklistDependencies, row.values, field.name)}
-                            linkTo={field.uitype === 'reference' ? row.display?.[`${col}__module`] : undefined}
-                            onSaved={() => invalidateRecordQueries(queryClient, moduleName, row.id)}
-                          />
-                        ) : (
-                          <FieldValue
-                            field={field}
-                            value={row.values[col]}
-                            display={row.display?.[col]}
-                            compact
-                            linkTo={field.uitype === 'reference' ? row.display?.[`${col}__module`] : undefined}
-                          />
-                        )}
-                        {ci === 0 && subtitle && (
-                          /*
-                            Who this is, under their name.
+                          <div className="flex items-center gap-2.5">
+                            {/*
+                              A face for the row, with how full the record is
+                              drawn round it and the number tucked into its
+                              corner. Initials on a colour derived from the
+                              name, so the same person is the same colour on
+                              every screen.
+                            */}
+                            <StrengthRing
+                              fields={meta.fields}
+                              values={row.values}
+                              size={26}
+                              cornerBadge
+                            >
+                              <Avatar name={row.label} size={26} className="text-[10px]" />
+                            </StrengthRing>
 
-                            A rep recognises "Prateek Ahuja / Buyer · B-118"
-                            faster than a name alone, and the alternative was
-                            two more columns competing for the same width.
-                            Which fields appear is `config.listSubtitle` on the
-                            field, so it is the admin's choice rather than a
-                            list of names compiled into this file.
-                          */
-                          <span className="mt-0.5 block truncate text-[11px] font-normal text-muted">
-                            {subtitle}
-                          </span>
-                        )}
+                            <div className="flex min-w-0 flex-col">
+                              <span className="flex min-w-0 items-center gap-1.5">
+                                {row.starred && (
+                                  <Star className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-500" aria-label="Favourite" />
+                                )}
+                                {/* `role="img"` on the tag icon because a bare
+                                    <span> may not carry an aria-label — axe
+                                    calls it aria-prohibited-attr and a screen
+                                    reader announces nothing, so the icon was
+                                    silent to anyone not looking at it. */}
+                                {(row.tags?.length ?? 0) > 0 && (
+                                  <span role="img" className="inline-flex shrink-0" title={`Tags: ${row.tags?.join(', ')}`} aria-label={`Tagged: ${row.tags?.join(', ')}`}>
+                                    <Tag className="h-3.5 w-3.5 fill-blue-100 text-blue-600 dark:fill-blue-950 dark:text-blue-400" />
+                                  </span>
+                                )}
+                                {isNew && (
+                                  <span
+                                    className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-brand-600 dark:bg-brand-400"
+                                    title="New — you haven’t opened this yet"
+                                  />
+                                )}
+                                {value}
+                              </span>
+                              {subtitle && (
+                                /*
+                                  Who this is, under their name. A rep
+                                  recognises "Prateek Ahuja / Buyer — B-118"
+                                  faster than a name alone, and the alternative
+                                  was two more columns competing for the same
+                                  width. Which fields appear is
+                                  `config.listSubtitle` on the field, so it is
+                                  the admin's choice rather than a list of names
+                                  compiled into this file.
+                                */
+                                <span className="mt-0.5 block truncate text-[11px] font-normal text-muted">
+                                  {subtitle}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ) : value}
                       </td>
                     );
                   })}
