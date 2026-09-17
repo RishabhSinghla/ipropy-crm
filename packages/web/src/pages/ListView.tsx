@@ -393,16 +393,34 @@ export default function ListView(): JSX.Element {
     return { logic: 'AND', conditions: [...filter.conditions, ...taskFilters[taskQueue].conditions] };
   }, [filter, taskFilters, taskQueue]);
 
+  /*
+    A queue is a decision about *when* something is due, so it has to be
+    ordered by that date. Filtering alone left page 1 of "Overdue" in whatever
+    order the list already had — with 22,983 leads that is not the ones most
+    overdue, it is an arbitrary hundred of them. Oldest date first, so the
+    longest-neglected person is the first row.
+
+    Only when nobody has chosen a sort. An explicit column sort, or one saved
+    into the view, still wins — the queue supplies a default, it does not
+    take the control away.
+  */
+  const effectiveSort = useMemo(() => (
+    taskQueue && !sortBy && taskField
+      ? { sortBy: taskField.name, sortDir: 'asc' as const }
+      : { sortBy, sortDir }
+  ), [taskQueue, sortBy, sortDir, taskField?.name]);
+
   const query: ListQuery = useMemo(() => ({
     view: activeView?.id,
     page,
     pageSize: displayMode === 'kanban' ? 200 : pageSize,
     search: search || undefined,
     filter: countConditions(effectiveFilter) ? effectiveFilter : undefined,
-    sortBy, sortDir,
+    sortBy: effectiveSort.sortBy,
+    sortDir: effectiveSort.sortDir,
     columns: columns.length ? columns : undefined,
     groupBy: groupByField,
-  }), [activeView?.id, page, pageSize, search, effectiveFilter, sortBy, sortDir, columns, groupByField, displayMode]);
+  }), [activeView?.id, page, pageSize, search, effectiveFilter, effectiveSort, columns, groupByField, displayMode]);
 
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['records', moduleName, query],
@@ -429,13 +447,13 @@ export default function ListView(): JSX.Element {
     const params = new URLSearchParams();
     if (activeView?.id) params.set('view', activeView.id);
     if (search) params.set('q', search);
-    if (sortBy) params.set('sort', sortBy);
-    if (sortBy && sortDir !== 'desc') params.set('dir', sortDir);
+    if (effectiveSort.sortBy) params.set('sort', effectiveSort.sortBy);
+    if (effectiveSort.sortBy && effectiveSort.sortDir !== 'desc') params.set('dir', effectiveSort.sortDir);
     if (page > 1) params.set('page', String(page));
     if (pageSize !== DEFAULT_PAGE_SIZE) params.set('pageSize', String(pageSize));
     if (countConditions(effectiveFilter)) params.set('filter', JSON.stringify(effectiveFilter));
     return `/${moduleName}${params.toString() ? `?${params}` : ''}`;
-  }, [activeView?.id, effectiveFilter, moduleName, page, pageSize, search, sortBy, sortDir]);
+  }, [activeView?.id, effectiveFilter, effectiveSort, moduleName, page, pageSize, search]);
 
   const taskCountQuery = (queue: TaskQueue): ListQuery => ({
     view: activeView?.id,
@@ -780,9 +798,9 @@ export default function ListView(): JSX.Element {
           {taskQueuesEnabled && (
             <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800/70" aria-label="Follow-up tasks">
               {([
-                ['pending', 'Pending follow-up', 'Past follow-ups need attention'],
-                ['today', 'Today follow-up', "Today's follow-ups"],
-                ['tomorrow', 'Tomorrow follow-up', "Tomorrow's follow-ups"],
+                ['pending', 'Overdue', 'Follow-ups whose date has passed'],
+                ['today', 'Today', "Follow-ups due today"],
+                ['tomorrow', 'Tomorrow', "Follow-ups due tomorrow"],
               ] as const).map(([queue, label, title]) => {
                 /*
                   Selected has to look selected. It used to be a 1px ring over
@@ -810,11 +828,21 @@ export default function ListView(): JSX.Element {
                       active
                         ? 'bg-slate-900 text-white shadow-sm hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100'
                         : cn(
+                          /*
+                            The same three colours the row chips use, because
+                            they are the same three facts. A row said "Overdue"
+                            in red while the button above it said "Pending" in
+                            red and "Today" in white — one language for when
+                            something is due, spoken twice with different words
+                            and different colours.
+                          */
                           queue === 'pending' && taskCounts.pending > 0 && 'bg-red-100 text-red-800 hover:bg-red-200 dark:bg-red-950/60 dark:text-red-200',
                           queue === 'pending' && taskCounts.pending === 0 && allTaskQueuesClear && 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-200',
                           queue === 'pending' && taskCounts.pending === 0 && !allTaskQueuesClear && 'bg-white text-slate-700 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-200',
-                          queue === 'today' && 'bg-white text-slate-800 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-100',
-                          queue === 'tomorrow' && 'bg-sky-100 text-sky-800 hover:bg-sky-200 dark:bg-sky-950/60 dark:text-sky-200',
+                          queue === 'today' && taskCounts.today > 0 && 'bg-amber-100 text-amber-900 hover:bg-amber-200 dark:bg-amber-950/60 dark:text-amber-200',
+                          queue === 'today' && taskCounts.today === 0 && 'bg-white text-slate-700 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-200',
+                          queue === 'tomorrow' && taskCounts.tomorrow > 0 && 'bg-blue-100 text-blue-800 hover:bg-blue-200 dark:bg-blue-950/60 dark:text-blue-200',
+                          queue === 'tomorrow' && taskCounts.tomorrow === 0 && 'bg-white text-slate-700 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-200',
                         ),
                     )}
                   >
@@ -1155,13 +1183,16 @@ export default function ListView(): JSX.Element {
                         disabled={!canSort}
                         title={canSort ? `Sort by ${field?.label ?? col}` : 'Sorting is disabled for this field'}
                         onClick={() => {
-                          if (sortBy === col) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+                          // effectiveSort, not sortBy: a queue's default order is a
+                          // real order, so the arrow must show it and a click must
+                          // flip it rather than silently start again from scratch.
+                          if (effectiveSort.sortBy === col) { setSortBy(col); setSortDir(effectiveSort.sortDir === 'asc' ? 'desc' : 'asc'); }
                           else { setSortBy(col); setSortDir('desc'); }
                         }}
                       >
                         <span className="truncate">{field?.label ?? col}</span>
-                        {canSort && sortBy === col
-                          ? <ChevronDown className={cn('h-3 w-3 shrink-0', sortDir === 'asc' && 'rotate-180')} />
+                        {canSort && effectiveSort.sortBy === col
+                          ? <ChevronDown className={cn('h-3 w-3 shrink-0', effectiveSort.sortDir === 'asc' && 'rotate-180')} />
                           : canSort ? <ArrowUpDown className="h-2.5 w-2.5 shrink-0 opacity-0 group-hover:opacity-40" /> : null}
                       </button>
                       {field && ['picklist', 'multipicklist'].includes(field.uitype) && field.options?.length ? (
