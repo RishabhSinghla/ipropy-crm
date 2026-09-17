@@ -41,6 +41,29 @@ test('the checkbox and the name are pinned to the left of the grid', async ({ pa
   }
 });
 
+/*
+  The whole header row stays while the rows scroll under it. It reads as a
+  one-line rule and was broken for real: the header cell carried Tailwind's
+  `relative`, which wins on source order over the sticky the header class
+  applies, so every column heading scrolled away with its rows.
+*/
+test('the column headings stay while the rows scroll under them', async ({ page }) => {
+  const heading = page.locator('thead th').nth(2);
+  await expect(heading).toHaveCSS('position', 'sticky');
+
+  const handle = await page.locator('table').first().evaluateHandle((table) => {
+    let el: HTMLElement | null = table.parentElement;
+    while (el && el.scrollHeight - el.clientHeight < 100) el = el.parentElement;
+    return el;
+  });
+  const scroller = handle.asElement();
+  if (!scroller) test.skip(true, 'not enough rows to scroll');
+
+  const before = Math.round((await heading.boundingBox())!.y);
+  await scroller!.evaluate((el) => { (el as HTMLElement).scrollTop = 700; });
+  await expect.poll(async () => Math.round((await heading.boundingBox())!.y)).toBe(before);
+});
+
 test('the name does not move when the table scrolls sideways', async ({ page }) => {
   const name = page.locator('tbody tr').first().locator('td').nth(1);
   const handle = await page.locator('table').first().evaluateHandle((table) => {

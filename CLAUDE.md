@@ -902,10 +902,16 @@ with it `e2e/quickActions.spec.ts`. It was one hover-only Call button in a colum
 the right of every row. The name column is pinned to the *left* instead — a wide grid
 scrolled right left every row anonymous, because the column saying who this is scrolled
 away with the rest. `.list-stick-select` / `.list-stick-first` in `styles.css`, pinned by
-`e2e/stickyName.spec.ts`. One trap encoded there: the header cell also carries Tailwind's
-`relative`, a utility that wins on source order and quietly unsticks the column, so the
-header rule states `position: sticky` itself under two class names. The symptom was names
-that held their place under a header that scrolled away.
+`e2e/stickyName.spec.ts`.
+
+**And the trap that was hiding in plain sight: `.list-head` says `sticky top-0`, and the
+header cell also carried Tailwind's `relative`.** A utility wins on source order, so every
+column heading in the CRM was `position: relative` and the whole header row scrolled away
+with its rows — reported as "the menu bar is movable". `relative` is gone from the cell (a
+sticky cell is a positioned cell, so the resize handle still anchors), and the two pinned
+header cells state `position: sticky` themselves under two class names. Both halves are
+pinned by `e2e/stickyName.spec.ts`, which asserts the computed style *and* measures that
+nothing moves — a class that is present while the cell still slides is exactly the bug.
 
 **If it is rebuilt, the things that cost a night to learn:** history arrives exactly once
 during the handshake after a scan and cannot be re-requested; Baileys must be on the

@@ -1241,8 +1241,16 @@ export default function ListView(): JSX.Element {
                       onDragEnd={() => setDragColumn(null)}
                       onDragOver={(e) => { if (!master?.length) e.preventDefault(); }}
                       onDrop={(e) => { if (master?.length) return; e.preventDefault(); if (dragColumn) moveColumn(dragColumn, col); setDragColumn(null); }}
+                      /*
+                        No `relative` here, deliberately. `.list-head` is what
+                        makes the header row stay put while the rows scroll, and
+                        Tailwind's `relative` is a utility that wins on source
+                        order — so every column header quietly scrolled away with
+                        its rows. A sticky cell is a positioned cell, so the
+                        resize handle inside it still anchors correctly.
+                      */
                       className={cn(
-                        'list-head relative',
+                        'list-head',
                         // The first column is the name; it stays while the rest scroll.
                         col === visibleColumns[0] && 'list-stick-first',
                         !master?.length && 'cursor-grab active:cursor-grabbing',
