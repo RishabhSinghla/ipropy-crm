@@ -82,6 +82,7 @@ export default function ListView(): JSX.Element {
   const [searchOpen, setSearchOpen] = useState(false);
   const [taskQueue, setTaskQueue] = useState<TaskQueue | null>(null);
   const [stagePick, setStagePick] = useState<string[]>([]);
+  const [agentPick, setAgentPick] = useState<string | null>(null);
   const [viewId, setViewId] = useState<string | undefined>(searchParams.get('view') ?? undefined);
   const [filter, setFilter] = useState<FilterGroup>(EMPTY_FILTER);
   const [sortBy, setSortBy] = useState<string | undefined>();
@@ -366,6 +367,7 @@ export default function ListView(): JSX.Element {
     the column is still there and nothing asks for it.
   */
   const stageField = meta ? pipelineFieldOf(meta) : undefined;
+  const ownerField = meta ? assignmentField(meta.fields) : undefined;
 
   const groupByField = displayMode === 'kanban'
     ? (activeView?.groupBy ?? stageField?.name ?? undefined)
@@ -394,10 +396,13 @@ export default function ListView(): JSX.Element {
       ...(stagePick.length && stageField
         ? [{ field: stageField.name, operator: 'in' as const, value: stagePick }]
         : []),
+      ...(agentPick && ownerField
+        ? [{ field: ownerField.name, operator: 'equals' as const, value: agentPick }]
+        : []),
     ];
     if (!extra.length) return filter;
     return { logic: 'AND', conditions: [...filter.conditions, ...extra] };
-  }, [filter, taskFilters, taskQueue, stagePick, stageField?.name]);
+  }, [filter, taskFilters, taskQueue, stagePick, stageField?.name, agentPick, ownerField?.name]);
 
   /*
     What the breakdown counts is the view and the ad-hoc filter, but never the
@@ -405,9 +410,18 @@ export default function ListView(): JSX.Element {
     clicked would make the shape of the pipeline unreadable from inside it.
   */
   const breakdownFilter = useMemo<FilterGroup | undefined>(() => {
-    const conditions = [...filter.conditions, ...(taskQueue ? taskFilters[taskQueue].conditions : [])];
+    const conditions = [
+      ...filter.conditions,
+      ...(taskQueue ? taskFilters[taskQueue].conditions : []),
+      // The agent *is* included: picking somebody should reshape the bars to
+      // their pipeline, which is the question "how is Shikha doing" and the
+      // reason the chips sit inside this panel rather than beside it.
+      ...(agentPick && ownerField
+        ? [{ field: ownerField.name, operator: 'equals' as const, value: agentPick }]
+        : []),
+    ];
     return conditions.length ? { logic: 'AND', conditions } : undefined;
-  }, [filter, taskFilters, taskQueue]);
+  }, [filter, taskFilters, taskQueue, agentPick, ownerField?.name]);
 
   /*
     A queue is a decision about *when* something is due, so it has to be
@@ -790,7 +804,9 @@ export default function ListView(): JSX.Element {
             viewId={activeView?.id}
             baseFilter={breakdownFilter}
             selected={stagePick}
+            agent={agentPick}
             onApply={(values) => { setStagePick(values); setPage(1); }}
+            onPickAgent={(userId) => { setAgentPick(userId); setPage(1); }}
           />
 
           {taskQueuesEnabled && (

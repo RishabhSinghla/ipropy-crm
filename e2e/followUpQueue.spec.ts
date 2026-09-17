@@ -37,7 +37,8 @@ test('the three cards add up to the number on the button', async ({ page }) => {
   await expect(page.getByText(/^[\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
 
   const trigger = page.getByRole('button', { name: /^Follow-ups/ });
-  const total = Number((/\(([\d,]+)\)/.exec(await trigger.innerText())?.[1] ?? '').replace(/,/g, ''));
+  // The count is a chip beside the word now, not "(981)" in the label.
+  const total = Number((/([\d,]+)\s*$/.exec((await trigger.innerText()).trim())?.[1] ?? '').replace(/,/g, ''));
   await trigger.click();
 
   const cards = page.getByRole('button', { name: /^(Overdue|Due Today|Tomorrow)/ });

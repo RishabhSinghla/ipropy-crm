@@ -103,20 +103,32 @@ export function FollowUpQueue({
           <button
             type="button"
             title="The follow-ups waiting on you"
+            /* The same shape and the same brand tint as the stage breakdown
+               beside it. These two are one row of tabs; two different idioms
+               for "this one is on" is the toolbar reading as two toolbars. */
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition-colors',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1',
+              'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold shadow-xs transition-colors',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1',
               active
-                ? 'border-brand-300 bg-brand-50 text-brand-700 dark:border-brand-800 dark:bg-brand-950/50 dark:text-brand-200'
+                ? 'border-brand-200 bg-brand-50 text-brand-700 ring-2 ring-brand-500/20 dark:border-brand-800 dark:bg-brand-950/50 dark:text-brand-200'
                 : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800',
             )}
           >
-            <Clock className="h-3.5 w-3.5" />
+            <Clock className={cn('h-3.5 w-3.5', active ? 'text-brand-600 dark:text-brand-300' : 'text-slate-500')} />
             Follow-ups
-            <span className={cn('font-bold', counts.pending > 0 ? 'text-red-600 dark:text-red-400' : 'text-muted')}>
-              ({total.toLocaleString('en-IN')})
+            <span
+              className={cn(
+                'rounded-full px-1.5 py-px text-[10px] font-bold tabular-nums',
+                counts.pending > 0
+                  ? 'bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-200'
+                  : active
+                    ? 'bg-brand-200/80 text-brand-800 dark:bg-brand-900 dark:text-brand-100'
+                    : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
+              )}
+            >
+              {total.toLocaleString('en-IN')}
             </span>
-            <ChevronDown className="h-3 w-3 opacity-60" />
+            <ChevronDown className={cn('h-3 w-3', active ? 'text-brand-600 dark:text-brand-300' : 'text-slate-400')} />
           </button>
         }
       >
