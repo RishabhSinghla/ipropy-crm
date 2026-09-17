@@ -18,7 +18,25 @@ const DEFAULTS: UiSettings = {
   openInNewTab: true,
   headerTabs: null,
   socialPosition: 'right',
+  listColumns: null,
 };
+
+/**
+ * `{ module: [field, …] }`, ignoring anything that is not that.
+ *
+ * Exported for its tests: this is the one place a bad settings row is stopped
+ * from reaching every table in the CRM.
+ */
+export function readColumns(value: unknown): Record<string, string[]> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const out: Record<string, string[]> = {};
+  for (const [module, columns] of Object.entries(value as Record<string, unknown>)) {
+    if (!Array.isArray(columns)) continue;
+    const names = columns.filter((c): c is string => typeof c === 'string' && c.trim().length > 0);
+    if (names.length) out[module] = names;
+  }
+  return Object.keys(out).length ? out : null;
+}
 
 let cached: UiSettings | null = null;
 
@@ -31,7 +49,7 @@ export async function uiSettings(): Promise<UiSettings> {
   try {
     const { rows } = await db.query<{ key: string; value: unknown }>(
       `SELECT key, value FROM ipy_setting WHERE key = ANY($1)`,
-      [['ui.inline_edit', 'ui.open_in_new_tab', 'ui.header_tabs', 'ui.social_position']],
+      [['ui.inline_edit', 'ui.open_in_new_tab', 'ui.header_tabs', 'ui.social_position', 'ui.list_columns']],
     );
     const map = new Map(rows.map((r) => [r.key, r.value]));
     // Only an explicit boolean counts. A row that has never been saved, or one
@@ -56,6 +74,13 @@ export async function uiSettings(): Promise<UiSettings> {
       socialPosition: position === 'brand' || position === 'right' || position === 'hidden'
         ? position
         : DEFAULTS.socialPosition,
+      /*
+        `{ module: [field, …] }` and nothing else. A malformed row falls back
+        to the shipped defaults rather than to an empty array — an empty array
+        is a *decision* ("show no columns") and a table with no columns is not
+        something a bad settings row should be able to cause.
+      */
+      listColumns: readColumns(map.get('ui.list_columns')),
     };
     return cached;
   } catch (err) {

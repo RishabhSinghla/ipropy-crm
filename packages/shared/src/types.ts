@@ -271,6 +271,17 @@ export interface UiSettings {
   headerTabs: HeaderTab[] | null;
   /** Where the social icons sit: beside the brand, on the right, or nowhere. */
   socialPosition: 'brand' | 'right' | 'hidden';
+  /**
+   * The columns every table shows, per module, in order — the admin's one
+   * arrangement for the whole team.
+   *
+   * A team that each arranged their own columns could not be talked to about
+   * "the third column", and a saved list carried its own set on top, so the
+   * same list looked different to two people. This is the single answer.
+   * `null` for a module, or no entry at all, falls back to the shipped
+   * defaults so a new module is never a blank table.
+   */
+  listColumns: Record<string, string[]> | null;
 }
 
 /** One entry in the admin-arranged header. */

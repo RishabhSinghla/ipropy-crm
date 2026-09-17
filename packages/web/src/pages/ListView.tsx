@@ -13,7 +13,7 @@ import { saveListNav } from '../lib/listNav';
 import { cn, restrictionForField } from '../lib/utils';
 import { FieldInput, FieldValue } from '../components/FieldRenderer';
 import { EditableField, isInlineEditable } from '../components/EditableField';
-import { assignmentField, byLabel, pipelineFieldOf, subtitleFieldsOf } from '../lib/fields';
+import { assignmentField, byLabel, fieldByKey, pipelineFieldOf, subtitleFieldsOf } from '../lib/fields';
 /*
   Shared with the phone, deliberately: `phoneOf` pairs each phone field with
   its own country field, and a second copy here would drift from the one the
@@ -97,6 +97,17 @@ export default function ListView(): JSX.Element {
   // Which record a long press is previewing. Null when nothing is peeked.
   const [peekId, setPeekId] = useState<string | null>(null);
   const [columns, setColumns] = useState<string[]>([]);
+  /*
+    The admin's one column order for this module (Admin → Table View).
+
+    When it is set it is what every table shows, for everybody: a team that
+    each arranged their own columns could not be talked to about "the third
+    column", and a saved list carried a set of its own on top, so the same
+    list looked different to two people. A field the order names but the
+    module no longer has is dropped rather than rendered as an empty column —
+    a renamed or deleted field must not leave a hole in everyone's table.
+  */
+  const masterColumns = useApp((st) => st.user?.ui?.listColumns?.[moduleName ?? ''] ?? null);
   const [showFilters, setShowFilters] = useState(false);
   const [showQuickCreate, setShowQuickCreate] = useState(false);
   const [showCapture, setShowCapture] = useState(false);
@@ -453,9 +464,10 @@ export default function ListView(): JSX.Element {
     filter: countConditions(effectiveFilter) ? effectiveFilter : undefined,
     sortBy: effectiveSort.sortBy,
     sortDir: effectiveSort.sortDir,
-    columns: columns.length ? columns : undefined,
+    // The master order when there is one, so an export and the screen agree.
+    columns: masterColumns?.length ? masterColumns : (columns.length ? columns : undefined),
     groupBy: groupByField,
-  }), [activeView?.id, page, pageSize, search, effectiveFilter, effectiveSort, columns, groupByField, displayMode]);
+  }), [activeView?.id, page, pageSize, search, effectiveSort, effectiveFilter, masterColumns, columns, groupByField, displayMode]);
 
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['records', moduleName, query],
@@ -732,7 +744,18 @@ export default function ListView(): JSX.Element {
   */
   const subtitleFields = subtitleFieldsOf(meta.fields);
 
-  const visibleColumns = columns.length ? columns : defaultColumns(meta);
+  /*
+    Resolved through `fieldByKey`, so a rename does not silently cost everybody
+    a column: a rename moves a field's name and leaves its column alone, and
+    the saved order holds the name it had when it was set. Anything that
+    answers to neither is dropped — Admin → Table View names those rather than
+    hiding them, so somebody can see why a column went.
+  */
+  const master = masterColumns
+    ?.map((c) => fieldByKey(meta.fields, c))
+    .filter((f): f is FieldMeta => Boolean(f && f.isActive && f.displayType !== 'hidden'))
+    .map((f) => f.name) ?? null;
+  const visibleColumns = master?.length ? master : (columns.length ? columns : defaultColumns(meta));
   const fieldMap = new Map(meta.fields.map((f) => [f.name, f]));
 
   /*
@@ -961,9 +984,17 @@ export default function ListView(): JSX.Element {
             >
               {(close) => (
                 <>
-                  <DropdownItem icon={<Columns3 className="h-3.5 w-3.5" />} onClick={() => { setShowColumns(true); close(); }}>
-                    Choose columns
-                  </DropdownItem>
+                  {/*
+                    Choosing your own columns is gone once an admin has set the
+                    table view (Admin → Table View). Leaving the control there
+                    to be overruled on the next load is worse than not offering
+                    it: it looks like a save that did not save.
+                  */}
+                  {!master?.length && (
+                    <DropdownItem icon={<Columns3 className="h-3.5 w-3.5" />} onClick={() => { setShowColumns(true); close(); }}>
+                      Choose columns
+                    </DropdownItem>
+                  )}
                   {colWidths.customised && (
                     <DropdownItem
                       icon={<Ruler className="h-3.5 w-3.5" />}
@@ -972,7 +1003,7 @@ export default function ListView(): JSX.Element {
                       Reset column widths
                     </DropdownItem>
                   )}
-                  {activeView && (
+                  {activeView && !master?.length && (
                     <DropdownItem
                       icon={<Save className="h-3.5 w-3.5" />}
                       onClick={() => { saveViewMutation.mutate(); close(); }}
@@ -1200,8 +1231,22 @@ export default function ListView(): JSX.Element {
                 {visibleColumns.map((col) => {
                   const field = fieldMap.get(col);
                   const canSort = field?.config.sortable !== false;
+                  /*
+                    Dragging a column is off once the admin has set the table
+                    view: the order is the same for everyone, and a drag that
+                    springs back on the next load reads as a bug rather than as
+                    a rule.
+                  */
                   return (
-                    <th key={col} draggable onDragStart={(e) => { setDragColumn(col); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', col); }} onDragEnd={() => setDragColumn(null)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); if (dragColumn) moveColumn(dragColumn, col); setDragColumn(null); }} className={cn('list-head relative cursor-grab active:cursor-grabbing', dragColumn === col && 'opacity-50')}>
+                    <th
+                      key={col}
+                      draggable={!master?.length}
+                      onDragStart={(e) => { if (master?.length) return; setDragColumn(col); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', col); }}
+                      onDragEnd={() => setDragColumn(null)}
+                      onDragOver={(e) => { if (!master?.length) e.preventDefault(); }}
+                      onDrop={(e) => { if (master?.length) return; e.preventDefault(); if (dragColumn) moveColumn(dragColumn, col); setDragColumn(null); }}
+                      className={cn('list-head relative', !master?.length && 'cursor-grab active:cursor-grabbing', dragColumn === col && 'opacity-50')}
+                    >
                       <button
                         className="inline-flex max-w-full items-center gap-1 truncate hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:text-slate-200"
                         disabled={!canSort}
