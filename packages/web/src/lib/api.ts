@@ -1233,6 +1233,11 @@ export const api = {
   }>(`/api/whatsapp-business/templates/${id}/preview${qs({ module, recordId })}`),
   waBizSendTemplate: (data: { templateId: string; module: string; recordId: string; to: string }) =>
     post<{ messageId: string; status: string }>('/api/whatsapp-business/send-template', data),
+  waBizThread: (to: string, module?: string, recordId?: string) => get<{
+    handle: string; conversationId: string | null; windowOpen: boolean;
+    windowExpiresAt: string | null; assignedName: string | null;
+    messages: Record<string, unknown>[];
+  }>(`/api/whatsapp-business/threads/by-number${qs({ to, module, recordId })}`),
   waBizContactMessages: (module: string, id: string) => get<{
     messages: Record<string, unknown>[];
   }>(`/api/whatsapp-business/contacts/${module}/${id}/messages`),

@@ -187,12 +187,42 @@ export async function openRecordTab(page: Page, name: string): Promise<void> {
  *
  * So it asks. Falls back to `/dashboard` so a CRM with no list widget at all
  * still fails on the assertion that matters rather than in here.
+ *
+ * And it **creates the row it needs**, which is the second half of the same
+ * lesson. Every seeded list widget filters on `owner_id is_me`, so the rows
+ * only exist for whoever happens to own leads. On a developer's database the
+ * signed-in admin owns plenty, left behind by every previous run; on a fresh
+ * CI seed the demo leads are spread across twelve demo users and the admin
+ * owns none — so both specs failed on CI and passed everywhere anybody looked.
+ * A spec that depends on what is already in the database is a spec that
+ * reports the machine it runs on.
  */
 export async function dashboardWithRecordRows(page: Page): Promise<string> {
   // Navigated first: `page.evaluate` on `about:blank` cannot resolve a relative
   // URL, and the app keeps its token in localStorage rather than a cookie, so
   // the fetch has to carry it by hand.
   await page.goto('/dashboard');
+
+  // Mine, and due today: that is what "Today's Follow-ups" asks for, and it is
+  // the widget on the seeded default dashboard.
+  await page.evaluate(async () => {
+    const token = localStorage.getItem('ipropy.token');
+    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+    const me = await (await fetch('/api/auth/me', { headers })).json() as { id?: string; user?: { id: string } };
+    const ownerId = me.id ?? me.user?.id;
+    const stamp = Date.now();
+    await fetch('/api/records/leads', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        full_name: `Peek Row ${stamp}`,
+        mobile: `98${String(stamp).slice(-8)}`,
+        status: 'New',
+        next_followup_at: new Date().toISOString().slice(0, 10),
+        ...(ownerId ? { owner_id: ownerId } : {}),
+      }),
+    });
+  });
   const boards = await page.evaluate(async () => {
     const token = localStorage.getItem('ipropy.token');
     const headers = token ? { Authorization: `Bearer ${token}` } : undefined;

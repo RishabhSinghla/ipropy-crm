@@ -4,6 +4,7 @@ import { recordStrength, relativeTime, type FieldMeta, type ModuleMeta, type Rec
 import { ChevronRight, CircleEllipsis, FileText, Link2, MessageCircle, Pencil, Phone, Send, Star, Tag, Trash2, UserRound } from 'lucide-react';
 import { FieldValue } from './FieldRenderer';
 import { CallButton, CallDispositionProvider } from './CallDisposition';
+import { WhatsAppComposerProvider } from './WhatsAppComposer';
 import { MatchingTab } from './MatchingTab';
 import { WhatsAppTab } from './WhatsAppTab';
 import { WhatsAppButton } from './WhatsAppButton';
@@ -78,6 +79,7 @@ export function IpropyWorkspace({
     saved against whoever was on screen before.
   */
   return <CallDispositionProvider key={active?.id ?? 'none'} recordId={active?.id ?? ''} module={module.name} recordLabel={active?.label ?? ''}>
+    <WhatsAppComposerProvider key={active?.id ?? 'none'} recordId={active?.id ?? ''} module={module.name} recordLabel={active?.label ?? ''}>
     <section data-testid="ipropy-workspace" className="min-h-full bg-[#f7f9fc] dark:bg-slate-950">
     <div className="grid min-h-[calc(100vh-13rem)] xl:grid-cols-[minmax(20rem,29rem)_minmax(0,1fr)_minmax(18rem,23rem)] xl:grid-rows-[auto_1fr]">
       <aside className="border-b border-slate-200 bg-white xl:row-span-2 xl:border-b-0 xl:border-r dark:border-slate-800 dark:bg-slate-900">
@@ -138,6 +140,7 @@ export function IpropyWorkspace({
     </div>
     {active && editing && <EditRecordDialog module={module} recordId={active.id} label={active.label} onClose={() => setEditing(false)} />}
     </section>
+    </WhatsAppComposerProvider>
   </CallDispositionProvider>;
 }
 

@@ -2,31 +2,49 @@ import type { JSX } from 'react';
 import { MessageCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { openExternal } from '../lib/nativeActions';
-
-/** Digits only — a handle is matched on digits, never on the spacing a screen adds. */
-export function waDigits(value: string): string {
-  return String(value ?? '').replace(/\D/g, '');
-}
+import { useWhatsAppComposer } from './WhatsAppComposer';
+import { waDigits } from '../lib/whatsapp';
 
 /**
  * The WhatsApp way into a number, wherever that number is shown.
  *
- * It opens the CRM's own Chats screen on that thread — never `wa.me`, because
- * the point of the linked number is that the conversation stays in the CRM
- * where a manager can read it and the timeline records it. A number with no
- * thread yet still opens Chats; nothing is sent by clicking.
+ * It never leaves the CRM — that is the point of the official number: the
+ * conversation stays where a manager can read it and the timeline records it.
+ *
+ * With a record in view it opens the composer over whatever the rep was doing,
+ * because the question they want to ask is about the person already on screen
+ * and the Chats queue is a detour. Everywhere else — a list of numbers with no
+ * one record behind them — it still goes to Chats on that thread. Neither
+ * sends anything by being clicked.
  *
  * It sits *before* the Call button by intent: the first thing a rep does with
  * a new enquiry is message it.
  */
 export function WhatsAppIconButton({ to, className }: { to: string; className?: string }): JSX.Element | null {
+  const composer = useWhatsAppComposer();
   const digits = waDigits(to);
   if (!digits) return null;
+  const look = className ?? 'inline-flex items-center text-emerald-600 hover:text-emerald-700 dark:text-emerald-400';
+
+  if (composer) {
+    return (
+      <button
+        type="button"
+        onClick={(event) => { event.stopPropagation(); composer.compose(digits); }}
+        className={look}
+        title="WhatsApp this number"
+        aria-label="WhatsApp this number"
+      >
+        <MessageCircle className="h-3.5 w-3.5" />
+      </button>
+    );
+  }
+
   return (
     <Link
       to={`/chats?to=${digits}`}
       onClick={(event) => event.stopPropagation()}
-      className={className ?? 'inline-flex items-center text-emerald-600 hover:text-emerald-700 dark:text-emerald-400'}
+      className={look}
       title="WhatsApp this number"
       aria-label="WhatsApp this number"
     >

@@ -27,6 +27,7 @@ import {
   listStoredTemplates, resolveTemplate, saveMapping, syncTemplates,
 } from '../../integrations/whatsapp/business/templates.js';
 import { recordService } from '../../core/entity/recordService.js';
+import { threadForNumber } from '../../integrations/whatsapp/business/thread.js';
 
 export const whatsappBusinessRouter = Router();
 whatsappBusinessRouter.use(requireAuth, blockApiKey);
@@ -201,6 +202,29 @@ whatsappBusinessRouter.get('/contacts/:module/:id/messages', asyncHandler(async 
   // Both routes in one column, because the customer had one conversation even
   // if it reached them two ways. `route` says which, on every line.
   res.json({ messages: rows, user: user.id });
+}));
+
+/**
+ * The thread behind one phone number, for the composer.
+ *
+ * Read-only: opening the composer must not create a conversation (see
+ * `business/thread.ts`). The record is the gate, not the thread — this is
+ * reached from a record the caller has open, so `recordService.getRecord`
+ * decides who may read the messages, exactly as the contact's WhatsApp tab
+ * does. Without a record it answers the window state and nothing to read.
+ */
+whatsappBusinessRouter.get('/threads/by-number', asyncHandler(async (req, res) => {
+  const scope = getScope(req);
+  const query = z.object({
+    to: z.string().min(6).max(24),
+    module: z.string().min(1).max(60).optional(),
+    recordId: z.string().uuid().optional(),
+  }).parse(req.query ?? {});
+
+  const readable = Boolean(query.module && query.recordId);
+  if (readable) await recordService.getRecord(scope, query.module!, query.recordId!);
+
+  res.json(await threadForNumber(query.to, readable));
 }));
 
 // ---------------------------------------------------------------------------

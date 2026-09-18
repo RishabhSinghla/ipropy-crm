@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { HeaderTab } from '@ipropy/shared';
 import { arrangeHeaderTabs } from '../src/lib/headerTabs';
-import { waDigits } from '../src/components/WhatsAppButton';
+import { waDigits } from '../src/lib/whatsapp';
 
 describe('arrangeHeaderTabs', () => {
   it('ships Dashboard, the modules, Chats and Site visit when nothing is arranged', () => {

@@ -448,6 +448,15 @@ back into TypeScript would reverse that.
 
 Both were mine, both invisible, and both had been live for a day or more.
 
+* **And two phone specs reported the machine they ran on.** Both long-press a
+  dashboard row, and every seeded list widget filters on `owner_id is_me` — so
+  on a developer's database the admin owns plenty of leads left behind by
+  previous runs, and on a fresh CI seed the demo leads belong to twelve demo
+  users and the admin owns none. Green everywhere anybody looked, red on CI
+  only, which reads as CI being flaky. `dashboardWithRecordRows` in
+  `e2e/helpers.ts` creates the row it needs now. **A spec that depends on what
+  is already in the database is a spec that reports the machine it runs on** —
+  this is the same rule as the unique markers, applied to a widget's filter.
 * **The mobile browser suite had been failing since 29 August.** A test helper
   was pointed at a `data-record-card` marker for phone-sized screens and the
   marker was never added to the app. Seven tests, every run, 30-second timeouts
@@ -1012,8 +1021,45 @@ listed for re-mapping rather than deleted.
 Parameters are filled **server-side** through `recordService`: a screen that posted them
 back could send a customer a budget its user is not allowed to read.
 
-**Still to build, in his order:** the WhatsApp icon composer, media, property sharing and
-follow-ups from a chat, campaigns, reports.
+**The icon beside a number is a composer now** (`components/WhatsAppComposer.tsx`). The
+Chats screen is the right place to *work* an inbox and the wrong place to answer one
+question about the person already on screen, so with a record in view the icon opens a
+small dialog over it: the last few lines of the thread, a box, Send. Provided by
+`WhatsAppComposerProvider` beside `CallDispositionProvider` on the record page and the
+desk, so it knows which record the number belongs to.
+
+Four rules it holds to:
+
+* **Nothing is offered that WhatsApp would refuse.** `composerMode()` in `lib/whatsapp.ts`
+  needs both halves — inside the 24-hour window *and* a provider that can send free text.
+  AiSensy can never, window or no window, so there the box is replaced by the template
+  list with the finished wording shown first.
+* **Looking writes nothing** (`business/thread.ts`, `GET /threads/by-number`). A
+  conversation created on a glance would put an empty thread in the team's shared queue
+  for every number anybody hovered over. `sendOnBusinessNumber` creates it, on the first
+  message that actually goes.
+* **The record is the gate, not the thread.** Messages come back only when the caller
+  names a record and `recordService.getRecord` allows it — the same rule as the contact's
+  WhatsApp tab. Without one the answer still carries the window state: enough to choose a
+  control, nothing to read.
+* **With no provider switched on, nothing changes.** `WhatsAppComposerProvider` supplies
+  no context until `status.connected`, so the icon stays the link to Chats it is today
+  rather than opening a dialog that can only apologise. `e2e/whatsappComposer.spec.ts`
+  pins that fallback, because it is what production is running right now and it is easy to
+  lose while adding the thing that replaces it.
+
+**The composer itself has never been opened in a browser** — no provider is connected
+anywhere this can be tested, so what is proved is the thread lookup
+(`tests/integration/whatsappComposerThread.test.ts`), the mode decision
+(`tests/whatsappComposer.test.ts`) and the fallback.
+
+`waDigits` moved from `components/WhatsAppButton.tsx` to `lib/whatsapp.ts` for a reason
+worth repeating: a component that imports the app's store cannot be loaded by a `node`
+test at all, because the store reads `localStorage` as it is constructed. Importing one
+helper out of a component pulled the whole store in and broke an unrelated suite.
+
+**Still to build, in his order:** media, property sharing and follow-ups from a chat,
+campaigns, reports.
 
 **The avatar on the row stayed, and a percentage chip that replaced it was rolled back the
 same day** (18 September). The owner asked for the chip, saw it on production, and asked for

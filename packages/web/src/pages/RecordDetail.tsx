@@ -31,6 +31,7 @@ import ComposeModal from '../components/ComposeModal';
 import MatchingTab from '../components/MatchingTab';
 import { PeekLink } from '../components/PeekLink';
 import { CallButton, CallDispositionProvider } from '../components/CallDisposition';
+import { WhatsAppComposerProvider } from '../components/WhatsAppComposer';
 import { WhatsAppButton } from '../components/WhatsAppButton';
 import { isNative } from '../lib/native';
 import { downloadFromUrl } from '../lib/nativeActions';
@@ -364,6 +365,7 @@ export default function RecordDetail(): JSX.Element {
         ?? meta.fields.find((field) => field.name === 'next_follow_up' || field.columnName === 'next_follow_up')?.name
         ?? 'next_followup_at'}
     >
+    <WhatsAppComposerProvider recordId={record.id} module={moduleName!} recordLabel={record.label}>
     <div className="mx-auto max-w-[1600px] p-4 sm:p-6">
       {/* Header */}
       <div className="card mb-4 overflow-visible">
@@ -779,6 +781,7 @@ export default function RecordDetail(): JSX.Element {
         />
       )}
     </div>
+    </WhatsAppComposerProvider>
     </CallDispositionProvider>
   );
 }
