@@ -72,6 +72,11 @@ export default function BusinessChats(): JSX.Element {
     refetchInterval: activeId ? 10_000 : false,
   });
   const { data: users } = useQuery({ queryKey: ['users'], queryFn: () => api.users() });
+  const { data: templates } = useQuery({
+    queryKey: ['wa-biz', 'templates', 'saved'],
+    queryFn: () => api.waBizSavedTemplates(),
+  });
+  const [templateId, setTemplateId] = useState('');
 
   const active = (conversations ?? []).find((row) => row.id === activeId) ?? null;
   const messages = (thread?.messages ?? []) as unknown as BizMessage[];
@@ -88,6 +93,31 @@ export default function BusinessChats(): JSX.Element {
     }),
     onSuccess: () => { setDraft(''); refresh(); },
     onError: (err: Error) => toast.error('Could not send', err.message),
+  });
+
+  /*
+    The template as this customer would read it, before it goes.
+
+    A positional template is unreadable in the abstract — "{{1}}, your {{2}} at
+    {{3}}" says nothing about whether the mapping is right, and the customer is
+    otherwise the one who finds out. Asked only when a template is picked and
+    the thread has a record to fill it from.
+  */
+  const { data: preview } = useQuery({
+    queryKey: ['wa-biz', 'preview', templateId, active?.recordId],
+    queryFn: () => api.waBizTemplatePreview(templateId, active!.recordModule ?? 'leads', active!.recordId!),
+    enabled: Boolean(templateId && active?.recordId),
+  });
+
+  const sendTemplate = useMutation({
+    mutationFn: () => api.waBizSendTemplate({
+      templateId,
+      module: active!.recordModule ?? 'leads',
+      recordId: active!.recordId!,
+      to: active!.handle,
+    }),
+    onSuccess: () => { setTemplateId(''); refresh(); toast.success('Template sent'); },
+    onError: (err: Error) => toast.error('Could not send that template', err.message),
   });
 
   // Opening a thread is what marks it read — receiving it is not.
@@ -262,10 +292,49 @@ export default function BusinessChats(): JSX.Element {
 
             <footer className="border-t border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
               {!active.windowOpen && (
-                <p className="mb-2 flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-                  <Clock className="h-3.5 w-3.5" />
-                  This chat is outside WhatsApp&rsquo;s 24-hour window, so only an approved template can be sent.
-                </p>
+                <div className="mb-2 space-y-2 rounded-lg bg-amber-50 px-3 py-2 dark:bg-amber-950/40">
+                  <p className="flex items-center gap-1.5 text-xs text-amber-900 dark:text-amber-200">
+                    <Clock className="h-3.5 w-3.5" />
+                    Outside WhatsApp&rsquo;s 24-hour window, so only an approved template can be sent.
+                  </p>
+                  {!active.recordId ? (
+                    <p className="text-2xs text-amber-900/80 dark:text-amber-200/80">
+                      A template is filled from the contact&rsquo;s own fields, so link this number to a
+                      contact first.
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Select
+                        value={templateId}
+                        onChange={setTemplateId}
+                        placeholder="Choose an approved template…"
+                        options={(templates ?? [])
+                          .filter((template) => template.status.toUpperCase() === 'APPROVED')
+                          .map((template) => ({ value: template.id, label: `${template.name} (${template.language})` }))}
+                      />
+                      <button
+                        className="btn-primary btn-sm"
+                        disabled={!templateId || sendTemplate.isPending || Boolean(preview?.missing.length)}
+                        onClick={() => sendTemplate.mutate()}
+                      >
+                        {sendTemplate.isPending ? <Spinner className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />}
+                        Send template
+                      </button>
+                    </div>
+                  )}
+                  {preview && (
+                    <div className="rounded-md bg-white/70 p-2 text-xs dark:bg-slate-900/60">
+                      <p className="whitespace-pre-wrap">{preview.preview}</p>
+                      {preview.missing.length > 0 && (
+                        // Named, not counted: this is fixable in ten seconds on
+                        // the record, and "failed" would send somebody hunting.
+                        <p className="mt-1 font-semibold text-rose-700 dark:text-rose-300">
+                          {preview.missing.map((gap) => `{{${gap.slot}}} ${gap.reason}`).join('; ')}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
               <div className="flex items-end gap-2">
                 <textarea

@@ -23,6 +23,9 @@ import {
   noteViewing, othersViewing, setStatus,
 } from '../../integrations/whatsapp/business/inbox.js';
 import { db } from '../../db/pool.js';
+import {
+  listStoredTemplates, resolveTemplate, saveMapping, syncTemplates,
+} from '../../integrations/whatsapp/business/templates.js';
 import { recordService } from '../../core/entity/recordService.js';
 
 export const whatsappBusinessRouter = Router();
@@ -198,4 +201,114 @@ whatsappBusinessRouter.get('/contacts/:module/:id/messages', asyncHandler(async 
   // Both routes in one column, because the customer had one conversation even
   // if it reached them two ways. `route` says which, on every line.
   res.json({ messages: rows, user: user.id });
+}));
+
+// ---------------------------------------------------------------------------
+// Approved templates, and what fills their blanks
+// ---------------------------------------------------------------------------
+
+/**
+ * The business's own name, for a template that signs off with it.
+ *
+ * Read from the same `org.name` setting the header and the public site read,
+ * so renaming the business renames it everywhere at once — and falling back to
+ * the product name rather than to an empty gap, because an approved template
+ * with a blank in it is refused by WhatsApp.
+ */
+async function organisationName(): Promise<string> {
+  const row = await db.queryOne<{ value: unknown }>(
+    `SELECT value FROM ipy_setting WHERE key = 'org.name'`,
+  );
+  return (typeof row?.value === 'string' && row.value.trim()) || 'iPropy';
+}
+
+/** What the CRM holds, with each template's mapping. Read by the composer too. */
+whatsappBusinessRouter.get('/templates/saved', asyncHandler(async (_req, res) => {
+  res.json(await listStoredTemplates());
+}));
+
+whatsappBusinessRouter.post('/templates/sync', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'whatsapp.templates');
+  res.json(await syncTemplates());
+}));
+
+whatsappBusinessRouter.put('/templates/:id/mapping', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'whatsapp.templates');
+  const input = z.object({
+    module: z.string().min(1).max(60).default('leads'),
+    map: z.record(z.string().max(200)),
+  }).parse(req.body ?? {});
+  await saveMapping(req.params.id, input.module, input.map);
+  res.json({ ok: true });
+}));
+
+/**
+ * The template as this customer would read it.
+ *
+ * Offered before every template send, because a positional template is
+ * unreadable in the abstract — `{{1}}, your {{2}} at {{3}}` says nothing about
+ * whether the mapping is right, and the customer is the one who finds out.
+ */
+whatsappBusinessRouter.get('/templates/:id/preview', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const scope = getScope(req);
+  const query = z.object({
+    module: z.string().min(1).max(60).default('leads'),
+    recordId: z.string().uuid(),
+  }).parse(req.query ?? {});
+
+  res.json(await resolveTemplate({
+    ctx: scope,
+    templateId: req.params.id,
+    module: query.module,
+    recordId: query.recordId,
+    agentName: user.fullName ?? '',
+    orgName: await organisationName(),
+  }));
+}));
+
+/**
+ * Send an approved template, filled from the record.
+ *
+ * The blanks are filled *here* rather than by the browser: the parameters are
+ * the record's own values, and a screen that posted them back could send a
+ * customer a budget its user is not allowed to read. `resolveTemplate` goes
+ * through `recordService`, so every permission applies.
+ */
+whatsappBusinessRouter.post('/send-template', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const scope = getScope(req);
+  await assertCapability(user, 'whatsapp.send');
+  const input = z.object({
+    templateId: z.string().uuid(),
+    module: z.string().min(1).max(60).default('leads'),
+    recordId: z.string().uuid(),
+    to: z.string().min(6).max(24),
+  }).parse(req.body ?? {});
+
+  const resolved = await resolveTemplate({
+    ctx: scope,
+    templateId: input.templateId,
+    module: input.module,
+    recordId: input.recordId,
+    agentName: user.fullName ?? '',
+    orgName: await organisationName(),
+  });
+
+  if (resolved.missing.length) {
+    // Named, not counted: "message failed" tells a rep nothing they can fix,
+    // and this is fixable in ten seconds on the record itself.
+    throw new BadRequestError(
+      `This template cannot go yet — ${resolved.missing.map((gap) => `{{${gap.slot}}} ${gap.reason}`).join('; ')}.`,
+    );
+  }
+
+  res.json(await sendOnBusinessNumber({
+    userId: user.id,
+    to: input.to,
+    recordId: input.recordId,
+    template: { name: resolved.name, language: resolved.language, params: resolved.params },
+  }));
 }));

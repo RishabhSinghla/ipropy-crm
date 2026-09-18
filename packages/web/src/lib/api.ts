@@ -1218,6 +1218,21 @@ export const api = {
     post<{ ok: true }>(`/api/whatsapp-business/conversations/${id}/assign`, { to }),
   waBizStatusSet: (id: string, status: 'open' | 'pending' | 'resolved') =>
     post<{ ok: true }>(`/api/whatsapp-business/conversations/${id}/status`, { status }),
+  waBizSavedTemplates: () => get<{
+    id: string; name: string; language: string; category: string; status: string;
+    bodyText: string; variableCount: number; variableMap: Record<string, string>;
+  }[]>('/api/whatsapp-business/templates/saved'),
+  waBizSyncTemplates: () => post<{ added: string[]; updated: string[]; skipped: string }>(
+    '/api/whatsapp-business/templates/sync', {},
+  ),
+  waBizSaveMapping: (id: string, module: string, map: Record<string, string>) =>
+    put<{ ok: true }>(`/api/whatsapp-business/templates/${id}/mapping`, { module, map }),
+  waBizTemplatePreview: (id: string, module: string, recordId: string) => get<{
+    name: string; language: string; params: string[]; preview: string;
+    missing: { slot: string; reason: string }[];
+  }>(`/api/whatsapp-business/templates/${id}/preview${qs({ module, recordId })}`),
+  waBizSendTemplate: (data: { templateId: string; module: string; recordId: string; to: string }) =>
+    post<{ messageId: string; status: string }>('/api/whatsapp-business/send-template', data),
   waBizContactMessages: (module: string, id: string) => get<{
     messages: Record<string, unknown>[];
   }>(`/api/whatsapp-business/contacts/${module}/${id}/messages`),

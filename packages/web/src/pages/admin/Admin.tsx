@@ -3,7 +3,7 @@ import { type JSX, lazy, Suspense } from 'react';
 import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {
   Activity, AppWindow, Blocks, Columns3, Database, KeyRound, LayoutTemplate, Link2, MapPin,
-  ListTree, MessageSquareText, Plug, Ruler, Settings2, Shield, Sparkles, Tag, ToggleLeft, Users, Workflow,
+  ListTree, MessageCircle, MessageSquareText, Plug, Ruler, Settings2, Shield, Sparkles, Tag, ToggleLeft, Users, Workflow,
   SlidersHorizontal,
 } from 'lucide-react';
 import { Spinner } from '../../components/ui';
@@ -28,6 +28,7 @@ const TableViewAdmin = lazy(() => import('./TableViewAdmin'));
 const MatchingSetupAdmin = lazy(() => import('./MatchingSetupAdmin'));
 const UnitMasterAdmin = lazy(() => import('./UnitMasterAdmin'));
 const TagsAdmin = lazy(() => import('./TagsAdmin'));
+const WhatsAppTemplatesAdmin = lazy(() => import('./WhatsAppTemplatesAdmin'));
 const TemplatesAdmin = lazy(() => import('./TemplatesAdmin'));
 
 /*
@@ -80,6 +81,10 @@ const SECTIONS = [
     items: [
       { path: 'integrations', capability: 'admin.integrations', label: 'Integrations', icon: Plug, element: <IntegrationsAdmin /> },
       { path: 'templates', capability: 'whatsapp.templates', label: 'Email Templates', icon: MessageSquareText, element: <TemplatesAdmin /> },
+      // Its own page rather than a tab on the one above: an email template is
+      // wording the business writes, and a WhatsApp template is wording Meta
+      // approved — the only thing editable here is what fills its blanks.
+      { path: 'whatsapp-templates', capability: 'whatsapp.templates', label: 'WhatsApp Templates', icon: MessageCircle, element: <WhatsAppTemplatesAdmin /> },
       { path: 'settings', capability: 'admin.access', label: 'Settings', icon: SlidersHorizontal, element: <SettingsAdmin /> },
       { path: 'brand', capability: 'admin.access', label: 'Brand & Social', icon: Sparkles, element: <BrandAdmin /> },
       { path: 'system', capability: 'admin.audit', label: 'System & Audit', icon: Activity, element: <SystemAdmin /> },

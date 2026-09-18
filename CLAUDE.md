@@ -984,8 +984,36 @@ its parameters travel together now (`visibility()` in `business/inbox.ts`).
 number each message went through: one customer had one conversation even if it reached them
 two ways.
 
-**Still to build, in his order:** template ↔ CRM field mapping, the WhatsApp icon composer,
-media, property sharing and follow-ups from a chat, campaigns, reports.
+**Approved templates and what fills their blanks** (`business/templates.ts`, Admin →
+WhatsApp Templates). Meta approves the wording and freezes it, so the only CRM decision is
+what goes in each `{{n}}` — and that is **metadata, not code**: a mapping names a field
+through the same Field Manager every screen reads, checked against the module when it is
+saved rather than when a customer is waiting. The other three sources are the agent
+sending it, the business name (`org.name`, the one the header reads) and a literal.
+
+Three rules, pinned by `tests/integration/whatsappTemplateMapping.test.ts`:
+
+* **A sync never touches a mapping.** The provider owns the wording, status and category;
+  the CRM owns the blanks. `ON CONFLICT DO UPDATE` deliberately omits `variable_map`,
+  because syncing to pick up one new template must not empty the other twelve.
+* **A picklist fills with its label**, never its stored value — those two have drifted on
+  this database before, and the customer would read the wrong one.
+* **An empty blank is named, not sent.** WhatsApp refuses the message anyway, and "failed"
+  sends a rep hunting; `{{2}} field:email is empty on this record` is fixable in ten
+  seconds. The composer previews the filled text before it goes, because a positional
+  template is unreadable in the abstract.
+
+**The nine templates seeded before the removal are still in the database**, and they map in
+the *old* vocabulary (`contact.first_name`). `resolveTemplate` reports those as "needs
+setting again" rather than slicing the prefix off blindly — which would have produced
+nonsense, looked up nothing and sent a blank. Their wording is still useful, so they are
+listed for re-mapping rather than deleted.
+
+Parameters are filled **server-side** through `recordService`: a screen that posted them
+back could send a customer a budget its user is not allowed to read.
+
+**Still to build, in his order:** the WhatsApp icon composer, media, property sharing and
+follow-ups from a chat, campaigns, reports.
 
 **The avatar on the row stayed, and a percentage chip that replaced it was rolled back the
 same day** (18 September). The owner asked for the chip, saw it on production, and asked for
