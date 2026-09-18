@@ -10,6 +10,8 @@ import crypto from 'node:crypto';
 import { z } from 'zod';
 import { getSettings } from '../../core/settings/integrations.js';
 import { db } from '../../db/pool.js';
+import { businessProvider } from '../../integrations/whatsapp/business/registry.js';
+import { applyStatus, receiveInbound } from '../../integrations/whatsapp/business/inbound.js';
 import { logger } from '../../utils/logger.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { NotFoundError, ServiceUnavailableError, UnauthorizedError } from '../../utils/errors.js';
@@ -33,6 +35,85 @@ export const webhooksRouter = Router();
 // eventually unsubscribes itself. Nothing in the CRM waits on them.
 
 // ---------------------------------------------------------------------------
+
+/*
+  The official WhatsApp Business route, whichever provider is carrying it.
+
+  One URL per provider — `/api/webhooks/whatsapp/aisensy`, `…/gupshup`,
+  `…/meta`, `…/whatsmarketing` — so the business can run one today and another
+  next year without re-registering a URL, and so a delivery that arrives on the
+  wrong door is refused rather than parsed by the wrong adapter.
+
+  The verification is the adapter's own, because they disagree: Meta answers a
+  subscription challenge on GET and signs every POST with an app secret, while
+  the resellers carry a shared token. A webhook that authenticates nobody is an
+  open door into the CRM's conversations, and this file has shipped one before
+  — the Facebook lead endpoint immediately below, fixed on 30 August.
+*/
+function whatsAppProviderFor(slug: string): { id: string; provider: ReturnType<typeof businessProvider> } {
+  const id = `whatsapp_${slug}`;
+  return { id, provider: businessProvider(id) };
+}
+
+webhooksRouter.get('/whatsapp/:slug', asyncHandler(async (req, res) => {
+  const { provider } = whatsAppProviderFor(req.params.slug);
+  if (!provider) { res.sendStatus(404); return; }
+  const check = provider.verifyWebhook({
+    method: 'GET',
+    query: req.query as Record<string, string | undefined>,
+    headers: req.headers as Record<string, string | undefined>,
+    rawBody: '',
+  });
+  if (!check.ok) {
+    logger.warn({ provider: provider.name, reason: check.reason }, 'refused a WhatsApp webhook handshake');
+    res.sendStatus(403);
+    return;
+  }
+  // Meta wants its own challenge back as plain text, not as JSON.
+  res.status(200).send(check.challenge ?? 'ok');
+}));
+
+webhooksRouter.post('/whatsapp/:slug', asyncHandler(async (req, res) => {
+  const { provider } = whatsAppProviderFor(req.params.slug);
+  if (!provider) { res.sendStatus(404); return; }
+
+  const raw = (req as Request & { rawBody?: Buffer }).rawBody ?? Buffer.from(JSON.stringify(req.body ?? {}));
+  const check = provider.verifyWebhook({
+    method: 'POST',
+    query: req.query as Record<string, string | undefined>,
+    headers: req.headers as Record<string, string | undefined>,
+    rawBody: raw.toString('utf8'),
+  });
+  if (!check.ok) {
+    logger.warn({ provider: provider.name, reason: check.reason }, 'refused a WhatsApp webhook delivery');
+    res.sendStatus(401);
+    return;
+  }
+
+  /*
+    Answer first, work second. Every provider retries anything it does not hear
+    a prompt 200 for, so a slow contact match is a duplicate message rather
+    than a late one — and the work below is idempotent precisely so this is
+    safe.
+  */
+  res.sendStatus(200);
+
+  const batch = provider.parseWebhook(req.body);
+  for (const message of batch.messages) {
+    try {
+      await receiveInbound(provider.name, message);
+    } catch (err) {
+      logger.error({ err, provider: provider.name }, 'could not store an inbound WhatsApp message');
+    }
+  }
+  for (const status of batch.statuses) {
+    try {
+      await applyStatus(provider.name, status);
+    } catch (err) {
+      logger.error({ err, provider: provider.name }, 'could not apply a WhatsApp status');
+    }
+  }
+}));
 
 webhooksRouter.get('/leads/facebook', (req, res) => {
   if (req.query['hub.mode'] === 'subscribe' && req.query['hub.verify_token'] === getSettings().leadSources.facebook.verifyToken) {

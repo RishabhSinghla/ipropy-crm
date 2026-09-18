@@ -23,6 +23,7 @@ import { dashboardsRouter } from './api/routes/dashboards.js';
 import { adminRouter } from './api/routes/admin.js';
 import { commsRouter } from './api/routes/comms.js';
 import { whatsappAgentRouter } from './api/routes/whatsappAgent.js';
+import { whatsappBusinessRouter } from './api/routes/whatsappBusiness.js';
 import { deviceRouter } from './api/routes/device.js';
 import { telephonyRouter } from './api/routes/telephony.js';
 import { aiRouter } from './api/routes/ai.js';
@@ -302,6 +303,9 @@ export function createApp(): Express {
   app.use('/api/admin', adminRouter);
   app.use('/api/comms', commsRouter);
   app.use('/api/whatsapp', whatsappAgentRouter);
+  // The official business number, alongside the per-agent one and never
+  // mixed with it: two routes, two prefixes, one recorded on every message.
+  app.use('/api/whatsapp-business', whatsappBusinessRouter);
   app.use('/api/telephony', telephonyRouter);
   app.use('/api/ai', aiRouter);
   // Connected assistants. Mounted before miscRouter's catch-all /api paths.

@@ -894,8 +894,75 @@ Dashboard, the modules and Site visit only. On a laptop or a phone there was no 
 reach Chats. The drawer carries it now. **A destination that lives only in the switcher
 is invisible on most screens** — put it in the drawer too.
 
-**Not built yet:** media, voice notes, quick replies, search, the admin panel,
-property sharing.
+**Not built yet on the agent route:** media, voice notes, quick replies, search, the admin
+panel, property sharing — and it is now the *second* route rather than the main one.
+
+## The official WhatsApp Business route, through a BSP
+
+**18 September 2026, the owner:** *"The feature of Personal whatsapp Agent wise not use to
+me, i need Bussiness API Integration."* So the CRM now has both, and the official one is
+what the business will use. The agent-linked route is **not** deleted — his own §13 asks
+for the two to stay separate with the route recorded on every message, and `ipy_message.route`
+('business' | 'agent', migration `158`) is that record.
+
+**One contract, four adapters, and nothing hard-coded to a vendor**
+(`integrations/whatsapp/business/`). `WhatsAppBusinessProvider` extends the same
+`WhatsAppProvider` the agent route implements rather than starting a second vocabulary.
+Moving from AiSensy to Gupshup is an admin switching an integration card; no conversation
+moves, because the history was never the vendor's to hold — provider ids sit *beside* the
+CRM's own ids, never instead of them.
+
+**What each adapter can do is what its own live documentation says, checked on the day:**
+
+* **Meta Cloud API** — `POST /{phone-number-id}/messages`, text, media, templates, status
+  webhooks, mark-read. The graph version and base URL are **settings, not constants**:
+  Meta retires versions on a schedule, and a hard-coded one is a dead integration on a date
+  nobody has in their calendar. Written from knowledge and **not verified against the live
+  reference from here** — `developers.facebook.com` is blocked by this container's egress
+  proxy — so the Test Connection button is what proves it against the real account.
+* **AiSensy** — `POST https://backend.aisensy.com/campaign/t1/api/v2`, which sends an
+  **approved template and nothing else**. So its adapter declares `templates` and *not*
+  `text`, and a rep typing a free reply is told before they press send rather than after.
+* **Gupshup** — `POST https://api.gupshup.io/wa/api/v1/msg`, form-encoded, key in an
+  `apikey` header: text, media and templates, and a template list to sync.
+* **whatsmarketing.in** — **no public developer documentation could be found from here.**
+  Rather than inventing endpoints it is the Cloud-API-shaped adapter with its own base URL,
+  which is what most resellers of that size proxy. Point it at their host, press Test, and
+  the answer is immediate and honest.
+
+**The webhook is `/api/webhooks/whatsapp/:slug`, one door per provider**, and every delivery
+is verified by the adapter that owns it — Meta's `hub.challenge` handshake and an app-secret
+signature over the **raw** body (re-serialising the parsed JSON changes the bytes and reads
+exactly like a wrong secret), a constant-time shared token for the resellers. It answers 200
+first and works second, because every provider retries anything it does not hear a prompt
+200 for.
+
+**Three rules the inbound path is built on**, all pinned by
+`tests/integration/whatsappBusinessWebhook.test.ts`:
+
+* **Seen once.** `ipy_wa_webhook_event` claims a delivery by unique insert — the insert *is*
+  the check, because a SELECT-then-INSERT lets two racing deliveries both through. Meta
+  retries for days; without this the agent is notified twice for one sentence.
+* **Never a silent duplicate contact.** An unknown number opens a thread with no record
+  attached and waits for create / link / ignore.
+* **A status only moves forward.** Providers deliver them out of order, and a late "sent"
+  would otherwise un-read a message the customer has plainly read.
+
+**One trap this cost a test run to find, and it is rule 8's cousin:** a parameter used both
+as a timestamp and as the left side of `+ interval` deduces two types and Postgres refuses
+the whole statement — *"inconsistent types deduced for parameter $2"*, at runtime, with a
+customer's message in hand. Every position is `$2::timestamptz` now.
+
+**Built so far:** the provider layer, the four adapters, the webhook (verify, dedupe,
+inbound, status), sending text and templates with the 24-hour window and opt-out enforced
+*before* the provider is called, the four integration cards with their secrets encrypted,
+and `GET /api/whatsapp-business/status` so a screen can ask what the live provider can
+actually do before offering a control.
+
+**Still to build, in his order:** the Chats screen reading the business thread, the contact's
+WhatsApp tab and timeline on this route, multi-agent inbox states (take/assign/transfer),
+template ↔ field mapping, the WhatsApp icon composer, media, property sharing, campaigns,
+reports.
 
 **The avatar on the row stayed, and a percentage chip that replaced it was rolled back the
 same day** (18 September). The owner asked for the chip, saw it on production, and asked for

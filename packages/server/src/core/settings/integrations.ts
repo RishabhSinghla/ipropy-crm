@@ -635,6 +635,13 @@ const SECRET_FIELDS: Record<string, string[]> = {
   google_ads: ['webhookKey'],
   s3: ['accessKeyId', 'secretAccessKey'],
   onedrive: ['clientSecret'],
+  // Every WhatsApp business credential is a bearer token or a shared secret:
+  // anything that leaves this list is a key the admin panel would hand back in
+  // plaintext to whoever opened the page.
+  whatsapp_meta: ['accessToken', 'appSecret', 'verifyToken'],
+  whatsapp_aisensy: ['apiKey', 'webhookToken'],
+  whatsapp_gupshup: ['apiKey', 'webhookToken'],
+  whatsapp_whatsmarketing: ['accessToken', 'webhookToken'],
 };
 
 function mask(value: string): string {
@@ -681,6 +688,27 @@ export function getIntegrationCredentials(provider: string): Record<string, stri
   const row = rows.get(provider);
   if (!row || !row.isActive) return null;
   return row.credentials;
+}
+
+/**
+ * The non-secret half of a card, for code that needs a phone number id or a
+ * base URL rather than a token. Same rule as the credentials: an inactive card
+ * answers nothing, so switching a provider off switches it off everywhere.
+ */
+export function getIntegrationConfig(provider: string): Record<string, string> | null {
+  const row = rows.get(provider);
+  if (!row || !row.isActive) return null;
+  return row.config;
+}
+
+/** Whichever of these providers is switched on, or null. First wins, and the
+ *  admin panel only allows one WhatsApp business card active at a time. */
+export function firstActiveIntegration(providers: string[]): string | null {
+  for (const provider of providers) {
+    const row = rows.get(provider);
+    if (row?.isActive) return provider;
+  }
+  return null;
 }
 
 export async function listIntegrations(): Promise<IntegrationSummary[]> {

@@ -388,6 +388,18 @@ export async function seedIntegrations(conn: Tx): Promise<void> {
     { provider: 'google_ads', kind: 'lead_source', label: 'Google Ads Lead Form' },
     { provider: 'zapier', kind: 'lead_source', label: 'Zapier Lead Capture' },
     { provider: 'google_rcs', kind: 'messaging', label: 'Google RCS for Business' },
+    /*
+      The official WhatsApp Business route, one card per way of buying it.
+      Four cards rather than one with a dropdown, because the credentials are
+      genuinely different — a Cloud API token and phone number id against a
+      reseller's key and campaign name — and because switching provider should
+      not mean retyping the one you may go back to. Only one is ever active;
+      the registry takes the first switched on.
+    */
+    { provider: 'whatsapp_meta', kind: 'messaging', label: 'WhatsApp Business — Meta Cloud API' },
+    { provider: 'whatsapp_aisensy', kind: 'messaging', label: 'WhatsApp Business — AiSensy' },
+    { provider: 'whatsapp_gupshup', kind: 'messaging', label: 'WhatsApp Business — Gupshup' },
+    { provider: 'whatsapp_whatsmarketing', kind: 'messaging', label: 'WhatsApp Business — whatsmarketing.in' },
     { provider: 'housing', kind: 'lead_source', label: 'Housing.com' },
     { provider: '99acres', kind: 'lead_source', label: '99acres' },
     { provider: 'magicbricks', kind: 'lead_source', label: 'MagicBricks' },

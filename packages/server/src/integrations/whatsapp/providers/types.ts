@@ -30,7 +30,11 @@ export type WhatsAppCapability =
   /** Reading conversations that happened before the account was linked. */
   | 'historySync'
   /** One linked account per agent, rather than one number for the business. */
-  | 'perAgentAccounts';
+  | 'perAgentAccounts'
+  /** Reading the approved template list back from the provider. */
+  | 'templateSync'
+  /** Sending an approved template to many people in one job. */
+  | 'campaigns';
 
 export type WhatsAppConnectionStatus =
   | 'disconnected' | 'connecting' | 'qr' | 'pairing' | 'connected' | 'error';
