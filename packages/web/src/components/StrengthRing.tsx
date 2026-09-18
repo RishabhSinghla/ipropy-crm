@@ -116,3 +116,47 @@ export function StrengthRing({
     </span>
   );
 }
+
+/**
+ * The same number, as a plain chip — no face, no ring.
+ *
+ * What a list column needs: the owner asked for the avatar to go, because a
+ * coloured circle with initials, a ring and a badge tucked in its corner is
+ * three things competing where one number was wanted.
+ *
+ * **Two pastel tones and no more**, also on his instruction. The split is at
+ * 70%: above it the record is worth calling, below it somebody has to fill it
+ * in. A third tone would put the column back to being read rather than
+ * glanced at.
+ */
+const CHIP = {
+  full: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300',
+  thin: 'bg-amber-50 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300',
+} as const;
+
+export function StrengthChip({ fields, values, className }: {
+  fields: FieldMeta[];
+  values: Record<string, unknown>;
+  className?: string;
+}): JSX.Element {
+  const { percent, missing } = recordStrength(fields, values);
+  const label = describe(percent, missing);
+  return (
+    <span
+      className={cn(
+        'inline-flex h-6 w-10 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold tabular-nums',
+        percent >= 70 ? CHIP.full : CHIP.thin,
+        className,
+      )}
+      title={label}
+      /*
+        Announced as one value, not as the digits on screen: "17%" read aloud
+        on its own says nothing about what it measures or what would raise it.
+      */
+      role="img"
+      aria-label={label}
+    >
+      {percent}%
+    </span>
+  );
+}

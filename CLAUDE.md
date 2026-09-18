@@ -897,6 +897,15 @@ is invisible on most screens** — put it in the drawer too.
 **Not built yet:** media, voice notes, quick replies, search, the admin panel,
 property sharing.
 
+**The row's avatar is gone, replaced by the form-strength number alone** (18 September,
+owner's words: *"replace Full Name avtar with Percentage of Contact Form Strength… use only
+two colour of pastel shade"*). `StrengthChip` in `components/StrengthRing.tsx`: one pastel
+chip, **two tones and no more**, splitting at 70%. The ring with the avatar inside it stays
+on the record page, where there is room for it. The chip carries `role="img"` and the same
+`Form strength …%` label the ring does — that shared name is what lets
+`e2e/formStrength.spec.ts` prove the row and the record agree, which is the one thing only
+a browser can answer.
+
 **The list's pinned quick-actions column is gone** (17 September, owner's instruction), and
 with it `e2e/quickActions.spec.ts`. It was one hover-only Call button in a column pinned to
 the right of every row. The name column is pinned to the *left* instead — a wide grid
@@ -910,8 +919,11 @@ column heading in the CRM was `position: relative` and the whole header row scro
 with its rows — reported as "the menu bar is movable". `relative` is gone from the cell (a
 sticky cell is a positioned cell, so the resize handle still anchors), and the two pinned
 header cells state `position: sticky` themselves under two class names. Both halves are
-pinned by `e2e/stickyName.spec.ts`, which asserts the computed style *and* measures that
-nothing moves — a class that is present while the cell still slides is exactly the bug.
+pinned by two specs: `e2e/listHeaderStaysPut.spec.ts` walks **every** header cell on both
+modules — measuring `.first()` was how the bug hid, since the checkbox column was the one
+column still pinned — and `e2e/stickyName.spec.ts` covers the two columns frozen to the
+left. Both assert the computed style *and* measure that nothing moves; a class that is
+present while the cell still slides is exactly the bug.
 
 **If it is rebuilt, the things that cost a night to learn:** history arrives exactly once
 during the handshake after a scan and cannot be re-requested; Baileys must be on the

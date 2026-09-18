@@ -17,13 +17,13 @@ import { assignmentField, byLabel, fieldByKey, pipelineFieldOf, subtitleFieldsOf
 import { DEFAULT_PAGE_SIZE, loadPageSize, PAGE_SIZE_OPTIONS, savePageSize } from '../lib/pageSize';
 import { FilterBuilder, countConditions } from '../components/FilterBuilder';
 import {
-  Avatar, Badge, ConfirmDialog, Dropdown, DropdownItem, EmptyState, Modal, Select, Skeleton, Spinner,
+  Badge, ConfirmDialog, Dropdown, DropdownItem, EmptyState, Modal, Select, Skeleton, Spinner,
 } from '../components/ui';
 import { ModuleIcon } from '../components/Layout';
 import RecordForm from '../components/RecordForm';
 import RecordPeek from '../components/RecordPeek';
 import { ListPicker } from '../components/ListPicker';
-import { StrengthRing } from '../components/StrengthRing';
+import { StrengthChip } from '../components/StrengthRing';
 import { FollowUpQueue, followUpFilters, type TaskQueue } from '../components/FollowUpQueue';
 import { StatusBreakdown } from '../components/StatusBreakdown';
 import SiteCapture from './SiteCapture';
@@ -1454,20 +1454,12 @@ export default function ListView(): JSX.Element {
                           */
                           <div className="flex items-center gap-2.5">
                             {/*
-                              A face for the row, with how full the record is
-                              drawn round it and the number tucked into its
-                              corner. Initials on a colour derived from the
-                              name, so the same person is the same colour on
-                              every screen.
+                              How full the record is, and nothing else. The
+                              avatar went on the owner's instruction: initials,
+                              a ring and a badge in its corner were three things
+                              where one number was wanted.
                             */}
-                            <StrengthRing
-                              fields={meta.fields}
-                              values={row.values}
-                              size={26}
-                              cornerBadge
-                            >
-                              <Avatar name={row.label} size={26} className="text-[10px]" />
-                            </StrengthRing>
+                            <StrengthChip fields={meta.fields} values={row.values} />
 
                             <div className="flex min-w-0 flex-col">
                               <span className="flex min-w-0 items-center gap-1.5">
