@@ -1186,6 +1186,42 @@ export const api = {
   }[]>(`/api/whatsapp/conversations/${conversationId}/messages`),
   whatsappMarkRead: (conversationId: string) =>
     post<{ ok: true }>(`/api/whatsapp/conversations/${conversationId}/read`, {}),
+  // --- WhatsApp Business (the official number) -----------------------------
+  waBizStatus: () => get<{
+    connected: boolean; provider: string | null; capabilities: string[]; businessNumber: string | null;
+  }>('/api/whatsapp-business/status'),
+  waBizProviders: () => get<{ id: string; label: string; capabilities: string[]; webhookPath: string }[]>(
+    '/api/whatsapp-business/providers',
+  ),
+  waBizTest: (id: string) => post<{ ok: boolean; detail: string }>(`/api/whatsapp-business/providers/${id}/test`, {}),
+  waBizTemplates: () => get<{
+    name: string; language: string; category: string; status: string;
+    bodyText: string | null; variableCount: number;
+  }[]>('/api/whatsapp-business/templates'),
+  waBizConversations: (filter = 'all', search = '') => get<{
+    id: string; handle: string; contactName: string | null; recordId: string | null;
+    recordModule: string | null; recordLabel: string | null; assignedTo: string | null;
+    assignedName: string | null; status: string; unreadCount: number;
+    lastMessageAt: string | null; lastMessagePreview: string | null; windowOpen: boolean;
+  }[]>(`/api/whatsapp-business/conversations${qs({ filter, search: search || undefined })}`),
+  waBizMessages: (conversationId: string) => get<{
+    messages: Record<string, unknown>[]; alsoViewing: string[];
+  }>(`/api/whatsapp-business/conversations/${conversationId}/messages`),
+  waBizSend: (data: {
+    to: string; text?: string; recordId?: string;
+    template?: { name: string; language: string; params: string[] };
+  }) => post<{ messageId: string; conversationId: string; status: string }>('/api/whatsapp-business/send', data),
+  waBizRead: (id: string) => post<{ ok: true }>(`/api/whatsapp-business/conversations/${id}/read`, {}),
+  waBizUnread: (id: string) => post<{ ok: true }>(`/api/whatsapp-business/conversations/${id}/unread`, {}),
+  waBizTake: (id: string) => post<{ ok: true }>(`/api/whatsapp-business/conversations/${id}/take`, {}),
+  waBizAssign: (id: string, to: string | null) =>
+    post<{ ok: true }>(`/api/whatsapp-business/conversations/${id}/assign`, { to }),
+  waBizStatusSet: (id: string, status: 'open' | 'pending' | 'resolved') =>
+    post<{ ok: true }>(`/api/whatsapp-business/conversations/${id}/status`, { status }),
+  waBizContactMessages: (module: string, id: string) => get<{
+    messages: Record<string, unknown>[];
+  }>(`/api/whatsapp-business/contacts/${module}/${id}/messages`),
+
   whatsappUnmatched: () => get<{
     conversationId: string; handle: string; contactName: string | null;
     lastMessageAt: string | null; lastMessagePreview: string | null; unreadCount: number;

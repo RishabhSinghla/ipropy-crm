@@ -11,13 +11,19 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { asyncHandler } from '../../middleware/errorHandler.js';
-import { blockApiKey, getUser, requireAuth } from '../../middleware/auth.js';
+import { blockApiKey, getScope, getUser, requireAuth } from '../../middleware/auth.js';
 import { assertCapability } from '../../core/permissions/index.js';
 import { BadRequestError, NotFoundError } from '../../utils/errors.js';
 import {
   activeBusinessProvider, businessProvider, BUSINESS_PROVIDERS,
 } from '../../integrations/whatsapp/business/registry.js';
 import { sendOnBusinessNumber } from '../../integrations/whatsapp/business/send.js';
+import {
+  assign, conversationMessages, listConversations, markRead, markUnread,
+  noteViewing, othersViewing, setStatus,
+} from '../../integrations/whatsapp/business/inbox.js';
+import { db } from '../../db/pool.js';
+import { recordService } from '../../core/entity/recordService.js';
 
 export const whatsappBusinessRouter = Router();
 whatsappBusinessRouter.use(requireAuth, blockApiKey);
@@ -101,4 +107,95 @@ whatsappBusinessRouter.post('/send', asyncHandler(async (req, res) => {
     template: input.template,
     recordId: input.recordId ?? null,
   }));
+}));
+
+// ---------------------------------------------------------------------------
+// The shared inbox
+// ---------------------------------------------------------------------------
+
+const filters = ['all', 'mine', 'unassigned', 'unread', 'open', 'pending', 'resolved'] as const;
+
+whatsappBusinessRouter.get('/conversations', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const query = z.object({
+    filter: z.enum(filters).default('all'),
+    search: z.string().max(120).optional(),
+  }).parse(req.query ?? {});
+  res.json(await listConversations({
+    userId: user.id, isAdmin: user.isAdmin, filter: query.filter, search: query.search,
+  }));
+}));
+
+whatsappBusinessRouter.get('/conversations/:id/messages', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  // Noted before the read, so two reps opening the same customer see each
+  // other rather than both typing an answer.
+  noteViewing(req.params.id, user.id, user.fullName ?? 'Somebody');
+  res.json({
+    messages: await conversationMessages(user.id, user.isAdmin, req.params.id),
+    alsoViewing: othersViewing(req.params.id, user.id),
+  });
+}));
+
+whatsappBusinessRouter.post('/conversations/:id/read', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await markRead(user.id, user.isAdmin, req.params.id);
+  res.json({ ok: true });
+}));
+
+whatsappBusinessRouter.post('/conversations/:id/unread', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await markUnread(user.id, user.isAdmin, req.params.id);
+  res.json({ ok: true });
+}));
+
+whatsappBusinessRouter.post('/conversations/:id/assign', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const input = z.object({ to: z.string().uuid().nullable() }).parse(req.body ?? {});
+  await assign({ userId: user.id, isAdmin: user.isAdmin, conversationId: req.params.id, to: input.to });
+  res.json({ ok: true });
+}));
+
+/** Take it myself, which is the one every rep uses and deserves its own door. */
+whatsappBusinessRouter.post('/conversations/:id/take', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assign({ userId: user.id, isAdmin: user.isAdmin, conversationId: req.params.id, to: user.id });
+  res.json({ ok: true });
+}));
+
+whatsappBusinessRouter.post('/conversations/:id/status', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const input = z.object({ status: z.enum(['open', 'pending', 'resolved']) }).parse(req.body ?? {});
+  await setStatus({ userId: user.id, isAdmin: user.isAdmin, conversationId: req.params.id, status: input.status });
+  res.json({ ok: true });
+}));
+
+/**
+ * One contact's WhatsApp, for the tab on the record.
+ *
+ * Permission comes from the *record*, through the ordinary engine: somebody
+ * who can open the lead reads its messages, and somebody who cannot never gets
+ * here. That is why a manager can read a thread they are not assigned — the
+ * contact is the authority, not the inbox.
+ */
+whatsappBusinessRouter.get('/contacts/:module/:id/messages', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const scope = getScope(req);
+  await recordService.getRecord(scope, req.params.module, req.params.id);
+
+  const { rows } = await db.query(
+    `SELECT m.id, m.direction, m.type, m.body, m.media, m.status, m.template_name,
+            m.created_at, m.route,
+            trim(u.first_name || ' ' || u.last_name) AS sent_by_name
+       FROM ipy_message m
+       JOIN ipy_conversation c ON c.id = m.conversation_id
+       LEFT JOIN ipy_user u ON u.id = m.sent_by
+      WHERE c.record_id = $1 AND c.channel = 'whatsapp'
+      ORDER BY m.created_at ASC
+      LIMIT 500`,
+    [req.params.id],
+  );
+  // Both routes in one column, because the customer had one conversation even
+  // if it reached them two ways. `route` says which, on every line.
+  res.json({ messages: rows, user: user.id });
 }));

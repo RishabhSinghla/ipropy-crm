@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
 import { Avatar, EmptyState, Skeleton, Spinner } from '../components/ui';
+import BusinessChats from './BusinessChats';
 
 /**
  * The agent's WhatsApp conversations.
@@ -30,6 +31,22 @@ function timeOf(value: string | null): string {
 }
 
 export default function Chats(): JSX.Element {
+  /*
+    Two routes to WhatsApp, one screen.
+
+    The official business number is what the team uses, so when a provider is
+    connected this page *is* the shared inbox. The per-agent screen below stays
+    for the other route rather than being deleted — the owner asked for both to
+    exist separately (§13) — and it is what somebody sees when no official
+    provider is switched on.
+  */
+  const { data: business } = useQuery({ queryKey: ['wa-biz', 'status'], queryFn: () => api.waBizStatus() });
+  if (business?.connected) return <BusinessChats />;
+
+  return <AgentChats />;
+}
+
+function AgentChats(): JSX.Element {
   const queryClient = useQueryClient();
   const [params] = useSearchParams();
   // `?to=<digits>` is how the WhatsApp icon beside a phone number arrives here.

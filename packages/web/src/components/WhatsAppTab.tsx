@@ -27,13 +27,34 @@ export function WhatsAppTab({ module, recordId, mobile }: {
   const [draft, setDraft] = useState('');
 
   const { data: me } = useQuery({ queryKey: ['whatsapp', 'me'], queryFn: () => api.whatsappMe() });
+  /*
+    Which road is available decides what this tab does, not which road the
+    history came down. A contact messaged on the business number last week and
+    from a rep's own phone in August has *one* conversation, and it reads as
+    one column with a line saying which number each message went through.
+  */
+  const { data: business } = useQuery({ queryKey: ['wa-biz', 'status'], queryFn: () => api.waBizStatus() });
+  const onBusiness = Boolean(business?.connected);
+
   const { data: messages, isLoading } = useQuery({
-    queryKey: ['whatsapp', 'contact', module, recordId],
-    queryFn: () => api.whatsappContactMessages(module, recordId),
+    queryKey: ['whatsapp', 'contact', module, recordId, onBusiness],
+    queryFn: async () => (onBusiness
+      ? (await api.waBizContactMessages(module, recordId)).messages.map((row) => ({
+        id: String(row.id),
+        direction: row.direction as 'inbound' | 'outbound',
+        body: (row.body as string | null) ?? null,
+        createdAt: String(row.created_at),
+        sentVia: row.route === 'agent'
+          ? (row.sent_by_name as string | null) ?? 'a linked phone'
+          : 'the business number',
+      }))
+      : api.whatsappContactMessages(module, recordId)),
   });
 
   const send = useMutation({
-    mutationFn: (text: string) => api.whatsappSend(mobile!, text),
+    mutationFn: (text: string) => (onBusiness
+      ? api.waBizSend({ to: mobile!, text, recordId }).then(() => undefined)
+      : api.whatsappSend(mobile!, text).then(() => undefined)),
     onSuccess: () => {
       setDraft('');
       void queryClient.invalidateQueries({ queryKey: ['whatsapp', 'contact', module, recordId] });
@@ -41,7 +62,8 @@ export function WhatsAppTab({ module, recordId, mobile }: {
     onError: (err: Error) => toast.error('Could not send', err.message),
   });
 
-  const linked = me?.account?.status === 'connected';
+  // Either road counts as "can send": the business number needs no linking.
+  const linked = onBusiness || me?.account?.status === 'connected';
 
   if (isLoading) return <div className="space-y-2 p-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>;
 
@@ -52,9 +74,11 @@ export function WhatsAppTab({ module, recordId, mobile }: {
           <EmptyState
             icon={<MessageCircle className="h-8 w-8" />}
             title="No WhatsApp yet"
-            body={linked
-              ? 'Send the first message below — it goes out from your own number.'
-              : 'Link your WhatsApp in My Profile to message this contact from the CRM.'}
+            body={onBusiness
+              ? 'Send the first message below — it goes out from the business number.'
+              : linked
+                ? 'Send the first message below — it goes out from your own number.'
+                : 'Link your WhatsApp in My Profile, or ask an admin to connect the business number.'}
           />
         )}
         {(messages ?? []).map((m) => (

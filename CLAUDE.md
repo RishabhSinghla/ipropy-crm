@@ -959,10 +959,33 @@ inbound, status), sending text and templates with the 24-hour window and opt-out
 and `GET /api/whatsapp-business/status` so a screen can ask what the live provider can
 actually do before offering a control.
 
-**Still to build, in his order:** the Chats screen reading the business thread, the contact's
-WhatsApp tab and timeline on this route, multi-agent inbox states (take/assign/transfer),
-template ↔ field mapping, the WhatsApp icon composer, media, property sharing, campaigns,
-reports.
+**The Chats screen and the contact tab are on this route now** (`pages/BusinessChats.tsx`).
+Three columns: the queue, the conversation, and the CRM contact **linked rather than
+copied** — a lead's budget repeated on this screen is a second copy to keep in step, and the
+first time the two disagree nobody knows which is true. `/chats` picks the route: the
+business inbox when a provider is connected, the per-agent screen when not.
+
+**The inbox is shared, and who sees what is the rule that matters.** An admin sees every
+thread; everybody else sees their own and the unassigned queue, and **not** one another rep
+is working — two people answering one customer is what a shared inbox exists to prevent.
+A manager who needs to read it uses the contact's WhatsApp tab, where the CRM's ordinary
+record permissions decide, as everywhere else. Take / assign / transfer / mark unread /
+open / pending / resolved are all there, a hand-over tells the person losing the thread, and
+the header shows who else is looking (in memory, 45 seconds, because it is true for half a
+minute and nobody wants to read it tomorrow).
+
+**Rule 8 again, the fifth time, and an integration test caught it rather than production.**
+The inbox list bound the user id even for an admin, whose visibility clause is `TRUE` and
+names no parameter — Postgres refuses the whole statement with *"could not determine data
+type of parameter $1"*, which on screen is an empty inbox for admins only. The clause and
+its parameters travel together now (`visibility()` in `business/inbox.ts`).
+
+**The contact's WhatsApp tab shows both roads in one column**, with a line saying which
+number each message went through: one customer had one conversation even if it reached them
+two ways.
+
+**Still to build, in his order:** template ↔ CRM field mapping, the WhatsApp icon composer,
+media, property sharing and follow-ups from a chat, campaigns, reports.
 
 **The avatar on the row stayed, and a percentage chip that replaced it was rolled back the
 same day** (18 September). The owner asked for the chip, saw it on production, and asked for

@@ -83,7 +83,14 @@ test('a record can be edited from the desk and the change sticks', async ({ page
   await dialog.getByRole('button', { name: /save changes/i }).click();
   await expect(dialog).toBeHidden({ timeout: 20_000 });
 
-  // Saved, not merely accepted: reopening reads it back from the server.
+  /*
+    Saved, not merely accepted: reopening reads it back from the server. The
+    reopen waits for the desk to settle first — clicking Edit while the list is
+    still refetching caught the old dialog on its way out, which made this test
+    flaky rather than wrong.
+  */
+  await expect(page.getByTestId('ipropy-workspace')).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.getByRole('button', { name: /^Edit$/ }).first().click();
   await expect(page.getByRole('dialog').getByLabel('Company')).toHaveValue(marker, { timeout: 20_000 });
 });
