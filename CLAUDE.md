@@ -932,6 +932,34 @@ ago; and pacing belongs in the CRM, never in a laptop script that forgets on res
 must also decide, up front, that a business CRM has no business storing a rep's personal
 chats.
 
+## Lists open on the iPROPY desk
+
+**18 September 2026, the owner's instruction:** the desk is the default for everybody in
+both modules, and anybody may switch for themselves. `lib/listMode.ts` ranks the three
+sources in one place — **this person's own choice on this module, then a saved view that
+explicitly names kanban or ipropy, then the desk**. A view that says `table` is treated as
+never having chosen, because every saved view predates the desk and says that by default;
+the only way to get the table is to click it, and clicking it is remembered.
+
+Remembered in the browser rather than on the record: it changes several times a day, it is
+nobody else's business, and a per-user setting that needs a round trip to say which way you
+like your list is slow at exactly the wrong moment.
+
+**The desk writes now, through the same components the table uses.** Its Basic Information
+card renders `EditableField` wherever the profile may edit and the field type has an inline
+editor, so a value changed there goes through the same validation, permissions and audit
+trail — the desk is another way to *look* at a record, never a second way to write one. The
+card shows every field rather than the first ten, since a field that is not on it is a field
+somebody has to leave the screen for. Delete is the selection bar's own endpoint with a
+selection of one, offered only where `permissions.delete` allows it. Add is the shell's New
+button, which was already on every screen.
+
+**Every spec in `e2e/` that is about the table now signs in with `table` already stored**
+(`auth.setup.ts`), because they are about the table. `e2e/listDefaultView.spec.ts` is the
+one place the real default is proved, and it clears the key by loading, removing and
+reloading — an init script clears it on the reload too, which reads exactly like the
+preference failing to stick and cost a debugging round to see.
+
 ## Pressing Call at a desk rings the rep's own phone
 
 **18 September 2026, the owner's report:** clicking Call on a Mac showed Chrome's

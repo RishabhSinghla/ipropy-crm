@@ -14,5 +14,21 @@ import { login, STORAGE_STATE } from './helpers';
  */
 setup('authenticate', async ({ page }) => {
   await login(page);
+
+  /*
+    Lists open on the iPROPY desk now, for everybody. Most specs here were
+    written against the table and are about the table — so the saved session
+    carries the same choice a rep makes by clicking Table once, and the specs
+    go on testing what they say they test.
+
+    The default itself is not left untested by that: `listDefaultView.spec.ts`
+    clears this key and asserts a fresh person lands on the desk.
+  */
+  await page.evaluate(() => {
+    for (const module of ['leads', 'properties']) {
+      localStorage.setItem(`ipropy.listmode.${module}`, 'table');
+    }
+  });
+
   await page.context().storageState({ path: STORAGE_STATE });
 });

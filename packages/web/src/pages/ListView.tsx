@@ -15,6 +15,7 @@ import { FieldInput, FieldValue } from '../components/FieldRenderer';
 import { EditableField, isInlineEditable } from '../components/EditableField';
 import { assignmentField, byLabel, fieldByKey, pipelineFieldOf, subtitleFieldsOf } from '../lib/fields';
 import { DEFAULT_PAGE_SIZE, loadPageSize, PAGE_SIZE_OPTIONS, savePageSize } from '../lib/pageSize';
+import { loadListMode, resolveListMode, saveListMode, type ListMode } from '../lib/listMode';
 import { FilterBuilder, countConditions } from '../components/FilterBuilder';
 import {
   Avatar, Badge, ConfirmDialog, Dropdown, DropdownItem, EmptyState, Modal, Select, Skeleton, Spinner,
@@ -83,7 +84,19 @@ export default function ListView(): JSX.Element {
   const [filter, setFilter] = useState<FilterGroup>(EMPTY_FILTER);
   const [sortBy, setSortBy] = useState<string | undefined>();
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  const [displayMode, setDisplayMode] = useState<'table' | 'kanban' | 'ipropy'>('table');
+  /*
+    The desk is what everybody lands on, and anybody may switch. `chooseMode`
+    is the only way the mode changes from a click, so the choice is always
+    remembered — a mode set in one place and forgotten in another is how a
+    preference comes to feel random.
+  */
+  const [displayMode, setDisplayMode] = useState<ListMode>(
+    () => resolveListMode(loadListMode(moduleName), null),
+  );
+  const chooseMode = (mode: ListMode): void => {
+    setDisplayMode(mode);
+    saveListMode(moduleName, mode);
+  };
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // Gmail's "select all X in this search": when true, bulk actions run against
   // every record the current view/filter matches, not just this page's ids.
@@ -314,7 +327,10 @@ export default function ListView(): JSX.Element {
     // arrived, so a view showing every column resolves to none of them, and
     // this is the render that fixes it.
     setColumns(activeView.columns?.length ? activeView.columns : allColumns(meta));
-    setDisplayMode(activeView.displayMode === 'kanban' || activeView.displayMode === 'ipropy' ? activeView.displayMode : 'table');
+    // The person's own choice outranks the view: a saved list that predates the
+    // desk says `table` because nothing else existed, not because anybody
+    // chose it.
+    setDisplayMode(resolveListMode(loadListMode(moduleName), activeView.displayMode));
 
     // Same view, same definition, later render — metadata arriving is not a
     // view change, and must not overwrite a sort the user chose since.
@@ -947,14 +963,14 @@ export default function ListView(): JSX.Element {
 
             <div className="inline-flex overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
               <button
-                onClick={() => setDisplayMode('table')}
+                onClick={() => chooseMode('table')}
                 className={cn('px-2 py-1.5', displayMode === 'table' ? 'bg-slate-100 dark:bg-slate-800' : 'hover:bg-slate-50 dark:hover:bg-slate-800')}
                 title="Table"
               >
                 <List className="h-3.5 w-3.5" />
               </button>
               <button
-                onClick={() => setDisplayMode('kanban')}
+                onClick={() => chooseMode('kanban')}
                 disabled={!stageField && !activeView?.groupBy}
                 className={cn(
                   'px-2 py-1.5 disabled:opacity-30',
@@ -965,7 +981,7 @@ export default function ListView(): JSX.Element {
                 <LayoutGrid className="h-3.5 w-3.5" />
               </button>
               <button
-                onClick={() => setDisplayMode('ipropy')}
+                onClick={() => chooseMode('ipropy')}
                 className={cn('px-2 py-1.5', displayMode === 'ipropy' ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200' : 'hover:bg-slate-50 dark:hover:bg-slate-800')}
                 title="IPROPY View"
                 aria-label="IPROPY View"
@@ -1172,6 +1188,15 @@ export default function ListView(): JSX.Element {
               });
             }}
             onOpen={(id) => openRecord(`/${moduleName}/${id}?return=${encodeURIComponent(returnTo)}`)}
+            /*
+              Deleting from the desk goes through the same confirmation and the
+              same endpoint the selection bar uses — one record is a selection
+              of one. Offered only where the profile may delete, so the button
+              is absent rather than present and refused.
+            */
+            onDelete={meta.permissions.delete
+              ? (row) => { setSelected(new Set([row.id])); setSelectedAll(false); setConfirmDelete(true); }
+              : undefined}
           />
         ) : (
           <>
