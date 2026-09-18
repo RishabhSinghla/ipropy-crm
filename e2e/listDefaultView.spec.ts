@@ -50,6 +50,44 @@ test('choosing the table keeps it chosen, on that module only', async ({ page })
   await expect(page.getByTestId('ipropy-workspace')).toBeVisible({ timeout: 30_000 });
 });
 
+test('the record\'s own tabs open inside the desk, not on another page', async ({ page }) => {
+  await forgetTheChoice(page, '/leads');
+  await expect(page.getByTestId('ipropy-workspace')).toBeVisible({ timeout: 30_000 });
+  const listUrl = page.url();
+
+  /*
+    The complaint this answers: every tab used to send you to the record page,
+    which is the trip the desk exists to save. So the assertion is not only
+    that each tab renders — it is that the URL never moved.
+  */
+  for (const tab of ['Timeline', 'Matching', 'Files', 'Calls', 'WhatsApp']) {
+    await page.getByRole('button', { name: new RegExp(`^${tab}`) }).first().click();
+    await expect(page.getByTestId('ipropy-workspace')).toBeVisible();
+    expect(page.url(), `${tab} navigated away from the list`).toBe(listUrl);
+  }
+});
+
+test('a record can be edited from the desk and the change sticks', async ({ page }) => {
+  await forgetTheChoice(page, '/leads');
+  const desk = page.getByTestId('ipropy-workspace');
+  await expect(desk).toBeVisible({ timeout: 30_000 });
+
+  await page.getByRole('button', { name: /^Edit$/ }).first().click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible({ timeout: 20_000 });
+
+  // Company is free text, optional, and on no list this suite asserts against.
+  const marker = `Desk edit ${Date.now()}`;
+  const company = dialog.getByLabel('Company');
+  await company.fill(marker);
+  await dialog.getByRole('button', { name: /save changes/i }).click();
+  await expect(dialog).toBeHidden({ timeout: 20_000 });
+
+  // Saved, not merely accepted: reopening reads it back from the server.
+  await page.getByRole('button', { name: /^Edit$/ }).first().click();
+  await expect(page.getByRole('dialog').getByLabel('Company')).toHaveValue(marker, { timeout: 20_000 });
+});
+
 test('the desk offers the record, its fields and a way to delete it', async ({ page }) => {
   await forgetTheChoice(page, '/leads');
   const desk = page.getByTestId('ipropy-workspace');

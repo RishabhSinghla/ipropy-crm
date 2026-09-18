@@ -1018,7 +1018,13 @@ const TIMELINE_FILTERS = [
   { key: 'audit', label: 'Changes' },
 ] as const;
 
-function TimelineTab({ module, id }: { module: string; id: string }): JSX.Element {
+/*
+  Exported because the iPROPY desk renders the same tabs inside the list. One
+  copy, deliberately: a second timeline that drifts from this one is two
+  answers to "what happened to this customer". The three of them belong in
+  their own files before this page is split, which CLAUDE.md already flags.
+*/
+export function TimelineTab({ module, id }: { module: string; id: string }): JSX.Element {
   const [filter, setFilter] = useState<string>('comment');
   const { data, isLoading } = useQuery({
     queryKey: ['timeline', module, id, filter],
@@ -1494,7 +1500,7 @@ interface FileRow {
   ai_caption?: string | null;
 }
 
-function FilesTab({ module, id, canEdit }: { module: string; id: string; canEdit: boolean }): JSX.Element {
+export function FilesTab({ module, id, canEdit }: { module: string; id: string; canEdit: boolean }): JSX.Element {
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: ['files', id],
@@ -2816,7 +2822,7 @@ function MentionTextarea({
  * because "what happened on the last call" is the question this tab exists to
  * answer.
  */
-function CallsTab({ recordId }: { recordId: string }): JSX.Element {
+export function CallsTab({ recordId }: { recordId: string }): JSX.Element {
   const queryClient = useQueryClient();
   const currentUser = useApp((state) => state.user);
   const [editing, setEditing] = useState<CallListItem | null>(null);

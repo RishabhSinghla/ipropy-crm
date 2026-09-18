@@ -1175,8 +1175,6 @@ export default function ListView(): JSX.Element {
           <IpropyWorkspace
             module={meta}
             rows={rows}
-            columns={visibleColumns}
-            fieldMap={fieldMap}
             selected={selected}
             attentionIds={unseen}
             onToggleSelect={(id, checked) => {

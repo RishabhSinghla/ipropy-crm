@@ -954,6 +954,20 @@ somebody has to leave the screen for. Delete is the selection bar's own endpoint
 selection of one, offered only where `permissions.delete` allows it. Add is the shell's New
 button, which was already on every screen.
 
+**The desk is self-sufficient, on the owner's follow-up the same day:** *"We can Edit the
+Records in This window Only… every thing we Can do as Table View in IPROPY View."* So the
+pencil opens the record's **own form in a dialog over the desk** (`RecordForm` in `mode:
+edit`, fetching the full record — a list row holds only the values the list asked for, and
+saving a form built from those writes blanks over every field the list did not carry).
+Timeline, Matching, Files, Calls and WhatsApp render **inside** the desk rather than sending
+you to the record page: `TimelineTab`, `FilesTab` and `CallsTab` are exported from
+`RecordDetail.tsx` for it, one copy each, because a second timeline that drifts is two
+answers to what happened to a customer. The star works, and Call goes through
+`CallDispositionProvider` keyed on the open record, so an outcome cannot be saved against
+whoever was on screen before. The field card lists the **module's** fields, not the list's
+columns — a table narrowed to five columns would otherwise narrow the record to five fields,
+and the value somebody came to fix is exactly the one that is not a column.
+
 **Every spec in `e2e/` that is about the table now signs in with `table` already stored**
 (`auth.setup.ts`), because they are about the table. `e2e/listDefaultView.spec.ts` is the
 one place the real default is proved, and it clears the key by loading, removing and
