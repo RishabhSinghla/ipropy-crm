@@ -13,6 +13,7 @@ import { io, type Socket } from 'socket.io-client';
 import { tokenStore } from './api';
 import { invalidateRecordQueries } from './invalidate';
 import { apiBase } from './native';
+import { callSyncSupported, placeCallFromPhone } from './callSync';
 
 let socket: Socket | null = null;
 
@@ -80,6 +81,20 @@ export function useRealtime(enabled: boolean): void {
       void qc.invalidateQueries({ queryKey: ['calls'] });
       void qc.invalidateQueries({ queryKey: ['timeline'] });
     };
+    /*
+      The CRM telling this phone to ring somebody.
+
+      Only the phone acts on it. The same event reaches the rep's laptop, where
+      there is nothing to do with it — that is deliberate rather than wasteful:
+      one event to the person, and whichever of their screens can actually
+      place a call does. The command is claimed by id so the phone's background
+      sync does not ring the same number a second time.
+    */
+    const onDial = (p: { commandId?: string; number?: string }): void => {
+      if (!callSyncSupported || !p?.number) return;
+      void placeCallFromPhone(p.number, p.commandId);
+    };
+
     const onLead = (): void => {
       invalidateRecordQueries(qc, 'leads');
       void qc.invalidateQueries({ queryKey: ['notifications'] });
@@ -95,6 +110,7 @@ export function useRealtime(enabled: boolean): void {
     s.on('call:incoming', onCall);
     s.on('call:ended', onCall);
     s.on('lead:new', onLead);
+    s.on('device:dial', onDial);
 
     return () => {
       s.off('record:updated', onRecordChanged);
@@ -107,6 +123,7 @@ export function useRealtime(enabled: boolean): void {
       s.off('call:incoming', onCall);
       s.off('call:ended', onCall);
       s.off('lead:new', onLead);
+      s.off('device:dial', onDial);
     };
   }, [enabled, qc]);
 }

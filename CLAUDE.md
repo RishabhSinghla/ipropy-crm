@@ -932,6 +932,43 @@ ago; and pacing belongs in the CRM, never in a laptop script that forgets on res
 must also decide, up front, that a business CRM has no business storing a rep's personal
 chats.
 
+## Pressing Call at a desk rings the rep's own phone
+
+**18 September 2026, the owner's report:** clicking Call on a Mac showed Chrome's
+*"Open Phone? https://crm.ipropy.com wants to open this application"* — the `tel:`
+hand-off asking which app should take the number. A laptop cannot place a phone call, so
+the CRM asks the paired handset instead.
+
+* `POST /api/telephony/dial` queues a `dial` command on `ipy_device_command` (migration
+  `157`) against the signed-in user's most recently synced active phone, and emits
+  `device:dial` to `user:<id>`. Picking "most recent" is safe **here and nowhere else** —
+  every device considered belongs to the same person, so the worst case is their spare
+  handset. The WhatsApp rebuild carries the same shape as a warning, because there the
+  accounts were different people's.
+* **The command expires in ninety seconds** (`expires_at`, swept on the next queue). A
+  phone back from a flat battery must never ring a customer for a button pressed the
+  night before. That rule is the reason this is a queue with a clock and not a push.
+* The app's own webview holds the socket, so the instruction arrives in the same second
+  and `CallSync.placeCall` fires `ACTION_CALL` — `CALL_PHONE` is asked for the first time
+  somebody presses Call, never at pairing. The result is posted back with the **device**
+  token, which only the native side holds; a browser session cannot speak for a handset.
+* **The CRM waits for that result before claiming anything.** Five seconds of polling
+  `GET /api/telephony/dial/:id`; anything other than `done` says so and falls back to the
+  desk hand-off. The two ordinary ways it goes quiet are a phone that is off and **an app
+  one version behind that has never heard of `placeCall`** — which is every installed
+  copy until somebody rebuilds and re-installs it.
+* **The Android half is written and has never been compiled here.** There is a JDK but no
+  Android SDK in this container, so `placeCall`, the manifest permission and the result
+  post are unproven against a real handset. `tests/integration/dialFromTheCrm.test.ts`
+  covers the server end — queue, expiry, the phone closing a command, and one handset
+  being unable to close another's.
+
+What is **not** possible, whatever a CRM claims: hearing a call as it happens. Android
+closed third-party call recording in Android 10 and no permission reopens it. What works
+is what `RecordingFinder` already does — the OEM recorder's file, read from a folder the
+rep grants once, uploaded **after** the call ends and matched on the last ten digits plus
+a time window. The player with play/pause is already in the timeline and the Calls tab.
+
 ## Every request appears twice in development, and once in production
 
 `main.tsx` wraps the app in `React.StrictMode`, which double-invokes effects in

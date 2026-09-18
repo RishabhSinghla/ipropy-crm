@@ -17,7 +17,7 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { BadRequestError } from '../../utils/errors.js';
 import {
-  attachRecording, authenticateDevice, syncCalls, type DeviceCallEntry,
+  attachRecording, authenticateDevice, finishCommand, syncCalls, type DeviceCallEntry,
 } from '../../integrations/telephony/deviceSync.js';
 
 export const deviceRouter = Router();
@@ -107,6 +107,17 @@ deviceRouter.get('/policy', asyncHandler(async (req, res) => {
     // Room to add the next thing the phone has to be told without shipping an
     // app that knows about it in advance.
   });
+}));
+
+/** The phone saying whether it managed it, so the CRM never has to guess. */
+deviceRouter.post('/commands/:id/result', asyncHandler(async (req, res) => {
+  const device = await authenticateDevice(bearer(req.headers.authorization) ?? undefined);
+  const input = z.object({
+    ok: z.boolean(),
+    error: z.string().max(200).nullable().optional(),
+  }).parse(req.body ?? {});
+  await finishCommand(device, req.params.id, input);
+  res.json({ ok: true });
 }));
 
 const fixSchema = z.object({

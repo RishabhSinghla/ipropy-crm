@@ -92,6 +92,13 @@
     -->
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
 
+    <!-- Placing the call the CRM asked for. ACTION_CALL without this shows an
+         app chooser, which is the dialog the whole feature exists to remove;
+         the rep is at a desk and not holding the phone. Asked for the first
+         time somebody presses Call, never at pairing, so a rep who only wants
+         their calls logged is never asked for the right to make one. -->
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+
     <!-- Android 13+ asks before an app may notify at all. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- So the fifteen-minute sync comes back after the handset restarts. -->

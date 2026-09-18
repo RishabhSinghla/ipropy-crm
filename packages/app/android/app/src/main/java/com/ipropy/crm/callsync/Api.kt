@@ -217,6 +217,21 @@ object Api {
         false
     }
 
+    /** Say what happened, so the CRM never has to guess whether a call rang. */
+    fun reportCommand(baseUrl: String, token: String, id: String, ok: Boolean, error: String?) {
+        try {
+            val connection = open(baseUrl, "/api/device/commands/$id/result", "POST", token)
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/json")
+            val body = JSONObject().put("ok", ok).apply { if (error != null) put("error", error) }
+            connection.outputStream.use { it.write(body.toString().toByteArray()) }
+            connection.responseCode
+            connection.disconnect()
+        } catch (e: Exception) {
+            Log.w(TAG, "command result failed", e)
+        }
+    }
+
     private fun open(baseUrl: String, path: String, method: String, token: String): HttpURLConnection {
         val connection = URL(baseUrl.trimEnd('/') + path).openConnection() as HttpURLConnection
         connection.requestMethod = method

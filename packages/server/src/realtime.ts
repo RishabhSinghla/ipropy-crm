@@ -161,6 +161,17 @@ function wireEvents(): void {
   });
 }
 
+/**
+ * Send one event to one person's own screens, from anywhere in the app.
+ *
+ * Every device they are signed in on, which is the point: the instruction to
+ * ring a number goes to the phone in their pocket, and the record they were
+ * looking at on the laptop follows the same call.
+ */
+export function emitToUser(userId: string, event: string, payload: unknown): void {
+  emitTo(`user:${userId}`, event, payload);
+}
+
 /** Push a notification to a specific user from anywhere in the app. */
 export function pushNotification(userId: string, payload: Record<string, unknown>): void {
   emitTo(`user:${userId}`, 'notification', payload);

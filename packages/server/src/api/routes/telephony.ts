@@ -10,6 +10,7 @@ import { activeValues, assertPicklistValue } from '../../core/metadata/picklists
 import { columnsOf } from '../../core/entity/payloadColumns.js';
 import { logManualCall } from '../../integrations/telephony/manualCall.js';
 import { recordService } from '../../core/entity/recordService.js';
+import { emitToUser } from '../../realtime.js';
 import { parseByteRange } from '../../utils/httpRange.js';
 
 export const telephonyRouter = Router();
@@ -480,6 +481,80 @@ telephonyRouter.post('/devices', asyncHandler(async (req, res) => {
     ...pairing,
     note: 'Copy this token into the phone app now — it is not shown again.',
   });
+}));
+
+/**
+ * Ring a number from the rep's own phone, pressed at a desk.
+ *
+ * The laptop cannot place a phone call. Handing it a `tel:` link asks the
+ * browser which application should open it — on a Mac that is a dialog naming
+ * FaceTime, which is not what anybody wanted and is what this replaces.
+ *
+ * Answers `{ sent: false }` rather than an error when the person has no paired
+ * phone, because the caller's fallback (the laptop's own dialler) is a working
+ * answer and not a failure.
+ */
+telephonyRouter.post('/dial', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'telephony.call');
+  const input = z.object({
+    to: z.string().min(3).max(32),
+    module: z.string().max(60).optional(),
+    recordId: z.string().uuid().optional(),
+  }).parse(req.body ?? {});
+
+  const { queueDial } = await import('../../integrations/telephony/deviceSync.js');
+  const queued = await queueDial({
+    userId: user.id,
+    number: input.to,
+    module: input.module ?? null,
+    recordId: input.recordId ?? null,
+  });
+  if (!queued) {
+    res.json({ sent: false, reason: 'no-device' });
+    return;
+  }
+
+  /*
+    The queue is what makes this reliable; this event is what makes it quick.
+    The app runs the same signed-in web app inside it, so when it is open the
+    instruction arrives in the same second rather than on the next sync. When
+    it is not, the phone finds the command the next time it asks — inside the
+    minute the command is alive for, or not at all.
+  */
+  emitToUser(user.id, 'device:dial', {
+    commandId: queued.commandId,
+    number: input.to,
+    module: input.module ?? null,
+    recordId: input.recordId ?? null,
+    expiresAt: queued.expiresAt,
+  });
+
+  res.json({
+    sent: true,
+    commandId: queued.commandId,
+    device: queued.deviceLabel,
+    expiresAt: queued.expiresAt,
+  });
+}));
+
+/**
+ * Did the phone actually ring?
+ *
+ * Asked by the screen that pressed Call, for a few seconds after. Without it
+ * the CRM would say "ringing from your phone" whatever happened — and the two
+ * ways that is a lie are both ordinary: a handset that is off, and an app one
+ * version behind that has never heard of placing a call. Either way the rep
+ * finds out from the CRM rather than from a customer who was never rung.
+ */
+telephonyRouter.get('/dial/:id', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const row = await db.queryOne<{ status: string; error: string | null }>(
+    `SELECT status, error FROM ipy_device_command WHERE id = $1 AND user_id = $2`,
+    [req.params.id, user.id],
+  );
+  if (!row) throw new NotFoundError('That call instruction is not yours or no longer exists.');
+  res.json({ status: row.status, error: row.error });
 }));
 
 telephonyRouter.delete('/devices/:id', asyncHandler(async (req, res) => {

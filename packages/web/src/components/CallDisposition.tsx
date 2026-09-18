@@ -8,6 +8,7 @@ import { useVoiceCapture } from '../lib/useVoiceCapture';
 import { cn } from '../lib/utils';
 import { Modal, Spinner } from './ui';
 import { dial } from '../lib/nativeActions';
+import { isNative } from '../lib/native';
 
 interface CallActions {
   startCall: (number: string) => Promise<void>;
@@ -18,6 +19,29 @@ const CallDispositionContext = createContext<CallActions | null>(null);
 /** Returns null outside a record page, where a normal tel: link is correct. */
 export function useCallDisposition(): CallActions | null {
   return useContext(CallDispositionContext);
+}
+
+/**
+ * Wait, briefly, for the phone to say it rang.
+ *
+ * Polled rather than pushed: the answer is one row and the wait is seconds, so
+ * a socket subscription for it would be more moving parts than the thing it
+ * reports. Five seconds is the budget — beyond that a rep has already reached
+ * for their phone to see what happened.
+ */
+async function phoneTookIt(commandId: string | undefined): Promise<boolean> {
+  if (!commandId) return false;
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await new Promise((resolve) => { setTimeout(resolve, 500); });
+    try {
+      const { status } = await api.dialStatus(commandId);
+      if (status === 'done') return true;
+      if (status === 'failed' || status === 'expired') return false;
+    } catch {
+      // A blip on the way to a row that will still be there next time round.
+    }
+  }
+  return false;
 }
 
 export function CallDispositionProvider({
@@ -82,17 +106,42 @@ export function CallDispositionProvider({
     setPlacing(true);
     try {
       /*
-        Always the phone's own dialler.
+        The rep's own phone, wherever they pressed the button.
 
-        There used to be a branch here that placed the call through Twilio or
-        Exotel when one was configured. Neither ever was on this business, and
-        both are gone: a rep rings from the handset in their hand, and the call
-        comes back into the CRM through the paired Android app.
+        On the phone itself that is its dialler, straight away. At a desk the
+        laptop cannot place a phone call at all: handing it the number asks the
+        browser which application should open it, and on a Mac that is a dialog
+        naming FaceTime. So the CRM asks the paired handset to ring instead,
+        and the call comes back in through the same sync that files every other
+        call the rep makes.
 
-        The CRM state is set before leaving for the dialler, so when they come
-        back the outcome form is already open and waiting.
+        A laptop with no paired phone still falls back to the old hand-off —
+        somebody may have a softphone set up, and a dialog is better than a
+        button that does nothing.
+
+        The CRM state is set before any of that, so the outcome form is already
+        open and waiting when they come back.
       */
-      dial(clean);
+      if (isNative) {
+        dial(clean);
+      } else {
+        const result = await api.dialOnPhone({ to: clean, module, recordId });
+        if (!result.sent) {
+          dial(clean);
+        } else if (await phoneTookIt(result.commandId)) {
+          toast.success('Ringing from your phone', `${result.device ?? 'Your phone'} is calling now.`);
+        } else {
+          /*
+            The two ordinary ways this goes quiet, and neither may be reported
+            as a call: a handset that is off or out of signal, and an app one
+            version behind that has never heard of placing a call. The desk
+            hand-off is offered instead, so the rep finds out here rather than
+            from a customer who was never rung.
+          */
+          toast.error('Your phone did not pick that up', 'Is it on, unlocked, and running the latest iPropy app?');
+          dial(clean);
+        }
+      }
     } catch (err) {
       toast.error('Could not place the call', (err as Error).message);
       close();

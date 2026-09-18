@@ -38,6 +38,7 @@ interface CallSyncPlugin {
   setLocationEnabled(options: { enabled: boolean }): Promise<CallSyncStatus>;
   setUploadRecordings(options: { enabled: boolean }): Promise<CallSyncStatus>;
   requestCallLog(): Promise<CallSyncStatus>;
+  placeCall(options: { number: string; commandId?: string }): Promise<{ placed: boolean; reason?: string }>;
   requestLocation(): Promise<CallSyncStatus>;
   openAppSettings(): Promise<void>;
 }
@@ -146,4 +147,31 @@ export async function setCallSyncRecordings(enabled: boolean): Promise<CallSyncS
 export async function openAppSettings(): Promise<void> {
   if (!callSyncSupported) return;
   await CallSync.openAppSettings();
+}
+
+/**
+ * Ring a number from this handset, on the CRM's instruction.
+ *
+ * The rep pressed Call at a desk; this is the phone in their pocket doing as
+ * it was told. It leaves through the dialler with the number already dialling,
+ * so there is no app chooser and nothing to tap — the permission for that was
+ * granted once, when they paired.
+ *
+ * Answers rather than throws when it cannot: an old build with no `placeCall`
+ * in it, a permission the rep later revoked, or a handset with no SIM. The
+ * caller reports the call as not placed, which is the truth and is actionable,
+ * instead of the CRM claiming a call that never rang.
+ */
+export async function placeCallFromPhone(
+  number: string, commandId?: string,
+): Promise<{ placed: boolean; reason?: string }> {
+  if (!callSyncSupported) return { placed: false, reason: 'not-a-phone' };
+  try {
+    // The command id travels into the native side rather than being closed
+    // from here: the result has to be posted with the *device* token, which
+    // only the plugin holds. A session token cannot speak for a handset.
+    return await CallSync.placeCall({ number, commandId });
+  } catch (err) {
+    return { placed: false, reason: (err as Error).message || 'failed' };
+  }
 }

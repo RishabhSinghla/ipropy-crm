@@ -411,3 +411,104 @@ export async function revokeDevice(deviceId: string, userId: string, isAdmin: bo
     [deviceId, userId, isAdmin],
   );
 }
+
+// ---------------------------------------------------------------------------
+// Telling a rep's own phone to place a call
+// ---------------------------------------------------------------------------
+
+/**
+ * How long a dial instruction is worth acting on.
+ *
+ * Short on purpose. A phone that was asleep, out of signal or had the app
+ * swapped out must never come back and ring a customer for a button somebody
+ * pressed hours ago — from the customer's side that is a silent call out of
+ * nowhere, and from the rep's side a call they are not holding the phone for.
+ * If it is late, it is wrong, and the CRM says so rather than ringing.
+ */
+const DIAL_TTL_SECONDS = 90;
+
+export interface QueuedDial {
+  commandId: string;
+  deviceId: string;
+  deviceLabel: string;
+  expiresAt: string;
+}
+
+/**
+ * Put "ring this number" in front of the signed-in user's own phone.
+ *
+ * Which phone, when there is more than one: the most recently synced active
+ * one. That choice is safe *here* and would not be elsewhere — every device
+ * considered belongs to this same user, so the worst case is the call leaving
+ * from their spare handset rather than from somebody else's. (The WhatsApp
+ * rebuild carries the same shape as a warning, because there the accounts
+ * belonged to different people and "most recent" sent Sheetal's message from
+ * Rahul's phone.)
+ *
+ * Answers null when the user has no paired phone, which is the caller's cue to
+ * fall back to the laptop's own dialler rather than to fail.
+ */
+export async function queueDial(input: {
+  userId: string;
+  number: string;
+  module?: string | null;
+  recordId?: string | null;
+}): Promise<QueuedDial | null> {
+  const digits = input.number.replace(/[^\d+]/g, '');
+  if (!digits) throw new BadRequestError('No number to call.');
+
+  const device = await db.queryOne<{ id: string; label: string }>(
+    `SELECT id, label FROM ipy_device
+      WHERE user_id = $1 AND is_active = true
+      ORDER BY last_sync_at DESC NULLS LAST, created_at DESC
+      LIMIT 1`,
+    [input.userId],
+  );
+  if (!device) return null;
+
+  /*
+    Close out anything this phone never acted on, in the same breath as adding
+    the next one. There is no separate sweeper to forget to run, and a row
+    sitting on `queued` for ever would read as a call still about to happen.
+  */
+  await db.query(
+    `UPDATE ipy_device_command SET status = 'expired', finished_at = now()
+      WHERE device_id = $1 AND status = 'queued' AND expires_at <= now()`,
+    [device.id],
+  );
+
+  const row = await db.queryOne<{ id: string; expires_at: string }>(
+    `INSERT INTO ipy_device_command (device_id, user_id, kind, payload, module, record_id, expires_at)
+     VALUES ($1, $2, 'dial', $3::jsonb, $4, $5, now() + ($6 || ' seconds')::interval)
+     RETURNING id, expires_at`,
+    [
+      device.id,
+      input.userId,
+      JSON.stringify({ number: digits }),
+      input.module ?? null,
+      input.recordId ?? null,
+      String(DIAL_TTL_SECONDS),
+    ],
+  );
+
+  return {
+    commandId: row!.id,
+    deviceId: device.id,
+    deviceLabel: device.label,
+    expiresAt: row!.expires_at,
+  };
+}
+
+/** The phone saying what happened, so the CRM never has to guess. */
+export async function finishCommand(
+  device: AuthedDevice,
+  commandId: string,
+  outcome: { ok: boolean; error?: string | null },
+): Promise<void> {
+  await db.query(
+    `UPDATE ipy_device_command
+        SET status = $3, finished_at = now(), error = $4
+      WHERE id = $1 AND device_id = $2`,
+    [commandId, device.id, outcome.ok ? 'done' : 'failed', outcome.error ?? null],
+  );
+}

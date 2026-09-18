@@ -14,6 +14,7 @@ import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
 import com.getcapacitor.annotation.Permission
 import com.getcapacitor.annotation.PermissionCallback
+import com.ipropy.crm.callsync.Api
 import com.ipropy.crm.callsync.CallLogReader
 import com.ipropy.crm.callsync.Prefs
 import com.ipropy.crm.callsync.SyncWorker
@@ -42,6 +43,7 @@ import com.ipropy.crm.callsync.SyncWorker
     name = "CallSync",
     permissions = [
         Permission(alias = CallSyncPlugin.CALL_LOG, strings = [Manifest.permission.READ_CALL_LOG]),
+        Permission(alias = CallSyncPlugin.PLACE_CALL, strings = [Manifest.permission.CALL_PHONE]),
         Permission(alias = CallSyncPlugin.LOCATION, strings = [
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION,
@@ -173,6 +175,69 @@ class CallSyncPlugin : Plugin() {
     @PermissionCallback
     private fun afterCallLog(call: PluginCall) = call.resolve(currentStatus())
 
+    /**
+     * Ring a number, because the CRM asked this handset to.
+     *
+     * `ACTION_CALL` and not `ACTION_DIAL`: dial only fills the number in and
+     * waits for a thumb, which defeats the point — the rep pressed Call on a
+     * laptop and is not holding the phone. With CALL_PHONE granted there is no
+     * app chooser either, which is the dialog this whole path exists to remove.
+     *
+     * The permission is asked for here rather than at pairing, so a rep who
+     * only ever wants their calls logged is never asked for the right to make
+     * one. Refusing it costs this feature and nothing else: the CRM hears
+     * `placed: false` and says so instead of claiming a call that never rang.
+     *
+     * Whatever happens is posted back with the *device* token, which only this
+     * side holds — the webview's session cannot speak for a handset.
+     */
+    @PluginMethod
+    fun placeCall(call: PluginCall) {
+        val number = call.getString("number").orEmpty().trim()
+        if (number.isEmpty()) { call.reject("No number to call"); return }
+        if (getPermissionState(PLACE_CALL)?.toString() != "granted") {
+            requestPermissionForAlias(PLACE_CALL, call, "afterPlaceCall")
+            return
+        }
+        dialNow(call, number)
+    }
+
+    @PermissionCallback
+    private fun afterPlaceCall(call: PluginCall) {
+        val number = call.getString("number").orEmpty().trim()
+        if (getPermissionState(PLACE_CALL)?.toString() != "granted") {
+            report(call.getString("commandId"), false, "permission-refused")
+            call.resolve(JSObject().put("placed", false).put("reason", "permission-refused"))
+            return
+        }
+        dialNow(call, number)
+    }
+
+    private fun dialNow(call: PluginCall, number: String) {
+        val commandId = call.getString("commandId")
+        try {
+            val intent = Intent(Intent.ACTION_CALL, Uri.parse("tel:" + Uri.encode(number)))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            report(commandId, true, null)
+            call.resolve(JSObject().put("placed", true))
+        } catch (e: Exception) {
+            // A handset with no SIM, a work profile that forbids calls, or a
+            // number the dialler will not take. Reported rather than thrown:
+            // the CRM has to be able to say "it did not ring".
+            report(commandId, false, e.message ?: "failed")
+            call.resolve(JSObject().put("placed", false).put("reason", e.message ?: "failed"))
+        }
+    }
+
+    /** Close the command out, if it came from one. Best effort, off the main thread. */
+    private fun report(commandId: String?, ok: Boolean, error: String?) {
+        val id = commandId ?: return
+        val base = prefs.baseUrl ?: return
+        val token = try { prefs.token } catch (e: Exception) { null } ?: return
+        Thread { Api.reportCommand(base, token, id, ok, error) }.start()
+    }
+
     @PluginMethod
     fun requestLocation(call: PluginCall) {
         if (getPermissionState(LOCATION)?.toString() == "granted") { call.resolve(currentStatus()); return }
@@ -215,5 +280,6 @@ class CallSyncPlugin : Plugin() {
     companion object {
         const val CALL_LOG = "callLog"
         const val LOCATION = "location"
+        const val PLACE_CALL = "placeCall"
     }
 }

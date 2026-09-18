@@ -1000,6 +1000,11 @@ export const api = {
   pairDevice: (data: { label?: string; phoneNumber?: string | null; model?: string | null }) =>
     post<{ deviceId: string; token: string; note: string }>('/api/telephony/devices', data),
   revokeDevice: (id: string) => del(`/api/telephony/devices/${id}`),
+  /** Ring a number from the signed-in user's own paired phone. */
+  dialOnPhone: (data: { to: string; module?: string; recordId?: string }) =>
+    post<{ sent: boolean; reason?: string; device?: string; commandId?: string; expiresAt?: string }>('/api/telephony/dial', data),
+  /** Did the phone actually take it? queued | delivered | done | failed | expired. */
+  dialStatus: (id: string) => get<{ status: string; error: string | null }>(`/api/telephony/dial/${id}`),
   logCall: (data: Record<string, unknown>) => post('/api/telephony/log', data),
   calls: (params: Record<string, unknown> = {}) => get<Record<string, unknown>[]>(`/api/telephony/calls${qs(params)}`),
   callDetail: (id: string) => get<Record<string, unknown>>(`/api/telephony/calls/${id}`),
