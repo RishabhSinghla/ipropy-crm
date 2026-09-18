@@ -897,14 +897,12 @@ is invisible on most screens** — put it in the drawer too.
 **Not built yet:** media, voice notes, quick replies, search, the admin panel,
 property sharing.
 
-**The row's avatar is gone, replaced by the form-strength number alone** (18 September,
-owner's words: *"replace Full Name avtar with Percentage of Contact Form Strength… use only
-two colour of pastel shade"*). `StrengthChip` in `components/StrengthRing.tsx`: one pastel
-chip, **two tones and no more**, splitting at 70%. The ring with the avatar inside it stays
-on the record page, where there is room for it. The chip carries `role="img"` and the same
-`Form strength …%` label the ring does — that shared name is what lets
-`e2e/formStrength.spec.ts` prove the row and the record agree, which is the one thing only
-a browser can answer.
+**The avatar on the row stayed, and a percentage chip that replaced it was rolled back the
+same day** (18 September). The owner asked for the chip, saw it on production, and asked for
+it back the way it was — so the row leads with the face and its ring again, and the number
+rides in the ring's corner. `StrengthChip` was removed with it rather than left behind
+unused. Worth knowing before proposing it again: the request and the reversal are both his,
+hours apart, and the second is the one that stands.
 
 **The list's pinned quick-actions column is gone** (17 September, owner's instruction), and
 with it `e2e/quickActions.spec.ts`. It was one hover-only Call button in a column pinned to

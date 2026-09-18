@@ -2,7 +2,7 @@
  * How full a record is, shown on the row and on the record.
  *
  * The one thing only a browser can answer: the list and the record page must
- * agree. The list draws its chip from the values the *list* endpoint returned,
+ * agree. The list draws its ring from the values the *list* endpoint returned,
  * the record page from the values the *record* endpoint returned. If the list
  * were sending back only the visible columns, every row would read far emptier
  * than the record it opens, and the number would quietly be a lie.
@@ -14,8 +14,6 @@ test('the row and the record report the same strength', async ({ page }) => {
   await expect(page.getByText(/^[\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
 
   const firstRow = page.locator('tbody tr').first();
-  // The row shows a chip and the record page a ring; both answer to the same
-  // accessible name, which is the point of this test — they must agree.
   const ring = firstRow.getByRole('img', { name: /^Form strength/ });
   await expect(ring).toBeVisible();
 
@@ -47,17 +45,14 @@ test('the number is spoken, not only drawn', async ({ page }) => {
   expect(label).toMatch(/Form strength \d+% — (nothing left to fill in|still missing .+)/);
 });
 
-test('the number is on the row, and the second line says who they are', async ({ page }) => {
+test('the number rides on the face, and the second line says who they are', async ({ page }) => {
   await page.goto('/leads');
   await expect(page.getByText(/^[\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
 
   const cell = page.locator('tbody tr').first().locator('td').nth(1);
 
-  /*
-    The chip that replaced the avatar: one pastel number, no face and no ring.
-    It must be there whatever the value — "no chip" and "0%" would look the
-    same to somebody scanning the column.
-  */
+  // Either a percentage in the ring's corner, or the tick that replaces it at
+  // 100% — never nothing, because "no badge" and "0%" would look the same.
   const badge = cell.locator('[title^="Form strength"]');
   await expect(badge).toBeVisible();
 
