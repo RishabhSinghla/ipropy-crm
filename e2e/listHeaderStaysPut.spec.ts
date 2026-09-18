@@ -32,9 +32,13 @@ for (const path of ['/leads', '/properties']) {
     await page.goto(path);
     await expect(page.getByText(/^[\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
 
-    const header = page.locator('th.list-head').first();
-    await expect(header).toBeVisible();
-    const before = (await header.boundingBox())?.y;
+    // EVERY header cell, not the first one. The first is the checkbox column,
+    // and it was the only one still pinned while every named column scrolled
+    // away — so a test that measured `.first()` passed four times in a row
+    // against a list whose headers were visibly gone.
+    const headers = page.locator('th.list-head');
+    await expect(headers.first()).toBeVisible();
+    const before = await headers.evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().y)));
 
     // A wheel over the grid, the way a person scrolls — not `scrollTop`, which
     // would pick the scroll container for the browser and hide the bug where
@@ -62,6 +66,15 @@ for (const path of ['/leads', '/properties']) {
     expect(state.rowsScrolled, 'the rows did not move, so this proves nothing').toBeGreaterThan(300);
     expect(state.windowScrolled, 'the page scrolled, which takes the header with it').toBe(0);
     expect(state.coveredByARow, 'a row is painted over the header').toBe(false);
-    expect((await header.boundingBox())?.y, 'the header drifted with the rows').toBeCloseTo(before ?? 0, 0);
+
+    // Every one of them, and still on screen. `position` is asserted outright
+    // because that is what actually broke: a Tailwind `relative` on the cell
+    // beat the `sticky` in `.list-head`, and a header that has scrolled to
+    // y = -581 still reports a perfectly plausible width and height.
+    const after = await headers.evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().y)));
+    const positions = await headers.evaluateAll((els) => [...new Set(els.map((e) => getComputedStyle(e).position))]);
+    expect(positions, 'every header cell must be sticky, not relative').toEqual(['sticky']);
+    expect(after, 'a header drifted with the rows').toEqual(before);
+    expect(Math.min(...after), 'a header scrolled off the top of the screen').toBeGreaterThan(0);
   });
 }
