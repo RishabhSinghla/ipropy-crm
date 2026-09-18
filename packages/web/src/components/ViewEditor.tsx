@@ -191,6 +191,7 @@ export function ViewEditor({
               options={[
                 { value: 'table', label: 'Table' },
                 { value: 'kanban', label: 'Board (grouped columns)' },
+                { value: 'ipropy', label: 'IPROPY workspace' },
               ]}
             />
           </div>

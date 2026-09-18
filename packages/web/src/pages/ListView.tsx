@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { isFilterGroup, type CustomView, type FieldMeta, type FilterGroup, formatIndianPrice, formatPhoneWithCode, toInternational, type ListQuery, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Columns3, Compass, Download, Filter,
-  LayoutGrid, List, MessageCircle, Pencil, Phone, Plus, RefreshCw, Ruler, Save, Search, Settings2, Star, Tag, Trash2, Upload, Users, X,
+  LayoutGrid, List, MessageCircle, PanelLeftOpen, Pencil, Phone, Plus, RefreshCw, Ruler, Save, Search, Settings2, Star, Tag, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { ApiError, api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
@@ -32,6 +32,7 @@ import { MAX_WIDTH, MIN_WIDTH, SELECT_COL_WIDTH, useColumnWidths } from '../lib/
 import { useOfflineMeta } from '../lib/useOfflineList';
 import { deliverFile, dial, openExternal } from '../lib/nativeActions';
 import { blankView, type SavedView, ViewEditor } from '../components/ViewEditor';
+import { IpropyWorkspace } from '../components/IpropyWorkspace';
 
 const EMPTY_FILTER: FilterGroup = { logic: 'AND', conditions: [] };
 export default function ListView(): JSX.Element {
@@ -82,7 +83,7 @@ export default function ListView(): JSX.Element {
   const [filter, setFilter] = useState<FilterGroup>(EMPTY_FILTER);
   const [sortBy, setSortBy] = useState<string | undefined>();
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  const [displayMode, setDisplayMode] = useState<'table' | 'kanban'>('table');
+  const [displayMode, setDisplayMode] = useState<'table' | 'kanban' | 'ipropy'>('table');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // Gmail's "select all X in this search": when true, bulk actions run against
   // every record the current view/filter matches, not just this page's ids.
@@ -313,7 +314,7 @@ export default function ListView(): JSX.Element {
     // arrived, so a view showing every column resolves to none of them, and
     // this is the render that fixes it.
     setColumns(activeView.columns?.length ? activeView.columns : allColumns(meta));
-    setDisplayMode(activeView.displayMode === 'kanban' ? 'kanban' : 'table');
+    setDisplayMode(activeView.displayMode === 'kanban' || activeView.displayMode === 'ipropy' ? activeView.displayMode : 'table');
 
     // Same view, same definition, later render — metadata arriving is not a
     // view change, and must not overwrite a sort the user chose since.
@@ -963,6 +964,14 @@ export default function ListView(): JSX.Element {
               >
                 <LayoutGrid className="h-3.5 w-3.5" />
               </button>
+              <button
+                onClick={() => setDisplayMode('ipropy')}
+                className={cn('px-2 py-1.5', displayMode === 'ipropy' ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200' : 'hover:bg-slate-50 dark:hover:bg-slate-800')}
+                title="IPROPY View"
+                aria-label="IPROPY View"
+              >
+                <PanelLeftOpen className="h-3.5 w-3.5" />
+              </button>
             </div>
 
             <Dropdown
@@ -1034,7 +1043,7 @@ export default function ListView(): JSX.Element {
               )}
             </Dropdown>
 
-            {displayMode === 'table' && (data?.total ?? 0) > 0 && (
+            {displayMode !== 'kanban' && (data?.total ?? 0) > 0 && (
               <div className="hidden items-center gap-1 rounded-lg border border-slate-200 px-1.5 py-1 text-xs text-muted lg:flex dark:border-slate-700">
                 <button className="btn-ghost p-0.5" aria-label="Previous page" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}><ChevronLeft className="h-3.5 w-3.5" /></button>
                 <label className="flex items-center gap-1 whitespace-nowrap"><input className="h-5 w-10 rounded border border-slate-200 bg-white px-1 text-center text-xs dark:border-slate-700 dark:bg-slate-900" aria-label="Go to page" type="number" min={1} max={data!.totalPages} value={pageInput} onFocus={(e) => e.currentTarget.select()} onBlur={commitPageInput} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} onChange={(e) => setPageInput(e.target.value)} /><span>/ {data!.totalPages}</span></label>
@@ -1145,6 +1154,24 @@ export default function ListView(): JSX.Element {
             groupBy={groupByField!}
             attentionIds={unseen}
             onMove={(id, value) => stageMutation.mutate({ id, values: { [groupByField!]: value } })}
+          />
+        ) : displayMode === 'ipropy' ? (
+          <IpropyWorkspace
+            module={meta}
+            rows={rows}
+            columns={visibleColumns}
+            fieldMap={fieldMap}
+            selected={selected}
+            attentionIds={unseen}
+            onToggleSelect={(id, checked) => {
+              setSelectedAll(false);
+              setSelected((current) => {
+                const next = new Set(current);
+                if (checked) next.add(id); else next.delete(id);
+                return next;
+              });
+            }}
+            onOpen={(id) => openRecord(`/${moduleName}/${id}?return=${encodeURIComponent(returnTo)}`)}
           />
         ) : (
           <>
@@ -1515,7 +1542,7 @@ export default function ListView(): JSX.Element {
       </div>
 
       {/* Pagination */}
-      {displayMode === 'table' && (data?.total ?? 0) > 0 && (
+      {displayMode !== 'kanban' && (data?.total ?? 0) > 0 && (
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-4 py-2 lg:hidden dark:border-slate-800 dark:bg-slate-900 sm:px-6">
           <p className="text-xs text-muted tnum">
             {((data!.page - 1) * data!.pageSize + 1).toLocaleString('en-IN')}–

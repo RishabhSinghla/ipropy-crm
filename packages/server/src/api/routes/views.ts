@@ -18,7 +18,7 @@ const viewSchema = z.object({
   filter: z.record(z.unknown()).default({ logic: 'AND', conditions: [] }),
   sortBy: z.string().nullable().optional(),
   sortDir: z.enum(['asc', 'desc']).default('desc'),
-  displayMode: z.enum(['table', 'kanban', 'calendar', 'map', 'timeline', 'gallery', 'split']).default('table'),
+  displayMode: z.enum(['table', 'kanban', 'ipropy', 'calendar', 'map', 'timeline', 'gallery', 'split']).default('table'),
   groupBy: z.string().nullable().optional(),
   isPublic: z.boolean().default(false),
   isDefault: z.boolean().default(false),

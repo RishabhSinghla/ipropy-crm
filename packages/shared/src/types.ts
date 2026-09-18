@@ -99,7 +99,7 @@ export interface CustomView {
   sharedWith?: string[];
 }
 
-export type ViewDisplayMode = 'table' | 'kanban' | 'calendar' | 'map' | 'timeline' | 'gallery' | 'split';
+export type ViewDisplayMode = 'table' | 'kanban' | 'ipropy' | 'calendar' | 'map' | 'timeline' | 'gallery' | 'split';
 
 // ---------------------------------------------------------------------------
 // Layouts
