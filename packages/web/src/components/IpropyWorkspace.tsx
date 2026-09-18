@@ -1,208 +1,70 @@
 import { type JSX, useEffect, useMemo, useState } from 'react';
-import { CalendarClock, CheckCircle2, ChevronRight, CircleDot, ExternalLink, Phone, Sparkles, Star, Tag, UserRound } from 'lucide-react';
-import type { FieldMeta, ModuleMeta, RecordEnvelope } from '@ipropy/shared';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { recordStrength, relativeTime, type FieldMeta, type ModuleMeta, type RecordEnvelope, type TimelineEntry } from '@ipropy/shared';
+import { ChevronRight, CircleEllipsis, FileText, Link2, MessageCircle, Pencil, Phone, Send, Star, Tag, UserRound } from 'lucide-react';
 import { FieldValue } from './FieldRenderer';
 import { ModuleIcon } from './Layout';
+import { api } from '../lib/api';
 import { cn } from '../lib/utils';
+import { toast } from '../lib/store';
 
-/**
- * The iPROPY view is deliberately a different way of reading the same list,
- * not a second record model.  It receives the list query's rows and metadata,
- * so saved-view filters, permissions, labels and custom fields behave exactly
- * as they do in the table and board views.
- */
-export function IpropyWorkspace({
-  module, rows, columns, fieldMap, selected, attentionIds, onToggleSelect, onOpen,
-}: {
-  module: ModuleMeta;
-  rows: RecordEnvelope[];
-  columns: string[];
-  fieldMap: Map<string, FieldMeta>;
-  selected: Set<string>;
-  attentionIds: Set<string>;
-  onToggleSelect: (id: string, checked: boolean) => void;
-  onOpen: (id: string) => void;
+/** A high-density record desk: list, record context and team notes in one view. */
+export function IpropyWorkspace({ module, rows, columns, fieldMap, selected, attentionIds, onToggleSelect, onOpen }: {
+  module: ModuleMeta; rows: RecordEnvelope[]; columns: string[]; fieldMap: Map<string, FieldMeta>;
+  selected: Set<string>; attentionIds: Set<string>; onToggleSelect: (id: string, checked: boolean) => void; onOpen: (id: string) => void;
 }): JSX.Element {
   const [activeId, setActiveId] = useState<string | null>(rows[0]?.id ?? null);
-
-  // Filters, sorting, paging and live invalidation replace the row array. Keep
-  // the inspector on its selected record when it still exists; otherwise move
-  // to the first visible result rather than leaving a stale detail pane.
-  useEffect(() => {
-    setActiveId((current) => rows.some((row) => row.id === current) ? current : (rows[0]?.id ?? null));
-  }, [rows]);
+  const [tab, setTab] = useState<'overview' | 'timeline'>('overview');
+  useEffect(() => setActiveId((current) => rows.some((row) => row.id === current) ? current : (rows[0]?.id ?? null)), [rows]);
 
   const active = rows.find((row) => row.id === activeId) ?? rows[0] ?? null;
-  const statusField = useMemo(
-    () => module.fields.find((field) => field.name === module.pipelineField)
-      ?? module.fields.find((field) => /status|stage/i.test(field.name)),
-    [module.fields, module.pipelineField],
-  );
-  const followUpField = useMemo(
-    () => module.fields.find((field) => field.columnName === 'next_followup_at')
-      ?? module.fields.find((field) => /next.*follow.*up/i.test(field.name)),
-    [module.fields],
-  );
-  const phoneField = useMemo(() => module.fields.find((field) => field.uitype === 'phone'), [module.fields]);
+  const statusField = useMemo(() => module.fields.find((f) => f.name === module.pipelineField) ?? module.fields.find((f) => /status|stage/i.test(f.name)), [module.fields, module.pipelineField]);
+  const followUpField = useMemo(() => module.fields.find((f) => f.columnName === 'next_followup_at') ?? module.fields.find((f) => /next.*follow.*up/i.test(f.name)), [module.fields]);
+  const phoneField = useMemo(() => module.fields.find((f) => f.uitype === 'phone'), [module.fields]);
   const overviewFields = useMemo(() => {
     const identity = new Set(module.labelFields);
-    const preferred = columns.length ? columns : module.fields.map((field) => field.name);
-    return preferred
-      .map((name) => fieldMap.get(name))
+    return (columns.length ? columns : module.fields.map((field) => field.name)).map((name) => fieldMap.get(name))
       .filter((field): field is FieldMeta => Boolean(field && field.isActive && field.displayType !== 'hidden'))
-      .filter((field) => !identity.has(field.name) && field.uitype !== 'autonumber')
-      .slice(0, 8);
+      .filter((field) => !identity.has(field.name) && field.uitype !== 'autonumber').slice(0, 10);
   }, [columns, fieldMap, module.fields, module.labelFields]);
 
-  return (
-    <section data-testid="ipropy-workspace" className="min-h-full bg-[#f6f8f5] p-3 sm:p-5 dark:bg-slate-950">
-      <div className="mx-auto grid max-w-[1680px] overflow-hidden rounded-2xl border border-emerald-950/10 bg-white shadow-sm lg:grid-cols-[minmax(18rem,23rem)_minmax(0,1fr)] dark:border-slate-800 dark:bg-slate-900">
-        <aside className="border-b border-slate-200 bg-[#fbfcfa] lg:border-b-0 lg:border-r dark:border-slate-800 dark:bg-slate-950/40">
-          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-800">
-            <div className="flex items-center gap-2">
-              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
-                <ModuleIcon name={module.icon} className="h-4 w-4" />
-              </span>
-              <div>
-                <p className="text-sm font-bold text-slate-900 dark:text-slate-100">{module.label}</p>
-                <p className="text-2xs text-slate-500">iPROPY workspace</p>
-              </div>
-            </div>
-            <span className="rounded-full bg-emerald-100 px-2 py-1 text-2xs font-bold text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
-              {rows.length} shown
-            </span>
+  return <section data-testid="ipropy-workspace" className="min-h-full bg-[#f7f9fc] dark:bg-slate-950">
+    <div className="grid min-h-[calc(100vh-13rem)] xl:grid-cols-[minmax(20rem,29rem)_minmax(0,1fr)_minmax(18rem,23rem)]">
+      <aside className="border-b border-slate-200 bg-white xl:border-b-0 xl:border-r dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex h-12 items-center justify-between border-b border-slate-200 px-4 dark:border-slate-800">
+          <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300"><ModuleIcon name={module.icon} className="h-4 w-4 text-brand-600" />{module.singularLabel} / Contact</p>
+          <span className="text-2xs font-semibold text-slate-400">{rows.length} shown</span>
+        </div>
+        <div className="max-h-[31rem] overflow-y-auto xl:max-h-[calc(100vh-16rem)]">
+          {rows.map((row) => <QueueRow key={row.id} module={module} row={row} active={row.id === active?.id} checked={selected.has(row.id)} attention={attentionIds.has(row.id)} statusField={statusField} followUpField={followUpField} onSelect={() => setActiveId(row.id)} onToggle={(checked) => onToggleSelect(row.id, checked)} />)}
+        </div>
+      </aside>
+      {active && <main className="min-w-0 bg-white dark:bg-slate-900">
+        <header className="border-b border-slate-200 px-5 pt-5 dark:border-slate-800 sm:px-7">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="flex min-w-0 items-center gap-4"><ScoreRing module={module} row={active} large /><div className="min-w-0"><div className="flex flex-wrap items-center gap-x-3 gap-y-1"><h2 className="truncate text-2xl font-extrabold tracking-tight text-slate-950 dark:text-white">{active.label}</h2><span className="hidden h-1 w-1 rounded-full bg-slate-300 sm:inline" /><span className="inline-flex items-center gap-1 text-sm text-slate-500"><UserRound className="h-3.5 w-3.5" />{active.ownerName ?? 'Unassigned'}</span><span className="text-sm text-slate-400">• Updated {relativeTime(active.updatedAt)}</span></div><div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">{phoneField && displayOf(active, phoneField) && <span className="inline-flex items-center gap-1.5 font-semibold text-slate-700 dark:text-slate-200"><Phone className="h-3.5 w-3.5 text-brand-600" />{displayOf(active, phoneField)}</span>}{followUpField && <span className="text-slate-500">Next Follow-up: <b className="text-slate-700 dark:text-slate-200">{dateLabel(active.values[followUpField.name]) ?? '—'}</b></span>}{statusField && <StatusPill field={statusField} row={active} label={displayOf(active, statusField) || 'Not set'} />}{active.tags?.slice(0, 2).map((tag) => <span key={tag} className="inline-flex items-center gap-1 rounded-md bg-brand-50 px-1.5 py-0.5 text-2xs font-semibold text-brand-700 dark:bg-brand-950/40 dark:text-brand-300"><Tag className="h-3 w-3" />{tag}</span>)}</div></div></div>
+            <div className="flex shrink-0 gap-2"><button aria-label="Favourite" className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-500 transition-colors hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/30"><Star className="h-4 w-4" /></button>{phoneField && displayOf(active, phoneField) && <a href={`tel:${String(active.values[phoneField.name])}`} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-brand-200 bg-brand-50 text-brand-600 transition-colors hover:bg-brand-100 dark:border-brand-900 dark:bg-brand-950/30"><Phone className="h-4 w-4" /></a>}<button onClick={() => onOpen(active.id)} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-brand-200 bg-brand-50 text-brand-600 transition-colors hover:bg-brand-100 dark:border-brand-900 dark:bg-brand-950/30" title="Open and edit record"><Pencil className="h-4 w-4" /></button><button onClick={() => onOpen(active.id)} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800" title="More record actions"><CircleEllipsis className="h-4 w-4" /></button></div>
           </div>
-
-          <div className="max-h-[30rem] overflow-y-auto lg:max-h-[calc(100vh-18rem)]">
-            {rows.map((row) => {
-              const isActive = row.id === active?.id;
-              const status = statusField ? displayOf(row, statusField) : '';
-              const followUp = followUpField ? dateLabel(row.values[followUpField.name]) : null;
-              return (
-                <button
-                  key={row.id}
-                  type="button"
-                  onClick={() => setActiveId(row.id)}
-                  className={cn(
-                    'group flex w-full items-start gap-3 border-b border-slate-100 px-4 py-3 text-left transition-colors dark:border-slate-800',
-                    isActive ? 'bg-emerald-50 dark:bg-emerald-950/30' : 'hover:bg-slate-50 dark:hover:bg-slate-800/70',
-                  )}
-                >
-                  <input
-                    aria-label={`Select ${row.label}`}
-                    type="checkbox"
-                    checked={selected.has(row.id)}
-                    onClick={(event) => event.stopPropagation()}
-                    onChange={(event) => onToggleSelect(row.id, event.target.checked)}
-                    className="mt-1 h-3.5 w-3.5 shrink-0 rounded border-slate-300"
-                  />
-                  <RecordGlyph module={module} row={row} active={isActive} />
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-1.5">
-                      <span className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{row.label}</span>
-                      {row.starred && <Star className="h-3 w-3 shrink-0 fill-amber-400 text-amber-500" aria-label="Favourite" />}
-                    </span>
-                    <span className="mt-0.5 block truncate text-2xs text-slate-500">{row.recordNumber ?? row.ownerName ?? module.singularLabel}</span>
-                    <span className="mt-2 flex flex-wrap items-center gap-1.5">
-                      {attentionIds.has(row.id) && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" title="Needs attention" />}
-                      {status && <StatusPill field={statusField} row={row} label={status} />}
-                      {followUp && <span className="inline-flex items-center gap-1 text-2xs text-slate-500"><CalendarClock className="h-3 w-3" />{followUp}</span>}
-                    </span>
-                  </span>
-                  <ChevronRight className={cn('mt-1 h-4 w-4 shrink-0 text-slate-300 transition-transform', isActive && 'translate-x-0.5 text-emerald-600')} />
-                </button>
-              );
-            })}
-          </div>
-        </aside>
-
-        {active ? (
-          <article className="min-w-0">
-            <header className="border-b border-slate-200 bg-gradient-to-r from-[#f8fcf8] to-[#fffaf0] px-5 py-5 dark:border-slate-800 dark:from-slate-900 dark:to-slate-900 sm:px-7">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="flex min-w-0 items-center gap-3">
-                  <RecordGlyph module={module} row={active} active />
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="truncate text-xl font-bold tracking-tight text-slate-950 dark:text-white">{active.label}</h2>
-                      {active.tags?.slice(0, 2).map((tag) => <span key={tag} className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-2xs font-semibold text-amber-800 dark:bg-amber-950/50 dark:text-amber-300"><Tag className="h-2.5 w-2.5" />{tag}</span>)}
-                    </div>
-                    <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
-                      <span className="inline-flex items-center gap-1"><UserRound className="h-3.5 w-3.5" />{active.ownerName ?? 'Unassigned'}</span>
-                      {active.recordNumber && <span className="font-mono text-2xs">{active.recordNumber}</span>}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex shrink-0 flex-wrap gap-2">
-                  {phoneField && displayOf(active, phoneField) && <a href={`tel:${String(active.values[phoneField.name])}`} className="btn-secondary btn-sm"><Phone className="h-3.5 w-3.5" />Call</a>}
-                  <button type="button" className="btn-primary btn-sm" onClick={() => onOpen(active.id)}><ExternalLink className="h-3.5 w-3.5" />Open record</button>
-                </div>
-              </div>
-
-              <div className="mt-5 grid gap-2 sm:grid-cols-3">
-                <SummaryTile label={statusField?.label ?? 'Status'} icon={<CircleDot className="h-3.5 w-3.5" />} value={statusField ? displayOf(active, statusField) || 'Not set' : 'Not set'} />
-                <SummaryTile label={followUpField?.label ?? 'Next follow-up'} icon={<CalendarClock className="h-3.5 w-3.5" />} value={followUpField ? dateLabel(active.values[followUpField.name]) ?? 'Not scheduled' : 'Not scheduled'} />
-                <SummaryTile label="Workspace" icon={<Sparkles className="h-3.5 w-3.5" />} value={attentionIds.has(active.id) ? 'Needs attention' : 'Up to date'} emphasis={attentionIds.has(active.id) ? 'amber' : 'emerald'} />
-              </div>
-            </header>
-
-            <div className="grid gap-5 p-5 sm:p-7 xl:grid-cols-[minmax(0,1fr)_17rem]">
-              <section>
-                <div className="mb-3 flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-bold text-slate-900 dark:text-slate-100">Overview</p>
-                    <p className="text-2xs text-slate-500">Live values from this record</p>
-                  </div>
-                  {active.can?.edit && <span className="text-2xs font-medium text-emerald-700 dark:text-emerald-300">Editable in record</span>}
-                </div>
-                <dl className="grid overflow-hidden rounded-xl border border-slate-200 sm:grid-cols-2 dark:border-slate-800">
-                  {overviewFields.map((field) => (
-                    <div key={field.name} className="border-b border-slate-100 p-3 last:border-b-0 odd:sm:border-r dark:border-slate-800">
-                      <dt className="mb-1 text-2xs font-semibold uppercase tracking-wide text-slate-500">{field.label}</dt>
-                      <dd className="min-w-0 text-sm text-slate-800 dark:text-slate-100"><FieldValue field={field} value={active.values[field.name]} display={active.display?.[field.name]} compact /></dd>
-                    </div>
-                  ))}
-                </dl>
-              </section>
-              <aside className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-4 dark:border-emerald-900/50 dark:bg-emerald-950/20">
-                <p className="flex items-center gap-1.5 text-sm font-bold text-emerald-950 dark:text-emerald-100"><CheckCircle2 className="h-4 w-4 text-emerald-600" />Work next</p>
-                <p className="mt-2 text-xs leading-5 text-emerald-900/75 dark:text-emerald-200/75">Use the record page for notes, files, messages and full editing. This workspace keeps the list and the important details together.</p>
-                <button type="button" onClick={() => onOpen(active.id)} className="mt-4 w-full rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-emerald-800">Continue with {module.singularLabel}</button>
-              </aside>
-            </div>
-          </article>
-        ) : null}
-      </div>
-    </section>
-  );
+          <nav className="mt-6 flex max-w-full overflow-x-auto" aria-label="Record workspace sections"><DeskTab active={tab === 'overview'} onClick={() => setTab('overview')}>Overview</DeskTab><DeskTab active={tab === 'timeline'} onClick={() => setTab('timeline')}>Timeline</DeskTab><DeskTab onClick={() => onOpen(active.id)}><Link2 className="h-3.5 w-3.5" />Matching {module.name === 'leads' ? 'inventory' : 'leads'}</DeskTab><DeskTab onClick={() => onOpen(active.id)}><FileText className="h-3.5 w-3.5" />Files</DeskTab><DeskTab onClick={() => onOpen(active.id)}><Phone className="h-3.5 w-3.5" />Calls</DeskTab><DeskTab onClick={() => onOpen(active.id)}><MessageCircle className="h-3.5 w-3.5" />WhatsApp</DeskTab></nav>
+        </header>
+        <div className="bg-[#f7f9fc] p-4 sm:p-6 dark:bg-slate-950/50">{tab === 'timeline' ? <DeskTimeline module={module.name} recordId={active.id} /> : <OverviewCard fields={overviewFields} row={active} onOpen={() => onOpen(active.id)} />}</div>
+      </main>}
+      {active && <NotesPanel module={module.name} record={active} />}
+    </div>
+  </section>;
 }
 
-function RecordGlyph({ module, row, active }: { module: ModuleMeta; row: RecordEnvelope; active: boolean }): JSX.Element {
-  return <span className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl', active ? 'bg-emerald-700 text-white shadow-sm' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300')}><ModuleIcon name={module.icon} className="h-4 w-4" /><span className="sr-only">{row.label}</span></span>;
+function QueueRow({ module, row, active, checked, attention, statusField, followUpField, onSelect, onToggle }: { module: ModuleMeta; row: RecordEnvelope; active: boolean; checked: boolean; attention: boolean; statusField?: FieldMeta; followUpField?: FieldMeta; onSelect: () => void; onToggle: (checked: boolean) => void }): JSX.Element {
+  const due = followUpField ? dueLabel(row.values[followUpField.name]) : null;
+  return <button type="button" onClick={onSelect} className={cn('group flex w-full items-center gap-3 border-b border-slate-100 px-4 py-3 text-left transition-colors dark:border-slate-800', active ? 'border-l-4 border-l-brand-600 bg-brand-50/70 pl-3 dark:bg-brand-950/30' : 'hover:bg-slate-50 dark:hover:bg-slate-800/70')}><input aria-label={`Select ${row.label}`} type="checkbox" checked={checked} onClick={(event) => event.stopPropagation()} onChange={(event) => onToggle(event.target.checked)} className="h-4 w-4 shrink-0 rounded border-slate-300" /><ScoreRing module={module} row={row} /><span className="min-w-0 flex-1"><span className="flex items-center gap-1.5"><span className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">{row.label}</span>{row.starred && <Star className="h-3 w-3 fill-amber-400 text-amber-500" />}</span><span className="mt-0.5 block truncate text-xs text-slate-500">{row.ownerName ?? row.recordNumber ?? module.singularLabel}</span></span><span className="flex shrink-0 flex-col items-end gap-1">{due && <span className={cn('rounded px-1.5 py-0.5 text-2xs font-bold', due.tone)}>{due.label}</span>}{statusField && <StatusPill field={statusField} row={row} label={displayOf(row, statusField) || 'Not set'} />}{attention && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" title="Needs attention" />}</span><ChevronRight className="hidden h-4 w-4 text-slate-300 group-hover:block" /></button>;
 }
-
-function StatusPill({ field, row, label }: { field: FieldMeta | undefined; row: RecordEnvelope; label: string }): JSX.Element {
-  const value = field ? String(row.values[field.name] ?? '') : '';
-  const color = field?.options?.find((option) => option.value === value)?.color;
-  return <span className="rounded-full px-2 py-0.5 text-2xs font-semibold" style={color ? { backgroundColor: `${color}20`, color } : undefined}>{label}</span>;
-}
-
-function SummaryTile({ label, icon, value, emphasis = 'slate' }: { label: string; icon: JSX.Element; value: string; emphasis?: 'slate' | 'emerald' | 'amber' }): JSX.Element {
-  const color = emphasis === 'emerald' ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200' : emphasis === 'amber' ? 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200' : 'border-white/80 bg-white/80 text-slate-800 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-100';
-  return <div className={cn('rounded-xl border px-3 py-2.5', color)}><p className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide opacity-70">{icon}{label}</p><p className="mt-1 truncate text-sm font-bold">{value}</p></div>;
-}
-
-function displayOf(row: RecordEnvelope, field: FieldMeta): string {
-  const display = row.display?.[field.name];
-  if (display) return display;
-  const value = row.values[field.name];
-  if (Array.isArray(value)) return value.join(', ');
-  return value === null || value === undefined ? '' : String(value);
-}
-
-function dateLabel(value: unknown): string | null {
-  if (!value) return null;
-  const date = new Date(String(value));
-  if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-}
+function ScoreRing({ module, row, large = false }: { module: ModuleMeta; row: RecordEnvelope; large?: boolean }): JSX.Element { const percent = recordStrength(module.fields, row.values).percent; const color = percent >= 80 ? '#14b86a' : percent >= 55 ? '#f59e0b' : '#ee3458'; const size = large ? 58 : 40; return <span className="relative flex shrink-0 items-center justify-center rounded-full bg-white shadow-sm dark:bg-slate-800" style={{ width: size, height: size, background: `conic-gradient(${color} ${percent}%, #e8edf4 0)` }}><span className="flex items-center justify-center rounded-full bg-white font-extrabold tabular-nums text-slate-800 dark:bg-slate-900 dark:text-white" style={{ width: size - 7, height: size - 7, fontSize: large ? 16 : 11 }}>{percent}%</span></span>; }
+function OverviewCard({ fields, row, onOpen }: { fields: FieldMeta[]; row: RecordEnvelope; onOpen: () => void }): JSX.Element { return <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"><header className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800"><p className="text-base font-bold text-slate-900 dark:text-white">Basic Information</p><button onClick={onOpen} className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-600 hover:text-brand-700"><Pencil className="h-3.5 w-3.5" />Edit details</button></header><dl className="grid gap-x-8 gap-y-4 p-5 sm:grid-cols-2">{fields.map((field) => <div key={field.name}><dt className="mb-1.5 text-2xs font-bold uppercase tracking-wide text-slate-500">{field.label}{field.isMandatory && <span className="ml-0.5 text-rose-500">*</span>}</dt><dd className="min-h-10 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-100"><FieldValue field={field} value={row.values[field.name]} display={row.display?.[field.name]} compact /></dd></div>)}</dl></section>; }
+function NotesPanel({ module, record }: { module: string; record: RecordEnvelope }): JSX.Element { const queryClient = useQueryClient(); const [note, setNote] = useState(''); const { data: entries, isLoading } = useQuery({ queryKey: ['timeline', module, record.id, 'comment'], queryFn: () => api.timeline(module, record.id, ['comment']) }); const add = useMutation({ mutationFn: () => api.addComment(module, record.id, note.trim()), onSuccess: () => { setNote(''); void queryClient.invalidateQueries({ queryKey: ['timeline', module, record.id] }); toast.success('Note added'); }, onError: (error: Error) => toast.error('Could not add note', error.message) }); return <aside className="border-t border-slate-200 bg-white xl:border-l xl:border-t-0 dark:border-slate-800 dark:bg-slate-900"><header className="flex h-12 items-center gap-2 border-b border-slate-200 px-5 dark:border-slate-800"><FileText className="h-4 w-4 text-brand-600" /><h3 className="font-bold text-slate-900 dark:text-white">Notes</h3></header><div className="p-4"><textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="Add a note for the team… type @ to notify someone" className="min-h-28 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm outline-none placeholder:text-slate-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-800" /><div className="mt-2 flex items-center justify-between"><span className="text-2xs text-slate-400">⌘↵ to post</span><button disabled={!note.trim() || add.isPending} onClick={() => add.mutate()} className="btn-primary btn-sm"><Send className="h-3.5 w-3.5" />{add.isPending ? 'Posting…' : 'Post'}</button></div></div><div className="max-h-[25rem] space-y-4 overflow-y-auto border-t border-slate-100 p-5 dark:border-slate-800">{isLoading ? <p className="text-sm text-slate-400">Loading notes…</p> : entries?.length ? entries.map((entry) => <NoteEntry key={entry.id} entry={entry} />) : <div className="py-12 text-center"><FileText className="mx-auto h-9 w-9 text-slate-300" /><p className="mt-3 text-sm font-semibold text-slate-500">No notes yet</p><p className="mt-1 text-xs text-slate-400">Internal team comments appear here.</p></div>}</div></aside>; }
+function DeskTimeline({ module, recordId }: { module: string; recordId: string }): JSX.Element { const { data, isLoading } = useQuery({ queryKey: ['timeline', module, recordId, 'all'], queryFn: () => api.timeline(module, recordId) }); return <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><p className="mb-4 text-base font-bold text-slate-900 dark:text-white">Record timeline</p>{isLoading ? <p className="text-sm text-slate-400">Loading timeline…</p> : data?.length ? <div className="space-y-4">{data.slice(0, 12).map((entry) => <NoteEntry key={entry.id} entry={entry} />)}</div> : <p className="text-sm text-slate-400">No activity yet.</p>}</section>; }
+function NoteEntry({ entry }: { entry: TimelineEntry }): JSX.Element { return <article><p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{entry.title}</p><p className="mt-0.5 text-2xs text-slate-400">{entry.actorName ?? 'iPROPY'} · {relativeTime(entry.at)}</p>{entry.body && <p className="mt-1.5 whitespace-pre-wrap text-sm leading-5 text-slate-600 dark:text-slate-300">{entry.body}</p>}</article>; }
+function DeskTab({ active = false, onClick, children }: { active?: boolean; onClick: () => void; children: React.ReactNode }): JSX.Element { return <button onClick={onClick} className={cn('flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-3 text-sm font-semibold transition-colors', active ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200')}>{children}</button>; }
+function StatusPill({ field, row, label }: { field: FieldMeta; row: RecordEnvelope; label: string }): JSX.Element { const value = String(row.values[field.name] ?? ''); const color = field.options?.find((option) => option.value === value)?.color; return <span className="max-w-32 truncate rounded px-2 py-0.5 text-2xs font-bold" style={color ? { backgroundColor: `${color}20`, color } : undefined}>{label}</span>; }
+function displayOf(row: RecordEnvelope, field: FieldMeta): string { const display = row.display?.[field.name]; if (display) return display; const value = row.values[field.name]; return Array.isArray(value) ? value.join(', ') : value == null ? '' : String(value); }
+function dateLabel(value: unknown): string | null { if (!value) return null; const date = new Date(String(value)); return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }); }
+function dueLabel(value: unknown): { label: string; tone: string } | null { if (!value) return null; const date = new Date(String(value)); if (Number.isNaN(date.getTime())) return null; const today = new Date(); today.setHours(0, 0, 0, 0); date.setHours(0, 0, 0, 0); const diff = Math.round((date.getTime() - today.getTime()) / 86_400_000); return diff < 0 ? { label: 'Overdue', tone: 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' } : diff === 0 ? { label: 'Today', tone: 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' } : diff === 1 ? { label: 'Tomorrow', tone: 'bg-brand-100 text-brand-700 dark:bg-brand-950/40 dark:text-brand-300' } : { label: date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }), tone: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' }; }
