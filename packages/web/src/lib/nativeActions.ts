@@ -43,9 +43,30 @@ export async function openExternal(url: string): Promise<void> {
 /** Ring a number from the record. */
 export function dial(phone: string): void {
   const clean = phone.replace(/[^\d+]/g, '');
-  // `tel:` is not http, so the webview hands it to the OS on both platforms.
-  // This is one of the few browser behaviours that survives the move intact.
-  window.location.href = `tel:${clean}`;
+  if (isNative) {
+    // `tel:` is not http, so the webview hands it to the OS on both platforms.
+    // This is one of the few browser behaviours that survives the move intact.
+    window.location.href = `tel:${clean}`;
+    return;
+  }
+  /*
+    At a desk the same line is a trap, and it cost a day to find.
+
+    A browser with no application registered for `tel:` starts the navigation,
+    aborts it, and from that moment delivers **no mouse events to the page at
+    all** — pointerdown, mouseup, click, none of them arrive. So the outcome
+    form the CRM has just opened cannot be saved and every button on the record
+    is dead until a reload, which reads as the page freezing for no reason. A
+    hidden iframe does exactly the same thing; it is the navigation itself, not
+    where it starts.
+
+    Handing it to a new tab keeps it off the page the rep is using. A softphone
+    still answers it; with nothing registered the blank tab closes itself and
+    the CRM is untouched. It may also be refused as a popup, since the rep's
+    click was spent before the paired handset was asked — in which case nothing
+    happens, and the toast that sent us down this path has already said so.
+  */
+  window.open(`tel:${clean}`, '_blank', 'noopener,noreferrer');
 }
 
 // ---------------------------------------------------------------------------

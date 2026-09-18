@@ -152,6 +152,7 @@ export function CallDispositionProvider({
   };
 
   const save = async (): Promise<void> => {
+    console.log('DBG save entered', JSON.stringify({ target, saving: savingRef.current, notes, selected }));
     if (!target || savingRef.current) return;
     const today = new Date().toISOString().slice(0, 10);
     if (nextFollowUp && nextFollowUp < today) {
@@ -192,6 +193,7 @@ export function CallDispositionProvider({
         queryClient.invalidateQueries({ queryKey: ['task-count', module] }),
       ]);
     } catch (err) {
+      console.log('DBG save failed', String(err));
       toast.error('Could not log the call', (err as Error).message);
     } finally {
       savingRef.current = false;
@@ -210,7 +212,7 @@ export function CallDispositionProvider({
         footer={(
           <>
             <button className="btn-secondary" onClick={close} disabled={saving}>Did not call</button>
-            <button className="btn-primary" disabled={saving || placing} onClick={() => void save()}>
+            <button className="btn-primary" disabled={saving || placing} onClick={() => { console.log('DBG click fired'); void save(); }}>
               {saving && <Spinner className="h-3.5 w-3.5" />} Save call
             </button>
           </>

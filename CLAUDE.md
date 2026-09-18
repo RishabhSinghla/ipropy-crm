@@ -1122,6 +1122,17 @@ the CRM asks the paired handset instead.
   post are unproven against a real handset. `tests/integration/dialFromTheCrm.test.ts`
   covers the server end — queue, expiry, the phone closing a command, and one handset
   being unable to close another's.
+* **And the desk fallback froze the page, which is how it was found.** When the paired
+  phone does not take the call the CRM hands the number to the browser, and a browser with
+  no application registered for `tel:` starts that navigation, aborts it, and from then on
+  delivers **no mouse events to the page at all** — so the outcome form that has just
+  opened cannot be saved and every button on the record is dead until a reload. A hidden
+  iframe behaves identically; it is the navigation, not where it starts. `dial()` hands it
+  to a new tab on the web now and keeps `location.href` for the app, where a webview always
+  has a dialler. The symptom to recognise: a click that Playwright reports as successful
+  while no `pointerdown` or `click` reaches the document, and a programmatic
+  `dispatchEvent('click')` on the same button working perfectly. `e2e/callOutcome.spec.ts`
+  had been failing on exactly this since the dial feature landed.
 
 What is **not** possible, whatever a CRM claims: hearing a call as it happens. Android
 closed third-party call recording in Android 10 and no permission reopens it. What works
