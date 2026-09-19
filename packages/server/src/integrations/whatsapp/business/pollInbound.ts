@@ -264,3 +264,40 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
 
 /** For the test, which must not inherit a watermark from another case. */
 export function __resetPollWatermark(at: Date): void { lastVisit = at; }
+
+/*
+  Its own clock, not the scheduler's.
+
+  `SCHEDULER_TICK_SECONDS` is 900 — fifteen minutes — which is right for SLA
+  sweeps and the semantic index and hopeless for a conversation. The owner
+  messaged the business number, waited two minutes and found the CRM still
+  refusing to let him reply; the poller was correct and simply had not run yet.
+  A quarter of an hour between a customer writing and a rep being allowed to
+  answer is not a WhatsApp integration.
+
+  One minute, and one visit at a time: a slow vendor must not start a second
+  visit on top of the first, because two polls reading the same thread would
+  both try to claim the same message and one would waste its work losing the
+  race.
+*/
+const POLL_EVERY_MS = 60_000;
+let timer: NodeJS.Timeout | null = null;
+let visiting = false;
+
+export function startWhatsAppPolling(): void {
+  if (timer) return;
+  timer = setInterval(() => {
+    if (visiting) return;
+    visiting = true;
+    void pollWhatsMarketingInbound()
+      .catch((err) => logger.warn({ err }, 'WhatsApp inbound poll failed'))
+      .finally(() => { visiting = false; });
+  }, POLL_EVERY_MS);
+  // Never hold the process open for a poll; the API shutting down matters more.
+  timer.unref?.();
+}
+
+export function stopWhatsAppPolling(): void {
+  if (timer) clearInterval(timer);
+  timer = null;
+}

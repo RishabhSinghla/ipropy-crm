@@ -41,8 +41,16 @@ export const WHATSMARKETING_PROVIDER = 'whatsapp_whatsmarketing';
 const LABEL = 'whatsmarketing.in';
 const DEFAULT_BASE = 'https://app.whatsmarketing.in/api/v1';
 
+/*
+  `templateSync` is what lets Admin → WhatsApp Templates fetch the list, and
+  leaving it out is why the owner's first sync answered "whatsmarketing does
+  not hand its template list back" while `listTemplates` sat there fully
+  implemented. `syncTemplates` checks the capability before it calls anything,
+  which is right — a capability a provider lacks should be refused early — but
+  it means the set below is load-bearing, not documentation.
+*/
 const CAPABILITIES: ReadonlySet<WhatsAppCapability> = new Set<WhatsAppCapability>([
-  'text', 'media', 'templates', 'messageStatus',
+  'text', 'media', 'templates', 'templateSync', 'messageStatus',
 ]);
 
 interface Conf { baseUrl: string; phoneNumberId: string; apiToken: string; botId: string | null }

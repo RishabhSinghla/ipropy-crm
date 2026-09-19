@@ -18,7 +18,6 @@ import { loadRecordValues, runWorkflowsFor } from './engine.js';
 import { runTask, type TaskContext } from './tasks.js';
 import { loadUser } from '../../middleware/auth.js';
 import { notify } from '../notifications/index.js';
-import { pollWhatsMarketingInbound } from '../../integrations/whatsapp/business/pollInbound.js';
 import type { FilterGroup, ModuleMeta } from '@ipropy/shared';
 import {
   buildWhere, quoteIdent, ENTITY_ALIAS, RECORD_ALIAS, SqlParams, type BuildContext,
@@ -503,14 +502,6 @@ async function housekeeping(): Promise<void> {
     checkSlaBreaches(),
     pruneOldQueueRows(),
     pollInboundEmail(),
-    /*
-      WhatsApp replies, for a provider that does not push them. WhatsMarketing
-      publish no self-serve webhook, and without inbound the CRM never learns
-      the 24-hour window is open — so a rep cannot reply to a customer who has
-      just written. It no-ops in one comparison when any other provider is
-      live, or when none is.
-    */
-    pollWhatsMarketingInbound(),
     // Make each property's OneDrive folder without the person adding it waiting
     // on a cloud call. Driver changes replay ready properties automatically.
     provisionPendingPropertyFolders(),
