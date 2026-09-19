@@ -1,0 +1,108 @@
+# Prove the WhatsMarketing connection against their live API.
+#
+# Exists because the machine this CRM is developed on cannot reach
+# `app.whatsmarketing.in` — its egress proxy refuses the CONNECT — while a
+# GitHub runner can. So this is the only place the adapter's assumptions meet
+# the real vendor, and it answers three questions in one run:
+#
+#   1. Does the API token work at all?
+#   2. What is the Phone Number ID? (Their API publishes no "list my accounts"
+#      endpoint, so this brute-checks the one thing that can be checked: given
+#      an id, do the endpoints answer? An id that works is the id to paste in.)
+#   3. Do the templates come back in the shape the adapter parses?
+#
+# It can also send one real WhatsApp message, to a number given on purpose, so
+# the whole chain is proved rather than assumed.
+#
+# The token is read from the `WHATSMARKETING_API_TOKEN` repository secret and
+# never from an input. A workflow_dispatch input is recorded in the run's
+# history for good, so a key pasted into one is a key published to everybody
+# who can read the repository — which is exactly the thing this is meant to
+# help avoid. Add the secret under Settings -> Secrets and variables ->
+# Actions, or skip this entirely and paste the key straight into
+# Admin -> Integrations, where the CRM encrypts it.
+name: Test WhatsMarketing
+
+on:
+  workflow_dispatch:
+    inputs:
+      phone_number_id:
+        description: "Phone Number ID, if you have it. Leave blank to only check the token."
+        default: ""
+      send_to:
+        description: "Send a real test message to this number (919876543210). Blank sends nothing."
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Ask WhatsMarketing
+        env:
+          TOKEN: ${{ secrets.WHATSMARKETING_API_TOKEN }}
+          PNID: ${{ inputs.phone_number_id }}
+          SEND_TO: ${{ inputs.send_to }}
+        run: |
+          set -u
+          BASE=https://app.whatsmarketing.in/api/v1
+
+          if [ -z "${TOKEN:-}" ]; then
+            echo "No WHATSMARKETING_API_TOKEN secret is set on this repository."
+            echo "Add it under Settings -> Secrets and variables -> Actions,"
+            echo "or paste the key into Admin -> Integrations instead."
+            exit 1
+          fi
+
+          # The token never reaches stdout. Every call posts it in the body and
+          # only the answer is printed, so the log is readable without being a
+          # second place the key lives.
+          say() { printf '\n=== %s ===\n' "$1"; }
+
+          say "1. Does the token work?"
+          curl -sS --max-time 30 -X POST "$BASE/user/package/list" \
+            -d "apiToken=$TOKEN" | head -c 800
+          echo
+
+          say "2. Team members (a second read that needs only the token)"
+          curl -sS --max-time 30 -X POST "$BASE/users/team-member/list" \
+            -d "apiToken=$TOKEN" | head -c 800
+          echo
+
+          if [ -z "$PNID" ]; then
+            printf '\nNo Phone Number ID given, so nothing below can be checked.\n'
+            printf 'Find it at https://app.whatsmarketing.in/connect-manager — click the\n'
+            printf 'connected WhatsApp number and copy "Phone Number ID".\n'
+            exit 0
+          fi
+
+          say "3. Approved templates — the shape the CRM parses"
+          curl -sS --max-time 30 -X POST "$BASE/whatsapp/get/template/list" \
+            -d "apiToken=$TOKEN" -d "phone_number_id=$PNID" | head -c 4000
+          echo
+
+          say "4. Subscribers (proves the Phone Number ID is the right one)"
+          curl -sS --max-time 30 -X POST "$BASE/whatsapp/subscriber/list" \
+            -d "apiToken=$TOKEN" -d "phone_number_id=$PNID" \
+            -d "limit=2" -d "offset=1" | head -c 1200
+          echo
+
+          if [ -n "$SEND_TO" ]; then
+            say "5. Sending one real message to $SEND_TO"
+            # Outside the 24-hour window a plain text message is refused by
+            # WhatsApp itself, and their API says so in `message`. That is a
+            # useful answer, not a failure of this workflow: it means the
+            # credentials are right and a template is what is needed.
+            curl -sS --max-time 30 -X POST "$BASE/whatsapp/send" \
+              -d "apiToken=$TOKEN" -d "phone_number_id=$PNID" \
+              -d "phone_number=$SEND_TO" \
+              -d "message=Test from iPropy CRM. If you can read this, WhatsApp is connected." \
+              | head -c 800
+            echo
+          fi
+
+          printf '\nNothing here was written to the CRM. Paste the token and the Phone\n'
+          printf 'Number ID into Admin -> Integrations -> WhatsApp, where they are encrypted.\n'
