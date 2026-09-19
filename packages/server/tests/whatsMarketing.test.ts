@@ -98,7 +98,13 @@ describe('sending', () => {
     expect(await whatsMarketingProvider.isConfigured()).toBe(false);
   });
 
-  it('sends a file by link, and keeps a document name that has nowhere else to go', async () => {
+  it('sends a document with the media_name their API requires', async () => {
+    /*
+      Their console states `media_name` is required when the type is document.
+      Without it the send is refused outright — and an earlier version of this
+      adapter smuggled the filename into the caption instead, which was both a
+      refused message and an untitled PDF for the customer.
+    */
     answerWith({ status: '1', wa_message_id: 'wamid.FILE' });
     await whatsMarketingProvider.sendMedia({
       accountId: null, to: '919876543210', type: 'document',
@@ -107,9 +113,15 @@ describe('sending', () => {
     });
     expect(form().get('media_url')).toContain('/api/public/whatsapp-media/abc');
     expect(form().get('media_type')).toBe('document');
-    // Their API has no filename parameter, so it rides in the caption rather
-    // than being dropped — an untitled PDF is what the customer would see.
-    expect(form().get('media_caption_text')).toBe('Brochure B-110.pdf');
+    expect(form().get('media_name')).toBe('Brochure B-110.pdf');
+  });
+
+  it('never sends a document with an empty media_name, which they refuse', async () => {
+    answerWith({ status: '1', wa_message_id: 'wamid.F2' });
+    await whatsMarketingProvider.sendMedia({
+      accountId: null, to: '919876543210', type: 'document', link: 'https://x/y',
+    });
+    expect(form().get('media_name')).toBeTruthy();
   });
 
   it('never captions audio, which their API does not support', async () => {
@@ -126,8 +138,8 @@ describe('templates', () => {
   it('turns a template name into their numeric id before sending', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
       sent.push({ url: String(url), body: String(init?.body ?? '') });
-      const payload = String(url).includes('/template/list')
-        ? { status: '1', templates: [{ id: '404470', name: 'site_visit_reminder', body: 'Hi {{1}}, visit on {{2}}' }] }
+      const payload = String(url).includes('/get/template/list')
+        ? { status: '1', message: [{ id: 48, template_id: '404470', template_name: 'site_visit_reminder', body_content: 'Hi {{1}}, visit on {{2}}' }] }
         : { status: '1', wa_message_id: 'wamid.TPL' };
       return { ok: true, status: 200, text: async () => JSON.stringify(payload) } as unknown as Response;
     }));
@@ -147,17 +159,39 @@ describe('templates', () => {
   });
 
   it('names the template it could not find instead of posting a blank id', async () => {
-    answerWith({ status: '1', templates: [] });
+    answerWith({ status: '1', message: [] });
     await expect(whatsMarketingProvider.sendTemplate({
       to: '919876543210', templateName: 'no_such_template', language: 'en', params: [],
     })).rejects.toThrow(/no template called "no_such_template"/);
   });
 
   it('counts the blanks in a template body so a mapping cannot under-fill it', async () => {
-    answerWith({ status: '1', data: [{ template_id: '9', template_name: 'x', body_text: '{{1}} and {{2}} and {{3}}' }] });
+    answerWith({ status: '1', message: [{ template_id: '9', template_name: 'x', body_content: '{{1}} and {{2}} and {{3}}' }] });
     const rows = await whatsMarketingProvider.listTemplates();
     expect(rows[0].variableCount).toBe(3);
     expect(rows[0].providerTemplateId).toBe('9');
+  });
+
+  it('believes their own variable_map over counting placeholders', async () => {
+    // `variable_map` is what they publish and what Meta approved. A body whose
+    // text has been edited since is the case where the two disagree.
+    answerWith({ status: '1', message: [{
+      template_id: '9', template_name: 'x', body_content: 'Hi {{1}}',
+      variable_map: { header: [], body: ['name', 'date'] },
+    }] });
+    expect((await whatsMarketingProvider.listTemplates())[0].variableCount).toBe(2);
+  });
+
+  it('reads a single template, which they return as an object rather than a list', async () => {
+    /*
+      Their `message` key is an object when there is one row and an array when
+      there are several. An account with exactly one approved template would
+      otherwise show none at all — and "none" reads as the sync being broken.
+    */
+    answerWith({ status: '1', message: { template_id: '77', template_name: 'only_one', body_content: 'hi' } });
+    const rows = await whatsMarketingProvider.listTemplates();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].name).toBe('only_one');
   });
 });
 
@@ -231,6 +265,25 @@ describe('reading what comes back', () => {
   it('leaves Meta-shaped deliveries to the Meta adapter', () => {
     const batch = parseWhatsMarketingWebhook({ object: 'whatsapp_business_account', entry: [] });
     expect(batch.messages).toHaveLength(0);
+  });
+});
+
+describe('delivery ticks', () => {
+  it('asks with the message id alone, as their console does', async () => {
+    /*
+      The PDF asked for a `whatsapp_bot_id` too, and requiring one meant every
+      tick read "unknown" for anybody who had not hunted down an id their own
+      console never asks for.
+    */
+    answerWith({ status: '1', message: { message_status: 'delivered' } });
+    expect(await whatsMarketingProvider.getMessageStatus('wamid.X')).toBe('delivered');
+    expect(form().get('wa_message_id')).toBe('wamid.X');
+    expect(form().has('whatsapp_bot_id')).toBe(false);
+  });
+
+  it('says unknown rather than failing a whole conversation over a tick', async () => {
+    answerWith({ status: '0', message: 'nope' });
+    expect(await whatsMarketingProvider.getMessageStatus('wamid.X')).toBe('unknown');
   });
 });
 

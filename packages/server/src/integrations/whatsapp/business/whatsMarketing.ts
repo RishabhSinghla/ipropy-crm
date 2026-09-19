@@ -145,29 +145,45 @@ let templateCache: { at: number; rows: TemplateSummary[] } | null = null;
  */
 async function templates({ fresh = false } = {}): Promise<TemplateSummary[]> {
   if (!fresh && templateCache && Date.now() - templateCache.at < 60_000) return templateCache.rows;
-  const answer = await call('/whatsapp/template/list', {});
   /*
-    Their documentation gives no response body for this endpoint, so the shape
-    is read defensively rather than assumed: the list may be under `templates`,
-    `data` or be the answer itself, and each row's id and name may be spelled
-    more than one way. Reading several spellings is not guessing — an absent
-    key simply yields nothing, and the Test button and the sync screen show
-    exactly what came back.
+    `/whatsapp/get/template/list`, from their live developer console — the PDF
+    the owner first sent calls it `/whatsapp/template/list`, which 404s. Their
+    console is the newer of the two and is what this follows wherever they
+    disagree.
   */
-  const list = (Array.isArray(answer.templates) ? answer.templates
-    : Array.isArray(answer.data) ? answer.data
-      : Array.isArray(answer.template_list) ? answer.template_list : []) as Record<string, unknown>[];
+  const answer = await call('/whatsapp/get/template/list', {});
+
+  /*
+    Everything in their API answers under `message`, and that key is a string
+    on a failure, one object when there is a single row, and an array when
+    there are several. All three are normalised here rather than at four call
+    sites — the single-object case is the one that would quietly yield no
+    templates at all for an account that has exactly one.
+  */
+  const payload = answer.message;
+  const list = (Array.isArray(payload) ? payload
+    : payload && typeof payload === 'object' ? [payload] : []) as Record<string, unknown>[];
 
   const rows = list.map((row): TemplateSummary => {
-    const body = String(row.body ?? row.body_text ?? row.template_body ?? '') || null;
+    const body = String(row.body_content ?? row.body ?? '') || null;
+    /*
+      They publish `variable_map` — `{"header":[],"body":[...]}` — which is the
+      authoritative count of blanks. The {{n}} scan is the fallback for a row
+      that does not carry it, because a body with no placeholders and a body
+      with three is the difference between a template that sends and one Meta
+      refuses.
+    */
+    const map = row.variable_map as { body?: unknown[] } | undefined;
+    const declared = Array.isArray(map?.body) ? map.body.length : null;
     return {
-      name: String(row.name ?? row.template_name ?? row.elementName ?? ''),
-      language: String(row.language ?? row.language_code ?? 'en'),
-      category: String(row.category ?? 'UTILITY'),
+      name: String(row.template_name ?? row.name ?? ''),
+      language: String(row.locale ?? row.language ?? 'en'),
+      category: String(row.category ?? row.check_wp_type ?? 'UTILITY'),
       status: String(row.status ?? 'APPROVED'),
       bodyText: body,
-      variableCount: body ? (body.match(/\{\{\s*\d+\s*\}\}/g) ?? []).length : 0,
-      providerTemplateId: String(row.id ?? row.template_id ?? '') || null,
+      variableCount: declared ?? (body ? (body.match(/\{\{\s*\d+\s*\}\}/g) ?? []).length : 0),
+      // Their send endpoint takes `template_id`; `id` is their internal row.
+      providerTemplateId: String(row.template_id ?? row.id ?? '') || null,
     };
   }).filter((t) => t.name || t.providerTemplateId);
 
@@ -221,8 +237,15 @@ export const whatsMarketingProvider: WhatsAppBusinessProvider = {
       media_url: link,
       media_type: type,
     };
-    const text = caption ?? (type === 'document' ? filename : undefined);
-    if (text && CAPTIONABLE.has(type)) fields.media_caption_text = text;
+    /*
+      `media_name` is REQUIRED for a document — their console says so, and a
+      document sent without it is refused. It is also what the customer sees as
+      the filename, so "Brochure B-110.pdf" rather than an untitled PDF. The
+      earlier version of this adapter smuggled the name into the caption, which
+      was both wrong and a refused send.
+    */
+    if (type === 'document') fields.media_name = filename || 'document.pdf';
+    if (caption && CAPTIONABLE.has(type)) fields.media_caption_text = caption;
     return outcome(await call('/whatsapp/send/file', fields));
   },
 
@@ -294,15 +317,18 @@ export const whatsMarketingProvider: WhatsAppBusinessProvider = {
   async markRead() { throw new NotSupportedError(WHATSMARKETING_PROVIDER, 'markRead'); },
 
   async getMessageStatus(providerMessageId: string): Promise<MessageDeliveryState> {
+    /*
+      Their live console takes the message id alone. The PDF also asked for a
+      `whatsapp_bot_id`, and requiring it meant every tick read "unknown" for
+      anyone who had not hunted down a Bot ID that their own console does not
+      ask for. Sending it anyway when it is configured costs nothing.
+    */
     const c = conf();
-    // Their status endpoint wants a Bot ID as well as the message id. Without
-    // one, "unknown" is the truthful answer — better than an error that makes
-    // a whole conversation fail to render over a tick.
-    if (!c?.botId) return 'unknown';
+    if (!c) return 'unknown';
     try {
       const answer = await call('/whatsapp/get/message-status', {
         wa_message_id: providerMessageId,
-        whatsapp_bot_id: c.botId,
+        ...(c.botId ? { whatsapp_bot_id: c.botId } : {}),
       });
       const state = String(
         (answer.message as Record<string, unknown> | undefined)?.message_status ?? '',
