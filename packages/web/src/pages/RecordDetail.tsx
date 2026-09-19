@@ -795,7 +795,7 @@ type RecordShare = {
   created_at: string;
 };
 
-function RecordCollaboratorsPanel({ module, recordId }: { module: string; recordId: string }): JSX.Element {
+export function RecordCollaboratorsPanel({ module, recordId }: { module: string; recordId: string }): JSX.Element {
   const [selectedUserId, setSelectedUserId] = useState('');
   const [access, setAccess] = useState<'read' | 'read_write'>('read_write');
   const { data: users = [] } = useQuery({ queryKey: ['users'], queryFn: () => api.users() });

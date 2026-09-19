@@ -1,19 +1,22 @@
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { recordStrength, relativeTime, type FieldMeta, type ModuleMeta, type RecordEnvelope, type TimelineEntry } from '@ipropy/shared';
-import { ArrowUpDown, Check, FileText, Link2, MessageCircle, Phone, Send, Star, Tag, Trash2 } from 'lucide-react';
+import {
+  ArrowRightLeft, ArrowUpDown, Check, FileText, Link2, MessageCircle, MoreHorizontal,
+  Phone, Send, Sparkles, Star, Tag, Trash2, Users,
+} from 'lucide-react';
 import { FieldValue } from './FieldRenderer';
 import { CallButton, CallDispositionProvider } from './CallDisposition';
 import { WhatsAppComposerProvider } from './WhatsAppComposer';
 import { MatchingTab } from './MatchingTab';
 import { WhatsAppTab } from './WhatsAppTab';
 import { WhatsAppButton } from './WhatsAppButton';
-import { CallsTab, FilesTab, TimelineTab } from '../pages/RecordDetail';
+import { CallsTab, FilesTab, RecordCollaboratorsPanel, TimelineTab } from '../pages/RecordDetail';
 import { EditableField, isInlineEditable } from './EditableField';
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { assignmentField, subtitleFieldsOf } from '../lib/fields';
 import { ModuleIcon } from './Layout';
-import { Avatar, Dropdown, DropdownItem } from './ui';
+import { Avatar, ConfirmDialog, Dropdown, DropdownItem, Modal, Spinner } from './ui';
 import { api } from '../lib/api';
 import { cn, restrictionForField } from '../lib/utils';
 import { toast } from '../lib/store';
@@ -118,6 +121,21 @@ function SplitHandle({ label, onDrag }: { label: string; onDrag: (deltaX: number
 const ACTION_CIRCLE = 'inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
 
 /** One choice in the queue's sorting menu: a column to order by, and which way. */
+/**
+ * Header fields the owner asked to read in Basic Information instead.
+ *
+ * 19 September 2026: "Lost Reason, Contact Type, Unit Number be removed from
+ * the header of the split pane on the right side and be moved in the basic
+ * information below where they can be inline editable."
+ *
+ * By field name and not by label, because a label is something an admin
+ * renames on a Tuesday and a name is the key everything else in this CRM uses.
+ * Contact Type and Unit Number are not listed here — they are whatever an
+ * admin flagged as the queue's subtitle, so they are found through that flag
+ * rather than named twice.
+ */
+const DEMOTED_FROM_HEADER = new Set(['lost_reason']);
+
 interface SortChoice {
   key: string;
   label: string;
@@ -243,11 +261,17 @@ export function IpropyWorkspace({
   */
   const headerFields = useMemo(() => {
     const names: string[] = [...(layout.headerFields ?? [])];
-    for (const field of [phoneField, followUpField, statusField, ...subtitleFields]) {
+    for (const field of [phoneField, followUpField, statusField]) {
       if (field && !names.includes(field.name)) names.push(field.name);
     }
     return names
       .filter((name) => name !== assignedField?.name)
+      .filter((name) => !DEMOTED_FROM_HEADER.has(name))
+      // Contact Type and Unit Number already read on every queue row, under
+      // the name. Repeating them two inches away said the same thing twice
+      // and crowded out the header's job, which is the handful of facts you
+      // act on: who, their number, what is next and where they are up to.
+      .filter((name) => !subtitleFields.some((field) => field.name === name))
       .map((name) => fieldMap.get(name))
       .filter((field): field is FieldMeta => Boolean(field && field.isActive && field.displayType !== 'hidden'));
   }, [layout.headerFields, fieldMap, assignedField, phoneField, followUpField, statusField, subtitleFields]);
@@ -271,7 +295,28 @@ export function IpropyWorkspace({
         fields: block.fields.map((name) => fieldMap.get(name)).filter(usable),
       }))
       .filter((block) => block.fields.length);
-    if (arranged.length) return arranged;
+
+    if (arranged.length) {
+      /*
+        A field taken off the header has to land somewhere, or the owner has
+        simply lost it. Lost Reason, Contact Type and Unit Number are header
+        fields on this layout and are not in any block, so demoting them
+        without this would delete them from the screen rather than move them —
+        and a value you can no longer see is one you can no longer edit.
+
+        They go into the first block, which is Basic Information, where
+        `FieldBlock` already renders them inline-editable like everything else.
+      */
+      const placed = new Set(arranged.flatMap((block) => block.fields.map((field) => field.name)));
+      const homeless = [...DEMOTED_FROM_HEADER, ...subtitleFields.map((field) => field.name)]
+        .filter((name) => !placed.has(name))
+        .map((name) => fieldMap.get(name))
+        .filter(usable);
+      if (homeless.length) {
+        arranged[0] = { ...arranged[0]!, fields: [...arranged[0]!.fields, ...homeless] };
+      }
+      return arranged;
+    }
 
     return [{
       key: 'all',
@@ -282,7 +327,7 @@ export function IpropyWorkspace({
         .filter((field) => !identity.has(field.name))
         .sort((a, b) => a.sequence - b.sequence),
     }];
-  }, [layout.blocks, fieldMap, module.fields, module.labelFields]);
+  }, [layout.blocks, fieldMap, module.fields, module.labelFields, subtitleFields]);
 
   /*
     What the queue's one menu can do. Ordering and the follow-up windows are
@@ -300,6 +345,33 @@ export function IpropyWorkspace({
   }, [module.labelFields, fieldMap, subtitleFields, statusField, followUpField]);
 
   const activeSort = sortChoices.find((choice) => choice.sort && choice.sort.by === sortBy) ?? sortChoices[0]!;
+
+  /*
+    The three dots, brought across from the record page on the owner's ask.
+
+    Not a link to that page — he asked for the split view to be somewhere you
+    never leave — so the same four actions are done here, against whichever
+    record the queue has open. The dialogs are the record page's own
+    components rather than copies: one Share-with-team panel, one confirm.
+  */
+  const [summarising, setSummarising] = useState(false);
+  const [summary, setSummary] = useState<string | null>(null);
+  const [sharingWithTeam, setSharingWithTeam] = useState(false);
+  const [moveTarget, setMoveTarget] = useState<'leads' | 'properties' | null>(null);
+
+  const move = useMutation({
+    mutationFn: (target: 'leads' | 'properties') => api.move(module.name, active!.id, target),
+    onSuccess: (moved, target) => {
+      toast.success(`Moved to ${target === 'properties' ? 'Inventories' : 'Leads'}`, moved.label);
+      invalidateRecordQueries(queryClient, module.name, active?.id);
+      void queryClient.invalidateQueries({ queryKey: ['records', target] });
+      // The record has left this module, so the queue must forget it rather
+      // than keep a pane open on something that is no longer here.
+      void queryClient.invalidateQueries({ queryKey: ['records', module.name] });
+      setActiveId(null);
+    },
+    onError: (err: Error) => toast.error('Could not move it', err.message),
+  });
 
   // A list row carries no `can`, so the module's own permission stands in
   // until the record itself arrives and answers for this row.
@@ -495,6 +567,68 @@ export function IpropyWorkspace({
                   <Trash2 className="h-4 w-4" />
                 </button>
               )}
+
+              {/*
+                The record page's own menu, here. The owner asked for it by
+                name: the three dots he gets on a record and did not get here.
+                Same four actions, done against whatever the queue has open,
+                without leaving the split view for a page.
+              */}
+              <Dropdown
+                align="right"
+                className="min-w-[15rem]"
+                trigger={(
+                  <button className={ACTION_CIRCLE} aria-label="More actions" title="More actions">
+                    <MoreHorizontal className="h-4 w-4" />
+                  </button>
+                )}
+              >
+                {(close) => (
+                  <>
+                    <DropdownItem
+                      icon={summarising ? <Spinner className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
+                      onClick={() => {
+                        close();
+                        setSummarising(true);
+                        void api.summarise(module.name, active.id)
+                          .then((result) => setSummary(result.summary))
+                          .catch((err: Error) => toast.error('Summary failed', err.message))
+                          .finally(() => setSummarising(false));
+                      }}
+                    >
+                      {summarising ? 'Summarising…' : 'Summarise with AI'}
+                    </DropdownItem>
+                    {canEdit && (
+                      <DropdownItem
+                        icon={<Users className="h-3.5 w-3.5" />}
+                        onClick={() => { setSharingWithTeam(true); close(); }}
+                      >
+                        Share with team
+                      </DropdownItem>
+                    )}
+                    {canEdit && onDelete && (
+                      <DropdownItem
+                        icon={<ArrowRightLeft className="h-3.5 w-3.5" />}
+                        onClick={() => {
+                          close();
+                          setMoveTarget(module.name === 'leads' ? 'properties' : 'leads');
+                        }}
+                      >
+                        Move to {module.name === 'leads' ? 'Inventories' : 'Leads'}
+                      </DropdownItem>
+                    )}
+                    {onDelete && (
+                      <DropdownItem
+                        icon={<Trash2 className="h-3.5 w-3.5" />}
+                        danger
+                        onClick={() => { close(); onDelete(active); }}
+                      >
+                        Delete record
+                      </DropdownItem>
+                    )}
+                  </>
+                )}
+              </Dropdown>
             </span>
           </div>
 
@@ -539,6 +673,46 @@ export function IpropyWorkspace({
         </div>
       </main>}
     </div>
+
+    {/*
+      What the three-dots menu opens. Mounted once for the pane rather than
+      per row, and keyed on nothing — each reads `active` at the moment it is
+      opened, and each closes itself when it is done.
+    */}
+    <Modal
+      open={sharingWithTeam && Boolean(active)}
+      onClose={() => setSharingWithTeam(false)}
+      title={`Share ${module.singularLabel ?? module.label} with team`}
+    >
+      {active && <RecordCollaboratorsPanel module={module.name} recordId={active.id} />}
+    </Modal>
+
+    <Modal
+      open={Boolean(summary)}
+      onClose={() => setSummary(null)}
+      title={`Summary of ${active?.label ?? ''}`}
+    >
+      <div className="space-y-3">
+        <div className="rounded-xl border border-brand-100 bg-brand-50/60 p-4 text-sm leading-6 text-slate-700 dark:border-brand-900 dark:bg-brand-950/30 dark:text-slate-200">
+          {summary}
+        </div>
+        <p className="text-xs text-muted">
+          Built only from the CRM fields and activity you are allowed to see; missing facts are not invented.
+        </p>
+      </div>
+    </Modal>
+
+    <ConfirmDialog
+      open={moveTarget !== null}
+      onClose={() => setMoveTarget(null)}
+      onConfirm={async () => {
+        if (moveTarget) await move.mutateAsync(moveTarget);
+        setMoveTarget(null);
+      }}
+      title={`Move to ${moveTarget === 'properties' ? 'Inventories' : 'Leads'}?`}
+      body="Matching values, files, and call history move to the new record. The original record is removed from its current module."
+      confirmLabel={move.isPending ? 'Moving…' : 'Move record'}
+    />
     </section>
     </WhatsAppComposerProvider>
   </CallDispositionProvider>;
