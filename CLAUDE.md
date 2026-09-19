@@ -923,6 +923,23 @@ CRM's own ids, never instead of them.
   appear for a message the customer never got. `tests/whatsMarketing.test.ts` opens on that
   case for exactly that reason.
 
+  **Their replies are polled, not pushed** (`business/pollInbound.ts`, every
+  scheduler tick). This is not a nicety: the CRM works the 24-hour window out
+  from its own record of the last inbound message, so with nothing ever
+  arriving `window_expires_at` is never set, every conversation reads as
+  permanently shut, and **a rep cannot reply to a customer who has just
+  written** — the composer offers templates only and `sendOnBusinessNumber`
+  refuses the send. That was found the moment the owner connected it and tried.
+  The poller reads `/whatsapp/subscriber/list` (ordered by most recent) then
+  `/whatsapp/get/conversation`, and hands each message to `receiveInbound` —
+  **the same function the webhook calls**, so there is one place that matches a
+  contact, opens the window and notifies an agent, and so re-reading a thread
+  is free. Two things in it are pinned by `tests/whatsMarketingPoll.test.ts`
+  because they fail silently: a row from `sender: 'bot'` must never be replayed
+  as something the customer said, and the watermark moves to when the visit
+  *started*, less a second, since their timestamps carry no sub-second part and
+  an exact boundary would otherwise drop a message for ever.
+
   Two more things worth knowing before touching it. Their templates are addressed by a
   numeric `template_id` from their dashboard, so a name is resolved through their list
   endpoint first and a miss is refused *naming the template* rather than posting a blank id.
