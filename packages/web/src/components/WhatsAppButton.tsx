@@ -65,7 +65,7 @@ export function WhatsAppIconButton({ to, className }: { to: string; className?: 
  * rather than a plain link, because `window.open` returns null inside the phone
  * app and nothing happens.
  */
-export function WhatsAppButton({ to, iconOnly = false }: { to: string; iconOnly?: boolean }): JSX.Element | null {
+export function WhatsAppButton({ to, iconOnly = false, round = false }: { to: string; iconOnly?: boolean; round?: boolean }): JSX.Element | null {
   const digits = waDigits(to);
   if (!digits) return null;
   return (
@@ -74,13 +74,17 @@ export function WhatsAppButton({ to, iconOnly = false }: { to: string; iconOnly?
       // `iconOnly` where the header is tight — the split view, above all. The
       // word costs a third of the strip for a button everybody recognises by
       // its shape, and the title still says what it does.
-      className={cn('btn-secondary btn-sm', iconOnly && 'h-9 w-9 justify-center px-0')}
+      // `round` is the split view's own shape: a tinted circle in the
+      // record's action strip, the colour of the thing it opens.
+      className={round
+        ? 'inline-flex h-8 w-8 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-600 transition-colors hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300'
+        : cn('btn-secondary btn-sm', iconOnly && 'h-9 w-9 justify-center px-0')}
       title={`WhatsApp ${to}`}
       aria-label={`WhatsApp ${to}`}
       onClick={() => void openExternal(`https://api.whatsapp.com/send/?phone=${digits}`)}
     >
-      <MessageCircle className="h-3.5 w-3.5 text-emerald-600" />
-      {!iconOnly && <span className="hidden sm:inline">WhatsApp</span>}
+      <MessageCircle className={round ? 'h-4 w-4' : 'h-3.5 w-3.5 text-emerald-600'} />
+      {!iconOnly && !round && <span className="hidden sm:inline">WhatsApp</span>}
     </button>
   );
 }

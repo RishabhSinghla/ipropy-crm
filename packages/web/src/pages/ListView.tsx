@@ -1201,6 +1201,20 @@ export default function ListView(): JSX.Element {
               of one. Offered only where the profile may delete, so the button
               is absent rather than present and refused.
             */
+            onToggleAll={(checked) => {
+              setSelectedAll(false);
+              setSelected(checked ? new Set(rows.map((row) => row.id)) : new Set());
+            }}
+            /*
+              The queue's own sorting menu drives the same query the table's
+              column headers do — one ordering for the list, whichever way you
+              asked for it, so the export and the screen still agree.
+            */
+            sortBy={effectiveSort.sortBy}
+            sortDir={effectiveSort.sortDir}
+            onSort={(by, dir) => { setSortBy(by); setSortDir(dir); setPage(1); }}
+            taskQueue={taskQueuesEnabled ? taskQueue : null}
+            onTaskQueue={taskQueuesEnabled ? ((queue) => { setTaskQueue(queue); setPage(1); }) : undefined}
             onDelete={meta.permissions.delete
               ? (row) => { setSelected(new Set([row.id])); setSelectedAll(false); setConfirmDelete(true); }
               : undefined}

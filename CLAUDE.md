@@ -1236,8 +1236,10 @@ opened the record's own page is gone. What replaced them:
   of a wide cell and a click anywhere else hits nothing. The cell forwards to the field's
   own "Change …" control, so there is still exactly one thing that opens an editor.
 * **The header is the record page's header**, read from the same `layout.headerFields` an
-  admin arranged, every value editable in place, plus five appended: the assignment field,
-  phone, follow-up, status, and the module's own identifying field.
+  admin arranged, every value editable in place, plus four appended: phone, follow-up,
+  status, and the module's own identifying field. The assignment field is deliberately not
+  among them — it sits on the name line, between the name and when the record was last
+  touched.
 * **The Overview renders the layout's blocks**, so Property Information and Unit Details
   appear here exactly as they do on the record page rather than as one flat card.
 
@@ -1255,12 +1257,12 @@ to the list's requested columns while the split view is showing, because otherwi
 is blank on any view whose columns do not happen to include it — which reads as the feature
 not working rather than as a column being absent.
 
-**Both dividers drag** (`SplitHandle`), pointer events so a finger on a tablet works, with
+**The divider drags** (`SplitHandle`), pointer events so a finger on a tablet works, with
 the pointer captured so a fast drag does not let go halfway across the screen, and arrow
-keys for anyone not using a mouse. Widths are per browser like the view choice itself, and
+keys for anyone not using a mouse. The width is per browser like the view choice itself, and
 clamped — a queue narrower than 240px is unreadable and one wider than 620px is a list with
-a keyhole beside it. Below `xl` the panes stack and the widths are ignored entirely; the
-handles are `xl:block`, because a divider you cannot see is not one you can drag.
+a keyhole beside it. Below `xl` the panes stack and the width is ignored entirely; the
+handle is `xl:block`, because a divider you cannot see is not one you can drag.
 
 **The WhatsApp and Call buttons are icons here** (`iconOnly`), and only here. The words cost
 a third of the header strip for two buttons everybody recognises by shape; the record page
@@ -1275,6 +1277,52 @@ things above: a value typed in where it stands and read back after a reload, nei
 removed button present, and the divider moving and being remembered. **The inline editor
 floats in a portal on `body`**, so a locator rooted in the workspace finds nothing at all —
 that cost a round too.
+
+### Two panes, a face and a bar
+
+**19 September 2026, the owner, against a screenshot of his own.** Ten changes, all of them
+inside the split view and in both modules. What each one is, and the one thing in it worth
+knowing:
+
+* **Notes moved in beside Basic Information**, and the third pane and its divider went with
+  them: *"we work only in two split panes in future"*. A note is written about what is on
+  screen, so it belongs next to it rather than in a column competing for width. Beside from
+  `xl` up; below that it stacks, like everything else here.
+* **The header is sticky.** The name, the assignment and the tabs stay put while the fields
+  scroll under them — each pane scrolls inside itself now rather than the page scrolling as
+  one.
+* **The white gap under the queue is gone, and the cause was a guess.** The panes were
+  `calc(100vh - 13rem)`, a stand-in for whatever toolbar sits above, and it was about a
+  hundred pixels out — so the queue stopped short and the page kept going. The shell now
+  measures its own distance from the top of the page and takes the rest, which is exact and
+  stays exact when the toolbar above grows a row.
+* **The score ring became an avatar and a bar** (`StrengthBar`). The face identifies the
+  person; how complete the record is is a different question and now reads as a proportion
+  at a glance. It sits under the name in the queue and under the name in the record, in both
+  cases above the module's own fact.
+* **The chevron at the end of every queue row is gone** — *"it been irritating"*. It pointed
+  at nothing: the record opens in the pane already on screen.
+* **The status is on the queue row**, beside the Type or the Unit Number, with the follow-up
+  chip up on the name line. Three lines in the order somebody reads them.
+* **A checkbox beside the module's name** ticks everything on the page, which is what the
+  bulk-edit bar the list already carries needs in order to appear. There was no way to make
+  a selection from this view at all.
+* **The bare word STATUS in that header became one sorting menu.** Two sections in one
+  control, because "sort this queue" is a single thought to a rep working it: *Sort by*
+  (name, the module's own fact, status, task soonest first) and *Show* (everyone, pending,
+  today, tomorrow, this week). It drives `ListView`'s own `sortBy`/`sortDir` and its task
+  queues — **not a second ordering of its own**, or the screen and an export would disagree
+  about what the list is.
+* **Assignment moved onto the name line**, between the name and *Updated …*, still edited in
+  place.
+* **The action icons are round, tinted and at the top of the header** (`round` on
+  `WhatsAppButton` and `CallButton`). **His words say left-aligned and his screenshot shows
+  them on the right; the words are what is built.** Worth knowing before changing it back.
+
+Pinned by four more tests in `e2e/listDefaultView.spec.ts`: the bar and the missing chevron,
+the select-all and the sorting menu, and the notes **measured** to be beside the fields
+rather than read off a class name — a class that is present while the card still sits
+underneath is exactly the bug.
 
 ## Pressing Call at a desk rings the rep's own phone
 

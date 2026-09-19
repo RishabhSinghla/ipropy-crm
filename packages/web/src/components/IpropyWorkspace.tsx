@@ -1,7 +1,7 @@
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { recordStrength, relativeTime, type FieldMeta, type ModuleMeta, type RecordEnvelope, type TimelineEntry } from '@ipropy/shared';
-import { ChevronRight, FileText, Link2, MessageCircle, Phone, Send, Star, Tag, Trash2 } from 'lucide-react';
+import { ArrowUpDown, Check, FileText, Link2, MessageCircle, Phone, Send, Star, Tag, Trash2 } from 'lucide-react';
 import { FieldValue } from './FieldRenderer';
 import { CallButton, CallDispositionProvider } from './CallDisposition';
 import { WhatsAppComposerProvider } from './WhatsAppComposer';
@@ -13,6 +13,8 @@ import { EditableField, isInlineEditable } from './EditableField';
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { assignmentField, queueSubtitleField } from '../lib/fields';
 import { ModuleIcon } from './Layout';
+import { Avatar, Dropdown, DropdownItem } from './ui';
+import type { TaskQueue } from './FollowUpQueue';
 import { api } from '../lib/api';
 import { cn, restrictionForField } from '../lib/utils';
 import { toast } from '../lib/store';
@@ -37,20 +39,25 @@ interface DetailLayout {
 }
 
 /*
-  Where the two dividers sit, remembered in the browser.
+  Where the divider sits, remembered in the browser.
 
   The same reasoning as which view a list opens in: it is a personal
   preference somebody adjusts several times a day, it is nobody else's
   business, and a per-user setting needing a round trip to say how wide you
   like your queue is slow at exactly the wrong moment.
+
+  One divider, not two. The owner's instruction on 19 September: "we work only
+  in two split panes in future" — the notes moved beside Basic Information,
+  where a note is written about what is on screen rather than in a third
+  column competing with it for width.
 */
 const SPLIT_KEY = 'ipropy.split';
-const LIMITS = { queue: [240, 620], notes: [240, 560] } as const;
+const QUEUE_LIMITS = [240, 620] as const;
 
-function loadSplit(which: 'queue' | 'notes', fallback: number): number {
-  const [min, max] = LIMITS[which];
+function loadSplit(fallback: number): number {
+  const [min, max] = QUEUE_LIMITS;
   try {
-    const raw = Number(localStorage.getItem(`${SPLIT_KEY}.${which}`));
+    const raw = Number(localStorage.getItem(`${SPLIT_KEY}.queue`));
     if (!Number.isFinite(raw) || raw <= 0) return fallback;
     return Math.min(max, Math.max(min, raw));
   } catch {
@@ -61,7 +68,7 @@ function loadSplit(which: 'queue' | 'notes', fallback: number): number {
 }
 
 /**
- * The grip between two panes.
+ * The grip between the queue and the record.
  *
  * Pointer events rather than mouse events, so the same handler answers a
  * finger on a tablet — which is where this view gets used, standing in a site
@@ -101,9 +108,19 @@ function SplitHandle({ label, onDrag }: { label: string; onDrag: (deltaX: number
   );
 }
 
+/** One choice in the queue's sorting menu: a column to order by, or a queue to show. */
+interface SortChoice {
+  key: string;
+  label: string;
+  /** A sort: the field to order by and which way. */
+  sort?: { by: string; dir: 'asc' | 'desc' };
+  /** A queue: which of the follow-up windows to narrow the list to. */
+  queue?: TaskQueue | null;
+}
+
 /**
- * The split view: the queue on the left, the whole record in the middle, the
- * team's notes on the right — and **nothing that sends you anywhere else**.
+ * The split view: the queue on the left, the whole record beside it — and
+ * **nothing that sends you anywhere else**.
  *
  * That is the owner's instruction on 19 September, and it is the shape of the
  * job: a rep works a list, and every trip to another page is a trip back. So
@@ -121,21 +138,49 @@ function SplitHandle({ label, onDrag }: { label: string; onDrag: (deltaX: number
  *    app's caller lookup, so this header said "Unassigned" on every record
  *    however it was assigned. The assignment field is drawn the way the record
  *    page draws it — found by uitype, shown by its display value, edited in
- *    place.
+ *    place, and sitting between the name and when it was last touched.
  */
 export function IpropyWorkspace({
-  module, rows, selected, attentionIds, onToggleSelect, onDelete,
+  module, rows, selected, attentionIds, onToggleSelect, onToggleAll, onDelete,
+  sortBy, sortDir, onSort, taskQueue, onTaskQueue,
 }: {
   module: DescribedModule; rows: RecordEnvelope[];
   selected: Set<string>; attentionIds: Set<string>; onToggleSelect: (id: string, checked: boolean) => void;
+  /** Tick every row on this page, for the bulk-edit bar the list already has. */
+  onToggleAll?: (checked: boolean) => void;
   /** Absent when this profile may not delete — the button is not offered at all. */
   onDelete?: (row: RecordEnvelope) => void;
+  /** The list's own ordering, so the queue's menu drives the same query the table does. */
+  sortBy?: string; sortDir?: 'asc' | 'desc';
+  onSort?: (by: string | undefined, dir: 'asc' | 'desc') => void;
+  taskQueue?: TaskQueue | null;
+  onTaskQueue?: (queue: TaskQueue | null) => void;
 }): JSX.Element {
   const [activeId, setActiveId] = useState<string | null>(rows[0]?.id ?? null);
   const [tab, setTab] = useState<DeskTabKey>('overview');
-  const [queueWidth, setQueueWidth] = useState(() => loadSplit('queue', 360));
-  const [notesWidth, setNotesWidth] = useState(() => loadSplit('notes', 320));
+  const [queueWidth, setQueueWidth] = useState(() => loadSplit(360));
   const queryClient = useQueryClient();
+
+  /*
+    How tall the two panes are, measured rather than guessed.
+
+    It used to be `calc(100vh - 13rem)`, a stand-in for whatever the toolbar
+    above happens to be — and it was about a hundred pixels out, which is the
+    white gap under the queue the owner reported. Reading the shell's own
+    distance from the top of the page is exact, and it stays exact when the
+    toolbar above grows a row.
+  */
+  const shell = useRef<HTMLDivElement>(null);
+  const [paneTop, setPaneTop] = useState(0);
+  useEffect(() => {
+    const measure = (): void => {
+      const box = shell.current?.getBoundingClientRect();
+      if (box) setPaneTop(Math.round(box.top + window.scrollY));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
 
   const star = useMutation({
     mutationFn: (row: RecordEnvelope) => api.star(module.name, row.id, !row.starred),
@@ -155,14 +200,11 @@ export function IpropyWorkspace({
   // two selections. Its values are right, there are simply fewer of them.
   const active = fetched && fetched.id === listRow?.id ? fetched : listRow;
 
-  const resize = useCallback((which: 'queue' | 'notes', delta: number) => {
-    const [min, max] = LIMITS[which];
-    const setter = which === 'queue' ? setQueueWidth : setNotesWidth;
-    setter((current) => {
-      // The notes panel is on the right, so dragging its handle right makes it
-      // *narrower* — the sign flips or the pane fights the cursor.
-      const next = Math.min(max, Math.max(min, current + (which === 'queue' ? delta : -delta)));
-      try { localStorage.setItem(`${SPLIT_KEY}.${which}`, String(Math.round(next))); } catch { /* see loadSplit */ }
+  const resize = useCallback((delta: number) => {
+    const [min, max] = QUEUE_LIMITS;
+    setQueueWidth((current) => {
+      const next = Math.min(max, Math.max(min, current + delta));
+      try { localStorage.setItem(`${SPLIT_KEY}.queue`, String(Math.round(next))); } catch { /* see loadSplit */ }
       return next;
     });
   }, []);
@@ -180,24 +222,22 @@ export function IpropyWorkspace({
   const phoneValue = active && phoneField ? displayOf(active, phoneField) : '';
 
   /*
-    The header strip: what the Layout Designer put there, plus the assignment
-    field when it is not already on the list, plus the phone and the follow-up
-    when an admin has not named them. Identical to the record page's rule on
-    purpose — an admin arranges a header once, for both screens.
+    The header strip: what the Layout Designer put there, plus the phone, the
+    follow-up, the status and the module's own fact when an admin has not named
+    them. Identical to the record page's rule on purpose — an admin arranges a
+    header once, for both screens.
+
+    The assignment field is deliberately **not** here. It goes on the name line
+    instead, between the name and when the record was last touched, which is
+    where the owner asked for it.
   */
   const headerFields = useMemo(() => {
     const names: string[] = [...(layout.headerFields ?? [])];
-    /*
-      Four the record page appends the same way, and one the owner named:
-      Contact Type on a contact, Unit Number on a unit. "I cannot see contact
-      type in this header" — it is not on the saved header layout, and waiting
-      for an admin to add it there is not an answer to a rep who needs to see
-      at a glance whether this is a buyer or a seller.
-    */
-    for (const field of [assignedField, phoneField, followUpField, statusField, subtitleField]) {
+    for (const field of [phoneField, followUpField, statusField, subtitleField]) {
       if (field && !names.includes(field.name)) names.push(field.name);
     }
     return names
+      .filter((name) => name !== assignedField?.name)
       .map((name) => fieldMap.get(name))
       .filter((field): field is FieldMeta => Boolean(field && field.isActive && field.displayType !== 'hidden'));
   }, [layout.headerFields, fieldMap, assignedField, phoneField, followUpField, statusField, subtitleField]);
@@ -234,9 +274,36 @@ export function IpropyWorkspace({
     }];
   }, [layout.blocks, fieldMap, module.fields, module.labelFields]);
 
+  /*
+    What the queue's one menu can do. Ordering and the follow-up windows are
+    two different questions and they stay two sections, but they are one
+    control: "sort this queue" is a single thought to a rep working it.
+  */
+  const sortChoices = useMemo<SortChoice[]>(() => {
+    const out: SortChoice[] = [{ key: 'recent', label: 'Recently updated' }];
+    const nameField = module.labelFields.map((name) => fieldMap.get(name)).find(Boolean);
+    if (nameField) out.push({ key: 'name', label: `${nameField.label} A–Z`, sort: { by: nameField.name, dir: 'asc' } });
+    if (subtitleField) out.push({ key: 'subtitle', label: `${subtitleField.label} A–Z`, sort: { by: subtitleField.name, dir: 'asc' } });
+    if (statusField) out.push({ key: 'status', label: `${statusField.label} A–Z`, sort: { by: statusField.name, dir: 'asc' } });
+    if (followUpField) out.push({ key: 'task', label: 'Task, soonest first', sort: { by: followUpField.name, dir: 'asc' } });
+    return out;
+  }, [module.labelFields, fieldMap, subtitleField, statusField, followUpField]);
+
+  const queueChoices: { key: TaskQueue | 'all'; label: string; queue: TaskQueue | null }[] = [
+    { key: 'all', label: 'Everyone', queue: null },
+    { key: 'pending', label: 'Pending', queue: 'pending' },
+    { key: 'today', label: 'Today', queue: 'today' },
+    { key: 'tomorrow', label: 'Tomorrow', queue: 'tomorrow' },
+    { key: 'week', label: 'This week', queue: 'week' },
+  ];
+
+  const activeSort = sortChoices.find((choice) => choice.sort && choice.sort.by === sortBy) ?? sortChoices[0]!;
+  const activeQueue = queueChoices.find((choice) => choice.queue === (taskQueue ?? null)) ?? queueChoices[0]!;
+
   // A list row carries no `can`, so the module's own permission stands in
   // until the record itself arrives and answers for this row.
   const canEdit = active?.can?.edit ?? module.permissions.edit;
+  const allChecked = rows.length > 0 && rows.every((row) => selected.has(row.id));
 
   /*
     One provider around the whole view, keyed on the record that is open: the
@@ -245,86 +312,192 @@ export function IpropyWorkspace({
   */
   return <CallDispositionProvider key={active?.id ?? 'none'} recordId={active?.id ?? ''} module={module.name} recordLabel={active?.label ?? ''}>
     <WhatsAppComposerProvider key={active?.id ?? 'none'} recordId={active?.id ?? ''} module={module.name} recordLabel={active?.label ?? ''}>
-    <section data-testid="ipropy-workspace" className="min-h-full bg-[#f7f9fc] dark:bg-slate-950">
+    <section data-testid="ipropy-workspace" className="bg-[#f7f9fc] dark:bg-slate-950">
     {/*
-      A flex row with two draggable dividers, not a fixed grid. Below `xl` the
-      panes stack and the widths are ignored entirely — the handles are
-      `xl:block`, because a divider you cannot see is not one you can drag.
+      A fixed-height row with one draggable divider, not a min-height one.
+
+      Height rather than min-height is what closes the white gap under the
+      queue the owner reported: with `min-h` the two panes are as tall as the
+      taller of them, the queue stops at its last row, and the page keeps
+      scrolling past it. Fixed to the viewport, each pane scrolls inside
+      itself, so the queue shows as many records as the screen can hold and
+      ends exactly at the bottom of it.
+
+      Below `xl` the panes stack and the width is ignored entirely — the handle
+      is `xl:block`, because a divider you cannot see is not one you can drag.
     */}
     <div
-      className="flex min-h-[calc(100vh-13rem)] flex-col xl:flex-row"
-      style={{ ['--queue-w' as string]: `${queueWidth}px`, ['--notes-w' as string]: `${notesWidth}px` }}
+      ref={shell}
+      className="flex min-h-[calc(100vh-13rem)] flex-col xl:h-[var(--pane-h)] xl:min-h-0 xl:flex-row"
+      style={{
+        ['--queue-w' as string]: `${queueWidth}px`,
+        ['--pane-h' as string]: paneTop ? `calc(100vh - ${paneTop}px)` : 'calc(100vh - 13rem)',
+      }}
     >
-      <aside className="w-full shrink-0 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 xl:w-[var(--queue-w)] xl:border-b-0">
-        <div className="flex h-10 items-center justify-between border-b border-slate-200 px-4 dark:border-slate-800">
-          <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300"><ModuleIcon name={module.icon} className="h-4 w-4 text-brand-600" />{module.label}</p>
-          <span className="text-2xs font-semibold text-slate-400">{rows.length} shown</span>
+      <aside className="flex w-full shrink-0 flex-col border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 xl:w-[var(--queue-w)] xl:border-b-0">
+        <div className="flex h-11 shrink-0 items-center gap-2 border-b border-slate-200 px-3 dark:border-slate-800">
+          {/* Beside the module's own name, because that is what it selects:
+              everything on this page, for the bulk-edit bar the list already
+              carries. */}
+          {onToggleAll && (
+            <input
+              type="checkbox"
+              aria-label={`Select all ${module.label.toLowerCase()} shown`}
+              checked={allChecked}
+              onChange={(event) => onToggleAll(event.target.checked)}
+              className="h-4 w-4 shrink-0 rounded border-slate-300"
+            />
+          )}
+          <p className="flex min-w-0 items-center gap-1.5 truncate text-xs font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+            <ModuleIcon name={module.icon} className="h-4 w-4 shrink-0 text-brand-600" />{module.label}
+          </p>
+          <span className="shrink-0 text-2xs font-semibold text-slate-400">{rows.length}</span>
+          {onSort && (
+            <div className="ml-auto shrink-0">
+              <Dropdown
+                align="right"
+                trigger={(
+                  <button
+                    type="button"
+                    className="inline-flex max-w-[11rem] items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-2xs font-semibold text-slate-600 hover:border-brand-300 hover:text-brand-700 dark:border-slate-700 dark:text-slate-300"
+                    aria-label="Sort this list"
+                  >
+                    <ArrowUpDown className="h-3 w-3 shrink-0" />
+                    <span className="truncate">{taskQueue ? activeQueue.label : activeSort.label}</span>
+                  </button>
+                )}
+              >
+                {(close) => (
+                  <div className="py-1">
+                    <p className="px-3 pb-1 pt-1.5 text-2xs font-bold uppercase tracking-wide text-slate-400">Sort by</p>
+                    {sortChoices.map((choice) => (
+                      <DropdownItem
+                        key={choice.key}
+                        icon={<Check className={cn('h-3.5 w-3.5', activeSort.key === choice.key ? 'text-brand-600' : 'invisible')} />}
+                        onClick={() => { onSort(choice.sort?.by, choice.sort?.dir ?? 'desc'); close(); }}
+                      >
+                        {choice.label}
+                      </DropdownItem>
+                    ))}
+                    {onTaskQueue && followUpField && (
+                      <>
+                        <p className="mt-1 border-t border-slate-100 px-3 pb-1 pt-2 text-2xs font-bold uppercase tracking-wide text-slate-400 dark:border-slate-800">Show</p>
+                        {queueChoices.map((choice) => (
+                          <DropdownItem
+                            key={choice.key}
+                            icon={<Check className={cn('h-3.5 w-3.5', activeQueue.key === choice.key ? 'text-brand-600' : 'invisible')} />}
+                            onClick={() => { onTaskQueue(choice.queue); close(); }}
+                          >
+                            {choice.label}
+                          </DropdownItem>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                )}
+              </Dropdown>
+            </div>
+          )}
         </div>
-        <div className="max-h-[31rem] overflow-y-auto xl:max-h-[calc(100vh-13rem)]">
+        <div className="min-h-0 flex-1 overflow-y-auto">
           {rows.map((row) => <QueueRow key={row.id} module={module} row={row} active={row.id === active?.id} checked={selected.has(row.id)} attention={attentionIds.has(row.id)} statusField={statusField} followUpField={followUpField} subtitleField={subtitleField} onSelect={() => setActiveId(row.id)} onToggle={(checked) => onToggleSelect(row.id, checked)} />)}
         </div>
       </aside>
 
-      <SplitHandle label="Resize the list" onDrag={(delta) => resize('queue', delta)} />
+      <SplitHandle label="Resize the list" onDrag={resize} />
 
-      {active && <main className="flex min-w-0 flex-1 flex-col">
-        <header className="border-b border-slate-200 bg-white px-5 pt-4 dark:border-slate-800 dark:bg-slate-900 sm:px-7">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="flex min-w-0 items-center gap-4">
-              <ScoreRing module={module} row={active} large />
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <h2 className="truncate text-2xl font-extrabold tracking-tight text-slate-950 dark:text-white">{active.label}</h2>
-                  <span className="text-sm text-slate-400">Updated {relativeTime(active.updatedAt)}</span>
-                  {active.tags?.slice(0, 2).map((tag) => <span key={tag} className="inline-flex items-center gap-1 rounded-md bg-brand-50 px-1.5 py-0.5 text-2xs font-semibold text-brand-700 dark:bg-brand-950/40 dark:text-brand-300"><Tag className="h-3 w-3" />{tag}</span>)}
-                </div>
-                {/*
-                  Every header value the record page carries, each one typed in
-                  where it stands. The owner's instruction: "Full of the header
-                  things phone number, next follow-up all other things be in
-                  line editable."
-                */}
-                <div className="mt-2.5 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm font-medium text-slate-800 dark:text-slate-100">
-                  {headerFields.map((field) => (
-                    <span key={field.name} className="inline-flex min-w-0 max-w-full items-center gap-1.5 truncate">
-                      <span className="shrink-0 text-xs font-normal text-muted">{field.label}:</span>
-                      {canEdit && isInlineEditable(field) ? (
-                        <EditableField
-                          module={module.name}
-                          recordId={active.id}
-                          field={field}
-                          value={active.values[field.name]}
-                          display={active.display?.[field.name]}
-                          compact
-                          siblings={active.values}
-                          restrictTo={restrictionForField(module.picklistDependencies, active.values, field.name)}
-                          onSaved={() => invalidateRecordQueries(queryClient, module.name, active.id)}
-                        />
-                      ) : (
-                        <FieldValue field={field} value={active.values[field.name]} display={active.display?.[field.name]} compact />
-                      )}
-                    </span>
-                  ))}
-                </div>
+      {active && <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
+        {/* Sticky, so the name, the assignment and the tabs stay on screen
+            while the fields below them scroll. */}
+        <header className="sticky top-0 z-10 border-b border-slate-200 bg-white px-5 pt-3 dark:border-slate-800 dark:bg-slate-900 sm:px-7">
+          {/*
+            The actions first and to the left, which is where the owner asked
+            for them. (His screenshot has them on the right; his words say
+            left, and the words are the instruction.)
+          */}
+          <div className="flex items-center gap-2">
+            <button
+              aria-label={active.starred ? 'Remove from starred' : 'Star this record'}
+              title={active.starred ? 'Remove from starred' : 'Star this record'}
+              onClick={() => star.mutate(active)}
+              className={cn('inline-flex h-8 w-8 items-center justify-center rounded-full border transition-colors', active.starred ? 'border-amber-300 bg-amber-100 text-amber-600 dark:border-amber-800 dark:bg-amber-950/50' : 'border-amber-200 bg-amber-50 text-amber-500 hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/30')}
+            >
+              <Star className={cn('h-4 w-4', active.starred && 'fill-amber-400')} />
+            </button>
+            {/* Icons only. The words cost a third of the header strip for
+                two buttons everybody recognises by their shape. */}
+            {phoneValue && <WhatsAppButton to={phoneValue} iconOnly round />}
+            {phoneValue && <CallButton to={phoneValue} iconOnly round />}
+            {onDelete && <button onClick={() => onDelete(active)} className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-rose-600 transition-colors hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300" title={`Delete ${active.label}`} aria-label={`Delete ${active.label}`}><Trash2 className="h-4 w-4" /></button>}
+          </div>
+
+          <div className="mt-3 flex min-w-0 items-start gap-4">
+            <Avatar name={active.label} size={52} className="mt-0.5 text-lg" />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <h2 className="truncate text-2xl font-extrabold tracking-tight text-slate-950 dark:text-white">{active.label}</h2>
+                {/* Between the name and when it was last touched, which is
+                    where the owner asked for it. */}
+                {assignedField && (
+                  <span className="inline-flex min-w-0 items-center gap-1.5 text-sm">
+                    <span className="shrink-0 text-xs font-normal text-muted">{assignedField.label}:</span>
+                    {canEdit && isInlineEditable(assignedField) ? (
+                      <EditableField
+                        module={module.name}
+                        recordId={active.id}
+                        field={assignedField}
+                        value={active.values[assignedField.name]}
+                        display={active.display?.[assignedField.name]}
+                        compact
+                        siblings={active.values}
+                        restrictTo={restrictionForField(module.picklistDependencies, active.values, assignedField.name)}
+                        onSaved={() => invalidateRecordQueries(queryClient, module.name, active.id)}
+                      />
+                    ) : (
+                      <FieldValue field={assignedField} value={active.values[assignedField.name]} display={active.display?.[assignedField.name]} compact />
+                    )}
+                  </span>
+                )}
+                <span className="text-sm text-slate-400">Updated {relativeTime(active.updatedAt)}</span>
+                {active.tags?.slice(0, 2).map((tag) => <span key={tag} className="inline-flex items-center gap-1 rounded-md bg-brand-50 px-1.5 py-0.5 text-2xs font-semibold text-brand-700 dark:bg-brand-950/40 dark:text-brand-300"><Tag className="h-3 w-3" />{tag}</span>)}
+              </div>
+
+              {/* How complete the record is, under the name rather than
+                  wrapped around the avatar. */}
+              <StrengthBar module={module} row={active} className="mt-2 max-w-sm" />
+
+              {/*
+                Every header value the record page carries, each one typed in
+                where it stands. The owner's instruction: "Full of the header
+                things phone number, next follow-up all other things be in
+                line editable."
+              */}
+              <div className="mt-2.5 flex flex-wrap items-center gap-x-5 gap-y-2 pb-1 text-sm font-medium text-slate-800 dark:text-slate-100">
+                {headerFields.map((field) => (
+                  <span key={field.name} className="inline-flex min-w-0 max-w-full items-center gap-1.5 truncate">
+                    <span className="shrink-0 text-xs font-normal text-muted">{field.label}:</span>
+                    {canEdit && isInlineEditable(field) ? (
+                      <EditableField
+                        module={module.name}
+                        recordId={active.id}
+                        field={field}
+                        value={active.values[field.name]}
+                        display={active.display?.[field.name]}
+                        compact
+                        siblings={active.values}
+                        restrictTo={restrictionForField(module.picklistDependencies, active.values, field.name)}
+                        onSaved={() => invalidateRecordQueries(queryClient, module.name, active.id)}
+                      />
+                    ) : (
+                      <FieldValue field={field} value={active.values[field.name]} display={active.display?.[field.name]} compact />
+                    )}
+                  </span>
+                ))}
               </div>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <button
-                aria-label={active.starred ? 'Remove from starred' : 'Star this record'}
-                title={active.starred ? 'Remove from starred' : 'Star this record'}
-                onClick={() => star.mutate(active)}
-                className={cn('inline-flex h-9 w-9 items-center justify-center rounded-lg border transition-colors', active.starred ? 'border-amber-300 bg-amber-100 text-amber-600 dark:border-amber-800 dark:bg-amber-950/50' : 'border-amber-200 bg-amber-50 text-amber-500 hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/30')}
-              >
-                <Star className={cn('h-4 w-4', active.starred && 'fill-amber-400')} />
-              </button>
-              {/* Icons only. The words cost a third of the header strip for
-                  two buttons everybody recognises by their shape. */}
-              {phoneValue && <WhatsAppButton to={phoneValue} iconOnly />}
-              {phoneValue && <CallButton to={phoneValue} iconOnly />}
-              {onDelete && <button onClick={() => onDelete(active)} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-600 transition-colors hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300" title={`Delete ${active.label}`} aria-label={`Delete ${active.label}`}><Trash2 className="h-4 w-4" /></button>}
-            </div>
           </div>
-          <nav className="mt-4 flex max-w-full overflow-x-auto" aria-label="Record workspace sections">
+
+          <nav className="mt-3 flex max-w-full overflow-x-auto" aria-label="Record workspace sections">
             <DeskTab active={tab === 'overview'} onClick={() => setTab('overview')}>Overview</DeskTab>
             <DeskTab active={tab === 'timeline'} onClick={() => setTab('timeline')}>Timeline</DeskTab>
             <DeskTab active={tab === 'matching'} onClick={() => setTab('matching')}><Link2 className="h-3.5 w-3.5" />Matching {module.name === 'leads' ? 'inventory' : 'leads'}</DeskTab>
@@ -333,18 +506,30 @@ export function IpropyWorkspace({
             <DeskTab active={tab === 'whatsapp'} onClick={() => setTab('whatsapp')}><MessageCircle className="h-3.5 w-3.5" />WhatsApp</DeskTab>
           </nav>
         </header>
-        <div className="min-w-0 flex-1 space-y-4 bg-[#f7f9fc] p-4 sm:p-6 dark:bg-slate-950/50">
-          {tab === 'overview' && blocks.map((block) => (
-            <FieldBlock
-              key={block.key}
-              module={module}
-              title={block.label}
-              columns={block.columns}
-              fields={block.fields}
-              row={active}
-              canEdit={canEdit}
-            />
-          ))}
+        <div className="min-w-0 flex-1 bg-[#f7f9fc] p-4 sm:p-6 dark:bg-slate-950/50">
+          {/*
+            Notes beside Basic Information rather than in a third column. Two
+            panes, as the owner asked — and a note is written about what is on
+            screen, so it belongs next to it.
+          */}
+          {tab === 'overview' && (
+            <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_20rem] 2xl:grid-cols-[minmax(0,1fr)_22rem]">
+              <div className="min-w-0 space-y-4">
+                {blocks.map((block) => (
+                  <FieldBlock
+                    key={block.key}
+                    module={module}
+                    title={block.label}
+                    columns={block.columns}
+                    fields={block.fields}
+                    row={active}
+                    canEdit={canEdit}
+                  />
+                ))}
+              </div>
+              <NotesPanel module={module.name} record={active} />
+            </div>
+          )}
           {tab === 'timeline' && <TimelineTab module={module.name} id={active.id} />}
           {tab === 'matching' && <MatchingTab module={module.name} id={active.id} returnQuery="" recordLabel={active.label} />}
           {tab === 'files' && <FilesTab module={module.name} id={active.id} canEdit={canEdit} />}
@@ -352,24 +537,88 @@ export function IpropyWorkspace({
           {tab === 'whatsapp' && <WhatsAppTab module={module.name} recordId={active.id} mobile={phoneValue || null} />}
         </div>
       </main>}
-
-      <SplitHandle label="Resize the notes panel" onDrag={(delta) => resize('notes', delta)} />
-
-      {active && <NotesPanel module={module.name} record={active} />}
     </div>
     </section>
     </WhatsAppComposerProvider>
   </CallDispositionProvider>;
 }
 
+/**
+ * One record in the queue.
+ *
+ * Three lines, in the order a rep reads them: who this is and when they are
+ * due, how complete the record is, and the one fact that tells the two modules
+ * apart — a contact's Type, a unit's Unit Number — with the status beside it.
+ *
+ * No chevron. It pointed at nothing: the record opens in the pane already on
+ * screen, and the owner's word for it was "irritating".
+ */
 function QueueRow({ module, row, active, checked, attention, statusField, followUpField, subtitleField, onSelect, onToggle }: { module: ModuleMeta; row: RecordEnvelope; active: boolean; checked: boolean; attention: boolean; statusField?: FieldMeta; followUpField?: FieldMeta; subtitleField?: FieldMeta; onSelect: () => void; onToggle: (checked: boolean) => void }): JSX.Element {
   const due = followUpField ? dueLabel(row.values[followUpField.name]) : null;
   // A contact's Type, a unit's Unit Number — never the record id, which
   // identifies a row to a database and nothing to a person.
   const subtitle = subtitleField ? displayOf(row, subtitleField) : '';
-  return <button type="button" onClick={onSelect} className={cn('group flex w-full items-center gap-3 border-b border-slate-100 px-4 py-2 text-left transition-colors dark:border-slate-800', active ? 'border-l-4 border-l-brand-600 bg-brand-50/70 pl-3 dark:bg-brand-950/30' : 'hover:bg-slate-50 dark:hover:bg-slate-800/70')}><input aria-label={`Select ${row.label}`} type="checkbox" checked={checked} onClick={(event) => event.stopPropagation()} onChange={(event) => onToggle(event.target.checked)} className="h-4 w-4 shrink-0 rounded border-slate-300" /><ScoreRing module={module} row={row} /><span className="min-w-0 flex-1"><span className="flex items-center gap-1.5"><span className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">{row.label}</span>{row.starred && <Star className="h-3 w-3 fill-amber-400 text-amber-500" />}</span>{subtitle && <span className="mt-0.5 block truncate text-xs text-slate-500">{subtitle}</span>}</span><span className="flex shrink-0 flex-col items-end gap-1">{due && <span className={cn('rounded px-1.5 py-0.5 text-2xs font-bold', due.tone)}>{due.label}</span>}{statusField && <StatusPill field={statusField} row={row} label={displayOf(row, statusField) || 'Not set'} />}{attention && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" title="Needs attention" />}</span><ChevronRight className="hidden h-4 w-4 text-slate-300 group-hover:block" /></button>;
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        'flex w-full items-start gap-2.5 border-b border-slate-100 px-3 py-2.5 text-left transition-colors dark:border-slate-800',
+        active ? 'border-l-4 border-l-brand-600 bg-brand-50/70 pl-2 dark:bg-brand-950/30' : 'hover:bg-slate-50 dark:hover:bg-slate-800/70',
+      )}
+    >
+      <input
+        aria-label={`Select ${row.label}`}
+        type="checkbox"
+        checked={checked}
+        onClick={(event) => event.stopPropagation()}
+        onChange={(event) => onToggle(event.target.checked)}
+        className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300"
+      />
+      <span className="relative shrink-0">
+        <Avatar name={row.label} size={36} />
+        {attention && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-amber-500 dark:border-slate-900" title="Needs attention" />}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5">
+          <span className="min-w-0 flex-1 truncate text-sm font-bold text-slate-900 dark:text-slate-100">{row.label}</span>
+          {row.starred && <Star className="h-3 w-3 shrink-0 fill-amber-400 text-amber-500" />}
+          {due && <span className={cn('shrink-0 rounded px-1.5 py-0.5 text-2xs font-bold', due.tone)}>{due.label}</span>}
+        </span>
+        <StrengthBar module={module} row={row} className="mt-1.5" />
+        <span className="mt-1.5 flex items-center gap-2">
+          <span className="min-w-0 flex-1 truncate text-xs text-slate-500">{subtitle || '—'}</span>
+          {statusField && <StatusPill field={statusField} row={row} label={displayOf(row, statusField) || 'Not set'} />}
+        </span>
+      </span>
+    </button>
+  );
 }
-function ScoreRing({ module, row, large = false }: { module: ModuleMeta; row: RecordEnvelope; large?: boolean }): JSX.Element { const percent = recordStrength(module.fields, row.values).percent; const color = percent >= 80 ? '#14b86a' : percent >= 55 ? '#f59e0b' : '#ee3458'; const size = large ? 58 : 36; return <span className="relative flex shrink-0 items-center justify-center rounded-full bg-white shadow-sm dark:bg-slate-800" style={{ width: size, height: size, background: `conic-gradient(${color} ${percent}%, #e8edf4 0)` }}><span className="flex items-center justify-center rounded-full bg-white font-extrabold tabular-nums text-slate-800 dark:bg-slate-900 dark:text-white" style={{ width: size - 7, height: size - 7, fontSize: large ? 16 : 10 }}>{percent}%</span></span>; }
+
+/**
+ * How complete a record is, as a straight line with the number beside it.
+ *
+ * It used to be a ring around the avatar. The owner asked for the two to be
+ * separated — the face identifies the person, the bar answers a different
+ * question — and a bar reads as a proportion at a glance where a ring has to
+ * be decoded.
+ */
+function StrengthBar({ module, row, className }: { module: ModuleMeta; row: RecordEnvelope; className?: string }): JSX.Element {
+  const percent = recordStrength(module.fields, row.values).percent;
+  const color = percent >= 80 ? '#14b86a' : percent >= 55 ? '#f59e0b' : '#ee3458';
+  return (
+    <span className={cn('flex items-center gap-2', className)}>
+      <span
+        className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700"
+        role="img"
+        aria-label={`Record ${percent}% complete`}
+      >
+        <span className="block h-full rounded-full" style={{ width: `${percent}%`, backgroundColor: color }} />
+      </span>
+      <span className="shrink-0 text-2xs font-bold tabular-nums text-slate-500 dark:text-slate-400">{percent}%</span>
+    </span>
+  );
+}
 
 /**
  * One block of the record's fields, editable where they stand.
@@ -428,9 +677,28 @@ function FieldBlock({ module, title, columns, fields, row, canEdit }: {
     </div>)}</dl>
   </section>;
 }
-function NotesPanel({ module, record }: { module: string; record: RecordEnvelope }): JSX.Element { const queryClient = useQueryClient(); const [note, setNote] = useState(''); const { data: entries, isLoading } = useQuery({ queryKey: ['timeline', module, record.id, 'comment'], queryFn: () => api.timeline(module, record.id, ['comment']) }); const add = useMutation({ mutationFn: () => api.addComment(module, record.id, note.trim()), onSuccess: () => { setNote(''); void queryClient.invalidateQueries({ queryKey: ['timeline', module, record.id] }); toast.success('Note added'); }, onError: (error: Error) => toast.error('Could not add note', error.message) }); return <aside className="w-full shrink-0 border-t border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 xl:w-[var(--notes-w)] xl:border-t-0"><header className="flex h-12 items-center gap-2 border-b border-slate-200 px-5 dark:border-slate-800"><FileText className="h-4 w-4 text-brand-600" /><h3 className="font-bold text-slate-900 dark:text-white">Notes</h3></header><div className="p-4"><textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="Add a note for the team… type @ to notify someone" className="min-h-28 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm outline-none placeholder:text-slate-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-800" /><div className="mt-2 flex items-center justify-between"><span className="text-2xs text-slate-400">⌘↵ to post</span><button disabled={!note.trim() || add.isPending} onClick={() => add.mutate()} className="btn-primary btn-sm"><Send className="h-3.5 w-3.5" />{add.isPending ? 'Posting…' : 'Post'}</button></div></div><div className="max-h-[25rem] space-y-4 overflow-y-auto border-t border-slate-100 p-5 dark:border-slate-800">{isLoading ? <p className="text-sm text-slate-400">Loading notes…</p> : entries?.length ? entries.map((entry) => <NoteEntry key={entry.id} entry={entry} />) : <div className="py-12 text-center"><FileText className="mx-auto h-9 w-9 text-slate-300" /><p className="mt-3 text-sm font-semibold text-slate-500">No notes yet</p><p className="mt-1 text-xs text-slate-400">Internal team comments appear here.</p></div>}</div></aside>; }
+
+/**
+ * The team's notes, beside the record's own fields rather than in a column of
+ * their own. Two panes, as the owner asked on 19 September.
+ */
+function NotesPanel({ module, record }: { module: string; record: RecordEnvelope }): JSX.Element {
+  const queryClient = useQueryClient();
+  const [note, setNote] = useState('');
+  const { data: entries, isLoading } = useQuery({ queryKey: ['timeline', module, record.id, 'comment'], queryFn: () => api.timeline(module, record.id, ['comment']) });
+  const add = useMutation({
+    mutationFn: () => api.addComment(module, record.id, note.trim()),
+    onSuccess: () => { setNote(''); void queryClient.invalidateQueries({ queryKey: ['timeline', module, record.id] }); toast.success('Note added'); },
+    onError: (error: Error) => toast.error('Could not add note', error.message),
+  });
+  return <section className="h-fit overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+    <header className="flex h-12 items-center gap-2 border-b border-slate-200 px-5 dark:border-slate-800"><FileText className="h-4 w-4 text-brand-600" /><h3 className="font-bold text-slate-900 dark:text-white">Notes</h3></header>
+    <div className="p-4"><textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="Add a note for the team… type @ to notify someone" className="min-h-24 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm outline-none placeholder:text-slate-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-800" /><div className="mt-2 flex items-center justify-between"><span className="text-2xs text-slate-400">⌘↵ to post</span><button disabled={!note.trim() || add.isPending} onClick={() => add.mutate()} className="btn-primary btn-sm"><Send className="h-3.5 w-3.5" />{add.isPending ? 'Posting…' : 'Post'}</button></div></div>
+    <div className="max-h-[25rem] space-y-4 overflow-y-auto border-t border-slate-100 p-5 dark:border-slate-800">{isLoading ? <p className="text-sm text-slate-400">Loading notes…</p> : entries?.length ? entries.map((entry) => <NoteEntry key={entry.id} entry={entry} />) : <div className="py-10 text-center"><FileText className="mx-auto h-9 w-9 text-slate-300" /><p className="mt-3 text-sm font-semibold text-slate-500">No notes yet</p><p className="mt-1 text-xs text-slate-400">Internal team comments appear here.</p></div>}</div>
+  </section>;
+}
 function NoteEntry({ entry }: { entry: TimelineEntry }): JSX.Element { return <article><p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{entry.title}</p><p className="mt-0.5 text-2xs text-slate-400">{entry.actorName ?? 'iPROPY'} · {relativeTime(entry.at)}</p>{entry.body && <p className="mt-1.5 whitespace-pre-wrap text-sm leading-5 text-slate-600 dark:text-slate-300">{entry.body}</p>}</article>; }
 function DeskTab({ active = false, onClick, children }: { active?: boolean; onClick: () => void; children: React.ReactNode }): JSX.Element { return <button onClick={onClick} className={cn('flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-3 text-sm font-semibold transition-colors', active ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200')}>{children}</button>; }
-function StatusPill({ field, row, label }: { field: FieldMeta; row: RecordEnvelope; label: string }): JSX.Element { const value = String(row.values[field.name] ?? ''); const color = field.options?.find((option) => option.value === value)?.color; return <span className="max-w-32 truncate rounded px-2 py-0.5 text-2xs font-bold" style={color ? { backgroundColor: `${color}20`, color } : undefined}>{label}</span>; }
+function StatusPill({ field, row, label }: { field: FieldMeta; row: RecordEnvelope; label: string }): JSX.Element { const value = String(row.values[field.name] ?? ''); const color = field.options?.find((option) => option.value === value)?.color; return <span className="max-w-32 shrink-0 truncate rounded px-2 py-0.5 text-2xs font-bold" style={color ? { backgroundColor: `${color}20`, color } : undefined}>{label}</span>; }
 function displayOf(row: RecordEnvelope, field: FieldMeta): string { const display = row.display?.[field.name]; if (display) return display; const value = row.values[field.name]; return Array.isArray(value) ? value.join(', ') : value == null ? '' : String(value); }
 function dueLabel(value: unknown): { label: string; tone: string } | null { if (!value) return null; const date = new Date(String(value)); if (Number.isNaN(date.getTime())) return null; const today = new Date(); today.setHours(0, 0, 0, 0); date.setHours(0, 0, 0, 0); const diff = Math.round((date.getTime() - today.getTime()) / 86_400_000); return diff < 0 ? { label: 'Overdue', tone: 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' } : diff === 0 ? { label: 'Today', tone: 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' } : diff === 1 ? { label: 'Tomorrow', tone: 'bg-brand-100 text-brand-700 dark:bg-brand-950/40 dark:text-brand-300' } : { label: date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }), tone: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' }; }

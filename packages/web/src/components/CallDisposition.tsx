@@ -275,7 +275,7 @@ export function CallDispositionProvider({
   );
 }
 
-export function CallButton({ to, iconOnly = false }: { to: string; iconOnly?: boolean }): JSX.Element {
+export function CallButton({ to, iconOnly = false, round = false }: { to: string; iconOnly?: boolean; round?: boolean }): JSX.Element {
   const calls = useCallDisposition();
   return (
     <button
@@ -283,13 +283,17 @@ export function CallButton({ to, iconOnly = false }: { to: string; iconOnly?: bo
       // `iconOnly` where the header is tight — the split view, above all. The
       // word costs a third of the strip for a button everybody recognises by
       // its shape, and the title still says what it does.
-      className={cn('btn-secondary btn-sm', iconOnly && 'h-9 w-9 justify-center px-0')}
+      // `round` is the split view's own shape: a tinted circle in the
+      // record's action strip, the colour of the thing it opens.
+      className={round
+        ? 'inline-flex h-8 w-8 items-center justify-center rounded-full border border-blue-200 bg-blue-50 text-blue-600 transition-colors hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-300'
+        : cn('btn-secondary btn-sm', iconOnly && 'h-9 w-9 justify-center px-0')}
       title={`Call ${to}`}
       aria-label={`Call ${to}`}
       onClick={() => void calls?.startCall(to)}
     >
-      <Phone className="h-3.5 w-3.5 text-blue-600" />
-      {!iconOnly && <span className="hidden sm:inline">Call</span>}
+      <Phone className={round ? 'h-4 w-4' : 'h-3.5 w-3.5 text-blue-600'} />
+      {!iconOnly && !round && <span className="hidden sm:inline">Call</span>}
     </button>
   );
 }
