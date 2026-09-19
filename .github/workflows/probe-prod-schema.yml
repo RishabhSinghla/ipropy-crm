@@ -64,18 +64,6 @@ jobs:
                  FROM ipy_field f JOIN ipy_module mo ON mo.id = f.module_id
                 WHERE mo.name = '$m' AND f.storage = 'column';"
             echo
-            # The line under a name in a list is `config.listSubtitle` on the
-            # fields themselves, so which facts a queue shows is a question
-            # about production's metadata and not about this repo's seed. A
-            # contact reading only "Buyer" means the second field is there and
-            # unflagged, which looks exactly like the feature not working.
-            echo "=== $m: fields flagged to show under the name ==="
-            psql "$PROD_DATABASE_URL" -tAc \
-              "SELECT string_agg(f.name || ' (' || f.label || ') = ' ||
-                                 (f.config->>'listSubtitle'), ', ' ORDER BY f.name)
-                 FROM ipy_field f JOIN ipy_module mo ON mo.id = f.module_id
-                WHERE mo.name = '$m' AND f.config ? 'listSubtitle';"
-            echo
             echo "=== $m: tombstoned fields ==="
             psql "$PROD_DATABASE_URL" -tAc \
               "SELECT string_agg(field_name, ', ' ORDER BY field_name)
