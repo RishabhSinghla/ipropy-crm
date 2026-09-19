@@ -76,10 +76,21 @@ export function classify(raw) {
 
   if (n.length === 10 && /^[6-9]/.test(n)) return 'mobile';
 
-  // A ten-digit number whose first digit no mobile series uses, or a local
-  // number stored without its area code. Real numbers; not mobiles.
+  // A ten-digit number whose first digit no mobile series uses. Delhi 011,
+  // Pune 020, Kolkata 033 and the rest, stored without the trunk 0.
   if (n.length === 10 && /^[1-5]/.test(n)) return 'landline';
-  if (n.length === 11 || n.length === 9 || n.length === 8) return 'landline';
+
+  /*
+    Wrong length, but in a mobile series. Separated from `landline` because it
+    is a different problem with a different answer: a nine- or eleven-digit
+    number starting 98 is somebody's mobile with a digit dropped or added, and
+    the fix is to correct it, not to empty it. Lumping the two together would
+    have reported typos as landlines and understated how many real mobiles are
+    one keystroke from working.
+  */
+  if ([8, 9, 11].includes(n.length)) {
+    return /^[6-9]/.test(n) ? 'wrong_length_mobile' : 'landline';
+  }
 
   if (n.length < 8) return 'too_short';
   return 'too_long';
@@ -89,13 +100,14 @@ export const LABELS = {
   mobile: 'A proper mobile (10 digits, starts 6/7/8/9)',
   landline: 'Looks like a landline (wrong length, or starts 1-5)',
   leading_zero: 'Has a 0 in front — could be either, needs a look',
+  wrong_length_mobile: 'A mobile with a digit missing or spare (fixable)',
   obvious_junk: 'Obvious junk (9999999999, 1234567890 and the like)',
   too_short: 'Too short to be any phone number',
   too_long: 'Too long to be any phone number',
   no_digits: 'No digits in it at all',
   blank: 'Empty',
 };
-export const BAD = ['landline', 'leading_zero', 'obvious_junk', 'too_short', 'too_long', 'no_digits'];
+export const BAD = ['landline', 'wrong_length_mobile', 'leading_zero', 'obvious_junk', 'too_short', 'too_long', 'no_digits'];
 
 /** Hide the last four digits. Enough to see the shape, not enough to ring. */
 export const mask = (v) => {

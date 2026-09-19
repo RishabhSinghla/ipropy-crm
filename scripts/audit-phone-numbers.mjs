@@ -136,8 +136,9 @@ console.log('='.repeat(78));
 console.log('PHONE NUMBERS IN THE CRM — what is a real mobile and what is not');
 console.log('='.repeat(78));
 console.log('A proper Indian mobile is 10 digits starting 6, 7, 8 or 9.');
-console.log('A leading +91, 91 or 0 is removed before judging, so a number that');
-console.log('merely carries its country code is not reported as a problem.');
+console.log('A leading +91 or 91 is removed first, so a number that merely carries');
+console.log('its country code is not reported as a problem. A leading 0 is NOT');
+console.log('removed: in Indian dialling that is the landline trunk prefix.');
 console.log('Nothing is changed by this. It only counts.');
 
 for (const module of modules) {

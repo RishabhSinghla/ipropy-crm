@@ -59,6 +59,22 @@ describe('what counts as a proper Indian mobile', () => {
     would hide real landlines, and calling them landlines would empty real
     mobiles. Neither is worth guessing at, so they are counted on their own.
   */
+  /*
+    Found by reading production's own samples rather than by imagining a case:
+    `98100321234` and `989931234` were both being reported as landlines. They
+    are somebody's mobile with a digit added or dropped, and the answer to a
+    typo is to correct it, not to empty it — so they are counted apart.
+  */
+  it('separates a mistyped mobile from a landline', () => {
+    for (const n of ['98100321234', '989931234', '82201345']) {
+      expect(bucket(n), n).toBe('wrong_length_mobile');
+    }
+    // Same wrong lengths, but in no mobile series: still a landline.
+    for (const n of ['26861234', '112681234', '20267231234']) {
+      expect(bucket(n), n).toBe('landline');
+    }
+  });
+
   it('refuses to guess on an 0 in front of a 6-9', () => {
     for (const n of ['08023456789', '07926543210', '09822013456']) {
       expect(bucket(n), n).toBe('leading_zero');
