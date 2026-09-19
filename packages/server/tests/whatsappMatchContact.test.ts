@@ -9,7 +9,7 @@
  * concludes the matching is broken.
  */
 import { describe, expect, it } from 'vitest';
-import { handleFromJid, matchKey } from '../src/integrations/whatsapp/agent/matchContact.js';
+import { handleFromJid, matchKey } from '../src/integrations/whatsapp/matchContact.js';
 
 describe('the number behind a WhatsApp id', () => {
   it('reads a plain contact', () => {

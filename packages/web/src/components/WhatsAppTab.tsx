@@ -10,14 +10,13 @@ import { EmptyState, Skeleton, Spinner } from './ui';
 /**
  * This contact's WhatsApp history, on the contact.
  *
- * Whoever sent it. The thread is not scoped to the reader's own linked number —
- * a manager who can open the lead reads the whole conversation, and somebody who
- * cannot open the lead never gets here. Authority comes from the contact, not
- * from the phone, which is how a manager sees the history without anybody
- * borrowing an agent's session.
+ * Whoever sent it. The thread is not scoped to one reader — a manager who can
+ * open the lead reads the whole conversation, and somebody who cannot open the
+ * lead never gets here. Authority comes from the contact, not from the phone.
  *
- * Replying always goes out from the *reader's* own number, though, and the
- * button says so. Nothing here can send as somebody else.
+ * Everything leaves from the official business number. The per-agent QR-linked
+ * road was removed on 19 September 2026; rows it wrote are still here and still
+ * read, and each one still says which phone it went through.
  */
 export function WhatsAppTab({ module, recordId, mobile }: {
   module: string;
@@ -27,20 +26,18 @@ export function WhatsAppTab({ module, recordId, mobile }: {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState('');
 
-  const { data: me } = useQuery({ queryKey: ['whatsapp', 'me'], queryFn: () => api.whatsappMe() });
   /*
-    Which road is available decides what this tab does, not which road the
-    history came down. A contact messaged on the business number last week and
-    from a rep's own phone in August has *one* conversation, and it reads as
-    one column with a line saying which number each message went through.
+    A contact messaged on the business number last week and from a rep's own
+    phone back in August has *one* conversation, and it reads as one column
+    with a line saying which number each message went through.
   */
   const { data: business } = useQuery({ queryKey: ['wa-biz', 'status'], queryFn: () => api.waBizStatus() });
   const onBusiness = Boolean(business?.connected);
 
   const { data: messages, isLoading } = useQuery({
-    queryKey: ['whatsapp', 'contact', module, recordId, onBusiness],
-    queryFn: async () => (onBusiness
-      ? (await api.waBizContactMessages(module, recordId)).messages.map((row) => ({
+    queryKey: ['whatsapp', 'contact', module, recordId],
+    enabled: onBusiness,
+    queryFn: async () => ((await api.waBizContactMessages(module, recordId)).messages.map((row) => ({
         id: String(row.id),
         direction: row.direction as 'inbound' | 'outbound',
         body: (row.body as string | null) ?? null,
@@ -49,16 +46,11 @@ export function WhatsAppTab({ module, recordId, mobile }: {
         sentVia: row.route === 'agent'
           ? (row.sent_by_name as string | null) ?? 'a linked phone'
           : 'the business number',
-      }))
-      // The agent route carries no media yet, so its rows are widened to the
-      // same shape rather than the renderer learning two of them.
-      : (await api.whatsappContactMessages(module, recordId)).map((row) => ({ ...row, media: null }))),
+      }))),
   });
 
   const send = useMutation({
-    mutationFn: (text: string) => (onBusiness
-      ? api.waBizSend({ to: mobile!, text, recordId }).then(() => undefined)
-      : api.whatsappSend(mobile!, text).then(() => undefined)),
+    mutationFn: (text: string) => api.waBizSend({ to: mobile!, text, recordId }).then(() => undefined),
     onSuccess: () => {
       setDraft('');
       void queryClient.invalidateQueries({ queryKey: ['whatsapp', 'contact', module, recordId] });
@@ -66,8 +58,7 @@ export function WhatsAppTab({ module, recordId, mobile }: {
     onError: (err: Error) => toast.error('Could not send', err.message),
   });
 
-  // Either road counts as "can send": the business number needs no linking.
-  const linked = onBusiness || me?.account?.status === 'connected';
+  const linked = onBusiness;
 
   if (isLoading) return <div className="space-y-2 p-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>;
 
@@ -80,9 +71,7 @@ export function WhatsAppTab({ module, recordId, mobile }: {
             title="No WhatsApp yet"
             body={onBusiness
               ? 'Send the first message below — it goes out from the business number.'
-              : linked
-                ? 'Send the first message below — it goes out from your own number.'
-                : 'Link your WhatsApp in My Profile, or ask an admin to connect the business number.'}
+              : 'Ask an admin to connect the WhatsApp Business number in Admin → Integrations.'}
           />
         )}
         {(messages ?? []).map((m) => (
@@ -110,8 +99,8 @@ export function WhatsAppTab({ module, recordId, mobile }: {
               )}
               <p className={cn('mt-1 text-[10px]', m.direction === 'outbound' ? 'text-emerald-50/80' : 'text-muted')}>
                 {new Date(m.createdAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
-                {/* Which number it left from. The one thing a shared inbox
-                    cannot tell you, and the reason for per-agent linking. */}
+                {/* Which number it left from — older rows may name a rep's
+                    own phone, from before that route was removed. */}
                 {m.direction === 'outbound' && m.sentVia && ` · sent via ${m.sentVia}`}
               </p>
             </div>
@@ -130,7 +119,7 @@ export function WhatsAppTab({ module, recordId, mobile }: {
           disabled={!linked || !mobile}
           placeholder={
             !mobile ? 'This contact has no mobile number'
-              : linked ? 'Write a message' : 'Link your WhatsApp in My Profile first'
+              : linked ? 'Write a message' : 'No WhatsApp Business number is connected yet'
           }
           aria-label="Write a WhatsApp message"
           className="input max-h-32 min-h-[2.25rem] flex-1 resize-y text-sm"

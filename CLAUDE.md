@@ -825,86 +825,61 @@ queue, `private_to_user_id` on conversations, the bridge endpoints, the WhatsApp
 page and the `whatsapp_linked` provider. The owner asked for a clean slate so it can be
 rebuilt deliberately later.
 
-### The rebuild has been asked for, and has started
+### The QR-code road was built, and then removed
 
-**2026-09-17, hours after the removal above:** the owner sent a full specification for
-*Agent Linked WhatsApp* — each rep links their own number, sends and receives inside the
-CRM, conversations attach to the existing Contact. So the "do not rebuild without being
-asked" condition is met; this is that ask, and the removal above was the clean slate it
-starts from.
+**2026-09-17:** the owner sent a specification for *Agent Linked WhatsApp* — each rep
+links their own number by scanning a QR code, sends and receives inside the CRM. It was
+built, under `integrations/whatsapp/agent/`, with a Baileys socket per agent, the linked
+device's keys in the database, a history policy, and a Chats screen.
 
-**One thing in the specification cannot be satisfied as written, and the owner has been
-told:** it asks for an *officially supported* connection *and* each agent linking their
-own personal WhatsApp by QR. Those are different things. Meta's Cloud API sends only from
-one approved business number; QR-linking a personal account is the linked-device
-mechanism, which is against WhatsApp's terms and risks the rep's own number. Nothing
-beyond the abstraction gets built until he picks: personal numbers and the risk, one
-official business number, or both.
+**2026-09-19 it was removed, on the owner's instruction:** *"remove that whatsapp agent
+base QR code scan connection that is there in settings there is tab just completely rip
+that off, and there is chats dropdown ... remove that chats thing too."* The reason it
+could never have stayed is the one already written down when the first version went in
+2026-08-18: QR-linking a personal account is WhatsApp's linked-device mechanism, it is
+against their terms, and it risks the rep's own number. **The official business route
+below is the only WhatsApp road now.** Do not build the QR one a third time.
 
-**What exists so far**, all under `integrations/whatsapp/`:
+What went: `integrations/whatsapp/agent/` (authState, claim, historyPolicy, service,
+session, store), `api/routes/whatsappAgent.ts` and its `/api/whatsapp` prefix, the boot
+hooks in `index.ts`, `web/src/components/WhatsAppLink.tsx` and the Settings → WhatsApp
+tab it lived on, `web/src/pages/Chats.tsx`, every `api.whatsapp*` client call, and the
+`@whiskeysockets/baileys` and `qrcode` dependencies.
 
-* `providers/types.ts` — the `WhatsAppProvider` contract the specification asks for
-  in its §27. A provider asked for a capability it lacks throws `NotSupportedError`
-  rather than returning quietly: a send that silently does nothing is the failure mode
-  that let 40,000 birthday messages queue unnoticed.
-* `agent/historyPolicy.ts` — **the rule both previous attempts lacked, and why both were
-  torn out.** History is strictly numbers the CRM already knows, asked once per
-  conversation before any message is read. A message arriving *now* from an unknown
-  number is different and deliberately so: somebody contacting a number the rep linked
-  on purpose is a lead, so it is kept unattached for a person to claim.
-* `agent/authState.ts` — the linked device's keys, in the database, encrypted under
-  their own salt. `useMultiFileAuthState` is useless here: Render replaces the container,
-  so the folder is gone on the next deploy and everybody re-scans. `BufferJSON` is not
-  optional — signal keys are Buffers and plain JSON breaks them.
-* `agent/session.ts` — one socket per agent, keyed by account, with **no "current"
-  socket**. History and live traffic have separate handlers and the history one cannot
-  reach the live one. A logout is honoured, not retried; a dropped connection retries
-  once after five seconds.
-* `agent/matchContact.ts` — last ten digits, read from the module's `phone` fields.
-  Answers one record, nobody, or "more than one and I will not choose".
-* `agent/store.ts` — idempotent by database, not by hope: `ON CONFLICT DO NOTHING`
-  against a partial unique index on (account, provider message id).
-* `agent/claim.ts` — the three ways out of an unknown number: create, link, ignore.
-* `agent/service.ts` and `api/routes/whatsappAgent.ts` — **no function or route takes
-  an account id.** Every call resolves the signed-in user's own account, so there is no
-  request shape that reaches a colleague's session.
-* `web/src/components/WhatsAppLink.tsx` (My Profile → WhatsApp) and
-  `web/src/pages/Chats.tsx`.
+**One file survived the deletion and matters: `integrations/whatsapp/matchContact.ts`.**
+It was `agent/matchContact.ts`, and `business/thread.ts`, `business/inbound.ts` and
+`business/send.ts` all import it — matching a number to a contact by its last ten digits
+is the official road's job too. It moved up a directory rather than being deleted with
+its neighbours.
 
-Migration `155`. `user_id` is NOT NULL and unique — the previous build picked an account
-with `ORDER BY last_connected_at DESC LIMIT 1`, so Sheetal's message could leave from
-Rahul's phone. Both new foreign keys are ON DELETE SET NULL: an agent leaving must not
-take the conversation with them.
+**What deliberately stayed:**
 
-**Built since:** the contact's own WhatsApp tab, timeline entries naming the number a
-message went through, and the WhatsApp icon beside every phone number (`components/
-WhatsAppButton.tsx`), which opens the CRM's own Chats screen at `/chats?to=<digits>`.
+* **Every table**, including `ipy_wa_account` and the messages the agent road wrote.
+  No migration drops anything. `ipy_message.route` still reads `'agent'` on those rows,
+  and the contact's WhatsApp tab still says which phone each one went through.
+* **WhatsApp templates** — asked for by name (*"whatsapp template to keep"*). Admin →
+  WhatsApp Templates is untouched and belongs to the official route anyway.
+* **`/chats`**, which now renders `BusinessChats` — the official number's shared inbox.
+  It is no longer a header tab and no longer in the drawer; the WhatsApp icon beside a
+  phone number is the way in, and the page says so itself when no provider is connected.
+
+**`HeaderTab['kind']` no longer has `'chats'`, and production's saved arrangement still
+names it.** `arrangeHeaderTabs` therefore drops any kind this build does not have, rather
+than rendering a tab that goes nowhere — pinned by `tests/headerTabs.test.ts`. Anything
+fixed *added* to that header later still needs its own append line, for the opposite
+reason: an arrangement saved before a page existed cannot have meant to leave it out.
 
 **Two WhatsApp controls, and they deliberately go to different places** — the owner asked
-for this on 17 September. The small **icon beside a number** stays inside the CRM
-(`/chats?to=…`), where a manager can read the thread and the timeline records it. The
-labelled **button on the record header** leaves: `https://api.whatsapp.com/send/?phone=…`
-through `openExternal`, so the rep writes in WhatsApp itself. Only that button leaves.
-`openExternal` and not a plain link, because `window.open` returns null inside the phone
-app and the tap does nothing at all.
+for this on 17 September. The small **icon beside a number** stays inside the CRM: the
+composer over the record where there is one, `/chats?to=…` otherwise, where a manager can
+read the thread and the timeline records it. The labelled **button on the record header**
+leaves: `https://api.whatsapp.com/send/?phone=…` through `openExternal`, so the rep writes
+in WhatsApp itself. Only that button leaves. `openExternal` and not a plain link, because
+`window.open` returns null inside the phone app and the tap does nothing at all.
 
-**A fixed page added to the header is invisible on production until it is appended.**
-`ui.header_tabs` is a saved arrangement, and an arrangement saved before a page existed
-cannot name it — the old code appended missing *modules* only, so Chats never appeared
-for anyone with a saved header, while every local run passed on the shipped default a
-fresh database gives. `arrangeHeaderTabs` in `web/src/lib/headerTabs.ts` appends it now,
-pinned by `tests/headerTabs.test.ts`. Anything fixed added to that header later needs
-the same line.
-
-**That was not why Chats was missing, though — production reads `(not arranged)`.** The
-real reason is narrower and easy to repeat: the header's module switcher is `lg:block`,
-so below 1024px it is not on the screen at all, and the drawer that replaces it listed
-Dashboard, the modules and Site visit only. On a laptop or a phone there was no way to
-reach Chats. The drawer carries it now. **A destination that lives only in the switcher
-is invisible on most screens** — put it in the drawer too.
-
-**Not built yet on the agent route:** media, voice notes, quick replies, search, the admin
-panel, property sharing — and it is now the *second* route rather than the main one.
+**A destination that lives only in the header's module switcher is invisible on most
+screens** — the switcher is `lg:block`, so below 1024px it is not on the screen at all.
+Anything a rep needs on a laptop or a phone goes in the drawer too.
 
 ## The official WhatsApp Business route, through a BSP
 
@@ -916,7 +891,10 @@ for the two to stay separate with the route recorded on every message, and `ipy_
 
 **One contract, four adapters, and nothing hard-coded to a vendor**
 (`integrations/whatsapp/business/`). `WhatsAppBusinessProvider` extends the same
-`WhatsAppProvider` the agent route implements rather than starting a second vocabulary.
+`WhatsAppProvider` contract in `providers/types.ts`, which outlived the agent route that
+first needed it: a provider asked for a capability it lacks throws `NotSupportedError`
+rather than returning quietly, because a send that silently does nothing is the failure
+mode that let 40,000 birthday messages queue unnoticed.
 Moving from AiSensy to Gupshup is an admin switching an integration card; no conversation
 moves, because the history was never the vendor's to hold — provider ids sit *beside* the
 CRM's own ids, never instead of them.
@@ -968,11 +946,21 @@ inbound, status), sending text and templates with the 24-hour window and opt-out
 and `GET /api/whatsapp-business/status` so a screen can ask what the live provider can
 actually do before offering a control.
 
+**A seeded integration card with no `PROVIDER_FIELDS` entry is a card nobody can fill
+in.** The four rows in `db/seed/automation.ts` existed for a day while
+`admin/IntegrationsAdmin.tsx` had no fields and no guide for them, so the Integrations tab
+showed four WhatsApp cards with nothing to type into — which reads exactly like the
+feature not being there, and is how the owner reported it. Both halves are in now, and
+every key named is one the adapter actually reads (`metaCloud.ts`, `resellers.ts`): a
+field the server never asks for is worse than a missing one, because somebody fills it in,
+presses Test, and the failure says nothing about why.
+
 **The Chats screen and the contact tab are on this route now** (`pages/BusinessChats.tsx`).
 Three columns: the queue, the conversation, and the CRM contact **linked rather than
 copied** — a lead's budget repeated on this screen is a second copy to keep in step, and the
-first time the two disagree nobody knows which is true. `/chats` picks the route: the
-business inbox when a provider is connected, the per-agent screen when not.
+first time the two disagree nobody knows which is true. `/chats` **is** the business inbox now — the per-agent
+screen it used to fall back to was removed on 19 September 2026. It is no longer a header
+tab; the WhatsApp icon beside a phone number is the way in.
 
 **The inbox is shared, and who sees what is the rule that matters.** An admin sees every
 thread; everybody else sees their own and the unassigned queue, and **not** one another rep

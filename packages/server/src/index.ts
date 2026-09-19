@@ -12,7 +12,6 @@ import { startScheduler, stopScheduler } from './core/workflow/scheduler.js';
 import { initRealtime, closeRealtime } from './realtime.js';
 import { aiStatus } from './ai/client.js';
 import { recoverOrphanedImports } from './core/import/recover.js';
-import * as whatsappAgent from './integrations/whatsapp/agent/service.js';
 
 async function main(): Promise<void> {
   logger.info('starting iPropy CRM server…');
@@ -66,18 +65,6 @@ async function main(): Promise<void> {
   const server = createServer(app);
   initRealtime(server);
   startScheduler();
-
-  /*
-    Agent-linked WhatsApp. `init` only wires the socket layer to the CRM, so it
-    costs nothing when nobody has linked an account.
-
-    Restoring is deliberately not awaited: an agent's phone being unreachable
-    must not hold up the API starting, and a session that cannot come back is a
-    "reconnect required" on their profile rather than a boot failure.
-  */
-  whatsappAgent.init();
-  void whatsappAgent.restore().catch((err) =>
-    logger.warn({ err }, 'could not restore linked WhatsApp sessions'));
 
   server.listen(config.port, () => {
     logger.info(`iPropy API listening on http://localhost:${config.port}`);

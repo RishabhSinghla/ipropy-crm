@@ -4,34 +4,25 @@ import { arrangeHeaderTabs } from '../src/lib/headerTabs';
 import { waDigits } from '../src/lib/whatsapp';
 
 describe('arrangeHeaderTabs', () => {
-  it('ships Dashboard, the modules, Chats and Site visit when nothing is arranged', () => {
+  it('ships Dashboard, the modules and Site visit when nothing is arranged', () => {
     const tabs = arrangeHeaderTabs(null, ['leads', 'properties']);
-    expect(tabs.map((t) => t.kind)).toEqual(['dashboard', 'module', 'module', 'chats', 'capture']);
+    expect(tabs.map((t) => t.kind)).toEqual(['dashboard', 'module', 'module', 'capture']);
   });
 
   /*
-    The regression that took Chats off production: an arrangement saved before
-    the page existed cannot name it, and the old code only appended missing
-    modules. Locally there is no arrangement, so nothing failed.
+    Chats was a fixed tab here until 19 September 2026, when the owner asked
+    for it to go. An arrangement saved while it existed still names it, and a
+    saved `chats` entry must not resurrect the tab — the kind no longer exists,
+    so anything unrecognised is dropped rather than rendered as a dead link.
   */
-  it('appends Chats to an arrangement saved before it existed', () => {
-    const saved: HeaderTab[] = [
+  it('drops a Chats entry left in an arrangement saved before it was removed', () => {
+    const saved = [
       { kind: 'dashboard' },
-      { kind: 'module', value: 'leads' },
-      { kind: 'module', value: 'properties' },
-    ];
-    const tabs = arrangeHeaderTabs(saved, ['leads', 'properties']);
-    expect(tabs.filter((t) => t.kind === 'chats')).toHaveLength(1);
-  });
-
-  it('leaves a placed Chats where the admin put it, and does not double it', () => {
-    const saved: HeaderTab[] = [
       { kind: 'chats', label: 'Messages' },
-      { kind: 'dashboard' },
-    ];
-    const tabs = arrangeHeaderTabs(saved, []);
-    expect(tabs).toHaveLength(2);
-    expect(tabs[0]).toEqual({ kind: 'chats', label: 'Messages' });
+      { kind: 'module', value: 'leads' },
+    ] as unknown as HeaderTab[];
+    const tabs = arrangeHeaderTabs(saved, ['leads']);
+    expect(tabs.map((t) => t.kind)).toEqual(['dashboard', 'module']);
   });
 
   it('still appends a module the arrangement does not name', () => {

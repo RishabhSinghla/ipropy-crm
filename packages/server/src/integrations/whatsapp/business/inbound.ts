@@ -25,7 +25,7 @@ import { db, onCommit, transaction, type Tx } from '../../../db/pool.js';
 import { bus } from '../../../core/events/bus.js';
 import { logger } from '../../../utils/logger.js';
 import { notifyMany } from '../../../core/notifications/index.js';
-import { matchContact, matchKey } from '../agent/matchContact.js';
+import { matchContact, matchKey } from '../matchContact.js';
 import { businessProvider } from './registry.js';
 import { keepInboundMedia } from './media.js';
 import type { InboundMessage, StatusUpdate } from './types.js';

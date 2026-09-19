@@ -19,7 +19,7 @@ import { bus } from '../../../core/events/bus.js';
 import { BadRequestError } from '../../../utils/errors.js';
 import { logger } from '../../../utils/logger.js';
 import { requireCapability } from '../providers/types.js';
-import { matchKey } from '../agent/matchContact.js';
+import { matchKey } from '../matchContact.js';
 import { activeBusinessProvider } from './registry.js';
 import { prepareOutgoingMedia } from './media.js';
 

@@ -1,7 +1,7 @@
-import { db } from '../../../db/pool.js';
-import { registry } from '../../../core/metadata/registry.js';
-import { columnsOf, fieldText } from '../../../core/entity/payloadColumns.js';
-import { quoteIdent } from '../../../core/query/builder.js';
+import { db } from '../../db/pool.js';
+import { registry } from '../../core/metadata/registry.js';
+import { columnsOf, fieldText } from '../../core/entity/payloadColumns.js';
+import { quoteIdent } from '../../core/query/builder.js';
 
 /**
  * Which existing contact a WhatsApp number belongs to.

@@ -14,7 +14,7 @@
  */
 import { db } from '../../../db/pool.js';
 import { BadRequestError } from '../../../utils/errors.js';
-import { matchKey } from '../agent/matchContact.js';
+import { matchKey } from '../matchContact.js';
 
 export interface NumberThread {
   handle: string;

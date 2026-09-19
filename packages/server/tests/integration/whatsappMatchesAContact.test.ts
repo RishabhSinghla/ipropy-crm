@@ -14,7 +14,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../src/db/pool.js';
 import { recordService } from '../../src/core/entity/recordService.js';
-import { matchContact } from '../../src/integrations/whatsapp/agent/matchContact.js';
+import { matchContact } from '../../src/integrations/whatsapp/matchContact.js';
 import { adminContext } from './fixtures.js';
 
 const stamp = Date.now();

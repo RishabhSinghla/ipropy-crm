@@ -63,7 +63,7 @@ async function moduleRoutes(page: Page): Promise<string[]> {
       would sit through the 25-second timeout and be reported as never having
       loaded — a failure about the test's expectations, not the page.
 
-      Chats has its own coverage in whatsappLink.spec.ts and the a11y sweep.
+      Chats has its own coverage in whatsappBusinessChats.spec.ts and the a11y sweep.
     */
     const skip = new Set(['/dashboard', '/settings', '/inbox', '/calls', '/portal', '/chats']);
     // Visible links only: the same href appears in three navs — the module

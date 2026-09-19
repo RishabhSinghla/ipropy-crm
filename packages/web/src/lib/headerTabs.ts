@@ -1,5 +1,7 @@
 import type { HeaderTab } from '@ipropy/shared';
 
+const KINDS = new Set<HeaderTab['kind']>(['dashboard', 'capture', 'module', 'link']);
+
 /**
  * The header's tabs: the admin's arrangement, with nothing orphaned.
  *
@@ -14,20 +16,28 @@ export function arrangeHeaderTabs(arranged: HeaderTab[] | null, moduleNames: str
     return [
       { kind: 'dashboard' as const },
       ...moduleNames.map((name) => ({ kind: 'module' as const, value: name })),
-      { kind: 'chats' as const },
       { kind: 'capture' as const },
     ];
   }
-  const placed: HeaderTab[] = arranged.map((t) => ({ ...t }));
+  /*
+    A kind this build no longer has is dropped, not rendered. Chats was a fixed
+    tab until 19 September 2026 and production's saved arrangement still names
+    it; keeping it would put a tab on the header that goes nowhere, which is
+    worse than the tab simply being gone.
+  */
+  const placed: HeaderTab[] = arranged
+    .filter((t) => KINDS.has(t.kind))
+    .map((t) => ({ ...t }));
   const used = new Set(placed.filter((t) => t.kind === 'module').map((t) => t.value));
   for (const name of moduleNames) {
     if (!used.has(name)) placed.push({ kind: 'module' as const, value: name });
   }
   /*
-    A fixed page shipped after the arrangement was saved is in the same
-    position as a module created after it: nobody chose to leave it out,
-    because it did not exist to leave out.
+    Anything fixed added to this header later needs a line here: an
+    arrangement saved before a page existed cannot have meant to leave it
+    out. Chats had one until 19 September 2026, when the header entry was
+    removed on the owner's instruction — its page is still reached from the
+    WhatsApp icon beside a number.
   */
-  if (!placed.some((t) => t.kind === 'chats')) placed.push({ kind: 'chats' as const });
   return placed;
 }

@@ -55,6 +55,45 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
       placeholder: '{ "type": "service_account", "project_id": … }',
     },
   ],
+  /*
+    The official WhatsApp Business route, one card per way of buying it.
+
+    Every key here is one the server actually reads — `metaCloud.ts` and
+    `resellers.ts` — rather than a plausible-looking name. A field the adapter
+    never asks for is worse than a missing one: somebody fills it in, presses
+    Test, and the failure says nothing about why.
+
+    Four cards and not one with a dropdown, because switching reseller should
+    not mean retyping the credentials of the one you may go back to. Only the
+    card that is switched on is used.
+  */
+  whatsapp_meta: [
+    { key: 'accessToken', label: 'Permanent access token', source: 'credentials', secret: true },
+    { key: 'phoneNumberId', label: 'Phone number ID', source: 'config', placeholder: '1234567890123456' },
+    { key: 'wabaId', label: 'WhatsApp Business Account ID', source: 'config' },
+    { key: 'verifyToken', label: 'Webhook verify token', source: 'credentials', secret: true },
+    { key: 'appSecret', label: 'App secret', source: 'credentials', secret: true },
+    { key: 'apiVersion', label: 'Graph API version', source: 'config', placeholder: 'v21.0' },
+  ],
+  whatsapp_aisensy: [
+    { key: 'apiKey', label: 'API Key', source: 'credentials', secret: true },
+    { key: 'businessNumber', label: 'Your WhatsApp business number', source: 'config', placeholder: '919876543210' },
+    { key: 'campaignName', label: 'Default campaign name', source: 'config' },
+    { key: 'webhookToken', label: 'Webhook token', source: 'credentials', secret: true },
+  ],
+  whatsapp_gupshup: [
+    { key: 'apiKey', label: 'API Key', source: 'credentials', secret: true },
+    { key: 'source', label: 'Source number', source: 'config', placeholder: '919876543210' },
+    { key: 'appName', label: 'App name', source: 'config' },
+    { key: 'webhookToken', label: 'Webhook token', source: 'credentials', secret: true },
+  ],
+  whatsapp_whatsmarketing: [
+    { key: 'accessToken', label: 'Access token', source: 'credentials', secret: true },
+    { key: 'baseUrl', label: 'API base URL', source: 'config', placeholder: 'https://api.whatsmarketing.in' },
+    { key: 'phoneNumberId', label: 'Phone number ID', source: 'config' },
+    { key: 'apiVersion', label: 'API version', source: 'config', placeholder: 'v21.0' },
+    { key: 'webhookToken', label: 'Webhook token', source: 'credentials', secret: true },
+  ],
   smtp: [
     { key: 'host', label: 'SMTP Host', source: 'config', placeholder: 'smtp.yourdomain.com' },
     { key: 'port', label: 'Port', source: 'config', placeholder: '587' },
@@ -247,6 +286,55 @@ interface Guide {
 }
 
 const GUIDES: Record<string, Guide> = {
+  whatsapp_meta: {
+    outcome: 'Message customers from your own approved business number, inside the CRM, with the whole thread on the contact.',
+    minutes: 15,
+    steps: [
+      { title: 'Create the app and add WhatsApp', help: 'Meta for Developers → Create app → Business → add the WhatsApp product. You need a Meta Business account that owns the number.', href: 'https://developers.facebook.com/apps', linkLabel: 'Open Meta for Developers' },
+      { title: 'Paste the permanent token', help: 'WhatsApp → API Setup gives a temporary 24-hour token. Use System Users in Business Settings to make a permanent one, or you will be reconnecting this every day.', field: 'accessToken' },
+      { title: 'Phone number ID', help: 'On the same API Setup page, under the number you are sending from. It is a long number, not the phone number itself.', field: 'phoneNumberId' },
+      { title: 'WhatsApp Business Account ID', help: 'Also on API Setup. This is what lets the CRM pull your approved templates in.', field: 'wabaId' },
+      { title: 'We made you a verify token', help: 'Meta asks for a password of your choosing when you set up the webhook. Here is one — paste it into Meta in the next step.', field: 'verifyToken', generate: true },
+      { title: 'App secret', help: 'App settings → Basic → App secret. It is what proves an incoming message really came from Meta, so nobody can post fake customer messages into your CRM.', field: 'appSecret' },
+      { title: 'Point Meta at us', help: 'WhatsApp → Configuration → Webhook. Use this callback URL and the verify token above, then subscribe to the "messages" field.', copyPath: '/api/webhooks/whatsapp/meta' },
+    ],
+  },
+  whatsapp_aisensy: {
+    outcome: 'Send your approved WhatsApp templates through AiSensy, with replies landing on the contact in the CRM.',
+    minutes: 8,
+    steps: [
+      { title: 'Get your AiSensy API key', help: 'AiSensy dashboard → Manage → API Key. It is a long token.', href: 'https://app.aisensy.com', linkLabel: 'Open AiSensy' },
+      { title: 'Paste the key', help: 'Nothing else about your AiSensy account is read.', field: 'apiKey' },
+      { title: 'Your business number', help: 'The number AiSensy sends from, digits only with the country code — for example 919876543210.', field: 'businessNumber' },
+      { title: 'Default campaign name', help: 'AiSensy sends approved templates as campaigns, so each template needs a live API campaign. Name the one to fall back on when a template has no campaign of its own.', field: 'campaignName' },
+      { title: 'We made you a webhook token', help: 'A password AiSensy sends back with each incoming message, so nobody else can post into your CRM.', field: 'webhookToken', generate: true },
+      { title: 'Point AiSensy at us', help: 'AiSensy → Manage → Webhook. Paste this URL and the token above.', copyPath: '/api/webhooks/whatsapp/aisensy' },
+    ],
+  },
+  whatsapp_gupshup: {
+    outcome: 'Send and receive WhatsApp through Gupshup — free typing as well as templates — with every thread on the contact.',
+    minutes: 8,
+    steps: [
+      { title: 'Get your Gupshup API key', help: 'Gupshup dashboard → your profile → API key.', href: 'https://www.gupshup.io/whatsapp/dashboard', linkLabel: 'Open Gupshup' },
+      { title: 'Paste the key', help: 'It is a long string of letters and numbers.', field: 'apiKey' },
+      { title: 'Source number', help: 'The WhatsApp number Gupshup sends from, digits only with the country code.', field: 'source' },
+      { title: 'App name', help: 'The name of your Gupshup app, exactly as their dashboard spells it. Templates are pulled in by this name, so a typo means no templates.', field: 'appName' },
+      { title: 'We made you a webhook token', help: 'A password Gupshup sends back with each incoming message, so nobody else can post into your CRM.', field: 'webhookToken', generate: true },
+      { title: 'Point Gupshup at us', help: 'Gupshup → your app → Callback URL. Paste this URL and the token above.', copyPath: '/api/webhooks/whatsapp/gupshup' },
+    ],
+  },
+  whatsapp_whatsmarketing: {
+    outcome: 'Any reseller that speaks the Meta Cloud API shape — whatsmarketing.in and most others — pointed at their own address.',
+    minutes: 8,
+    steps: [
+      { title: 'Ask your reseller for three things', help: 'Their API base address, the phone number ID for your number, and an access token. Most resellers of this kind pass the Cloud API through unchanged, so the same three values work. If they do not, Test says so in ten seconds rather than failing later with a customer waiting.' },
+      { title: 'API base URL', help: 'The address their dashboard or docs give, for example https://api.whatsmarketing.in. No trailing slash needed.', field: 'baseUrl' },
+      { title: 'Phone number ID', help: 'A long number identifying your WhatsApp number on their system — not the phone number itself.', field: 'phoneNumberId' },
+      { title: 'Access token', help: 'The token from their dashboard.', field: 'accessToken' },
+      { title: 'We made you a webhook token', help: 'A password they send back with each incoming message, so nobody else can post into your CRM.', field: 'webhookToken', generate: true },
+      { title: 'Point them at us', help: 'Give this callback URL and the token above to your reseller.', copyPath: '/api/webhooks/whatsapp/whatsmarketing' },
+    ],
+  },
   smtp: {
     outcome: 'Send email from the CRM using your own address, so replies come back to you.',
     minutes: 4,
@@ -533,6 +621,28 @@ const JOBS: JobDef[] = [
     trouble: 'Lead capture is set up but failing, so new enquiries are not arriving.',
     missing: 'Lead capture is not set up, so enquiries from ads and your website have to be typed in by hand.',
     moreLabel: 'More lead sources',
+  },
+  {
+    /*
+      The job the owner named: *official* WhatsApp, bought however suits — Meta
+      direct or through an Indian reseller. One card, four ways of buying it,
+      because "which BSP" is a purchasing decision and not four separate jobs.
+
+      AiSensy fronts it: it is the one most Indian brokerages already have, and
+      a card that opens on Meta's own Cloud API sends somebody into a Business
+      Manager verification they may not need.
+    */
+    id: 'whatsapp',
+    title: 'WhatsApp',
+    blurb: 'Message buyers from your official business number, with every thread on the contact.',
+    icon: MessageCircle,
+    providers: ['whatsapp_aisensy', 'whatsapp_gupshup', 'whatsapp_meta', 'whatsapp_whatsmarketing'],
+    recommended: 'whatsapp_aisensy',
+    wanted: true,
+    short: 'WhatsApp',
+    trouble: 'WhatsApp is set up but failing its test, so messages are not going out.',
+    missing: 'WhatsApp is not set up, so the CRM cannot message buyers from your business number.',
+    moreLabel: 'More WhatsApp providers',
   },
   {
     id: 'email',
