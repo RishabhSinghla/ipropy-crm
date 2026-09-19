@@ -87,11 +87,18 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
     { key: 'appName', label: 'App name', source: 'config' },
     { key: 'webhookToken', label: 'Webhook token', source: 'credentials', secret: true },
   ],
+  /*
+    Read off WhatsMarketing's own API documentation (v1.0), not guessed. Their
+    token is `apiToken` in the form body rather than a Bearer header, and there
+    is no API version in any path — the two fields this used to carry were from
+    the Meta shape they turned out not to use.
+  */
   whatsapp_whatsmarketing: [
-    { key: 'accessToken', label: 'Access token', source: 'credentials', secret: true },
-    { key: 'baseUrl', label: 'API base URL', source: 'config', placeholder: 'https://api.whatsmarketing.in' },
-    { key: 'phoneNumberId', label: 'Phone number ID', source: 'config' },
-    { key: 'apiVersion', label: 'API version', source: 'config', placeholder: 'v21.0' },
+    { key: 'apiToken', label: 'API Token', source: 'credentials', secret: true },
+    { key: 'phoneNumberId', label: 'Phone Number ID', source: 'config', placeholder: '337228512808270' },
+    { key: 'businessNumber', label: 'Your WhatsApp business number', source: 'config', placeholder: '919876543210' },
+    { key: 'botId', label: 'WhatsApp Bot ID (for delivery ticks)', source: 'config' },
+    { key: 'baseUrl', label: 'API base URL', source: 'config', placeholder: 'https://app.whatsmarketing.in/api/v1' },
     { key: 'webhookToken', label: 'Webhook token', source: 'credentials', secret: true },
   ],
   smtp: [
@@ -324,15 +331,16 @@ const GUIDES: Record<string, Guide> = {
     ],
   },
   whatsapp_whatsmarketing: {
-    outcome: 'Any reseller that speaks the Meta Cloud API shape — whatsmarketing.in and most others — pointed at their own address.',
-    minutes: 8,
+    outcome: 'Message buyers from your WhatsMarketing business number, with the whole thread kept on the contact.',
+    minutes: 6,
     steps: [
-      { title: 'Ask your reseller for three things', help: 'Their API base address, the phone number ID for your number, and an access token. Most resellers of this kind pass the Cloud API through unchanged, so the same three values work. If they do not, Test says so in ten seconds rather than failing later with a customer waiting.' },
-      { title: 'API base URL', help: 'The address their dashboard or docs give, for example https://api.whatsmarketing.in. No trailing slash needed.', field: 'baseUrl' },
-      { title: 'Phone number ID', help: 'A long number identifying your WhatsApp number on their system — not the phone number itself.', field: 'phoneNumberId' },
-      { title: 'Access token', help: 'The token from their dashboard.', field: 'accessToken' },
-      { title: 'We made you a webhook token', help: 'A password they send back with each incoming message, so nobody else can post into your CRM.', field: 'webhookToken', generate: true },
-      { title: 'Point them at us', help: 'Give this callback URL and the token above to your reseller.', copyPath: '/api/webhooks/whatsapp/whatsmarketing' },
+      { title: 'Generate your API token', help: 'Sign in to WhatsMarketing, open the API Developer section and press "Generate API Key". Copy what it gives you.', href: 'https://app.whatsmarketing.in', linkLabel: 'Open WhatsMarketing' },
+      { title: 'Paste the token', help: 'It is only shown to you — the CRM keeps it encrypted and never puts it on a screen again.', field: 'apiToken' },
+      { title: 'Phone Number ID', help: 'In the WhatsApp section of their dashboard, click your connected number. Copy the "Phone Number ID" — it is a long number, not the phone number itself.', field: 'phoneNumberId' },
+      { title: 'Your WhatsApp business number', help: 'The number itself, digits only with the country code — for example 919876543210. This is what the CRM shows as the number a message went out from.', field: 'businessNumber' },
+      { title: 'Bot ID, if you want delivery ticks', help: 'Optional. Their delivery-status check needs a Bot ID as well. Without it everything still sends — you just do not see sent/delivered/read.', field: 'botId' },
+      { title: 'We made you a webhook token', help: 'A password WhatsMarketing sends back with each incoming message, so nobody else can post into your CRM.', field: 'webhookToken', generate: true },
+      { title: 'Ask them to point replies at us', help: 'Their documentation has no self-serve webhook page — email support@whatsmarketing.in with this URL and the token above, and ask them to enable incoming message and delivery callbacks.', copyPath: '/api/webhooks/whatsapp/whatsmarketing' },
     ],
   },
   smtp: {
@@ -628,16 +636,17 @@ const JOBS: JobDef[] = [
       direct or through an Indian reseller. One card, four ways of buying it,
       because "which BSP" is a purchasing decision and not four separate jobs.
 
-      AiSensy fronts it: it is the one most Indian brokerages already have, and
-      a card that opens on Meta's own Cloud API sends somebody into a Business
-      Manager verification they may not need.
+      WhatsMarketing fronts it because that is the plan the business actually
+      bought (19 September 2026). A card that opens on Meta's own Cloud API
+      would send somebody into a Business Manager verification they do not
+      need when they already have a reseller.
     */
     id: 'whatsapp',
     title: 'WhatsApp',
     blurb: 'Message buyers from your official business number, with every thread on the contact.',
     icon: MessageCircle,
-    providers: ['whatsapp_aisensy', 'whatsapp_gupshup', 'whatsapp_meta', 'whatsapp_whatsmarketing'],
-    recommended: 'whatsapp_aisensy',
+    providers: ['whatsapp_whatsmarketing', 'whatsapp_aisensy', 'whatsapp_gupshup', 'whatsapp_meta'],
+    recommended: 'whatsapp_whatsmarketing',
     wanted: true,
     short: 'WhatsApp',
     trouble: 'WhatsApp is set up but failing its test, so messages are not going out.',

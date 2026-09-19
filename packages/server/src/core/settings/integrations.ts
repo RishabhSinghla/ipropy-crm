@@ -641,7 +641,7 @@ const SECRET_FIELDS: Record<string, string[]> = {
   whatsapp_meta: ['accessToken', 'appSecret', 'verifyToken'],
   whatsapp_aisensy: ['apiKey', 'webhookToken'],
   whatsapp_gupshup: ['apiKey', 'webhookToken'],
-  whatsapp_whatsmarketing: ['accessToken', 'webhookToken'],
+  whatsapp_whatsmarketing: ['apiToken', 'webhookToken'],
 };
 
 function mask(value: string): string {

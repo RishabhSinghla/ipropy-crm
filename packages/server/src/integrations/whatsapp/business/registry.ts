@@ -15,8 +15,8 @@ import {
 import { metaCloudProvider, META_PROVIDER } from './metaCloud.js';
 import {
   aisensyProvider, AISENSY_PROVIDER, gupshupProvider, GUPSHUP_PROVIDER,
-  whatsMarketingProvider, WHATSMARKETING_PROVIDER,
 } from './resellers.js';
+import { whatsMarketingProvider, WHATSMARKETING_PROVIDER } from './whatsMarketing.js';
 import type { WhatsAppBusinessProvider } from './types.js';
 
 /** In the order an admin sees them, which is also the order a tie is broken. */

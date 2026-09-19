@@ -912,10 +912,28 @@ CRM's own ids, never instead of them.
   `text`, and a rep typing a free reply is told before they press send rather than after.
 * **Gupshup** — `POST https://api.gupshup.io/wa/api/v1/msg`, form-encoded, key in an
   `apikey` header: text, media and templates, and a template list to sync.
-* **whatsmarketing.in** — **no public developer documentation could be found from here.**
-  Rather than inventing endpoints it is the Cloud-API-shaped adapter with its own base URL,
-  which is what most resellers of that size proxy. Point it at their host, press Test, and
-  the answer is immediate and honest.
+* **whatsmarketing.in** — **the one the business actually bought**, and it has a real
+  adapter now (`business/whatsMarketing.ts`), written from their own API documentation
+  v1.0, which the owner sent on 19 September 2026. Until then it was the Cloud-API-shaped
+  guess, and **the guess was wrong in four ways**: the token goes in the form body as
+  `apiToken` rather than a Bearer header, requests are form-encoded rather than JSON, the
+  paths are `/whatsapp/send` and friends rather than `/{version}/{phone-number-id}/messages`,
+  and — the expensive one — **a refused message answers HTTP 200** with `{"status":"0"}`.
+  An adapter that trusts `res.ok` records every refusal as a send, and a rep watches a tick
+  appear for a message the customer never got. `tests/whatsMarketing.test.ts` opens on that
+  case for exactly that reason.
+
+  Two more things worth knowing before touching it. Their templates are addressed by a
+  numeric `template_id` from their dashboard, so a name is resolved through their list
+  endpoint first and a miss is refused *naming the template* rather than posting a blank id.
+  And **their documentation has no inbound webhook section at all** — §17 says delivery
+  webhooks need their support team. So `parseWebhook` reads the two shapes it can recognise
+  without inventing one, and **logs the body** of anything else rather than dropping it:
+  an unrecognised delivery has to become a fact somebody can read, not a customer's message
+  that quietly never arrived. Until they enable a callback, replies do not reach the CRM.
+
+  `cloudCompatibleProvider` stays in `resellers.ts` — it is still the right answer for the
+  next reseller that genuinely does proxy the Cloud API.
 
 **The webhook is `/api/webhooks/whatsapp/:slug`, one door per provider**, and every delivery
 is verified by the adapter that owns it — Meta's `hub.challenge` handshake and an app-secret

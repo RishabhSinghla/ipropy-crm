@@ -66,7 +66,6 @@ async function fetchByLink(ref: MediaRef, headers?: Record<string, string>): Pro
 
 export const AISENSY_PROVIDER = 'whatsapp_aisensy';
 export const GUPSHUP_PROVIDER = 'whatsapp_gupshup';
-export const WHATSMARKETING_PROVIDER = 'whatsapp_whatsmarketing';
 
 /**
  * A shared secret on the webhook, which is all the resellers offer.
@@ -511,7 +510,14 @@ export function cloudCompatibleProvider(provider: string, label: string): WhatsA
   };
 }
 
-export const whatsMarketingProvider = cloudCompatibleProvider(WHATSMARKETING_PROVIDER, 'whatsmarketing.in');
+/*
+  WhatsMarketing used to be `cloudCompatibleProvider` here — an honest guess
+  that they proxy Meta's Cloud API, which their own documentation (sent by the
+  owner on 19 September 2026) shows they do not. It has a real adapter now, in
+  `whatsMarketing.ts`. `cloudCompatibleProvider` stays: it is still the right
+  answer for the next reseller that genuinely does proxy the Cloud API, and it
+  is what the CRM offers before anybody has read a vendor's docs.
+*/
 
 /**
  * The Cloud API's webhook shape, which the resellers that wrap it also send.
