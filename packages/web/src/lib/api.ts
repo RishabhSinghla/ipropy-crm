@@ -1195,6 +1195,35 @@ export const api = {
     id: string; name: string; language: string; category: string; status: string;
     bodyText: string; variableCount: number; variableMap: Record<string, string>;
   }[]>('/api/whatsapp-business/templates/saved'),
+
+  // Campaigns: one approved template to many people. `preview` writes nothing
+  // and is what the screen shows before it offers Approve, so the number
+  // somebody approves is the number they were shown — `approve` passes it back
+  // and the server refuses a mismatch.
+  waBizCampaigns: () => get<{
+    id: string; name: string; moduleName: string; templateId: string; templateName: string;
+    status: 'draft' | 'running' | 'paused' | 'done' | 'cancelled';
+    audience: { view?: string };
+    approvedCount: number | null; approvedAt: string | null; createdAt: string;
+    counts: { pending: number; sent: number; failed: number; skipped: number };
+  }[]>('/api/whatsapp-business/campaigns'),
+  waBizCampaignCreate: (data: { name: string; module: string; templateId: string; audience: { view?: string } }) =>
+    post<{ id: string }>('/api/whatsapp-business/campaigns', data),
+  waBizCampaignPreview: (data: { module: string; templateId: string; audience: { view?: string } }) =>
+    post<{
+      total: number; reachable: number;
+      sample: { recordId: string; label: string; to: string; preview: string; missing: string[] }[];
+      skipped: { label: string; reason: string }[];
+    }>('/api/whatsapp-business/campaigns/preview', data),
+  waBizCampaignApprove: (id: string, expectedCount: number, confirmLarge?: boolean) =>
+    post<{ frozen: number; skipped: number }>(
+      `/api/whatsapp-business/campaigns/${id}/approve`, { expectedCount, confirmLarge }),
+  waBizCampaignStatus: (id: string, status: 'paused' | 'running' | 'cancelled') =>
+    post<{ ok: true }>(`/api/whatsapp-business/campaigns/${id}/status`, { status }),
+  waBizCampaignRecipients: (id: string, status?: string) => get<{
+    recordId: string; label: string; handle: string; status: string;
+    error: string | null; sentAt: string | null;
+  }[]>(`/api/whatsapp-business/campaigns/${id}/recipients${status ? `?status=${status}` : ''}`),
   waBizSyncTemplates: () => post<{ added: string[]; updated: string[]; skipped: string }>(
     '/api/whatsapp-business/templates/sync', {},
   ),

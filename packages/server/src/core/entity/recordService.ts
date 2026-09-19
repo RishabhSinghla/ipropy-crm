@@ -939,11 +939,46 @@ export async function moveRecord(
   );
   const values: Record<string, unknown> = {};
 
+  /*
+    The stage field, found by name **or column**.
+
+    `pipeline_field` stores a name, and a rename changes a field's name while
+    leaving its column alone — production's leads module says `status` and has
+    called that field `lead_status` for some time. Matching on the name alone
+    finds nothing there, which is how the two lines below stopped doing their
+    job without anything erroring.
+  */
+  const stageOf = (module: ModuleMeta): FieldMeta | undefined => (module.pipelineField
+    ? module.fields.find((field) => field.name === module.pipelineField)
+      ?? module.fields.find((field) => field.columnName === module.pipelineField)
+    : undefined);
+  const sourceStage = stageOf(sourceModule);
+  const targetStage = stageOf(targetModule);
+
   for (const [name, value] of Object.entries(source.values)) {
-    // Status values have different meanings in the two modules. Let the
-    // destination module apply its own mandatory default instead.
-    if (name === sourceModule.pipelineField || name === targetModule.pipelineField) continue;
+    // Status values have different meanings in the two modules: "Available" is
+    // not a thing a person can be, and "Contacted" is not a thing a floor can
+    // be. The destination starts at its own beginning instead.
+    if (name === sourceStage?.name || name === targetStage?.name) continue;
     if (targetFields.has(name) && value !== undefined && value !== null) values[name] = value;
+  }
+
+  /*
+    And the destination's stage is set here rather than left to a default,
+    because **neither module's stage field has one**: both are mandatory with
+    an empty `default_value`, so every move — in both directions — failed with
+    "Lead Status is required" and the record stayed where it was.
+
+    Its first option, read off the dropdown, not the word "New" written into
+    this file. An admin who renames or reorders those options keeps a working
+    move; a hardcoded value is a move that breaks the day somebody edits a
+    dropdown, silently, in the same way this did.
+  */
+  if (targetStage && targetFields.has(targetStage.name)) {
+    const starting = targetStage.defaultValue ?? targetStage.options?.[0]?.value;
+    if (starting !== undefined && starting !== null && starting !== '') {
+      values[targetStage.name] = starting;
+    }
   }
 
   if (targetFields.has('name') && !values.name) {

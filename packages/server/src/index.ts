@@ -10,6 +10,7 @@ import { configureSentry } from './core/observability/sentry.js';
 import { registerWorkflowHandlers } from './core/workflow/engine.js';
 import { startScheduler, stopScheduler } from './core/workflow/scheduler.js';
 import { startWhatsAppPolling, stopWhatsAppPolling } from './integrations/whatsapp/business/pollInbound.js';
+import { startCampaignSending, stopCampaignSending } from './integrations/whatsapp/business/campaigns.js';
 import { initRealtime, closeRealtime } from './realtime.js';
 import { aiStatus } from './ai/client.js';
 import { recoverOrphanedImports } from './core/import/recover.js';
@@ -74,6 +75,7 @@ async function main(): Promise<void> {
     one comparison a minute when no provider is connected.
   */
   startWhatsAppPolling();
+  startCampaignSending();
 
   server.listen(config.port, () => {
     logger.info(`iPropy API listening on http://localhost:${config.port}`);
@@ -92,6 +94,7 @@ async function main(): Promise<void> {
     logger.info({ signal }, 'shutting down…');
     stopScheduler();
   stopWhatsAppPolling();
+  stopCampaignSending();
     closeRealtime();
     server.close(() => {
       void closePool().then(() => process.exit(0));

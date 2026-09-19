@@ -1081,6 +1081,100 @@ worth repeating: a component that imports the app's store cannot be loaded by a 
 test at all, because the store reads `localStorage` as it is constructed. Importing one
 helper out of a component pulled the whole store in and broke an unrelated suite.
 
+### Three bugs the owner found in an hour, 20 September
+
+All three were live, and two of them had never run at all.
+
+* **Moving a record between the modules had never once worked.** *"Bug in Move to Lead"* —
+  the dialog answered "Lead Status is required" and the record stayed where it was.
+  `moveRecord` deliberately drops both modules' stage values (*"Available" is not a thing a
+  person can be*) and left the destination to "apply its own mandatory default".
+  **Neither module's stage field has a default**: both are mandatory with an empty
+  `default_value`, so every move in both directions failed validation, silently, since the
+  day it was written. It now sets the destination's **first dropdown option**, read off the
+  picklist rather than the word "New" written into the file — a hardcoded value is a move
+  that breaks the day somebody edits a dropdown. The stage field is also found by name *or
+  column* now, the same `lead_status`/`status` drift as everywhere else.
+  `tests/integration/moveBetweenModules.test.ts` moves one each way.
+* **Every WhatsApp send died on the opt-out check.** *"Unknown field referenced in the
+  request"* is the error handler's wording for Postgres 42703, and the cause was
+  `SELECT id FROM ipy_channel_optout` — a table keyed on `(handle, channel)` that **has no
+  `id` column and never has**. It is `SELECT 1` now.
+  **Why it survived is the part worth keeping:** nothing had ever run it. The composer has
+  never been opened against a live provider, and every test that calls
+  `sendOnBusinessNumber` expects it to refuse *earlier*, at "no provider is switched on" —
+  so the first thing to reach that line was a customer waiting for a message.
+  `tests/integration/whatsappSendReachesTheProvider.test.ts` switches a provider on for
+  exactly that reason: it is the only way to make those queries execute.
+  **The lesson generalises.** A guard that every test trips over is a guard that hides
+  everything behind it. Where a path is gated on configuration this CRM does not have in a
+  test database, the test has to supply the configuration, not accept the refusal.
+* **Click-to-call is not broken.** *"Your phone did not pick that up"* is the documented
+  behaviour when the paired handset does not answer, and the desk hand-off it falls back to
+  worked — the Log call dialog opened. The real cause is almost certainly the one already
+  written down: **every installed copy of the app predates `placeCall`** and will until
+  somebody rebuilds and re-installs it, which cannot be done from this container (there is
+  a JDK and no Android SDK). The message says that now rather than asking whether the phone
+  is switched on, which sends a rep checking a phone that is working perfectly.
+
+## Campaigns: one template, many people, once each
+
+**19 September 2026, the owner: "now start campaigns"** — the next thing in his own order
+after the inbox.
+
+**This feature exists under one rule, and the rule is this repo's own history.** On 13 and
+16 September a *daily* workflow whose condition list had emptied itself queued 40,515
+WhatsApp messages — 20,209 people holding two each — and nobody received one only because
+no provider was connected. Luck, not a safeguard. A campaign is deliberately "message many
+people", so "refuse to match everybody" cannot be the protection. These are, and each one
+is tested:
+
+* **Nothing sends until a person approves a number they have been shown.** The screen has
+  no Send button until the preview has run; the button then *carries that number*, approval
+  passes it back, and the server refuses a mismatch — so an audience that moved between
+  reading it and approving it stops rather than surprises. `audienceVerdict` is pure and
+  exported for exactly that reason (`tests/campaignCeiling.test.ts` walks every threshold).
+* **The audience is frozen at approval.** One row per recipient in `ipy_campaign_recipient`,
+  written then. A saved view widened afterwards cannot grow a running campaign, because
+  nothing re-reads the view. Pinned by `tests/integration/whatsappCampaigns.test.ts`, which
+  approves, then adds a matching contact, then checks the campaign is still the size it was.
+* **Once each**, by a unique index on `(campaign_id, record_id)` rather than by whoever is
+  careful — and **once per number**, not per record: two contacts on one husband-and-wife
+  handset are one person. Worth knowing that `createRecord` already refuses a second record
+  with the same *mobile*, so the way this really happens is an `alternate_phone` matching
+  somebody else's mobile, or an import, which bypasses the duplicate check.
+* **A ceiling.** Over 500 needs an explicit second confirmation; over 5,000 is refused
+  outright. Twenty thousand has been queued by accident here once already, and splitting a
+  genuine large campaign costs an afternoon rather than a reputation.
+* **Every refusal is a row somebody can read** — opted out, no number, a blank the template
+  needed. The birthday messages were invisible until somebody thought to count the queue.
+* **Opt-out and the 24-hour window are not re-implemented.** Every message goes through
+  `sendOnBusinessNumber`, the one send path, which already refuses both. A refusal marks
+  that recipient and the campaign carries on: one person who opted out must not stop the
+  other three hundred. An opt-out or a shut window reads as `skipped` (the customer's
+  answer); anything else is `failed` (something to look at).
+* **Ten a minute, on its own clock** (`startCampaignSending`). Not a throughput decision: a
+  campaign approved by mistake has a minute in which somebody can press Pause and only ten
+  people have heard about it.
+
+**A campaign sends an approved template and nothing else.** Outside WhatsApp's 24-hour
+window nothing else may go, and a campaign by definition reaches people who are not in an
+open conversation. The blanks are filled per recipient by `resolveTemplate`, **read as the
+person who approved it** — so a campaign cannot put a value in front of a customer that the
+approver was not allowed to see. A template with an unfilled blank is skipped and named,
+never sent with a hole in it.
+
+**Deliberately absent: a schedule.** A campaign that fires itself at nine in the morning is
+precisely the shape of the rule that caused all this. A person approves it, with the count
+in front of them. Building one is `whatsapp.send`; **approving one is
+`whatsapp.templates`** — writing a campaign and deciding it goes to nine hundred people are
+not the same decision.
+
+Migration `161`. Admin → Campaigns. **Never exercised against a real provider**, like
+everything else on this route: what is proved is the ceiling, the freeze, the
+once-per-number rule, the skip reasons, and the screen refusing to offer a Send button
+before a preview (`e2e/campaigns.spec.ts`). **Still to build: reports.**
+
 ## Photos, documents and voice notes
 
 **The rule this phase exists for is one line of his specification: the CRM's history must

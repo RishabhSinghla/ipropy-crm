@@ -51,8 +51,22 @@ export interface BusinessSendResult {
 
 /** Has this person asked not to be messaged on WhatsApp? */
 async function optedOut(handle: string): Promise<boolean> {
-  const row = await db.queryOne<{ id: string }>(
-    `SELECT id FROM ipy_channel_optout
+  /*
+    `SELECT 1`, not `SELECT id`.
+
+    `ipy_channel_optout` is keyed on `(handle, channel)` and **has no `id`
+    column** — it never has. This asked for one, so every send on the official
+    route died here with Postgres 42703, which the error handler turns into
+    "Unknown field referenced in the request": a rep pressing Send on an
+    approved template, and a message that never went.
+
+    It survived because nothing ever ran it. The composer has never been opened
+    against a live provider, and the tests that call `sendOnBusinessNumber`
+    expect it to refuse *earlier* — at "no provider is switched on" — so the
+    line below was never reached by anything until a customer was waiting.
+  */
+  const row = await db.queryOne<{ ok: number }>(
+    `SELECT 1 AS ok FROM ipy_channel_optout
       WHERE channel = 'whatsapp' AND right(regexp_replace(handle, '\\D', '', 'g'), 10) = right($1, 10)
       LIMIT 1`,
     [handle],

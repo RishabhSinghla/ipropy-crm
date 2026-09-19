@@ -2,7 +2,7 @@ import SettingsAdmin from './SettingsAdmin';
 import { type JSX, lazy, Suspense } from 'react';
 import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {
-  Activity, AppWindow, Blocks, Columns2, Columns3, Database, KeyRound, LayoutTemplate, Link2, MapPin,
+  Activity, AppWindow, Blocks, Columns2, Columns3, Megaphone, Database, KeyRound, LayoutTemplate, Link2, MapPin,
   ListTree, MessageCircle, MessageSquareText, Plug, Ruler, Settings2, Shield, Sparkles, Tag, ToggleLeft, Users, Workflow,
   SlidersHorizontal,
 } from 'lucide-react';
@@ -30,6 +30,7 @@ const MatchingSetupAdmin = lazy(() => import('./MatchingSetupAdmin'));
 const UnitMasterAdmin = lazy(() => import('./UnitMasterAdmin'));
 const TagsAdmin = lazy(() => import('./TagsAdmin'));
 const WhatsAppTemplatesAdmin = lazy(() => import('./WhatsAppTemplatesAdmin'));
+const CampaignsAdmin = lazy(() => import('./CampaignsAdmin'));
 const TemplatesAdmin = lazy(() => import('./TemplatesAdmin'));
 
 /*
@@ -87,6 +88,7 @@ const SECTIONS = [
       // wording the business writes, and a WhatsApp template is wording Meta
       // approved — the only thing editable here is what fills its blanks.
       { path: 'whatsapp-templates', capability: 'whatsapp.templates', label: 'WhatsApp Templates', icon: MessageCircle, element: <WhatsAppTemplatesAdmin /> },
+      { path: 'campaigns', capability: 'whatsapp.templates', label: 'Campaigns', icon: Megaphone, element: <CampaignsAdmin /> },
       { path: 'settings', capability: 'admin.access', label: 'Settings', icon: SlidersHorizontal, element: <SettingsAdmin /> },
       { path: 'brand', capability: 'admin.access', label: 'Brand & Social', icon: Sparkles, element: <BrandAdmin /> },
       { path: 'system', capability: 'admin.audit', label: 'System & Audit', icon: Activity, element: <SystemAdmin /> },

@@ -241,3 +241,18 @@ export async function resolveTemplate(input: {
 
   return { name: template.name, language: template.language, params, preview, missing };
 }
+
+/**
+ * The business's own name, for a template slot that asks for it.
+ *
+ * One reading of `org.name` — the same value the app header shows — so
+ * renaming the business renames it everywhere at once. It falls back to the
+ * product name rather than to an empty gap, because an approved template with
+ * a blank in it is refused by WhatsApp.
+ */
+export async function organisationName(): Promise<string> {
+  const row = await db.queryOne<{ value: unknown }>(
+    `SELECT value FROM ipy_setting WHERE key = 'org.name'`,
+  );
+  return (typeof row?.value === 'string' && row.value.trim()) || 'iPropy';
+}

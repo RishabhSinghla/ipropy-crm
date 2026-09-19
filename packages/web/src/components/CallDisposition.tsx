@@ -138,7 +138,16 @@ export function CallDispositionProvider({
             hand-off is offered instead, so the rep finds out here rather than
             from a customer who was never rung.
           */
-          toast.error('Your phone did not pick that up', 'Is it on, unlocked, and running the latest iPropy app?');
+          /*
+            Naming the likeliest cause rather than blaming the handset. Every
+            installed copy of the app predates `placeCall` until somebody
+            rebuilds and re-installs it, so "is your phone on?" sends a rep
+            checking a phone that is working perfectly.
+          */
+          toast.error(
+            'Your phone did not ring — dialling from here instead',
+            'Usually the app needs updating: this needs the version that can place calls. Otherwise check the phone is on and unlocked.',
+          );
           dial(clean);
         }
       }

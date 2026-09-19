@@ -24,7 +24,7 @@ import {
 } from '../../integrations/whatsapp/business/inbox.js';
 import { db } from '../../db/pool.js';
 import {
-  listStoredTemplates, resolveTemplate, saveMapping, syncTemplates,
+  listStoredTemplates, organisationName, resolveTemplate, saveMapping, syncTemplates,
 } from '../../integrations/whatsapp/business/templates.js';
 import { recordService } from '../../core/entity/recordService.js';
 import { threadForNumber } from '../../integrations/whatsapp/business/thread.js';
@@ -32,6 +32,10 @@ import {
   assertFollowUpDay, contactBehind, sharePropertyOnWhatsApp,
 } from '../../integrations/whatsapp/business/share.js';
 import { scheduleFollowUp } from '../../core/workflow/followUp.js';
+import {
+  approveCampaign, campaignRecipients, createCampaign, listCampaigns, previewCampaign,
+  setCampaignStatus,
+} from '../../integrations/whatsapp/business/campaigns.js';
 
 /**
  * May this person send that file to a customer?
@@ -341,21 +345,6 @@ whatsappBusinessRouter.post('/conversations/:id/follow-up', asyncHandler(async (
 // Approved templates, and what fills their blanks
 // ---------------------------------------------------------------------------
 
-/**
- * The business's own name, for a template that signs off with it.
- *
- * Read from the same `org.name` setting the header and the public site read,
- * so renaming the business renames it everywhere at once — and falling back to
- * the product name rather than to an empty gap, because an approved template
- * with a blank in it is refused by WhatsApp.
- */
-async function organisationName(): Promise<string> {
-  const row = await db.queryOne<{ value: unknown }>(
-    `SELECT value FROM ipy_setting WHERE key = 'org.name'`,
-  );
-  return (typeof row?.value === 'string' && row.value.trim()) || 'iPropy';
-}
-
 /** What the CRM holds, with each template's mapping. Read by the composer too. */
 whatsappBusinessRouter.get('/templates/saved', asyncHandler(async (_req, res) => {
   res.json(await listStoredTemplates());
@@ -445,4 +434,90 @@ whatsappBusinessRouter.post('/send-template', asyncHandler(async (req, res) => {
     recordId: input.recordId,
     template: { name: resolved.name, language: resolved.language, params: resolved.params },
   }));
+}));
+
+// ---------------------------------------------------------------------------
+// Campaigns
+// ---------------------------------------------------------------------------
+
+/*
+  Two capabilities, deliberately different ones.
+
+  Building and previewing a campaign is `whatsapp.send` — the same permission
+  that already lets somebody message one customer. **Approving one is
+  `whatsapp.templates`**, which in this CRM is the administrator's side of
+  messaging. Writing a campaign and deciding that it goes to nine hundred
+  people are not the same decision, and the second is the one that queued forty
+  thousand messages last time.
+*/
+const audienceSchema = z.object({
+  view: z.string().uuid().optional(),
+  filter: z.any().optional(),
+});
+
+whatsappBusinessRouter.get('/campaigns', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'whatsapp.send');
+  res.json(await listCampaigns());
+}));
+
+whatsappBusinessRouter.post('/campaigns', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'whatsapp.send');
+  const input = z.object({
+    name: z.string().min(1).max(120),
+    module: z.string().min(1),
+    templateId: z.string().uuid(),
+    audience: audienceSchema,
+  }).parse(req.body ?? {});
+  res.json(await createCampaign({ ...input, userId: user.id }));
+}));
+
+/** Who it would reach and what the first few would read. Writes nothing. */
+whatsappBusinessRouter.post('/campaigns/preview', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'whatsapp.send');
+  const input = z.object({
+    module: z.string().min(1),
+    templateId: z.string().uuid(),
+    audience: audienceSchema,
+  }).parse(req.body ?? {});
+  res.json(await previewCampaign({
+    ctx: getScope(req),
+    module: input.module,
+    audience: input.audience,
+    templateId: input.templateId,
+    agentName: user.fullName ?? '',
+  }));
+}));
+
+whatsappBusinessRouter.post('/campaigns/:id/approve', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'whatsapp.templates');
+  const input = z.object({
+    // What the screen showed. A mismatch refuses rather than sending to a
+    // number nobody agreed to.
+    expectedCount: z.number().int().min(0),
+    confirmLarge: z.boolean().optional(),
+  }).parse(req.body ?? {});
+  res.json(await approveCampaign({
+    ctx: getScope(req),
+    userId: user.id,
+    campaignId: req.params.id!,
+    expectedCount: input.expectedCount,
+    confirmLarge: input.confirmLarge,
+  }));
+}));
+
+whatsappBusinessRouter.post('/campaigns/:id/status', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'whatsapp.templates');
+  const input = z.object({ status: z.enum(['paused', 'running', 'cancelled']) }).parse(req.body ?? {});
+  await setCampaignStatus(req.params.id!, input.status);
+  res.json({ ok: true });
+}));
+
+/** Who got it, who did not, and why. */
+whatsappBusinessRouter.get('/campaigns/:id/recipients', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'whatsapp.send');
+  const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+  res.json(await campaignRecipients(req.params.id!, status));
 }));
