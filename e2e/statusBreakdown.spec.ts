@@ -18,7 +18,10 @@ function isListSearch(r: Request): boolean {
 
 /** The stage rows, which are the pressable rows carrying a percentage. */
 function stages(page: Page) {
-  return page.locator('[aria-pressed]').filter({ hasText: /\d+\.\d%/ });
+  // By name, not by the percentage they used to print: the owner asked for the
+  // per-stage share gone on 19 September, and a locator built on it would have
+  // quietly started matching the agent chips instead.
+  return page.getByTestId('stage-row');
 }
 
 async function openPanel(page: Page) {
@@ -33,14 +36,21 @@ async function openPanel(page: Page) {
 test('the stages add up to the whole view', async ({ page }) => {
   await openPanel(page);
 
-  const shares = await stages(page)
-    .evaluateAll((els) => els.map((el) => Number(/([\d.]+)%/.exec(el.textContent ?? '')?.[1] ?? 0)));
+  /*
+    The same promise as before — every record is in exactly one stage — read
+    off the counts rather than the percentages, which the owner asked to be
+    rid of. The counts were always the fact; the shares were a second number
+    derived from them.
+  */
+  const counts = await stages(page)
+    .evaluateAll((els) => els.map((el) => Number((/([\d,]+)\s*$/.exec(el.textContent ?? '')?.[1] ?? '0').replace(/,/g, ''))));
 
-  expect(shares.length).toBeGreaterThan(0);
-  const sum = shares.reduce((a, b) => a + b, 0);
-  // Rounded to one decimal per row, so the total lands near 100 rather than on it.
-  expect(sum).toBeGreaterThan(99);
-  expect(sum).toBeLessThan(101);
+  expect(counts.length).toBeGreaterThan(0);
+  const sum = counts.reduce((a, b) => a + b, 0);
+
+  const all = page.getByRole('button', { name: /^All stages/ });
+  const total = Number((/([\d,]+)/.exec((await all.innerText()).split('\n').pop() ?? '')?.[1] ?? '0').replace(/,/g, ''));
+  expect(sum).toBe(total);
 });
 
 test('one stage is one click, and it reaches the list as an `in`', async ({ page }) => {

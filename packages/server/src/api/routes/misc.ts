@@ -269,9 +269,21 @@ miscRouter.get('/tags', asyncHandler(async (req, res) => {
   // the column carries — so asking without a module, as the admin screen does,
   // still returns the whole vocabulary.
   const module = typeof req.query.module === 'string' ? req.query.module : null;
+  /*
+    The number beside a tag has to be the number of records the list will show.
+
+    It counted links, not records: a link survives nothing being at the other
+    end that this screen would ever list. A deleted record keeps its link (the
+    row is only flagged, so it can be restored), and a tag offered on both
+    modules counts Inventory links while Contacts is on screen. On production
+    that read 229 beside a tag whose list says 2.
+  */
   const rows = await db.query(
-    `SELECT t.id, t.name, t.color, t.created_by, t.modules, COUNT(l.record_id)::int AS usage_count
-     FROM ipy_tag t LEFT JOIN ipy_tag_link l ON l.tag_id = t.id
+    `SELECT t.id, t.name, t.color, t.created_by, t.modules, COUNT(r.id)::int AS usage_count
+     FROM ipy_tag t
+     LEFT JOIN ipy_tag_link l ON l.tag_id = t.id
+     LEFT JOIN ipy_record r ON r.id = l.record_id AND r.is_deleted = false
+       AND ($1::text IS NULL OR r.module_name = $1::text)
      WHERE $1::text IS NULL OR cardinality(t.modules) = 0 OR t.modules @> ARRAY[$1::text]
      GROUP BY t.id ORDER BY usage_count DESC, t.name LIMIT 200`,
     [module],

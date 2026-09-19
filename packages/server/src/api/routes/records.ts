@@ -479,8 +479,12 @@ recordsRouter.get('/:module/:id', asyncHandler(async (req, res) => {
   ).catch(() => undefined);
 
   const [tags, starred] = await Promise.all([
+    // Same rule as the list: a tag this module is not offered is not this
+    // record's tag, whatever an old link says.
     db.query<{ name: string }>(
-      `SELECT t.name FROM ipy_tag t JOIN ipy_tag_link l ON l.tag_id = t.id WHERE l.record_id = $1`, [id],
+      `SELECT t.name FROM ipy_tag t JOIN ipy_tag_link l ON l.tag_id = t.id
+       WHERE l.record_id = $1 AND (cardinality(t.modules) = 0 OR t.modules @> ARRAY[$2::text])`,
+      [id, req.params.module],
     ),
     db.queryOne(`SELECT 1 FROM ipy_starred WHERE user_id = $1 AND record_id = $2`, [user.id, id]),
   ]);
@@ -858,7 +862,21 @@ recordsRouter.post('/:module/:id/tags', asyncHandler(async (req, res) => {
   await transaction(async (tx) => {
     await tx.query(`DELETE FROM ipy_tag_link WHERE record_id = $1`, [req.params.id]);
     for (const name of tags) {
-      const tag = await tx.queryOne<{ id: string }>(
+      /*
+        A tag narrowed to another module cannot be put on this record. The
+        picker already only offers the right ones, so this is the door behind
+        it: without it an old screen, an import or a stale tab can still write
+        "Corner Unit" onto a person, and the CRM then shows a tag on a module
+        nobody gave it to. A name nobody has used yet is created, as before,
+        and a new tag is offered everywhere.
+      */
+      const existing = await tx.queryOne<{ id: string; modules: string[] }>(
+        `SELECT id, modules FROM ipy_tag WHERE name = $1`, [name.trim().toLowerCase()],
+      );
+      if (existing && existing.modules.length > 0 && !existing.modules.includes(req.params.module)) {
+        throw new BadRequestError(`The tag “${name}” is not offered on this module`);
+      }
+      const tag = existing ?? await tx.queryOne<{ id: string }>(
         `INSERT INTO ipy_tag (name, created_by) VALUES ($1,$2)
          ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id`,
         [name.trim().toLowerCase(), getUser(req).id],

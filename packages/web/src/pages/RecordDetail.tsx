@@ -18,7 +18,7 @@ import { resolveIcon } from '../lib/icons';
 import { FieldValue } from '../components/FieldRenderer';
 import { StrengthRing } from '../components/StrengthRing';
 import { WhatsAppTab } from '../components/WhatsAppTab';
-import { TagButton } from '../components/TagButton';
+import { TagButton, TagChips } from '../components/TagButton';
 import { EditableField, isInlineEditable } from '../components/EditableField';
 import { assignmentField } from '../lib/fields';
 import { ShareLinksPanel } from '../components/ShareLinks';
@@ -76,12 +76,6 @@ export default function RecordDetail(): JSX.Element {
     queryFn: () => api.record(moduleName!, id!),
     enabled: Boolean(moduleName && id),
   });
-  // Only the tags this module offers: "Site Visit Done" is not a thing a
-  // builder floor can be, and "Corner Unit" is not a thing a person can be.
-  const { data: tagOptions } = useQuery({
-    queryKey: ['tags', moduleName], queryFn: () => api.tags(moduleName), staleTime: 60_000,
-  });
-
   // Join this record's realtime room so workflow/AI writes that land after the
   // response (lead scoring, lifecycle promotion) appear without a refresh.
   useWatchRecord(id);
@@ -406,9 +400,10 @@ export default function RecordDetail(): JSX.Element {
 
             {/* Actions, right-aligned on the same line as the back arrow. */}
             <div className="ml-auto flex flex-wrap items-center gap-1.5 sm:justify-end">
-              {(record.tags ?? []).slice(0, 3).map((tag) => (
-                <span key={tag} className="rounded-full px-2 py-1 text-2xs font-medium text-white" style={{ backgroundColor: tagOptions?.find((option) => option.name === tag)?.color ?? '#2563eb' }}>{tag}</span>
-              ))}
+              {/* Every tag on the record, before the icons — the same chips
+                  the split view shows, so a record reads the same either way.
+                  Capped at three before, which quietly hid the fourth. */}
+              <TagChips module={moduleName!} tags={record.tags} />
               <TagButton
                 module={moduleName!}
                 recordId={id!}

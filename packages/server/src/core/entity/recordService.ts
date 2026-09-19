@@ -326,10 +326,19 @@ export async function listRecords(
     // Tags are shared record state, so carry them with the list just as we do
     // per-user favourites. One grouped lookup avoids an N+1 query while making
     // tag-aware list filters and the blue tag marker truthful on every row.
+    /*
+      Only the tags this module offers. A tag narrowed to Inventories can still
+      be linked to a contact by history — the narrowing came after the links —
+      and showing it on a person is the owner's report of 19 September: a tag
+      appearing on a module it was never given to. Empty `modules` means
+      "everywhere", which is what every tag that predates migration 154 carries.
+    */
     const tagRows = await conn.query<{ record_id: string; name: string }>(
       `SELECT l.record_id, t.name FROM ipy_tag_link l JOIN ipy_tag t ON t.id = l.tag_id
-       WHERE l.record_id = ANY($1::uuid[]) ORDER BY t.name`,
-      [rows.map((row) => row.id)],
+       WHERE l.record_id = ANY($1::uuid[])
+         AND (cardinality(t.modules) = 0 OR t.modules @> ARRAY[$2::text])
+       ORDER BY t.name`,
+      [rows.map((row) => row.id), module.name],
     );
     const tagsByRecord = new Map<string, string[]>();
     for (const tag of tagRows.rows) tagsByRecord.set(tag.record_id, [...(tagsByRecord.get(tag.record_id) ?? []), tag.name]);

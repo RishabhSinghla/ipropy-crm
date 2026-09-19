@@ -93,6 +93,16 @@ export function StatusBreakdown({
   );
 }
 
+/**
+ * What a chosen row looks like, here and in the list picker beside it.
+ *
+ * It was a half-tinted background that read as a hover on a light screen —
+ * *"please highlight the selected records"*. Filled, ringed and bold, so which
+ * row is in force is answerable from across the desk.
+ */
+export const CHOSEN = 'bg-brand-100 font-bold text-brand-900 ring-1 ring-brand-300 '
+  + 'dark:bg-brand-900/60 dark:text-brand-50 dark:ring-brand-700';
+
 /** Mounted only while open, so its two queries cost nothing when it is shut. */
 function BreakdownPanel({
   moduleName, moduleLabel, fieldName, fieldLabel, viewId, baseFilter,
@@ -137,6 +147,9 @@ function BreakdownPanel({
   })).filter((u) => u.id && u.name);
 
   const groups = data?.groups ?? [];
+  // Still the header's number, and what "All stages" shows; the per-row
+  // percentages are gone on the owner's instruction — the count is the fact,
+  // and a share of a filtered list is a second number to read past.
   const total = groups.reduce((sum, g) => sum + g.count, 0);
 
   const choose = (value: string): void => {
@@ -145,16 +158,21 @@ function BreakdownPanel({
   };
 
   return (
-    <div className="text-xs">
+    /*
+      A size up throughout, on the owner's instruction of 19 September: this is
+      a list somebody reads down to decide what to work on, and it was set in
+      the same 10–11px as the labels around it.
+    */
+    <div className="text-[13px]">
       <div className="flex items-start justify-between gap-3 border-b border-slate-100 bg-slate-50/90 px-3 py-2 dark:border-slate-800 dark:bg-slate-800/50">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h4 className="text-xs font-bold tracking-tight text-slate-800 dark:text-slate-100">{fieldLabel} breakdown</h4>
-            <span className="rounded-full bg-brand-100/70 px-1.5 py-px text-[10px] font-bold text-brand-700 dark:bg-brand-950/60 dark:text-brand-200">
+            <h4 className="text-sm font-bold tracking-tight text-slate-800 dark:text-slate-100">{fieldLabel} breakdown</h4>
+            <span className="rounded-full bg-brand-100/70 px-2 py-0.5 text-[11px] font-bold text-brand-700 dark:bg-brand-950/60 dark:text-brand-200">
               {total.toLocaleString('en-IN')}
             </span>
           </div>
-          <p className="mt-0.5 text-[10px] text-muted">Filter {moduleLabel.toLowerCase()} by pipeline stage</p>
+          <p className="mt-0.5 text-[11px] text-muted">Filter {moduleLabel.toLowerCase()} by pipeline stage</p>
         </div>
         {(picked.length > 0 || agent) && (
           <button
@@ -218,10 +236,8 @@ function BreakdownPanel({
           aria-pressed={picked.length === 0}
           onClick={() => { setPicked([]); onApply([]); }}
           className={cn(
-            'flex w-full items-center justify-between rounded-lg px-2 py-1.5 font-semibold transition-colors',
-            picked.length === 0
-              ? 'border border-brand-200/50 bg-brand-50/80 text-brand-800 dark:border-brand-800/60 dark:bg-brand-950/50 dark:text-brand-100'
-              : 'text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800',
+            'flex w-full items-center justify-between rounded-lg px-2 py-2 font-semibold transition-colors',
+            picked.length === 0 ? CHOSEN : 'text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800',
           )}
         >
           <span className="flex items-center gap-2">
@@ -229,8 +245,7 @@ function BreakdownPanel({
             All stages
           </span>
           <span className="flex items-center gap-2">
-            <span className="text-[10px] font-normal text-muted">100%</span>
-            <span className="rounded-full bg-brand-200/80 px-1.5 py-px text-[10px] font-bold text-brand-800 dark:bg-brand-900 dark:text-brand-100">
+            <span className="rounded-full bg-brand-200/80 px-2 py-0.5 text-[11px] font-bold text-brand-800 dark:bg-brand-900 dark:text-brand-100">
               {total.toLocaleString('en-IN')}
             </span>
             {picked.length === 0 && <Check className="h-3 w-3 text-brand-600 dark:text-brand-300" />}
@@ -252,20 +267,21 @@ function BreakdownPanel({
         */}
         <div className="max-h-[11rem] space-y-0.5 overflow-y-auto">
         {groups.map((group) => {
-          const share = total ? (group.count / total) * 100 : 0;
           const on = picked.includes(group.key);
           const vars = badgeVars(group.color);
           return (
             <button
               key={group.key}
               type="button"
+              // Named, because the percentage the specs used to find these
+              // rows by is gone. A row identified by a number it happens to
+              // print is a row that disappears when the number does.
+              data-testid="stage-row"
               aria-pressed={on}
               onClick={() => choose(group.key)}
               className={cn(
-                'group flex w-full items-center justify-between rounded-lg px-2 py-1.5 font-medium transition-colors',
-                on
-                  ? 'border border-brand-200/50 bg-brand-50/80 text-brand-800 dark:border-brand-800/60 dark:bg-brand-950/50 dark:text-brand-100'
-                  : 'text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800',
+                'group flex w-full items-center justify-between rounded-lg px-2 py-2 transition-colors',
+                on ? CHOSEN : 'font-medium text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800',
               )}
             >
               <span className="flex min-w-0 items-center gap-2">
@@ -273,10 +289,9 @@ function BreakdownPanel({
                 <span className="truncate">{group.label}</span>
               </span>
               <span className="flex shrink-0 items-center gap-2">
-                <span className="text-[10px] font-normal text-muted tabular-nums">{share.toFixed(1)}%</span>
                 <span
                   className={cn(
-                    'rounded-full px-1.5 py-px text-[10px] font-semibold tabular-nums',
+                    'rounded-full px-2 py-0.5 text-[11px] font-bold tabular-nums',
                     vars ? 'badge-tinted border' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200',
                   )}
                   style={vars}

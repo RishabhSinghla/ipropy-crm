@@ -26,11 +26,12 @@ async function openPicker(page: Page) {
 
 test('lists and tags are both in the one picker', async ({ page }) => {
   await openPicker(page);
-  // `exact` on both: with no shared tags saved, the empty state reads "No
-  // shared tags yet" and a loose match hits the heading and the empty line at
-  // once, which Playwright refuses rather than picking one.
-  await expect(page.getByText('Shared tags', { exact: true })).toBeVisible();
-  await expect(page.getByText('My tags', { exact: true })).toBeVisible();
+  // One tag section, not two. The owner asked for the "shared tags" split
+  // gone on 19 September — every tag is readable by everybody, so who typed
+  // the name first was never a useful division. `exact` because the empty
+  // state ("No tags found") would otherwise match the heading too.
+  await expect(page.getByText('Tags', { exact: true })).toBeVisible();
+  await expect(page.getByText('Shared tags', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^All Leads/ })).toBeVisible();
 });
 

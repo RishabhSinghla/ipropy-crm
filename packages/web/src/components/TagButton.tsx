@@ -5,7 +5,7 @@ import { api } from '../lib/api';
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
-import { Modal } from './ui';
+import { Badge, Modal } from './ui';
 
 /**
  * Tagging a record, from wherever the record is open.
@@ -35,8 +35,21 @@ export function TagButton({ module, recordId, tags, canEdit, className, iconClas
 
   // Only the tags this module offers: "Site Visit Done" is not a thing a
   // builder floor can be, and "Corner Unit" is not a thing a person can be.
+  /*
+    Fetched afresh every time the dialog opens.
+
+    It shares its key with the chips below, which are on screen from the moment
+    a record is — so by the time somebody opens this, the list has usually been
+    cached for a while, and a tag an admin created in the meantime would simply
+    not be offered. There is nothing on screen to say why. A round trip when a
+    person opens a dialog costs nothing anybody can feel.
+  */
   const { data: options } = useQuery({
-    queryKey: ['tags', module], queryFn: () => api.tags(module), staleTime: 60_000, enabled: open,
+    queryKey: ['tags', module],
+    queryFn: () => api.tags(module),
+    staleTime: 0,
+    refetchOnMount: 'always',
+    enabled: open,
   });
 
   const save = useMutation({
@@ -107,5 +120,42 @@ export function TagButton({ module, recordId, tags, canEdit, className, iconClas
         </div>
       </Modal>
     </>
+  );
+}
+
+/**
+ * A record's own tags, as chips, wherever that record is open.
+ *
+ * The owner asked for them on every view — *"so that we can see easly all tag
+ * on record view in table, Kanban and split view"* — and beside the header's
+ * icons rather than buried at the end of a line of text. Table and Kanban both
+ * open the record page, so this and the split view's header are the two places
+ * it has to be, and one component is what keeps them saying the same thing.
+ *
+ * Colour goes through `Badge`, never a raw hex fill: a tag's colour is chosen
+ * by an admin, and painting an arbitrary hue behind white text lands wherever
+ * that hue happens to land. `lib/color.ts` keeps the pair above AA in both
+ * themes.
+ */
+export function TagChips({ module, tags, className }: {
+  module: string;
+  tags: string[] | undefined;
+  className?: string;
+}): JSX.Element | null {
+  // The same key the dialog above uses, so showing the chips costs no extra
+  // request on a page that has already opened the tag list once.
+  const { data: options } = useQuery({
+    queryKey: ['tags', module], queryFn: () => api.tags(module), staleTime: 60_000,
+  });
+
+  if (!tags?.length) return null;
+  return (
+    <span className={cn('flex min-w-0 flex-wrap items-center gap-1', className)}>
+      {tags.map((name) => (
+        <Badge key={name} color={options?.find((option) => option.name === name)?.color ?? null} className="max-w-[10rem] truncate">
+          {name}
+        </Badge>
+      ))}
+    </span>
   );
 }

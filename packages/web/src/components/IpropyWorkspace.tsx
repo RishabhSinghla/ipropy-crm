@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { recordStrength, relativeTime, type FieldMeta, type ModuleMeta, type RecordEnvelope, type TimelineEntry } from '@ipropy/shared';
 import {
   ArrowRightLeft, ArrowUpDown, Check, FileText, Link2, MessageCircle, MoreHorizontal,
-  Phone, Send, Sparkles, Star, Tag, Trash2, Users,
+  Phone, Send, Sparkles, Star, Trash2, Users,
 } from 'lucide-react';
 import { FieldValue } from './FieldRenderer';
 import { CallButton, CallDispositionProvider } from './CallDisposition';
@@ -11,7 +11,7 @@ import { WhatsAppComposerProvider } from './WhatsAppComposer';
 import { MatchingTab } from './MatchingTab';
 import { WhatsAppTab } from './WhatsAppTab';
 import { WhatsAppButton } from './WhatsAppButton';
-import { TagButton } from './TagButton';
+import { TagButton, TagChips } from './TagButton';
 import { CallsTab, FilesTab, RecordCollaboratorsPanel, TimelineTab } from '../pages/RecordDetail';
 import { EditableField, isInlineEditable } from './EditableField';
 import { invalidateRecordQueries } from '../lib/invalidate';
@@ -628,8 +628,6 @@ export function IpropyWorkspace({
                   </span>
                 )}
                 <span className="shrink-0 text-sm text-slate-400">Updated {relativeTime(active.updatedAt)}</span>
-                {active.tags?.slice(0, 2).map((tag) => <span key={tag} className="inline-flex shrink-0 items-center gap-1 rounded-md bg-brand-50 px-1.5 py-0.5 text-2xs font-semibold text-brand-700 dark:bg-brand-950/40 dark:text-brand-300"><Tag className="h-3 w-3" />{tag}</span>)}
-
               </div>
 
               {/* How complete the record is, under the name rather than
@@ -639,6 +637,11 @@ export function IpropyWorkspace({
             </div>
 
             <span className="mt-1 flex shrink-0 items-center gap-2">
+              {/* The record's tags, before the icons. They used to trail the
+                  name after "Updated …", capped at two — the end of a line of
+                  text is where a chip goes unread, and the owner asked for
+                  them beside the icons in every view. */}
+              <TagChips module={module.name} tags={active.tags} className="mr-0.5 max-w-[16rem]" />
               <button
                 aria-label={active.starred ? 'Remove from starred' : 'Star this record'}
                 title={active.starred ? 'Remove from starred' : 'Star this record'}

@@ -1321,6 +1321,54 @@ ago; and pacing belongs in the CRM, never in a laptop script that forgets on res
 must also decide, up front, that a business CRM has no business storing a rep's personal
 chats.
 
+## Tags: what they count, where they show, and which module they belong to
+
+**19 September 2026, three reports in one message**, plus two more an hour later.
+All of them are about the same thing: a tag is shared vocabulary, and every screen
+has to agree about it.
+
+* **The number beside a tag counted links, not records.** A tag whose list says
+  `2 of 2 records` read **229**, because `COUNT(ipy_tag_link)` survives both
+  things that take a record off a list: a delete only flags the row, and a tag
+  offered on both modules carries links to the other one. The count joins
+  `ipy_record` now, excludes `is_deleted`, and narrows to the module being asked
+  about. Pinned in `tagsBelongToAModule.test.ts` — against the old query it read 3
+  where it should read 1.
+* **There is no "shared tags" split any more.** Every tag name is unique across
+  the CRM and everybody can read every tag, so "mine" only ever meant who typed
+  the name first. One flat **Tags** section in the picker. Lists keep their split,
+  because a list somebody else built genuinely is a different thing.
+* **A record's tags are chips in the header of every view, before the icons.**
+  `TagChips` in `components/TagButton.tsx`, on the record page (which is what the
+  table and the kanban open) and in the split view's action strip. It replaced two
+  different hand-rolled chips that disagreed: the record page capped at three and
+  painted a raw hex behind white text, the split view capped at two and painted
+  everything brand blue. Colour goes through `Badge`, so an admin's own tag
+  colour is what shows and `lib/color.ts` still guarantees AA in both themes.
+* **A tag narrowed to one module must not appear on the other — and could.**
+  `sale` showed on a contact although the tag is not offered on Contacts.
+  Migration `154` narrowed the *picker*; it did not narrow the links already
+  written, and `POST /records/:module/:id/tags` never checked. Both ends are
+  closed now: the write refuses a tag this module is not offered, and both reads
+  (`getRecord` and `listRecords`) filter to `cardinality(modules) = 0 OR modules @> ARRAY[module]`.
+  Empty `modules` still means everywhere.
+
+**A dialog sharing a query key with something always on screen reads a stale
+list.** The tag dialog used to be the only thing asking for `['tags', module]`,
+so it always fetched fresh; the chips ask for it the moment a record opens, so
+by the time somebody opens the dialog the answer has been cached for a minute
+and **a tag created in the meantime is not offered**, with nothing on screen to
+say why. The dialog refetches on open for that reason. `splitViewHeader.spec.ts`
+caught it, because it creates a tag through the API and then looks for it.
+
+**The two dropdowns above the list read like fine print, and now do not.**
+The stage breakdown (`StatusBreakdown.tsx`) and the list/tag picker
+(`ListPicker.tsx`) are one size up, counts sit in chips, and the chosen row is
+filled and ringed rather than half-tinted — `CHOSEN`, exported from
+`StatusBreakdown.tsx` so the two cannot drift. **The per-stage percentages are
+gone on the owner's instruction**: the count is the fact, and a share of an
+already-filtered list is a second number to read past.
+
 ## Lists open on the split view
 
 **18 September 2026, the owner's instruction:** it is the default for everybody in both

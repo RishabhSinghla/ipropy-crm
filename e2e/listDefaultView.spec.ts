@@ -256,3 +256,58 @@ test('the notes sit beside the record rather than in a third column', async ({ p
   // And the third divider went with it.
   await expect(page.getByRole('separator', { name: 'Resize the notes panel' })).toHaveCount(0);
 });
+
+test('a record\'s tags read as chips, before the icons', async ({ page }) => {
+  /*
+    The owner asked for tags visible on the record in every view, "in chip
+    shape … beside and before the icons". They used to trail the name after
+    "Updated …", capped at two, which is where a chip goes unread.
+
+    Measured rather than read off a class: the chip has to sit to the *left* of
+    the star, which is the only thing that says it is before the icons rather
+    than merely present somewhere in the header.
+  */
+  await forgetTheChoice(page, '/leads');
+  const desk = page.getByTestId('ipropy-workspace');
+  await expect(desk).toBeVisible({ timeout: 30_000 });
+
+  const header = desk.locator('main > header');
+  const dialog = page.getByRole('dialog');
+  /*
+    Retried, because the "Tags updated" toast lands over this corner of the
+    header for a few seconds and a click that hits it opens nothing at all.
+  */
+  const openTheDialog = async (): Promise<void> => {
+    await expect(async () => {
+      await header.getByRole('button', { name: 'Edit tags' }).click();
+      await expect(dialog).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 20_000 });
+  };
+
+  await openTheDialog();
+  // A tag, not the dialog's own controls — and not its icon-only close
+  // button, whose empty name slips through a `hasNotText` filter and shuts
+  // the dialog instead of choosing anything.
+  const option = dialog.getByRole('button')
+    .filter({ hasText: /\w/ })
+    .filter({ hasNotText: /^(Cancel|Save tags)$/ })
+    .first();
+  if (!(await option.count())) test.skip(true, 'no tags in this database');
+  const name = (await option.innerText()).trim();
+  await option.click();
+  await dialog.getByRole('button', { name: 'Save tags' }).click();
+  await expect(dialog).toHaveCount(0);
+
+  const chip = header.getByText(name, { exact: true }).first();
+  await expect(chip).toBeVisible({ timeout: 10_000 });
+  const star = header.locator('button[title$="starred"], button[title^="Star "]').first();
+  const chipBox = (await chip.boundingBox())!;
+  const starBox = (await star.boundingBox())!;
+  expect(chipBox.x, 'the tag chip is not before the icons').toBeLessThan(starBox.x);
+
+  // Put the record back the way it was found.
+  await openTheDialog();
+  await dialog.getByRole('button', { name }).first().click();
+  await dialog.getByRole('button', { name: 'Save tags' }).click();
+  await expect(chip).toHaveCount(0, { timeout: 10_000 });
+});

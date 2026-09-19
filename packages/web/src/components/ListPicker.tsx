@@ -7,6 +7,7 @@ import type { CustomView } from '@ipropy/shared';
 import { api } from '../lib/api';
 import { cn } from '../lib/utils';
 import { badgeVars } from '../lib/color';
+import { CHOSEN } from './StatusBreakdown';
 
 export interface PickerView extends Pick<CustomView, 'id' | 'name' | 'isSystem' | 'isPublic' | 'isDefault' | 'ownerId'> {
   isOverride?: boolean;
@@ -29,10 +30,11 @@ export interface PickerTag {
  * rep marks a handful of records on the spot, without an admin building a view
  * for it, so it belongs beside the views rather than behind a filter dialog.
  *
- * Shared and mine are split by who owns the thing, which is the only honest
- * split available: every tag name is unique across the CRM and everybody can
- * read every tag, so "my tags" means the ones you created, not the ones only
- * you can see.
+ * Lists are split by who owns them, because a list somebody else built is a
+ * different thing from your own. Tags are not: every tag name is unique across
+ * the CRM and everybody can read every tag, so "mine" and "shared" only ever
+ * meant who typed the name first. The owner asked for that split gone — it is
+ * one list of tags.
  *
  * Which tags appear at all is a different question, and it is the module's:
  * since migration 154 a tag may be narrowed to Contacts or to Inventories, and
@@ -68,15 +70,16 @@ export function ListPicker({
 
   const mine = views.filter((v) => matches(v.name) && (v.isSystem || v.ownerId === userId || !v.isPublic));
   const shared = views.filter((v) => matches(v.name) && !v.isSystem && v.isPublic && v.ownerId !== userId);
-  const myTags = (tags ?? []).filter((t) => matches(t.name) && t.created_by === userId);
-  const sharedTags = (tags ?? []).filter((t) => matches(t.name) && t.created_by !== userId);
+  const tagList = (tags ?? []).filter((t) => matches(t.name));
 
-  const nothing = !mine.length && !shared.length && !myTags.length && !sharedTags.length;
+  const nothing = !mine.length && !shared.length && !tagList.length;
   const canManage = (view: PickerView): boolean =>
     Boolean(view.isSystem || view.ownerId === userId || isAdmin);
 
   return (
-    <div className="flex max-h-[calc(100vh-11rem)] w-80 flex-col text-xs">
+    // A size up, like the stage breakdown beside it: these are names somebody
+    // reads down, not labels.
+    <div className="flex max-h-[calc(100vh-11rem)] w-80 flex-col text-[13px]">
       <div className="flex items-center justify-between border-b border-slate-100 p-3 dark:border-slate-800">
         <span className="text-sm font-bold text-slate-800 dark:text-slate-100">Select list or tag</span>
         <button
@@ -153,18 +156,10 @@ export function ListPicker({
           </Section>
         )}
 
-        <Section label="Shared tags">
-          {sharedTags.length === 0
-            ? <Empty>No shared tags yet</Empty>
-            : sharedTags.map((tag) => (
-              <TagRow key={tag.id} tag={tag} active={activeTag === tag.name} onChoose={onChooseTag} />
-            ))}
-        </Section>
-
-        <Section label="My tags">
-          {myTags.length === 0
+        <Section label="Tags">
+          {tagList.length === 0
             ? <Empty>No tags found</Empty>
-            : myTags.map((tag) => (
+            : tagList.map((tag) => (
               <TagRow key={tag.id} tag={tag} active={activeTag === tag.name} onChoose={onChooseTag} />
             ))}
         </Section>
@@ -206,10 +201,8 @@ function ViewRow({
     <div className="relative">
       <div
         className={cn(
-          'flex items-center justify-between rounded-md p-1.5 transition-colors',
-          active
-            ? 'bg-brand-50/70 font-medium text-brand-700 dark:bg-brand-950/50 dark:text-brand-200'
-            : 'text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800',
+          'flex items-center justify-between rounded-md p-2 transition-colors',
+          active ? CHOSEN : 'font-medium text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800',
         )}
       >
         <button type="button" onClick={onChoose} className="flex min-w-0 flex-1 items-center gap-2 text-left">
@@ -217,7 +210,9 @@ function ViewRow({
           <span className="truncate">{view.name}</span>
           {view.isOverride && <span className="shrink-0 text-2xs text-muted" title="Your own version of this list">edited</span>}
           {typeof view.count === 'number' && (
-            <span className="shrink-0 text-2xs text-muted tabular-nums">{view.count.toLocaleString('en-IN')}</span>
+            <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold tabular-nums text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+              {view.count.toLocaleString('en-IN')}
+            </span>
           )}
         </button>
         <span className="flex shrink-0 items-center gap-1.5 pl-1">
@@ -300,17 +295,17 @@ function TagRow({
       onClick={() => onChoose(active ? null : tag.name)}
       aria-pressed={active}
       className={cn(
-        'flex w-full items-center gap-2 rounded-md p-1.5 text-left transition-colors',
-        active
-          ? 'bg-brand-50/70 font-medium text-brand-700 dark:bg-brand-950/50 dark:text-brand-200'
-          : 'text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800',
+        'flex w-full items-center gap-2 rounded-md p-2 text-left transition-colors',
+        active ? CHOSEN : 'font-medium text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800',
       )}
     >
       {/* The tag's own colour, through the helper that keeps it legible. */}
       <Tag className="h-3 w-3 shrink-0 text-tinted" style={badgeVars(tag.color)} />
       <span className="min-w-0 flex-1 truncate">{tag.name}</span>
       {tag.usage_count > 0 && (
-        <span className="shrink-0 text-2xs text-muted tabular-nums">{tag.usage_count.toLocaleString('en-IN')}</span>
+        <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold tabular-nums text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+          {tag.usage_count.toLocaleString('en-IN')}
+        </span>
       )}
     </button>
   );
