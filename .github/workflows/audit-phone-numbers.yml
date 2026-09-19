@@ -1,0 +1,47 @@
+# Count the phone numbers on production that are not proper mobiles.
+#
+# READ-ONLY, and deliberately has no "apply" input. Every other workflow here
+# that touches data takes one; this one does not, because emptying a customer's
+# phone number is a decision the owner takes after reading a count, and a
+# workflow that could do both is one wrong dropdown away from doing the second.
+# If he says empty them, that is a separate workflow with the usual `*_removed`
+# backup table.
+#
+# The rule is his, from 19 September 2026: a proper Indian mobile is ten digits
+# starting 6, 7, 8 or 9. `scripts/lib/phoneQuality.mjs` is the judgement and
+# `packages/server/tests/phoneQuality.test.ts` is what proves it — seeded demo
+# data is entirely clean, so running this against a developer's database proves
+# the plumbing and nothing about the answers.
+#
+# Samples print with the last four digits covered. They exist to show the shape
+# of a problem, and an Actions log is not the place to reproduce a customer's
+# whole number.
+name: Audit phone numbers
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # `pg` alone. A full `npm ci` installs every workspace to run one script
+      # that needs one driver, and on this repo that is several minutes of a
+      # free allowance for no gain.
+      - name: Install the Postgres driver
+        run: npm install --no-save --no-audit --no-fund pg
+
+      - name: Count them
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: node scripts/audit-phone-numbers.mjs
