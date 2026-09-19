@@ -14,9 +14,9 @@ import { WhatsAppButton } from './WhatsAppButton';
 import { CallsTab, FilesTab, RecordCollaboratorsPanel, TimelineTab } from '../pages/RecordDetail';
 import { EditableField, isInlineEditable } from './EditableField';
 import { invalidateRecordQueries } from '../lib/invalidate';
-import { assignmentField, subtitleFieldsOf } from '../lib/fields';
+import { assignmentField, pipelineFieldOf, subtitleFieldsOf } from '../lib/fields';
 import { ModuleIcon } from './Layout';
-import { Avatar, ConfirmDialog, Dropdown, DropdownItem, Modal, Spinner } from './ui';
+import { Avatar, Badge, ConfirmDialog, Dropdown, DropdownItem, Modal, Spinner } from './ui';
 import { api } from '../lib/api';
 import { cn, restrictionForField } from '../lib/utils';
 import { toast, useApp } from '../lib/store';
@@ -261,7 +261,20 @@ export function IpropyWorkspace({
     const chosen = pickFields(panes?.queue);
     return chosen.length ? chosen : subtitleFieldsOf(module.fields);
   }, [panes?.queue, pickFields, module.fields]);
-  const statusField = useMemo(() => module.fields.find((f) => f.name === module.pipelineField) ?? module.fields.find((f) => /status|stage/i.test(f.name)), [module.fields, module.pipelineField]);
+  /*
+    The module's own pipeline field — Lead Status on a contact, Property Status
+    on a unit — through the one helper that knows a rename moves a field's name
+    and leaves its column alone. Production's leads module says `status` and
+    has called that field `lead_status` for some time, so matching on the name
+    finds nothing there.
+
+    There is deliberately no fallback guess any more. It used to take the first
+    field whose *name* contained "status", and both modules carry others —
+    `kyc_status` on a contact, `possession_status` on a unit — so a guess that
+    lands on one of those shows every row as blank, which reads as the feature
+    being broken rather than as the wrong field being read.
+  */
+  const statusField = useMemo(() => pipelineFieldOf(module), [module]);
   const followUpField = useMemo(() => module.fields.find((f) => f.columnName === 'next_followup_at') ?? module.fields.find((f) => /next.*follow.*up/i.test(f.name)), [module.fields]);
   const phoneField = useMemo(() => module.fields.find((f) => f.uitype === 'phone'), [module.fields]);
   const phoneValue = active && phoneField ? displayOf(active, phoneField) : '';
@@ -804,7 +817,7 @@ function QueueRow({ row, active, checked, attention, statusField, followUpField,
         {due
           ? <span className={cn('rounded px-1.5 py-0.5 text-2xs font-bold', due.tone)}>{due.label}</span>
           : <span className="px-1.5 py-0.5 text-2xs font-bold text-slate-300">—</span>}
-        {statusField && <StatusPill field={statusField} row={row} label={displayOf(row, statusField) || 'Not set'} />}
+        {statusField && <StatusPill field={statusField} row={row} />}
       </span>
     </button>
   );
@@ -914,6 +927,22 @@ function NotesPanel({ module, record }: { module: string; record: RecordEnvelope
 }
 function NoteEntry({ entry }: { entry: TimelineEntry }): JSX.Element { return <article><p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{entry.title}</p><p className="mt-0.5 text-2xs text-slate-400">{entry.actorName ?? 'iPROPY'} · {relativeTime(entry.at)}</p>{entry.body && <p className="mt-1.5 whitespace-pre-wrap text-sm leading-5 text-slate-600 dark:text-slate-300">{entry.body}</p>}</article>; }
 function DeskTab({ active = false, onClick, children }: { active?: boolean; onClick: () => void; children: React.ReactNode }): JSX.Element { return <button onClick={onClick} className={cn('flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-3 text-sm font-semibold transition-colors', active ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200')}>{children}</button>; }
-function StatusPill({ field, row, label }: { field: FieldMeta; row: RecordEnvelope; label: string }): JSX.Element { const value = String(row.values[field.name] ?? ''); const color = field.options?.find((option) => option.value === value)?.color; return <span className="max-w-32 shrink-0 truncate rounded px-2 py-0.5 text-2xs font-bold" style={color ? { backgroundColor: `${color}20`, color } : undefined}>{label}</span>; }
+/**
+ * The record's stage, as the CRM draws a stage everywhere else.
+ *
+ * `Badge` rather than a tint computed here: it fills the chip and `lib/color.ts`
+ * guarantees the text clears WCAG AA against that fill in both themes. This
+ * used to paint the admin's raw hex as text on a 12% wash of itself, which is
+ * the pattern CLAUDE.md names — it lands around 2–3:1, and how readable it came
+ * out depended entirely on which colour somebody had chosen.
+ */
+function StatusPill({ field, row }: { field: FieldMeta; row: RecordEnvelope }): JSX.Element {
+  const value = String(row.values[field.name] ?? '');
+  const color = field.options?.find((option) => option.value === value)?.color;
+  // Never nothing: a row with no stage set has to look different from a row
+  // whose stage simply did not load.
+  const label = displayOf(row, field) || 'No status';
+  return <Badge color={color} className="max-w-32 shrink-0 truncate text-2xs">{label}</Badge>;
+}
 function displayOf(row: RecordEnvelope, field: FieldMeta): string { const display = row.display?.[field.name]; if (display) return display; const value = row.values[field.name]; return Array.isArray(value) ? value.join(', ') : value == null ? '' : String(value); }
 function dueLabel(value: unknown): { label: string; tone: string } | null { if (!value) return null; const date = new Date(String(value)); if (Number.isNaN(date.getTime())) return null; const today = new Date(); today.setHours(0, 0, 0, 0); date.setHours(0, 0, 0, 0); const diff = Math.round((date.getTime() - today.getTime()) / 86_400_000); return diff < 0 ? { label: 'Overdue', tone: 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' } : diff === 0 ? { label: 'Today', tone: 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' } : diff === 1 ? { label: 'Tomorrow', tone: 'bg-brand-100 text-brand-700 dark:bg-brand-950/40 dark:text-brand-300' } : { label: date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }), tone: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' }; }

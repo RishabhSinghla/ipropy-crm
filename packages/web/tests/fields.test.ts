@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FieldMeta } from '@ipropy/shared';
-import { assignmentField, byLabel, fieldByKey, pipelineFieldOf, subtitleFieldsOf } from '../src/lib/fields';
+import { assignmentField, byLabel, fieldByKey, pipelineFieldOf, subtitleFieldsOf, withQueueSubtitle } from '../src/lib/fields';
 
 /**
  * Finding a field without hard-coding its name.
@@ -154,5 +154,39 @@ describe('subtitleFieldsOf', () => {
       field({ name: 'off', sequence: 4, isActive: false, config: { listSubtitle: 3 } }),
     ]);
     expect(out.map((f) => f.name)).toEqual(['contact_type']);
+  });
+});
+
+describe('withQueueSubtitle', () => {
+  const leads = {
+    // Production's own shape: the pipeline field is named `status` and the
+    // field answering to it has been called `lead_status` since a rename.
+    pipelineField: 'status',
+    fields: [
+      field({ name: 'kyc_status', sequence: 0 }),
+      field({ name: 'contact_type', sequence: 3, config: { listSubtitle: 1 } }),
+      field({ name: 'lead_status', columnName: 'status', sequence: 7 }),
+    ],
+  };
+
+  it('asks for the line under the name and the stage chip beside it', () => {
+    expect(withQueueSubtitle(['full_name'], leads))
+      .toEqual(['full_name', 'contact_type', 'lead_status']);
+  });
+
+  it('never asks twice for a column the list already has', () => {
+    expect(withQueueSubtitle(['full_name', 'lead_status'], leads))
+      .toEqual(['full_name', 'lead_status', 'contact_type']);
+  });
+
+  it("takes the admin's own list over the flagged fields", () => {
+    expect(withQueueSubtitle(['full_name'], leads, ['kyc_status']))
+      .toEqual(['full_name', 'kyc_status', 'lead_status']);
+  });
+
+  it('leaves the server defaults alone', () => {
+    // Undefined means "whatever the server sends"; narrowing it to three
+    // fields would empty the table.
+    expect(withQueueSubtitle(undefined, leads)).toBeUndefined();
   });
 });

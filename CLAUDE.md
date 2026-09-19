@@ -1342,6 +1342,26 @@ knowing:
   under the date and ending where it ends. Two chips on two lines with two different right
   edges is what makes a queue look ragged. A row with no follow-up prints a dash in the
   date's place, so the status stays on its own line rather than jumping up one.
+  **Which field that status is, is `pipelineFieldOf` and nothing else** — Lead Status on a
+  contact, Property Status on a unit, found by name *or column* because production's leads
+  module says `status` and has called that field `lead_status` since a rename. It briefly
+  fell back to "the first field whose name contains status", and both modules carry others
+  — `kyc_status` on a contact, `possession_status` on a unit, each empty on nearly every
+  record. A guess that lands on one of those shows a queue of blanks, which reads as the
+  feature being broken rather than as the wrong field being read. There is no fallback now:
+  a module with no pipeline field has no stage to show.
+  Its value is requested as a column too (`withQueueSubtitle`), for the same reason the
+  subtitle is — a row carries only what the list asked for.
+  **And it is a `Badge`, not a tint computed in this file.** It used to paint the admin's
+  raw hex as text on a 12% wash of itself, which is the pattern the Conventions section
+  names: that lands around 2–3:1, so how readable a status came out depended entirely on
+  which colour somebody had picked for it. `Badge` fills the chip and `lib/color.ts`
+  guarantees the pair clears AA in both themes.
+  **What is not established:** the owner reported the chip missing from production on
+  19 September, and it could not be reproduced here — a local database reshaped to
+  production's exact field naming still drew it. So the fixes above are the two things that
+  *could* produce a blank (the wrong field, or an unrequested column) rather than a
+  diagnosis of what did.
 * **A checkbox beside the module's name** ticks everything on the page, which is what the
   bulk-edit bar the list already carries needs in order to appear. There was no way to make
   a selection from this view at all.
