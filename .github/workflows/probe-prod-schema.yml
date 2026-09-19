@@ -37,6 +37,17 @@ jobs:
           psql "$PROD_DATABASE_URL" -tAc \
             "SELECT name FROM ipy_migration ORDER BY name DESC LIMIT 12;"
           echo
+          # The messaging tables, because a send that fails with 42703 —
+          # "unknown field referenced" — is a column this repo has and
+          # production does not, and there is no way to tell which from here.
+          for t in ipy_message ipy_conversation ipy_channel_optout ipy_campaign; do
+            echo "=== $t columns ==="
+            psql "$PROD_DATABASE_URL" -tAc \
+              "SELECT coalesce(string_agg(column_name, ', ' ORDER BY column_name), '(no such table)')
+                 FROM information_schema.columns WHERE table_name = '$t';"
+            echo
+          done
+
           for t in ipy_e_properties ipy_e_leads; do
             echo "=== $t columns ==="
             psql "$PROD_DATABASE_URL" -tAc \
