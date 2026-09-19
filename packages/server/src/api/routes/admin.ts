@@ -1122,6 +1122,26 @@ async function testIntegration(provider: string): Promise<{ ok: boolean; message
         const { testGoogleRcs } = await import('../../integrations/rcs/google.js');
         return testGoogleRcs();
       }
+      /*
+        Every WhatsApp Business provider, through the adapter that owns it.
+
+        Without this the setup wizard fell to "Saved and switched on." — which
+        is what the comment beside that line warns against in as many words:
+        saved is not working. The owner connected WhatsMarketing, read
+        "connected", and nothing had asked WhatsMarketing anything. Each
+        adapter already has a `testConnection` that makes a real, cheap call;
+        this is what lets somebody press the button.
+      */
+      case 'whatsapp_meta':
+      case 'whatsapp_aisensy':
+      case 'whatsapp_gupshup':
+      case 'whatsapp_whatsmarketing': {
+        const { businessProvider } = await import('../../integrations/whatsapp/business/registry.js');
+        const adapter = businessProvider(provider);
+        if (!adapter) return { ok: false, message: 'That WhatsApp provider is not known.' };
+        const answer = await adapter.testConnection();
+        return { ok: answer.ok, message: answer.detail };
+      }
       default:
         return { ok: false, message: 'This provider does not support a connectivity test — save the settings and check the webhook logs instead.' };
     }

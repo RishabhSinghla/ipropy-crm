@@ -210,6 +210,15 @@ const TESTABLE = new Set([
   'smtp', 'imap', 'facebook_leads',
   'anthropic', 'ai_gemini', 'ai_groq', 'ai_openrouter', 'ai_openai',
   'stt', 'onedrive', 'sentry', 'fcm', 'zapier', 'google_rcs',
+  /*
+    The WhatsApp providers. Leaving them out is what let the setup wizard
+    finish on "Saved and switched on." — the branch for a provider with no
+    test — so the owner connected WhatsMarketing, read "connected", and
+    nothing had asked WhatsMarketing anything at all. Each adapter has a real
+    `testConnection`; a provider added here without one gets the honest
+    "does not support a connectivity test" from the server instead.
+  */
+  'whatsapp_meta', 'whatsapp_aisensy', 'whatsapp_gupshup', 'whatsapp_whatsmarketing',
 ]);
 
 /**
