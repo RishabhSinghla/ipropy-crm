@@ -1,12 +1,13 @@
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Clock, MessageCircle, Send } from 'lucide-react';
+import { Clock, MessageCircle, Paperclip, Send } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
 import { formatDateTime } from '@ipropy/shared';
 import { Modal, Spinner } from './ui';
 import { composerMode, whyNoTextBox } from '../lib/whatsapp';
+import { readMessageMedia, WhatsAppMedia } from './WhatsAppMedia';
 
 /**
  * Writing a WhatsApp message without leaving the record.
@@ -123,6 +124,31 @@ function ComposerDialog({ to, module, recordId, recordLabel, onClose }: {
     if (!canText && !templateId && approved.length) setTemplateId(approved[0].id);
   }, [canText, templateId, approved]);
 
+  /*
+    A file goes into the CRM first and is sent from there — the same road the
+    Chats screen takes. The CRM's copy is what the conversation, the contact's
+    Files tab and any future provider read; a file that only ever lived at a
+    vendor is a broken square a year from now.
+  */
+  const sendFile = async (file: File): Promise<void> => {
+    if (sendingRef.current) return;
+    sendingRef.current = true;
+    setSending(true);
+    try {
+      const uploaded = await api.uploadFile(file, recordId, module);
+      await api.waBizSend({ to, attachmentId: uploaded.id, text: text.trim() || undefined, recordId });
+      toast.success('Sent on WhatsApp', `${recordLabel} will see it on ${to}.`);
+      setText('');
+      void queryClient.invalidateQueries({ queryKey: ['wa-biz'] });
+      onClose();
+    } catch (err) {
+      toast.error('Could not send that file', (err as Error).message);
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
+    }
+  };
+
   const send = async (): Promise<void> => {
     if (sendingRef.current) return;
     sendingRef.current = true;
@@ -159,6 +185,27 @@ function ComposerDialog({ to, module, recordId, recordLabel, onClose }: {
       footer={(
         <>
           <button className="btn-secondary" onClick={onClose} disabled={sending}>Close</button>
+          {canText && (
+            <label
+              className={cn('btn-secondary cursor-pointer', sending && 'pointer-events-none opacity-40')}
+              title="Send a photo or document"
+            >
+              <Paperclip className="h-3.5 w-3.5" />
+              <input
+                type="file"
+                className="hidden"
+                aria-label="Send a photo or document"
+                disabled={sending}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  // Cleared before anything async, so the same file picked
+                  // twice still fires a change and a retry is possible.
+                  event.target.value = '';
+                  if (file) void sendFile(file);
+                }}
+              />
+            </label>
+          )}
           <button
             className="btn-primary"
             disabled={sending || (canText ? !text.trim() : !templateId || Boolean(preview?.missing.length))}
@@ -184,7 +231,13 @@ function ComposerDialog({ to, module, recordId, recordLabel, onClose }: {
                           : 'bg-white dark:bg-slate-900',
                       )}
                     >
-                      <p className="whitespace-pre-wrap">{String(message.body ?? '')}</p>
+                      {(() => {
+                        const media = readMessageMedia(message.media);
+                        return media ? (
+                          <div className="mb-1"><WhatsAppMedia media={media} dark={message.direction === 'outbound'} /></div>
+                        ) : null;
+                      })()}
+                      {Boolean(message.body) && <p className="whitespace-pre-wrap">{String(message.body)}</p>}
                       <p className="mt-0.5 text-2xs text-muted">{formatDateTime(String(message.created_at))}</p>
                     </div>
                   ))}

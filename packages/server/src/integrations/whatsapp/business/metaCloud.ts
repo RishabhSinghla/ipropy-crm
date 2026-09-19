@@ -22,7 +22,8 @@ import { getIntegrationConfig, getIntegrationCredentials } from '../../../core/s
 import { logger } from '../../../utils/logger.js';
 import { NotSupportedError, type SendOutcome, type WhatsAppCapability } from '../providers/types.js';
 import type {
-  InboundMessage, SendTemplateRequest, StatusUpdate, TemplateSummary,
+  InboundMessage, MediaBytes, MediaRef, SendMediaByIdRequest, SendTemplateRequest,
+  StatusUpdate, TemplateSummary,
   WebhookBatch, WebhookRequest, WebhookVerification, WhatsAppBusinessProvider,
 } from './types.js';
 import { createHmac, timingSafeEqual } from 'node:crypto';
@@ -87,6 +88,27 @@ function sentId(answer: Record<string, unknown>): string {
   const id = messages?.[0]?.id;
   if (!id) throw new Error('WhatsApp accepted the message but returned no id.');
   return id;
+}
+
+/**
+ * A raw fetch against the graph, for the two calls that are not JSON.
+ *
+ * `call()` above parses a JSON answer and sends a JSON body. Media does
+ * neither: going out it is multipart, coming back it is the file itself.
+ */
+async function raw(
+  conf: MetaConfig, url: string, init?: { method: 'POST'; body: FormData },
+): Promise<Response> {
+  const res = await fetch(url, {
+    method: init?.method ?? 'GET',
+    headers: { authorization: `Bearer ${conf.token}` },
+    body: init?.body,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`WhatsApp refused that (${res.status})${text ? `: ${text.slice(0, 200)}` : ''}`);
+  }
+  return res;
 }
 
 export const metaCloudProvider: WhatsAppBusinessProvider = {
@@ -156,6 +178,66 @@ export const metaCloudProvider: WhatsAppBusinessProvider = {
       body: { messaging_product: 'whatsapp', to: to.replace(/\D/g, ''), type, [type]: media },
     });
     return { providerMessageId: sentId(answer), status: 'sent' };
+  },
+
+  mediaTransport: 'upload',
+
+  async uploadMedia(file: MediaBytes): Promise<string> {
+    const conf = config();
+    if (!conf) throw new Error('The WhatsApp Business connection is not set up.');
+    const form = new FormData();
+    form.set('messaging_product', 'whatsapp');
+    form.set('type', file.mimeType);
+    // A Blob, not the Buffer: undici needs a real file part with a name, and
+    // a bare Buffer is sent as a plain field that Meta answers 400 to.
+    form.set('file', new Blob([new Uint8Array(file.data)], { type: file.mimeType }), file.filename ?? 'file');
+    const res = await raw(conf, `${conf.baseUrl}/${conf.version}/${conf.phoneNumberId}/media`, {
+      method: 'POST', body: form,
+    });
+    const answer = await res.json() as { id?: string };
+    if (!answer.id) throw new Error('WhatsApp took the file but returned no id for it.');
+    return answer.id;
+  },
+
+  async sendMediaById({ to, type, mediaId, caption, filename }: SendMediaByIdRequest): Promise<SendOutcome> {
+    const conf = config();
+    if (!conf) throw new Error('The WhatsApp Business connection is not set up.');
+    const media: Record<string, unknown> = { id: mediaId };
+    if (caption && type !== 'audio') media.caption = caption;
+    if (filename && type === 'document') media.filename = filename;
+    const answer = await call(conf, `${conf.phoneNumberId}/messages`, {
+      method: 'POST',
+      body: { messaging_product: 'whatsapp', to: to.replace(/\D/g, ''), type, [type]: media },
+    });
+    return { providerMessageId: sentId(answer), status: 'sent' };
+  },
+
+  async fetchMedia(ref: MediaRef): Promise<MediaBytes | null> {
+    const conf = config();
+    if (!conf) return null;
+    if (!ref.id && !ref.link) return null;
+    /*
+      Two hops, and the second one still needs the token. Meta hands back a
+      lookaside URL that looks public and is not — fetching it without the
+      Authorization header answers 401, which reads exactly like a wrong
+      access token rather than a missing header.
+    */
+    let url = ref.link ?? '';
+    let mimeType = ref.mimeType ?? '';
+    let filename = ref.filename ?? null;
+    if (ref.id) {
+      const found = await call(conf, ref.id, { method: 'GET' });
+      url = String(found.url ?? '');
+      mimeType = String(found.mime_type ?? mimeType);
+      if (!url) return null;
+    }
+    const res = await raw(conf, url);
+    const data = Buffer.from(await res.arrayBuffer());
+    return {
+      data,
+      mimeType: mimeType || res.headers.get('content-type') || 'application/octet-stream',
+      filename,
+    };
   },
 
   async sendTemplate({ to, templateName, language, params, headerMedia }: SendTemplateRequest): Promise<SendOutcome> {

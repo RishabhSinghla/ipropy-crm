@@ -1208,7 +1208,7 @@ export const api = {
     messages: Record<string, unknown>[]; alsoViewing: string[];
   }>(`/api/whatsapp-business/conversations/${conversationId}/messages`),
   waBizSend: (data: {
-    to: string; text?: string; recordId?: string;
+    to: string; text?: string; recordId?: string; attachmentId?: string;
     template?: { name: string; language: string; params: string[] };
   }) => post<{ messageId: string; conversationId: string; status: string }>('/api/whatsapp-business/send', data),
   waBizRead: (id: string) => post<{ ok: true }>(`/api/whatsapp-business/conversations/${id}/read`, {}),

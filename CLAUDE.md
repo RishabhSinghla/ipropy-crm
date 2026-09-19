@@ -1058,7 +1058,74 @@ worth repeating: a component that imports the app's store cannot be loaded by a 
 test at all, because the store reads `localStorage` as it is constructed. Importing one
 helper out of a component pulled the whole store in and broke an unrelated suite.
 
-**Still to build, in his order:** media, property sharing and follow-ups from a chat,
+## Photos, documents and voice notes
+
+**The rule this phase exists for is one line of his specification: the CRM's history must
+never depend on the provider's dashboard.** A webhook hands over a media id that expires,
+or a URL that needs the account's own token. A CRM that stores either has a photo album
+that empties itself — the picture a customer sent is gone the day the business changes
+vendor, silently, with nothing that looks like an error until somebody opens an old chat
+and finds a broken square.
+
+So an inbound file is fetched **once, now**, and stored as an ordinary `ipy_attachment`
+with `category = 'whatsapp'` — the same row a file dragged onto the record gets. It
+appears on the contact's Files tab, it gets the image pipeline's derivatives, and it
+survives every vendor decision made afterwards. The provider's own id stays *beside* the
+CRM's in `ipy_message.media`, never instead of it: it is what a support conversation with
+the vendor is about, and it costs one key.
+
+`keepInboundMedia` runs **after** the message row is committed and never throws
+(`business/media.ts`). Collecting a 15MB video is a round trip to the vendor, and a
+provider that does not hear a prompt 200 sends the whole delivery again — so a fetch that
+fails leaves the message and its caption standing rather than losing both and earning a
+retry that delivers the conversation twice. Pinned by
+`tests/integration/whatsappMedia.test.ts`.
+
+**Going out, the two halves of the world disagree and neither is a choice:**
+
+* **Meta takes an upload.** `uploadMedia` posts the bytes as multipart, Meta answers with
+  its own id, and `sendMediaById` sends that. Nothing of the customer's is published. Two
+  traps: the part must be a real `Blob` with a name (a bare Buffer is sent as a plain
+  field and answered 400), and the lookaside URL Meta hands back for a *download* still
+  needs the Authorization header — fetching it without one answers 401, which reads
+  exactly like a wrong access token rather than a missing header.
+* **Every reseller fetches a link** and none of them offers an upload. So the CRM has to
+  publish the file where they can reach it: `GET /api/public/whatsapp-media/:id`, signed
+  with an HMAC over the id **and** the expiry so neither can be edited, valid fifteen
+  minutes, `Cache-Control: private, no-store`, and through `applyFileSecurityHeaders` like
+  every other byte-serving route. Not a row in a table — there is nothing to look up later
+  and nothing to revoke that expiry does not already cover. It is a real exposure for that
+  window, it is the vendors' design rather than this one's, and it is the strongest
+  argument for Meta direct of the four.
+
+**A file is named by attachment id, never by URL.** `POST /send` takes `attachmentId`;
+a caller who could name any link could make the CRM fetch and republish whatever it can
+reach. The sender must also be able to *view* the record the file hangs on
+(`assertMaySendFile`), which is what stops a rep forwarding a document off a lead they
+cannot see.
+
+**WhatsApp's ceilings are lower than people expect** and are checked before the provider
+is called: 5MB an image, 16MB audio or video, 100MB a document. A file over them is
+refused with its real size named — "will not carry a video over 16MB, and this one is
+90MB" — rather than failing two minutes later as a vendor error code. The limits are from
+knowledge, not from Meta's page (blocked by this container's proxy), and being slightly
+low is the cheap direction to be wrong in.
+
+**One renderer for all three screens** (`components/WhatsAppMedia.tsx`): the Chats inbox,
+the contact's WhatsApp tab and the composer. Three copies drift, and the way they drift is
+that one keeps rendering the vendor's expiring URL while the others moved to the CRM's
+copy — a photo that shows on one screen and is broken on another, months later, for
+reasons nobody can reconstruct. `readMessageMedia` (in `lib/whatsapp.ts`, so a `node` test
+can reach it without the store) returns null without an `attachmentId` for the same
+reason: a row carrying only the vendor's id renders as nothing rather than as a link that
+works today.
+
+**Never built and worth knowing:** nothing here has been exercised against a real
+provider, because none is connected. What is proved is the storing, the signing, the size
+refusal and both transports against a stub
+(`tests/integration/whatsappMedia.test.ts`, 8 tests).
+
+**Still to build, in his order:** property sharing and follow-ups from a chat,
 campaigns, reports.
 
 **The avatar on the row stayed, and a percentage chip that replaced it was rolled back the

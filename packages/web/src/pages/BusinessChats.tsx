@@ -2,13 +2,14 @@ import { type JSX, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
-  CheckCheck, CircleUser, Clock, Inbox, MessageCircle, Search, Send, UserPlus,
+  CheckCheck, CircleUser, Clock, Inbox, MessageCircle, Paperclip, Search, Send, UserPlus,
 } from 'lucide-react';
 import { relativeTime } from '@ipropy/shared';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { Avatar, EmptyState, Select, Skeleton, Spinner } from '../components/ui';
+import { readMessageMedia, WhatsAppMedia } from '../components/WhatsAppMedia';
 
 /**
  * The team's WhatsApp, on the business number.
@@ -47,6 +48,8 @@ interface BizMessage {
   route: string | null;
   sent_by_name: string | null;
   error_message: string | null;
+  /** Loose until `readMessageMedia` has looked at it — it is a JSONB column. */
+  media: unknown;
 }
 
 export default function BusinessChats(): JSX.Element {
@@ -86,13 +89,33 @@ export default function BusinessChats(): JSX.Element {
   };
 
   const send = useMutation({
-    mutationFn: (text: string) => api.waBizSend({
+    mutationFn: (input: { text?: string; attachmentId?: string }) => api.waBizSend({
       to: active!.handle,
-      text,
+      text: input.text,
+      attachmentId: input.attachmentId,
       recordId: active!.recordId ?? undefined,
     }),
     onSuccess: () => { setDraft(''); refresh(); },
     onError: (err: Error) => toast.error('Could not send', err.message),
+  });
+
+  /*
+    A file goes into the CRM first and is sent from there.
+
+    Never straight to the provider: the CRM's own copy is what the
+    conversation, the contact's Files tab and every future vendor read, and a
+    file that only ever existed at a vendor is a broken square a year from now.
+  */
+  const attach = useMutation({
+    mutationFn: async (file: File) => {
+      const uploaded = await api.uploadFile(
+        file,
+        active?.recordId ?? undefined,
+        active?.recordModule ?? undefined,
+      );
+      return send.mutateAsync({ text: draft.trim() || undefined, attachmentId: uploaded.id });
+    },
+    onError: (err: Error) => toast.error('Could not send that file', err.message),
   });
 
   /*
@@ -264,7 +287,17 @@ export default function BusinessChats(): JSX.Element {
                       ? 'rounded-br-sm bg-emerald-600 text-white'
                       : 'rounded-bl-sm bg-white text-slate-800 dark:bg-slate-800 dark:text-slate-100',
                   )}>
-                    <p className="whitespace-pre-wrap break-words">{message.body ?? `[${message.type}]`}</p>
+                    {(() => {
+                      const media = readMessageMedia(message.media);
+                      return media ? (
+                        <div className="mb-1 min-w-[12rem]">
+                          <WhatsAppMedia media={media} dark={message.direction === 'outbound'} />
+                        </div>
+                      ) : null;
+                    })()}
+                    {message.body && message.body !== `[${message.type}]` && (
+                      <p className="whitespace-pre-wrap break-words">{message.body}</p>
+                    )}
                     <p className={cn(
                       'mt-1 flex items-center gap-1 text-2xs',
                       message.direction === 'outbound' ? 'text-emerald-100' : 'text-slate-400',
@@ -337,11 +370,34 @@ export default function BusinessChats(): JSX.Element {
                 </div>
               )}
               <div className="flex items-end gap-2">
+                <label
+                  className={cn(
+                    'btn-ghost btn-sm shrink-0 cursor-pointer',
+                    (!active.windowOpen || attach.isPending) && 'pointer-events-none opacity-40',
+                  )}
+                  title="Send a photo or document"
+                >
+                  {attach.isPending ? <Spinner className="h-4 w-4" /> : <Paperclip className="h-4 w-4" />}
+                  <input
+                    type="file"
+                    className="hidden"
+                    aria-label="Send a photo or document"
+                    disabled={!active.windowOpen || attach.isPending}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      // Cleared straight away so picking the same file twice
+                      // still fires a change, which is how a re-send after a
+                      // failure otherwise does nothing at all.
+                      event.target.value = '';
+                      if (file) attach.mutate(file);
+                    }}
+                  />
+                </label>
                 <textarea
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
                   onKeyDown={(event) => {
-                    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && draft.trim()) send.mutate(draft.trim());
+                    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && draft.trim()) send.mutate({ text: draft.trim() });
                   }}
                   disabled={!active.windowOpen}
                   placeholder={active.windowOpen ? 'Type a reply… ⌘↵ to send' : 'Outside the 24-hour window'}
@@ -350,7 +406,7 @@ export default function BusinessChats(): JSX.Element {
                 <button
                   className="btn-primary btn-sm"
                   disabled={!draft.trim() || !active.windowOpen || send.isPending}
-                  onClick={() => send.mutate(draft.trim())}
+                  onClick={() => send.mutate({ text: draft.trim() })}
                 >
                   {send.isPending ? <Spinner className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />} Send
                 </button>

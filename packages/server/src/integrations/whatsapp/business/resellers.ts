@@ -30,11 +30,39 @@ import { getIntegrationConfig, getIntegrationCredentials } from '../../../core/s
 import { logger } from '../../../utils/logger.js';
 import { NotSupportedError, type SendOutcome, type WhatsAppCapability } from '../providers/types.js';
 import type {
-  InboundMessage, SendTemplateRequest, StatusUpdate, TemplateSummary,
+  InboundMessage, MediaBytes, MediaRef, SendTemplateRequest, StatusUpdate, TemplateSummary,
   WebhookBatch, WebhookRequest, WebhookVerification, WhatsAppBusinessProvider,
 } from './types.js';
 import { countVariables, metaCloudProvider } from './metaCloud.js';
 import { timingSafeEqual } from 'node:crypto';
+
+/**
+ * Collect an inbound file from a plain URL.
+ *
+ * Every reseller here hands a link rather than an id to exchange, and the link
+ * is theirs — it stops working when the account moves or the vendor expires
+ * it. So the CRM fetches it once, now, and keeps its own copy; the link is
+ * never what the conversation stores.
+ *
+ * Capped, because a webhook is not a place to discover somebody has sent a
+ * 300MB file: the fetch is abandoned rather than held in memory.
+ */
+const INBOUND_LIMIT = 32 * 1024 * 1024;
+
+async function fetchByLink(ref: MediaRef, headers?: Record<string, string>): Promise<MediaBytes | null> {
+  if (!ref.link) return null;
+  const res = await fetch(ref.link, { headers });
+  if (!res.ok) return null;
+  const declared = Number(res.headers.get('content-length') ?? 0);
+  if (declared > INBOUND_LIMIT) return null;
+  const data = Buffer.from(await res.arrayBuffer());
+  if (data.byteLength > INBOUND_LIMIT) return null;
+  return {
+    data,
+    mimeType: ref.mimeType || res.headers.get('content-type') || 'application/octet-stream',
+    filename: ref.filename ?? null,
+  };
+}
 
 export const AISENSY_PROVIDER = 'whatsapp_aisensy';
 export const GUPSHUP_PROVIDER = 'whatsapp_gupshup';
@@ -100,6 +128,13 @@ export const aisensyProvider: WhatsAppBusinessProvider = {
     throw new NotSupportedError(AISENSY_PROVIDER, 'text');
   },
   async sendMedia() { throw new NotSupportedError(AISENSY_PROVIDER, 'media'); },
+
+  mediaTransport: 'link',
+  async uploadMedia() { throw new NotSupportedError(AISENSY_PROVIDER, 'media'); },
+  async sendMediaById() { throw new NotSupportedError(AISENSY_PROVIDER, 'media'); },
+  // Inbound is a different question from outbound: AiSensy cannot *send* a
+  // file through its campaign API, and a customer can still send one in.
+  async fetchMedia(ref: MediaRef) { return fetchByLink(ref); },
 
   async sendTemplate({ to, templateName, params, headerMedia }: SendTemplateRequest): Promise<SendOutcome> {
     const key = getIntegrationCredentials(AISENSY_PROVIDER)?.apiKey;
@@ -203,6 +238,15 @@ export const gupshupProvider: WhatsAppBusinessProvider = {
           : { type: 'file', url: link, filename: filename ?? 'document' };
     return gupshupSend(to, message);
   },
+
+  mediaTransport: 'link',
+  async uploadMedia() {
+    // Gupshup fetches a URL; it publishes no upload endpoint, so the CRM
+    // publishes the file on a signed, short-lived link instead.
+    throw new NotSupportedError(GUPSHUP_PROVIDER, 'media');
+  },
+  async sendMediaById() { throw new NotSupportedError(GUPSHUP_PROVIDER, 'media'); },
+  async fetchMedia(ref: MediaRef) { return fetchByLink(ref); },
 
   async sendTemplate({ to, templateName, params }: SendTemplateRequest): Promise<SendOutcome> {
     const creds = getIntegrationCredentials(GUPSHUP_PROVIDER);
@@ -422,6 +466,27 @@ export function cloudCompatibleProvider(provider: string, label: string): WhatsA
           components: params.length ? [{ type: 'body', parameters: params.map((text) => ({ type: 'text', text })) }] : [],
         },
       });
+    },
+    mediaTransport: 'link',
+    async uploadMedia() { throw new NotSupportedError(provider, 'media'); },
+    async sendMediaById() { throw new NotSupportedError(provider, 'media'); },
+    async fetchMedia(ref: MediaRef) {
+      /*
+        This adapter speaks the Cloud API's shape, so its webhooks carry a
+        media *id* rather than a link — and the id is exchanged for a URL that
+        still needs the account's own token. Both hops go to the reseller's
+        own host, never to Meta's.
+      */
+      const c = conf();
+      if (!c) return null;
+      const auth = { authorization: `Bearer ${c.token}` };
+      if (ref.link) return fetchByLink(ref, auth);
+      if (!ref.id) return null;
+      const found = await fetch(`${c.baseUrl}/${c.version}/${ref.id}`, { headers: auth });
+      if (!found.ok) return null;
+      const answer = await found.json() as { url?: string; mime_type?: string };
+      if (!answer.url) return null;
+      return fetchByLink({ ...ref, link: answer.url, mimeType: ref.mimeType || answer.mime_type }, auth);
     },
     async listTemplates() { throw new NotSupportedError(provider, 'templateSync'); },
     async markRead() { throw new NotSupportedError(provider, 'markRead'); },

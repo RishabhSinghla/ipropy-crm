@@ -25,6 +25,7 @@ import {
 } from '../../core/sharing/propertyShare.js';
 import { photoOrderBy } from '../../core/media/ordering.js';
 import { applyFileSecurityHeaders } from '../../core/media/serving.js';
+import { mediaLinkValid } from '../../integrations/whatsapp/business/media.js';
 import { publicPropertyStatuses } from '../../core/settings/scoring.js';
 
 export const publicRouter = Router();
@@ -687,6 +688,49 @@ publicRouter.get('/media/:attachmentId', asyncHandler(async (req, res) => {
   if (!data) throw new NotFoundError('File is missing from storage');
   applyFileSecurityHeaders(res, mimeType, file.file_name, false);
   res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.send(data);
+}));
+
+// ---------------------------------------------------------------------------
+// One file, for one WhatsApp provider, for fifteen minutes.
+//
+// Every Indian reseller fetches media from a URL and none of them offers an
+// upload, so a CRM that wants to send a floor plan on WhatsApp has to publish
+// it somewhere they can reach. That is a real exposure and this route is
+// shaped to make it as small as it can be: the link names exactly one
+// attachment, it is signed over the id *and* its expiry so neither can be
+// edited, and it stops working shortly after it is minted. Meta direct never
+// uses this at all — it takes the bytes instead (see business/media.ts).
+//
+// Deliberately not the `/public/media/:id` route above: that one is gated on
+// the owning property being published, which is the wrong question here and
+// would refuse every document on a contact.
+// ---------------------------------------------------------------------------
+
+publicRouter.get('/whatsapp-media/:attachmentId', asyncHandler(async (req, res) => {
+  if (!mediaLinkValid(req.params.attachmentId, req.query.exp, req.query.sig)) {
+    // The same 404 for a wrong signature, an expired link and a file that was
+    // never there — three different facts that are nobody's business to tell
+    // apart from outside.
+    throw new NotFoundError('File not found');
+  }
+
+  const file = await db.queryOne<{ storage_key: string; file_name: string; mime_type: string }>(
+    `SELECT storage_key, file_name, mime_type FROM ipy_attachment WHERE id = $1`,
+    [req.params.attachmentId],
+  );
+  if (!file) throw new NotFoundError('File not found');
+
+  const data = await getDriver().then((driver) => driver.read(file.storage_key));
+  if (!data) throw new NotFoundError('File not found');
+  // The same headers every other byte-serving route carries — a stored mime
+  // type is whatever the uploader declared, and an SVG served raw from this
+  // origin runs its scripts. `tests/publicFileHeaders.test.ts` fails if a
+  // route appears without this line, which is how this one came to have it.
+  applyFileSecurityHeaders(res, file.mime_type, file.file_name, false);
+  // Private: a provider fetches it once, and no proxy in between should keep
+  // a copy of a customer's document after the link has expired.
+  res.setHeader('Cache-Control', 'private, no-store');
   res.send(data);
 }));
 

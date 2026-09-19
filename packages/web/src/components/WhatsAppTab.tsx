@@ -4,6 +4,7 @@ import { MessageCircle, Send } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
+import { readMessageMedia, WhatsAppMedia } from './WhatsAppMedia';
 import { EmptyState, Skeleton, Spinner } from './ui';
 
 /**
@@ -43,12 +44,15 @@ export function WhatsAppTab({ module, recordId, mobile }: {
         id: String(row.id),
         direction: row.direction as 'inbound' | 'outbound',
         body: (row.body as string | null) ?? null,
+        media: row.media,
         createdAt: String(row.created_at),
         sentVia: row.route === 'agent'
           ? (row.sent_by_name as string | null) ?? 'a linked phone'
           : 'the business number',
       }))
-      : api.whatsappContactMessages(module, recordId)),
+      // The agent route carries no media yet, so its rows are widened to the
+      // same shape rather than the renderer learning two of them.
+      : (await api.whatsappContactMessages(module, recordId)).map((row) => ({ ...row, media: null }))),
   });
 
   const send = useMutation({
@@ -91,9 +95,19 @@ export function WhatsAppTab({ module, recordId, mobile }: {
                   : 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-100',
               )}
             >
-              <p className="whitespace-pre-wrap break-words">
-                {m.body ?? <span className="italic opacity-70">Attachment</span>}
-              </p>
+              {(() => {
+                const media = readMessageMedia(m.media);
+                return media ? (
+                  <div className="mb-1 min-w-[12rem]">
+                    <WhatsAppMedia media={media} dark={m.direction === 'outbound'} />
+                  </div>
+                ) : null;
+              })()}
+              {(m.body || !readMessageMedia(m.media)) && (
+                <p className="whitespace-pre-wrap break-words">
+                  {m.body ?? <span className="italic opacity-70">Attachment</span>}
+                </p>
+              )}
               <p className={cn('mt-1 text-[10px]', m.direction === 'outbound' ? 'text-emerald-50/80' : 'text-muted')}>
                 {new Date(m.createdAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
                 {/* Which number it left from. The one thing a shared inbox

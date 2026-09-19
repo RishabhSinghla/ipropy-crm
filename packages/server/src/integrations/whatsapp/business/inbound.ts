@@ -26,6 +26,8 @@ import { bus } from '../../../core/events/bus.js';
 import { logger } from '../../../utils/logger.js';
 import { notifyMany } from '../../../core/notifications/index.js';
 import { matchContact, matchKey } from '../agent/matchContact.js';
+import { businessProvider } from './registry.js';
+import { keepInboundMedia } from './media.js';
 import type { InboundMessage, StatusUpdate } from './types.js';
 
 const MODULE = 'leads';
@@ -220,6 +222,26 @@ export async function receiveInbound(
   });
 
   if (!stored) return null;
+
+  /*
+    Collect the file, now that the message is safely written.
+
+    Outside the transaction on purpose: fetching a 15MB video is a round trip
+    to the vendor, and a provider that does not hear a prompt 200 sends the
+    whole delivery again. If it fails, the message and its caption still
+    stand — which is the right half to keep.
+  */
+  if (message.media) {
+    const adapter = businessProvider(provider);
+    if (adapter) {
+      await keepInboundMedia({
+        provider: adapter,
+        messageId: stored.messageId,
+        recordId: stored.recordId,
+        ref: message.media,
+      });
+    }
+  }
 
   // The rep whose lead this is, or every admin when nobody owns it. Through
   // `notify`, so it reaches the bell *and* the phone rather than only the bell.

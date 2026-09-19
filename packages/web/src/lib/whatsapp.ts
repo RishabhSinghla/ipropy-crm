@@ -39,3 +39,23 @@ export function whyNoTextBox(capabilities: string[], providerName: string | null
     ? 'WhatsApp only carries a free reply for 24 hours after the customer last wrote, and that has passed. An approved template can still go.'
     : `${providerName ?? 'This provider'} sends approved templates only.`;
 }
+
+export interface MessageMedia {
+  attachmentId?: string;
+  url?: string;
+  fileName?: string;
+  mimeType?: string;
+  size?: number;
+  /** What a customer typed under the picture. Rendered as the message body. */
+  caption?: string;
+}
+
+/** `media` off a message row, which is loose JSON until it is read. */
+export function readMessageMedia(value: unknown): MessageMedia | null {
+  if (!value || typeof value !== 'object') return null;
+  const media = value as MessageMedia;
+  // No attachment id means the file never made it into the CRM — an inbound
+  // collection that failed, or an old row from before this existed. Showing
+  // the vendor's link instead would be a square that breaks silently later.
+  return media.attachmentId ? media : null;
+}

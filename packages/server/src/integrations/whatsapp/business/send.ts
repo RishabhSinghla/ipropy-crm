@@ -21,6 +21,7 @@ import { logger } from '../../../utils/logger.js';
 import { requireCapability } from '../providers/types.js';
 import { matchKey } from '../agent/matchContact.js';
 import { activeBusinessProvider } from './registry.js';
+import { prepareOutgoingMedia } from './media.js';
 
 const MODULE = 'leads';
 
@@ -31,6 +32,13 @@ export interface BusinessSendInput {
   text?: string;
   /** An approved template, allowed at any time. */
   template?: { name: string; language: string; params: string[]; headerMedia?: { link: string; filename?: string } };
+  /**
+   * One of the CRM's own files, by attachment id — never a URL from the
+   * browser. A caller that could name any link could make the CRM fetch and
+   * republish anything it can reach, and the file a rep picked is already in
+   * the CRM anyway.
+   */
+  attachmentId?: string;
   recordId?: string | null;
 }
 
@@ -90,8 +98,9 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
   const conversation = await conversationFor(handle, input.recordId ?? null, input.userId);
 
   if (input.template) requireCapability(provider, 'templates');
+  if (input.attachmentId) requireCapability(provider, 'media');
   if (!input.template) {
-    requireCapability(provider, 'text');
+    requireCapability(provider, input.attachmentId ? 'media' : 'text');
     if (!conversation.windowOpen) {
       throw new BadRequestError(
         'This chat is outside WhatsApp\'s 24-hour window, so only an approved template can be sent.',
@@ -99,9 +108,21 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
     }
   }
 
+  /*
+    The provider is handed the file *before* the message row is written.
+
+    Uploading to Meta or minting a signed link is the part that fails — a file
+    too large for WhatsApp, storage that cannot find it — and failing here
+    leaves nothing behind. Doing it after the row would leave a message stuck
+    at 'queued' that nobody sent and nobody can retry.
+  */
+  const media = input.attachmentId
+    ? await prepareOutgoingMedia(provider, input.attachmentId)
+    : null;
+
   const body = input.template
     ? `[template: ${input.template.name}]`
-    : input.text ?? '';
+    : input.text ?? (media ? media.fileName : '');
 
   // Written first, on purpose: a provider that accepts and then times out on
   // the answer must not leave the customer holding a message the CRM never
@@ -109,17 +130,27 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
   const queued = await db.queryOne<{ id: string }>(
     `INSERT INTO ipy_message
        (conversation_id, direction, channel, type, body, status, provider, route, sent_by,
-        template_name, template_params)
-     VALUES ($1, 'outbound', 'whatsapp', $2, $3, 'queued', $4, 'business', $5, $6, $7)
+        template_name, template_params, media)
+     VALUES ($1, 'outbound', 'whatsapp', $2, $3, 'queued', $4, 'business', $5, $6, $7, $8)
      RETURNING id`,
     [
       conversation.id,
-      input.template ? 'template' : 'text',
+      input.template ? 'template' : media ? media.type : 'text',
       body,
       provider.name,
       input.userId,
       input.template?.name ?? null,
       input.template ? JSON.stringify(input.template.params) : null,
+      // The CRM's own file, named the same way an inbound one is, so one
+      // renderer draws both sides of the conversation.
+      media && input.attachmentId
+        ? JSON.stringify({
+          attachmentId: input.attachmentId,
+          url: `/api/files/${input.attachmentId}`,
+          fileName: media.fileName,
+          mimeType: media.mimeType,
+        })
+        : null,
     ],
   );
 
@@ -132,7 +163,28 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
         params: input.template.params,
         headerMedia: input.template.headerMedia ?? null,
       })
-      : await provider.sendMessage({ accountId: null, to: handle, text: input.text ?? '' });
+      : media
+        // Two ways in, because the vendors disagree and neither offers the
+        // other: Meta takes the bytes and gives an id back, every reseller
+        // fetches a link. `prepareOutgoingMedia` has already done whichever
+        // one this provider asked for.
+        ? media.mediaId
+          ? await provider.sendMediaById({
+            to: handle,
+            type: media.type,
+            mediaId: media.mediaId,
+            caption: input.text || undefined,
+            filename: media.fileName,
+          })
+          : await provider.sendMedia({
+            accountId: null,
+            to: handle,
+            type: media.type,
+            link: media.link!,
+            caption: input.text || undefined,
+            filename: media.fileName,
+          })
+        : await provider.sendMessage({ accountId: null, to: handle, text: input.text ?? '' });
 
     await transaction(async (conn) => {
       await conn.query(

@@ -90,10 +90,67 @@ export interface WebhookVerification {
   reason?: string;
 }
 
+/** Bytes, with enough about them to store and to serve them again. */
+export interface MediaBytes {
+  data: Buffer;
+  mimeType: string;
+  filename: string | null;
+}
+
+/** What a webhook gave us to find the file with: an id to exchange, or a link. */
+export interface MediaRef {
+  id?: string;
+  link?: string;
+  mimeType?: string;
+  filename?: string;
+}
+
+export interface SendMediaByIdRequest {
+  to: string;
+  type: 'image' | 'document' | 'audio' | 'video';
+  /** The provider's own id, from `uploadMedia`. Never the CRM's. */
+  mediaId: string;
+  caption?: string;
+  filename?: string;
+}
+
 export interface WhatsAppBusinessProvider extends WhatsAppProvider {
   readonly kind: 'business';
   /** The business number this connection sends from, once it is configured. */
   businessNumber(): Promise<string | null>;
+
+  /**
+   * How this provider wants the bytes of an outgoing file.
+   *
+   * `'upload'` — hand them over first and send its id back. Nothing of the
+   * customer's is exposed on the internet, so it is the better half of the
+   * two and Meta's own API works this way.
+   *
+   * `'link'` — the provider fetches a URL itself, which means the CRM has to
+   * publish the file somewhere the provider can reach, for as long as it takes
+   * them to collect it. Every reseller here works this way and none of them
+   * offers the other, so it is a constraint rather than a choice — the link is
+   * signed and short-lived because of it.
+   */
+  readonly mediaTransport: 'upload' | 'link';
+
+  /** Hand the provider the bytes, get its own id back. `'upload'` only. */
+  uploadMedia(file: MediaBytes): Promise<string>;
+
+  /** Send something already uploaded, by the provider's id. `'upload'` only. */
+  sendMediaById(request: SendMediaByIdRequest): Promise<SendOutcome>;
+
+  /**
+   * Fetch what an inbound message referred to, so the CRM keeps its own copy.
+   *
+   * This is the whole reason the method exists. A webhook hands over an id
+   * that expires or a URL that needs the account's own token, and a CRM that
+   * stores either of those has a photo album that empties itself — the
+   * customer's picture is gone the day the vendor changes, and the owner's
+   * specification says in as many words that the history must not depend on a
+   * provider's dashboard.
+   */
+  fetchMedia(ref: MediaRef): Promise<MediaBytes | null>;
 
   sendTemplate(request: SendTemplateRequest): Promise<SendOutcome>;
   listTemplates(): Promise<TemplateSummary[]>;

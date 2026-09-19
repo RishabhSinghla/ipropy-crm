@@ -12,8 +12,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { blockApiKey, getScope, getUser, requireAuth } from '../../middleware/auth.js';
-import { assertCapability } from '../../core/permissions/index.js';
-import { BadRequestError, NotFoundError } from '../../utils/errors.js';
+import { assertCapability, canAccessRecord } from '../../core/permissions/index.js';
+import { BadRequestError, ForbiddenError, NotFoundError } from '../../utils/errors.js';
 import {
   activeBusinessProvider, businessProvider, BUSINESS_PROVIDERS,
 } from '../../integrations/whatsapp/business/registry.js';
@@ -28,6 +28,30 @@ import {
 } from '../../integrations/whatsapp/business/templates.js';
 import { recordService } from '../../core/entity/recordService.js';
 import { threadForNumber } from '../../integrations/whatsapp/business/thread.js';
+
+/**
+ * May this person send that file to a customer?
+ *
+ * The file is the CRM's, so the CRM's own rules decide. A file attached to a
+ * record is readable by whoever may read the record — which is what stops a
+ * rep forwarding a document off a lead they cannot see. A file attached to
+ * nothing (an inbound photo from a number nobody has claimed yet) is decided
+ * by the conversation, and that is already gated by `whatsapp.send`.
+ */
+async function assertMaySendFile(req: Parameters<typeof getScope>[0], attachmentId: string): Promise<void> {
+  const file = await db.queryOne<{ record_id: string | null }>(
+    `SELECT record_id FROM ipy_attachment WHERE id = $1`, [attachmentId],
+  );
+  if (!file) throw new NotFoundError('That file is no longer here.');
+  if (!file.record_id) return;
+  const record = await db.queryOne<{ module_name: string }>(
+    `SELECT module_name FROM ipy_record WHERE id = $1`, [file.record_id],
+  );
+  if (!record) return;
+  if (!(await canAccessRecord(getScope(req), record.module_name, file.record_id, 'view'))) {
+    throw new ForbiddenError('You cannot send a file from a record you cannot open.');
+  }
+}
 
 export const whatsappBusinessRouter = Router();
 whatsappBusinessRouter.use(requireAuth, blockApiKey);
@@ -91,9 +115,20 @@ const sendSchema = z.object({
     params: z.array(z.string().max(500)).max(20).default([]),
     headerMedia: z.object({ link: z.string().url(), filename: z.string().max(200).optional() }).optional(),
   }).optional(),
+  /**
+   * A file already in the CRM, by id — never a URL. A caller who could name
+   * any link could make the CRM fetch and republish whatever it can reach.
+   */
+  attachmentId: z.string().uuid().optional(),
   recordId: z.string().uuid().optional(),
-}).refine((value) => Boolean(value.text) !== Boolean(value.template), {
-  message: 'Send either a message or a template, not both.',
+}).refine((value) => {
+  // A template is its own whole message: its wording is approved and frozen,
+  // so a caption or an attachment alongside it has nowhere to go.
+  if (value.template) return !value.text && !value.attachmentId;
+  // Otherwise: a message, a file, or a file with a caption.
+  return Boolean(value.text) || Boolean(value.attachmentId);
+}, {
+  message: 'Send a message, a file, or an approved template — not a template with either.',
 });
 
 whatsappBusinessRouter.post('/send', asyncHandler(async (req, res) => {
@@ -103,12 +138,14 @@ whatsappBusinessRouter.post('/send', asyncHandler(async (req, res) => {
   await assertCapability(user, 'whatsapp.send');
   const input = sendSchema.parse(req.body ?? {});
   if (!activeBusinessProvider()) throw new BadRequestError('No official WhatsApp provider is switched on.');
+  if (input.attachmentId) await assertMaySendFile(req, input.attachmentId);
 
   res.json(await sendOnBusinessNumber({
     userId: user.id,
     to: input.to,
     text: input.text,
     template: input.template,
+    attachmentId: input.attachmentId,
     recordId: input.recordId ?? null,
   }));
 }));
