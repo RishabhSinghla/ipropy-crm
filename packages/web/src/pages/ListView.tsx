@@ -920,11 +920,18 @@ export default function ListView(): JSX.Element {
           <div className="ml-auto flex shrink-0 items-center gap-2">
             {/* The number, not a footnote. It was the same muted 11px as the
                 labels around it; it is the one value on this row somebody
-                reads on purpose. */}
+                reads on purpose.
+
+                Two numbers since 19 September, on the owner's instruction:
+                how many are on the screen and how many the filter found. The
+                total on its own says nothing about how far down the page
+                anybody has got — "25 of 22,970" answers both at once. The
+                count is the rows actually delivered, not the page size, so
+                the last page says 20 rather than 25. */}
             <span className="hidden shrink-0 text-xs font-semibold text-slate-700 tnum xl:inline dark:text-slate-200">
               {isFetching && !data
                 ? 'Loading…'
-                : `${(data?.total ?? 0).toLocaleString('en-IN')} records`}
+                : `${rows.length.toLocaleString('en-IN')} of ${(data?.total ?? 0).toLocaleString('en-IN')} records`}
             </span>
 
             {/*
@@ -1213,8 +1220,6 @@ export default function ListView(): JSX.Element {
             sortBy={effectiveSort.sortBy}
             sortDir={effectiveSort.sortDir}
             onSort={(by, dir) => { setSortBy(by); setSortDir(dir); setPage(1); }}
-            taskQueue={taskQueuesEnabled ? taskQueue : null}
-            onTaskQueue={taskQueuesEnabled ? ((queue) => { setTaskQueue(queue); setPage(1); }) : undefined}
             onDelete={meta.permissions.delete
               ? (row) => { setSelected(new Set([row.id])); setSelectedAll(false); setConfirmDelete(true); }
               : undefined}

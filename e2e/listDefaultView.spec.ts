@@ -156,16 +156,21 @@ test('the desk offers the record, its fields and a way to delete it', async ({ p
   await expect(page.locator('button[title^="Delete "]')).toBeVisible();
 });
 
-test('the queue leads with a face, a bar and the module\'s own fact', async ({ page }) => {
+test('the queue is faces and facts, with the completeness bar off it', async ({ page }) => {
   await forgetTheChoice(page, '/leads');
   const desk = page.getByTestId('ipropy-workspace');
   await expect(desk).toBeVisible({ timeout: 30_000 });
 
   const queue = page.locator('aside').first();
 
-  // How complete the record is, as a line with the number beside it, rather
-  // than as a ring around the avatar.
-  await expect(queue.getByRole('img', { name: /Record \d+% complete/ }).first()).toBeVisible();
+  /*
+    How complete a record is belongs to the record, not to the queue — the
+    owner asked for it off this side. It is still on the open record, thinner
+    than it was, so the two assertions together say where it went rather than
+    only that it left.
+  */
+  await expect(queue.getByRole('img', { name: /Record \d+% complete/ })).toHaveCount(0);
+  await expect(page.locator('main').getByRole('img', { name: /Record \d+% complete/ })).toBeVisible();
 
   /*
     The chevron that used to sit at the end of every row is gone. It pointed
@@ -173,6 +178,30 @@ test('the queue leads with a face, a bar and the module\'s own fact', async ({ p
     owner's word for it was "irritating".
   */
   await expect(queue.locator('svg.lucide-chevron-right')).toHaveCount(0);
+});
+
+test('the record\'s actions sit on the name\'s own line', async ({ page }) => {
+  await forgetTheChoice(page, '/leads');
+  await expect(page.getByTestId('ipropy-workspace')).toBeVisible({ timeout: 30_000 });
+
+  /*
+    They had a row of their own above the name and the owner sent the
+    screenshot back. Measured rather than read off a class: the star's middle
+    has to fall inside the name's own line, which is the only thing that says
+    they are on it.
+  */
+  // The record pane's own header. `main` alone matches the app shell's too,
+  // whose first heading is not this record's name.
+  const header = page.getByTestId('ipropy-workspace').locator('main > header');
+  const name = header.getByRole('heading').first();
+  const star = header.locator('button[title$="starred"], button[title^="Star "]').first();
+  const nameBox = (await name.boundingBox())!;
+  const starBox = (await star.boundingBox())!;
+  const middle = starBox.y + starBox.height / 2;
+  expect(middle, 'the actions are above the name').toBeGreaterThan(nameBox.y - 8);
+  expect(middle, 'the actions are below the name').toBeLessThan(nameBox.y + nameBox.height + 8);
+  // And at the end of that line rather than in front of the name.
+  expect(starBox.x).toBeGreaterThan(nameBox.x);
 });
 
 test('the queue can be ticked in bulk and sorted from its own header', async ({ page }) => {
@@ -188,9 +217,15 @@ test('the queue can be ticked in bulk and sorted from its own header', async ({ 
   await expect(page.getByText(/selected/i).first()).toBeVisible();
   await all.uncheck();
 
-  // And the one menu that orders the queue, which is what replaced the bare
-  // word STATUS in that header.
+  /*
+    And the one menu that orders the queue, which is what replaced the bare
+    word STATUS in that header. Ordering only: it used to carry a second
+    section choosing which follow-ups to show, and the toolbar above already
+    has that control — two ways to ask one question is how they end up
+    disagreeing.
+  */
   await page.getByRole('button', { name: 'Sort this list' }).click();
+  await expect(page.getByRole('button', { name: 'Everyone' })).toHaveCount(0);
   await page.getByRole('button', { name: /A–Z/ }).first().click();
   await expect(page.getByRole('button', { name: 'Sort this list' })).toContainText('A–Z');
 });

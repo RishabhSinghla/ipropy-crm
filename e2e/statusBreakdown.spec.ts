@@ -23,7 +23,7 @@ function stages(page: Page) {
 
 async function openPanel(page: Page) {
   await page.goto('/leads');
-  await expect(page.getByText(/^[\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/^[\d,]+ of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
   const trigger = page.getByRole('button', { name: /\d+ stages|\d+ picked/ }).first();
   await trigger.click();
   await expect(page.getByRole('heading', { name: /breakdown$/i })).toBeVisible();

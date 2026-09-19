@@ -11,10 +11,9 @@ import { WhatsAppButton } from './WhatsAppButton';
 import { CallsTab, FilesTab, TimelineTab } from '../pages/RecordDetail';
 import { EditableField, isInlineEditable } from './EditableField';
 import { invalidateRecordQueries } from '../lib/invalidate';
-import { assignmentField, queueSubtitleField } from '../lib/fields';
+import { assignmentField, subtitleFieldsOf } from '../lib/fields';
 import { ModuleIcon } from './Layout';
 import { Avatar, Dropdown, DropdownItem } from './ui';
-import type { TaskQueue } from './FollowUpQueue';
 import { api } from '../lib/api';
 import { cn, restrictionForField } from '../lib/utils';
 import { toast } from '../lib/store';
@@ -108,14 +107,22 @@ function SplitHandle({ label, onDrag }: { label: string; onDrag: (deltaX: number
   );
 }
 
-/** One choice in the queue's sorting menu: a column to order by, or a queue to show. */
+/**
+ * The record header's action buttons.
+ *
+ * One neutral circle for all of them, from the owner's screenshot. Each
+ * button used to carry the colour of the thing it opened — amber, green,
+ * blue, red — and four tinted circles in a row read as four warnings rather
+ * than as four ordinary controls.
+ */
+const ACTION_CIRCLE = 'inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
+
+/** One choice in the queue's sorting menu: a column to order by, and which way. */
 interface SortChoice {
   key: string;
   label: string;
-  /** A sort: the field to order by and which way. */
+  /** Absent on the first choice, which is the list's own default order. */
   sort?: { by: string; dir: 'asc' | 'desc' };
-  /** A queue: which of the follow-up windows to narrow the list to. */
-  queue?: TaskQueue | null;
 }
 
 /**
@@ -142,7 +149,7 @@ interface SortChoice {
  */
 export function IpropyWorkspace({
   module, rows, selected, attentionIds, onToggleSelect, onToggleAll, onDelete,
-  sortBy, sortDir, onSort, taskQueue, onTaskQueue,
+  sortBy, sortDir, onSort,
 }: {
   module: DescribedModule; rows: RecordEnvelope[];
   selected: Set<string>; attentionIds: Set<string>; onToggleSelect: (id: string, checked: boolean) => void;
@@ -153,8 +160,6 @@ export function IpropyWorkspace({
   /** The list's own ordering, so the queue's menu drives the same query the table does. */
   sortBy?: string; sortDir?: 'asc' | 'desc';
   onSort?: (by: string | undefined, dir: 'asc' | 'desc') => void;
-  taskQueue?: TaskQueue | null;
-  onTaskQueue?: (queue: TaskQueue | null) => void;
 }): JSX.Element {
   const [activeId, setActiveId] = useState<string | null>(rows[0]?.id ?? null);
   const [tab, setTab] = useState<DeskTabKey>('overview');
@@ -215,7 +220,12 @@ export function IpropyWorkspace({
   );
   const fieldMap = useMemo(() => new Map(module.fields.map((field) => [field.name, field])), [module.fields]);
   const assignedField = useMemo(() => assignmentField(module.fields), [module.fields]);
-  const subtitleField = useMemo(() => queueSubtitleField(module.fields), [module.fields]);
+  /*
+    Whatever an admin flagged with `config.listSubtitle`, in the order the flag
+    gives: a contact reads `Buyer — 304`, a unit reads its Unit Number. Named
+    by metadata rather than in this file, like every other field here.
+  */
+  const subtitleFields = useMemo(() => subtitleFieldsOf(module.fields), [module.fields]);
   const statusField = useMemo(() => module.fields.find((f) => f.name === module.pipelineField) ?? module.fields.find((f) => /status|stage/i.test(f.name)), [module.fields, module.pipelineField]);
   const followUpField = useMemo(() => module.fields.find((f) => f.columnName === 'next_followup_at') ?? module.fields.find((f) => /next.*follow.*up/i.test(f.name)), [module.fields]);
   const phoneField = useMemo(() => module.fields.find((f) => f.uitype === 'phone'), [module.fields]);
@@ -233,14 +243,14 @@ export function IpropyWorkspace({
   */
   const headerFields = useMemo(() => {
     const names: string[] = [...(layout.headerFields ?? [])];
-    for (const field of [phoneField, followUpField, statusField, subtitleField]) {
+    for (const field of [phoneField, followUpField, statusField, ...subtitleFields]) {
       if (field && !names.includes(field.name)) names.push(field.name);
     }
     return names
       .filter((name) => name !== assignedField?.name)
       .map((name) => fieldMap.get(name))
       .filter((field): field is FieldMeta => Boolean(field && field.isActive && field.displayType !== 'hidden'));
-  }, [layout.headerFields, fieldMap, assignedField, phoneField, followUpField, statusField, subtitleField]);
+  }, [layout.headerFields, fieldMap, assignedField, phoneField, followUpField, statusField, subtitleFields]);
 
   const blocks = useMemo(() => {
     /*
@@ -283,22 +293,13 @@ export function IpropyWorkspace({
     const out: SortChoice[] = [{ key: 'recent', label: 'Recently updated' }];
     const nameField = module.labelFields.map((name) => fieldMap.get(name)).find(Boolean);
     if (nameField) out.push({ key: 'name', label: `${nameField.label} A–Z`, sort: { by: nameField.name, dir: 'asc' } });
-    if (subtitleField) out.push({ key: 'subtitle', label: `${subtitleField.label} A–Z`, sort: { by: subtitleField.name, dir: 'asc' } });
+    for (const field of subtitleFields) out.push({ key: `subtitle:${field.name}`, label: `${field.label} A–Z`, sort: { by: field.name, dir: 'asc' } });
     if (statusField) out.push({ key: 'status', label: `${statusField.label} A–Z`, sort: { by: statusField.name, dir: 'asc' } });
     if (followUpField) out.push({ key: 'task', label: 'Task, soonest first', sort: { by: followUpField.name, dir: 'asc' } });
     return out;
-  }, [module.labelFields, fieldMap, subtitleField, statusField, followUpField]);
-
-  const queueChoices: { key: TaskQueue | 'all'; label: string; queue: TaskQueue | null }[] = [
-    { key: 'all', label: 'Everyone', queue: null },
-    { key: 'pending', label: 'Pending', queue: 'pending' },
-    { key: 'today', label: 'Today', queue: 'today' },
-    { key: 'tomorrow', label: 'Tomorrow', queue: 'tomorrow' },
-    { key: 'week', label: 'This week', queue: 'week' },
-  ];
+  }, [module.labelFields, fieldMap, subtitleFields, statusField, followUpField]);
 
   const activeSort = sortChoices.find((choice) => choice.sort && choice.sort.by === sortBy) ?? sortChoices[0]!;
-  const activeQueue = queueChoices.find((choice) => choice.queue === (taskQueue ?? null)) ?? queueChoices[0]!;
 
   // A list row carries no `can`, so the module's own permission stands in
   // until the record itself arrives and answers for this row.
@@ -363,7 +364,7 @@ export function IpropyWorkspace({
                     aria-label="Sort this list"
                   >
                     <ArrowUpDown className="h-3 w-3 shrink-0" />
-                    <span className="truncate">{taskQueue ? activeQueue.label : activeSort.label}</span>
+                    <span className="truncate">{activeSort.label}</span>
                   </button>
                 )}
               >
@@ -379,20 +380,6 @@ export function IpropyWorkspace({
                         {choice.label}
                       </DropdownItem>
                     ))}
-                    {onTaskQueue && followUpField && (
-                      <>
-                        <p className="mt-1 border-t border-slate-100 px-3 pb-1 pt-2 text-2xs font-bold uppercase tracking-wide text-slate-400 dark:border-slate-800">Show</p>
-                        {queueChoices.map((choice) => (
-                          <DropdownItem
-                            key={choice.key}
-                            icon={<Check className={cn('h-3.5 w-3.5', activeQueue.key === choice.key ? 'text-brand-600' : 'invisible')} />}
-                            onClick={() => { onTaskQueue(choice.queue); close(); }}
-                          >
-                            {choice.label}
-                          </DropdownItem>
-                        ))}
-                      </>
-                    )}
                   </div>
                 )}
               </Dropdown>
@@ -400,7 +387,7 @@ export function IpropyWorkspace({
           )}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {rows.map((row) => <QueueRow key={row.id} module={module} row={row} active={row.id === active?.id} checked={selected.has(row.id)} attention={attentionIds.has(row.id)} statusField={statusField} followUpField={followUpField} subtitleField={subtitleField} onSelect={() => setActiveId(row.id)} onToggle={(checked) => onToggleSelect(row.id, checked)} />)}
+          {rows.map((row) => <QueueRow key={row.id} row={row} active={row.id === active?.id} checked={selected.has(row.id)} attention={attentionIds.has(row.id)} statusField={statusField} followUpField={followUpField} subtitleFields={subtitleFields} onSelect={() => setActiveId(row.id)} onToggle={(checked) => onToggleSelect(row.id, checked)} />)}
         </div>
       </aside>
 
@@ -411,27 +398,17 @@ export function IpropyWorkspace({
             while the fields below them scroll. */}
         <header className="sticky top-0 z-10 border-b border-slate-200 bg-white px-5 pt-3 dark:border-slate-800 dark:bg-slate-900 sm:px-7">
           {/*
-            The actions first and to the left, which is where the owner asked
-            for them. (His screenshot has them on the right; his words say
-            left, and the words are the instruction.)
-          */}
-          <div className="flex items-center gap-2">
-            <button
-              aria-label={active.starred ? 'Remove from starred' : 'Star this record'}
-              title={active.starred ? 'Remove from starred' : 'Star this record'}
-              onClick={() => star.mutate(active)}
-              className={cn('inline-flex h-8 w-8 items-center justify-center rounded-full border transition-colors', active.starred ? 'border-amber-300 bg-amber-100 text-amber-600 dark:border-amber-800 dark:bg-amber-950/50' : 'border-amber-200 bg-amber-50 text-amber-500 hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/30')}
-            >
-              <Star className={cn('h-4 w-4', active.starred && 'fill-amber-400')} />
-            </button>
-            {/* Icons only. The words cost a third of the header strip for
-                two buttons everybody recognises by their shape. */}
-            {phoneValue && <WhatsAppButton to={phoneValue} iconOnly round />}
-            {phoneValue && <CallButton to={phoneValue} iconOnly round />}
-            {onDelete && <button onClick={() => onDelete(active)} className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-rose-600 transition-colors hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300" title={`Delete ${active.label}`} aria-label={`Delete ${active.label}`}><Trash2 className="h-4 w-4" /></button>}
-          </div>
+            The actions live on the name's own line, at the end of it.
 
-          <div className="mt-3 flex min-w-0 items-start gap-4">
+            They had a row of their own above the name, which is what the
+            owner's words asked for and not what his screenshot showed — and
+            when he saw it he sent the screenshot back: *"Move icons ... with
+            an alignment of Full Name ... should be same as per screenshot"*.
+            So they are on that line now, and the screenshot decides the rest:
+            plain light circles, one weight of grey, no colour per button. The
+            colours made four ordinary controls look like four warnings.
+          */}
+          <div className="flex min-w-0 items-start gap-4">
             <Avatar name={active.label} size={52} className="mt-0.5 text-lg" />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -460,11 +437,12 @@ export function IpropyWorkspace({
                 )}
                 <span className="text-sm text-slate-400">Updated {relativeTime(active.updatedAt)}</span>
                 {active.tags?.slice(0, 2).map((tag) => <span key={tag} className="inline-flex items-center gap-1 rounded-md bg-brand-50 px-1.5 py-0.5 text-2xs font-semibold text-brand-700 dark:bg-brand-950/40 dark:text-brand-300"><Tag className="h-3 w-3" />{tag}</span>)}
+
               </div>
 
               {/* How complete the record is, under the name rather than
                   wrapped around the avatar. */}
-              <StrengthBar module={module} row={active} className="mt-2 max-w-sm" />
+              <StrengthBar module={module} row={active} className="mt-1.5 max-w-[13rem]" slim />
 
               {/*
                 Every header value the record page carries, each one typed in
@@ -495,6 +473,29 @@ export function IpropyWorkspace({
                 ))}
               </div>
             </div>
+
+            <span className="mt-1 flex shrink-0 items-center gap-2">
+              <button
+                aria-label={active.starred ? 'Remove from starred' : 'Star this record'}
+                title={active.starred ? 'Remove from starred' : 'Star this record'}
+                onClick={() => star.mutate(active)}
+                className={cn(ACTION_CIRCLE, active.starred && 'text-amber-500')}
+              >
+                <Star className={cn('h-4 w-4', active.starred && 'fill-amber-400')} />
+              </button>
+              {phoneValue && <WhatsAppButton to={phoneValue} iconOnly round />}
+              {phoneValue && <CallButton to={phoneValue} iconOnly round />}
+              {onDelete && (
+                <button
+                  onClick={() => onDelete(active)}
+                  className={cn(ACTION_CIRCLE, 'hover:text-rose-600')}
+                  title={`Delete ${active.label}`}
+                  aria-label={`Delete ${active.label}`}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
+            </span>
           </div>
 
           <nav className="mt-3 flex max-w-full overflow-x-auto" aria-label="Record workspace sections">
@@ -546,18 +547,23 @@ export function IpropyWorkspace({
 /**
  * One record in the queue.
  *
- * Three lines, in the order a rep reads them: who this is and when they are
- * due, how complete the record is, and the one fact that tells the two modules
- * apart — a contact's Type, a unit's Unit Number — with the status beside it.
+ * Two lines and two chips, in the order a rep reads them: who this is with
+ * when they are due, then the module's own facts with the status under that
+ * date. No completeness bar — the owner asked for it off this side on
+ * 19 September; it is a number about the *record*, and the queue is about the
+ * people in it.
  *
- * No chevron. It pointed at nothing: the record opens in the pane already on
- * screen, and the owner's word for it was "irritating".
+ * No chevron either. It pointed at nothing: the record opens in the pane
+ * already on screen, and the owner's word for it was "irritating".
  */
-function QueueRow({ module, row, active, checked, attention, statusField, followUpField, subtitleField, onSelect, onToggle }: { module: ModuleMeta; row: RecordEnvelope; active: boolean; checked: boolean; attention: boolean; statusField?: FieldMeta; followUpField?: FieldMeta; subtitleField?: FieldMeta; onSelect: () => void; onToggle: (checked: boolean) => void }): JSX.Element {
+function QueueRow({ row, active, checked, attention, statusField, followUpField, subtitleFields, onSelect, onToggle }: { row: RecordEnvelope; active: boolean; checked: boolean; attention: boolean; statusField?: FieldMeta; followUpField?: FieldMeta; subtitleFields: FieldMeta[]; onSelect: () => void; onToggle: (checked: boolean) => void }): JSX.Element {
   const due = followUpField ? dueLabel(row.values[followUpField.name]) : null;
-  // A contact's Type, a unit's Unit Number — never the record id, which
-  // identifies a row to a database and nothing to a person.
-  const subtitle = subtitleField ? displayOf(row, subtitleField) : '';
+  /*
+    A contact's Type then its Unit Number, joined by a hyphen — "Buyer — 304".
+    Never the record id, which identifies a row to a database and nothing to a
+    person. Empty values drop out rather than printing a stray dash.
+  */
+  const subtitle = subtitleFields.map((field) => displayOf(row, field)).filter(Boolean).join(' — ');
   return (
     <button
       type="button"
@@ -573,23 +579,30 @@ function QueueRow({ module, row, active, checked, attention, statusField, follow
         checked={checked}
         onClick={(event) => event.stopPropagation()}
         onChange={(event) => onToggle(event.target.checked)}
-        className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300"
+        className="mt-1.5 h-4 w-4 shrink-0 rounded border-slate-300"
       />
       <span className="relative shrink-0">
         <Avatar name={row.label} size={36} />
         {attention && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-amber-500 dark:border-slate-900" title="Needs attention" />}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-1.5">
-          <span className="min-w-0 flex-1 truncate text-sm font-bold text-slate-900 dark:text-slate-100">{row.label}</span>
+        <span className="flex items-center gap-1.5 truncate text-sm font-bold text-slate-900 dark:text-slate-100">
+          <span className="truncate">{row.label}</span>
           {row.starred && <Star className="h-3 w-3 shrink-0 fill-amber-400 text-amber-500" />}
-          {due && <span className={cn('shrink-0 rounded px-1.5 py-0.5 text-2xs font-bold', due.tone)}>{due.label}</span>}
         </span>
-        <StrengthBar module={module} row={row} className="mt-1.5" />
-        <span className="mt-1.5 flex items-center gap-2">
-          <span className="min-w-0 flex-1 truncate text-xs text-slate-500">{subtitle || '—'}</span>
-          {statusField && <StatusPill field={statusField} row={row} label={displayOf(row, statusField) || 'Not set'} />}
-        </span>
+        <span className="mt-1 block truncate text-xs text-slate-500">{subtitle || '—'}</span>
+      </span>
+      {/*
+        The date and the status in one column on the right, the status under
+        the date and ending where it ends. Two chips on two different lines
+        with two different right edges is the thing that makes a queue look
+        ragged, and the owner asked for them lined up.
+      */}
+      <span className="flex shrink-0 flex-col items-end gap-1">
+        {due
+          ? <span className={cn('rounded px-1.5 py-0.5 text-2xs font-bold', due.tone)}>{due.label}</span>
+          : <span className="px-1.5 py-0.5 text-2xs font-bold text-slate-300">—</span>}
+        {statusField && <StatusPill field={statusField} row={row} label={displayOf(row, statusField) || 'Not set'} />}
       </span>
     </button>
   );
@@ -603,13 +616,13 @@ function QueueRow({ module, row, active, checked, attention, statusField, follow
  * question — and a bar reads as a proportion at a glance where a ring has to
  * be decoded.
  */
-function StrengthBar({ module, row, className }: { module: ModuleMeta; row: RecordEnvelope; className?: string }): JSX.Element {
+function StrengthBar({ module, row, className, slim = false }: { module: ModuleMeta; row: RecordEnvelope; className?: string; slim?: boolean }): JSX.Element {
   const percent = recordStrength(module.fields, row.values).percent;
   const color = percent >= 80 ? '#14b86a' : percent >= 55 ? '#f59e0b' : '#ee3458';
   return (
     <span className={cn('flex items-center gap-2', className)}>
       <span
-        className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700"
+        className={cn('min-w-0 flex-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700', slim ? 'h-1' : 'h-1.5')}
         role="img"
         aria-label={`Record ${percent}% complete`}
       >

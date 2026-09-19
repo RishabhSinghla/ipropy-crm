@@ -11,7 +11,7 @@ import { test, expect } from '@playwright/test';
 
 test('the row and the record report the same strength', async ({ page }) => {
   await page.goto('/leads');
-  await expect(page.getByText(/^[\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/^[\d,]+ of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
 
   const firstRow = page.locator('tbody tr').first();
   const ring = firstRow.getByRole('img', { name: /^Form strength/ });
@@ -36,7 +36,7 @@ test('the row and the record report the same strength', async ({ page }) => {
 
 test('the number is spoken, not only drawn', async ({ page }) => {
   await page.goto('/leads');
-  await expect(page.getByText(/^[\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/^[\d,]+ of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
 
   const label = await page.locator('tbody tr').first()
     .getByRole('img', { name: /^Form strength/ }).getAttribute('aria-label');
@@ -47,7 +47,7 @@ test('the number is spoken, not only drawn', async ({ page }) => {
 
 test('the number rides on the face, and the second line says who they are', async ({ page }) => {
   await page.goto('/leads');
-  await expect(page.getByText(/^[\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/^[\d,]+ of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
 
   const cell = page.locator('tbody tr').first().locator('td').nth(1);
 

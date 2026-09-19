@@ -74,10 +74,11 @@ export function WhatsAppButton({ to, iconOnly = false, round = false }: { to: st
       // `iconOnly` where the header is tight — the split view, above all. The
       // word costs a third of the strip for a button everybody recognises by
       // its shape, and the title still says what it does.
-      // `round` is the split view's own shape: a tinted circle in the
-      // record's action strip, the colour of the thing it opens.
+      // `round` is the split view's own shape: a plain circle in the
+      // record's action strip. Neutral like the rest of that row — four
+      // tinted circles in a line read as four warnings.
       className={round
-        ? 'inline-flex h-8 w-8 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-600 transition-colors hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300'
+        ? 'inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 hover:text-emerald-600'
         : cn('btn-secondary btn-sm', iconOnly && 'h-9 w-9 justify-center px-0')}
       title={`WhatsApp ${to}`}
       aria-label={`WhatsApp ${to}`}

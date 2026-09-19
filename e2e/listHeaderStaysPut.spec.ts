@@ -30,7 +30,7 @@ test.use({ viewport: { width: 1512, height: 820 } });
 for (const path of ['/leads', '/properties']) {
   test(`column headers stay put while the rows scroll — ${path}`, async ({ page }) => {
     await page.goto(path);
-    await expect(page.getByText(/^[\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(/^[\d,]+ of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
 
     // EVERY header cell, not the first one. The first is the checkbox column,
     // and it was the only one still pinned while every named column scrolled

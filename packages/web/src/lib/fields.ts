@@ -88,24 +88,6 @@ export function byLabel<T extends { label: string }>(fields: readonly T[]): T[] 
 }
 
 /**
- * The one line under a name in the split view's queue.
- *
- * The owner asked for this by name on 19 September: a contact's **Type** and a
- * unit's **Unit Number**, in place of the record id that used to sit there —
- * "I don't need the ID there". An id identifies a row to a database; neither
- * of those two is a number a person recognises, and the line was wasted.
- *
- * Column name first, then field name, so a rename of either keeps working —
- * the same rule as every other lookup in this file. Anything else falls back
- * to nothing rather than to a guess.
- */
-export function queueSubtitleField(fields: FieldMeta[]): FieldMeta | undefined {
-  const byColumn = (column: string): FieldMeta | undefined =>
-    fields.find((f) => f.columnName === column) ?? fields.find((f) => f.name === column);
-  return byColumn('contact_type') ?? byColumn('unit_number');
-}
-
-/**
  * Add the queue's subtitle to a list's columns when the split view is showing.
  *
  * A list row carries only the values the list asked for, so the line under
@@ -113,12 +95,19 @@ export function queueSubtitleField(fields: FieldMeta[]): FieldMeta | undefined {
  * which reads as the feature not working rather than as a column being
  * absent. Undefined is left alone: that means "the server's defaults", and
  * narrowing it to one field would empty the table.
+ *
+ * The fields are `subtitleFieldsOf`'s, so the queue shows whatever an admin
+ * flagged rather than a pair named in this file — that is how Unit Number
+ * came to sit after Contact Type on a contact without a line of code naming
+ * either of them.
  */
 export function withQueueSubtitle(
   columns: string[] | undefined,
   module: { fields: FieldMeta[] } | undefined,
 ): string[] | undefined {
   if (!columns || !module) return columns;
-  const extra = queueSubtitleField(module.fields)?.name;
-  return extra && !columns.includes(extra) ? [...columns, extra] : columns;
+  const extra = subtitleFieldsOf(module.fields)
+    .map((field) => field.name)
+    .filter((name) => !columns.includes(name));
+  return extra.length ? [...columns, ...extra] : columns;
 }

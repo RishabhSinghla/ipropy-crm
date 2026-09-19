@@ -283,10 +283,11 @@ export function CallButton({ to, iconOnly = false, round = false }: { to: string
       // `iconOnly` where the header is tight — the split view, above all. The
       // word costs a third of the strip for a button everybody recognises by
       // its shape, and the title still says what it does.
-      // `round` is the split view's own shape: a tinted circle in the
-      // record's action strip, the colour of the thing it opens.
+      // `round` is the split view's own shape: a plain circle in the
+      // record's action strip. Neutral like the rest of that row — four
+      // tinted circles in a line read as four warnings.
       className={round
-        ? 'inline-flex h-8 w-8 items-center justify-center rounded-full border border-blue-200 bg-blue-50 text-blue-600 transition-colors hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-300'
+        ? 'inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 hover:text-blue-600'
         : cn('btn-secondary btn-sm', iconOnly && 'h-9 w-9 justify-center px-0')}
       title={`Call ${to}`}
       aria-label={`Call ${to}`}

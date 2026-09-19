@@ -1316,31 +1316,61 @@ knowing:
   stays exact when the toolbar above grows a row.
 * **The score ring became an avatar and a bar** (`StrengthBar`). The face identifies the
   person; how complete the record is is a different question and now reads as a proportion
-  at a glance. It sits under the name in the queue and under the name in the record, in both
-  cases above the module's own fact.
+  at a glance. **It is on the record only** — he asked for it off the queue hours later, and
+  he is right about which side it belongs to: it is a fact about the *record*, and the queue
+  is about the people in it.
 * **The chevron at the end of every queue row is gone** — *"it been irritating"*. It pointed
   at nothing: the record opens in the pane already on screen.
-* **The status is on the queue row**, beside the Type or the Unit Number, with the follow-up
-  chip up on the name line. Three lines in the order somebody reads them.
+* **The date and the status share one column** on the right of each queue row, the status
+  under the date and ending where it ends. Two chips on two lines with two different right
+  edges is what makes a queue look ragged. A row with no follow-up prints a dash in the
+  date's place, so the status stays on its own line rather than jumping up one.
 * **A checkbox beside the module's name** ticks everything on the page, which is what the
   bulk-edit bar the list already carries needs in order to appear. There was no way to make
   a selection from this view at all.
-* **The bare word STATUS in that header became one sorting menu.** Two sections in one
-  control, because "sort this queue" is a single thought to a rep working it: *Sort by*
-  (name, the module's own fact, status, task soonest first) and *Show* (everyone, pending,
-  today, tomorrow, this week). It drives `ListView`'s own `sortBy`/`sortDir` and its task
-  queues — **not a second ordering of its own**, or the screen and an export would disagree
-  about what the list is.
+* **The bare word STATUS in that header became one sorting menu** — name, the module's own
+  facts, status, task soonest first. It drives `ListView`'s own `sortBy`/`sortDir`, **not a
+  second ordering of its own**, or the screen and an export would disagree about what the
+  list is. It briefly also chose *which* follow-ups to show and that half is gone: the
+  toolbar above already has that control, and two ways to ask one question is how they come
+  to disagree.
 * **Assignment moved onto the name line**, between the name and *Updated …*, still edited in
   place.
-* **The action icons are round, tinted and at the top of the header** (`round` on
-  `WhatsAppButton` and `CallButton`). **His words say left-aligned and his screenshot shows
-  them on the right; the words are what is built.** Worth knowing before changing it back.
+* **The action icons are plain circles at the end of the name's own line** (`ACTION_CIRCLE`,
+  and `round` on `WhatsAppButton` and `CallButton`). **This is the one his words and his
+  screenshot disagreed about, and the screenshot won on the second pass.** They were built
+  above the name, left-aligned, because that is what he wrote; he sent the screenshot back
+  the same day. So: when the two disagree here, build the screenshot.
+  They are one weight of grey, not one colour each — four tinted circles in a row read as
+  four warnings rather than four ordinary controls.
+  Two mechanical notes, both of which cost a test run. `ml-auto` inside a `flex-wrap` row
+  puts them on a line of *their own* the moment that row wraps, so they are a sibling of the
+  whole name block rather than the last thing in it. And `page.locator('main')` matches the
+  app shell's `<main>` as well as this pane's, whose first heading is not the record's name.
 
-Pinned by four more tests in `e2e/listDefaultView.spec.ts`: the bar and the missing chevron,
-the select-all and the sorting menu, and the notes **measured** to be beside the fields
-rather than read off a class name — a class that is present while the card still sits
-underneath is exactly the bug.
+* **The queue's second line is `config.listSubtitle`, and it is a *list* of fields.** It used
+  to be `contact_type ?? unit_number` named in `lib/fields.ts`, which could only ever show
+  one; `subtitleFieldsOf` already existed, already ordered them, and is what the table and
+  the phone cards read. So a contact reads `Buyer — 304` and a unit reads its Unit Number
+  without either name appearing in the code. **If a fact does not show there, the field is
+  unflagged rather than the feature broken** — `probe-prod-schema.yml` prints which fields
+  each module flags, and production's answer on 19 September was `contact_type` then
+  `unit_no` on leads, `contact_type` then `unit_number` on properties. Only 2,476 of 22,988
+  contacts hold a unit number, so most of that queue still reads `Buyer` alone: that is the
+  data, not the screen.
+* **The toolbar counts the page as well as the total** — `25 of 22,970 records`. The total
+  alone says nothing about how much of it is on screen. It counts rows delivered, not the
+  page size, so the last page says 20 rather than 25.
+  **That wording is load-bearing in eleven spec files**: `/^[\d,]+ records$/` is how nine
+  of them wait for a list to finish loading, so changing it turned twenty-seven passing
+  tests red at once with no bug behind any of them. Anything that edits that line edits
+  those specs in the same commit.
+
+Pinned by five more tests in `e2e/listDefaultView.spec.ts`: the completeness bar **off** the
+queue and still on the record, the missing chevron, the actions **measured** onto the name's
+line, the select-all and the sorting menu with no follow-up section in it, and the notes
+**measured** to be beside the fields rather than read off a class name — a class that is
+present while the card still sits underneath is exactly the bug.
 
 ## Pressing Call at a desk rings the rep's own phone
 

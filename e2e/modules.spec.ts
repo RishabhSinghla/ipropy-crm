@@ -59,7 +59,7 @@ async function moduleRoutes(page: Page): Promise<string[]> {
     /*
       Not modules. `/chats` joins the list for the same reason as `/inbox` and
       `/calls`: this sweep proves a *record list* opens, and waits for the
-      "N records" line to say so. A conversation screen has no such line, so it
+      "n of N records" line to say so. A conversation screen has no such line, so it
       would sit through the 25-second timeout and be reported as never having
       loaded — a failure about the test's expectations, not the page.
 
@@ -104,7 +104,7 @@ const TOOL_ROUTES = new Set(['/capture']);
 /**
  * "Finished loading" is not the same signal on both kinds of page.
  *
- * A module list shows "Loading…" until its query resolves and then "<n> records",
+ * A module list shows "Loading…" until its query resolves and then "<n> of <N> records",
  * which is what proves the *data* arrived, not merely the shell. A tool page has
  * no such count, so its heading is the only honest signal it came up at all —
  * weaker, deliberately, rather than dropping the two pages from the sweep and
@@ -113,7 +113,7 @@ const TOOL_ROUTES = new Set(['/capture']);
 function settled(page: Page, route: string) {
   return TOOL_ROUTES.has(route)
     ? page.getByRole('heading', { level: 1 })
-    : page.getByText(/^[\d,]+ records$/);
+    : page.getByText(/^[\d,]+ of [\d,]+ records$/);
 }
 
 /**
