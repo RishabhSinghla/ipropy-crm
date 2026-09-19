@@ -1,0 +1,57 @@
+# Set the landline and junk phone numbers blank on production.
+#
+# The owner's instruction, 19 September 2026, after reading the audit:
+# "empty those landline and junk numbers, dont delete the record by mistake
+# just empty those numbers got it so set it blank."
+#
+# THIS ONE WRITES. Looking is still the default — it needs the word `empty`
+# typed into the box below, exactly, the same guard as every other destructive
+# workflow here. What it does:
+#
+#   * No record is deleted. Nothing but the phone box is touched.
+#   * Every value is copied into `ipy_phone_number_emptied` first, in the same
+#     transaction, so any of them can be put back.
+#   * `updated_at` is left alone, so the scheduled "nobody has touched this in
+#     sixty days" rules are not told that 48,000 records were just worked on.
+#
+# It uses the same classifier as `audit-phone-numbers.yml`, so what it empties
+# is exactly what that audit reported. Run the audit again afterwards to see
+# the result rather than trusting this log.
+name: Empty the junk phone numbers
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Type empty to do it. Anything else only shows what would go."
+        default: "look"
+
+permissions:
+  contents: read
+
+jobs:
+  empty:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install the Postgres driver
+        run: npm install --no-save --no-audit --no-fund pg
+
+      # Always, whatever the input says. Reading what would go, immediately
+      # above the thing that goes, is what makes the log worth keeping.
+      - name: What would go
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: node scripts/empty-junk-phone-numbers.mjs
+
+      - name: Empty them
+        if: ${{ inputs.apply == 'empty' }}
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: node scripts/empty-junk-phone-numbers.mjs --apply
