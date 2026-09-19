@@ -114,12 +114,28 @@ function SplitHandle({ label, onDrag }: { label: string; onDrag: (deltaX: number
 /**
  * The record header's action buttons.
  *
- * One neutral circle for all of them, from the owner's screenshot. Each
- * button used to carry the colour of the thing it opened — amber, green,
- * blue, red — and four tinted circles in a row read as four warnings rather
- * than as four ordinary controls.
+ * One neutral circle for all of them, from the owner's screenshot. Each button
+ * used to *sit* in the colour of the thing it opened — amber, green, blue, red
+ * — and four tinted circles in a row read as four warnings rather than as four
+ * ordinary controls.
+ *
+ * The colour moved to the hover instead, on his instruction: *"make the icon
+ * color change with solid when hover"*. At rest they are one weight of grey;
+ * under the cursor the one you are about to press fills with its own colour,
+ * so it says what it is exactly when that matters and never before.
  */
-const ACTION_CIRCLE = 'inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
+const ACTION_BASE = 'inline-flex h-8 w-8 items-center justify-center rounded-full border transition-colors hover:border-transparent hover:text-white';
+/*
+  The resting colours are separate from the shape on purpose. A button that is
+  *on* — the star — needs its own background, and writing `bg-amber-500` after
+  `bg-slate-50` in the same class list does not win: Tailwind decides which of
+  two `bg-*` utilities applies by where they sit in its own stylesheet, not by
+  the order they are typed. That is the same rule that made every column header
+  in the CRM scroll away once. So a state swaps this string out rather than
+  trying to beat it.
+*/
+const ACTION_REST = 'border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
+const ACTION_CIRCLE = `${ACTION_BASE} ${ACTION_REST}`;
 
 /** One choice in the queue's sorting menu: a column to order by, and which way. */
 /**
@@ -208,7 +224,8 @@ export function IpropyWorkspace({
     sight — the cue to go and shorten the list in Admin → Split View.
   */
   const strip = useRef<HTMLDivElement>(null);
-  const [clipped, setClipped] = useState(false);
+  /** How many of the header's fields fit on the line; the rest are hidden. */
+  const [fits, setFits] = useState(Number.MAX_SAFE_INTEGER);
   const [paneTop, setPaneTop] = useState(0);
   useEffect(() => {
     const measure = (): void => {
@@ -223,7 +240,15 @@ export function IpropyWorkspace({
 
   const star = useMutation({
     mutationFn: (row: RecordEnvelope) => api.star(module.name, row.id, !row.starred),
-    onSuccess: () => invalidateRecordQueries(queryClient, module.name),
+    /*
+      **With the record's id.** Without it `invalidateRecordQueries` refreshes
+      the lists and leaves `['record', module, id]` alone — and this header
+      reads the *fetched record*, not the list row. So the star saved, the
+      queue knew, and the button somebody had just pressed stayed exactly as it
+      was until something else happened to refetch. That is the whole of
+      "favourite does not work properly in split view".
+    */
+    onSuccess: (_result, row) => invalidateRecordQueries(queryClient, module.name, row.id),
     onError: (error: Error) => toast.error('Could not change that', error.message),
   });
   useEffect(() => setActiveId((current) => rows.some((row) => row.id === current) ? current : (rows[0]?.id ?? null)), [rows]);
@@ -333,7 +358,24 @@ export function IpropyWorkspace({
   useEffect(() => {
     const box = strip.current;
     if (!box) return;
-    const measure = (): void => setClipped(box.scrollWidth - box.clientWidth > 1);
+    /*
+      Which fields fit, counted rather than clipped.
+
+      Clipping alone cut the last one through the middle of a word — "Budg…" —
+      which reads as a broken screen rather than as a full line. The ones that
+      do not fit are made **invisible rather than unmounted**: they keep their
+      space, so the measurement that produced this count stays true and the
+      count cannot oscillate between two answers on every frame.
+    */
+    const measure = (): void => {
+      const width = box.clientWidth;
+      let count = 0;
+      for (const child of Array.from(box.children) as HTMLElement[]) {
+        if (child.offsetLeft + child.offsetWidth > width + 1) break;
+        count += 1;
+      }
+      setFits(count);
+    };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(box);
@@ -540,7 +582,7 @@ export function IpropyWorkspace({
       {active && <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
         {/* Sticky, so the name, the assignment and the tabs stay on screen
             while the fields below them scroll. */}
-        <header className="sticky top-0 z-10 border-b border-slate-200 bg-white px-5 pt-3 dark:border-slate-800 dark:bg-slate-900 sm:px-7">
+        <header className="sticky top-0 z-10 border-b border-slate-200 bg-white px-4 pt-2 dark:border-slate-800 dark:bg-slate-900 sm:px-5">
           {/*
             The actions live on the name's own line, at the end of it.
 
@@ -552,8 +594,8 @@ export function IpropyWorkspace({
             plain light circles, one weight of grey, no colour per button. The
             colours made four ordinary controls look like four warnings.
           */}
-          <div className="flex min-w-0 items-start gap-4">
-            <Avatar name={active.label} size={52} className="mt-0.5 text-lg" />
+          <div className="flex min-w-0 items-start gap-3">
+            <Avatar name={active.label} size={42} className="mt-0.5" />
             <div className="min-w-0 flex-1">
               {/*
                 One line here too. It used to wrap, so a long name pushed
@@ -562,7 +604,7 @@ export function IpropyWorkspace({
                 (`truncate`) and everything beside it holds its width.
               */}
               <div className="flex min-w-0 items-center gap-x-3 whitespace-nowrap">
-                <h2 className="min-w-0 truncate text-2xl font-extrabold tracking-tight text-slate-950 dark:text-white">{active.label}</h2>
+                <h2 className="min-w-0 truncate text-xl font-extrabold tracking-tight text-slate-950 dark:text-white">{active.label}</h2>
                 {/* Between the name and when it was last touched, which is
                     where the owner asked for it. */}
                 {assignedField && (
@@ -592,46 +634,8 @@ export function IpropyWorkspace({
 
               {/* How complete the record is, under the name rather than
                   wrapped around the avatar. */}
-              <StrengthBar module={module} row={active} className="mt-1.5 max-w-[13rem]" slim />
+              <StrengthBar module={module} row={active} className="mt-1 max-w-[11rem]" slim />
 
-              {/*
-                Every header value the record page carries, each one typed in
-                where it stands. The owner's instruction: "Full of the header
-                things phone number, next follow-up all other things be in
-                line editable."
-              */}
-              <div className="mt-2.5 flex items-center gap-2 pb-1 text-sm font-medium text-slate-800 dark:text-slate-100">
-                <div ref={strip} data-testid="header-fields" className="flex min-w-0 flex-1 items-center gap-x-5 overflow-hidden whitespace-nowrap">
-                {headerFields.map((field) => (
-                  <span key={field.name} className="inline-flex shrink-0 items-center gap-1.5">
-                    <span className="shrink-0 text-xs font-normal text-muted">{field.label}:</span>
-                    {canEdit && isInlineEditable(field) ? (
-                      <EditableField
-                        module={module.name}
-                        recordId={active.id}
-                        field={field}
-                        value={active.values[field.name]}
-                        display={active.display?.[field.name]}
-                        compact
-                        siblings={active.values}
-                        restrictTo={restrictionForField(module.picklistDependencies, active.values, field.name)}
-                        onSaved={() => invalidateRecordQueries(queryClient, module.name, active.id)}
-                      />
-                    ) : (
-                      <FieldValue field={field} value={active.values[field.name]} display={active.display?.[field.name]} compact />
-                    )}
-                  </span>
-                ))}
-                </div>
-                {clipped && (
-                  <span
-                    className="shrink-0 cursor-default select-none text-base leading-none tracking-widest text-slate-400"
-                    title="More fields than fit on one line. Choose fewer in Admin → Split View."
-                  >
-                    …
-                  </span>
-                )}
-              </div>
             </div>
 
             <span className="mt-1 flex shrink-0 items-center gap-2">
@@ -639,9 +643,13 @@ export function IpropyWorkspace({
                 aria-label={active.starred ? 'Remove from starred' : 'Star this record'}
                 title={active.starred ? 'Remove from starred' : 'Star this record'}
                 onClick={() => star.mutate(active)}
-                className={cn(ACTION_CIRCLE, active.starred && 'text-amber-500')}
+                className={cn(
+                  ACTION_BASE,
+                  'hover:bg-amber-500',
+                  active.starred ? 'border-transparent bg-amber-500 text-white' : ACTION_REST,
+                )}
               >
-                <Star className={cn('h-4 w-4', active.starred && 'fill-amber-400')} />
+                <Star className={cn('h-4 w-4', active.starred && 'fill-white')} />
               </button>
               {phoneValue && <WhatsAppButton to={phoneValue} iconOnly round />}
               {phoneValue && <CallButton to={phoneValue} iconOnly round />}
@@ -651,7 +659,7 @@ export function IpropyWorkspace({
                 recordId={active.id}
                 tags={active.tags}
                 canEdit={canEdit}
-                className={ACTION_CIRCLE}
+                className={cn(ACTION_CIRCLE, 'hover:bg-brand-600')}
               />
               {/*
                 No delete circle. Delete is in the menu beside it, and one
@@ -669,7 +677,7 @@ export function IpropyWorkspace({
                 align="right"
                 className="min-w-[15rem]"
                 trigger={(
-                  <button className={ACTION_CIRCLE} aria-label="More actions" title="More actions">
+                  <button className={cn(ACTION_CIRCLE, 'hover:bg-slate-600')} aria-label="More actions" title="More actions">
                     <MoreHorizontal className="h-4 w-4" />
                   </button>
                 )}
@@ -723,7 +731,46 @@ export function IpropyWorkspace({
             </span>
           </div>
 
-          <nav className="mt-3 flex max-w-full overflow-x-auto" aria-label="Record workspace sections">
+            {/*
+              Every header value the record page carries, each one typed in
+              where it stands. The owner's instruction: "Full of the header
+              things phone number, next follow-up all other things be in
+              line editable."
+            */}
+            <div className="mt-2 flex items-center gap-2 pb-0.5 text-sm font-medium text-slate-800 dark:text-slate-100">
+              <div ref={strip} data-testid="header-fields" className="flex min-w-0 flex-1 items-center gap-x-3.5 overflow-hidden whitespace-nowrap">
+              {headerFields.map((field, index) => (
+                <span key={field.name} className={cn('inline-flex shrink-0 items-center gap-1', index >= fits && 'invisible')}>
+                  <span className="shrink-0 text-xs font-normal text-muted">{field.label}:</span>
+                  {canEdit && isInlineEditable(field) ? (
+                    <EditableField
+                      module={module.name}
+                      recordId={active.id}
+                      field={field}
+                      value={active.values[field.name]}
+                      display={active.display?.[field.name]}
+                      compact
+                      siblings={active.values}
+                      restrictTo={restrictionForField(module.picklistDependencies, active.values, field.name)}
+                      onSaved={() => invalidateRecordQueries(queryClient, module.name, active.id)}
+                    />
+                  ) : (
+                    <FieldValue field={field} value={active.values[field.name]} display={active.display?.[field.name]} compact />
+                  )}
+                </span>
+              ))}
+              </div>
+              {fits < headerFields.length && (
+                <span
+                  className="shrink-0 cursor-default select-none text-base leading-none tracking-widest text-slate-400"
+                  title="More fields than fit on one line. Choose fewer in Admin → Split View."
+                >
+                  …
+                </span>
+              )}
+            </div>
+
+          <nav className="mt-1.5 flex max-w-full overflow-x-auto" aria-label="Record workspace sections">
             <DeskTab active={tab === 'overview'} onClick={() => setTab('overview')}>Overview</DeskTab>
             <DeskTab active={tab === 'timeline'} onClick={() => setTab('timeline')}>Timeline</DeskTab>
             <DeskTab active={tab === 'matching'} onClick={() => setTab('matching')}><Link2 className="h-3.5 w-3.5" />Matching {module.name === 'leads' ? 'inventory' : 'leads'}</DeskTab>
@@ -834,10 +881,22 @@ function QueueRow({ row, active, checked, attention, statusField, followUpField,
       type="button"
       onClick={onSelect}
       className={cn(
-        'flex w-full items-start gap-2.5 border-b border-slate-100 px-3 py-2.5 text-left transition-colors dark:border-slate-800',
-        active ? 'border-l-4 border-l-brand-600 bg-brand-50/70 pl-2 dark:bg-brand-950/30' : 'hover:bg-slate-50 dark:hover:bg-slate-800/70',
+        'relative flex w-full items-start gap-2.5 border-b border-slate-100 px-3 py-2.5 text-left transition-colors dark:border-slate-800',
+        active
+          ? 'bg-brand-50 dark:bg-brand-950/50'
+          : 'hover:bg-slate-50 dark:hover:bg-slate-800/70',
       )}
     >
+      {/*
+        The bar marking the open record is an element, not a border.
+
+        It was `border-l-4 border-l-brand-600` on a row that also says
+        `border-b border-slate-100`, and which of those two decides the left
+        edge's colour is Tailwind's stylesheet order rather than the order they
+        are written — so the marker could come out slate on slate and the row
+        looked no different from its neighbours. Nothing competes with a span.
+      */}
+      {active && <span className="absolute inset-y-0 left-0 w-1 bg-brand-600" aria-hidden />}
       <input
         aria-label={`Select ${row.label}`}
         type="checkbox"
@@ -976,7 +1035,7 @@ function NotesPanel({ module, record }: { module: string; record: RecordEnvelope
   </section>;
 }
 function NoteEntry({ entry }: { entry: TimelineEntry }): JSX.Element { return <article><p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{entry.title}</p><p className="mt-0.5 text-2xs text-slate-400">{entry.actorName ?? 'iPROPY'} · {relativeTime(entry.at)}</p>{entry.body && <p className="mt-1.5 whitespace-pre-wrap text-sm leading-5 text-slate-600 dark:text-slate-300">{entry.body}</p>}</article>; }
-function DeskTab({ active = false, onClick, children }: { active?: boolean; onClick: () => void; children: React.ReactNode }): JSX.Element { return <button onClick={onClick} className={cn('flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-3 text-sm font-semibold transition-colors', active ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200')}>{children}</button>; }
+function DeskTab({ active = false, onClick, children }: { active?: boolean; onClick: () => void; children: React.ReactNode }): JSX.Element { return <button onClick={onClick} className={cn('flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-semibold transition-colors', active ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200')}>{children}</button>; }
 /**
  * The record's stage, as the CRM draws a stage everywhere else.
  *

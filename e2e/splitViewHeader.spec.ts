@@ -41,6 +41,30 @@ test('every header field sits on the same line', async ({ page }) => {
   expect(spread, 'the header fields are on more than one line').toBeLessThan(6);
 });
 
+test('a narrow pane says there are more fields rather than cutting one in half', async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 900 });
+  await splitView(page);
+  const header = page.getByTestId('ipropy-workspace').locator('main > header');
+
+  /*
+    The strip clips, and clipping alone cut the last field through the middle
+    of a word — "Budg…" — which reads as a broken screen. Anything that does
+    not fit whole is made invisible and the line ends with a `…`, which is the
+    cue to shorten the list in Admin → Split View.
+  */
+  const more = header.getByTitle(/More fields than fit/);
+  await expect(more).toBeVisible();
+
+  const strip = header.getByTestId('header-fields');
+  const box = (await strip.boundingBox())!;
+  for (const field of await strip.locator('> span:visible').all()) {
+    const item = await field.boundingBox();
+    if (!item) continue;
+    expect(item.x + item.width, 'a field is cut off rather than hidden')
+      .toBeLessThanOrEqual(box.x + box.width + 1);
+  }
+});
+
 test('the actions are star, WhatsApp, call, tag and the menu — and Delete is only in the menu', async ({ page }) => {
   await splitView(page);
   const header = page.getByTestId('ipropy-workspace').locator('main > header');
@@ -89,4 +113,42 @@ test('the tag icon actually tags the record', async ({ page }) => {
       await fetch(`/api/tags/${id}`, { method: 'DELETE', headers: { authorization: `Bearer ${token}` } });
     }, tagId);
   }
+});
+
+test('the star turns the record into a favourite and says so', async ({ page }) => {
+  await splitView(page);
+  const header = page.getByTestId('ipropy-workspace').locator('main > header');
+
+  /*
+    It saved and the button did not move: `invalidateRecordQueries` was called
+    without the record's id, so the lists refreshed and `['record', module,
+    id]` — which is what this header reads — did not. The press looked like it
+    had done nothing.
+  */
+  const star = header.locator('button[title$="starred"], button[title^="Star "]').first();
+  const before = await star.getAttribute('title');
+  await star.click();
+  await expect(star).not.toHaveAttribute('title', before ?? '', { timeout: 15_000 });
+
+  // And back, so the spec leaves the record as it found it.
+  await star.click();
+  await expect(star).toHaveAttribute('title', before ?? '', { timeout: 15_000 });
+});
+
+test('the open record is obvious in the queue', async ({ page }) => {
+  await splitView(page);
+  const rows = page.locator('aside').first().locator('button:has(input[type="checkbox"])');
+
+  /*
+    The marker used to be `border-l-4 border-l-brand-600` on a row that also
+    says `border-b border-slate-100`, and which of those decides the left
+    edge's colour is Tailwind's own stylesheet order rather than the order they
+    are written. Measured, so a class that is present while the row still looks
+    like its neighbours cannot pass.
+  */
+  const chosen = rows.nth(2);
+  await chosen.click();
+  const background = await chosen.evaluate((el) => getComputedStyle(el).backgroundColor);
+  const plain = await rows.nth(4).evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(background, 'the open record looks like every other row').not.toBe(plain);
 });

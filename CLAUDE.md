@@ -1416,17 +1416,48 @@ Unit Number etc. are shown in two row Please set all in one row, so that we can 
 header and wide Timeline etc view. If more then line should make it in dash … so that we can
 choose only option from master as i need in a single line."*
 
-* **The field strip never wraps.** It is one row, clipped, and a `…` appears at its end when
+* **The field strip never wraps.** It is one row, and a `…` appears at its end when
   something is out of sight — which is the cue to go and shorten the list in Admin → Split
   View rather than a silent loss. Measured with a `ResizeObserver` on the strip itself: a
   window listener is not enough, because the strip also narrows when the queue's divider is
   dragged and that moves no window.
+  **It counts what fits rather than only clipping.** Clipping alone cut the last field
+  through the middle of a word — "Budg…" — which reads as a broken screen rather than as a
+  full line. The ones that do not fit are made **invisible rather than unmounted**: they keep
+  their space, so the measurement that produced the count stays true and the count cannot
+  oscillate between two answers on every frame.
+  **And it sits below the whole row, not inside the name's column**, so it runs the header's
+  full width and uses the space under the action icons. Nested beside them it stopped where
+  they began and a third of the line was empty on every record — three fields fitting where
+  six do now.
 * **The name line stopped wrapping too**, which is where most of the height was going: a long
   name pushed *Updated …* onto a second row, so the header grew by a line for nothing. The
   name gives way first (`truncate`) and everything beside it holds its width.
 * **The delete circle is gone.** Delete is in the three-dot menu a few pixels away, and one
   destructive action offered twice, a thumb's width from Call, is one more chance to hit it
   by accident than it is worth.
+* **The favourite star saved and did not move**, which is the whole of *"favourite icon does
+  not work properly in split view"*. `invalidateRecordQueries` was called without the
+  record's id, so the lists refreshed and `['record', module, id]` — which is what this
+  header reads — did not. The press looked like it had done nothing.
+  **A mutation in this pane passes the id**, always: the header shows the fetched record, not
+  the list row.
+* **The action circles fill with their own colour on hover** and are grey at rest — his
+  instruction, and the right way round: four tinted circles at rest read as four warnings,
+  while one filling under the cursor says what it is exactly when that matters.
+  `ACTION_BASE` and `ACTION_REST` are separate strings for a reason worth keeping: the
+  starred state needs its own background, and `bg-amber-500` written after `bg-slate-50` in
+  one class list **does not win** — Tailwind decides between two `bg-*` utilities by where
+  they sit in its own stylesheet, not by the order they are typed. That is the same rule that
+  made every column header in the CRM scroll away once. A state swaps the string out rather
+  than trying to beat it.
+* **The open record's row is marked by an element, not a border.** It was `border-l-4
+  border-l-brand-600` on a row that also says `border-b border-slate-100`, and which of those
+  decides the left edge's colour is the same stylesheet-order lottery as above — so the
+  marker could come out slate on slate and the row looked no different from its neighbours.
+  A `span` competes with nothing.
+* **The header is tighter**: smaller avatar, smaller name, 8px circles, less padding above
+  and below the tabs. *"Now it is comfortable, but try compact in split view."*
 * **The tag icon works now** (`components/TagButton.tsx`) — *"give an operational tag icon,
   which is missing from header"*. **One component, used by the record page and the split
   view.** The cheap answer was a second copy of the record page's dialog, and two copies of
