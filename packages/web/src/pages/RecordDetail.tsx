@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type BuyerMatch, type FieldMeta, type ModuleMeta, type PropertyMatch, type RecordEnvelope, relativeTime, type TimelineEntry } from '@ipropy/shared';
 import {
-  Activity, ArrowRightLeft, Check, ChevronLeft, ChevronRight, Download, Edit3, Eye, FileQuestion, FileText, Images, LayoutDashboard, Link2, MessageCircle, Mic, MoreHorizontal, Paperclip, Pencil, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Tag, Trash2, Upload, Users, X,
+  Activity, ArrowRightLeft, Check, ChevronLeft, ChevronRight, Download, Edit3, Eye, FileQuestion, FileText, Images, LayoutDashboard, Link2, MessageCircle, Mic, MoreHorizontal, Paperclip, Pencil, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, Plus, RefreshCw, Search, Send, Sparkles, Star, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { api, authedFileUrl } from '../lib/api';
 import { compressImage, formatBytes } from '../lib/compressImage';
@@ -18,6 +18,7 @@ import { resolveIcon } from '../lib/icons';
 import { FieldValue } from '../components/FieldRenderer';
 import { StrengthRing } from '../components/StrengthRing';
 import { WhatsAppTab } from '../components/WhatsAppTab';
+import { TagButton } from '../components/TagButton';
 import { EditableField, isInlineEditable } from '../components/EditableField';
 import { assignmentField } from '../lib/fields';
 import { ShareLinksPanel } from '../components/ShareLinks';
@@ -60,8 +61,6 @@ export default function RecordDetail(): JSX.Element {
   const [moveTarget, setMoveTarget] = useState<'leads' | 'properties' | null>(null);
   const [sharing, setSharing] = useState(false);
   const [collaborators, setCollaborators] = useState(false);
-  const [tagging, setTagging] = useState(false);
-  const [tagDraft, setTagDraft] = useState<string[]>([]);
   const [compose, setCompose] = useState<'email' | null>(null);
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [summarising, setSummarising] = useState(false);
@@ -217,11 +216,6 @@ export default function RecordDetail(): JSX.Element {
       invalidateRecordQueries(queryClient, moduleName, id);
       void refetch();
     },
-  });
-  const tagsMutation = useMutation({
-    mutationFn: (tags: string[]) => api.setTags(moduleName!, id!, tags),
-    onSuccess: () => { toast.success('Tags updated'); setTagging(false); void refetch(); },
-    onError: (err: Error) => toast.error('Could not update tags', err.message),
   });
 
   // A failed load has to be distinguishable from a slow one. Previously this
@@ -415,11 +409,13 @@ export default function RecordDetail(): JSX.Element {
               {(record.tags ?? []).slice(0, 3).map((tag) => (
                 <span key={tag} className="rounded-full px-2 py-1 text-2xs font-medium text-white" style={{ backgroundColor: tagOptions?.find((option) => option.name === tag)?.color ?? '#2563eb' }}>{tag}</span>
               ))}
-              {record.can?.edit && (
-                <button className={cn('btn-ghost p-2', (record.tags?.length ?? 0) > 0 && 'text-blue-600 dark:text-blue-400')} title="Tags" aria-label="Edit tags" onClick={() => { setTagDraft(record.tags ?? []); setTagging(true); }}>
-                  <Tag className={cn('h-4 w-4', (record.tags?.length ?? 0) > 0 && 'fill-blue-100 dark:fill-blue-950')} />
-                </button>
-              )}
+              <TagButton
+                module={moduleName!}
+                recordId={id!}
+                tags={record.tags}
+                canEdit={Boolean(record.can?.edit)}
+                className="btn-ghost p-2"
+              />
               <button
                 onClick={() => starMutation.mutate(!record.starred)}
                 className="btn-ghost p-2"
@@ -723,30 +719,6 @@ export default function RecordDetail(): JSX.Element {
           <p className="text-xs text-muted">
             Built only from the CRM fields and activity you are allowed to see; missing facts are not invented.
           </p>
-        </div>
-      </Modal>
-
-      <Modal
-        open={tagging}
-        onClose={() => setTagging(false)}
-        title="Tags"
-        size="sm"
-        footer={(
-          <>
-            <button className="btn-secondary" onClick={() => setTagging(false)}>Cancel</button>
-            <button className="btn-primary" disabled={tagsMutation.isPending} onClick={() => tagsMutation.mutate(tagDraft)}>
-              {tagsMutation.isPending ? 'Saving…' : 'Save tags'}
-            </button>
-          </>
-        )}
-      >
-        <p className="mb-3 text-sm text-muted">Choose one or more shared tags to help the team find and group this record.</p>
-        <div className="flex flex-wrap gap-2">
-          {(tagOptions ?? []).map((tag) => {
-            const active = tagDraft.includes(tag.name);
-            return <button key={tag.id} type="button" onClick={() => setTagDraft((current) => active ? current.filter((name) => name !== tag.name) : [...current, tag.name])} className={cn('rounded-full border px-2.5 py-1 text-xs font-medium transition-colors', active ? 'border-transparent text-white' : 'border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800')} style={active ? { backgroundColor: tag.color } : undefined}>{tag.name}</button>;
-          })}
-          {!tagOptions?.length && <p className="text-sm text-muted">No tags exist yet. An administrator can create them in Admin → Tags.</p>}
         </div>
       </Modal>
 

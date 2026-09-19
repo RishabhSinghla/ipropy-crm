@@ -152,8 +152,12 @@ test('the desk offers the record, its fields and a way to delete it', async ({ p
 
   // The field card is what makes the desk somewhere a value gets fixed rather
   // than only read, and Delete is what makes it somewhere the work finishes.
+  // Delete moved into the three-dot menu on 19 September — one destructive
+  // action a thumb's width from Call was one accident waiting — so it is
+  // reached rather than sitting in the open.
   await expect(desk.getByText('Basic Information')).toBeVisible();
-  await expect(page.locator('button[title^="Delete "]')).toBeVisible();
+  await desk.getByRole('button', { name: 'More actions' }).click();
+  await expect(page.getByRole('button', { name: /^Delete/ })).toBeVisible();
 });
 
 test('the queue is faces and facts, with the completeness bar off it', async ({ page }) => {

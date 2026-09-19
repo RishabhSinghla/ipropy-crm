@@ -1409,6 +1409,45 @@ line, the select-all and the sorting menu with no follow-up section in it, and t
 **measured** to be beside the fields rather than read off a class name — a class that is
 present while the card still sits underneath is exactly the bug.
 
+### The header is one line, and the actions beside it
+
+**19 September 2026, the owner:** *"In the Head Tab Mobile, Budget, Next Followup, Status,
+Unit Number etc. are shown in two row Please set all in one row, so that we can see narrow
+header and wide Timeline etc view. If more then line should make it in dash … so that we can
+choose only option from master as i need in a single line."*
+
+* **The field strip never wraps.** It is one row, clipped, and a `…` appears at its end when
+  something is out of sight — which is the cue to go and shorten the list in Admin → Split
+  View rather than a silent loss. Measured with a `ResizeObserver` on the strip itself: a
+  window listener is not enough, because the strip also narrows when the queue's divider is
+  dragged and that moves no window.
+* **The name line stopped wrapping too**, which is where most of the height was going: a long
+  name pushed *Updated …* onto a second row, so the header grew by a line for nothing. The
+  name gives way first (`truncate`) and everything beside it holds its width.
+* **The delete circle is gone.** Delete is in the three-dot menu a few pixels away, and one
+  destructive action offered twice, a thumb's width from Call, is one more chance to hit it
+  by accident than it is worth.
+* **The tag icon works now** (`components/TagButton.tsx`) — *"give an operational tag icon,
+  which is missing from header"*. **One component, used by the record page and the split
+  view.** The cheap answer was a second copy of the record page's dialog, and two copies of
+  one dialog drift: one learns about a new colour, or stops going through
+  `invalidateRecordQueries`, and the same action behaves differently depending on which
+  screen you were on. Moving it out of `RecordDetail.tsx` removed four pieces of state and a
+  modal from the largest file in the repo.
+
+**Two test traps this round, both of which made a spec pass while doing nothing:**
+
+* **The token is `localStorage['ipropy.token']`, a bare string.** Two specs read
+  `JSON.parse(localStorage['ipropy.auth']).token`, which is undefined, so every API call they
+  made was unauthenticated — and `fetch` does not throw on a 401. `splitViewAdmin.spec.ts`'s
+  `afterAll` therefore never restored the global setting it changes, and the header spec's
+  tag was never created, which presented as a dialog that did not list it. `e2e/helpers.ts`
+  has had the right key all along.
+* **`hasText` matches a descendant's text**, so `header.locator('span', { hasText: /:$/ })`
+  also caught the *name line's* "Assigned To:" — a line above by design — and the one-line
+  assertion failed against correct markup. The strip carries `data-testid="header-fields"`
+  and the spec measures its direct children.
+
 ### One split view for the whole team
 
 **19 September 2026, the owner:** *"can you create a master in admin for Split view, so that

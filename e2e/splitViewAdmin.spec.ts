@@ -31,7 +31,7 @@ test.afterAll(async ({ browser }) => {
   const page = await browser.newPage();
   await page.goto('/leads');
   await page.evaluate(async (key) => {
-    const token = JSON.parse(localStorage.getItem('ipropy.auth') ?? '{}')?.token;
+    const token = localStorage.getItem('ipropy.token');
     await fetch('/api/admin/settings', {
       method: 'PUT',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },

@@ -11,6 +11,7 @@ import { WhatsAppComposerProvider } from './WhatsAppComposer';
 import { MatchingTab } from './MatchingTab';
 import { WhatsAppTab } from './WhatsAppTab';
 import { WhatsAppButton } from './WhatsAppButton';
+import { TagButton } from './TagButton';
 import { CallsTab, FilesTab, RecordCollaboratorsPanel, TimelineTab } from '../pages/RecordDetail';
 import { EditableField, isInlineEditable } from './EditableField';
 import { invalidateRecordQueries } from '../lib/invalidate';
@@ -194,6 +195,20 @@ export function IpropyWorkspace({
     toolbar above grows a row.
   */
   const shell = useRef<HTMLDivElement>(null);
+
+  /*
+    The header's field strip is **one row, always**, and says so when it cannot
+    fit: *"Please set all in one row, so that we can see narrow header and wide
+    Timeline… if more then line should make it in dash … so that we can choose
+    only option from master."*
+
+    Wrapping was the old behaviour, and a header that grows to two or three
+    rows eats the screen the work happens on. Clipping alone would hide fields
+    silently, so the row is measured and a `…` appears when something is out of
+    sight — the cue to go and shorten the list in Admin → Split View.
+  */
+  const strip = useRef<HTMLDivElement>(null);
+  const [clipped, setClipped] = useState(false);
   const [paneTop, setPaneTop] = useState(0);
   useEffect(() => {
     const measure = (): void => {
@@ -204,6 +219,7 @@ export function IpropyWorkspace({
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
   }, []);
+
 
   const star = useMutation({
     mutationFn: (row: RecordEnvelope) => api.star(module.name, row.id, !row.starred),
@@ -308,6 +324,21 @@ export function IpropyWorkspace({
       .map((name) => fieldMap.get(name))
       .filter((field): field is FieldMeta => Boolean(field && field.isActive && field.displayType !== 'hidden'));
   }, [panes?.header, pickFields, layout.headerFields, fieldMap, assignedField, phoneField, followUpField, statusField, subtitleFields]);
+
+  /*
+    A window listener is not enough here: the strip also narrows when the
+    queue's divider is dragged, which moves no window. `ResizeObserver` fires
+    on the element itself, so the `…` is right in both cases.
+  */
+  useEffect(() => {
+    const box = strip.current;
+    if (!box) return;
+    const measure = (): void => setClipped(box.scrollWidth - box.clientWidth > 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, [headerFields, active?.id]);
 
   const blocks = useMemo(() => {
     /*
@@ -524,12 +555,18 @@ export function IpropyWorkspace({
           <div className="flex min-w-0 items-start gap-4">
             <Avatar name={active.label} size={52} className="mt-0.5 text-lg" />
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <h2 className="truncate text-2xl font-extrabold tracking-tight text-slate-950 dark:text-white">{active.label}</h2>
+              {/*
+                One line here too. It used to wrap, so a long name pushed
+                "Updated …" onto a second row and the header grew by a line for
+                nothing — the opposite of the ask. The name gives way first
+                (`truncate`) and everything beside it holds its width.
+              */}
+              <div className="flex min-w-0 items-center gap-x-3 whitespace-nowrap">
+                <h2 className="min-w-0 truncate text-2xl font-extrabold tracking-tight text-slate-950 dark:text-white">{active.label}</h2>
                 {/* Between the name and when it was last touched, which is
                     where the owner asked for it. */}
                 {assignedField && (
-                  <span className="inline-flex min-w-0 items-center gap-1.5 text-sm">
+                  <span className="inline-flex shrink-0 items-center gap-1.5 text-sm">
                     <span className="shrink-0 text-xs font-normal text-muted">{assignedField.label}:</span>
                     {canEdit && isInlineEditable(assignedField) ? (
                       <EditableField
@@ -548,8 +585,8 @@ export function IpropyWorkspace({
                     )}
                   </span>
                 )}
-                <span className="text-sm text-slate-400">Updated {relativeTime(active.updatedAt)}</span>
-                {active.tags?.slice(0, 2).map((tag) => <span key={tag} className="inline-flex items-center gap-1 rounded-md bg-brand-50 px-1.5 py-0.5 text-2xs font-semibold text-brand-700 dark:bg-brand-950/40 dark:text-brand-300"><Tag className="h-3 w-3" />{tag}</span>)}
+                <span className="shrink-0 text-sm text-slate-400">Updated {relativeTime(active.updatedAt)}</span>
+                {active.tags?.slice(0, 2).map((tag) => <span key={tag} className="inline-flex shrink-0 items-center gap-1 rounded-md bg-brand-50 px-1.5 py-0.5 text-2xs font-semibold text-brand-700 dark:bg-brand-950/40 dark:text-brand-300"><Tag className="h-3 w-3" />{tag}</span>)}
 
               </div>
 
@@ -563,9 +600,10 @@ export function IpropyWorkspace({
                 things phone number, next follow-up all other things be in
                 line editable."
               */}
-              <div className="mt-2.5 flex flex-wrap items-center gap-x-5 gap-y-2 pb-1 text-sm font-medium text-slate-800 dark:text-slate-100">
+              <div className="mt-2.5 flex items-center gap-2 pb-1 text-sm font-medium text-slate-800 dark:text-slate-100">
+                <div ref={strip} data-testid="header-fields" className="flex min-w-0 flex-1 items-center gap-x-5 overflow-hidden whitespace-nowrap">
                 {headerFields.map((field) => (
-                  <span key={field.name} className="inline-flex min-w-0 max-w-full items-center gap-1.5 truncate">
+                  <span key={field.name} className="inline-flex shrink-0 items-center gap-1.5">
                     <span className="shrink-0 text-xs font-normal text-muted">{field.label}:</span>
                     {canEdit && isInlineEditable(field) ? (
                       <EditableField
@@ -584,6 +622,15 @@ export function IpropyWorkspace({
                     )}
                   </span>
                 ))}
+                </div>
+                {clipped && (
+                  <span
+                    className="shrink-0 cursor-default select-none text-base leading-none tracking-widest text-slate-400"
+                    title="More fields than fit on one line. Choose fewer in Admin → Split View."
+                  >
+                    …
+                  </span>
+                )}
               </div>
             </div>
 
@@ -598,16 +645,19 @@ export function IpropyWorkspace({
               </button>
               {phoneValue && <WhatsAppButton to={phoneValue} iconOnly round />}
               {phoneValue && <CallButton to={phoneValue} iconOnly round />}
-              {onDelete && (
-                <button
-                  onClick={() => onDelete(active)}
-                  className={cn(ACTION_CIRCLE, 'hover:text-rose-600')}
-                  title={`Delete ${active.label}`}
-                  aria-label={`Delete ${active.label}`}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              )}
+              {/* Tagging, the same dialog the record page opens. */}
+              <TagButton
+                module={module.name}
+                recordId={active.id}
+                tags={active.tags}
+                canEdit={canEdit}
+                className={ACTION_CIRCLE}
+              />
+              {/*
+                No delete circle. Delete is in the menu beside it, and one
+                destructive action offered twice, a thumb's width from Call, is
+                one more chance to hit it by accident than it is worth.
+              */}
 
               {/*
                 The record page's own menu, here. The owner asked for it by
