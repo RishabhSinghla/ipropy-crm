@@ -256,6 +256,16 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
 
   let checked = 0;
   let stored = 0;
+  /*
+    The newest thing a customer has said, **ignoring the watermark**.
+
+    Without it "stored 0" has two very different causes that read the same:
+    the poller cannot see a message at all, or it can see it and has already
+    passed it. One is a bug and one is the poller working. This is the single
+    number that tells them apart, and it is the question that has been open
+    since the owner messaged the business number and nothing appeared.
+  */
+  let newestFromAnyone: Date | null = null;
 
   const subscribers = rowsOf(list.message);
   /*
@@ -285,6 +295,7 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
       if (!isFromCustomer(row)) continue;
 
       const sentAt = readTime(row.conversation_time ?? row.created_at);
+      if (!newestFromAnyone || sentAt > newestFromAnyone) newestFromAnyone = sentAt;
       /*
         `<`, not `<=`, and the watermark overlaps by a second below.
 
@@ -351,7 +362,8 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
     lastOutcome
       || `WhatsMarketing listed ${listed} subscriber${listed === 1 ? '' : 's'}; `
         + `read ${checked} thread${checked === 1 ? '' : 's'}; `
-        + `stored ${stored} new message${stored === 1 ? '' : 's'} since ${since.toISOString()}.`,
+        + `stored ${stored} new message${stored === 1 ? '' : 's'} since ${since.toISOString()}; `
+        + `newest customer message visible anywhere: ${newestFromAnyone?.toISOString() ?? 'none'}.`,
   );
   return { checked, stored };
 }

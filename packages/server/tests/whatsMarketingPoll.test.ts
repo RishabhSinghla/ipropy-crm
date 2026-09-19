@@ -187,6 +187,12 @@ describe('pulling replies in', () => {
     await pollWhatsMarketingInbound();
     expect(reported.calls.at(-1)?.ok).toBe(true);
     expect(reported.calls.at(-1)?.detail).toMatch(/listed 1 subscriber; read 1 thread; stored 0 new messages/);
+    /*
+      And the number that separates the two causes of "stored 0": the poller
+      cannot see the message, or it can see it and has already passed it. Here
+      it can see one from 1 September, which is the second case.
+    */
+    expect(reported.calls.at(-1)?.detail).toMatch(/newest customer message visible anywhere: 2026-09-01T09:00:00/);
   });
 });
 
