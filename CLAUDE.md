@@ -1389,6 +1389,50 @@ line, the select-all and the sorting menu with no follow-up section in it, and t
 **measured** to be beside the fields rather than read off a class name — a class that is
 present while the card still sits underneath is exactly the bug.
 
+### One split view for the whole team
+
+**19 September 2026, the owner:** *"can you create a master in admin for Split view, so that
+we can set key and key value for Left pane and Right pane for header and form as we had used
+in table view."*
+
+**Admin → Split View**, beside Table View and built the same way: one arrangement for
+everybody, stored in `ui.split_view` as `{ module: { queue, header, form } }`, three ordered
+lists of field names.
+
+* **queue** — the line under each name in the left pane, joined with a hyphen.
+* **header** — the strip beside the open record's name.
+* **form** — the fields below it, in one card called Details.
+
+**Every list left empty keeps exactly what the CRM shipped**, and that fallback is the whole
+safety of the setting: the queue falls back to the fields flagged `config.listSubtitle`, and
+the header and the form to the Layout Designer's arrangement. A module nobody has arranged
+looks as it did before the screen existed, and clearing a list gives the fallback back
+rather than a blank pane. The row is seeded `{}` for that reason — it changes nothing on the
+day it lands.
+
+Three things this cost, all worth keeping:
+
+* **A brand-new settings key lands in the wrong category, and the symptom is a page that
+  saves and reads back empty.** `PUT /api/admin/settings` inserts a key it has never seen
+  with no category, so it goes to `general`; the admin screen asks for `ui` and never sees
+  it again. Migration `160` creates the row under `ui` up front. **Any new `ui.*` setting
+  needs the same line.**
+* **A settings response that arrives after the first paint wipes what was ticked in the
+  gap** — no error, nothing on screen, and it reads exactly like a checkbox that does not
+  work. `SplitViewAdmin` renders nothing until the saved arrangement has loaded.
+  `TableViewAdmin` has the same shape and has never been reported; it is the same bug
+  waiting.
+* **The queue's fields have to be asked for.** A list row carries only the columns the list
+  requested, so `withQueueSubtitle` now appends the admin's own queue list when there is one
+  — otherwise the line is blank on any view whose columns do not happen to include it, which
+  reads as the setting not working.
+
+Pinned by `tests/listColumns.test.ts` (`readSplitView`: an unsaved list reads as empty
+rather than refusing the module, and a module with nothing chosen anywhere is dropped) and
+`e2e/splitViewAdmin.spec.ts`, which does the round trip against a real browser — choose a
+field, save, see it in the queue, clear it, see the shipped answer come back. That spec
+writes a **global** setting, so it restores it in `afterAll` whatever happens.
+
 ## Pressing Call at a desk rings the rep's own phone
 
 **18 September 2026, the owner's report:** clicking Call on a Mac showed Chrome's

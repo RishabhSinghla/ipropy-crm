@@ -115,6 +115,9 @@ export default function ListView(): JSX.Element {
     a renamed or deleted field must not leave a hole in everyone's table.
   */
   const masterColumns = useApp((st) => st.user?.ui?.listColumns?.[moduleName ?? ''] ?? null);
+  // Admin → Split View's queue line. Requested as columns so the line is not
+  // blank on a view whose columns happen not to include those fields.
+  const splitQueue = useApp((st) => st.user?.ui?.splitView?.[moduleName ?? '']?.queue ?? null);
   const [showFilters, setShowFilters] = useState(false);
   const [showQuickCreate, setShowQuickCreate] = useState(false);
   const [showCapture, setShowCapture] = useState(false);
@@ -485,9 +488,10 @@ export default function ListView(): JSX.Element {
     columns: withQueueSubtitle(
       masterColumns?.length ? masterColumns : (columns.length ? columns : undefined),
       displayMode === 'ipropy' ? meta : undefined,
+      splitQueue ?? undefined,
     ),
     groupBy: groupByField,
-  }), [activeView?.id, page, pageSize, search, effectiveSort, effectiveFilter, masterColumns, columns, groupByField, displayMode, meta]);
+  }), [activeView?.id, page, pageSize, search, effectiveSort, effectiveFilter, masterColumns, splitQueue, columns, groupByField, displayMode, meta]);
 
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['records', moduleName, query],

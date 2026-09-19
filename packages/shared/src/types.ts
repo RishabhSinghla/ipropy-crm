@@ -282,6 +282,30 @@ export interface UiSettings {
    * defaults so a new module is never a blank table.
    */
   listColumns: Record<string, string[]> | null;
+  /**
+   * What the split view shows, per module — the same idea as `listColumns`,
+   * for the screen most of the team now works in all day.
+   *
+   * Three lists, because the split view has three places a field can appear
+   * and they answer different questions: the **queue** line under each name in
+   * the left pane, the **header** strip beside the open record's name, and the
+   * **form** below it. An empty or missing list means "as shipped": the queue
+   * falls back to the fields flagged `config.listSubtitle`, and the header and
+   * the form to the Layout Designer's arrangement. That fallback is the whole
+   * safety of this setting — a module nobody has configured looks exactly as
+   * it does today.
+   */
+  splitView: Record<string, SplitViewLayout> | null;
+}
+
+/** One module's split-view arrangement. Every list is ordered and may be empty. */
+export interface SplitViewLayout {
+  /** The line under each name in the queue, joined with a hyphen. */
+  queue: string[];
+  /** The strip beside the open record's name. */
+  header: string[];
+  /** The fields below it. Empty keeps the Layout Designer's blocks. */
+  form: string[];
 }
 
 /** One entry in the admin-arranged header. */

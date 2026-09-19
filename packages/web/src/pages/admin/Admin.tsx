@@ -2,7 +2,7 @@ import SettingsAdmin from './SettingsAdmin';
 import { type JSX, lazy, Suspense } from 'react';
 import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {
-  Activity, AppWindow, Blocks, Columns3, Database, KeyRound, LayoutTemplate, Link2, MapPin,
+  Activity, AppWindow, Blocks, Columns2, Columns3, Database, KeyRound, LayoutTemplate, Link2, MapPin,
   ListTree, MessageCircle, MessageSquareText, Plug, Ruler, Settings2, Shield, Sparkles, Tag, ToggleLeft, Users, Workflow,
   SlidersHorizontal,
 } from 'lucide-react';
@@ -25,6 +25,7 @@ const ImportAdmin = lazy(() => import('./ImportAdmin'));
 const BrandAdmin = lazy(() => import('./BrandAdmin'));
 const HeaderTabsAdmin = lazy(() => import('./HeaderTabsAdmin'));
 const TableViewAdmin = lazy(() => import('./TableViewAdmin'));
+const SplitViewAdmin = lazy(() => import('./SplitViewAdmin'));
 const MatchingSetupAdmin = lazy(() => import('./MatchingSetupAdmin'));
 const UnitMasterAdmin = lazy(() => import('./UnitMasterAdmin'));
 const TagsAdmin = lazy(() => import('./TagsAdmin'));
@@ -54,6 +55,7 @@ const SECTIONS = [
       { path: 'layouts', capability: 'admin.layouts', label: 'Layout Designer', icon: LayoutTemplate, element: <LayoutDesigner /> },
       { path: 'header', capability: 'admin.layouts', label: 'Header Tabs', icon: AppWindow, element: <HeaderTabsAdmin /> },
       { path: 'table-view', capability: 'admin.layouts', label: 'Table View', icon: Columns3, element: <TableViewAdmin /> },
+      { path: 'split-view', capability: 'admin.layouts', label: 'Split View', icon: Columns2, element: <SplitViewAdmin /> },
       { path: 'picklists', capability: 'admin.picklists', label: 'Dropdowns', icon: ListTree, element: <PicklistManager /> },
       { path: 'tags', capability: 'admin.picklists', label: 'Tags', icon: Tag, element: <TagsAdmin /> },
     ],

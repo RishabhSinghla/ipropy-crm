@@ -96,18 +96,21 @@ export function byLabel<T extends { label: string }>(fields: readonly T[]): T[] 
  * absent. Undefined is left alone: that means "the server's defaults", and
  * narrowing it to one field would empty the table.
  *
- * The fields are `subtitleFieldsOf`'s, so the queue shows whatever an admin
- * flagged rather than a pair named in this file — that is how Unit Number
- * came to sit after Contact Type on a contact without a line of code naming
- * either of them.
+ * The fields are Admin → Split View's list for this module when it has one,
+ * and `subtitleFieldsOf`'s otherwise — so the queue shows whatever an admin
+ * chose rather than a pair named in this file. That is how Unit Number came to
+ * sit after Contact Type on a contact without a line of code naming either.
  */
 export function withQueueSubtitle(
   columns: string[] | undefined,
   module: { fields: FieldMeta[] } | undefined,
+  /** Admin → Split View's own list for this module, which wins when it is set. */
+  chosen?: string[],
 ): string[] | undefined {
   if (!columns || !module) return columns;
-  const extra = subtitleFieldsOf(module.fields)
-    .map((field) => field.name)
-    .filter((name) => !columns.includes(name));
+  const wanted = chosen?.length
+    ? chosen
+    : subtitleFieldsOf(module.fields).map((field) => field.name);
+  const extra = wanted.filter((name) => !columns.includes(name));
   return extra.length ? [...columns, ...extra] : columns;
 }

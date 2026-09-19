@@ -19,7 +19,7 @@ import { ModuleIcon } from './Layout';
 import { Avatar, ConfirmDialog, Dropdown, DropdownItem, Modal, Spinner } from './ui';
 import { api } from '../lib/api';
 import { cn, restrictionForField } from '../lib/utils';
-import { toast } from '../lib/store';
+import { toast, useApp } from '../lib/store';
 
 type DeskTabKey = 'overview' | 'timeline' | 'matching' | 'files' | 'calls' | 'whatsapp';
 
@@ -237,13 +237,30 @@ export function IpropyWorkspace({
     [module.layouts],
   );
   const fieldMap = useMemo(() => new Map(module.fields.map((field) => [field.name, field])), [module.fields]);
+
+  /*
+    What Admin → Split View says this module shows, if anything.
+
+    Three ordered lists, each of which **wins over the shipped answer only when
+    it is not empty**. That is the whole safety of the setting: a module nobody
+    has arranged behaves exactly as it did before the screen existed, and an
+    admin who clears a list gets the fallback back rather than a blank pane.
+  */
+  const panes = useApp((st) => st.user?.ui?.splitView?.[module.name]) ?? null;
+  const pickFields = useMemo(() => (names: string[] | undefined): FieldMeta[] => (names ?? [])
+    .map((name) => fieldMap.get(name))
+    .filter((field): field is FieldMeta => Boolean(field && field.isActive && field.displayType !== 'hidden')),
+  [fieldMap]);
   const assignedField = useMemo(() => assignmentField(module.fields), [module.fields]);
   /*
     Whatever an admin flagged with `config.listSubtitle`, in the order the flag
     gives: a contact reads `Buyer — 304`, a unit reads its Unit Number. Named
     by metadata rather than in this file, like every other field here.
   */
-  const subtitleFields = useMemo(() => subtitleFieldsOf(module.fields), [module.fields]);
+  const subtitleFields = useMemo(() => {
+    const chosen = pickFields(panes?.queue);
+    return chosen.length ? chosen : subtitleFieldsOf(module.fields);
+  }, [panes?.queue, pickFields, module.fields]);
   const statusField = useMemo(() => module.fields.find((f) => f.name === module.pipelineField) ?? module.fields.find((f) => /status|stage/i.test(f.name)), [module.fields, module.pipelineField]);
   const followUpField = useMemo(() => module.fields.find((f) => f.columnName === 'next_followup_at') ?? module.fields.find((f) => /next.*follow.*up/i.test(f.name)), [module.fields]);
   const phoneField = useMemo(() => module.fields.find((f) => f.uitype === 'phone'), [module.fields]);
@@ -260,6 +277,9 @@ export function IpropyWorkspace({
     where the owner asked for it.
   */
   const headerFields = useMemo(() => {
+    const chosen = pickFields(panes?.header);
+    if (chosen.length) return chosen.filter((field) => field.name !== assignedField?.name);
+
     const names: string[] = [...(layout.headerFields ?? [])];
     for (const field of [phoneField, followUpField, statusField]) {
       if (field && !names.includes(field.name)) names.push(field.name);
@@ -274,7 +294,7 @@ export function IpropyWorkspace({
       .filter((name) => !subtitleFields.some((field) => field.name === name))
       .map((name) => fieldMap.get(name))
       .filter((field): field is FieldMeta => Boolean(field && field.isActive && field.displayType !== 'hidden'));
-  }, [layout.headerFields, fieldMap, assignedField, phoneField, followUpField, statusField, subtitleFields]);
+  }, [panes?.header, pickFields, layout.headerFields, fieldMap, assignedField, phoneField, followUpField, statusField, subtitleFields]);
 
   const blocks = useMemo(() => {
     /*
@@ -286,6 +306,14 @@ export function IpropyWorkspace({
     const identity = new Set(module.labelFields);
     const usable = (field: FieldMeta | undefined): field is FieldMeta =>
       Boolean(field && field.isActive && field.displayType !== 'hidden' && field.uitype !== 'autonumber');
+
+    /*
+      An admin's own list is one card in their order. Deliberately flat: the
+      blocks are the Layout Designer's grouping, and a second screen inventing
+      groups of its own would be two answers to "which section is this in".
+    */
+    const chosen = pickFields(panes?.form).filter(usable);
+    if (chosen.length) return [{ key: 'chosen', label: 'Details', columns: 2, fields: chosen }];
 
     const arranged = (layout.blocks ?? [])
       .map((block) => ({
@@ -327,7 +355,7 @@ export function IpropyWorkspace({
         .filter((field) => !identity.has(field.name))
         .sort((a, b) => a.sequence - b.sequence),
     }];
-  }, [layout.blocks, fieldMap, module.fields, module.labelFields, subtitleFields]);
+  }, [panes?.form, pickFields, layout.blocks, fieldMap, module.fields, module.labelFields, subtitleFields]);
 
   /*
     What the queue's one menu can do. Ordering and the follow-up windows are
