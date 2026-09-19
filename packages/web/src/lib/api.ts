@@ -1233,6 +1233,15 @@ export const api = {
   }>(`/api/whatsapp-business/templates/${id}/preview${qs({ module, recordId })}`),
   waBizSendTemplate: (data: { templateId: string; module: string; recordId: string; to: string }) =>
     post<{ messageId: string; status: string }>('/api/whatsapp-business/send-template', data),
+  waBizShareProperty: (data: {
+    to: string; propertyId: string; contactId?: string | null; note?: string;
+  }) => post<{ messageId: string; conversationId: string; shareUrl: string; propertyLabel: string }>(
+    '/api/whatsapp-business/share-property', data,
+  ),
+  waBizFollowUp: (conversationId: string, on: string, reason?: string) =>
+    post<{ ok: true; on: string }>(
+      `/api/whatsapp-business/conversations/${conversationId}/follow-up`, { on, reason },
+    ),
   waBizThread: (to: string, module?: string, recordId?: string) => get<{
     handle: string; conversationId: string | null; windowOpen: boolean;
     windowExpiresAt: string | null; assignedName: string | null;

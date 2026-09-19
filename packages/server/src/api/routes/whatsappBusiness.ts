@@ -28,6 +28,10 @@ import {
 } from '../../integrations/whatsapp/business/templates.js';
 import { recordService } from '../../core/entity/recordService.js';
 import { threadForNumber } from '../../integrations/whatsapp/business/thread.js';
+import {
+  assertFollowUpDay, contactBehind, sharePropertyOnWhatsApp,
+} from '../../integrations/whatsapp/business/share.js';
+import { scheduleFollowUp } from '../../core/workflow/followUp.js';
 
 /**
  * May this person send that file to a customer?
@@ -262,6 +266,75 @@ whatsappBusinessRouter.get('/threads/by-number', asyncHandler(async (req, res) =
   if (readable) await recordService.getRecord(scope, query.module!, query.recordId!);
 
   res.json(await threadForNumber(query.to, readable));
+}));
+
+// ---------------------------------------------------------------------------
+// Sending a unit, and chasing them about it
+// ---------------------------------------------------------------------------
+
+/**
+ * Send a property to whoever is in this chat.
+ *
+ * The browser names a property id and nothing else. Which link gets minted,
+ * what the message says and whether this rep may see that unit at all are all
+ * decided on the server — a screen that composed the text could send a buyer a
+ * link to a floor its user was never shown.
+ */
+whatsappBusinessRouter.post('/share-property', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'whatsapp.send');
+  const input = z.object({
+    to: z.string().min(6).max(24),
+    propertyId: z.string().uuid(),
+    contactId: z.string().uuid().nullable().optional(),
+    note: z.string().max(500).optional(),
+  }).parse(req.body ?? {});
+
+  if (!activeBusinessProvider()) throw new BadRequestError('No official WhatsApp provider is switched on.');
+
+  res.json(await sharePropertyOnWhatsApp({
+    ctx: getScope(req),
+    userId: user.id,
+    to: input.to,
+    propertyId: input.propertyId,
+    contactId: input.contactId ?? null,
+    note: input.note,
+  }));
+}));
+
+/**
+ * Chase them on a date, from the conversation.
+ *
+ * Straight through to `scheduleFollowUp`, which is the one definition of what
+ * that means — the date on the record, the note in the timeline, the
+ * notification to whoever owns the lead. The only things decided here are that
+ * the thread has a contact behind it and that the caller may edit it: a
+ * follow-up writes to the record, so reading it is not enough.
+ */
+whatsappBusinessRouter.post('/conversations/:id/follow-up', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const input = z.object({
+    on: z.string().min(10).max(10),
+    reason: z.string().min(1).max(300).default('Follow up on WhatsApp'),
+  }).parse(req.body ?? {});
+
+  assertFollowUpDay(input.on);
+  const contact = await contactBehind(req.params.id);
+  if (!contact) {
+    throw new BadRequestError('Link this number to a contact first — a follow-up is a date on a record.');
+  }
+  if (!(await canAccessRecord(getScope(req), contact.module, contact.id, 'edit'))) {
+    throw new ForbiddenError('You cannot set a follow-up on this contact.');
+  }
+
+  await scheduleFollowUp({
+    recordId: contact.id,
+    module: contact.module,
+    on: input.on,
+    reason: input.reason,
+    authorId: user.id,
+  });
+  res.json({ ok: true, on: input.on });
 }));
 
 // ---------------------------------------------------------------------------

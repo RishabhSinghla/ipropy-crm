@@ -2,7 +2,8 @@ import { type JSX, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
-  CheckCheck, CircleUser, Clock, Inbox, MessageCircle, Paperclip, Search, Send, UserPlus,
+  Building2, CalendarClock, CheckCheck, CircleUser, Clock, Inbox, MessageCircle, Paperclip,
+  Search, Send, UserPlus,
 } from 'lucide-react';
 import { relativeTime } from '@ipropy/shared';
 import { api } from '../lib/api';
@@ -10,6 +11,7 @@ import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { Avatar, EmptyState, Select, Skeleton, Spinner } from '../components/ui';
 import { readMessageMedia, WhatsAppMedia } from '../components/WhatsAppMedia';
+import { SharePropertyDialog } from '../components/SharePropertyDialog';
 
 /**
  * The team's WhatsApp, on the business number.
@@ -80,6 +82,8 @@ export default function BusinessChats(): JSX.Element {
     queryFn: () => api.waBizSavedTemplates(),
   });
   const [templateId, setTemplateId] = useState('');
+  const [sharing, setSharing] = useState(false);
+  const [followUpOn, setFollowUpOn] = useState('');
 
   const active = (conversations ?? []).find((row) => row.id === activeId) ?? null;
   const messages = (thread?.messages ?? []) as unknown as BizMessage[];
@@ -97,6 +101,21 @@ export default function BusinessChats(): JSX.Element {
     }),
     onSuccess: () => { setDraft(''); refresh(); },
     onError: (err: Error) => toast.error('Could not send', err.message),
+  });
+
+  /*
+    A date typed in the chat goes straight to the one definition of a
+    follow-up — the date on the record, a note in the timeline, a nudge to
+    whoever owns the lead. Nothing about "chase them" is decided here.
+  */
+  const followUp = useMutation({
+    mutationFn: (on: string) => api.waBizFollowUp(active!.id, on),
+    onSuccess: (result) => {
+      setFollowUpOn('');
+      toast.success('Follow-up set', `You will be reminded on ${result.on}.`);
+      refresh();
+    },
+    onError: (err: Error) => toast.error('Could not set that follow-up', err.message),
   });
 
   /*
@@ -252,6 +271,33 @@ export default function BusinessChats(): JSX.Element {
                     <UserPlus className="h-3.5 w-3.5" /> Take
                   </button>
                 )}
+                <button
+                  className="btn-secondary btn-sm"
+                  title="Send a property to this buyer"
+                  onClick={() => setSharing(true)}
+                >
+                  <Building2 className="h-3.5 w-3.5" /> Send a property
+                </button>
+                {/*
+                  A date, not a dialog. Deciding to chase somebody on Tuesday
+                  takes one tap, and anything longer gets skipped in the middle
+                  of a conversation — which is how follow-ups stop happening.
+                */}
+                <label className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-2xs dark:border-slate-700" title="Chase them on a day">
+                  <CalendarClock className="h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    type="date"
+                    aria-label="Follow up on"
+                    className="bg-transparent text-2xs outline-none"
+                    min={new Date().toISOString().slice(0, 10)}
+                    value={followUpOn}
+                    disabled={followUp.isPending}
+                    onChange={(event) => {
+                      setFollowUpOn(event.target.value);
+                      if (event.target.value) followUp.mutate(event.target.value);
+                    }}
+                  />
+                </label>
                 <Select
                   value={active.assignedTo ?? ''}
                   onChange={(value) => void api.waBizAssign(active.id, value || null).then(refresh)}
@@ -415,6 +461,16 @@ export default function BusinessChats(): JSX.Element {
           </>
         )}
       </section>
+
+      {sharing && active && (
+        <SharePropertyDialog
+          to={active.handle}
+          contactId={active.recordId}
+          contactLabel={active.recordLabel ?? active.contactName ?? active.handle}
+          onClose={() => setSharing(false)}
+          onSent={refresh}
+        />
+      )}
 
       {/* The CRM, linked rather than copied */}
       {active && (

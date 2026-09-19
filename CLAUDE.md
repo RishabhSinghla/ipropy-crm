@@ -1125,8 +1125,49 @@ provider, because none is connected. What is proved is the storing, the signing,
 refusal and both transports against a stub
 (`tests/integration/whatsappMedia.test.ts`, 8 tests).
 
-**Still to build, in his order:** property sharing and follow-ups from a chat,
-campaigns, reports.
+## Sending a unit from the chat, and chasing them about it
+
+**Both halves already existed and neither is reimplemented** (`business/share.ts`). A share
+link is `core/sharing/shareLinks.ts`, which mints a fresh token every time on purpose so a
+view count means something and revoking one buyer's link does not revoke another's. A
+follow-up is `core/workflow/followUp.ts`, the one definition of "chase them on `<date>`" —
+the date on the record, a note in the timeline, a notification to whoever owns the lead. A
+chat is not a reason to grow a second of either.
+
+What is new is the join, and the rules in it:
+
+* **The message is composed on the server, never in the browser.** The facts come off the
+  property through `recordService`, so a rep who cannot open a unit cannot send it and a
+  screen cannot post a link to a floor its user was never shown. `shareMessage` is
+  exported and tested because the wording *is* the product here: the rep's own line, the
+  unit, then only the facts somebody decides on — configuration, locality, size, price,
+  status — and the link **last and alone**, because WhatsApp previews a link it can see
+  the end of and nobody taps one buried mid-sentence. It also has to still say something
+  when a property has almost nothing filled in, which is what both live properties look
+  like today.
+* **A send that fails revokes the link it minted.** This is the ordinary path, not a rare
+  one: outside WhatsApp's 24-hour window a free-text message cannot go at all, so without
+  the cleanup every refused attempt would leave a working link to this morning's draft
+  floor behind it. `tests/integration/whatsappShareProperty.test.ts` is mostly about this.
+* **The link is labelled with who it went to** (`WhatsApp · <contact>`). The label never
+  reaches the visitor; it is what makes the property's Share tab readable a month later,
+  because eleven links with view counts and no names is a list nobody can act on.
+* **A follow-up needs a record.** A number nobody has claimed has nothing to put a date
+  on, and the route says so rather than quietly doing nothing. It also needs *edit*, not
+  view: a follow-up writes to the record.
+
+**The picker offers this contact's own matches first** (`components/SharePropertyDialog.tsx`),
+through the matching that already exists, with search for the unit somebody has in mind
+anyway. The control is a plain date input in the conversation header rather than a dialog —
+deciding to chase somebody on Tuesday has to take one tap, and anything longer gets skipped
+mid-conversation, which is how follow-ups stop happening.
+
+**Never opened in a browser**, for the same reason as the composer: the business Chats
+screen only renders when a provider is connected, and none is. Proved instead against a
+real database — the wording, the label, the revoke-on-failure, the permission refusal and
+both follow-up guards (7 tests).
+
+**Still to build, in his order:** campaigns, then reports.
 
 **The avatar on the row stayed, and a percentage chip that replaced it was rolled back the
 same day** (18 September). The owner asked for the chip, saw it on production, and asked for
