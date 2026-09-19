@@ -295,6 +295,26 @@ describe('the Test button', () => {
     expect(answer.ok).toBe(true);
   });
 
+  it('checks the token on its own and says which half is still missing', async () => {
+    /*
+      Their key and their Phone Number ID are on two different pages of their
+      dashboard, so somebody will paste one and press Test. "Add both first"
+      tells them nothing about the half they have already done right.
+    */
+    config.value = {};
+    answerWith({ status: '1', message: [] });
+    const answer = await whatsMarketingProvider.testConnection();
+    expect(sent[0].url).toContain('/user/package/list');
+    expect(answer.detail).toMatch(/token works/i);
+    expect(answer.detail).toMatch(/Phone Number ID/);
+  });
+
+  it('says a bad token is bad even when the Phone Number ID is missing too', async () => {
+    config.value = {};
+    answerWith({ status: '0', message: 'Authentication failed' });
+    expect((await whatsMarketingProvider.testConnection()).detail).toBe('Authentication failed');
+  });
+
   it('reports their refusal in their own words rather than a status code', async () => {
     answerWith({ status: '0', message: 'Authentication failed' });
     const answer = await whatsMarketingProvider.testConnection();

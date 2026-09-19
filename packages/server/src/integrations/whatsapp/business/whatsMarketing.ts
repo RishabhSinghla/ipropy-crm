@@ -366,6 +366,38 @@ export const whatsMarketingProvider: WhatsAppBusinessProvider = {
   },
 
   async testConnection() {
+    /*
+      The token is checkable on its own, and checking it on its own is the
+      whole point. Their Phone Number ID lives on a different page of their
+      dashboard from the key, so somebody pasting the key first and pressing
+      Test deserves "your key works, now I need the other thing" rather than a
+      flat refusal that tells them nothing about the half they have done.
+    */
+    const creds = getIntegrationCredentials(WHATSMARKETING_PROVIDER);
+    const token = creds?.apiToken ?? '';
+    if (!token) return { ok: false, detail: 'Add the WhatsMarketing API token first.' };
+
+    const base = (getIntegrationConfig(WHATSMARKETING_PROVIDER)?.baseUrl || DEFAULT_BASE).replace(/\/+$/, '');
+    if (!getIntegrationConfig(WHATSMARKETING_PROVIDER)?.phoneNumberId) {
+      try {
+        const res = await fetch(`${base}/user/package/list`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ apiToken: token }).toString(),
+        });
+        const parsed = JSON.parse(await res.text()) as Record<string, unknown>;
+        return String(parsed.status) === '1'
+          ? {
+            ok: false,
+            detail: 'Your API token works. Now add the Phone Number ID — WhatsMarketing → '
+              + 'Connect Account → click your WhatsApp number → copy "Phone Number ID".',
+          }
+          : { ok: false, detail: String(parsed.message ?? 'WhatsMarketing did not accept that token.') };
+      } catch (err) {
+        return { ok: false, detail: (err as Error).message };
+      }
+    }
+
     const c = conf();
     if (!c) return { ok: false, detail: 'Add the API token and Phone Number ID first.' };
     /*
