@@ -33,6 +33,7 @@ vi.mock('../src/core/settings/integrations.js', () => ({
     reported.calls.push({ ok, detail });
   }),
 }));
+vi.mock('../src/db/pool.js', () => ({ db: { query: vi.fn(async () => ({ rows: [] })) } }));
 vi.mock('../src/utils/logger.js', () => ({
   logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
@@ -185,7 +186,7 @@ describe('pulling replies in', () => {
     wire([{ chat_id: '919811533633' }], [customerSaid('ancient', OLD)]);
     await pollWhatsMarketingInbound();
     expect(reported.calls.at(-1)?.ok).toBe(true);
-    expect(reported.calls.at(-1)?.detail).toMatch(/Checked 1 conversation, stored 0/);
+    expect(reported.calls.at(-1)?.detail).toMatch(/listed 1 subscriber; read 1 thread; stored 0 new messages/);
   });
 });
 

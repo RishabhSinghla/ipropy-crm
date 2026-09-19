@@ -95,6 +95,12 @@ jobs:
               || ' | newest: ' || COALESCE(max(received_at)::text, 'never')
               FROM ipy_wa_webhook_event;"
 
+          echo "--- what the last inbound check actually saw ---"
+          psql "$PROD_DATABASE_URL" -tAc "
+            SELECT COALESCE(
+              (SELECT value::text FROM ipy_setting WHERE key = 'whatsapp.last_poll'),
+              'the poller has not reported yet');"
+
           echo "--- templates ---"
           psql "$PROD_DATABASE_URL" -tAc "
             SELECT 'templates synced: ' || count(*) FROM ipy_whatsapp_template;"

@@ -35,6 +35,7 @@ import {
   getIntegrationConfig, getIntegrationCredentials, recordIntegrationResult,
 } from '../../../core/settings/integrations.js';
 import { logger } from '../../../utils/logger.js';
+import { db } from '../../../db/pool.js';
 import type { InboundMessage } from './types.js';
 import { receiveInbound } from './inbound.js';
 import { activeBusinessProvider } from './registry.js';
@@ -190,12 +191,36 @@ function readTime(raw: unknown): Date {
   return new Date();
 }
 
-/** Put the last visit's outcome where a person, and a database check, can read it. */
+/**
+ * Put the last visit's outcome where a person, and a database check, can read it.
+ *
+ * Two places, because they answer different questions and one of them throws
+ * the answer away. `recordIntegrationResult` is what Admin → Integrations
+ * shows, and it deliberately clears `last_error` on success — so a *successful*
+ * visit's counts vanish. "Reached them and stored nothing" and "reached them
+ * and stored four" then look identical, which is exactly the hole this whole
+ * exercise has been falling down: the poller was working, talking to
+ * WhatsMarketing and finding nothing, and there was no way to see which of
+ * those three facts was the problem.
+ *
+ * So the sentence also lands in `ipy_setting` under `whatsapp.last_poll`,
+ * where it survives a success.
+ */
 async function report(ok: boolean, detail: string): Promise<void> {
   try {
     await recordIntegrationResult(WHATSMARKETING_PROVIDER, ok, detail);
   } catch (err) {
     logger.warn({ err }, 'could not record the WhatsApp poll outcome');
+  }
+  try {
+    await db.query(
+      `INSERT INTO ipy_setting (key, value, category, label, updated_at)
+       VALUES ('whatsapp.last_poll', $1::jsonb, 'whatsapp', 'Last WhatsApp inbound check', now())
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+      [JSON.stringify({ at: new Date().toISOString(), ok, detail })],
+    );
+  } catch (err) {
+    logger.warn({ err }, 'could not write the WhatsApp poll summary');
   }
 }
 
@@ -232,7 +257,16 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
   let checked = 0;
   let stored = 0;
 
-  for (const subscriber of rowsOf(list.message)) {
+  const subscribers = rowsOf(list.message);
+  /*
+    Named separately from `checked` because the difference between them is the
+    diagnosis. "WhatsMarketing listed 40 and none had a number we could read"
+    is a different problem from "WhatsMarketing listed nobody", and both look
+    like silence.
+  */
+  let listed = subscribers.length;
+
+  for (const subscriber of subscribers) {
     const handle = String(subscriber.chat_id ?? subscriber.phone_number ?? '').replace(/\D/g, '');
     if (!handle) continue;
     checked += 1;
@@ -314,7 +348,10 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
   */
   await report(
     !lastOutcome,
-    lastOutcome || `Checked ${checked} conversation${checked === 1 ? '' : 's'}, stored ${stored} new message${stored === 1 ? '' : 's'}.`,
+    lastOutcome
+      || `WhatsMarketing listed ${listed} subscriber${listed === 1 ? '' : 's'}; `
+        + `read ${checked} thread${checked === 1 ? '' : 's'}; `
+        + `stored ${stored} new message${stored === 1 ? '' : 's'} since ${since.toISOString()}.`,
   );
   return { checked, stored };
 }
