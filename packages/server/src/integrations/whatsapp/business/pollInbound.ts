@@ -31,7 +31,9 @@
  * than wrong: both doors lead to the same room, and the dedupe means both
  * being open at once is not a problem.
  */
-import { getIntegrationConfig, getIntegrationCredentials } from '../../../core/settings/integrations.js';
+import {
+  getIntegrationConfig, getIntegrationCredentials, recordIntegrationResult,
+} from '../../../core/settings/integrations.js';
 import { logger } from '../../../utils/logger.js';
 import type { InboundMessage } from './types.js';
 import { receiveInbound } from './inbound.js';
@@ -73,20 +75,52 @@ function conf(): Conf | null {
   };
 }
 
-async function call(c: Conf, path: string, fields: Record<string, string>): Promise<Record<string, unknown> | null> {
+/**
+ * Why the last visit ended the way it did.
+ *
+ * This poller used to swallow everything and answer `{checked: 0, stored: 0}`,
+ * which is indistinguishable from a quiet afternoon. It ran ten times against
+ * production without storing anything and there was no way, from outside the
+ * container, to tell a refused token from an unreachable vendor from nobody
+ * having written — the exact silent failure this codebase keeps meeting.
+ *
+ * So every visit now records what happened on the integration row, where
+ * Admin → Integrations already shows it and a database check can read it.
+ */
+let lastOutcome = '';
+
+async function call(
+  c: Conf, path: string, fields: Record<string, string>,
+): Promise<Record<string, unknown> | null> {
   try {
     const res = await fetch(`${c.baseUrl}${path}`, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ apiToken: c.apiToken, phone_number_id: c.phoneNumberId, ...fields }).toString(),
     });
-    if (!res.ok) return null;
-    const parsed = JSON.parse(await res.text()) as Record<string, unknown>;
+    const text = await res.text();
+    if (!res.ok) {
+      lastOutcome = `${path} answered HTTP ${res.status}: ${text.slice(0, 120)}`;
+      return null;
+    }
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      lastOutcome = `${path} answered something that is not JSON: ${text.slice(0, 120)}`;
+      return null;
+    }
     // Their refusals answer HTTP 200 with status "0" — the trap the adapter's
     // own tests open on. A poll must not read one as an empty list.
-    return String(parsed.status) === '1' ? parsed : null;
-  } catch {
-    // A vendor being unreachable is not a reason to take the scheduler down.
+    if (String(parsed.status) !== '1') {
+      lastOutcome = `${path} refused: ${String(parsed.message ?? 'no reason given').slice(0, 120)}`;
+      return null;
+    }
+    return parsed;
+  } catch (err) {
+    // A vendor being unreachable is not a reason to take the process down —
+    // but it is a reason to say so rather than to look like an empty inbox.
+    lastOutcome = `${path} could not be reached: ${(err as Error).message}`;
     return null;
   }
 }
@@ -156,6 +190,15 @@ function readTime(raw: unknown): Date {
   return new Date();
 }
 
+/** Put the last visit's outcome where a person, and a database check, can read it. */
+async function report(ok: boolean, detail: string): Promise<void> {
+  try {
+    await recordIntegrationResult(WHATSMARKETING_PROVIDER, ok, detail);
+  } catch (err) {
+    logger.warn({ err }, 'could not record the WhatsApp poll outcome');
+  }
+}
+
 /**
  * One visit: who has written lately, and what did they say.
  *
@@ -175,12 +218,16 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
   const since = lastVisit;
   const visitStarted = new Date();
 
+  lastOutcome = '';
   const list = await call(c, '/whatsapp/subscriber/list', {
     limit: String(SUBSCRIBERS_PER_VISIT),
     offset: '1',
     orderBy: '1',
   });
-  if (!list) return { checked: 0, stored: 0 };
+  if (!list) {
+    await report(false, lastOutcome || 'WhatsMarketing returned no subscriber list.');
+    return { checked: 0, stored: 0 };
+  }
 
   let checked = 0;
   let stored = 0;
@@ -259,6 +306,16 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
   // rather than a theoretical one.
   lastVisit = new Date(visitStarted.getTime() - 1000);
   if (stored) logger.info({ checked, stored }, 'pulled WhatsApp replies from WhatsMarketing');
+
+  /*
+    Said out loud even when it went fine, because "checked 40, stored 0" and
+    "could not reach them" look identical from the outside and only one of
+    them needs somebody.
+  */
+  await report(
+    !lastOutcome,
+    lastOutcome || `Checked ${checked} conversation${checked === 1 ? '' : 's'}, stored ${stored} new message${stored === 1 ? '' : 's'}.`,
+  );
   return { checked, stored };
 }
 

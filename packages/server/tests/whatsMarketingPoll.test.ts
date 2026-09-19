@@ -24,9 +24,14 @@ const config = vi.hoisted(() => ({ value: {} as Record<string, string> }));
 const active = vi.hoisted(() => ({ name: 'whatsapp_whatsmarketing' as string | null }));
 const received = vi.hoisted(() => ({ calls: [] as { provider: string; message: Record<string, unknown> }[] }));
 
+const reported = vi.hoisted(() => ({ calls: [] as { ok: boolean; detail: string }[] }));
+
 vi.mock('../src/core/settings/integrations.js', () => ({
   getIntegrationCredentials: () => credentials.value,
   getIntegrationConfig: () => config.value,
+  recordIntegrationResult: vi.fn(async (_p: string, ok: boolean, detail: string) => {
+    reported.calls.push({ ok, detail });
+  }),
 }));
 vi.mock('../src/utils/logger.js', () => ({
   logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -67,6 +72,7 @@ const customerSaid = (text: string, at: string, id = 'wamid.IN1'): Record<string
 
 beforeEach(() => {
   received.calls = [];
+  reported.calls = [];
   active.name = 'whatsapp_whatsmarketing';
   credentials.value = { apiToken: 'tok' };
   config.value = { phoneNumberId: '984702481401419' };
@@ -150,18 +156,36 @@ describe('pulling replies in', () => {
     expect(await pollWhatsMarketingInbound()).toEqual({ checked: 0, stored: 0 });
   });
 
-  it('reads their refusal as a refusal, not as an empty inbox', async () => {
-    // HTTP 200 with status "0" is how they say no. Reading it as "no messages"
-    // would look exactly like a quiet afternoon.
+  it('reads their refusal as a refusal, and says so where somebody can see it', async () => {
+    /*
+      HTTP 200 with status "0" is how they say no, and reading it as "no
+      messages" looks exactly like a quiet afternoon. This poller ran ten times
+      against production storing nothing, and from outside the container there
+      was no way to tell a refused token from an unreachable vendor from nobody
+      having written. The outcome goes on the integration row now.
+    */
     vi.stubGlobal('fetch', vi.fn(async () => ({
       ok: true, status: 200, text: async () => JSON.stringify({ status: '0', message: 'Authentication failed' }),
     } as unknown as Response)));
     expect(await pollWhatsMarketingInbound()).toEqual({ checked: 0, stored: 0 });
+    expect(reported.calls.at(-1)?.ok).toBe(false);
+    expect(reported.calls.at(-1)?.detail).toMatch(/Authentication failed/);
   });
 
-  it('survives the vendor being down without taking the scheduler with it', async () => {
+  it('survives the vendor being down, and names that too', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('ECONNRESET'); }));
     await expect(pollWhatsMarketingInbound()).resolves.toEqual({ checked: 0, stored: 0 });
+    expect(reported.calls.at(-1)?.ok).toBe(false);
+    expect(reported.calls.at(-1)?.detail).toMatch(/ECONNRESET/);
+  });
+
+  it('says how much it looked at even on a quiet visit', async () => {
+    // "Checked 1, stored 0" and "could not reach them" look identical from
+    // outside, and only one of them needs somebody to act.
+    wire([{ chat_id: '919811533633' }], [customerSaid('ancient', OLD)]);
+    await pollWhatsMarketingInbound();
+    expect(reported.calls.at(-1)?.ok).toBe(true);
+    expect(reported.calls.at(-1)?.detail).toMatch(/Checked 1 conversation, stored 0/);
   });
 });
 
