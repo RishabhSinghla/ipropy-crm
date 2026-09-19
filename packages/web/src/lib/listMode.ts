@@ -1,5 +1,5 @@
 /**
- * Which way a list opens: the iPROPY desk, the table, or the board.
+ * Which way a list opens: the split view, the table, or the board.
  *
  * The owner asked for the desk to be what everybody lands on, in both modules,
  * with anybody free to switch. So the order is: what this person last chose on
@@ -17,6 +17,16 @@
  * localStorage throws outright in a locked-down browser or a private window,
  * so every read and write is guarded and the list falls back to the default.
  */
+/*
+  `ipropy` is the split view's *stored* name and stays that way.
+
+  It is the key in every saved view, in every browser that has remembered a
+  choice, and in the e2e specs' storage state — renaming the value would make
+  all of them read as "never chosen" and quietly move everybody back to the
+  default. The same reason the `leads` module is still called `leads` while
+  the screen says Contacts: the label is what people read, the name is what
+  things are stored under.
+*/
 export type ListMode = 'table' | 'kanban' | 'ipropy';
 
 /** What a list opens as when nobody has said otherwise. */

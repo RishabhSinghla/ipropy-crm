@@ -1026,7 +1026,7 @@ Chats screen is the right place to *work* an inbox and the wrong place to answer
 question about the person already on screen, so with a record in view the icon opens a
 small dialog over it: the last few lines of the thread, a box, Send. Provided by
 `WhatsAppComposerProvider` beside `CallDispositionProvider` on the record page and the
-desk, so it knows which record the number belongs to.
+split view, so it knows which record the number belongs to.
 
 Four rules it holds to:
 
@@ -1204,47 +1204,89 @@ ago; and pacing belongs in the CRM, never in a laptop script that forgets on res
 must also decide, up front, that a business CRM has no business storing a rep's personal
 chats.
 
-## Lists open on the iPROPY desk
+## Lists open on the split view
 
-**18 September 2026, the owner's instruction:** the desk is the default for everybody in
-both modules, and anybody may switch for themselves. `lib/listMode.ts` ranks the three
-sources in one place — **this person's own choice on this module, then a saved view that
-explicitly names kanban or ipropy, then the desk**. A view that says `table` is treated as
-never having chosen, because every saved view predates the desk and says that by default;
-the only way to get the table is to click it, and clicking it is remembered.
+**18 September 2026, the owner's instruction:** it is the default for everybody in both
+modules, and anybody may switch for themselves. `lib/listMode.ts` ranks the three sources
+in one place — **this person's own choice on this module, then a saved view that
+explicitly names kanban or ipropy, then the split view**. A view that says `table` is
+treated as never having chosen, because every saved view predates it and says that by
+default; the only way to get the table is to click it, and clicking it is remembered.
 
 Remembered in the browser rather than on the record: it changes several times a day, it is
 nobody else's business, and a per-user setting that needs a round trip to say which way you
 like your list is slow at exactly the wrong moment.
 
-**The desk writes now, through the same components the table uses.** Its Basic Information
-card renders `EditableField` wherever the profile may edit and the field type has an inline
-editor, so a value changed there goes through the same validation, permissions and audit
-trail — the desk is another way to *look* at a record, never a second way to write one. The
-card shows every field rather than the first ten, since a field that is not on it is a field
-somebody has to leave the screen for. Delete is the selection bar's own endpoint with a
-selection of one, offered only where `permissions.delete` allows it. Add is the shell's New
-button, which was already on every screen.
+**It was called the iPROPY desk until 19 September**, when the owner renamed it: *"Please
+change the name of IPROPY view to split view."* The *stored* value is still `ipropy` and
+must stay that way — it is the key in every saved view, in every browser that has
+remembered a choice and in `e2e/auth.setup.ts`, so renaming it would make all of them read
+as "never chosen" and move the whole team back to the default. Same rule as the `leads`
+module still being called `leads` while the screen says Contacts.
 
-**The desk is self-sufficient, on the owner's follow-up the same day:** *"We can Edit the
-Records in This window Only… every thing we Can do as Table View in IPROPY View."* So the
-pencil opens the record's **own form in a dialog over the desk** (`RecordForm` in `mode:
-edit`, fetching the full record — a list row holds only the values the list asked for, and
-saving a form built from those writes blanks over every field the list did not carry).
-Timeline, Matching, Files, Calls and WhatsApp render **inside** the desk rather than sending
-you to the record page: `TimelineTab`, `FilesTab` and `CallsTab` are exported from
-`RecordDetail.tsx` for it, one copy each, because a second timeline that drifts is two
-answers to what happened to a customer. The star works, and Call goes through
-`CallDispositionProvider` keyed on the open record, so an outcome cannot be saved against
-whoever was on screen before. The field card lists the **module's** fields, not the list's
-columns — a table narrowed to five columns would otherwise narrow the record to five fields,
-and the value somebody came to fix is exactly the one that is not a column.
+### Everything happens in it, and nothing leaves it
 
-**Every spec in `e2e/` that is about the table now signs in with `table` already stored**
+**19 September 2026, the owner, at length:** *"this split view is made so that life becomes
+easy and fast of the team, so no clicking of edit button, no opening of any other sort of
+things, just write then and there… Never need to open any sort of page in the split view."*
+
+So the Edit button is gone, the dialog it opened is gone, and the button beside Delete that
+opened the record's own page is gone. What replaced them:
+
+* **The whole record is fetched by id**, on the same query key the record page uses. A list
+  row carries only the values the *list* asked for, so every field that is not a column
+  read back blank — which is exactly why Contact Type was missing and why the card looked
+  emptier than the record page. The row still stands in while the record loads, so the pane
+  never blanks between two selections.
+* **`surface` is `record`, not `list`.** The "editing from a list" setting exists because
+  turning a value into an edit box under a cursor *on a list* is how a live mobile number
+  gets changed by somebody who only meant to read it. This pane is not that: the record was
+  picked out of the queue on purpose. Gating it on that setting — which ships **off** — is
+  what put an Edit button there in the first place.
+* **The whole cell is the click target.** `EditableField` takes the click on its own box,
+  which is only as wide as the value, so on an empty field that box is a dash in the middle
+  of a wide cell and a click anywhere else hits nothing. The cell forwards to the field's
+  own "Change …" control, so there is still exactly one thing that opens an editor.
+* **The header is the record page's header**, read from the same `layout.headerFields` an
+  admin arranged, every value editable in place, plus five appended: the assignment field,
+  phone, follow-up, status, and the module's own identifying field.
+* **The Overview renders the layout's blocks**, so Property Information and Unit Details
+  appear here exactly as they do on the record page rather than as one flat card.
+
+**The header said "Unassigned" on every record however it was assigned**, and the cause is
+worth keeping: `RecordEnvelope.ownerName` is populated by **nothing** except the phone
+app's caller lookup (`assignedNumberLookup`) and global search. Neither `listRecords` nor
+`getRecord` fills it in, so `active.ownerName ?? 'Unassigned'` could only ever print the
+fallback. The assignment field is drawn the way the record page draws it — found by
+uitype through `assignmentField`, shown by its display value, edited in place.
+
+**The queue's second line is the module's own fact, not an id.** *"I don't need the ID
+there"* — a contact's **Type**, a unit's **Unit Number** (`queueSubtitleField`). An id
+identifies a row to a database and nothing to a person. `withQueueSubtitle` adds that field
+to the list's requested columns while the split view is showing, because otherwise the line
+is blank on any view whose columns do not happen to include it — which reads as the feature
+not working rather than as a column being absent.
+
+**Both dividers drag** (`SplitHandle`), pointer events so a finger on a tablet works, with
+the pointer captured so a fast drag does not let go halfway across the screen, and arrow
+keys for anyone not using a mouse. Widths are per browser like the view choice itself, and
+clamped — a queue narrower than 240px is unreadable and one wider than 620px is a list with
+a keyhole beside it. Below `xl` the panes stack and the widths are ignored entirely; the
+handles are `xl:block`, because a divider you cannot see is not one you can drag.
+
+**The WhatsApp and Call buttons are icons here** (`iconOnly`), and only here. The words cost
+a third of the header strip for two buttons everybody recognises by shape; the record page
+keeps its labels, where there is room.
+
+**Every spec in `e2e/` that is about the table signs in with `table` already stored**
 (`auth.setup.ts`), because they are about the table. `e2e/listDefaultView.spec.ts` is the
 one place the real default is proved, and it clears the key by loading, removing and
 reloading — an init script clears it on the reload too, which reads exactly like the
-preference failing to stick and cost a debugging round to see.
+preference failing to stick and cost a debugging round to see. It also pins the three
+things above: a value typed in where it stands and read back after a reload, neither
+removed button present, and the divider moving and being remembered. **The inline editor
+floats in a portal on `body`**, so a locator rooted in the workspace finds nothing at all —
+that cost a round too.
 
 ## Pressing Call at a desk rings the rep's own phone
 

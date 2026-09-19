@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { openExternal } from '../lib/nativeActions';
 import { useWhatsAppComposer } from './WhatsAppComposer';
 import { waDigits } from '../lib/whatsapp';
+import { cn } from '../lib/utils';
 
 /**
  * The WhatsApp way into a number, wherever that number is shown.
@@ -64,18 +65,22 @@ export function WhatsAppIconButton({ to, className }: { to: string; className?: 
  * rather than a plain link, because `window.open` returns null inside the phone
  * app and nothing happens.
  */
-export function WhatsAppButton({ to }: { to: string }): JSX.Element | null {
+export function WhatsAppButton({ to, iconOnly = false }: { to: string; iconOnly?: boolean }): JSX.Element | null {
   const digits = waDigits(to);
   if (!digits) return null;
   return (
     <button
       type="button"
-      className="btn-secondary btn-sm"
+      // `iconOnly` where the header is tight — the split view, above all. The
+      // word costs a third of the strip for a button everybody recognises by
+      // its shape, and the title still says what it does.
+      className={cn('btn-secondary btn-sm', iconOnly && 'h-9 w-9 justify-center px-0')}
       title={`WhatsApp ${to}`}
+      aria-label={`WhatsApp ${to}`}
       onClick={() => void openExternal(`https://api.whatsapp.com/send/?phone=${digits}`)}
     >
       <MessageCircle className="h-3.5 w-3.5 text-emerald-600" />
-      <span className="hidden sm:inline">WhatsApp</span>
+      {!iconOnly && <span className="hidden sm:inline">WhatsApp</span>}
     </button>
   );
 }

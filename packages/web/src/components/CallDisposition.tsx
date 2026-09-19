@@ -275,17 +275,21 @@ export function CallDispositionProvider({
   );
 }
 
-export function CallButton({ to }: { to: string }): JSX.Element {
+export function CallButton({ to, iconOnly = false }: { to: string; iconOnly?: boolean }): JSX.Element {
   const calls = useCallDisposition();
   return (
     <button
       type="button"
-      className="btn-secondary btn-sm"
+      // `iconOnly` where the header is tight — the split view, above all. The
+      // word costs a third of the strip for a button everybody recognises by
+      // its shape, and the title still says what it does.
+      className={cn('btn-secondary btn-sm', iconOnly && 'h-9 w-9 justify-center px-0')}
       title={`Call ${to}`}
+      aria-label={`Call ${to}`}
       onClick={() => void calls?.startCall(to)}
     >
       <Phone className="h-3.5 w-3.5 text-blue-600" />
-      <span className="hidden sm:inline">Call</span>
+      {!iconOnly && <span className="hidden sm:inline">Call</span>}
     </button>
   );
 }

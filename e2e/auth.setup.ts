@@ -16,7 +16,7 @@ setup('authenticate', async ({ page }) => {
   await login(page);
 
   /*
-    Lists open on the iPROPY desk now, for everybody. Most specs here were
+    Lists open on the split view now, for everybody. Most specs here were
     written against the table and are about the table — so the saved session
     carries the same choice a rep makes by clicking Table once, and the specs
     go on testing what they say they test.

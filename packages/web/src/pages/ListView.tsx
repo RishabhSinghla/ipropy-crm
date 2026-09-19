@@ -13,7 +13,7 @@ import { saveListNav } from '../lib/listNav';
 import { cn, restrictionForField } from '../lib/utils';
 import { FieldInput, FieldValue } from '../components/FieldRenderer';
 import { EditableField, isInlineEditable } from '../components/EditableField';
-import { assignmentField, byLabel, fieldByKey, pipelineFieldOf, subtitleFieldsOf } from '../lib/fields';
+import { assignmentField, byLabel, fieldByKey, pipelineFieldOf, subtitleFieldsOf, withQueueSubtitle } from '../lib/fields';
 import { DEFAULT_PAGE_SIZE, loadPageSize, PAGE_SIZE_OPTIONS, savePageSize } from '../lib/pageSize';
 import { loadListMode, resolveListMode, saveListMode, type ListMode } from '../lib/listMode';
 import { FilterBuilder, countConditions } from '../components/FilterBuilder';
@@ -474,10 +474,20 @@ export default function ListView(): JSX.Element {
     filter: countConditions(effectiveFilter) ? effectiveFilter : undefined,
     sortBy: effectiveSort.sortBy,
     sortDir: effectiveSort.sortDir,
-    // The master order when there is one, so an export and the screen agree.
-    columns: masterColumns?.length ? masterColumns : (columns.length ? columns : undefined),
+    /*
+      The master order when there is one, so an export and the screen agree.
+
+      The split view's queue prints one line under each name — a contact's
+      Type, a unit's Unit Number — and a list row only carries the values the
+      list asked for. Without this the line is blank on any view whose columns
+      do not happen to include it, which reads as the feature not working.
+    */
+    columns: withQueueSubtitle(
+      masterColumns?.length ? masterColumns : (columns.length ? columns : undefined),
+      displayMode === 'ipropy' ? meta : undefined,
+    ),
     groupBy: groupByField,
-  }), [activeView?.id, page, pageSize, search, effectiveSort, effectiveFilter, masterColumns, columns, groupByField, displayMode]);
+  }), [activeView?.id, page, pageSize, search, effectiveSort, effectiveFilter, masterColumns, columns, groupByField, displayMode, meta]);
 
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['records', moduleName, query],
@@ -983,8 +993,8 @@ export default function ListView(): JSX.Element {
               <button
                 onClick={() => chooseMode('ipropy')}
                 className={cn('px-2 py-1.5', displayMode === 'ipropy' ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200' : 'hover:bg-slate-50 dark:hover:bg-slate-800')}
-                title="IPROPY View"
-                aria-label="IPROPY View"
+                title="Split view"
+                aria-label="Split view"
               >
                 <PanelLeftOpen className="h-3.5 w-3.5" />
               </button>
@@ -1185,7 +1195,6 @@ export default function ListView(): JSX.Element {
                 return next;
               });
             }}
-            onOpen={(id) => openRecord(`/${moduleName}/${id}?return=${encodeURIComponent(returnTo)}`)}
             /*
               Deleting from the desk goes through the same confirmation and the
               same endpoint the selection bar uses — one record is a selection

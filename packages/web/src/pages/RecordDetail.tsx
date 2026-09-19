@@ -1022,7 +1022,7 @@ const TIMELINE_FILTERS = [
 ] as const;
 
 /*
-  Exported because the iPROPY desk renders the same tabs inside the list. One
+  Exported because the split view renders the same tabs inside the list. One
   copy, deliberately: a second timeline that drifts from this one is two
   answers to "what happened to this customer". The three of them belong in
   their own files before this page is split, which CLAUDE.md already flags.
