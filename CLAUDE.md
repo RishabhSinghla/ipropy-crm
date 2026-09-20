@@ -1102,6 +1102,30 @@ CRM's own ids, never instead of them.
   see*. This is a row with a label in Admin → Settings, seeded `91`, and a
   contact carrying its own code still wins over it.
 
+  **And the refusal after that one is not ours, which is the point of writing
+  it down.** The owner sent the same template twice on 20 September: 10:52 UTC
+  answered *"Message template not found."*, and 11:00 UTC reached Meta and came
+  back *"(Error Code : 131049 )In order to maintain a healthy ecosystem
+  engagement, the message failed to be delivered."* — read off production, not
+  from the screen. **131049 is Meta limiting how many marketing messages one
+  person may receive**, and nothing on this side lifts it: the customer writing
+  in first (which opens the 24-hour window) or a utility-category template are
+  the only two ways past it. What changed between the two attempts is **not
+  established** — either the template-id retry reaching production or a sync
+  refreshing the minute-long `templateCache` would produce it, and both are
+  possible in that gap.
+
+  `business/whyItFailed.ts` puts a plain sentence in front of the codes we
+  recognise and **keeps the provider's own words after it**, because the
+  original is what a support conversation with the vendor is about and an
+  unrecognised code must stay readable. An unknown code is passed through
+  untouched rather than guessed at (`tests/whyWhatsAppRefused.test.ts`).
+
+  **Their `category` is useless for this and it looks useful.** All ten synced
+  templates read `general` — WhatsMarketing's own word, from `check_wp_type` —
+  so the CRM cannot tell a marketing template from a utility one, which is
+  exactly the fact 131049 turns on. Do not read that column as Meta's category.
+
   Two more things worth knowing before touching it. Their templates are addressed by a
   numeric `template_id` from their dashboard, so a name is resolved through their list
   endpoint first and a miss is refused *naming the template* rather than posting a blank id.

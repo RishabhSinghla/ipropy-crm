@@ -22,6 +22,7 @@ import { requireCapability } from '../providers/types.js';
 import { toInternational } from '@ipropy/shared';
 import { matchKey } from '../matchContact.js';
 import { activeBusinessProvider } from './registry.js';
+import { whyItFailed } from './whyItFailed.js';
 import { prepareOutgoingMedia } from './media.js';
 
 const MODULE = 'leads';
@@ -341,7 +342,9 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
     // not only in a log nobody reads.
     await db.query(
       `UPDATE ipy_message SET status = 'failed', error_message = $2 WHERE id = $1`,
-      [queued!.id, (err as Error).message.slice(0, 500)],
+      // Translated where the code is one we know, and never instead of the
+      // provider's own words — see `whyItFailed`.
+      [queued!.id, whyItFailed((err as Error).message).slice(0, 500)],
     );
     logger.warn({ err, provider: provider.name }, 'WhatsApp business send failed');
     throw err;
