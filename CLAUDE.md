@@ -2458,6 +2458,32 @@ is what `RecordingFinder` already does — the OEM recorder's file, read from a 
 rep grants once, uploaded **after** the call ends and matched on the last ten digits plus
 a time window. The player with play/pause is already in the timeline and the Calls tab.
 
+### "Phone call was not confirmed" about a call that rang
+
+**20 September 2026, the owner, against a record showing a one-minute outbound
+call he had just finished:** *"cool, the call is landed, but this msg coming
+unnecessarily."*
+
+The desk watched `GET /api/telephony/dial/:id` for five seconds and accepted
+**only `done`**. But the phone collects the instruction in well under a second
+(`delivered`) and closes it out only once the rep has taken the handset out of
+their pocket and pressed the green button — which is a minute later, not five
+seconds. So the ordinary successful path ended in a red toast telling somebody
+to go and install the app, while the call they had just made was already in the
+timeline.
+
+`delivered` is now the answer to *"did it reach the phone"*, which is the only
+question the desk can honestly ask in those five seconds; `done` still says
+*how* when it arrives in time. A red message is kept for the two states that
+really are failures — `expired` (nothing ever collected it) and `failed`.
+`tests/integration/thePhoneIsReachable.test.ts` pins that a claimed command
+reads `delivered` with no `via` yet, which is the state that was being called a
+failure.
+
+**The general shape, and it has now cost two reports:** a screen that waits a
+fixed few seconds for somebody else's slowest step will call the normal path
+broken. Wait for the fact you can actually establish in that time.
+
 ## The calling system, and what it still needs
 
 **20 September 2026, the owner sent a twenty-point specification** for a NeoDove-style

@@ -104,6 +104,28 @@ describe('is the phone there', () => {
     expect(status.body.via).toBe('dialler');
   });
 
+  it('a collected call reads as delivered before the phone says how it went', async () => {
+    /*
+      The desk watches this for a few seconds after somebody presses Call. The
+      phone collects the instruction in under a second and closes it out only
+      once the rep has taken the phone out of their pocket, so `delivered` is
+      the only honest answer in between -- and on 20 September a call that rang
+      for a minute was reported as "not confirmed" because nothing read it.
+    */
+    const queued = await request(app).post('/api/telephony/dial')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ to: '9811533633' })
+      .expect(200);
+
+    await request(app).get('/api/telephony/dial/pending')
+      .set('Authorization', `Bearer ${token}`).expect(200);
+
+    const status = await request(app).get(`/api/telephony/dial/${queued.body.commandId}`)
+      .set('Authorization', `Bearer ${token}`).expect(200);
+    expect(status.body.status).toBe('delivered');
+    expect(status.body.via).toBeNull();
+  });
+
   it('marks a phone as heard from whenever it uses its own token', async () => {
     /*
       The signal that did not exist. The background worker only contacts the

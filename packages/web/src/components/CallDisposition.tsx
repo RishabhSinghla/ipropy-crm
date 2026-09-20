@@ -33,6 +33,18 @@ async function phoneTookIt(
   commandId: string | undefined,
 ): Promise<{ took: boolean; via: string | null }> {
   if (!commandId) return { took: false, via: null };
+  /*
+    `delivered` is the phone having collected the instruction, and that is
+    already the answer to "did it reach the handset". Only `done` says what
+    happened next, and that lands after the rep has taken the phone out of
+    their pocket — which is longer than anybody will watch a laptop for.
+
+    Waiting for `done` alone is how a call that rang perfectly well was
+    reported as "not confirmed" on 20 September: the command was delivered
+    inside a second, the customer was spoken to for a minute, and the desk had
+    given up five seconds in. A phone that has the number is not a failure.
+  */
+  let collected = false;
   for (let attempt = 0; attempt < 10; attempt += 1) {
     await new Promise((resolve) => { setTimeout(resolve, 500); });
     try {
@@ -47,11 +59,14 @@ async function phoneTookIt(
       */
       if (status === 'done') return { took: true, via: via ?? null };
       if (status === 'failed' || status === 'expired') return { took: false, via: null };
+      if (status === 'delivered') collected = true;
     } catch {
       // A blip on the way to a row that will still be there next time round.
     }
   }
-  return { took: false, via: null };
+  // Collected and not yet closed out: the phone has it, and how it went is
+  // the handset's business rather than something to accuse it of failing.
+  return { took: collected, via: collected ? 'collected' : null };
 }
 
 export function CallDispositionProvider({
@@ -141,10 +156,10 @@ export function CallDispositionProvider({
           dial(clean);
         } else if ((outcome = await phoneTookIt(result.commandId)).took) {
           const phone = result.device ?? 'Your phone';
-          if (outcome.via === 'dialler') {
+          if (outcome.via === 'dialler' || outcome.via === 'collected') {
             toast.success(
               'The number is on your phone',
-              `${phone} has it dialled — press the green button to start the call.`,
+              `${phone} has it — press the green button there if it is waiting.`,
             );
           } else {
             toast.success('Ringing from your phone', `${phone} is calling now.`);
