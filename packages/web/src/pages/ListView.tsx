@@ -1165,7 +1165,11 @@ export default function ListView(): JSX.Element {
       )}
 
       {/* Body */}
-      <div className="min-h-0 flex-1 overflow-auto">
+      {/* A flex item defaults to its content width. Without `min-w-0`, a wide
+          table widened the whole page instead of this scroll region; the page
+          then moved sideways and the frozen identity column naturally moved
+          with it. Keep both axes inside this one scroll container. */}
+      <div className="min-h-0 min-w-0 flex-1 overflow-auto">
         {isLoading && !data ? (
           <div className="space-y-2 p-4 sm:p-6">
             {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
@@ -1534,11 +1538,7 @@ export default function ListView(): JSX.Element {
                             subtitle started at the left edge of the cell and
                             read as a caption for the picture.
                           */
-                          /* The cell itself stays overflow-visible so native
-                             table sticky positioning can pin it. This inner
-                             wrapper owns clipping, retaining the compact,
-                             one-line identity layout for long imported names. */
-                          <div className="flex min-w-0 overflow-hidden items-center gap-2.5">
+                          <div className="flex items-center gap-2.5">
                             {/*
                               A face for the row, with how full the record is
                               drawn round it and the number tucked into its
