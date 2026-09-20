@@ -82,6 +82,7 @@ async function pruneEvents(conn: Tx): Promise<void> {
  */
 async function conversationFor(
   conn: Tx, handle: string, recordId: string | null, contactName: string | null,
+  waId: string | null,
 ): Promise<{ id: string; assignedTo: string | null }> {
   const existing = await conn.queryOne<{ id: string; assigned_to: string | null }>(
     `SELECT id, assigned_to FROM ipy_conversation
@@ -90,6 +91,19 @@ async function conversationFor(
     [handle],
   );
   if (existing) {
+    /*
+      WhatsApp's own id for this person, which is the only number that can be
+      *sent* to — `handle` is ten digits and WhatsApp reads ten digits as
+      somebody else entirely. Written on every inbound rather than only at
+      creation, so every thread that predates this column heals itself the
+      first time its customer writes again.
+    */
+    if (waId) {
+      await conn.query(
+        `UPDATE ipy_conversation SET wa_id = $2 WHERE id = $1 AND wa_id IS DISTINCT FROM $2`,
+        [existing.id, waId],
+      );
+    }
     // A thread that started unknown and is claimed later keeps everything said
     // before the claim.
     if (recordId) {
@@ -118,10 +132,10 @@ async function conversationFor(
     : null;
 
   const created = await conn.queryOne<{ id: string }>(
-    `INSERT INTO ipy_conversation (channel, handle, contact_name, record_id, record_module, assigned_to)
-     VALUES ('whatsapp', $1, $2, $3, $4, $5)
+    `INSERT INTO ipy_conversation (channel, handle, contact_name, record_id, record_module, assigned_to, wa_id)
+     VALUES ('whatsapp', $1, $2, $3, $4, $5, $6)
      RETURNING id`,
-    [handle, contactName, recordId, recordId ? MODULE : null, owner?.owner_id ?? null],
+    [handle, contactName, recordId, recordId ? MODULE : null, owner?.owner_id ?? null, waId],
   );
   return { id: created!.id, assignedTo: owner?.owner_id ?? null };
 }
@@ -158,6 +172,9 @@ export async function receiveInbound(
 
     const conversation = await conversationFor(
       conn, handle, recordId, message.profileName,
+      // WhatsApp's own id for the sender, digits only. Authoritative in a way
+      // a phone field typed by a person never is.
+      String(message.from ?? '').replace(/\D/g, '') || null,
     );
 
     const body = message.text

@@ -19,6 +19,7 @@ import { bus } from '../../../core/events/bus.js';
 import { BadRequestError } from '../../../utils/errors.js';
 import { logger } from '../../../utils/logger.js';
 import { requireCapability } from '../providers/types.js';
+import { toInternational } from '@ipropy/shared';
 import { matchKey } from '../matchContact.js';
 import { activeBusinessProvider } from './registry.js';
 import { prepareOutgoingMedia } from './media.js';
@@ -76,10 +77,10 @@ async function optedOut(handle: string): Promise<boolean> {
 
 /** The business thread for this number, created on first contact from our side. */
 async function conversationFor(handle: string, recordId: string | null, userId: string): Promise<{
-  id: string; windowOpen: boolean;
+  id: string; windowOpen: boolean; waId: string | null;
 }> {
-  const existing = await db.queryOne<{ id: string; window_expires_at: string | null }>(
-    `SELECT id, window_expires_at FROM ipy_conversation
+  const existing = await db.queryOne<{ id: string; window_expires_at: string | null; wa_id: string | null }>(
+    `SELECT id, window_expires_at, wa_id FROM ipy_conversation
       WHERE channel = 'whatsapp' AND handle = $1 AND wa_account_id IS NULL LIMIT 1`,
     [handle],
   );
@@ -87,6 +88,7 @@ async function conversationFor(handle: string, recordId: string | null, userId: 
     return {
       id: existing.id,
       windowOpen: Boolean(existing.window_expires_at && new Date(existing.window_expires_at) > new Date()),
+      waId: existing.wa_id,
     };
   }
   const created = await db.queryOne<{ id: string }>(
@@ -96,7 +98,63 @@ async function conversationFor(handle: string, recordId: string | null, userId: 
     [handle, recordId, recordId ? MODULE : null, userId],
   );
   // Nobody has written to us, so there is no window: only a template may go.
-  return { id: created!.id, windowOpen: false };
+  return { id: created!.id, windowOpen: false, waId: null };
+}
+
+/**
+ * The number to actually send to — **never the handle.**
+ *
+ * `handle` is the last ten digits, on purpose: it is what matches a contact
+ * whose mobile might be stored as `9891222206`, `+919891222206` or
+ * `0 9891 222206`. It is a matching key and it was also being passed to the
+ * provider as a destination, which is the bug this exists to close. WhatsApp
+ * read ten digits as a different person from the `919891222206` who had just
+ * written in, found no session for them, and refused every free-text reply
+ * with *"Sending message outside 24 hour window is not allowed"* — which reads
+ * exactly like a window bug and is not one.
+ *
+ * Three sources, best first:
+ *
+ *  1. **WhatsApp's own `wa_id`**, stored on the conversation from an inbound
+ *     message. Authoritative: it is the number WhatsApp itself used.
+ *  2. **What the caller passed**, when it already carries a country code.
+ *  3. **The record's own country code plus its national number**, through
+ *     `toInternational` — the one helper that knows how to put those back
+ *     together.
+ *
+ * And when none of those give a country code it **refuses**, rather than
+ * assuming +91. A silent Indian default sends an NRI buyer's message to a
+ * stranger, and `toInternational`'s own comment says so.
+ */
+export async function dialableNumber(
+  waId: string | null, to: string, recordId: string | null,
+): Promise<string | null> {
+  if (waId) return waId;
+
+  const given = to.replace(/\D/g, '');
+  // More than ten digits means a country code is already in there.
+  if (given.length > 10) return given;
+
+  if (recordId) {
+    const row = await db.queryOne<{ country_code: string | null; mobile: string | null }>(
+      `SELECT to_jsonb(l)->>'country_code' AS country_code, to_jsonb(l)->>'mobile' AS mobile
+         FROM ipy_e_leads l WHERE l.record_id = $1`,
+      [recordId],
+    );
+    /*
+      Only when the record actually carries a country code. `toInternational`
+      falls back to `toE164` without one, and `toE164` assumes India — which is
+      the silent default this function exists to refuse. An NRI buyer's message
+      sent to a stranger in India cannot be taken back.
+    */
+    const code = (row?.country_code ?? '').replace(/\D/g, '');
+    if (code) {
+      const full = toInternational(code, row?.mobile ?? to);
+      const digits = (full ?? '').replace(/\D/g, '');
+      if (digits.length > 10) return digits;
+    }
+  }
+  return null;
 }
 
 export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<BusinessSendResult> {
@@ -110,6 +168,14 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
   }
 
   const conversation = await conversationFor(handle, input.recordId ?? null, input.userId);
+
+  const dialTo = await dialableNumber(conversation.waId, input.to, input.recordId ?? null);
+  if (!dialTo) {
+    throw new BadRequestError(
+      'This number has no country code, so WhatsApp cannot be sure who to send to. '
+      + 'Add the country code on the contact and try again.',
+    );
+  }
 
   if (input.template) requireCapability(provider, 'templates');
   if (input.attachmentId) requireCapability(provider, 'media');
@@ -171,7 +237,7 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
   try {
     const outcome = input.template
       ? await provider.sendTemplate({
-        to: handle,
+        to: dialTo,
         templateName: input.template.name,
         language: input.template.language,
         params: input.template.params,
@@ -184,7 +250,7 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
         // one this provider asked for.
         ? media.mediaId
           ? await provider.sendMediaById({
-            to: handle,
+            to: dialTo,
             type: media.type,
             mediaId: media.mediaId,
             caption: input.text || undefined,
@@ -192,13 +258,13 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
           })
           : await provider.sendMedia({
             accountId: null,
-            to: handle,
+            to: dialTo,
             type: media.type,
             link: media.link!,
             caption: input.text || undefined,
             filename: media.fileName,
           })
-        : await provider.sendMessage({ accountId: null, to: handle, text: input.text ?? '' });
+        : await provider.sendMessage({ accountId: null, to: dialTo, text: input.text ?? '' });
 
     await transaction(async (conn) => {
       await conn.query(

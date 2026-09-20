@@ -1029,6 +1029,29 @@ CRM's own ids, never instead of them.
   copy would drift, and the way it drifts is that one of them quietly stops
   understanding a customer.
 
+  **`handle` is a matching key and must never be a destination.** Every
+  free-text reply this CRM ever attempted failed on that, and the error said
+  something else entirely. `ipy_conversation.handle` is the last ten digits on
+  purpose — it is what matches a contact whose mobile might be stored as
+  `9891222206`, `+919891222206` or `0 9891 222206` — and `sendOnBusinessNumber`
+  was handing it to the provider as the number to send to. WhatsApp read ten
+  digits as a different person from the `919891222206` who had just written in,
+  found no session for them, and refused with *"Sending message outside 24 hour
+  window is not allowed. You can only send template message to this user."*
+  Which reads exactly like a window bug and is not one: read off production on
+  20 September 2026, `window_expires_at` was the following morning and the send
+  was refused anyway.
+  Migration `163` adds `ipy_conversation.wa_id`, WhatsApp's own id, written from
+  every inbound message so threads that predate it heal themselves the first
+  time their customer writes again. `dialableNumber` in `business/send.ts`
+  prefers it, then a number the caller already gave in full, then the record's
+  `country_code` + `mobile` through `toInternational` — and **refuses rather
+  than assuming +91**, because a silent Indian default sends an NRI buyer's
+  message to a stranger and cannot be taken back.
+  The two sends that did work, on 18 September, went to handles that happened
+  to be longer than ten digits. That is the whole reason this looked
+  intermittent.
+
   **The same rows carry delivery receipts for what *we* sent**, also
   undocumented: `message_status`, `delivery_status_updated_at`, `read_time`
   and `failed_reason` on a `sender: "bot"` row. `readOutboundStatus` hands
