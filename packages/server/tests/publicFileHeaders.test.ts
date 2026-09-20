@@ -113,3 +113,33 @@ describe('every public byte-serving route calls the helper', () => {
     expect(echoedType, 'a stored mime type must go through applyFileSecurityHeaders').toHaveLength(0);
   });
 });
+
+/*
+  A call recording is bytes too, and its route had none of these.
+
+  Found on 20 September 2026 by uploading a recording from a paired handset and
+  reading the response headers: `Content-Type` and `nosniff`, no
+  Content-Disposition and no CSP. Signed-in rather than public, so it is a
+  smaller hole than the one above — but it is the *same* omission, and the
+  seeking player asks for ranges, so the range branch had to be covered too.
+*/
+describe('a call recording is served like every other file', () => {
+  it('hardens before the range branch, so a seek is covered as well', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const source = await readFile(
+      new URL('../src/api/routes/telephony.ts', import.meta.url),
+      'utf8',
+    );
+
+    expect(source, 'the recording route must harden its response')
+      .toMatch(/applyFileSecurityHeaders\(/);
+
+    // Order is the point: a 206 returns bytes too, and hardening applied after
+    // the range branch protects only the request the player never makes.
+    const hardened = source.indexOf('applyFileSecurityHeaders(res');
+    const rangeBranch = source.indexOf('const range = req.headers.range');
+    expect(hardened, 'the helper is not called at all').toBeGreaterThan(-1);
+    expect(rangeBranch).toBeGreaterThan(-1);
+    expect(hardened, 'hardening must come before the range branch').toBeLessThan(rangeBranch);
+  });
+});

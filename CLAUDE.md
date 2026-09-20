@@ -2402,6 +2402,48 @@ What *is* worth doing from here, in his order: the server and web halves of each
 the lookup and the Calls list (done), then the live-call panel and the call reports, which
 need the phone to report state and are therefore only worth building once something can.
 
+## The call side, walked as a paired handset — 20 September 2026
+
+Same method as the WhatsApp walk: a real handset paired against the running
+stack, and every route it uses driven for real. **What the installed app can do
+today works**, and three faults came out of the parts nobody had exercised.
+
+What was proved end to end, against a live server: pairing and `/ping`; a call
+log uploaded, both directions read correctly from Android's `type`, both
+matched to a contact on the last ten digits; **a replay of the same
+`externalId` deduped** (`created: 0, duplicates: 1`); a recording uploaded from
+the phone, stored, and played back with range support; a dial queued, expiring
+in ninety seconds, and closed by the handset — and **only** by that handset.
+
+* **A call recording was served without the file security headers.** The route
+  set `Content-Type` and `nosniff` and stopped there: no Content-Disposition,
+  no CSP, with a mime type that arrived with an upload. This is the same
+  omission the public file routes produced once, and the repo already has a
+  rule about it. `applyFileSecurityHeaders` is called **before the range
+  branch**, because a 206 returns bytes too and the seeking player is the one
+  that asks. Pinned in `tests/publicFileHeaders.test.ts`, which now also
+  asserts that order.
+* **"The desk is told which happened" was not true, and this file said it was.**
+  `via: 'app'` versus `via: 'dialler'` is the difference between a phone that
+  is ringing and a phone with the number typed in waiting for a green button.
+  The session route recorded it; the **device-token route — the native
+  plugin's, so the good path — did not**, and `phoneTookIt` on the desk threw
+  the field away and returned a boolean. So a rep was told "Ringing from your
+  phone" either way. Both ends fixed;
+  `tests/integration/dialFromTheCrm.test.ts` pins the plugin path saying
+  `app`.
+* **`POST /api/device/calls` takes `entries`, not `calls`.** Not a bug — worth
+  writing down because the obvious guess answers a validation error and looks
+  like a broken endpoint.
+
+**What is still not provable from here, and is the honest limit:** `placeCall`
+itself is Android code and this container has a JDK and no Android SDK, so the
+native path has never been compiled. Everything above tests the server's half
+of it. And the installed copies of the app still predate `placeCall`, so until
+somebody rebuilds and re-installs, the dialler fallback is the *only* path a
+desk Call can take — which is exactly why the `via` fix matters now rather than
+later.
+
 ## Every request appears twice in development, and once in production
 
 `main.tsx` wraps the app in `React.StrictMode`, which double-invokes effects in

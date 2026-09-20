@@ -12,6 +12,7 @@ import { logManualCall } from '../../integrations/telephony/manualCall.js';
 import { recordService } from '../../core/entity/recordService.js';
 import { emitToUser } from '../../realtime.js';
 import { parseByteRange } from '../../utils/httpRange.js';
+import { applyFileSecurityHeaders } from '../../core/media/serving.js';
 
 export const telephonyRouter = Router();
 telephonyRouter.use(requireAuth);
@@ -366,6 +367,20 @@ telephonyRouter.get('/calls/:id/recording', asyncHandler(async (req, res) => {
   const mime = extension === 'm4a' || extension === 'mp4' ? 'audio/mp4'
     : extension === 'amr' ? 'audio/amr'
       : extension === 'wav' ? 'audio/wav' : 'audio/mpeg';
+
+  /*
+    The same headers every other byte-serving route in this CRM applies —
+    `nosniff`, a Content-Disposition, and the strict media CSP. This route had
+    none of them, which is the finding the public file routes already produced
+    once: `applyFileSecurityHeaders` existed and four places that served bytes
+    never called it. Found again here on 20 September 2026 by reading the
+    response headers of a recording uploaded from a paired handset.
+
+    Applied before the range branch, because a seek returns bytes too and a
+    header set only on the whole-file path protects the one request nobody
+    makes — the player asks for ranges.
+  */
+  applyFileSecurityHeaders(res, mime, call.recording_key.split('/').pop() ?? 'recording', false);
 
   // Range support so the player can seek — without it, scrubbing a ten-minute
   // call re-downloads from the start on every drag.

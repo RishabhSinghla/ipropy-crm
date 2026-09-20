@@ -29,19 +29,29 @@ export function useCallDisposition(): CallActions | null {
  * reports. Five seconds is the budget — beyond that a rep has already reached
  * for their phone to see what happened.
  */
-async function phoneTookIt(commandId: string | undefined): Promise<boolean> {
-  if (!commandId) return false;
+async function phoneTookIt(
+  commandId: string | undefined,
+): Promise<{ took: boolean; via: string | null }> {
+  if (!commandId) return { took: false, via: null };
   for (let attempt = 0; attempt < 10; attempt += 1) {
     await new Promise((resolve) => { setTimeout(resolve, 500); });
     try {
-      const { status } = await api.dialStatus(commandId);
-      if (status === 'done') return true;
-      if (status === 'failed' || status === 'expired') return false;
+      const { status, via } = await api.dialStatus(commandId);
+      /*
+        `via` and not just `status`, because the two ways a phone can take a
+        dial are different for the rep. On the app path it is already ringing;
+        on the dialler fallback the number is typed in and nothing happens
+        until somebody presses the green button. Both used to be reported as
+        "Ringing from your phone", so a rep on the older installed build was
+        told a call was under way while the phone sat waiting for a tap.
+      */
+      if (status === 'done') return { took: true, via: via ?? null };
+      if (status === 'failed' || status === 'expired') return { took: false, via: null };
     } catch {
       // A blip on the way to a row that will still be there next time round.
     }
   }
-  return false;
+  return { took: false, via: null };
 }
 
 export function CallDispositionProvider({
@@ -125,11 +135,20 @@ export function CallDispositionProvider({
       if (isNative) {
         dial(clean);
       } else {
+        let outcome: { took: boolean; via: string | null };
         const result = await api.dialOnPhone({ to: clean, module, recordId });
         if (!result.sent) {
           dial(clean);
-        } else if (await phoneTookIt(result.commandId)) {
-          toast.success('Ringing from your phone', `${result.device ?? 'Your phone'} is calling now.`);
+        } else if ((outcome = await phoneTookIt(result.commandId)).took) {
+          const phone = result.device ?? 'Your phone';
+          if (outcome.via === 'dialler') {
+            toast.success(
+              'The number is on your phone',
+              `${phone} has it dialled — press the green button to start the call.`,
+            );
+          } else {
+            toast.success('Ringing from your phone', `${phone} is calling now.`);
+          }
         } else {
           toast.error(
             'Phone call was not confirmed',

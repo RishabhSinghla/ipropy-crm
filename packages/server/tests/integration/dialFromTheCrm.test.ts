@@ -234,3 +234,50 @@ describe('dialling from the CRM', () => {
     expect(untouched?.status).toBe('queued');
   });
 });
+
+/*
+  Which way the phone took it, because the two are different for the rep.
+
+  The plugin path rings on its own; the dialler fallback types the number in
+  and waits for the green button. Both used to come back with no `via` at all
+  from the **device-token** route — the plugin's route, so the good path — and
+  the desk said "Ringing from your phone" while a phone sat waiting for a tap.
+  This feature's own notes claimed the desk was told which happened; until
+  20 September 2026 nothing recorded it.
+*/
+describe('the desk is told which way the phone took it', () => {
+  it('records the app path when the plugin closes the command', async () => {
+    /*
+      Its own handset. The dial goes to this person's *most recently synced*
+      phone, and earlier specs in this file pair others — so reusing their
+      token closes nothing and the assertion below would read as the fix
+      failing rather than as the wrong phone answering.
+    */
+    const paired = await request(app)
+      .post('/api/telephony/devices')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ label: 'Via test handset' })
+      .expect(201);
+
+    const queued = await request(app)
+      .post('/api/telephony/dial')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ to: '+91 99100 00123' })
+      .expect(200);
+    expect(queued.body.sent, 'no paired phone to queue against').toBe(true);
+
+    await request(app)
+      .post(`/api/device/commands/${queued.body.commandId}/result`)
+      .set('Authorization', `Bearer ${paired.body.token}`)
+      .send({ ok: true })
+      .expect(200);
+
+    const seen = await request(app)
+      .get(`/api/telephony/dial/${queued.body.commandId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(seen.body.status).toBe('done');
+    expect(seen.body.via, 'the plugin path must say it rang on its own').toBe('app');
+  });
+});

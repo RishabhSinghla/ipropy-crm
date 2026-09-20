@@ -505,9 +505,20 @@ export async function finishCommand(
   commandId: string,
   outcome: { ok: boolean; error?: string | null },
 ): Promise<void> {
+  /*
+    `via: 'app'`, because this route is the native plugin's and nothing else
+    holds a device token. The plugin path is the one where the phone rings on
+    its own; the dialler fallback runs in the webview and closes the command
+    through the session route, which records 'dialler'.
+
+    Without this the good path recorded no `via` at all, so the desk could not
+    tell "it is ringing" from "the number is typed in, press the green button"
+    — and said the former either way.
+  */
   await db.query(
     `UPDATE ipy_device_command
-        SET status = $3, finished_at = now(), error = $4
+        SET status = $3, finished_at = now(), error = $4,
+            payload = COALESCE(payload, '{}'::jsonb) || jsonb_build_object('via', 'app')
       WHERE id = $1 AND device_id = $2`,
     [commandId, device.id, outcome.ok ? 'done' : 'failed', outcome.error ?? null],
   );
