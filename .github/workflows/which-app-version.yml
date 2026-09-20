@@ -1,0 +1,37 @@
+name: Which app version is on the phones
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ask:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Postgres client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client >/dev/null
+      - name: Ask production
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          echo "=== Every paired handset, and what it is running ==="
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT label, platform, app_version, model, is_active,
+                   last_sync_at, last_sync_count
+              FROM ipy_device
+             ORDER BY last_sync_at DESC NULLS LAST"
+
+          echo "=== Dial instructions: has a phone ever collected one? ==="
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT status,
+                   COUNT(*)                                        AS how_many,
+                   COUNT(*) FILTER (WHERE delivered_at IS NOT NULL) AS collected,
+                   COUNT(*) FILTER (WHERE payload->>'via' IS NOT NULL) AS said_how,
+                   MAX(created_at)                                 AS latest
+              FROM ipy_device_command
+             WHERE kind = 'dial'
+             GROUP BY status
+             ORDER BY how_many DESC"
