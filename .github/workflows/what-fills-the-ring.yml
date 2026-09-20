@@ -1,0 +1,85 @@
+# Which fields the form-strength percentage counts, and what each is worth.
+#
+# The owner asked, on 20 September 2026: "how to calculate the form strength
+# percentage, means which fields are using and how much strength of each
+# field." Every answerable field is worth the same — 100 divided by how many
+# there are — so the only real question is *which* fields make the list, and
+# that is production's own metadata rather than anything written in the code.
+#
+# Read-only and narrow: field names and labels, never a record's values.
+name: What fills the ring
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  explain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: List the fields the percentage counts
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          if [ -z "$PROD_DATABASE_URL" ]; then
+            echo "No PROD_DATABASE_URL secret configured." >&2
+            exit 1
+          fi
+
+          # The same rule as `isAnswerable` in packages/shared/src/strength.ts,
+          # kept in step by hand: active, not read-only, not hidden, and not a
+          # number a person cannot type into (autonumber, formula, rollup,
+          # score). A copy that drifts is worse than no copy, so if that
+          # function changes, this changes with it.
+          for module in leads properties; do
+            echo "=== $module ==="
+            psql "$PROD_DATABASE_URL" -tAc "
+              SELECT count(*) FROM ipy_field f
+                JOIN ipy_module m ON m.id = f.module_id
+               WHERE m.name = '$module'
+                 AND f.is_active
+                 AND NOT f.is_readonly
+                 AND coalesce(f.display_type, '') NOT IN ('hidden','readonly')
+                 AND f.uitype NOT IN ('autonumber','formula','rollup','score');
+            " | while read -r total; do
+              echo "counted fields: $total  ·  each one is worth $(awk -v t="$total" 'BEGIN{ if (t>0) printf "%.1f", 100/t; else print "0" }')%"
+            done
+            psql "$PROD_DATABASE_URL" -c "
+              SELECT f.label,
+                     f.name,
+                     f.uitype,
+                     CASE WHEN f.is_mandatory THEN 'required' ELSE '' END AS must
+                FROM ipy_field f
+                JOIN ipy_module m ON m.id = f.module_id
+               WHERE m.name = '$module'
+                 AND f.is_active
+                 AND NOT f.is_readonly
+                 AND coalesce(f.display_type, '') NOT IN ('hidden','readonly')
+                 AND f.uitype NOT IN ('autonumber','formula','rollup','score')
+               ORDER BY f.sequence, f.label;
+            "
+            echo
+            echo "--- left out of the sum, and why ---"
+            psql "$PROD_DATABASE_URL" -c "
+              SELECT f.label,
+                     f.uitype,
+                     CASE
+                       WHEN NOT f.is_active THEN 'switched off'
+                       WHEN f.is_readonly THEN 'read-only'
+                       WHEN coalesce(f.display_type,'') IN ('hidden','readonly') THEN 'hidden on the form'
+                       ELSE 'worked out by the CRM'
+                     END AS why
+                FROM ipy_field f
+                JOIN ipy_module m ON m.id = f.module_id
+               WHERE m.name = '$module'
+                 AND (NOT f.is_active
+                      OR f.is_readonly
+                      OR coalesce(f.display_type,'') IN ('hidden','readonly')
+                      OR f.uitype IN ('autonumber','formula','rollup','score'))
+               ORDER BY f.label;
+            "
+            echo
+          done
