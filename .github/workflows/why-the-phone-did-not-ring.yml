@@ -1,0 +1,66 @@
+# Why pressing Call at a desk did not ring the rep's own phone.
+#
+# The CRM already knows the answer and nobody can read it: the instruction is a
+# row in `ipy_device_command`, and what that row's status settled on says which
+# of three different problems this is.
+#
+#   queued / expired  — the phone never collected it. The app was not open and
+#                       signed in, or the handset was asleep or off.
+#   delivered, never done — the app collected it and could not place the call:
+#                       an old build with no `placeCall` in it, or the call
+#                       permission refused on the handset.
+#   done              — it rang, and the complaint is about something else.
+#
+# And no paired device at all is a fourth answer, which shows as "no-device"
+# on screen instead of this message.
+#
+# Read-only, and deliberately narrow: device labels and command statuses. The
+# number dialled is masked to its last four digits — it belongs to a customer.
+name: Why the phone did not ring
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  look:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install PostgreSQL 18 client
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: Read the phones and the call instructions
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          echo "=== phones paired, and when each last spoke to the CRM ==="
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT u.email, d.label, d.platform, d.model,
+                 coalesce(d.app_version, '(never reported)') AS app_version,
+                 d.is_active, d.last_sync_at, d.last_sync_count, d.created_at
+            FROM ipy_device d JOIN ipy_user u ON u.id = d.user_id
+           ORDER BY d.created_at DESC;
+          SQL
+
+          echo "=== the last 20 call instructions the CRM sent a phone ==="
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT c.created_at, u.email, d.label, c.kind, c.status,
+                 '…' || right(coalesce(c.payload->>'number',''), 4) AS number,
+                 c.delivered_at, c.finished_at, c.expires_at, c.error
+            FROM ipy_device_command c
+            JOIN ipy_user u ON u.id = c.user_id
+            LEFT JOIN ipy_device d ON d.id = c.device_id
+           ORDER BY c.created_at DESC LIMIT 20;
+          SQL
+
+          echo "=== how those instructions have ended, all time ==="
+          psql "$PROD_DATABASE_URL" -P pager=off -c \
+            "SELECT status, count(*) FROM ipy_device_command GROUP BY status ORDER BY count DESC;"
