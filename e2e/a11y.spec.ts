@@ -152,17 +152,22 @@ test.describe('accessibility', () => {
     expect(messaging.violations, summarise(messaging.violations)).toEqual([]);
   });
 
-  test('the WhatsApp link screen has no violations', async ({ page }) => {
-    await page.goto('/settings');
-    await page.getByRole('button', { name: 'WhatsApp' }).click();
-    await expect(page.getByText('My WhatsApp')).toBeVisible();
-    const { violations } = await scan(page);
-    expect(violations, summarise(violations)).toEqual([]);
-  });
+  /*
+    The Settings -> WhatsApp tab this used to scan was removed with the
+    QR-linking route on 19 September 2026. A spec for a screen that no longer
+    exists fails for ever and teaches nobody anything, so it goes with it.
+  */
 
   test('Chats has no violations', async ({ page }) => {
     await page.goto('/chats');
-    await expect(page.getByText(/Link your WhatsApp first|Pick a conversation/)).toBeVisible({ timeout: 20_000 });
+    /*
+      Three legitimate states, because /chats renders the business inbox now:
+      no provider connected (which is what a developer's database and CI both
+      look like), a provider with nothing chosen, and a thread open.
+    */
+    await expect(
+      page.getByText(/is not connected yet|Pick a conversation|No messages yet/),
+    ).toBeVisible({ timeout: 20_000 });
     const { violations } = await scan(page);
     expect(violations, summarise(violations)).toEqual([]);
   });
