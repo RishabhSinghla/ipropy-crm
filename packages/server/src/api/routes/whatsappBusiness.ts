@@ -36,6 +36,7 @@ import {
   approveCampaign, campaignRecipients, createCampaign, listCampaigns, previewCampaign,
   setCampaignStatus,
 } from '../../integrations/whatsapp/business/campaigns.js';
+import { whatsAppOverview } from '../../integrations/whatsapp/business/overview.js';
 
 /**
  * May this person send that file to a customer?
@@ -101,6 +102,19 @@ whatsappBusinessRouter.get('/status', asyncHandler(async (_req, res) => {
     capabilities: [...provider.capabilities],
     businessNumber: await provider.businessNumber(),
   });
+}));
+
+/**
+ * Everything about WhatsApp on one screen, so nobody has to open the vendor's.
+ *
+ * `admin.integrations`, because it names the provider and what it can do.
+ * Reads only rows the CRM owns — no vendor call, so it still answers when
+ * WhatsMarketing are having an afternoon, which is exactly when somebody opens
+ * it.
+ */
+whatsappBusinessRouter.get('/overview', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.integrations');
+  res.json(await whatsAppOverview());
 }));
 
 /** The four adapters and what each is able to do, for the admin panel. */

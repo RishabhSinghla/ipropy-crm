@@ -31,6 +31,7 @@ const UnitMasterAdmin = lazy(() => import('./UnitMasterAdmin'));
 const TagsAdmin = lazy(() => import('./TagsAdmin'));
 const WhatsAppTemplatesAdmin = lazy(() => import('./WhatsAppTemplatesAdmin'));
 const CampaignsAdmin = lazy(() => import('./CampaignsAdmin'));
+const WhatsAppAdmin = lazy(() => import('./WhatsAppAdmin'));
 const TemplatesAdmin = lazy(() => import('./TemplatesAdmin'));
 
 /*
@@ -87,6 +88,10 @@ const SECTIONS = [
       // Its own page rather than a tab on the one above: an email template is
       // wording the business writes, and a WhatsApp template is wording Meta
       // approved — the only thing editable here is what fills its blanks.
+      // Before the templates and the campaigns, because it answers the
+      // question somebody has *before* either of those: is this thing working
+      // at all, and is anybody writing to us.
+      { path: 'whatsapp', capability: 'admin.integrations', label: 'WhatsApp', icon: MessageCircle, element: <WhatsAppAdmin /> },
       { path: 'whatsapp-templates', capability: 'whatsapp.templates', label: 'WhatsApp Templates', icon: MessageCircle, element: <WhatsAppTemplatesAdmin /> },
       { path: 'campaigns', capability: 'whatsapp.templates', label: 'Campaigns', icon: Megaphone, element: <CampaignsAdmin /> },
       { path: 'settings', capability: 'admin.access', label: 'Settings', icon: SlidersHorizontal, element: <SettingsAdmin /> },

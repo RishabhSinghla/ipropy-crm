@@ -1258,6 +1258,17 @@ export const api = {
       `/api/whatsapp-business/campaigns/${id}/approve`, { expectedCount, confirmLarge }),
   waBizCampaignStatus: (id: string, status: 'paused' | 'running' | 'cancelled') =>
     post<{ ok: true }>(`/api/whatsapp-business/campaigns/${id}/status`, { status }),
+  // One screen instead of the vendor's dashboard. Read from the CRM's own
+  // rows, so it still answers when they are down.
+  waBizOverview: () => get<{
+    provider: string | null; connected: boolean; businessNumber: string | null;
+    capabilities: string[];
+    lastCheck: { at: string; ok: boolean; detail: string } | null;
+    conversations: { total: number; windowOpen: number; unlinked: number; unread: number };
+    messages: { inboundToday: number; outboundToday: number; failedToday: number; deliveredToday: number };
+    templates: { total: number; approved: number; unmapped: number };
+    stillTheirs: string[];
+  }>('/api/whatsapp-business/overview'),
   waBizCampaignRecipients: (id: string, status?: string) => get<{
     recordId: string; label: string; handle: string; status: string;
     error: string | null; sentAt: string | null;
