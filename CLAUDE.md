@@ -1015,6 +1015,29 @@ CRM's own ids, never instead of them.
   the team's phones about conversations from Tuesday, and a team that switches
   notifications off is how the useful ones get lost.
 
+  **What a customer actually sends, read from their live API on 20 September
+  2026 rather than from anybody's documentation:** WhatsMarketing store the
+  *entire Meta webhook envelope* against an inbound row —
+  `{object:'whatsapp_business_account', entry:[{changes:[{value:{messages:[…]}}]}]}`
+  — and a small `{messaging_product, to, text}` against an outbound one. A
+  customer's row says `sender: "user"`; ours says `sender: "bot"` with the
+  agent id in `agent_name`. Their PDF says none of this, which is why six of
+  the owner's messages read as unreadable while the poller reported success
+  every minute. The envelope goes to `metaCloudProvider.parseWebhook`, the
+  parser the CRM already has for exactly that shape — **one parser, so the
+  webhook door and the polling door learn a new message type together.** A
+  copy would drift, and the way it drifts is that one of them quietly stops
+  understanding a customer.
+
+  **Their template listing contains a live Meta access token**, in
+  `template_json` and `raw_data`, and on 20 September it reached a GitHub
+  Actions run log before anybody noticed. That log was deleted and the token
+  must be treated as exposed. `test-whatsmarketing.yml` now pipes every
+  response through a `redact` filter — the credential-bearing fields by name,
+  plus Meta's `EAA…` prefix generically. **A vendor's response is not ours to
+  trust with a log**, and this is the second time a third party's payload has
+  carried something it should not; assume the next one does too.
+
   **The diagnosis came from the poller's own report, not from the vendor.**
   `whatsapp.last_poll` carries the handle the newest visible message came from,
   how many were already held, and what was dropped, by cause. Before that,

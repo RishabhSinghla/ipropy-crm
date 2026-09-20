@@ -40,6 +40,7 @@ import type { InboundMessage } from './types.js';
 import { receiveInbound } from './inbound.js';
 import { activeBusinessProvider } from './registry.js';
 import { WHATSMARKETING_PROVIDER } from './whatsMarketing.js';
+import { metaCloudProvider } from './metaCloud.js';
 
 /**
  * How many recent subscribers to look at on one visit.
@@ -196,7 +197,10 @@ function rowsOf(payload: unknown): Record<string, unknown>[] {
  * would file them as things the customer said, reopen the 24-hour window on
  * our own message, and notify an agent about their own reply.
  */
-const OURS = new Set(['bot', 'agent', 'admin', 'system', 'business']);
+export const OURS_SENDERS = ['bot', 'agent', 'admin', 'system', 'business'] as const;
+const OURS = new Set<string>(OURS_SENDERS);
+/* Read from their live API: a customer's row says `sender: "user"`, and ours
+   says `sender: "bot"` with the agent's id in `agent_name`. */
 const isFromCustomer = (row: Record<string, unknown>): boolean =>
   !OURS.has(String(row.sender ?? '').toLowerCase());
 
@@ -217,7 +221,32 @@ export function textOfMessage(raw: unknown): { text: string | null; media: Inbou
   if (typeof parsed === 'string') return { text: parsed, media: null };
   if (!parsed || typeof parsed !== 'object') return { text: null, media: null };
 
-  return readObject(parsed as Record<string, unknown>, 2);
+  const obj = parsed as Record<string, unknown>;
+
+  /*
+    **What a customer actually sends, read from their live API on 20 September
+    2026 and not from anybody's documentation.**
+
+    WhatsMarketing store the *entire Meta webhook envelope* against an inbound
+    row — `{object:'whatsapp_business_account', entry:[{changes:[{value:{
+    messages:[…]}}]}]}` — and a plain little `{messaging_product, to, text}`
+    against an outbound one. Nothing in their PDF says so, which is why six of
+    the owner's messages read as unreadable while the poller reported success
+    every minute.
+
+    So the envelope goes to the parser the CRM already has for exactly this
+    shape, rather than to a second one written here. One parser: when Meta add
+    a message type, the webhook door and this door learn it together. A copy
+    would drift, and the way it drifts is that one of them silently stops
+    understanding a customer.
+  */
+  if (obj.object === 'whatsapp_business_account' && Array.isArray(obj.entry)) {
+    const first = metaCloudProvider.parseWebhook(obj).messages[0];
+    if (first) return { text: first.text, media: first.media };
+    return { text: null, media: null };
+  }
+
+  return readObject(obj, 2);
 }
 
 /** A string at one of these keys, or nothing. Never a guess at another type. */

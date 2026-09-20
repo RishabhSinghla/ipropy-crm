@@ -14,6 +14,12 @@
 # It can also send one real WhatsApp message, to a number given on purpose, so
 # the whole chain is proved rather than assumed.
 #
+# **Everything printed is redacted first.** Their template listing embeds a
+# live Meta access token in `template_json`; on 20 September that reached a run
+# log before anybody noticed. A vendor's response is not ours to trust with a
+# log, so `redact` strips the fields known to carry credentials and catches
+# Meta's `EAA…` prefix generically.
+#
 # The token is read from the `WHATSMARKETING_API_TOKEN` repository secret and
 # never from an input. A workflow_dispatch input is recorded in the run's
 # history for good, so a key pasted into one is a key published to everybody
@@ -66,14 +72,32 @@ jobs:
           # second place the key lives.
           say() { printf '\n=== %s ===\n' "$1"; }
 
+          # Everything printed goes through this. On 20 September a template
+          # listing came back with a live Meta access token embedded in
+          # `template_json`, and it went straight into a run log that several
+          # people can read and that GitHub keeps. The log was deleted and the
+          # token treated as exposed; this is what stops the next one.
+          #
+          # A vendor's response is not ours to trust with a log. Redact the
+          # fields known to carry credentials, and catch Meta's token prefix
+          # generically in case a new field starts carrying one.
+          redact() {
+            sed -E \
+              -e 's/"access_token":"[^"]*"/"access_token":"[redacted]"/g' \
+              -e 's/"template_json":"(\\\\.|[^"\\\\])*"/"template_json":"[redacted]"/g' \
+              -e 's/"raw_data":"(\\\\.|[^"\\\\])*"/"raw_data":"[redacted]"/g' \
+              -e 's/"header_handle[^]]*\]/"header_handle":"[redacted]"]/g' \
+              -e 's/EAA[A-Za-z0-9_-]{20,}/[redacted-meta-token]/g'
+          }
+
           say "1. Does the token work?"
           curl -sS --max-time 30 -X POST "$BASE/user/package/list" \
-            -d "apiToken=$TOKEN" | head -c 800
+            -d "apiToken=$TOKEN" | redact | head -c 800
           echo
 
           say "2. Team members (a second read that needs only the token)"
           curl -sS --max-time 30 -X POST "$BASE/users/team-member/list" \
-            -d "apiToken=$TOKEN" | head -c 800
+            -d "apiToken=$TOKEN" | redact | head -c 800
           echo
 
           if [ -z "$PNID" ]; then
@@ -85,13 +109,13 @@ jobs:
 
           say "3. Approved templates — the shape the CRM parses"
           curl -sS --max-time 30 -X POST "$BASE/whatsapp/get/template/list" \
-            -d "apiToken=$TOKEN" -d "phone_number_id=$PNID" | head -c 4000
+            -d "apiToken=$TOKEN" -d "phone_number_id=$PNID" | redact | head -c 4000
           echo
 
           say "4. Subscribers (proves the Phone Number ID is the right one)"
           curl -sS --max-time 30 -X POST "$BASE/whatsapp/subscriber/list" \
             -d "apiToken=$TOKEN" -d "phone_number_id=$PNID" \
-            -d "limit=2" -d "offset=1" | head -c 1200
+            -d "limit=2" -d "offset=1" | redact | head -c 1200
           echo
 
           if [ -n "$THREAD_WITH" ]; then
@@ -112,7 +136,7 @@ jobs:
             say "6. The raw thread with $THREAD_WITH, exactly as the poller reads it"
             curl -sS --max-time 30 -X POST "$BASE/whatsapp/get/conversation" \
               -d "apiToken=$TOKEN" -d "phone_number_id=$PNID" \
-              -d "phone_number=$THREAD_WITH" -d "limit=15" -d "offset=1" | head -c 6000
+              -d "phone_number=$THREAD_WITH" -d "limit=15" -d "offset=1" | redact | head -c 6000
             echo
           fi
 

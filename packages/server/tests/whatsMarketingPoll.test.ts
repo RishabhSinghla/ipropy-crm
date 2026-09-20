@@ -47,7 +47,7 @@ vi.mock('../src/integrations/whatsapp/business/inbound.js', () => ({
   }),
 }));
 
-const { pollWhatsMarketingInbound, textOfMessage, describeShape, __resetPollWatermark } =
+const { pollWhatsMarketingInbound, textOfMessage, describeShape, OURS_SENDERS, __resetPollWatermark } =
   await import('../src/integrations/whatsapp/business/pollInbound.js');
 
 /** A fixed "now" so the watermark arithmetic is readable. */
@@ -249,6 +249,48 @@ describe('reading their message_content', () => {
 
   it('takes a plain string at face value', () => {
     expect(textOfMessage('just text').text).toBe('just text');
+  });
+
+  it('reads the whole Meta envelope they store against an inbound row', () => {
+    /*
+      The real shape, copied from their live API on 20 September 2026 — not
+      from their documentation, which does not mention it. This is what six of
+      the owner's messages looked like while the poller called them unreadable.
+      Trimmed of nothing that matters and of everything that identifies.
+    */
+    const envelope = JSON.stringify({
+      object: 'whatsapp_business_account',
+      entry: [{
+        id: '1160490932764005',
+        changes: [{
+          field: 'messages',
+          value: {
+            messaging_product: 'whatsapp',
+            metadata: { display_phone_number: '919821772933', phone_number_id: '984702481401419' },
+            contacts: [{ profile: { name: 'A Customer' }, wa_id: '911111111111' }],
+            messages: [{
+              from: '911111111111',
+              id: 'wamid.HBgMOTE',
+              timestamp: '1789888860',
+              text: { body: 'Hey' },
+              type: 'text',
+            }],
+          },
+        }],
+      }],
+    });
+    expect(textOfMessage(envelope).text).toBe('Hey');
+  });
+
+  it('does not read our own outbound row as something the customer said', () => {
+    // Their outbound rows carry a different shape entirely — the send request,
+    // not the webhook — and `sender: "bot"` keeps them out. Belt and braces.
+    const ours = JSON.stringify({
+      messaging_product: 'whatsapp', to: '911111111111',
+      text: { body: 'hi', preview_url: true },
+    });
+    expect(textOfMessage(ours).text).toBe('hi');
+    expect(OURS_SENDERS).toContain('bot');
   });
 
   it('finds the words wherever a vendor puts them', () => {
