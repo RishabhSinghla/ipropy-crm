@@ -73,12 +73,21 @@ const MESSAGES_PER_THREAD = 15;
  * is skipped permanently, and the only symptom is a customer's reply that
  * never appears, with a poller reporting success every single minute.
  *
- * So each visit re-reads the last quarter of an hour. That is not sloppiness:
+ * **How long the lag actually is, measured rather than assumed.** That same
+ * message was stamped 07:27:30 UTC and was still invisible to a visit at
+ * 07:45; it first appeared in a report at 07:48. So the lag on a real account
+ * is around twenty minutes, not the two or three a quarter-hour window was
+ * sized for — fifteen minutes would have missed this exact message. Forty-five
+ * gives it more than double the worst lag seen. If a reply ever goes missing
+ * again, this number is the first thing to raise, and the report's "newest
+ * customer message visible anywhere" against the watermark is how to tell.
+ *
+ * So each visit re-reads the last three quarters of an hour. That is not sloppiness:
  * `receiveInbound` claims every message by a unique insert and refuses the
  * repeat, so an extra look costs one refused insert and a dropped message
  * costs a customer. When the two are not symmetrical, look again.
  */
-const LOOK_BACK_MS = 15 * 60 * 1000;
+const LOOK_BACK_MS = 45 * 60 * 1000;
 
 /**
  * Only look at threads that have moved since the last visit.

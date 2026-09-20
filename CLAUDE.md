@@ -984,8 +984,8 @@ CRM's own ids, never instead of them.
   contact, opens the window and notifies an agent, and so re-reading a thread
   is free. Two things in it are pinned by `tests/whatsMarketingPoll.test.ts`
   because they fail silently: a row from `sender: 'bot'` must never be replayed
-  as something the customer said, and **each visit re-reads the last quarter of
-  an hour** (`LOOK_BACK_MS`).
+  as something the customer said, and **each visit re-reads the last
+  three quarters of an hour** (`LOOK_BACK_MS`).
 
   That second one was the whole bug, found on 20 September 2026 and worth
   keeping. The owner sent "hey" at 12:57 IST. Twenty minutes later the poller
@@ -1002,6 +1002,15 @@ CRM's own ids, never instead of them.
   by a unique insert, so an extra look costs one refused insert and a dropped
   message costs a customer. An in-memory `seen` set skips the repeats cheaply —
   an optimisation, never the guarantee; the unique index is the guarantee.
+
+  **The window was sized from a measurement, and the first guess was wrong.**
+  That message was stamped 07:27:30 UTC, was still invisible to a visit at
+  07:45, and first appeared at 07:48 — a lag of around twenty minutes, where
+  fifteen had been assumed. A quarter of an hour would have missed the very
+  message it was written for. Forty-five minutes is more than double the worst
+  lag seen; if a reply goes missing again this is the first number to raise,
+  and the way to tell is the report's "newest customer message visible
+  anywhere" against the watermark in the same line.
 
   **The diagnosis came from the report, not from the vendor.** `whatsapp.last_poll`
   now carries the handle the newest visible message came from and the count of

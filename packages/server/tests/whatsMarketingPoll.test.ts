@@ -144,7 +144,7 @@ describe('pulling replies in', () => {
     expect(received.calls.map((c) => c.message.providerMessageId)).toContain('wamid.B');
   });
 
-  it('looks back a quarter of an hour, because the vendor publishes late', async () => {
+  it('looks back far enough for a vendor that publishes late', async () => {
     /*
       The bug the owner hit on 20 September, and the reason this file exists at
       all. WhatsMarketing stamps a message with when it was sent and publishes
@@ -154,17 +154,18 @@ describe('pulling replies in', () => {
       minute.
 
       Proved by polling once with nothing to find — which moves the watermark —
-      then offering a message stamped five minutes *before* that visit. Against
-      a one-second watermark it is dropped; it must be stored.
+      then offering a message stamped twenty minutes *before* that visit, which
+      is the lag measured on the real account. Against a one-second watermark
+      it is dropped; it must be stored.
     */
     wire([{ chat_id: '919891222206' }], []);
     await pollWhatsMarketingInbound();
 
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000)
+    const twentyMinutesAgo = new Date(Date.now() - 20 * 60 * 1000)
       .toISOString().slice(0, 19).replace('T', ' ');
     wire(
       [{ chat_id: '919891222206' }],
-      [customerSaid('hey', fiveMinutesAgo, 'wamid.LATE')],
+      [customerSaid('hey', twentyMinutesAgo, 'wamid.LATE')],
     );
 
     expect((await pollWhatsMarketingInbound()).stored).toBe(1);
