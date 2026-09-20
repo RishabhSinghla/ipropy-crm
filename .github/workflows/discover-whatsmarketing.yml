@@ -1,0 +1,91 @@
+# What else does WhatsMarketing's API offer that the CRM is not using?
+#
+# The owner's instruction, 20 September 2026: bring as much of their dashboard
+# into the CRM as possible, so he never has to open it. That cannot start from
+# guesswork — an endpoint invented from a plausible name is a feature that
+# fails in front of a customer — so this asks their live API which of a list
+# of candidate endpoints actually exist, and prints the first part of each
+# answer.
+#
+# **Read-only by intent.** Every candidate here is a list or a get. No
+# create, update or delete endpoint is probed: an endpoint that exists would
+# then have written something to the business's real account, which is not a
+# thing to find out by accident.
+#
+# Everything printed goes through the same `redact` filter as the other
+# workflow, because their responses have carried a live Meta token before.
+name: Discover WhatsMarketing
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Which endpoints answer
+        env:
+          TOKEN: ${{ secrets.WHATSMARKETING_API_TOKEN }}
+        run: |
+          set -u
+          BASE=https://app.whatsmarketing.in/api/v1
+
+          if [ -z "${TOKEN:-}" ]; then
+            echo "No WHATSMARKETING_API_TOKEN secret is set on this repository."
+            exit 1
+          fi
+
+          redact() {
+            sed -E \
+              -e 's/"access_token":"[^"]*"/"access_token":"[redacted]"/g' \
+              -e 's/"template_json":"(\\\\.|[^"\\\\])*"/"template_json":"[redacted]"/g' \
+              -e 's/"raw_data":"(\\\\.|[^"\\\\])*"/"raw_data":"[redacted]"/g' \
+              -e 's/EAA[A-Za-z0-9_-]{20,}/[redacted-meta-token]/g' \
+              -e 's/"apiToken":"[^"]*"/"apiToken":"[redacted]"/g'
+          }
+
+          # Candidates, all reads. The four the CRM already uses are included
+          # on purpose as a control: if a known-good one reads as missing, the
+          # probe is wrong rather than the endpoint.
+          ENDPOINTS="
+          user/package/list
+          users/team-member/list
+          whatsapp/get/template/list
+          whatsapp/subscriber/list
+          whatsapp/get/phone-numbers
+          whatsapp/phone-number/list
+          whatsapp/get/phone/list
+          whatsapp/bot/list
+          whatsapp/campaign/list
+          whatsapp/get/campaign/list
+          whatsapp/broadcast/list
+          whatsapp/subscriber/tag/list
+          whatsapp/tag/list
+          whatsapp/attribute/list
+          whatsapp/get/subscriber/attribute
+          whatsapp/opt-in/list
+          whatsapp/get/profile
+          whatsapp/business/profile
+          whatsapp/get/wallet
+          user/balance/list
+          user/credit/list
+          whatsapp/flow/list
+          whatsapp/catalog/list
+          whatsapp/get/analytics
+          whatsapp/report/list
+          "
+
+          for path in $ENDPOINTS; do
+            printf '\n=== %s ===\n' "$path"
+            body=$(curl -sS --max-time 25 -w '\n[http %{http_code}]' \
+              -X POST "$BASE/$path" -d "apiToken=$TOKEN" 2>&1 || echo '[curl failed]')
+            printf '%s\n' "$body" | redact | head -c 600
+            echo
+          done
+
+          printf '\nNothing above was written. Endpoints that answer with real data are\n'
+          printf 'the ones worth pulling into the CRM.\n'
