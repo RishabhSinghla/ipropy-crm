@@ -1534,7 +1534,11 @@ export default function ListView(): JSX.Element {
                             subtitle started at the left edge of the cell and
                             read as a caption for the picture.
                           */
-                          <div className="flex items-center gap-2.5">
+                          /* The cell itself stays overflow-visible so native
+                             table sticky positioning can pin it. This inner
+                             wrapper owns clipping, retaining the compact,
+                             one-line identity layout for long imported names. */
+                          <div className="flex min-w-0 overflow-hidden items-center gap-2.5">
                             {/*
                               A face for the row, with how full the record is
                               drawn round it and the number tucked into its

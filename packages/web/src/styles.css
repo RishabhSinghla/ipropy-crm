@@ -347,7 +347,18 @@
     straight through it.
   */
   .list-stick-select { position: sticky; left: 0; z-index: 11; background-color: inherit; }
-  .list-stick-first { position: sticky; left: var(--list-select-w); z-index: 11; background-color: inherit; }
+  .list-stick-first {
+    position: sticky;
+    left: var(--list-select-w);
+    z-index: 11;
+    background-color: inherit;
+    /* `.list-cell` uses Tailwind's `truncate`, which makes the cell itself an
+       overflow container. Chromium then treats that table cell as its own
+       scroll boundary and lets it slide with the grid. Keep clipping inside
+       the identity content instead; the cell must remain visible to stay
+       frozen within the outer list scroller. */
+    overflow: visible;
+  }
   /* The header cells pin in both directions, and outrank the body so nothing
      slides over the corner. Two class names on purpose: the header cell also
      carries Tailwind's `relative`, a utility that would otherwise win on
