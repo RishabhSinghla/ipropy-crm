@@ -55,6 +55,32 @@ const SUBSCRIBERS_PER_VISIT = 40;
 const MESSAGES_PER_THREAD = 15;
 
 /**
+ * How far back each visit looks, beyond the last one.
+ *
+ * **The bug this exists for, measured on production 20 September 2026.** The
+ * owner sent "hey" at 12:57 IST. The poller reported, twenty minutes later,
+ * that it could see that exact message from that exact number — and that it
+ * had dropped nothing: no missing id, nothing unreadable, nothing the store
+ * refused. It had simply arrived *behind the watermark*, because the
+ * watermark was already at 13:17.
+ *
+ * The mistake was treating the vendor's timestamp as the moment the message
+ * became readable. It is not. WhatsMarketing's conversation endpoint publishes
+ * a message some minutes after it is stamped — its position in the
+ * most-recent-forty subscriber list moves on their clock, not ours — so a
+ * watermark that marches to "when this visit started" is always a few minutes
+ * ahead of what the vendor will show next. Every message landing in that gap
+ * is skipped permanently, and the only symptom is a customer's reply that
+ * never appears, with a poller reporting success every single minute.
+ *
+ * So each visit re-reads the last quarter of an hour. That is not sloppiness:
+ * `receiveInbound` claims every message by a unique insert and refuses the
+ * repeat, so an extra look costs one refused insert and a dropped message
+ * costs a customer. When the two are not symmetrical, look again.
+ */
+const LOOK_BACK_MS = 15 * 60 * 1000;
+
+/**
  * Only look at threads that have moved since the last visit.
  *
  * Without this every tick would re-read forty whole conversations for nothing.
@@ -62,6 +88,22 @@ const MESSAGES_PER_THREAD = 15;
  * CRM was being deployed.
  */
 let lastVisit = new Date(Date.now() - 60 * 60 * 1000);
+
+/**
+ * Message ids this process has already offered to the store.
+ *
+ * The look-back above means the same message is read again every minute for a
+ * quarter of an hour. The database would refuse each repeat correctly, but
+ * `receiveInbound` resolves the contact *before* it opens the transaction, so
+ * a repeat still costs a lookup per message per minute. This skips the second
+ * and later sightings for free.
+ *
+ * Memory only, and deliberately so: it is an optimisation, never the
+ * guarantee. The unique index is the guarantee, and a restart simply pays for
+ * one more look.
+ */
+const seen = new Set<string>();
+const SEEN_CEILING = 5_000;
 
 interface Conf { baseUrl: string; apiToken: string; phoneNumberId: string }
 
@@ -335,6 +377,10 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
       const providerMessageId = String(row.wa_message_id ?? row.id ?? '');
       if (!providerMessageId) { noId += 1; continue; }
 
+      // Read again by the look-back, and already handled. The database would
+      // say so too; this just saves it the contact lookup every minute.
+      if (seen.has(providerMessageId)) continue;
+
       const { text, media } = textOfMessage(row.message_content);
       if (!text && !media) {
         logger.warn(
@@ -359,6 +405,9 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
       try {
         if (await receiveInbound(WHATSMARKETING_PROVIDER, message)) stored += 1;
         else refused += 1;
+        // Remembered either way: stored, or already known to the database.
+        if (seen.size >= SEEN_CEILING) seen.clear();
+        seen.add(providerMessageId);
       } catch (err) {
         logger.warn({ err, providerMessageId }, 'could not store a polled WhatsApp reply');
         refused += 1;
@@ -373,10 +422,11 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
     again — the classic off-by-one in every poller, and invisible when it bites
     because the only symptom is one customer's reply that never appeared.
   */
-  // A second of overlap, for the reason given at the `<` above: their
-  // timestamps have no sub-second part, so an exact boundary is a real case
-  // rather than a theoretical one.
-  lastVisit = new Date(visitStarted.getTime() - 1000);
+  // Back by the look-back, not by a second. The second of overlap only ever
+  // covered their timestamps having no sub-second part; it did nothing about
+  // a message published minutes after it is stamped, which is the failure
+  // that actually happened. See LOOK_BACK_MS.
+  lastVisit = new Date(visitStarted.getTime() - LOOK_BACK_MS);
   if (stored) logger.info({ checked, stored }, 'pulled WhatsApp replies from WhatsMarketing');
 
   /*
@@ -398,8 +448,15 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
   return { checked, stored };
 }
 
-/** For the test, which must not inherit a watermark from another case. */
-export function __resetPollWatermark(at: Date): void { lastVisit = at; }
+/**
+ * For the test, which must not inherit a watermark — or a seen id — from
+ * another case. Both are process-wide on purpose in production and both would
+ * otherwise leak between cases, which reads as a message being dropped.
+ */
+export function __resetPollWatermark(at: Date): void {
+  lastVisit = at;
+  seen.clear();
+}
 
 /*
   Its own clock, not the scheduler's.

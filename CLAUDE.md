@@ -984,9 +984,32 @@ CRM's own ids, never instead of them.
   contact, opens the window and notifies an agent, and so re-reading a thread
   is free. Two things in it are pinned by `tests/whatsMarketingPoll.test.ts`
   because they fail silently: a row from `sender: 'bot'` must never be replayed
-  as something the customer said, and the watermark moves to when the visit
-  *started*, less a second, since their timestamps carry no sub-second part and
-  an exact boundary would otherwise drop a message for ever.
+  as something the customer said, and **each visit re-reads the last quarter of
+  an hour** (`LOOK_BACK_MS`).
+
+  That second one was the whole bug, found on 20 September 2026 and worth
+  keeping. The owner sent "hey" at 12:57 IST. Twenty minutes later the poller
+  reported that it could see that exact message from that exact number, and
+  that it had dropped nothing — no missing id, nothing unreadable, nothing the
+  store refused. It had arrived **behind the watermark**, which was already at
+  13:17. The mistake was treating the vendor's timestamp as the moment the
+  message becomes readable: WhatsMarketing publishes a message some minutes
+  after it is stamped, and a subscriber's position in the most-recent-forty
+  list moves on their clock. A watermark set to "when this visit started" is
+  therefore permanently a few minutes ahead of what they will show next, and
+  **every message landing in that gap is skipped for ever while the poller
+  reports success every single minute.** `receiveInbound` claims each message
+  by a unique insert, so an extra look costs one refused insert and a dropped
+  message costs a customer. An in-memory `seen` set skips the repeats cheaply —
+  an optimisation, never the guarantee; the unique index is the guarantee.
+
+  **The diagnosis came from the report, not from the vendor.** `whatsapp.last_poll`
+  now carries the handle the newest visible message came from and the count of
+  messages dropped past the watermark, by cause. Before that, "stored 0" covered
+  four different failures. The raw-thread route was tried first and could not
+  work: the probe workflow needs a repository secret that is not set, and the
+  live key exists only encrypted inside the CRM — printing a credential to fetch
+  a diagnosis is the wrong trade.
 
   Two more things worth knowing before touching it. Their templates are addressed by a
   numeric `template_id` from their dashboard, so a name is resolved through their list

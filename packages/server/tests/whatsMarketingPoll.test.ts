@@ -144,6 +144,49 @@ describe('pulling replies in', () => {
     expect(received.calls.map((c) => c.message.providerMessageId)).toContain('wamid.B');
   });
 
+  it('looks back a quarter of an hour, because the vendor publishes late', async () => {
+    /*
+      The bug the owner hit on 20 September, and the reason this file exists at
+      all. WhatsMarketing stamps a message with when it was sent and publishes
+      it minutes later. A watermark set to "when this visit started" is
+      therefore always ahead of what they will show next, and a message landing
+      in that gap is skipped for ever while the poller reports success every
+      minute.
+
+      Proved by polling once with nothing to find — which moves the watermark —
+      then offering a message stamped five minutes *before* that visit. Against
+      a one-second watermark it is dropped; it must be stored.
+    */
+    wire([{ chat_id: '919891222206' }], []);
+    await pollWhatsMarketingInbound();
+
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000)
+      .toISOString().slice(0, 19).replace('T', ' ');
+    wire(
+      [{ chat_id: '919891222206' }],
+      [customerSaid('hey', fiveMinutesAgo, 'wamid.LATE')],
+    );
+
+    expect((await pollWhatsMarketingInbound()).stored).toBe(1);
+    expect(received.calls.at(-1)?.message.providerMessageId).toBe('wamid.LATE');
+  });
+
+  it('offers a message once, however many times it reads it', async () => {
+    // The look-back re-reads the same quarter hour every minute. The database
+    // would refuse each repeat, but `receiveInbound` resolves the contact
+    // before it opens its transaction, so the repeat is not free.
+    const justNow = new Date().toISOString().slice(0, 19).replace('T', ' ');
+    wire([{ chat_id: '919891222206' }], [customerSaid('hey', justNow, 'wamid.ONCE')]);
+
+    await pollWhatsMarketingInbound();
+    await pollWhatsMarketingInbound();
+    await pollWhatsMarketingInbound();
+
+    const offered = received.calls
+      .filter((c) => c.message.providerMessageId === 'wamid.ONCE');
+    expect(offered).toHaveLength(1);
+  });
+
   it('does nothing at all when another provider is the live one', async () => {
     active.name = 'whatsapp_gupshup';
     wire([{ chat_id: '919811533633' }], [customerSaid('hey', RECENT)]);
