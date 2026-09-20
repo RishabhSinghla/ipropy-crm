@@ -16,9 +16,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const row = vi.hoisted(() => ({ value: null as Record<string, string | null> | null }));
+/** The organisation's default, read from `ipy_setting` by its own query. */
+const orgCode = vi.hoisted(() => ({ value: null as string | null }));
 
 vi.mock('../src/db/pool.js', () => ({
-  db: { queryOne: vi.fn(async () => row.value), query: vi.fn(async () => ({ rows: [] })) },
+  db: {
+    queryOne: vi.fn(async (sql: string) => (sql.includes('ipy_setting')
+      ? (orgCode.value === null ? null : { value: orgCode.value })
+      : row.value)),
+    query: vi.fn(async () => ({ rows: [] })),
+  },
   onCommit: vi.fn(), transaction: vi.fn(),
 }));
 vi.mock('../src/utils/logger.js', () => ({
@@ -30,7 +37,7 @@ vi.mock('../src/integrations/whatsapp/business/media.js', () => ({ prepareOutgoi
 
 const { dialableNumber } = await import('../src/integrations/whatsapp/business/send.js');
 
-beforeEach(() => { row.value = null; });
+beforeEach(() => { row.value = null; orgCode.value = null; });
 
 describe('which number a message goes to', () => {
   it('prefers what WhatsApp itself called them', async () => {
@@ -51,6 +58,27 @@ describe('which number a message goes to', () => {
   it('puts the record\'s country code back on its national number', async () => {
     row.value = { country_code: '91', mobile: '9891222206' };
     expect(await dialableNumber(null, '9891222206', 'rec-1')).toBe('919891222206');
+  });
+
+  it("falls back to the organisation's own default, which is a row somebody can see", async () => {
+    /*
+      The other end of the refusal, met on 20 September: most of this database
+      was imported with a ten-digit mobile and no `country_code`, so every one
+      of those contacts was unreachable — the composer refused before the
+      provider was called. What the warning is about is a default **nobody can
+      see**; `org.country_code` has a label in Admin → Settings.
+    */
+    row.value = { country_code: null, mobile: '9311171162' };
+    orgCode.value = '91';
+    expect(await dialableNumber(null, '9311171162', 'rec-1')).toBe('919311171162');
+  });
+
+  it("lets the contact's own code win over the organisation's", async () => {
+    // An NRI buyer whose record says 971 must not be sent to India because a
+    // setting says 91. The record is the more specific fact and it wins.
+    row.value = { country_code: '971', mobile: '501234567' };
+    orgCode.value = '91';
+    expect(await dialableNumber(null, '501234567', 'rec-1')).toBe('971501234567');
   });
 
   it('refuses rather than assuming +91', async () => {

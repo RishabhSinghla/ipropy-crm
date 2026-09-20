@@ -144,6 +144,14 @@ async function conversationFor(handle: string, recordId: string | null, userId: 
  * assuming +91. A silent Indian default sends an NRI buyer's message to a
  * stranger, and `toInternational`'s own comment says so.
  */
+export /** The organisation's own default, or nothing. Never a code invented here. */
+async function defaultCountryCode(): Promise<string> {
+  const row = await db.queryOne<{ value: unknown }>(
+    `SELECT value FROM ipy_setting WHERE key = 'org.country_code'`,
+  );
+  return String(row?.value ?? '').replace(/\D/g, '');
+}
+
 export async function dialableNumber(
   waId: string | null, to: string, recordId: string | null,
 ): Promise<string | null> {
@@ -165,7 +173,21 @@ export async function dialableNumber(
       the silent default this function exists to refuse. An NRI buyer's message
       sent to a stranger in India cannot be taken back.
     */
-    const code = (row?.country_code ?? '').replace(/\D/g, '');
+    /*
+      The record's own code first, then the organisation's.
+
+      Refusing outright was right about the danger and wrong about the cost:
+      most of this database was imported with a ten-digit mobile and no
+      `country_code`, so on 20 September every one of those contacts was
+      unreachable — the composer refused before the provider was called.
+
+      What `toInternational`'s comment warns about is a default **nobody can
+      see**. `org.country_code` is a row with a label in Admin → Settings, so
+      an admin knows it exists and which country it names, and a contact that
+      carries its own code still wins over it. That is a different thing from
+      `toE164` quietly assuming India.
+    */
+    const code = (row?.country_code ?? '').replace(/\D/g, '') || await defaultCountryCode();
     if (code) {
       const full = toInternational(code, row?.mobile ?? to);
       const digits = (full ?? '').replace(/\D/g, '');
@@ -191,7 +213,7 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
   if (!dialTo) {
     throw new BadRequestError(
       'This number has no country code, so WhatsApp cannot be sure who to send to. '
-      + 'Add the country code on the contact and try again.',
+      + 'Add one on the contact, or set a default in Admin → Settings → Default country code.',
     );
   }
 

@@ -116,6 +116,16 @@ async function call(path: string, fields: Record<string, string>): Promise<Recor
 /** Digits only with the country code, which is how every endpoint wants it. */
 const digits = (to: string): string => to.replace(/\D/g, '');
 
+/**
+ * Each template id to the *other* id the same row publishes.
+ *
+ * Filled whenever the template list is read. It exists so a "template not
+ * found" from their API can be retried with the id they did not want, rather
+ * than handed to a person as a refusal about a template they can plainly see
+ * in the CRM.
+ */
+const otherId = new Map<string, string>();
+
 function outcome(answer: Record<string, unknown>): SendOutcome {
   const id = String(answer.wa_message_id ?? '');
   if (!id) throw new Error(`${LABEL} accepted the message but returned no id.`);
@@ -190,10 +200,32 @@ async function templates({ fresh = false } = {}): Promise<TemplateSummary[]> {
       status: String(row.status ?? 'APPROVED'),
       bodyText: body,
       variableCount: declared ?? (body ? (body.match(/\{\{\s*\d+\s*\}\}/g) ?? []).length : 0),
-      // Their send endpoint takes `template_id`; `id` is their internal row.
+      /*
+        **Two ids, and which one `/whatsapp/send/template` wants is not
+        documented anywhere.** A row carries `template_id` (Meta's long id,
+        `1574812586925817`) and `id` (their own row, `340813`). This sent
+        Meta's, on the strength of the parameter sharing its name, and on
+        20 September their API answered *"Message template not found."* with a
+        template that had synced from them minutes earlier.
+
+        So both are kept, and `sendTemplate` tries the other one when the
+        first is refused — see `otherId`. A comment claiming to know which
+        is what put a red bubble in front of the owner.
+      */
       providerTemplateId: String(row.template_id ?? row.id ?? '') || null,
     };
   }).filter((t) => t.name || t.providerTemplateId);
+
+  /*
+    Which other id this template also has, so a refusal can be retried rather
+    than handed to somebody as "not found" for a template they can see.
+  */
+  otherId.clear();
+  for (const row of list) {
+    const a = String(row.template_id ?? '');
+    const b = String(row.id ?? '');
+    if (a && b && a !== b) { otherId.set(a, b); otherId.set(b, a); }
+  }
 
   templateCache = { at: Date.now(), rows };
   return rows;
@@ -287,9 +319,46 @@ export const whatsMarketingProvider: WhatsAppBusinessProvider = {
       failure is loud (their "Template not found" / a blank in the message)
       rather than silent.
     */
-    const fields: Record<string, string> = { template_id: templateId, phone_number: digits(to) };
-    params.forEach((value, i) => { fields[`templateVariable-var-${i + 1}`] = value; });
-    return outcome(await call('/whatsapp/send/template', fields));
+    const send = async (id: string): Promise<Record<string, unknown>> => {
+      const fields: Record<string, string> = { template_id: id, phone_number: digits(to) };
+      params.forEach((value, i) => { fields[`templateVariable-var-${i + 1}`] = value; });
+      return call('/whatsapp/send/template', fields);
+    };
+
+    /*
+      **Their two ids, and a refusal that names neither.**
+
+      A template row carries `template_id` (Meta's long id) and `id` (their own
+      row), and nothing in their documentation says which one
+      `/whatsapp/send/template` wants. On 20 September Meta's was sent — the
+      parameter shares its name — and their API answered *"Message template not
+      found."* about a template that had synced from them minutes earlier.
+      That is unarguable; it is not proof that the other id is right.
+
+      So the other one is tried, **once, and only on that exact refusal**. A
+      blanket retry would double every real failure; this one is narrow enough
+      that the worst case is a second refusal nobody sees. When it works the
+      log says which id did it, which is how this stops being a guess and
+      becomes a fact somebody can write down.
+    */
+    try {
+      return outcome(await send(templateId));
+    } catch (err) {
+      const why = err instanceof Error ? err.message : String(err);
+      const other = otherId.get(templateId);
+      if (!other || !/template not found/i.test(why)) throw err;
+
+      logger.warn(
+        { templateName, tried: templateId, retryingWith: other },
+        'whatsmarketing refused a template id; trying the other id it publishes',
+      );
+      const second = await send(other);
+      logger.info(
+        { templateName, worked: other },
+        'whatsmarketing accepted the other template id — record this in CLAUDE.md',
+      );
+      return outcome(second);
+    }
   },
 
   async listTemplates() { return templates({ fresh: true }); },

@@ -91,3 +91,27 @@ export function wentOut(status: string): string {
   };
   return said[status] ?? status;
 }
+
+/** Where the WhatsApp page lives. Every link is built from it — see `tabHref`. */
+export const WHATSAPP_BASE = '/whatsapp';
+
+/**
+ * A tab's address, **absolute, always**.
+ *
+ * `to="chats"` inside a route matched as `/whatsapp/*` does not resolve
+ * against `/whatsapp` — it resolves against the *whole current pathname*. So
+ * one click went to `/whatsapp/chats`, the next to
+ * `/whatsapp/chats/campaigns`, and the catch-all redirect appended `chats`
+ * again on every render until the address bar held a hundred of them and the
+ * page rendered nothing at all. Live for about an hour on 20 September, found
+ * by the owner clicking Campaigns once.
+ *
+ * **It lives here rather than beside the page on purpose.** A module that
+ * imports the app's store cannot be loaded by a `node` test at all — the store
+ * reads `localStorage` as it is constructed — and this repo has already paid
+ * for that once, when pulling `waDigits` out of a component broke an unrelated
+ * suite. A rule worth a test has to live where a test can reach it.
+ */
+export function tabHref(path: string): string {
+  return `${WHATSAPP_BASE}/${path}`;
+}

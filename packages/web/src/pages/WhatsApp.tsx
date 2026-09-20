@@ -4,6 +4,7 @@ import { BarChart3, MessageCircle, Megaphone, MessagesSquare } from 'lucide-reac
 import { useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { Skeleton } from '../components/ui';
+import { tabHref } from '../lib/whatsapp';
 
 /**
  * WhatsApp, as one place, because nobody thinks in drawers.
@@ -98,7 +99,7 @@ export default function WhatsAppPage(): JSX.Element {
           {tabs.map((tab) => (
             <NavLink
               key={tab.path}
-              to={tab.path}
+              to={tabHref(tab.path)}
               className={({ isActive }) => cn(
                 'flex items-center gap-1.5 rounded-t-lg px-3 py-2 text-sm font-medium',
                 isActive
@@ -119,7 +120,12 @@ export default function WhatsAppPage(): JSX.Element {
             {tabs.map((tab) => <Route key={tab.path} path={tab.path} element={tab.element} />)}
             {/* The first tab this person may open, not a fixed one: a rep with
                 only Chats must not be bounced to a page they cannot see. */}
-            <Route path="*" element={<Navigate to={tabs[0]?.path ?? 'chats'} replace />} />
+            {/*
+              Absolute, and `replace`, for the same reason: a relative
+              redirect here appended to a path it had just been given, so it
+              grew on every render rather than settling.
+            */}
+            <Route path="*" element={<Navigate to={tabHref(tabs[0]?.path ?? 'chats')} replace />} />
           </Routes>
         </Suspense>
       </div>

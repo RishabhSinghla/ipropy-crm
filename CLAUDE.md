@@ -1078,6 +1078,30 @@ CRM's own ids, never instead of them.
   live key exists only encrypted inside the CRM — printing a credential to
   fetch a diagnosis is the wrong trade.
 
+  **A template row carries two ids and their documentation names neither as
+  the one to send with.** `template_id` is Meta's long id
+  (`1574812586925817`); `id` is their own row (`340813`). The adapter sent
+  Meta's, on the strength of the send parameter sharing its name, and on
+  20 September their API answered *"Message template not found."* about a
+  template that had synced from them minutes earlier — a red bubble in front
+  of the owner. Both are kept now (`otherId`), and `sendTemplate` retries with
+  the other one **once, only on that exact refusal**: a blanket retry would
+  double every real failure, and this one is narrow enough that the worst case
+  is a second refusal nobody sees. When it works the log says which id did it
+  — `whatsmarketing accepted the other template id` — and **that is the line
+  to come back and write down here**, because it is the only way this stops
+  being a guess.
+
+  **`org.country_code` (migration `164`) is the other half of the dialling
+  rule.** Refusing a number with no country code is right — `toE164` assumes
+  India, and an unseen Indian default sends an NRI buyer's message to a
+  stranger — but on 20 September the owner met the other end of it: most of
+  the 22,988 contacts were imported with a ten-digit mobile and no
+  `country_code`, so **every one of them was unreachable**, refused before the
+  provider was called. What the warning is about is a default *nobody can
+  see*. This is a row with a label in Admin → Settings, seeded `91`, and a
+  contact carrying its own code still wins over it.
+
   Two more things worth knowing before touching it. Their templates are addressed by a
   numeric `template_id` from their dashboard, so a name is resolved through their list
   endpoint first and a miss is refused *naming the template* rather than posting a blank id.
