@@ -20,6 +20,7 @@ export interface CallSyncStatus {
   available: boolean;
   paired: boolean;
   callLogGranted: boolean;
+  callPhoneGranted: boolean;
   locationGranted: boolean;
   backgroundLocationGranted: boolean;
   /** Epoch millis, 0 when it has never run. */
@@ -38,6 +39,7 @@ interface CallSyncPlugin {
   setLocationEnabled(options: { enabled: boolean }): Promise<CallSyncStatus>;
   setUploadRecordings(options: { enabled: boolean }): Promise<CallSyncStatus>;
   requestCallLog(): Promise<CallSyncStatus>;
+  requestCallPermissions(): Promise<CallSyncStatus>;
   placeCall(options: { number: string; commandId?: string }): Promise<{ placed: boolean; reason?: string }>;
   requestLocation(): Promise<CallSyncStatus>;
   openAppSettings(): Promise<void>;
@@ -52,6 +54,7 @@ const UNAVAILABLE: CallSyncStatus = {
   available: false,
   paired: false,
   callLogGranted: false,
+  callPhoneGranted: false,
   locationGranted: false,
   backgroundLocationGranted: false,
   lastSyncAt: 0,
@@ -94,8 +97,8 @@ export async function enableCallSync(options: {
 } = {}): Promise<CallSyncStatus> {
   if (!callSyncSupported) return UNAVAILABLE;
 
-  const granted = await CallSync.requestCallLog();
-  if (!granted.callLogGranted) return granted;
+  const granted = await CallSync.requestCallPermissions();
+  if (!granted.callLogGranted || !granted.callPhoneGranted) return granted;
 
   const { Device } = await import('@capacitor/device');
   const info = await Device.getInfo();

@@ -19,9 +19,9 @@
  * hardcoded tab bar would be the one part of this CRM that needed a Play Store
  * release to rename a thing.
  */
-import { type JSX, lazy, Suspense } from 'react';
+import { type JSX, lazy, Suspense, useEffect, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { useApp } from '../lib/store';
+import { toast, useApp } from '../lib/store';
 import { Spinner } from '../components/ui';
 /*
   `resolveIcon`, not Layout's `ModuleIcon`. They render the same thing, but
@@ -35,6 +35,7 @@ import { api } from '../lib/api';
 import { cn } from '../lib/utils';
 import { tap } from '../lib/nativeActions';
 import { useBottomBarHeight } from './useBottomBarHeight';
+import { callSyncStatus, callSyncSupported, enableCallSync, type CallSyncStatus } from '../lib/callSync';
 
 import MobileList from './List';
 import MobileRecord from './Record';
@@ -55,6 +56,43 @@ function Loading(): JSX.Element {
   );
 }
 
+/** A new Android install should not require a rep to hunt through the You tab. */
+function DesktopCallingSetup(): JSX.Element | null {
+  const [status, setStatus] = useState<CallSyncStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => { void callSyncStatus().then(setStatus); }, []);
+  if (!callSyncSupported || status === null || status.paired) return null;
+
+  const enable = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      const next = await enableCallSync();
+      setStatus(next);
+      if (next.paired) toast.success('Desktop calling is ready', 'Calls started from CRM will now open this phone’s dialler.');
+      else toast.error('Permissions needed', 'Allow Call logs and Phone so CRM can call from this device.');
+    } catch (error) {
+      toast.error('Could not enable desktop calling', (error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mx-auto w-full max-w-2xl border-b border-brand-200 bg-brand-50 px-4 py-3 dark:border-brand-800 dark:bg-brand-950/40">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">Enable desktop calling</p>
+          <p className="text-xs text-brand-800 dark:text-brand-200">One tap lets CRM start calls from this phone.</p>
+        </div>
+        <button className="btn-primary btn-sm shrink-0" disabled={busy} onClick={() => void enable()}>
+          {busy ? 'Setting up…' : 'Enable'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function MobileShell(): JSX.Element {
   const modules = useApp((s) => s.modules);
   const home = modules[0]?.name ?? 'leads';
@@ -70,6 +108,7 @@ export default function MobileShell(): JSX.Element {
         other. A phone is narrower than the cap, so this changes nothing there.
       */}
       <main className="mx-auto min-h-0 w-full max-w-2xl flex-1">
+        <DesktopCallingSetup />
         <Suspense fallback={<Loading />}>
           <Routes>
             <Route index element={<Navigate to={`/${home}`} replace />} />

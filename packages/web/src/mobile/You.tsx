@@ -56,8 +56,8 @@ export default function MobileYou(): JSX.Element {
     try {
       const next = calls?.paired ? await disableCallSync() : await enableCallSync();
       setCalls(next);
-      if (!calls?.paired && !next.callLogGranted) {
-        toast.error('Android would not allow it', 'Allow Call logs under Settings → Apps → iPropy → Permissions.');
+      if (!calls?.paired && (!next.callLogGranted || !next.callPhoneGranted)) {
+        toast.error('Android would not allow it', 'Allow both Call logs and Phone under Settings → Apps → iPropy → Permissions.');
       }
     } catch (err) {
       toast.error('Could not change it', (err as Error).message);
@@ -94,11 +94,11 @@ export default function MobileYou(): JSX.Element {
           {callSyncSupported && calls?.available && (
             <Row
               leading={<Phone className="h-5 w-5 text-slate-500" />}
-              title="Log my calls"
+              title="CRM calling & call log"
               subtitle={
                 calls.paired
-                  ? (calls.lastSyncAt ? `Last checked ${new Date(calls.lastSyncAt).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}` : 'Waiting for the first check')
-                  : 'Off'
+                  ? (calls.lastSyncAt ? `Desktop calling ready · checked ${new Date(calls.lastSyncAt).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}` : 'Desktop calling ready')
+                  : 'Enable this phone to make calls from CRM'
               }
               trailing={callsBusy ? <Spinner className="h-4 w-4" /> : <Switch on={calls.paired} />}
               onClick={callsBusy ? undefined : () => void toggleCalls()}

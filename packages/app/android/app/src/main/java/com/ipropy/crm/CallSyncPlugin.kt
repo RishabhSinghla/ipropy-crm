@@ -67,6 +67,7 @@ class CallSyncPlugin : Plugin() {
         put("available", true)
         put("paired", prefs.token != null)
         put("callLogGranted", getPermissionState(CALL_LOG)?.toString() == "granted")
+        put("callPhoneGranted", getPermissionState(PLACE_CALL)?.toString() == "granted")
         put("locationGranted", getPermissionState(LOCATION)?.toString() == "granted")
         put("backgroundLocationGranted", hasBackgroundLocation())
         put("lastSyncAt", prefs.lastSyncAt)
@@ -174,6 +175,29 @@ class CallSyncPlugin : Plugin() {
 
     @PermissionCallback
     private fun afterCallLog(call: PluginCall) = call.resolve(currentStatus())
+
+    /** Set up desktop calling in one action, using Android's normal consent prompts. */
+    @PluginMethod
+    fun requestCallPermissions(call: PluginCall) {
+        requestMissingCallPermission(call)
+    }
+
+    private fun requestMissingCallPermission(call: PluginCall) {
+        if (getPermissionState(CALL_LOG)?.toString() != "granted") {
+            requestPermissionForAlias(CALL_LOG, call, "afterCallPermissions")
+            return
+        }
+        if (getPermissionState(PLACE_CALL)?.toString() != "granted") {
+            requestPermissionForAlias(PLACE_CALL, call, "afterCallPermissions")
+            return
+        }
+        call.resolve(currentStatus())
+    }
+
+    @PermissionCallback
+    private fun afterCallPermissions(call: PluginCall) {
+        requestMissingCallPermission(call)
+    }
 
     /**
      * Ring a number, because the CRM asked this handset to.

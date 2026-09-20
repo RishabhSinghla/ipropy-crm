@@ -1041,13 +1041,13 @@ function ThisPhone(): JSX.Element | null {
     try {
       const next = await enableCallSync({ importHistory });
       setStatus(next);
-      if (!next.callLogGranted) {
+      if (!next.callLogGranted || !next.callPhoneGranted) {
         toast.error(
           'Android would not allow it',
-          'Call logging needs permission to read the call log. Open Settings → Apps → iPropy → Permissions and allow Call logs.',
+          'Desktop calling needs Call logs and Phone permissions. Open Settings → Apps → iPropy → Permissions and allow both.',
         );
       } else if (next.paired) {
-        toast.success('Call logging is on', 'Calls from this phone will reach the CRM within fifteen minutes.');
+        toast.success('Desktop calling is ready', 'CRM can now start calls from this phone and keep its call history in sync.');
       }
     } catch (err) {
       toast.error('Could not turn it on', (err as Error).message);
@@ -1069,8 +1069,8 @@ function ThisPhone(): JSX.Element | null {
           <p className="text-sm font-medium">This phone</p>
           <p className="mt-1 text-sm text-muted">
             {status.paired
-              ? 'Calls you make and take on this handset reach the CRM on their own, matched to the right contact. Nothing to remember, nothing to log.'
-              : 'Switch this on and every call you make or take on this phone appears in the CRM by itself, against the right contact.'}
+              ? 'Desktop calls and calls you make or take on this handset reach the CRM, matched to the right contact.'
+              : 'Switch this on to make calls from CRM with this phone and keep its call history against the right contact.'}
           </p>
           {status.paired && (
             <p className="mt-2 text-2xs text-muted">

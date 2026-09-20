@@ -29,11 +29,11 @@ android {
           person reads, and the one the phone reports to the CRM so Settings →
           Phones shows which build each handset is running.
         */
-        // 2 is intentionally higher than the legacy 1.0.0 companion. Android
-        // will therefore offer this as an upgrade instead of quietly leaving
-        // the old shell — which predates remote calling — on a handset.
-        versionCode 2
-        versionName "2.0.0"
+        // Each public companion build must rise monotonically so Android
+        // offers an in-place upgrade rather than leaving a rep on an older
+        // calling flow.
+        versionCode 3
+        versionName "2.1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
