@@ -5,7 +5,7 @@ import { relativeTime, type HeaderTab } from '@ipropy/shared';
 import {
   AtSign, Bell, Cake, Check, Facebook, Flame, Globe, Instagram, Linkedin, Lock, LogOut, Menu,
   MessageCircle, Moon, Search, Settings, Shield, Sparkles, Sun, Twitter, Upload, X, Youtube,
-  BarChart3, MessagesSquare, LayoutDashboard, MapPin, Building2, Plus, ChevronDown,
+  BarChart3, MessagesSquare, LayoutDashboard, MapPin, Building2, PhoneCall, Plus, ChevronDown,
 } from 'lucide-react';
 import { applyBrandColour, toast, useApp } from '../lib/store';
 import { api, authedFileUrl, type ModuleSummary, type SearchHit } from '../lib/api';
@@ -428,6 +428,12 @@ function ModuleSwitcher({
       one room.
     */
     if (t.kind === 'whatsapp') return [];
+    if (t.kind === 'calls') {
+      return [{
+        key, to: '/calls', label: t.label ?? 'Calls',
+        icon: <PhoneCall className="h-4 w-4" />, badge: undefined, external: false,
+      }];
+    }
     if (t.kind === 'link') {
       return [{
         key, to: t.value ?? '#', label: t.label ?? t.value ?? '',
@@ -640,6 +646,7 @@ function MobileNav({
                 `lg:block` and does not exist below 1024px — the rule this
                 repo already learned twice, with Chats and then Reports. */}
             <DrawerLink to="/whatsapp" icon="message-circle" label="WhatsApp" />
+            <DrawerLink to="/calls" icon="phone" label="Calls" />
             <DrawerLink to="/settings" icon="settings" label="Settings" />
           </div>
         </nav>

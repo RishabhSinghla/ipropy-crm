@@ -130,6 +130,13 @@ test.describe('accessibility', () => {
     expect(violations, summarise(violations)).toEqual([]);
   });
 
+  test('the calls list has no violations', async ({ page }) => {
+    await page.goto('/calls');
+    await expect(page.getByText(/^[\d,]+ calls ·/)).toBeVisible({ timeout: 30_000 });
+    const { violations } = await scan(page);
+    expect(violations, summarise(violations)).toEqual([]);
+  });
+
   test('reports has no violations', async ({ page }) => {
     // Both halves: a chart is the easiest place in this CRM to fail a contrast
     // or a focus rule, and the WhatsApp tab draws a second one.

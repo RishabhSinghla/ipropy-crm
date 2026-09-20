@@ -2269,6 +2269,54 @@ is what `RecordingFinder` already does — the OEM recorder's file, read from a 
 rep grants once, uploaded **after** the call ends and matched on the last ten digits plus
 a time window. The player with play/pause is already in the timeline and the Calls tab.
 
+## The calling system, and what it still needs
+
+**20 September 2026, the owner sent a twenty-point specification** for a NeoDove-style
+Android calling app wired into this CRM. His own §20 says: inspect what exists, reuse it,
+do not rebuild working functionality, and build in phases. So the first answer is an
+inventory, because **most of the server half already exists** and was built over several
+sessions:
+
+| His ask | What is already here |
+|---|---|
+| §1 dialler, §3 mobile→web sync | `packages/app` + `CallSyncPlugin.kt`: pairing, call-log upload, `POST /api/device/calls` with dedupe |
+| §2 click-to-call | `POST /api/telephony/dial` → socket + `/dial/pending` poll → the phone's dialler |
+| §4 contact matching | `matchContact.ts`, last ten digits, refuses to choose between two people |
+| §6 timeline | calls already merge into `buildTimeline` |
+| §7 recording | `POST /api/device/recordings`, signed playback, OEM-recorder file only |
+| §8 post-call screen | `CallDispositionProvider` on the web, `/calls/:id/disposition`, follow-up written through `followUp.ts` |
+| §10 agents/devices | `ipy_device`, per-user tokens, pairing screen |
+| §15 security | JWT + refresh rotation, device tokens, capability gates, signed recording URLs |
+
+**Added 20 September:**
+
+* **`GET /api/telephony/lookup?phone=`** (§4, §9, §17) — the caller card. One question, one
+  answer, for both the phone (before it rings) and the CRM (after a call ends). It reads
+  the record **as the person asking**, so a rep outside a lead's scope is told the number
+  belongs to somebody and *whose* — enough to pass it on, nothing about the customer. It
+  never guesses between two people; `matchContact` already refuses, and the screen offers
+  the candidates.
+* **A Calls page** (§5) — every call with direction, picked-up-or-not, outcome, date range
+  and "only mine", the record link, and a recording that loads only when somebody presses
+  play. Nothing re-derives a call: it is the same endpoint the record's Calls tab reads.
+* **The list's filters and its count.** The count rides in **`X-Total-Count`, not in a
+  wrapped body** — this endpoint answers a bare array, an integration test pins that in
+  those words, and changing the shape to add one number broke four tests before the header
+  was used instead. A response shape with readers is a contract.
+
+**What cannot be built here, and it is not a scheduling problem.** Everything in §1, §11,
+§12 and most of §16 — the default dialler, `InCallService`, `ROLE_DIALER`,
+`CallScreeningService`, multi-SIM, the Room offline queue, FCM — is Android code, and this
+container has a JDK and **no Android SDK**. It cannot be compiled, let alone run on a
+handset. The repo already carries the cost of ignoring that: `placeCall` was written here,
+never compiled, and every installed copy of the app still cannot place a call — 130 dial
+instructions, none ever collected. **Writing more unproven Android code makes that worse,
+not better.** That half needs a machine with Android Studio and a real phone.
+
+What *is* worth doing from here, in his order: the server and web halves of each phase —
+the lookup and the Calls list (done), then the live-call panel and the call reports, which
+need the phone to report state and are therefore only worth building once something can.
+
 ## Every request appears twice in development, and once in production
 
 `main.tsx` wraps the app in `React.StrictMode`, which double-invokes effects in

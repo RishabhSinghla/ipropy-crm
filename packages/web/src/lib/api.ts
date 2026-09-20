@@ -1045,6 +1045,28 @@ export const api = {
     post(`/api/telephony/dial/${id}/result`, data),
   logCall: (data: Record<string, unknown>) => post('/api/telephony/log', data),
   calls: (params: Record<string, unknown> = {}) => get<Record<string, unknown>[]>(`/api/telephony/calls${qs(params)}`),
+  /**
+   * The same list, with how many match the filters in total.
+   *
+   * A second call rather than a changed shape: `calls` answers a bare array,
+   * which the record's own Calls tab and an integration test both pin. The
+   * count rides in `X-Total-Count`, which is why this one reads the response
+   * rather than the parsed body.
+   */
+  callsWithTotal: async (params: Record<string, unknown> = {}) => {
+    const res = await request<Response>(`/api/telephony/calls${qs(params)}`, { raw: true });
+    const total = Number(res.headers.get('X-Total-Count') ?? 0);
+    const calls = await res.json() as Record<string, unknown>[];
+    return { calls, total: total || calls.length };
+  },
+  /** Whose number is this? One, nobody, several, or "somebody else's lead". */
+  callerLookup: (phone: string) => get<{
+    kind: 'one' | 'none' | 'ambiguous' | 'restricted';
+    recordId?: string; module?: string; label?: string; ownerName?: string | null;
+    facts?: Record<string, unknown>; values?: Record<string, unknown>;
+    candidates?: { recordId: string; label: string }[];
+    lastCall?: { started_at: string; direction: string; disposition: string | null } | null;
+  }>(`/api/telephony/lookup?phone=${encodeURIComponent(phone)}`),
   callDetail: (id: string) => get<Record<string, unknown>>(`/api/telephony/calls/${id}`),
   updateCall: (id: string, data: Record<string, unknown>) => patch(`/api/telephony/calls/${id}`, data),
   callHistory: (id: string) => get<Record<string, unknown>[]>(`/api/telephony/calls/${id}/history`),

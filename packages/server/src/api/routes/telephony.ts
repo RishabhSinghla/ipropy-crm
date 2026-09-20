@@ -4,7 +4,7 @@ import { recordConsent } from '../../core/consent/index.js';
 import { db, transaction } from '../../db/pool.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { getScope, getUser, requireAuth } from '../../middleware/auth.js';
-import { ForbiddenError, NotFoundError } from '../../utils/errors.js';
+import { BadRequestError, ForbiddenError, NotFoundError } from '../../utils/errors.js';
 import { assertCapability, hasCapability } from '../../core/permissions/index.js';
 import { activeValues, assertPicklistValue } from '../../core/metadata/picklists.js';
 import { columnsOf } from '../../core/entity/payloadColumns.js';
@@ -24,6 +24,83 @@ telephonyRouter.use(requireAuth);
   somebody from their handset; the Call button is a `tel:` link, and the call
   comes back through the paired Android app.
 */
+
+/**
+ * Who is this number, before the phone stops ringing.
+ *
+ * The one question the Android app has to answer in the second between a call
+ * arriving and a rep deciding how to greet it, and the same one the CRM asks
+ * after a call to file it. Both go here, so there is one answer.
+ *
+ * Three rules, and the first two are already the CRM's:
+ *
+ *  * **It never guesses between two people.** `matchContact` answers one,
+ *    nobody, or "more than one and I will not choose" — because filing a
+ *    customer against a stranger who shares their number is worse than asking.
+ *    The screen offers the candidates.
+ *  * **Numbers match on their last ten digits.** `9711533633`, `+919711533633`
+ *    and `0919711533633` are one number; the CRM stores a country code and
+ *    national digits, and imported rows carry every shape there is.
+ *  * **The card is read as the person asking**, through `recordService`, so a
+ *    rep who may not open a lead is told the number belongs to somebody —
+ *    with the owner's name, so they can pass it on — and not what that
+ *    somebody's budget is.
+ */
+telephonyRouter.get('/lookup', asyncHandler(async (req, res) => {
+  const scope = getScope(req);
+  const phone = String(req.query.phone ?? '');
+  const { matchContact, matchKey } = await import('../../integrations/whatsapp/matchContact.js');
+  if (!matchKey(phone)) throw new BadRequestError('A phone number of at least ten digits is needed.');
+
+  const match = await matchContact('leads', phone);
+  if (match.kind === 'none') { res.json({ kind: 'none' }); return; }
+  if (match.kind === 'ambiguous') {
+    res.json({ kind: 'ambiguous', candidates: match.candidates });
+    return;
+  }
+
+  /*
+    Read as the caller. A rep outside this lead's scope gets the "known to the
+    CRM, not to you" shape rather than a 403 — an incoming call from a
+    colleague's customer is a thing that happens, and "somebody else owns this,
+    ask them" is the useful answer.
+  */
+  let record;
+  try {
+    record = await recordService.getRecord(scope, 'leads', match.recordId);
+  } catch {
+    const owner = await db.queryOne<{ owner_name: string | null }>(
+      `SELECT trim(u.first_name || ' ' || u.last_name) AS owner_name
+         FROM ipy_record r LEFT JOIN ipy_user u ON u.id = r.owner_id WHERE r.id = $1`,
+      [match.recordId],
+    );
+    res.json({ kind: 'restricted', label: match.label, ownerName: owner?.owner_name ?? null });
+    return;
+  }
+
+  const lastCall = await db.queryOne<{ started_at: string; direction: string; disposition: string | null }>(
+    `SELECT started_at, direction, disposition FROM ipy_call
+      WHERE record_id = $1 ORDER BY started_at DESC LIMIT 1`,
+    [match.recordId],
+  );
+
+  res.json({
+    kind: 'one',
+    recordId: match.recordId,
+    module: 'leads',
+    label: record.label ?? match.label,
+    /*
+      The facts the module itself flags as worth showing under a name —
+      `config.listSubtitle`, the same ones the list and the split view read.
+      Hardcoding "budget, configuration, locality" here would be a fourth place
+      to edit when an admin changes what matters.
+    */
+    facts: record.display ?? {},
+    values: record.values ?? {},
+    ownerName: record.ownerName ?? null,
+    lastCall: lastCall ?? null,
+  });
+}));
 
 /** Log a call made outside the system. */
 telephonyRouter.post('/log', asyncHandler(async (req, res) => {
@@ -61,12 +138,25 @@ telephonyRouter.post('/log', asyncHandler(async (req, res) => {
 
 telephonyRouter.get('/calls', asyncHandler(async (req, res) => {
   const user = getUser(req);
-  const { recordId, userId, limit, offset, direction, source, hasRecording } = z.object({
+  const {
+    recordId, userId, limit, offset, direction, source, hasRecording,
+    disposition, answered, from, to,
+  } = z.object({
     recordId: z.string().uuid().optional(),
     userId: z.string().uuid().optional(),
     direction: z.enum(['inbound', 'outbound', 'missed', 'rejected', 'blocked', 'unknown']).optional(),
     source: z.enum(['api', 'device', 'manual']).optional(),
     hasRecording: z.coerce.boolean().optional(),
+    disposition: z.string().max(60).optional(),
+    /*
+      Answered is not a direction and not a status: a call with time on the
+      clock was picked up, whichever way it went and whatever the handset
+      chose to call it. Filtering on `status` instead gives a different answer
+      on every make of phone.
+    */
+    answered: z.enum(['yes', 'no']).optional(),
+    from: z.string().max(40).optional(),
+    to: z.string().max(40).optional(),
     limit: z.coerce.number().int().max(200).default(50),
     offset: z.coerce.number().int().default(0),
   }).parse(req.query);
@@ -77,6 +167,12 @@ telephonyRouter.get('/calls', asyncHandler(async (req, res) => {
   if (direction) { params.push(direction); clauses.push(`c.direction = $${params.length}`); }
   if (source) { params.push(source); clauses.push(`c.source = $${params.length}`); }
   if (hasRecording) clauses.push(`c.recording_url IS NOT NULL`);
+  if (disposition) { params.push(disposition); clauses.push(`c.disposition = $${params.length}`); }
+  if (answered) clauses.push(answered === 'yes' ? `c.duration_seconds > 0` : `c.duration_seconds = 0`);
+  if (from) { params.push(from); clauses.push(`c.started_at >= $${params.length}::timestamptz`); }
+  // The day somebody types is the whole day: a date with no time is midnight,
+  // so "to 20 September" would otherwise exclude every call made on it.
+  if (to) { params.push(to); clauses.push(`c.started_at < ($${params.length}::timestamptz + interval '1 day')`); }
   // A rep sees their own calls unless they can listen to recordings org-wide.
   const canSeeAll = user.isAdmin || await hasCapability(user, 'telephony.listen_recordings');
   if (userId && userId !== user.id && !canSeeAll) {
@@ -107,6 +203,21 @@ telephonyRouter.get('/calls', asyncHandler(async (req, res) => {
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params,
   );
+
+  /*
+    The count matches the filters, not the page — a list that says "50 calls"
+    because fifty is the page size tells somebody counting a day's work the
+    wrong number. It rides in a **header** rather than wrapping the rows in an
+    envelope: this endpoint answers a bare array, the record's Calls tab and an
+    integration test both pin that, and changing the shape to add one number
+    would have broken four tests and whatever else reads it.
+  */
+  const total = await db.queryOne<{ count: number }>(
+    `SELECT COUNT(*)::int AS count FROM ipy_call c
+     ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}`,
+    params.slice(0, params.length - 2),
+  );
+  res.setHeader('X-Total-Count', String(total?.count ?? rows.rows.length));
   res.json(rows.rows);
 }));
 

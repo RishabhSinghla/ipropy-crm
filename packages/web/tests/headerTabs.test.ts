@@ -6,7 +6,7 @@ import { waDigits } from '../src/lib/whatsapp';
 describe('arrangeHeaderTabs', () => {
   it('ships Dashboard, the modules and Site visit when nothing is arranged', () => {
     const tabs = arrangeHeaderTabs(null, ['leads', 'properties']);
-    expect(tabs.map((t) => t.kind)).toEqual(['dashboard', 'module', 'module', 'whatsapp', 'capture']);
+    expect(tabs.map((t) => t.kind)).toEqual(['dashboard', 'module', 'module', 'calls', 'whatsapp', 'capture']);
   });
 
   /*
@@ -22,7 +22,7 @@ describe('arrangeHeaderTabs', () => {
       { kind: 'module', value: 'leads' },
     ] as unknown as HeaderTab[];
     const tabs = arrangeHeaderTabs(saved, ['leads']);
-    expect(tabs.map((t) => t.kind)).toEqual(['dashboard', 'module', 'whatsapp']);
+    expect(tabs.map((t) => t.kind)).toEqual(['dashboard', 'module', 'calls', 'whatsapp']);
   });
 
   /*
@@ -35,6 +35,11 @@ describe('arrangeHeaderTabs', () => {
   it('appends WhatsApp to an arrangement saved before the page existed', () => {
     const saved = [{ kind: 'dashboard' }, { kind: 'module', value: 'leads' }] as HeaderTab[];
     expect(arrangeHeaderTabs(saved, ['leads']).some((t) => t.kind === 'whatsapp')).toBe(true);
+  });
+
+  it('appends Calls to an arrangement saved before that page existed too', () => {
+    const saved = [{ kind: 'dashboard' }] as HeaderTab[];
+    expect(arrangeHeaderTabs(saved, []).some((t) => t.kind === 'calls')).toBe(true);
   });
 
   it('does not add a second WhatsApp when the arrangement already names it', () => {

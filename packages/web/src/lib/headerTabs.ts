@@ -10,7 +10,7 @@ import type { HeaderTab } from '@ipropy/shared';
   a kind this build no longer places is filtered out rather than rendered.
   `/reports` itself still answers, so a bookmark does not break.
 */
-const KINDS = new Set<HeaderTab['kind']>(['dashboard', 'capture', 'module', 'whatsapp', 'link']);
+const KINDS = new Set<HeaderTab['kind']>(['dashboard', 'capture', 'module', 'whatsapp', 'calls', 'link']);
 
 /**
  * The header's tabs: the admin's arrangement, with nothing orphaned.
@@ -26,6 +26,7 @@ export function arrangeHeaderTabs(arranged: HeaderTab[] | null, moduleNames: str
     return [
       { kind: 'dashboard' as const },
       ...moduleNames.map((name) => ({ kind: 'module' as const, value: name })),
+      { kind: 'calls' as const },
       { kind: 'whatsapp' as const },
       { kind: 'capture' as const },
     ];
@@ -55,6 +56,7 @@ export function arrangeHeaderTabs(arranged: HeaderTab[] | null, moduleNames: str
     production was saved before that page existed, so without this it is the
     screen nobody can reach.
   */
+  if (!placed.some((t) => t.kind === 'calls')) placed.push({ kind: 'calls' as const });
   if (!placed.some((t) => t.kind === 'whatsapp')) placed.push({ kind: 'whatsapp' as const });
   return placed;
 }
