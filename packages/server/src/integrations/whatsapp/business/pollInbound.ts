@@ -266,6 +266,27 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
     since the owner messaged the business number and nothing appeared.
   */
   let newestFromAnyone: Date | null = null;
+  /*
+    Whose it was. "The poller can see a message from a minute ago" is only
+    half an answer — the other half is whether that message is the one
+    somebody is standing next to their phone waiting for.
+  */
+  let newestFrom: string | null = null;
+  /*
+    Why a message past the watermark was not stored, counted by cause.
+
+    On 20 September production reported a customer message newer than its own
+    watermark and `stored 0` in the same breath, which is the shape of a
+    message being dropped *after* the watermark check. From outside the
+    container the three causes are identical, so each gets its own number:
+    a row with no id to dedupe on, a `message_content` shape `textOfMessage`
+    refuses to guess at, and one `receiveInbound` turned down (a repeat, or a
+    throw it swallowed). A bare `stored 0` cannot tell them apart, and the
+    house rule is that a failure has to become a fact somebody can read.
+  */
+  let noId = 0;
+  let unreadable = 0;
+  let refused = 0;
 
   const subscribers = rowsOf(list.message);
   /*
@@ -295,7 +316,10 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
       if (!isFromCustomer(row)) continue;
 
       const sentAt = readTime(row.conversation_time ?? row.created_at);
-      if (!newestFromAnyone || sentAt > newestFromAnyone) newestFromAnyone = sentAt;
+      if (!newestFromAnyone || sentAt > newestFromAnyone) {
+        newestFromAnyone = sentAt;
+        newestFrom = handle;
+      }
       /*
         `<`, not `<=`, and the watermark overlaps by a second below.
 
@@ -309,7 +333,7 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
       if (sentAt < since) continue;
 
       const providerMessageId = String(row.wa_message_id ?? row.id ?? '');
-      if (!providerMessageId) continue;
+      if (!providerMessageId) { noId += 1; continue; }
 
       const { text, media } = textOfMessage(row.message_content);
       if (!text && !media) {
@@ -317,6 +341,7 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
           { providerMessageId, content: String(row.message_content ?? '').slice(0, 500) },
           'whatsmarketing reply in a shape this poller cannot read — not stored',
         );
+        unreadable += 1;
         continue;
       }
 
@@ -333,8 +358,10 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
 
       try {
         if (await receiveInbound(WHATSMARKETING_PROVIDER, message)) stored += 1;
+        else refused += 1;
       } catch (err) {
         logger.warn({ err, providerMessageId }, 'could not store a polled WhatsApp reply');
+        refused += 1;
       }
     }
   }
@@ -363,7 +390,10 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
       || `WhatsMarketing listed ${listed} subscriber${listed === 1 ? '' : 's'}; `
         + `read ${checked} thread${checked === 1 ? '' : 's'}; `
         + `stored ${stored} new message${stored === 1 ? '' : 's'} since ${since.toISOString()}; `
-        + `newest customer message visible anywhere: ${newestFromAnyone?.toISOString() ?? 'none'}.`,
+        + `newest customer message visible anywhere: ${newestFromAnyone?.toISOString() ?? 'none'}`
+        + `${newestFrom ? ` from ${newestFrom}` : ''}; `
+        + `dropped past the watermark: ${noId} with no id, ${unreadable} unreadable, `
+        + `${refused} refused by the store.`,
   );
   return { checked, stored };
 }

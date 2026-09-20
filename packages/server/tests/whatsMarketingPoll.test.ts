@@ -180,6 +180,28 @@ describe('pulling replies in', () => {
     expect(reported.calls.at(-1)?.detail).toMatch(/ECONNRESET/);
   });
 
+  it('names the cause when it can see a message and stores it anyway not', async () => {
+    /*
+      The one that was open on production on 20 September: a customer message
+      newer than the watermark, and `stored 0` in the same sentence. A bare
+      count cannot say whether the row had no id, carried a shape the reader
+      refuses to guess at, or was turned down by the store — and those need
+      three different fixes. Here the row has no `wa_message_id`.
+    */
+    wire(
+      [{ chat_id: '919891222206' }],
+      [{ sender: 'subscriber', conversation_time: RECENT,
+         message_content: JSON.stringify({ type: 'text', text: { body: 'hey' } }) }],
+    );
+
+    expect((await pollWhatsMarketingInbound()).stored).toBe(0);
+    expect(received.calls).toHaveLength(0);
+    const detail = reported.calls.at(-1)?.detail ?? '';
+    expect(detail).toMatch(/dropped past the watermark: 1 with no id/);
+    // And whose message it was, which is what somebody waiting by their phone asks.
+    expect(detail).toMatch(/visible anywhere: .* from 919891222206/);
+  });
+
   it('says how much it looked at even on a quiet visit', async () => {
     // "Checked 1, stored 0" and "could not reach them" look identical from
     // outside, and only one of them needs somebody to act.
