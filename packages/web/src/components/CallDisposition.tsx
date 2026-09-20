@@ -139,14 +139,14 @@ export function CallDispositionProvider({
             from a customer who was never rung.
           */
           /*
-            Naming the likeliest cause rather than blaming the handset. Every
-            installed copy of the app predates `placeCall` until somebody
-            rebuilds and re-installs it, so "is your phone on?" sends a rep
-            checking a phone that is working perfectly.
+            Naming what the rep can actually do about it. The instruction only
+            reaches a phone whose iPropy app is *open* — it arrives over that
+            app's own connection and a closed app has none — so "is your phone
+            on?" sends somebody checking a handset that is working perfectly.
           */
           toast.error(
-            'Your phone did not ring — dialling from here instead',
-            'Usually the app needs updating: this needs the version that can place calls. Otherwise check the phone is on and unlocked.',
+            'Your phone did not pick that up',
+            'Open the iPropy app on your phone, then press Call again and it will dial there. Dialling from this computer meanwhile.',
           );
           dial(clean);
         }
@@ -161,7 +161,6 @@ export function CallDispositionProvider({
   };
 
   const save = async (): Promise<void> => {
-    console.log('DBG save entered', JSON.stringify({ target, saving: savingRef.current, notes, selected }));
     if (!target || savingRef.current) return;
     const today = new Date().toISOString().slice(0, 10);
     if (nextFollowUp && nextFollowUp < today) {
@@ -202,7 +201,6 @@ export function CallDispositionProvider({
         queryClient.invalidateQueries({ queryKey: ['task-count', module] }),
       ]);
     } catch (err) {
-      console.log('DBG save failed', String(err));
       toast.error('Could not log the call', (err as Error).message);
     } finally {
       savingRef.current = false;
@@ -221,7 +219,7 @@ export function CallDispositionProvider({
         footer={(
           <>
             <button className="btn-secondary" onClick={close} disabled={saving}>Did not call</button>
-            <button className="btn-primary" disabled={saving || placing} onClick={() => { console.log('DBG click fired'); void save(); }}>
+            <button className="btn-primary" disabled={saving || placing} onClick={() => void save()}>
               {saving && <Spinner className="h-3.5 w-3.5" />} Save call
             </button>
           </>

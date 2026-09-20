@@ -10,10 +10,11 @@
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { io, type Socket } from 'socket.io-client';
-import { tokenStore } from './api';
+import { api, tokenStore } from './api';
 import { invalidateRecordQueries } from './invalidate';
-import { apiBase } from './native';
+import { apiBase, isNative } from './native';
 import { callSyncSupported, placeCallFromPhone } from './callSync';
+import { dial } from './nativeActions';
 
 let socket: Socket | null = null;
 
@@ -91,8 +92,33 @@ export function useRealtime(enabled: boolean): void {
       sync does not ring the same number a second time.
     */
     const onDial = (p: { commandId?: string; number?: string }): void => {
-      if (!callSyncSupported || !p?.number) return;
-      void placeCallFromPhone(p.number, p.commandId);
+      if (!isNative || !p?.number) return;
+      const number = p.number;
+      void (async () => {
+        const placed = callSyncSupported
+          ? await placeCallFromPhone(number, p.commandId)
+          : { placed: false, reason: 'not-android' };
+        if (placed.placed) return;
+        /*
+          The app on this phone cannot place the call itself — which today is
+          *every* installed copy, because they all predate `placeCall`. Its own
+          webview still has a dialler, so the number goes there with the digits
+          already in it and the rep presses the green button.
+
+          Without this the instruction is simply never collected: 130 of them
+          on production, every one expired, which on the desk reads as "your
+          phone did not ring" and gives a rep nothing to do about it.
+        */
+        dial(number);
+        if (p.commandId) {
+          try {
+            await api.closeDial(p.commandId, { ok: true, via: 'dialler' });
+          } catch {
+            // The call is already dialling. A desk that never hears back falls
+            // back on its own, which is a worse message and not a worse call.
+          }
+        }
+      })();
     };
 
     const onLead = (): void => {

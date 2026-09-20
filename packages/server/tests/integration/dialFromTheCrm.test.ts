@@ -141,4 +141,55 @@ describe('dialling from the CRM', () => {
     );
     expect(untouched?.status).toBe('queued');
   });
+
+  it('lets the app close its own instruction when the plugin cannot place the call', async () => {
+    /*
+      The route that makes this work at all today. Every copy of the app in the
+      field predates `placeCall`, so the native plugin fails, nothing is posted
+      with the device token, and the instruction expires uncollected — 130 of
+      them on production and not one ever taken. The app's own webview can
+      still hand the number to the phone's dialler, and it closes the command
+      through the signed-in session, which is the only credential it holds.
+    */
+    const res = await request(app)
+      .post('/api/telephony/dial')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ to: '9811100001' })
+      .expect(200);
+
+    await request(app)
+      .post(`/api/telephony/dial/${res.body.commandId}/result`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ok: true, via: 'dialler' })
+      .expect(200);
+
+    // And the desk is told *which* it was, because one of the two needs the
+    // rep to pick the phone up and press the green button.
+    const status = await request(app)
+      .get(`/api/telephony/dial/${res.body.commandId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(status.body.status).toBe('done');
+    expect(status.body.via).toBe('dialler');
+  });
+
+  it('will not let one person close another person\'s call instruction', async () => {
+    const res = await request(app)
+      .post('/api/telephony/dial')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ to: '9811100002' })
+      .expect(200);
+
+    const other = await signIn(app, 'priya.sharma@ipropy.com');
+    await request(app)
+      .post(`/api/telephony/dial/${res.body.commandId}/result`)
+      .set('Authorization', `Bearer ${other}`)
+      .send({ ok: true, via: 'dialler' })
+      .expect(404);
+
+    const untouched = await db.queryOne<{ status: string }>(
+      `SELECT status FROM ipy_device_command WHERE id = $1`, [res.body.commandId],
+    );
+    expect(untouched?.status).toBe('queued');
+  });
 });

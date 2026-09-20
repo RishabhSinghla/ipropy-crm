@@ -1787,6 +1787,39 @@ the CRM asks the paired handset instead.
   `dispatchEvent('click')` on the same button working perfectly. `e2e/callOutcome.spec.ts`
   had been failing on exactly this since the dial feature landed.
 
+### It had never once worked, and the database said so
+
+**20 September 2026, the owner: "Call Not going."** Read off production rather than
+guessed (`.github/workflows/why-the-phone-did-not-ring.yml`, read-only): **130 dial
+instructions, 122 expired and 8 still queued, `delivered_at` null on every single row.**
+Not one has ever been collected by a phone, by anybody, since the feature landed. Pairing
+itself is fine — two handsets uploaded calls the same week.
+
+The cause is one line of design that nothing wrote down: **the instruction reaches the
+phone only over the app's own socket, into its webview** (`device:dial` in
+`lib/realtime.ts`). There is no endpoint a phone polls for waiting commands. So the app
+has to be **open and signed in** for a desk Call to ring it — and even then, every
+installed copy predates `placeCall`, the plugin call fails, and nothing closes the
+command out.
+
+Two changes, both of which work with the app exactly as it is installed today:
+
+* **The webview hands the number to the phone's own dialler when the plugin cannot.**
+  A webview always has one, so an old build now dials with the digits filled in and the
+  rep presses the green button. Without this the instruction was simply never collected.
+* **The app closes its own command through the session** (`POST /api/telephony/dial/:id/result`),
+  because the device-token route needs a credential only the native plugin holds. A
+  person may close their own dial instruction and nobody else's. The desk is told
+  *which* happened — `via: 'app'` rang on its own, `via: 'dialler'` needs the green
+  button — and says so, rather than claiming a call that is still waiting for a tap.
+
+**The failure message names the thing a rep can act on**: open the app on the phone. It
+used to say the app needed updating, which is true and is not something a rep can do.
+
+**Still true and still not buildable here:** `placeCall` itself — the ACTION_CALL path
+that needs no tap — is Android code that has never been compiled, because this container
+has a JDK and no Android SDK.
+
 What is **not** possible, whatever a CRM claims: hearing a call as it happens. Android
 closed third-party call recording in Android 10 and no permission reopens it. What works
 is what `RecordingFinder` already does — the OEM recorder's file, read from a folder the

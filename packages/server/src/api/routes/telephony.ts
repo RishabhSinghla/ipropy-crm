@@ -549,12 +549,48 @@ telephonyRouter.post('/dial', asyncHandler(async (req, res) => {
  */
 telephonyRouter.get('/dial/:id', asyncHandler(async (req, res) => {
   const user = getUser(req);
-  const row = await db.queryOne<{ status: string; error: string | null }>(
-    `SELECT status, error FROM ipy_device_command WHERE id = $1 AND user_id = $2`,
+  const row = await db.queryOne<{ status: string; error: string | null; via: string | null }>(
+    `SELECT status, error, payload->>'via' AS via FROM ipy_device_command
+      WHERE id = $1 AND user_id = $2`,
     [req.params.id, user.id],
   );
   if (!row) throw new NotFoundError('That call instruction is not yours or no longer exists.');
-  res.json({ status: row.status, error: row.error });
+  res.json({ status: row.status, error: row.error, via: row.via });
+}));
+
+/**
+ * The phone closing its own instruction, from the app rather than the plugin.
+ *
+ * There is a device-token route for this already (`/api/device/commands/:id/result`)
+ * and it is the right one when the native side placed the call. It cannot be
+ * the only one: **every copy of the app installed today has no `placeCall` in
+ * it**, so the plugin call fails, nothing is posted, and the instruction sits
+ * there until it expires — 130 of them on production and not one ever
+ * collected. The app's own webview can still hand the number to the phone's
+ * dialler, and when it does, this is how it says so.
+ *
+ * Safe because a command belongs to a person: the signed-in user may close
+ * their own dial instruction and nobody else's, which is all this does.
+ */
+telephonyRouter.post('/dial/:id/result', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const input = z.object({
+    ok: z.boolean(),
+    /** `app` placed the call outright; `dialler` filled it in for a tap. */
+    via: z.enum(['app', 'dialler']).optional(),
+    error: z.string().max(200).nullish(),
+  }).parse(req.body ?? {});
+
+  const row = await db.queryOne<{ id: string }>(
+    `UPDATE ipy_device_command
+        SET status = $3, finished_at = now(), error = $4,
+            payload = payload || jsonb_build_object('via', $5::text)
+      WHERE id = $1 AND user_id = $2 AND kind = 'dial'
+      RETURNING id`,
+    [req.params.id, user.id, input.ok ? 'done' : 'failed', input.error ?? null, input.via ?? 'app'],
+  );
+  if (!row) throw new NotFoundError('That call instruction is not yours or no longer exists.');
+  res.json({ ok: true });
 }));
 
 telephonyRouter.delete('/devices/:id', asyncHandler(async (req, res) => {

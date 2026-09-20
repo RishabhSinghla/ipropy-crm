@@ -1004,7 +1004,10 @@ export const api = {
   dialOnPhone: (data: { to: string; module?: string; recordId?: string }) =>
     post<{ sent: boolean; reason?: string; device?: string; commandId?: string; expiresAt?: string }>('/api/telephony/dial', data),
   /** Did the phone actually take it? queued | delivered | done | failed | expired. */
-  dialStatus: (id: string) => get<{ status: string; error: string | null }>(`/api/telephony/dial/${id}`),
+  dialStatus: (id: string) => get<{ status: string; error: string | null; via?: string | null }>(`/api/telephony/dial/${id}`),
+  /** The app on the phone saying what it managed to do with that instruction. */
+  closeDial: (id: string, data: { ok: boolean; via?: 'app' | 'dialler'; error?: string | null }) =>
+    post(`/api/telephony/dial/${id}/result`, data),
   logCall: (data: Record<string, unknown>) => post('/api/telephony/log', data),
   calls: (params: Record<string, unknown> = {}) => get<Record<string, unknown>[]>(`/api/telephony/calls${qs(params)}`),
   callDetail: (id: string) => get<Record<string, unknown>>(`/api/telephony/calls/${id}`),
