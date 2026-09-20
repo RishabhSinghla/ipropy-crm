@@ -2482,6 +2482,49 @@ somebody rebuilds and re-installs, the dialler fallback is the *only* path a
 desk Call can take — which is exactly why the `via` fix matters now rather than
 later.
 
+## "The app is not working" — what a phone can and cannot tell you
+
+**20 September 2026, the owner: "please update android app also, app not working."**
+No screenshot, and from a phone there was nothing to read. So the first job was
+to make the invisible visible rather than to change anything.
+
+**Everything the app asks production for is healthy**, read by
+`.github/workflows/what-the-app-sees.yml` (read-only, public endpoints only):
+the server answers, **both webview origins are accepted** (`https://localhost`
+and `capacitor://localhost` — the CORS trap this file already warns about is
+not the cause), a bundle is on offer, and `bundle.zip` really is a zip, 878 KB.
+An APK is published and downloads: **2.1.0, built 13:41 UTC that day** by the
+other developer's session.
+
+**The published APK was opened and read rather than trusted.** `placeCall` is
+in `classes2.dex`, and the binary manifest declares `CALL_PHONE` and
+`READ_CALL_LOG`. So installing 2.1.0 is a real fix for the desk-Call path, not
+a hope — that had never been checked before. The manifest is **UTF-16 binary
+XML**: `grep CALL_PHONE AndroidManifest.xml` answers "not found" on an APK that
+declares it, which is how a wrong conclusion gets drawn in one line. Read the
+bytes (`perm.encode('utf-16-le') in data`), never a plain grep.
+
+**The app is two halves and they update two different ways.** The **screens**
+are the same React bundle the website serves and update themselves on the next
+launch (`lib/liveUpdate.ts` + `/api/public/app/bundle`), so they are nearly
+always current. The **native half** — the dialler, the call-log reader — is
+frozen in the installed APK. Every handset in this business had a build that
+predates `placeCall`, and **nothing on the phone said so**: `callSyncStatus()`
+has carried `BuildConfig.VERSION_NAME` all along and no screen showed it.
+
+So Settings, *inside the app only*, now says which build this phone is running,
+what the latest is, and offers Update when it is behind (`ThisPhonesApp`, with
+`lib/appVersion.ts` deciding). **An unreadable version counts as behind**, which
+is the case that matters rather than an edge: a build too old to name itself is
+by definition older than the one on offer, and answering "up to date" there
+would hide exactly the phones that cannot place a call
+(`tests/appVersion.test.ts`).
+
+**What remains unknown, and was said plainly rather than guessed:** which of the
+several possible faults the owner actually met. A phone with no version on
+screen and no error message cannot be diagnosed from here, which is the whole
+reason that card now exists.
+
 ## Every request appears twice in development, and once in production
 
 `main.tsx` wraps the app in `React.StrictMode`, which double-invokes effects in

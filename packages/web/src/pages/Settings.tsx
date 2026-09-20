@@ -14,6 +14,7 @@ import { currentSubscription, disablePush, enablePush, permissionState, pushSupp
 import { Avatar, Badge, ConfirmDialog, EmptyState, Modal, Select, Skeleton, Spinner, Tabs } from '../components/ui';
 import { copyText } from '../lib/nativeActions';
 import { isNative } from '../lib/native';
+import { updateAvailable, UNKNOWN_VERSION } from '../lib/appVersion';
 import {
   callSyncStatus, callSyncSupported, disableCallSync, enableCallSync, openAppSettings,
   syncCallsNow, type CallSyncStatus,
@@ -950,9 +951,14 @@ function GetTheApp(): JSX.Element | null {
   // nobody reading this screen can answer.
   if (!data?.available || !data.build) return null;
 
-  // And nothing inside the app either — offering somebody a download of the
-  // thing they are currently looking at reads as a mistake, because it is one.
-  if (isNative) return null;
+  /*
+    Inside the app this is a different question, so it is a different card.
+    Offering a download of the thing you are looking at reads as a mistake —
+    but "which version am I running, and is it the current one" is the one
+    thing a rep could never see, and is what "the app is not working" has
+    meant every time so far.
+  */
+  if (isNative) return <ThisPhonesApp published={data.build.versionName} url={data.url} />;
 
   const megabytes = (data.build.sizeBytes / 1024 / 1024).toFixed(1);
 
@@ -1001,6 +1007,64 @@ function GetTheApp(): JSX.Element | null {
           show why.
         </li>
       </ol>
+    </div>
+  );
+}
+
+/**
+ * What this handset is actually running, and a way to fix it when it is behind.
+ *
+ * The app is two halves updated two ways. The **screens** update themselves
+ * from the server and are almost always current. The **native half** — the
+ * dialler, the call-log reader — is frozen in the installed APK, and that is
+ * the half that has been out of date on every phone in this business: a build
+ * that predates `placeCall` cannot ring a customer from the desk, and nothing
+ * on the phone said so.
+ *
+ * `callSyncStatus()` has carried the installed version all along. This is the
+ * first screen to show it.
+ */
+function ThisPhonesApp({ published, url }: { published: string; url: string }): JSX.Element {
+  const { data: status } = useQuery({
+    queryKey: ['call-sync-status'],
+    queryFn: () => callSyncStatus(),
+    staleTime: 60_000,
+  });
+
+  const installed = status?.version ?? '';
+  const behind = updateAvailable(installed, published);
+
+  return (
+    <div className="card space-y-3 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium">This phone&apos;s app</p>
+          <p className="mt-1 text-sm text-muted">
+            Running <strong>{installed || UNKNOWN_VERSION}</strong>
+            {published && ` · latest is ${published}`}
+          </p>
+        </div>
+        {behind && (
+          /* A plain anchor, as on the website: Android installs the new one
+             over the top and the sign-in survives it. */
+          <a href={url} className="btn-primary btn-sm shrink-0" download>
+            <Download className="h-3.5 w-3.5" /> Update the app
+          </a>
+        )}
+      </div>
+
+      {behind ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+          This phone is behind. Until it is updated, pressing Call in the CRM on a computer
+          cannot ring this handset — that part of the app only exists in the newer build.
+          Tap Update, then let Android install it over the top.
+        </p>
+      ) : (
+        <p className="text-sm text-muted">
+          This is the current build. The screens update themselves whenever the CRM changes,
+          so there is nothing to install for those.
+        </p>
+      )}
     </div>
   );
 }
