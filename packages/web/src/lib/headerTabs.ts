@@ -1,6 +1,6 @@
 import type { HeaderTab } from '@ipropy/shared';
 
-const KINDS = new Set<HeaderTab['kind']>(['dashboard', 'capture', 'module', 'reports', 'link']);
+const KINDS = new Set<HeaderTab['kind']>(['dashboard', 'capture', 'module', 'reports', 'whatsapp', 'link']);
 
 /**
  * The header's tabs: the admin's arrangement, with nothing orphaned.
@@ -17,6 +17,7 @@ export function arrangeHeaderTabs(arranged: HeaderTab[] | null, moduleNames: str
       { kind: 'dashboard' as const },
       ...moduleNames.map((name) => ({ kind: 'module' as const, value: name })),
       { kind: 'reports' as const },
+      { kind: 'whatsapp' as const },
       { kind: 'capture' as const },
     ];
   }
@@ -45,5 +46,12 @@ export function arrangeHeaderTabs(arranged: HeaderTab[] | null, moduleNames: str
     nobody could reach.
   */
   if (!placed.some((t) => t.kind === 'reports')) placed.push({ kind: 'reports' as const });
+  /*
+    And WhatsApp, for exactly the same reason one line up. Every arrangement
+    on production was saved before this page existed, so without this it is
+    the screen nobody can reach — which is what happened to Chats, and is why
+    that paragraph is there to be copied.
+  */
+  if (!placed.some((t) => t.kind === 'whatsapp')) placed.push({ kind: 'whatsapp' as const });
   return placed;
 }

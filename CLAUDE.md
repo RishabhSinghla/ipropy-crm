@@ -1481,6 +1481,47 @@ ago; and pacing belongs in the CRM, never in a laptop script that forgets on res
 must also decide, up front, that a business CRM has no business storing a rep's personal
 chats.
 
+
+## WhatsApp is one destination now
+
+**20 September 2026, the owner:** *"why don't we get most of its things
+(whatsmarketing) … inside our CRM to that max … so maybe never ever in this life
+I would be required to open whatsmarketing"* — a mixture of their dashboard and
+the WhatsApp Web everybody already knows.
+
+Until then WhatsApp lived in four places and three were inside **Admin**, where a
+rep never goes: the inbox at `/chats`, plus health, templates and campaigns each
+on their own admin tab. Nobody thinks *"I need the campaigns admin page"*; they
+think *"I want to do WhatsApp"*. `/whatsapp` is one destination with four tabs in
+the order a day runs — **Chats · Campaigns · Templates · Health**.
+
+**Nothing there is a new screen.** Each tab renders the component that already
+existed and every old address still works: `/chats` in particular, because that
+is what the WhatsApp icon beside a phone number opens. This moved the door, not
+the room — a second copy of the inbox would drift from the first, which is the
+mistake this repo keeps finding months later.
+
+Two decisions the owner made when asked, both on the day:
+
+* **Everybody sees Chats**, so that tab carries no capability. The inbox already
+  decides *what* each person sees — their own threads and the unassigned queue,
+  an admin everything — so gating the tab as well would hide the screen from the
+  very people whose conversations it holds. Campaigns is `whatsapp.send`,
+  Templates `whatsapp.templates`, Health `admin.integrations`.
+* **Chats and the record are both the daily driver**, so neither is demoted.
+
+**`HeaderTab['kind']` gains `'whatsapp'`, and the append line matters more than
+the tab does.** Every arrangement saved on production predates this page, so an
+arrangement that does not name it has not decided against it — without the line
+in `arrangeHeaderTabs` it is the one screen nobody can reach, exactly as Chats
+was. It is in the drawer too, because the switcher is `lg:block` and does not
+exist below 1024px. `tests/headerTabs.test.ts` pins both.
+
+**A rep with only Chats sees no tab strip**: one tab is not a choice, and a row
+of one reads as something missing. The fallback route goes to the first tab that
+person may open rather than a fixed one, so a rep is never bounced to a page they
+cannot see.
+
 ## Reports
 
 **20 September 2026, the owner: "now start reports"** — the last item in his own

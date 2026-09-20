@@ -6,7 +6,7 @@ import { waDigits } from '../src/lib/whatsapp';
 describe('arrangeHeaderTabs', () => {
   it('ships Dashboard, the modules and Site visit when nothing is arranged', () => {
     const tabs = arrangeHeaderTabs(null, ['leads', 'properties']);
-    expect(tabs.map((t) => t.kind)).toEqual(['dashboard', 'module', 'module', 'reports', 'capture']);
+    expect(tabs.map((t) => t.kind)).toEqual(['dashboard', 'module', 'module', 'reports', 'whatsapp', 'capture']);
   });
 
   /*
@@ -22,7 +22,7 @@ describe('arrangeHeaderTabs', () => {
       { kind: 'module', value: 'leads' },
     ] as unknown as HeaderTab[];
     const tabs = arrangeHeaderTabs(saved, ['leads']);
-    expect(tabs.map((t) => t.kind)).toEqual(['dashboard', 'module', 'reports']);
+    expect(tabs.map((t) => t.kind)).toEqual(['dashboard', 'module', 'reports', 'whatsapp']);
   });
 
   /*
@@ -34,6 +34,13 @@ describe('arrangeHeaderTabs', () => {
   it('appends Reports to an arrangement saved before the page existed', () => {
     const saved = [{ kind: 'dashboard' }, { kind: 'module', value: 'leads' }] as HeaderTab[];
     expect(arrangeHeaderTabs(saved, ['leads']).some((t) => t.kind === 'reports')).toBe(true);
+    /*
+      And WhatsApp, added 20 September 2026 for the same reason: every saved
+      arrangement on production predates the page, so an arrangement that does
+      not name it has not *decided* against it. Without this line it is the one
+      screen nobody can reach — which is exactly what happened to Chats.
+    */
+    expect(arrangeHeaderTabs(saved, ['leads']).some((t) => t.kind === 'whatsapp')).toBe(true);
   });
 
   it('does not add a second Reports when the arrangement already names it', () => {

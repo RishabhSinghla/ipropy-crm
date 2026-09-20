@@ -5,7 +5,7 @@ import { relativeTime, type HeaderTab } from '@ipropy/shared';
 import {
   AtSign, Bell, Cake, Check, Facebook, Flame, Globe, Instagram, Linkedin, Lock, LogOut, Menu,
   MessageCircle, Moon, Search, Settings, Shield, Sparkles, Sun, Twitter, Upload, X, Youtube,
-  BarChart3, LayoutDashboard, MapPin, Building2, Plus, ChevronDown,
+  BarChart3, MessagesSquare, LayoutDashboard, MapPin, Building2, Plus, ChevronDown,
 } from 'lucide-react';
 import { applyBrandColour, toast, useApp } from '../lib/store';
 import { api, authedFileUrl, type ModuleSummary, type SearchHit } from '../lib/api';
@@ -395,6 +395,12 @@ function ModuleSwitcher({
         icon: <BarChart3 className="h-4 w-4" />, badge: undefined, external: false,
       }];
     }
+    if (t.kind === 'whatsapp') {
+      return [{
+        key, to: '/whatsapp', label: t.label ?? 'WhatsApp',
+        icon: <MessagesSquare className="h-4 w-4" />, badge: undefined, external: false,
+      }];
+    }
     if (t.kind === 'link') {
       return [{
         key, to: t.value ?? '#', label: t.label ?? t.value ?? '',
@@ -604,6 +610,10 @@ function MobileNav({
           <div className="space-y-0.5">
             <p className="mb-1 px-3 text-2xs font-semibold uppercase tracking-wider text-muted">Tools</p>
             <DrawerLink to="/reports" icon="bar-chart-3" label="Reports" />
+            {/* In the drawer as well as the header, because the switcher is
+                `lg:block` and does not exist below 1024px — the rule this
+                repo already learned twice, with Chats and then Reports. */}
+            <DrawerLink to="/whatsapp" icon="message-circle" label="WhatsApp" />
             <DrawerLink to="/settings" icon="settings" label="Settings" />
           </div>
         </nav>
