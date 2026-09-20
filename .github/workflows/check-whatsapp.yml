@@ -92,7 +92,14 @@ jobs:
           echo "--- why a send failed, which the message row already knows ---"
           psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
           SELECT m.created_at,
-                 left(coalesce(m.body, '(template)'), 24) AS body,
+                 -- Which number it was going to. "Outside the 24-hour window"
+                 -- is a correct refusal for a number that never wrote to us
+                 -- and a real bug for one that just did, and the handle is the
+                 -- only thing that tells those apart.
+                 c.handle,
+                 c.last_inbound_at,
+                 c.window_expires_at,
+                 left(coalesce(m.body, '(template)'), 18) AS body,
                  m.status,
                  -- The whole point of this block. A send that failed has a
                  -- reason on it, and until now nothing printed it, so every
@@ -113,9 +120,12 @@ jobs:
                  -- And whether a contact with that number exists at all: an
                  -- unlinked thread with a matching contact is a bug, one with
                  -- no contact is simply a stranger.
+                 -- `to_jsonb` so a field an admin has deleted answers NULL
+                 -- rather than raising 42703 and taking the whole check down,
+                 -- which is exactly what `whatsapp_number` just did.
                  (SELECT count(*)::int FROM ipy_e_leads l
-                    WHERE right(regexp_replace(coalesce(l.mobile, ''), '\D', '', 'g'), 10) = c.handle
-                       OR right(regexp_replace(coalesce(l.whatsapp_number, ''), '\D', '', 'g'), 10) = c.handle
+                    WHERE right(regexp_replace(coalesce(to_jsonb(l)->>'mobile', ''), '\D', '', 'g'), 10) = c.handle
+                       OR right(regexp_replace(coalesce(to_jsonb(l)->>'whatsapp_number', ''), '\D', '', 'g'), 10) = c.handle
                  ) AS contacts_with_that_number
             FROM ipy_conversation c
            WHERE c.channel = 'whatsapp'
