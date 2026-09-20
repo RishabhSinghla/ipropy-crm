@@ -1237,8 +1237,8 @@ function PhonesTab(): JSX.Element {
                     </p>
                     {d.is_active && !d.last_sync_at && (
                       <p className="text-2xs text-muted">
-                        Nothing has been uploaded from this handset yet. Open iPropy Companion on
-                        it, allow the call log permission, and tap Sync now.
+                        This phone has not connected yet. Open iPropy 2.0 on it, sign in, then turn
+                        on <strong>Log my calls</strong> under You → This phone to finish pairing.
                       </p>
                     )}
                   </div>

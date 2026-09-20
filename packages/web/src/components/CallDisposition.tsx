@@ -131,24 +131,10 @@ export function CallDispositionProvider({
         } else if (await phoneTookIt(result.commandId)) {
           toast.success('Ringing from your phone', `${result.device ?? 'Your phone'} is calling now.`);
         } else {
-          /*
-            The two ordinary ways this goes quiet, and neither may be reported
-            as a call: a handset that is off or out of signal, and an app one
-            version behind that has never heard of placing a call. The desk
-            hand-off is offered instead, so the rep finds out here rather than
-            from a customer who was never rung.
-          */
-          /*
-            Naming what the rep can actually do about it. The instruction only
-            reaches a phone whose iPropy app is *open* — it arrives over that
-            app's own connection and a closed app has none — so "is your phone
-            on?" sends somebody checking a handset that is working perfectly.
-          */
           toast.error(
-            'Your phone did not pick that up',
-            'Open the iPropy app on your phone, then press Call again and it will dial there. Dialling from this computer meanwhile.',
+            'Phone call was not confirmed',
+            'Open iPropy 2.0 on your Android phone and allow Phone calls when prompted, then press Call again.',
           );
-          dial(clean);
         }
       }
     } catch (err) {
