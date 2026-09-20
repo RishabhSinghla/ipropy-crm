@@ -1343,6 +1343,47 @@ All three were live, and two of them had never run at all.
   a JDK and no Android SDK). The message says that now rather than asking whether the phone
   is switched on, which sends a rep checking a phone that is working perfectly.
 
+### What is actually proved, read off production on 20 September 2026
+
+The owner asked whether the foundation is strong and whether he can stop
+opening WhatsMarketing, and said he doubted it. `.github/workflows/whatsapp-audit.yml`
+is the answer: read-only, one promise at a time, **and it prints the zeros**,
+because a feature that has never once run is invisible from every screen.
+
+What the numbers said:
+
+| promise | evidence |
+|---|---|
+| a customer's message arrives | inbound rows through to 10:25 that morning |
+| a rep replies inside 24 hours | 4 outbound, all `read` |
+| the CRM learns what arrived | 4 delivered and 4 read stamps, from the poller |
+| a thread finds its contact | 5 of the 6 business threads linked |
+| the inbox stays clean | 6 business threads, **0** odd handles |
+| a template reaches somebody | **2 attempts, 0 arrived — never once** |
+| a photo or document moves | **0 files kept**; nothing has ever gone either way |
+| a campaign runs | **0 campaigns have ever existed** |
+
+**The 120 imported personal-WhatsApp threads are correctly invisible.** They
+carry group ids (`+120363…`) and malformed handles, and every one of them has
+a `wa_account_id`, which is exactly what `listConversations` filters on. Worth
+knowing because it looks alarming in the table and is the filter working.
+
+**The ten synced templates genuinely have no blanks** — wording is 119 to 617
+characters and not one contains `{{n}}`, so "0 mapped" is correct rather than
+unfinished. Checked with `length(body_text)`, since empty wording and wording
+with no placeholders both read as zero blanks and mean opposite things.
+
+**Two conversations hold no messages at all.** A send that fails creates the
+thread and then throws, so the empty row stays in the team's queue reading
+"No messages yet" — the owner saw two of them. Cosmetic, and still a promise
+broken: `business/thread.ts` says looking writes nothing.
+
+**Three things still need WhatsMarketing's own dashboard**, so the answer to
+*"never open it again"* is **not yet**: a template can only be **read** here,
+never written and submitted for Meta's approval; their inbound webhook is
+switched off, so replies are polled rather than pushed; and the account itself
+— business profile, display name, credit — is theirs.
+
 ## Campaigns: one template, many people, once each
 
 **19 September 2026, the owner: "now start campaigns"** — the next thing in his own order
