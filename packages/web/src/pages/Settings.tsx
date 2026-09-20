@@ -1033,6 +1033,36 @@ function GetTheApp(): JSX.Element | null {
   );
 }
 
+/** A second download, because Dialer is not an upgrade of the CRM app. */
+function GetTheDialer(): JSX.Element | null {
+  const { data } = useQuery({
+    queryKey: ['dialer-build'],
+    queryFn: () => api.dialerBuild(),
+    staleTime: 5 * 60_000,
+  });
+  if (!data?.available || !data.build || isNative) return null;
+  const megabytes = (data.build.sizeBytes / 1024 / 1024).toFixed(1);
+  return (
+    <div className="card space-y-3 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 max-w-xl">
+          <p className="text-sm font-medium">iPROPY Dialer <span className="badge badge-warning ml-1">Beta</span></p>
+          <p className="mt-1 text-sm text-muted">
+            A focused calling app with manual calls, a power-dial queue, outcomes and follow-ups saved to the same CRM Leads and Inventory records.
+          </p>
+          <p className="mt-2 text-2xs text-muted">Version {data.build.versionName} · {megabytes} MB · Android {androidNameFor(data.build.minSdk)} or newer</p>
+        </div>
+        <a href={data.url} className="btn-primary btn-sm shrink-0" download>
+          <Download className="h-3.5 w-3.5" /> Download Dialer beta
+        </a>
+      </div>
+      <p className="rounded-lg bg-violet-50 p-3 text-2xs text-violet-950 dark:bg-violet-950/30 dark:text-violet-100">
+        Installs alongside iPROPY CRM. It does not replace the existing CRM app, Call Sync, or the working desktop-to-phone Call button.
+      </p>
+    </div>
+  );
+}
+
 /**
  * What this handset is actually running, and a way to fix it when it is behind.
  *
@@ -1259,6 +1289,8 @@ function PhonesTab(): JSX.Element {
     <ThisPhone />
 
     <GetTheApp />
+
+    <GetTheDialer />
 
     {/* Can the CRM reach each handset *right now* — which is a different
         question from whether it has ever synced, and the one somebody asks

@@ -95,3 +95,28 @@ describe('the download', () => {
     expect(meta.body.url).toBe('/api/public/companion/download');
   });
 });
+
+describe('the separate Dialer build', () => {
+  it('is described and downloadable without signing in', async () => {
+    const meta = await request(app).get('/api/public/dialer');
+    expect(meta.status).toBe(200);
+    expect(meta.body).toMatchObject({ available: true, url: '/api/public/dialer/download' });
+    expect(meta.body.build.versionName).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(meta.body.build.sizeBytes).toBeGreaterThan(1_000_000);
+
+    const download = await request(app)
+      .get('/api/public/dialer/download')
+      .buffer(true)
+      .parse((response, callback) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk: Buffer) => chunks.push(chunk));
+        response.on('end', () => callback(null, Buffer.concat(chunks)));
+      });
+
+    expect(download.status).toBe(200);
+    expect(download.headers['content-type']).toBe('application/vnd.android.package-archive');
+    expect(download.headers['content-disposition']).toMatch(/attachment; filename="ipropy-dialer-[\d.]+\.apk"/);
+    expect((download.body as Buffer).subarray(0, 2).toString('latin1')).toBe('PK');
+    expect((download.body as Buffer).length).toBe(meta.body.build.sizeBytes);
+  });
+});

@@ -790,6 +790,15 @@ export const api = {
     } | null;
     url: string;
   }>('/api/public/companion'),
+  /** The separate iPROPY Dialer beta — never an upgrade of the CRM app. */
+  dialerBuild: () => get<{
+    available: boolean;
+    build: {
+      versionName: string; versionCode: number; minSdk: number;
+      sizeBytes: number; sha256: string; builtAt: string;
+    } | null;
+    url: string;
+  }>('/api/public/dialer'),
   /** A real call against one model id, to find out whether it answers. */
   testAiModel: (job: string, model: string) =>
     post<{ ok: boolean; message: string; ms?: number }>('/api/admin/ai-models/test', { job, model }),

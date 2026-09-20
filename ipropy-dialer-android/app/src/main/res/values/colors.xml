@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="dialer_purple">#461178</color>
+    <color name="dialer_purple_light">#6B21A8</color>
+    <color name="dialer_mint">#047857</color>
+    <color name="dialer_bg">#F7F3FB</color>
+</resources>

@@ -1,0 +1,11 @@
+local.properties
+.gradle/
+.idea/
+build/
+app/build/
+*.iml
+
+# This app has its own signing identity. It is deliberately not the existing
+# Call Sync app's key, because it is a separate product and package.
+keystore.properties
+keystore/

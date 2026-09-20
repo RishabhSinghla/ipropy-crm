@@ -1125,6 +1125,10 @@ async function serveSharedPhoto(
 // both `src` and `dist`.
 const COMPANION_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../../public/companion');
 const COMPANION_APK = resolve(COMPANION_DIR, 'ipropy-companion.apk');
+// A separate package and download route. The Dialer is intentionally never an
+// update to the CRM Android app or the legacy Call Sync companion.
+const DIALER_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../../public/dialer');
+const DIALER_APK = resolve(DIALER_DIR, 'ipropy-dialer.apk');
 
 interface CompanionBuild {
   versionName: string;
@@ -1147,6 +1151,15 @@ async function publishedBuild(): Promise<CompanionBuild | null> {
   try {
     const { readFile } = await import('node:fs/promises');
     return JSON.parse(await readFile(resolve(COMPANION_DIR, 'companion.json'), 'utf8')) as CompanionBuild;
+  } catch {
+    return null;
+  }
+}
+
+async function publishedDialerBuild(): Promise<CompanionBuild | null> {
+  try {
+    const { readFile } = await import('node:fs/promises');
+    return JSON.parse(await readFile(resolve(DIALER_DIR, 'dialer.json'), 'utf8')) as CompanionBuild;
   } catch {
     return null;
   }
@@ -1181,8 +1194,12 @@ publicRouter.get('/companion/download', asyncHandler(async (req, res) => {
 
   // Version in the filename, so a rep with two downloads in their folder can
   // tell which is which, and so a phone does not silently reuse a cached copy.
-  res.setHeader('Content-Type', 'application/vnd.android.package-archive');
-  res.setHeader('Content-Disposition', `attachment; filename="ipropy-companion-${build.versionName}.apk"`);
+  applyFileSecurityHeaders(
+    res,
+    'application/vnd.android.package-archive',
+    `ipropy-companion-${build.versionName}.apk`,
+    true,
+  );
   // Long cache, but keyed to this exact build: the URL is stable, so the ETag
   // is what tells a phone the file changed.
   res.setHeader('ETag', `"${build.sha256}"`);
@@ -1190,6 +1207,31 @@ publicRouter.get('/companion/download', asyncHandler(async (req, res) => {
   res.sendFile(COMPANION_APK, (err) => {
     if (err) {
       logger.warn({ err }, 'companion apk stream failed');
+      if (!res.headersSent) res.status(404).json({ error: 'not_found' });
+    }
+  });
+}));
+
+/** Standalone power-dialer beta, served independently of the CRM Android app. */
+publicRouter.get('/dialer', asyncHandler(async (_req, res) => {
+  const build = await publishedDialerBuild();
+  res.json({ available: build !== null, build, url: '/api/public/dialer/download' });
+}));
+
+publicRouter.get('/dialer/download', asyncHandler(async (_req, res) => {
+  const build = await publishedDialerBuild();
+  if (!build) throw new NotFoundError('No iPROPY Dialer build has been published yet');
+  applyFileSecurityHeaders(
+    res,
+    'application/vnd.android.package-archive',
+    `ipropy-dialer-${build.versionName}.apk`,
+    true,
+  );
+  res.setHeader('ETag', `"${build.sha256}"`);
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  res.sendFile(DIALER_APK, (err) => {
+    if (err) {
+      logger.warn({ err }, 'dialer apk stream failed');
       if (!res.headersSent) res.status(404).json({ error: 'not_found' });
     }
   });
@@ -1322,4 +1364,3 @@ publicRouter.get('/app/bundle.zip', asyncHandler(async (_req, res) => {
   zip.directory(WEB_DIST, false);
   await zip.finalize();
 }));
-
