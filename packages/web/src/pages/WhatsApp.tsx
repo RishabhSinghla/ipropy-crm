@@ -86,7 +86,13 @@ export default function WhatsAppPage(): JSX.Element {
   const showStrip = tabs.length > 1;
 
   return (
-    <div className="flex h-full flex-col">
+    /*
+      No height on this wrapper. Chats measures its own distance from the top
+      and takes the rest of the window; Campaigns, Templates and Health are
+      ordinary scrolling pages. A `h-full` here would depend on every ancestor
+      having a height, which is the guess `useFillHeight` exists to end.
+    */
+    <div>
       {showStrip && (
         <nav className="flex gap-1 border-b border-slate-200 px-4 pt-3 dark:border-slate-800" aria-label="WhatsApp">
           {tabs.map((tab) => (
@@ -107,7 +113,7 @@ export default function WhatsAppPage(): JSX.Element {
         </nav>
       )}
 
-      <div className="min-h-0 flex-1">
+      <div>
         <Suspense fallback={<div className="p-4 sm:p-6"><Skeleton className="h-96 w-full" /></div>}>
           <Routes>
             {tabs.map((tab) => <Route key={tab.path} path={tab.path} element={tab.element} />)}

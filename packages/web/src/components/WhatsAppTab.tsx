@@ -5,6 +5,7 @@ import { api } from '../lib/api';
 import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
 import { readMessageMedia, WhatsAppMedia } from './WhatsAppMedia';
+import { composerMode, whyNoTextBox } from '../lib/whatsapp';
 import { EmptyState, Skeleton, Spinner } from './ui';
 
 /**
@@ -75,7 +76,26 @@ export function WhatsAppTab({ module, recordId, mobile }: {
     onError: (err: Error) => toast.error('Could not send', err.message),
   });
 
-  const linked = onBusiness;
+  /*
+    **The window, not only the connection.** This box asked one question — is a
+    provider switched on — and then let anybody type. On 20 September the owner
+    sent six messages from it and WhatsApp refused every one: the 24-hour
+    window had shut, and nothing on the screen said so until the failures came
+    back. The composer beside the phone number has always asked `composerMode`;
+    this tab is the same question and had a different answer.
+
+    `text` needs both halves — an open window *and* a provider that can carry a
+    free reply. Outside that, the honest thing is a shut box saying why, with
+    the templates on the Chats screen as the way through.
+  */
+  const { data: thread } = useQuery({
+    queryKey: ['wa-biz', 'thread', mobile, module, recordId],
+    queryFn: () => api.waBizThread(mobile!, module, recordId),
+    enabled: onBusiness && Boolean(mobile),
+    refetchInterval: 30_000,
+  });
+  const canText = composerMode(business?.capabilities ?? [], Boolean(thread?.windowOpen)) === 'text';
+  const linked = onBusiness && canText;
 
   if (isLoading) return <div className="space-y-2 p-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>;
 
@@ -160,7 +180,11 @@ export function WhatsAppTab({ module, recordId, mobile }: {
           disabled={!linked || !mobile}
           placeholder={
             !mobile ? 'This contact has no mobile number'
-              : linked ? 'Write a message' : 'No WhatsApp Business number is connected yet'
+              : !onBusiness ? 'No WhatsApp Business number is connected yet'
+                : linked ? 'Write a message'
+                  // The reason, where the person is about to type — not after
+                  // they have written a paragraph and pressed Send.
+                  : whyNoTextBox(business?.capabilities ?? [], business?.provider ?? null)
           }
           aria-label="Write a WhatsApp message"
           className="input max-h-32 min-h-[2.25rem] flex-1 resize-y text-sm"

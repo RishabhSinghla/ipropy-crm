@@ -10,7 +10,7 @@ import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { useFillHeight } from '../lib/fillHeight';
-import { displayNumber, outboundTone, wentOut } from '../lib/whatsapp';
+import { composerMode, displayNumber, outboundTone, wentOut, whyNoTextBox } from '../lib/whatsapp';
 import { Avatar, EmptyState, Select, Skeleton, Spinner } from '../components/ui';
 import { readMessageMedia, WhatsAppMedia } from '../components/WhatsAppMedia';
 import { SharePropertyDialog } from '../components/SharePropertyDialog';
@@ -40,6 +40,9 @@ const FILTERS: { value: Filter; label: string }[] = [
   { value: 'pending', label: 'Pending' },
   { value: 'resolved', label: 'Resolved' },
 ];
+
+/** One row of the queue, as `listConversations` returns it. */
+type ChatRow = Awaited<ReturnType<typeof api.waBizConversations>>[number];
 
 interface BizMessage {
   id: string;
@@ -88,8 +91,30 @@ export default function BusinessChats(): JSX.Element {
   const [sharing, setSharing] = useState(false);
   const [followUpOn, setFollowUpOn] = useState('');
 
-  const active = (conversations ?? []).find((row) => row.id === activeId) ?? null;
+  /*
+    **The open conversation must survive the list changing under it.**
+
+    It used to be looked up in the filtered list alone, so typing in the
+    search box, switching the filter, or simply the fifteen-second refresh
+    dropping it off the page emptied the middle column back to "Pick a chat" —
+    mid-sentence, with a customer waiting. A person who has opened a thread
+    has made a decision; a list re-query has not un-made it.
+
+    So the row is kept when it is picked, and the live one is preferred when
+    it is still there — the kept copy is a fallback, never the source of
+    truth, or an assignment made elsewhere would never show.
+  */
+  const [picked, setPicked] = useState<ChatRow | null>(null);
+  const active = (conversations ?? []).find((row) => row.id === activeId) ?? picked;
   const messages = (thread?.messages ?? []) as unknown as BizMessage[];
+  /*
+    **Both halves, not just the clock.** A free reply needs an open 24-hour
+    window *and* a provider that can carry one — AiSensy's API sends approved
+    templates and nothing else, window or no window. The record's composer has
+    always asked `composerMode`; this screen only looked at the window, so on
+    such a provider it would offer a box whose every send was refused.
+  */
+  const mode = composerMode(status?.capabilities ?? [], Boolean(active?.windowOpen));
 
   const refresh = (): void => {
     void queryClient.invalidateQueries({ queryKey: ['wa-biz'] });
@@ -225,7 +250,7 @@ export default function BusinessChats(): JSX.Element {
             <button
               key={row.id}
               type="button"
-              onClick={() => setActiveId(row.id)}
+              onClick={() => { setActiveId(row.id); setPicked(row); }}
               className={cn(
                 'flex w-full items-start gap-2.5 border-b border-slate-100 px-3 py-2.5 text-left transition-colors dark:border-slate-800',
                 row.id === activeId ? 'bg-brand-50 dark:bg-brand-950/30' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60',
@@ -239,7 +264,7 @@ export default function BusinessChats(): JSX.Element {
                     <span className="rounded-full bg-emerald-600 px-1.5 text-2xs font-bold text-white">{row.unreadCount}</span>
                   )}
                 </span>
-                <span className="mt-0.5 block truncate text-xs text-muted">{row.lastMessagePreview ?? '—'}</span>
+                <span className="mt-0.5 block truncate text-xs text-muted">{row.lastMessagePreview ?? 'No messages yet'}</span>
                 <span className="mt-1 flex flex-wrap items-center gap-1.5 text-2xs text-slate-400">
                   {row.assignedName
                     ? <span className="inline-flex items-center gap-1"><CircleUser className="h-3 w-3" />{row.assignedName}</span>
@@ -356,6 +381,20 @@ export default function BusinessChats(): JSX.Element {
                     {message.body && message.body !== `[${message.type}]` && (
                       <p className="whitespace-pre-wrap break-words">{message.body}</p>
                     )}
+                    {/*
+                      A photo the CRM never managed to collect used to render
+                      as an empty bubble — invisible white on white, which
+                      reads as a gap in the conversation rather than as a
+                      message. `readMessageMedia` refuses the vendor's own
+                      link on purpose (it expires), so the honest answer is to
+                      name the thing and say it is not here.
+                    */}
+                    {!readMessageMedia(message.media)
+                      && (!message.body || message.body === `[${message.type}]`) && (
+                      <p className="italic opacity-70">
+                        {message.type === 'text' ? 'Empty message' : `${message.type} — not saved in the CRM`}
+                      </p>
+                    )}
                     <p className={cn(
                       'mt-1 flex items-center gap-1 text-2xs',
                       message.direction === 'outbound' ? 'text-white/80' : 'text-slate-400',
@@ -394,11 +433,11 @@ export default function BusinessChats(): JSX.Element {
             </div>
 
             <footer className="border-t border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-              {!active.windowOpen && (
+              {mode === 'template' && (
                 <div className="mb-2 space-y-2 rounded-lg bg-amber-50 px-3 py-2 dark:bg-amber-950/40">
                   <p className="flex items-center gap-1.5 text-xs text-amber-900 dark:text-amber-200">
                     <Clock className="h-3.5 w-3.5" />
-                    Outside WhatsApp&rsquo;s 24-hour window, so only an approved template can be sent.
+                    {whyNoTextBox(status?.capabilities ?? [], status?.provider ?? null)}
                   </p>
                   {!active.recordId ? (
                     <p className="text-2xs text-amber-900/80 dark:text-amber-200/80">
@@ -443,7 +482,7 @@ export default function BusinessChats(): JSX.Element {
                 <label
                   className={cn(
                     'btn-ghost btn-sm shrink-0 cursor-pointer',
-                    (!active.windowOpen || attach.isPending) && 'pointer-events-none opacity-40',
+                    (mode === 'template' || attach.isPending) && 'pointer-events-none opacity-40',
                   )}
                   title="Send a photo or document"
                 >
@@ -452,7 +491,7 @@ export default function BusinessChats(): JSX.Element {
                     type="file"
                     className="hidden"
                     aria-label="Send a photo or document"
-                    disabled={!active.windowOpen || attach.isPending}
+                    disabled={mode === 'template' || attach.isPending}
                     onChange={(event) => {
                       const file = event.target.files?.[0];
                       // Cleared straight away so picking the same file twice
@@ -469,13 +508,13 @@ export default function BusinessChats(): JSX.Element {
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && draft.trim()) send.mutate({ text: draft.trim() });
                   }}
-                  disabled={!active.windowOpen}
-                  placeholder={active.windowOpen ? 'Type a reply… ⌘↵ to send' : 'Outside the 24-hour window'}
+                  disabled={mode === 'template'}
+                  placeholder={mode === 'text' ? 'Type a reply… ⌘↵ to send' : 'Only an approved template can go now'}
                   className="input min-h-[2.5rem] flex-1 resize-none"
                 />
                 <button
                   className="btn-primary btn-sm"
-                  disabled={!draft.trim() || !active.windowOpen || send.isPending}
+                  disabled={!draft.trim() || mode === 'template' || send.isPending}
                   onClick={() => send.mutate({ text: draft.trim() })}
                 >
                   {send.isPending ? <Spinner className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />} Send
