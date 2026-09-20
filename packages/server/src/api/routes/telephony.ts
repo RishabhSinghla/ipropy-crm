@@ -539,6 +539,34 @@ telephonyRouter.post('/dial', asyncHandler(async (req, res) => {
 }));
 
 /**
+ * Pick up the next call a signed-in phone missed while its app was asleep.
+ *
+ * Socket delivery is the fast path, but Android may suspend the webview between
+ * the moment a rep presses Call and the moment they open the app. Returning a
+ * queued instruction on reconnect means opening iPropy is sufficient; nobody
+ * has to return to the laptop and press Call a second time.
+ */
+telephonyRouter.get('/dial/pending', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'telephony.call');
+  const row = await db.queryOne<{
+    id: string; number: string | null; module: string | null; record_id: string | null; expires_at: string;
+  }>(
+    `WITH next_command AS (
+       SELECT id FROM ipy_device_command
+        WHERE user_id = $1 AND kind = 'dial' AND status = 'queued' AND expires_at > now()
+        ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED
+     )
+     UPDATE ipy_device_command command SET status = 'delivered', delivered_at = now()
+       FROM next_command WHERE command.id = next_command.id
+     RETURNING command.id, command.payload->>'number' AS number, command.module, command.record_id, command.expires_at`,
+    [user.id],
+  );
+  if (!row || !row.number) { res.json({ command: null }); return; }
+  res.json({ command: { id: row.id, number: row.number, module: row.module, recordId: row.record_id, expiresAt: row.expires_at } });
+}));
+
+/**
  * Did the phone actually ring?
  *
  * Asked by the screen that pressed Call, for a few seconds after. Without it

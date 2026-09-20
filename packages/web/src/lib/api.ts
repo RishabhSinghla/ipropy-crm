@@ -1003,6 +1003,8 @@ export const api = {
   /** Ring a number from the signed-in user's own paired phone. */
   dialOnPhone: (data: { to: string; module?: string; recordId?: string }) =>
     post<{ sent: boolean; reason?: string; device?: string; commandId?: string; expiresAt?: string }>('/api/telephony/dial', data),
+  /** Claim one waiting desk-call instruction when the native app reconnects. */
+  pendingDial: () => get<{ command: { id: string; number: string; module: string | null; recordId: string | null; expiresAt: string } | null }>('/api/telephony/dial/pending'),
   /** Did the phone actually take it? queued | delivered | done | failed | expired. */
   dialStatus: (id: string) => get<{ status: string; error: string | null; via?: string | null }>(`/api/telephony/dial/${id}`),
   /** The app on the phone saying what it managed to do with that instruction. */

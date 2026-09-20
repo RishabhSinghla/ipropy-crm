@@ -82,6 +82,29 @@ export function useRealtime(enabled: boolean): void {
       void qc.invalidateQueries({ queryKey: ['calls'] });
       void qc.invalidateQueries({ queryKey: ['timeline'] });
     };
+    let takingDial = false;
+    const takePendingDial = async (): Promise<void> => {
+      if (!isNative || takingDial) return;
+      takingDial = true;
+      try {
+        const { command } = await api.pendingDial();
+        if (!command) return;
+        const placed = callSyncSupported
+          ? await placeCallFromPhone(command.number, command.id)
+          : { placed: false, reason: 'not-android' };
+        if (placed.placed) return;
+
+        // Older installed builds do not contain the native caller. They can
+        // still open the handset dialler, which is a useful and honest fallback.
+        dial(command.number);
+        await api.closeDial(command.id, { ok: true, via: 'dialler' }).catch(() => undefined);
+      } catch {
+        // A reconnect can race the database write. The next reconnect retries
+        // this short read, while the desktop still has its normal fallback.
+      } finally {
+        takingDial = false;
+      }
+    };
     /*
       The CRM telling this phone to ring somebody.
 
@@ -91,35 +114,9 @@ export function useRealtime(enabled: boolean): void {
       place a call does. The command is claimed by id so the phone's background
       sync does not ring the same number a second time.
     */
-    const onDial = (p: { commandId?: string; number?: string }): void => {
-      if (!isNative || !p?.number) return;
-      const number = p.number;
-      void (async () => {
-        const placed = callSyncSupported
-          ? await placeCallFromPhone(number, p.commandId)
-          : { placed: false, reason: 'not-android' };
-        if (placed.placed) return;
-        /*
-          The app on this phone cannot place the call itself — which today is
-          *every* installed copy, because they all predate `placeCall`. Its own
-          webview still has a dialler, so the number goes there with the digits
-          already in it and the rep presses the green button.
-
-          Without this the instruction is simply never collected: 130 of them
-          on production, every one expired, which on the desk reads as "your
-          phone did not ring" and gives a rep nothing to do about it.
-        */
-        dial(number);
-        if (p.commandId) {
-          try {
-            await api.closeDial(p.commandId, { ok: true, via: 'dialler' });
-          } catch {
-            // The call is already dialling. A desk that never hears back falls
-            // back on its own, which is a worse message and not a worse call.
-          }
-        }
-      })();
-    };
+    const onDial = (): void => { void takePendingDial(); };
+    const onConnect = (): void => { void takePendingDial(); };
+    const onResume = (): void => { void takePendingDial(); };
 
     const onLead = (): void => {
       invalidateRecordQueries(qc, 'leads');
@@ -137,6 +134,9 @@ export function useRealtime(enabled: boolean): void {
     s.on('call:ended', onCall);
     s.on('lead:new', onLead);
     s.on('device:dial', onDial);
+    s.on('connect', onConnect);
+    window.addEventListener('ipropy:resumed', onResume);
+    void takePendingDial();
 
     return () => {
       s.off('record:updated', onRecordChanged);
@@ -150,6 +150,8 @@ export function useRealtime(enabled: boolean): void {
       s.off('call:ended', onCall);
       s.off('lead:new', onLead);
       s.off('device:dial', onDial);
+      s.off('connect', onConnect);
+      window.removeEventListener('ipropy:resumed', onResume);
     };
   }, [enabled, qc]);
 }

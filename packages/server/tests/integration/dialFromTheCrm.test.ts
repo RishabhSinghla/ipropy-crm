@@ -173,6 +173,32 @@ describe('dialling from the CRM', () => {
     expect(status.body.via).toBe('dialler');
   });
 
+  it('lets a phone claim a call it missed while the app was asleep', async () => {
+    const queued = await request(app)
+      .post('/api/telephony/dial')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ to: '9811100003' })
+      .expect(200);
+
+    const pending = await request(app)
+      .get('/api/telephony/dial/pending')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(pending.body.command.id).toBe(queued.body.commandId);
+    expect(pending.body.command.number).toBe('9811100003');
+
+    const claimed = await db.queryOne<{ status: string }>(
+      `SELECT status FROM ipy_device_command WHERE id = $1`, [queued.body.commandId],
+    );
+    expect(claimed?.status).toBe('delivered');
+
+    const another = await request(app)
+      .get('/api/telephony/dial/pending')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(another.body.command).toBeNull();
+  });
+
   it('will not let one person close another person\'s call instruction', async () => {
     const res = await request(app)
       .post('/api/telephony/dial')

@@ -473,7 +473,7 @@ export async function queueDial(input: {
   */
   await db.query(
     `UPDATE ipy_device_command SET status = 'expired', finished_at = now()
-      WHERE device_id = $1 AND status = 'queued' AND expires_at <= now()`,
+      WHERE device_id = $1 AND status IN ('queued', 'delivered') AND expires_at <= now()`,
     [device.id],
   );
 
