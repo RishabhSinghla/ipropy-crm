@@ -1,0 +1,73 @@
+# What the installed app asks production for, and what it gets back.
+#
+# The phone app is the same React bundle this CRM serves, wrapped in a native
+# shell, and it keeps its screens current by asking the server what it is
+# serving (`/api/public/app/bundle`) and fetching it. A person with a phone can
+# see none of that, so "the app is not working" has to be answered from here.
+#
+# Four public things, in the order the app uses them:
+#
+#   1. the server is up at all;
+#   2. the browser origins the app stamps on its requests are accepted —
+#      `https://localhost` and `capacitor://localhost`, which have stopped both
+#      apps at the login screen before, on production only;
+#   3. a web bundle is on offer, and which version;
+#   4. an APK is published, and which build.
+#
+# Read-only, and every endpoint here is one any browser can already reach: no
+# secret, no database, nothing signed in.
+name: What the app sees
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "The CRM to ask"
+        default: "https://crm.ipropy.com"
+
+permissions:
+  contents: read
+
+jobs:
+  ask:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Ask the site what the app would get
+        env:
+          BASE: ${{ inputs.base_url }}
+        run: |
+          set -uo pipefail
+
+          echo "=== is it up ==="
+          curl -fsS -m 25 "$BASE/api/health" || echo "unreachable"
+          echo
+
+          echo "=== does it accept the app's own origins ==="
+          # The webview stamps these on every request. A missing one is a CORS
+          # refusal at the login screen and nowhere else.
+          for origin in "https://localhost" "capacitor://localhost"; do
+            allowed=$(curl -fsS -m 25 -o /dev/null -D - -H "Origin: $origin" \
+              "$BASE/api/public/client-config" 2>/dev/null \
+              | tr -d '\r' | awk 'tolower($1) == "access-control-allow-origin:" { print $2 }')
+            echo "$origin -> ${allowed:-REFUSED}"
+          done
+          echo
+
+          echo "=== what screens the app would download ==="
+          curl -fsS -m 25 "$BASE/api/public/app/bundle" || echo "no answer"
+          echo
+
+          echo "=== what the bundle download actually answers ==="
+          curl -fsS -m 60 -o /tmp/bundle.zip -w 'status %{http_code}, %{size_download} bytes, %{content_type}\n' \
+            "$BASE/api/public/app/bundle.zip" || echo "the download failed"
+          # A zip that is not a zip is the failure that would leave every phone
+          # rolling back to its old screens on every launch, silently.
+          file /tmp/bundle.zip 2>/dev/null || true
+          echo
+
+          echo "=== what somebody installing the app today would get ==="
+          curl -fsS -m 25 "$BASE/api/public/companion" || echo "no build published"
+          echo
+          curl -fsS -m 60 -o /dev/null -w 'apk: status %{http_code}, %{size_download} bytes\n' \
+            "$BASE/api/public/companion/download" || echo "the apk download failed"
