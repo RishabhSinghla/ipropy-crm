@@ -36,8 +36,8 @@ import {
 } from '../../../core/settings/integrations.js';
 import { logger } from '../../../utils/logger.js';
 import { db } from '../../../db/pool.js';
-import type { InboundMessage } from './types.js';
-import { receiveInbound } from './inbound.js';
+import type { InboundMessage, StatusUpdate } from './types.js';
+import { applyStatus, receiveInbound } from './inbound.js';
 import { activeBusinessProvider } from './registry.js';
 import { WHATSMARKETING_PROVIDER } from './whatsMarketing.js';
 import { metaCloudProvider } from './metaCloud.js';
@@ -361,6 +361,55 @@ function readTime(raw: unknown): Date {
 }
 
 /**
+ * How a message *we* sent actually went, from the same rows.
+ *
+ * Found by reading their live API on 20 September 2026 rather than their
+ * documentation, which does not mention it: an outbound row carries
+ * `message_status`, `delivery_status_updated_at` and `read_time`. That is a
+ * delivery receipt, and it is the thing a webhook would have pushed.
+ *
+ * **It matters more than it looks.** Without it the CRM can say a message was
+ * handed to the vendor and nothing more — so a campaign report could only ever
+ * count attempts, never arrivals, and "sent 900" would mean nothing at all.
+ * With it, delivered and read are real numbers on a real screen.
+ *
+ * Goes through `applyStatus`, the same function the webhook uses, which only
+ * ever moves a status forward and claims each one once. So re-reading a thread
+ * every minute is free, and a late "sent" cannot un-read a message the
+ * customer has plainly read.
+ */
+const THEIR_STATES: Record<string, StatusUpdate['state']> = {
+  sent: 'sent', delivered: 'delivered', read: 'read', failed: 'failed',
+};
+
+async function readOutboundStatus(row: Record<string, unknown>): Promise<boolean> {
+  const id = String(row.wa_message_id ?? '');
+  const state = THEIR_STATES[String(row.message_status ?? '').toLowerCase()];
+  if (!id || !state) return false;
+
+  // The most specific time they give for this state, and the row's own time
+  // as a floor — a receipt with no clock is still a receipt.
+  const at = readTime(
+    (state === 'read' ? row.read_time : null)
+    ?? row.delivery_status_updated_at
+    ?? row.failed_time
+    ?? row.conversation_time,
+  );
+  const failedReason = String(row.failed_reason ?? '').trim();
+  try {
+    return await applyStatus(WHATSMARKETING_PROVIDER, {
+      providerMessageId: id,
+      state,
+      at,
+      error: state === 'failed' ? (failedReason || 'the provider gave no reason') : null,
+    });
+  } catch (err) {
+    logger.warn({ err, providerMessageId: id }, 'could not apply a polled WhatsApp delivery status');
+    return false;
+  }
+}
+
+/**
  * Put the last visit's outcome where a person, and a database check, can read it.
  *
  * Two places, because they answer different questions and one of them throws
@@ -460,6 +509,7 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
   let refused = 0;
   let tooOld = 0;
   let known = 0;
+  let statuses = 0;
   /* Keys and types only — see `describeShape`. Never a customer's words. */
   let unreadableShape: string | null = null;
 
@@ -488,7 +538,11 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
       .filter((p) => p && String(p) !== 'null').join(' ').trim() || null;
 
     for (const row of rowsOf(thread.message)) {
-      if (!isFromCustomer(row)) continue;
+      if (!isFromCustomer(row)) {
+        // Ours. Not a message to store — but it carries how it went.
+        if (await readOutboundStatus(row)) statuses += 1;
+        continue;
+      }
 
       const sentAt = readTime(row.conversation_time ?? row.created_at);
       if (!newestFromAnyone || sentAt > newestFromAnyone) {
@@ -558,7 +612,7 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
         + `stored ${stored} new message${stored === 1 ? '' : 's'}; `
         + `newest customer message visible anywhere: ${newestFromAnyone?.toISOString() ?? 'none'}`
         + `${newestFrom ? ` from ${newestFrom}` : ''}; `
-        + `${known} already held; `
+        + `${known} already held; ${statuses} delivery update${statuses === 1 ? '' : 's'}; `
         + `dropped: ${noId} with no id, ${unreadable} unreadable, `
         + `${refused} refused by the store, ${tooOld} older than ${HISTORY_FLOOR_DAYS} days`
         + `${unreadableShape ? `; first unreadable shape: ${unreadableShape}` : ''}.`,

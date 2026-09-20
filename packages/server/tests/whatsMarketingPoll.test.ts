@@ -25,6 +25,7 @@ const active = vi.hoisted(() => ({ name: 'whatsapp_whatsmarketing' as string | n
 const received = vi.hoisted(() => ({ calls: [] as { provider: string; message: Record<string, unknown> }[] }));
 
 const reported = vi.hoisted(() => ({ calls: [] as { ok: boolean; detail: string }[] }));
+const applied = vi.hoisted(() => ({ calls: [] as Record<string, unknown>[] }));
 
 vi.mock('../src/core/settings/integrations.js', () => ({
   getIntegrationCredentials: () => credentials.value,
@@ -44,6 +45,10 @@ vi.mock('../src/integrations/whatsapp/business/inbound.js', () => ({
   receiveInbound: vi.fn(async (provider: string, message: Record<string, unknown>) => {
     received.calls.push({ provider, message });
     return { id: 'stored' };
+  }),
+  applyStatus: vi.fn(async (_provider: string, update: Record<string, unknown>) => {
+    applied.calls.push(update);
+    return true;
   }),
 }));
 
@@ -74,6 +79,7 @@ const customerSaid = (text: string, at: string, id = 'wamid.IN1'): Record<string
 beforeEach(() => {
   received.calls = [];
   reported.calls = [];
+  applied.calls = [];
   active.name = 'whatsapp_whatsmarketing';
   credentials.value = { apiToken: 'tok' };
   config.value = { phoneNumberId: '984702481401419' };
@@ -158,6 +164,59 @@ describe('pulling replies in', () => {
     const offered = received.calls
       .filter((c) => c.message.providerMessageId === 'wamid.ONCE');
     expect(offered).toHaveLength(1);
+  });
+
+  it('takes the delivery receipt off our own outbound rows', async () => {
+    /*
+      Read from their live API on 20 September 2026, documented nowhere: an
+      outbound row carries `message_status`, `delivery_status_updated_at` and
+      `read_time`. Without it the CRM knows only that it handed a message over,
+      so a campaign report could count attempts and never arrivals — "sent 900"
+      meaning nothing at all. It goes through `applyStatus`, the webhook's own
+      function, which only moves a status forward and claims each one once.
+    */
+    wire([{ chat_id: '919891222206' }], [{
+      sender: 'bot',
+      wa_message_id: 'wamid.OUT',
+      conversation_time: '2026-09-20 07:27:13',
+      message_status: 'read',
+      delivery_status_updated_at: '2026-09-20 07:27:18',
+      read_time: '2026-09-20 08:34:08',
+      failed_reason: '',
+      message_content: JSON.stringify({ messaging_product: 'whatsapp', text: { body: 'hi' } }),
+    }]);
+
+    await pollWhatsMarketingInbound();
+
+    // Not stored as something the customer said — that is the other rule.
+    expect(received.calls).toHaveLength(0);
+    expect(applied.calls).toHaveLength(1);
+    expect(applied.calls[0].providerMessageId).toBe('wamid.OUT');
+    expect(applied.calls[0].state).toBe('read');
+    // The most specific clock they gave for *this* state, not the row's.
+    expect((applied.calls[0].at as Date).toISOString()).toBe('2026-09-20T08:34:08.000Z');
+    expect(reported.calls.at(-1)?.detail).toMatch(/1 delivery update/);
+  });
+
+  it('names a reason when the provider says a send failed', async () => {
+    wire([{ chat_id: '919891222206' }], [{
+      sender: 'bot', wa_message_id: 'wamid.BAD', conversation_time: '2026-09-20 07:27:13',
+      message_status: 'failed', failed_reason: 'Re-engagement message',
+      message_content: JSON.stringify({ text: { body: 'hi' } }),
+    }]);
+    await pollWhatsMarketingInbound();
+    expect(applied.calls[0].state).toBe('failed');
+    expect(applied.calls[0].error).toBe('Re-engagement message');
+  });
+
+  it('ignores an outbound row with no receipt yet', async () => {
+    wire([{ chat_id: '919891222206' }], [{
+      sender: 'bot', wa_message_id: 'wamid.NEW', conversation_time: '2026-09-20 07:27:13',
+      message_status: null,
+      message_content: JSON.stringify({ text: { body: 'hi' } }),
+    }]);
+    await pollWhatsMarketingInbound();
+    expect(applied.calls).toHaveLength(0);
   });
 
   it('does nothing at all when another provider is the live one', async () => {

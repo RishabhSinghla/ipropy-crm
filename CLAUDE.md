@@ -1029,6 +1029,15 @@ CRM's own ids, never instead of them.
   copy would drift, and the way it drifts is that one of them quietly stops
   understanding a customer.
 
+  **The same rows carry delivery receipts for what *we* sent**, also
+  undocumented: `message_status`, `delivery_status_updated_at`, `read_time`
+  and `failed_reason` on a `sender: "bot"` row. `readOutboundStatus` hands
+  them to `applyStatus` — the webhook's own function, which only moves a
+  status forward and claims each one once, so re-reading a thread every minute
+  is free. Without this the CRM knows only that it handed a message over, and
+  **a campaign report could count attempts and never arrivals** — "sent 900"
+  meaning nothing at all.
+
   **Their template listing contains a live Meta access token**, in
   `template_json` and `raw_data`, and on 20 September it reached a GitHub
   Actions run log before anybody noticed. That log was deleted and the token
