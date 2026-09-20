@@ -82,9 +82,13 @@ export async function whatsAppOverview(): Promise<WhatsAppOverview> {
             COUNT(*) FILTER (WHERE upper(status) = 'APPROVED') AS approved,
             -- A template with blanks and no mapping cannot be sent to anybody,
             -- which is the one template fact worth surfacing here.
+            -- The column is body_text. This line once read body, which does
+            -- not exist on this table, so Postgres refused the whole statement
+            -- (42703), the route answered 500, and the Health page sat on its
+            -- loading skeleton for ever with nothing on screen to say why.
             COUNT(*) FILTER (
               WHERE COALESCE(variable_map::text, '{}') IN ('{}', 'null')
-                AND body LIKE '%{{%'
+                AND body_text LIKE '%{{%'
             ) AS unmapped
        FROM ipy_whatsapp_template`,
   );

@@ -28,13 +28,42 @@ import { Badge, Skeleton } from '../../components/ui';
  * needed.
  */
 export default function WhatsAppAdmin(): JSX.Element {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ['wa-biz', 'overview'],
     queryFn: () => api.waBizOverview(),
     refetchInterval: 30_000,
   });
 
-  if (isLoading || !data) return <div className="p-4 sm:p-6"><Skeleton className="h-96 w-full" /></div>;
+  if (isLoading) return <div className="p-4 sm:p-6"><Skeleton className="h-96 w-full" /></div>;
+
+  /*
+    **A failed request is not a loading one, and this page proved it the hard
+    way.** The guard used to read `isLoading || !data`, so when `/overview`
+    started answering 500 — one wrong column name in its SQL — the page held
+    the loading skeleton for ever. An empty grey box says nothing at all: the
+    owner met it on two different URLs and could only report "what's wrong in
+    here". A screen that cannot load has to say so, and name the thing that
+    broke, or the next person debugs the wrong half of the CRM.
+  */
+  if (error || !data) {
+    return (
+      <div className="p-4 sm:p-6">
+        <div className="card border-rose-300 p-4 dark:border-rose-900">
+          <p className="flex items-center gap-2 font-semibold">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-rose-500" />
+            This page could not load
+          </p>
+          <p className="mt-1 text-sm text-muted">
+            The CRM could not read its own WhatsApp summary. Everything else — your chats,
+            sending and receiving — is unaffected; it is only this screen.
+          </p>
+          <p className="mt-2 break-words rounded bg-slate-100 p-2 text-2xs dark:bg-slate-800">
+            {error instanceof Error ? error.message : 'No reason was given.'}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   /*
     "Working" is not "switched on". A provider can be configured and still be

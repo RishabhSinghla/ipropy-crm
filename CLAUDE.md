@@ -1384,6 +1384,42 @@ never written and submitted for Meta's approval; their inbound webhook is
 switched off, so replies are polled rather than pushed; and the account itself
 — business profile, display name, credit — is theirs.
 
+### The Health page was an empty grey box, and the guard is why
+
+**20 September 2026, the owner, against two screenshots** — `/whatsapp/health`
+and `/admin/whatsapp`, both showing nothing but a grey rectangle: *"whats wrong
+in here dude"*.
+
+Two faults, and the second is the one worth keeping.
+
+* **`whatsAppOverview` counted templates with `body LIKE '%{{%'`.** The column
+  on `ipy_whatsapp_template` is **`body_text`**; `body` has never existed. So
+  Postgres refused the whole statement (42703), `/overview` answered 500, and
+  the screen had nothing to draw. This is rule 8's neighbour — the SQL is a
+  string, so typecheck cannot see a wrong column and a unit test with a mocked
+  `db.query` accepts any statement at all.
+* **A failed request is not a loading one.** The page guarded with
+  `if (isLoading || !data)`, and on an error `isLoading` is false while `data`
+  stays undefined — so it held its loading skeleton **for ever**. That is why
+  the report could only be "what's wrong in here": an empty grey box names
+  nothing. It now renders the error, says the rest of WhatsApp is unaffected,
+  and prints the reason. **Any screen written as `isLoading || !data` has this
+  bug waiting**; the pattern is the finding, not the one page.
+  `admin/SharingAdmin.tsx` and `admin/MatchingSetupAdmin.tsx` still carry it —
+  left alone because neither has been reported and neither could be checked
+  against a failing request from here, but they are the next two to meet it.
+
+`tests/integration/whatsappOverviewLoads.test.ts` runs every query in that
+function against a real database and was checked both ways: it fails with
+*column "body" does not exist* on the old code and passes on the fix. It
+asserts no business meaning on purpose — what broke was whether Postgres would
+accept the statement at all.
+
+**And a trap that cost a run on the way in: a SQL comment inside a template
+literal may not contain a backtick.** `` -- `body_text` is the column `` ends
+the string, and esbuild fails with *Expected ")"* pointing at the next word,
+which reads like a broken query rather than a broken quote.
+
 ## Campaigns: one template, many people, once each
 
 **19 September 2026, the owner: "now start campaigns"** — the next thing in his own order
