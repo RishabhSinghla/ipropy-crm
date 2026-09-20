@@ -32,6 +32,9 @@ on:
       send_to:
         description: "Send a real test message to this number (919876543210). Blank sends nothing."
         default: ""
+      conversation_with:
+        description: "Dump the raw thread with this number (919876543210). Read-only."
+        default: ""
 
 permissions:
   contents: read
@@ -46,6 +49,7 @@ jobs:
           TOKEN: ${{ secrets.WHATSMARKETING_API_TOKEN }}
           PNID: ${{ inputs.phone_number_id }}
           SEND_TO: ${{ inputs.send_to }}
+          THREAD_WITH: ${{ inputs.conversation_with }}
         run: |
           set -u
           BASE=https://app.whatsmarketing.in/api/v1
@@ -90,8 +94,30 @@ jobs:
             -d "limit=2" -d "offset=1" | head -c 1200
           echo
 
+          if [ -n "$THREAD_WITH" ]; then
+            # The poller reads exactly these two endpoints, so this prints the
+            # bytes it actually sees. It exists because "the message is visible
+            # but was not stored" has three causes that look identical from
+            # outside the container -- no `wa_message_id` on the row, a
+            # `message_content` shape the reader cannot parse, or a `sender`
+            # the direction check reads as ours -- and only the raw row tells
+            # them apart.
+            say "5. Is $THREAD_WITH in the subscriber list the poller reads?"
+            curl -sS --max-time 30 -X POST "$BASE/whatsapp/subscriber/list" \
+              -d "apiToken=$TOKEN" -d "phone_number_id=$PNID" \
+              -d "limit=40" -d "offset=1" -d "orderBy=1" \
+              | tr ',' '\n' | grep -n "$THREAD_WITH" || echo "NOT in the first 40 by most recent"
+            echo
+
+            say "6. The raw thread with $THREAD_WITH, exactly as the poller reads it"
+            curl -sS --max-time 30 -X POST "$BASE/whatsapp/get/conversation" \
+              -d "apiToken=$TOKEN" -d "phone_number_id=$PNID" \
+              -d "phone_number=$THREAD_WITH" -d "limit=15" -d "offset=1" | head -c 6000
+            echo
+          fi
+
           if [ -n "$SEND_TO" ]; then
-            say "5. Sending one real message to $SEND_TO"
+            say "7. Sending one real message to $SEND_TO"
             # Outside the 24-hour window a plain text message is refused by
             # WhatsApp itself, and their API says so in `message`. That is a
             # useful answer, not a failure of this workflow: it means the
