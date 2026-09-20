@@ -217,23 +217,109 @@ export function textOfMessage(raw: unknown): { text: string | null; media: Inbou
   if (typeof parsed === 'string') return { text: parsed, media: null };
   if (!parsed || typeof parsed !== 'object') return { text: null, media: null };
 
-  const obj = parsed as Record<string, unknown>;
-  const text = obj.text as { body?: string } | undefined;
-  const body = text?.body
-    ?? (typeof obj.body === 'string' ? obj.body : undefined)
-    ?? (typeof obj.message === 'string' ? obj.message : undefined)
-    ?? null;
+  return readObject(parsed as Record<string, unknown>, 2);
+}
 
-  for (const kind of ['image', 'video', 'document', 'audio'] as const) {
-    const found = obj[kind] as { link?: string; id?: string; caption?: string; mime_type?: string } | undefined;
+/** A string at one of these keys, or nothing. Never a guess at another type. */
+function stringAt(obj: Record<string, unknown>, keys: readonly string[]): string | null {
+  for (const key of keys) {
+    const value = obj[key];
+    if (typeof value === 'string' && value) return value;
+  }
+  return null;
+}
+
+/**
+ * Where the words are, across every shape seen or documented.
+ *
+ * Meta's own is `text.body`, and WhatsMarketing wrap a Meta object — but only
+ * for what *they* send. What a subscriber sends came back in a shape this
+ * reader did not know, and six of the owner's messages were dropped for it on
+ * 20 September. The answer is not to guess at an unknown type: it is to look
+ * in every place a string could legitimately be, and to keep returning null
+ * when there is none, because a message stored with invented text is worse
+ * than one that is visibly missing.
+ *
+ * One level of nesting is followed (`message`, `data`, `payload`), since a
+ * vendor wrapping Meta's object one deeper is the common difference between
+ * two APIs rather than a different idea.
+ */
+const TEXT_KEYS = ['body', 'text', 'message', 'content', 'caption'] as const;
+const WRAPPERS = ['message', 'data', 'payload'] as const;
+const MEDIA_KINDS = ['image', 'video', 'document', 'audio', 'sticker', 'voice'] as const;
+
+function readObject(
+  obj: Record<string, unknown>, depth: number,
+): { text: string | null; media: InboundMessage['media'] } {
+  // `text` is an object in Meta's shape and a plain string in others.
+  const textObj = obj.text as Record<string, unknown> | undefined;
+  const body = (textObj && typeof textObj === 'object' ? stringAt(textObj, TEXT_KEYS) : null)
+    ?? stringAt(obj, TEXT_KEYS);
+
+  for (const kind of MEDIA_KINDS) {
+    const found = obj[kind] as
+      { link?: string; url?: string; id?: string; caption?: string; mime_type?: string; mimetype?: string }
+      | undefined;
     if (found && typeof found === 'object') {
       return {
         text: body ?? found.caption ?? null,
-        media: { link: found.link, id: found.id, mimeType: found.mime_type, caption: found.caption },
+        media: {
+          link: found.link ?? found.url,
+          id: found.id,
+          mimeType: found.mime_type ?? found.mimetype,
+          caption: found.caption,
+        },
       };
     }
   }
-  return { text: body, media: null };
+
+  if (body) return { text: body, media: null };
+
+  // Nothing at this level. A vendor that wraps Meta's object one deeper is a
+  // packaging difference, not a different idea, so follow it once.
+  if (depth > 0) {
+    for (const key of WRAPPERS) {
+      const inner = obj[key];
+      if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
+        const found = readObject(inner as Record<string, unknown>, depth - 1);
+        if (found.text || found.media) return found;
+      }
+    }
+  }
+  return { text: null, media: null };
+}
+
+/**
+ * The *shape* of something this reader could not parse — keys and types, never
+ * a value.
+ *
+ * On 20 September the poller reported six of today's messages as unreadable,
+ * the owner's own among them, and there is no way to widen the reader without
+ * knowing what it is looking at. The obvious move is to print the body; the
+ * body is a customer's message, and it would go into a CI log that several
+ * people can read and that is kept.
+ *
+ * So this prints `{type:string,message:{body:string}}` and nothing that anyone
+ * wrote. It is enough to fix a parser and it discloses nothing. Reach for it
+ * whenever a vendor's payload has to be understood from outside the container.
+ */
+export function describeShape(raw: unknown): string {
+  if (typeof raw !== 'string') return `not a string (${raw === null ? 'null' : typeof raw})`;
+  if (!raw) return 'empty';
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); } catch { return 'plain text, not JSON'; }
+
+  const walk = (value: unknown, depth: number): string => {
+    if (value === null) return 'null';
+    if (Array.isArray(value)) return value.length ? `[${walk(value[0], depth - 1)}]` : '[]';
+    if (typeof value === 'object') {
+      if (depth <= 0) return 'object';
+      const keys = Object.keys(value as Record<string, unknown>).slice(0, 12);
+      return `{${keys.map((k) => `${k}:${walk((value as Record<string, unknown>)[k], depth - 1)}`).join(',')}}`;
+    }
+    return typeof value;
+  };
+  return walk(parsed, 3).slice(0, 300);
 }
 
 /** Their timestamps are "2026-07-28 13:21:03" — no zone, and theirs is UTC. */
@@ -345,6 +431,8 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
   let refused = 0;
   let tooOld = 0;
   let known = 0;
+  /* Keys and types only — see `describeShape`. Never a customer's words. */
+  let unreadableShape: string | null = null;
 
   const subscribers = rowsOf(list.message);
   /*
@@ -399,6 +487,7 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
           'whatsmarketing reply in a shape this poller cannot read — not stored',
         );
         unreadable += 1;
+        unreadableShape ??= describeShape(row.message_content);
         continue;
       }
 
@@ -442,7 +531,8 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
         + `${newestFrom ? ` from ${newestFrom}` : ''}; `
         + `${known} already held; `
         + `dropped: ${noId} with no id, ${unreadable} unreadable, `
-        + `${refused} refused by the store, ${tooOld} older than ${HISTORY_FLOOR_DAYS} days.`,
+        + `${refused} refused by the store, ${tooOld} older than ${HISTORY_FLOOR_DAYS} days`
+        + `${unreadableShape ? `; first unreadable shape: ${unreadableShape}` : ''}.`,
   );
   return { checked, stored };
 }

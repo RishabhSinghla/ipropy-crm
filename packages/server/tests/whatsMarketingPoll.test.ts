@@ -47,7 +47,7 @@ vi.mock('../src/integrations/whatsapp/business/inbound.js', () => ({
   }),
 }));
 
-const { pollWhatsMarketingInbound, textOfMessage, __resetPollWatermark } =
+const { pollWhatsMarketingInbound, textOfMessage, describeShape, __resetPollWatermark } =
   await import('../src/integrations/whatsapp/business/pollInbound.js');
 
 /** A fixed "now" so the watermark arithmetic is readable. */
@@ -249,6 +249,49 @@ describe('reading their message_content', () => {
 
   it('takes a plain string at face value', () => {
     expect(textOfMessage('just text').text).toBe('just text');
+  });
+
+  it('finds the words wherever a vendor puts them', () => {
+    /*
+      Six of the owner's messages were dropped as unreadable on 20 September,
+      his own "hey" among them, because the reader knew only Meta's shape.
+      These are every place a string legitimately sits in an
+      OpenAI-shaped-or-Meta-shaped payload. Adding them is not guessing: each
+      is a named key holding a string, and anything else still returns null.
+    */
+    expect(textOfMessage(JSON.stringify({ type: 'text', text: 'hey' })).text).toBe('hey');
+    expect(textOfMessage(JSON.stringify({ body: 'hey' })).text).toBe('hey');
+    expect(textOfMessage(JSON.stringify({ message: 'hey' })).text).toBe('hey');
+    expect(textOfMessage(JSON.stringify({ content: 'hey' })).text).toBe('hey');
+    expect(textOfMessage(JSON.stringify({ caption: 'hey' })).text).toBe('hey');
+    // One level of wrapping, which is the usual difference between two APIs.
+    expect(textOfMessage(JSON.stringify({ message: { text: { body: 'hey' } } })).text).toBe('hey');
+    expect(textOfMessage(JSON.stringify({ data: { body: 'hey' } })).text).toBe('hey');
+  });
+
+  it('takes a media link from `url` as well as `link`', () => {
+    const out = textOfMessage(JSON.stringify({
+      type: 'image', image: { url: 'https://x/y.jpg', mimetype: 'image/jpeg' },
+    }));
+    expect(out.media?.link).toBe('https://x/y.jpg');
+    expect(out.media?.mimeType).toBe('image/jpeg');
+  });
+
+  it('describes an unreadable shape without printing a word of it', () => {
+    /*
+      The only safe way to understand a vendor's payload from outside the
+      container: the body is a customer's message and a CI log is read by
+      several people and kept. Keys and types carry the whole fix and disclose
+      nothing.
+    */
+    const shape = describeShape(JSON.stringify({
+      type: 'text', message: { body: 'meet me at four', from: '919891222206' },
+    }));
+    expect(shape).toBe('{type:string,message:{body:string,from:string}}');
+    expect(shape).not.toContain('four');
+    expect(shape).not.toContain('919891222206');
+    expect(describeShape('not json at all')).toBe('plain text, not JSON');
+    expect(describeShape(undefined)).toMatch(/not a string/);
   });
 
   it('returns nothing rather than inventing something for a shape it cannot read', () => {
