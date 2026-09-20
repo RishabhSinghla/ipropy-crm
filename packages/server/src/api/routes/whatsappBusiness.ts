@@ -310,6 +310,10 @@ whatsappBusinessRouter.get('/contacts/:module/:id/messages', asyncHandler(async 
   const { rows } = await db.query(
     `SELECT m.id, m.direction, m.type, m.body, m.media, m.status, m.template_name,
             m.created_at, m.route,
+            -- Why a send failed, so the screen can say it. Without this the
+            -- tab paints a refused message the same green as a delivered one
+            -- and writes "sent" under it.
+            m.error_message,
             trim(u.first_name || ' ' || u.last_name) AS sent_by_name
        FROM ipy_message m
        JOIN ipy_conversation c ON c.id = m.conversation_id

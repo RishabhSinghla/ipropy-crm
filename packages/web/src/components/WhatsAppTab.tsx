@@ -46,6 +46,8 @@ export function WhatsAppTab({ module, recordId, mobile }: {
         sentVia: row.route === 'agent'
           ? (row.sent_by_name as string | null) ?? 'a linked phone'
           : 'the business number',
+        status: String(row.status ?? ''),
+        error: (row.error_message as string | null) ?? null,
       }))),
   });
 
@@ -79,9 +81,23 @@ export function WhatsAppTab({ module, recordId, mobile }: {
             <div
               className={cn(
                 'max-w-[75%] rounded-xl px-3 py-2 text-sm shadow-sm',
-                m.direction === 'outbound'
-                  ? 'bg-emerald-600 text-white'
-                  : 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-100',
+                m.direction !== 'outbound'
+                  ? 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-100'
+                  /*
+                    **A message that did not go must not look like one that
+                    did.** Until 20 September every outbound line here was the
+                    same green and said "sent via the business number" —
+                    including six that WhatsApp had refused outright. The owner
+                    was looking at a screen telling him his customer had been
+                    messaged. That is the exact failure this repo already
+                    warns about for the adapter, and it had been sitting in the
+                    screen the whole time.
+                  */
+                  : m.status === 'failed'
+                    ? 'bg-rose-600 text-white'
+                    : m.status === 'queued'
+                      ? 'bg-emerald-600/60 text-white'
+                      : 'bg-emerald-600 text-white',
               )}
             >
               {(() => {
@@ -97,12 +113,22 @@ export function WhatsAppTab({ module, recordId, mobile }: {
                   {m.body ?? <span className="italic opacity-70">Attachment</span>}
                 </p>
               )}
-              <p className={cn('mt-1 text-[10px]', m.direction === 'outbound' ? 'text-emerald-50/80' : 'text-muted')}>
+              <p className={cn('mt-1 text-[10px]', m.direction === 'outbound' ? 'text-white/80' : 'text-muted')}>
                 {new Date(m.createdAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
                 {/* Which number it left from — older rows may name a rep's
                     own phone, from before that route was removed. */}
-                {m.direction === 'outbound' && m.sentVia && ` · sent via ${m.sentVia}`}
+                {m.direction === 'outbound' && m.sentVia && ` · ${WENT[m.status] ?? 'sent'} via ${m.sentVia}`}
               </p>
+              {/*
+                The reason, in the provider's own words. "Not delivered" alone
+                sends somebody hunting; "outside the 24-hour window" is a thing
+                a person can act on in ten seconds.
+              */}
+              {m.direction === 'outbound' && m.status === 'failed' && (
+                <p className="mt-1 rounded bg-white/15 px-1.5 py-1 text-[10px] leading-snug text-white">
+                  <strong>Not delivered.</strong> {m.error ?? 'WhatsApp gave no reason.'}
+                </p>
+              )}
             </div>
           </div>
         ))}
@@ -132,3 +158,18 @@ export function WhatsAppTab({ module, recordId, mobile }: {
     </div>
   );
 }
+
+/**
+ * What actually became of an outbound message, in a person's words.
+ *
+ * Not "status: failed" — a rep reads this between calls. And never the word
+ * "sent" for something WhatsApp refused, which is what this screen said about
+ * six messages on 20 September while the owner watched.
+ */
+const WENT: Record<string, string> = {
+  queued: 'sending',
+  sent: 'sent',
+  delivered: 'delivered',
+  read: 'read',
+  failed: 'NOT delivered',
+};
