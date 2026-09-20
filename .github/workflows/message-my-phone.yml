@@ -1,0 +1,117 @@
+# Send one WhatsApp message to a real handset, and say what came back.
+#
+# The question this answers is the one nothing else could: **does a message
+# this CRM sends actually arrive on a phone?** Everything else is proved
+# against a stub or against the CRM's own tables.
+#
+# It finds the Phone Number ID itself, out of production's own integration
+# card, rather than asking somebody to go and look it up in WhatsMarketing's
+# dashboard. That id lives in `config`, not `credentials`, so it is plain JSON
+# and no decryption key is needed — and reading it here means the message goes
+# through the same account the CRM uses, which is the whole point. If it were
+# typed in by hand, a working test would prove somebody's typing rather than
+# the CRM's configuration.
+#
+# **Two things this deliberately does not do.** It does not take the API token
+# as an input — an input is recorded in the run history for ever, so a key
+# pasted into one is a key published. And it prints nothing a vendor sent back
+# without redacting it first: WhatsMarketing's own responses have carried a
+# live Meta access token before, and that run log had to be deleted.
+#
+# It is also honest about what a success means. WhatsMarketing answer HTTP 200
+# to a refusal, with `"status":"0"` in the body — so this reads the body rather
+# than the status code, exactly as the adapter does.
+name: Message my phone
+
+on:
+  workflow_dispatch:
+    inputs:
+      to:
+        description: "The number to message, with country code (919891222206)."
+        required: true
+      text:
+        description: "What to say."
+        default: "Test from iPropy CRM. If you can read this on your phone, WhatsApp is working end to end."
+
+permissions:
+  contents: read
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Postgres client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client >/dev/null
+
+      - name: Find the number this CRM sends from
+        id: card
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          # config, not credentials: the id is not a secret and is stored as
+          # plain JSON, so this needs no encryption key.
+          PNID="$(psql "$PROD_DATABASE_URL" -tAc "
+            SELECT config->>'phoneNumberId'
+              FROM ipy_integration
+             WHERE provider = 'whatsapp_whatsmarketing'
+             LIMIT 1")"
+          if [ -z "$PNID" ]; then
+            echo "The WhatsMarketing card on production holds no Phone Number ID."
+            echo "Paste it into Admin -> Integrations -> WhatsApp first."
+            exit 1
+          fi
+          echo "Sending from the number whose id ends ...${PNID: -4}"
+          echo "pnid=$PNID" >> "$GITHUB_OUTPUT"
+
+      - name: Send it
+        env:
+          TOKEN: ${{ secrets.WHATSMARKETING_API_TOKEN }}
+          PNID: ${{ steps.card.outputs.pnid }}
+          TO: ${{ inputs.to }}
+          TEXT: ${{ inputs.text }}
+        run: |
+          set -u
+          if [ -z "${TOKEN:-}" ]; then
+            echo "No WHATSMARKETING_API_TOKEN secret on this repository."
+            exit 1
+          fi
+
+          # A vendor's response is not ours to trust with a log.
+          redact() {
+            sed -E \
+              -e 's/"access_token":"[^"]*"/"access_token":"[redacted]"/g' \
+              -e 's/"template_json":"(\\\\.|[^"\\\\])*"/"template_json":"[redacted]"/g' \
+              -e 's/"raw_data":"(\\\\.|[^"\\\\])*"/"raw_data":"[redacted]"/g' \
+              -e 's/EAA[A-Za-z0-9_-]{20,}/[redacted-meta-token]/g'
+          }
+
+          ANSWER="$(curl -sS --max-time 30 -X POST \
+            https://app.whatsmarketing.in/api/v1/whatsapp/send \
+            -d "apiToken=$TOKEN" -d "phone_number_id=$PNID" \
+            -d "phone_number=$TO" -d "message=$TEXT")"
+
+          echo "--- what they said ---"
+          printf '%s\n' "$ANSWER" | redact | head -c 1200
+          echo
+
+          # Their refusals arrive as HTTP 200 with "status":"0". An adapter that
+          # trusts res.ok records every refusal as a send, and a rep watches a
+          # tick appear for a message the customer never got.
+          case "$ANSWER" in
+            *'"status":"1"'*|*'"status":1'*)
+              echo
+              echo "Accepted. Check the handset — if nothing arrives, it left here and"
+              echo "stopped at Meta, and the reason is in the CRM's own message row."
+              ;;
+            *)
+              echo
+              echo "REFUSED. The body above is their reason, verbatim."
+              echo "Outside the 24-hour window only an approved template may go —"
+              echo "that is the usual answer and it is not a broken connection."
+              exit 1
+              ;;
+          esac

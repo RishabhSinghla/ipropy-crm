@@ -739,6 +739,31 @@ toolchain and Gradle will not substitute another). iPhone needs Xcode and an
 Apple Developer account, neither of which is on this machine; the project is
 complete and unbuilt.
 
+**Android Studio is not required and never was — the SDK is.** This container
+has JDK 21 and no Android SDK, and its egress proxy refuses
+`dl.google.com`, so it cannot get one. A GitHub runner has both,
+which makes `.github/workflows/build-the-app.yml` the way to build the app
+without anybody's laptop: web bundle, `cap sync`, `assembleRelease`, the
+version read back out of the APK, and a check that `placeCall` and
+`CALL_PHONE` are actually inside the build before it is published — their
+absence is invisible until a rep presses Call.
+
+**The one thing a runner cannot invent is the signing key.** Android refuses
+an update signed by a different key from the version already on the phone, and
+2.1.0 was signed on a developer's Mac, so the workflow needs that same
+keystore as `ANDROID_KEYSTORE_BASE64` plus its three passwords. It refuses
+rather than falling back to the debug key, for the reason `build.gradle`
+already states: a debug-signed release installs perfectly and then blocks
+every properly signed update after it, months later, on somebody else's phone.
+
+**And the note that said every installed copy predates `placeCall` is out of
+date.** The APK published on 20 September 2026 — 2.1.0, versionCode 3 —
+**contains it**, along with the `CALL_PHONE` permission and the pending-dial
+poll. Read out of the published APK itself (`unzip`, then `grep -a` the dex and
+`strings -el` the binary manifest), not assumed. So a desk Call ringing a
+phone on its own needs a **reinstall from the CRM's own download page**, not a
+rebuild — the three handsets paired since August are running something older.
+
 ---
 
 ## Two developers, one repo, and whose Claude made the commit

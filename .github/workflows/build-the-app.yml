@@ -1,0 +1,183 @@
+# Build the Android app without Android Studio, and without anybody's laptop.
+#
+# Android Studio is an editor. What a build actually needs is a JDK 21 and the
+# Android SDK, and a GitHub runner already has both — so the app can be built
+# here, by anyone, from a phone if it comes to that. Until now it could only be
+# built on one developer's Mac, which meant the rest of the team's phones ran
+# whatever that machine last produced.
+#
+# It builds the same way `packages/app/scripts/publish-apk.sh` does, in the same
+# order, for the same reason: the web bundle first, `cap sync` to copy it into
+# the Android project, then Gradle. A build that skips the sync ships the app
+# with last month's screens inside it and looks perfectly successful.
+#
+# ## The signing key, which is the one thing a runner cannot invent
+#
+# Android will not install an update signed by a different key from the version
+# already on the phone. Version 2.1.0 is on the team's handsets and was signed
+# on that Mac, so **this workflow must use that same key** — a fresh one
+# generated here would produce an APK that every rep has to uninstall first,
+# losing their pairing.
+#
+# So the key travels as two repository secrets, added once:
+#
+#   ANDROID_KEYSTORE_BASE64   base64 -w0 < packages/app/android/<your>.jks
+#   ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+#                             the three values in keystore.properties
+#
+# Without them this refuses rather than falling back to the debug key —
+# `build.gradle` already refuses, for the same reason, and that refusal is
+# load-bearing: a debug-signed "release" installs perfectly and then blocks
+# every properly signed update after it, months later, on somebody else's
+# phone.
+#
+# The APK travels in git, in `packages/server/public/companion/`, because that
+# is where the CRM serves it from and there is no artefact store. About twelve
+# megabytes — the price of handing somebody the app with no second service and
+# no monthly bill.
+name: Build the app
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Commit the APK so the CRM serves it. Off = build and attach it here only."
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      # JDK 21, not 17. Capacitor 8's plugins declare a Java 21 toolchain and
+      # Gradle will not substitute another — it fails with "Cannot find a Java
+      # installation matching languageVersion=21", which reads like a broken
+      # Gradle rather than a missing JDK.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Put the signing key in place
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEYSTORE:-}" ]; then
+            echo "No ANDROID_KEYSTORE_BASE64 secret on this repository."
+            echo
+            echo "On the machine that holds the key, run:"
+            echo "    base64 -w0 < packages/app/android/<the>.jks"
+            echo "and add that as the secret, plus ANDROID_KEYSTORE_PASSWORD,"
+            echo "ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD from"
+            echo "packages/app/android/keystore.properties."
+            echo
+            echo "It must be the SAME key that signed the version already on the"
+            echo "team's phones, or Android refuses the update."
+            exit 1
+          fi
+          printf '%s' "$KEYSTORE" | base64 -d > packages/app/android/release.jks
+          cat > packages/app/android/keystore.properties <<PROPS
+          storeFile=release.jks
+          storePassword=$STORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          PROPS
+
+      - name: Install
+        run: npm ci
+
+      # No VITE_API_BASE. A release build talks to production; setting it here
+      # is how a build pointed at somebody's laptop reaches a rep's phone.
+      - name: Build the web bundle
+        run: |
+          npm run build:deps
+          npm run build -w @ipropy/web
+
+      - name: Copy it into the Android project
+        working-directory: packages/web
+        run: npx cap sync android
+
+      - name: Build the APK
+        working-directory: packages/app/android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon assembleRelease
+
+      - name: Read the version out of the APK itself
+        id: apk
+        run: |
+          set -euo pipefail
+          BUILT=packages/app/android/app/build/outputs/apk/release/app-release.apk
+          [ -f "$BUILT" ] || { echo "Gradle reported success and produced no APK."; exit 1; }
+          # Out of the APK, never out of build.gradle: the two are the same
+          # number right up until somebody edits one and rebuilds the other.
+          AAPT="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)aapt2"
+          BADGING="$("$AAPT" dump badging "$BUILT")"
+          NAME="$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" <<<"$BADGING" | head -1)"
+          CODE="$(sed -n "s/.*versionCode='\([^']*\)'.*/\1/p" <<<"$BADGING" | head -1)"
+          echo "built $NAME (code $CODE), $(stat -c%s "$BUILT") bytes"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "path=$BUILT" >> "$GITHUB_OUTPUT"
+
+      # Proof the thing a desk Call depends on is actually inside this build.
+      # It is cheap, and its absence is invisible until a rep presses Call.
+      - name: Check the calling half is in there
+        run: |
+          set -euo pipefail
+          WORK="$(mktemp -d)"
+          unzip -q "${{ steps.apk.outputs.path }}" -d "$WORK"
+          grep -aq "placeCall" "$WORK"/classes*.dex \
+            || { echo "placeCall is not in this build — the phone cannot ring on its own."; exit 1; }
+          grep -aq "android.permission.CALL_PHONE" \
+            <(strings -el "$WORK/AndroidManifest.xml") \
+            || { echo "CALL_PHONE is not in the manifest."; exit 1; }
+          echo "placeCall and CALL_PHONE are both present."
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ipropy-${{ steps.apk.outputs.name }}
+          path: ${{ steps.apk.outputs.path }}
+
+      - name: Publish it where the CRM serves it
+        if: inputs.publish
+        run: |
+          set -euo pipefail
+          OUT=packages/server/public/companion
+          mkdir -p "$OUT"
+          cp "${{ steps.apk.outputs.path }}" "$OUT/ipropy-companion.apk"
+          SIZE=$(stat -c%s "$OUT/ipropy-companion.apk")
+          SHA=$(sha256sum "$OUT/ipropy-companion.apk" | cut -d' ' -f1)
+          cat > "$OUT/companion.json" <<JSON
+          {
+            "versionName": "${{ steps.apk.outputs.name }}",
+            "versionCode": ${{ steps.apk.outputs.code }},
+            "minSdk": 24,
+            "sizeBytes": $SIZE,
+            "sha256": "$SHA",
+            "builtAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          JSON
+          git config user.name "iPropy build"
+          git config user.email "noreply@anthropic.com"
+          git add "$OUT"
+          git diff --cached --quiet && { echo "Identical to what is already published."; exit 0; }
+          git commit -m "build(app): ${{ steps.apk.outputs.name }} (code ${{ steps.apk.outputs.code }})"
+          git push
