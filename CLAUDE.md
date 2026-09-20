@@ -1150,6 +1150,26 @@ names no parameter — Postgres refuses the whole statement with *"could not det
 type of parameter $1"*, which on screen is an empty inbox for admins only. The clause and
 its parameters travel together now (`visibility()` in `business/inbox.ts`).
 
+**The record's WhatsApp tab finds its thread by number, not only by link.**
+`matchContact` attaches a conversation to a record when a message arrives,
+which is the right moment to *try* and the wrong moment to depend on: the
+contact may not exist yet, two records may share the number, or it may sit in
+a field the matcher does not read (it reads `uitype = 'phone'` **and**
+`storage = 'column'`, so an admin-created phone field — always `json` — is
+invisible to it). On production, 20 September 2026, a thread from 9811533633
+sat unlinked beside a contact holding that exact number, and the tab showed
+nothing, which reads as WhatsApp being broken. The route now matches
+`c.record_id = $1 OR c.handle = ANY($2)`, the handles coming off the record
+`getRecord` has already authorised — so nobody reads a thread whose contact
+they cannot open, and linking becomes tidiness for the shared inbox rather
+than the thing the tab depends on. The empty-array guard matters: an unguarded
+`= ANY('{}')` is not an error, it simply matches nothing, and the day somebody
+inverts that condition it would match everything.
+**And sending from a record takes the link** (`conversationFor` in
+`business/send.ts`): a person pressing Send is the one moment all three
+failure cases are settled, and `COALESCE` means it never steals a thread that
+already belongs to another record.
+
 **The contact's WhatsApp tab shows both roads in one column**, with a line saying which
 number each message went through: one customer had one conversation even if it reached them
 two ways.

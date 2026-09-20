@@ -85,6 +85,24 @@ async function conversationFor(handle: string, recordId: string | null, userId: 
     [handle],
   );
   if (existing) {
+    /*
+      Sending from a record is a person saying "this thread is this contact".
+
+      `matchContact` tries on every inbound and is right most of the time, but
+      it cannot be right when the contact did not exist yet, when two records
+      share a number, or when the number sits in a field it does not read. A
+      human pressing Send on a record settles all three, so the link is taken
+      then — and `COALESCE` means it never steals a thread that already belongs
+      to somebody else.
+    */
+    if (recordId) {
+      await db.query(
+        `UPDATE ipy_conversation
+            SET record_id = COALESCE(record_id, $2), record_module = COALESCE(record_module, $3)
+          WHERE id = $1`,
+        [existing.id, recordId, MODULE],
+      );
+    }
     return {
       id: existing.id,
       windowOpen: Boolean(existing.window_expires_at && new Date(existing.window_expires_at) > new Date()),

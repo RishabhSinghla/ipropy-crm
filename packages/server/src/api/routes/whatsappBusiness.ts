@@ -12,6 +12,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { blockApiKey, getScope, getUser, requireAuth } from '../../middleware/auth.js';
+import { registry } from '../../core/metadata/registry.js';
+import { matchKey } from '../../integrations/whatsapp/matchContact.js';
 import { assertCapability, canAccessRecord } from '../../core/permissions/index.js';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../utils/errors.js';
 import {
@@ -252,6 +254,26 @@ whatsappBusinessRouter.post('/conversations/:id/status', asyncHandler(async (req
 }));
 
 /**
+ * Every number on a record, as the ten-digit key a conversation is filed under.
+ *
+ * `matchKey` on each phone field, so a mobile stored as `+91 98912 22206`,
+ * `9891222206` or `0 9891 222206` all land on the same key the inbound path
+ * used. Reads every phone field the module has rather than only `mobile`: a
+ * contact reached on their alternate number had that conversation too.
+ */
+async function handlesOf(moduleName: string, values: Record<string, unknown>): Promise<string[]> {
+  const module = await registry.getModule(moduleName);
+  const keys = new Set<string>();
+  for (const field of module?.fields ?? []) {
+    if (field.uitype !== 'phone' || !field.isActive) continue;
+    const raw = values[field.name];
+    const key = matchKey(typeof raw === 'string' ? raw : null);
+    if (key) keys.add(key);
+  }
+  return [...keys];
+}
+
+/**
  * One contact's WhatsApp, for the tab on the record.
  *
  * Permission comes from the *record*, through the ordinary engine: somebody
@@ -262,7 +284,28 @@ whatsappBusinessRouter.post('/conversations/:id/status', asyncHandler(async (req
 whatsappBusinessRouter.get('/contacts/:module/:id/messages', asyncHandler(async (req, res) => {
   const user = getUser(req);
   const scope = getScope(req);
-  await recordService.getRecord(scope, req.params.module, req.params.id);
+  const record = await recordService.getRecord(scope, req.params.module, req.params.id);
+
+  /*
+    **By number as well as by link, and this is the whole fix.**
+
+    A conversation is attached to a record by `matchContact` at the moment a
+    message arrives. That is the right moment to *try*, and it is the wrong
+    moment to rely on: the contact may not exist yet, two records may share the
+    number, or the number may sit in a field the matcher does not read. On
+    production, 20 September 2026, a thread from 9811533633 sat unlinked while
+    a contact holding that exact number sat beside it — and the tab on that
+    contact showed nothing at all, which reads as WhatsApp being broken.
+
+    So the tab asks the question a person would: *is there a conversation with
+    one of this contact's numbers?* Linking becomes a tidiness that helps the
+    shared inbox, rather than the thing the record's own tab depends on.
+
+    It is still read-only and still safe: `getRecord` above decides who may see
+    this record, and the numbers come off the record itself, so nobody can read
+    a thread belonging to a contact they cannot open.
+  */
+  const handles = await handlesOf(req.params.module!, record.values ?? {});
 
   const { rows } = await db.query(
     `SELECT m.id, m.direction, m.type, m.body, m.media, m.status, m.template_name,
@@ -271,10 +314,14 @@ whatsappBusinessRouter.get('/contacts/:module/:id/messages', asyncHandler(async 
        FROM ipy_message m
        JOIN ipy_conversation c ON c.id = m.conversation_id
        LEFT JOIN ipy_user u ON u.id = m.sent_by
-      WHERE c.record_id = $1 AND c.channel = 'whatsapp'
+      WHERE c.channel = 'whatsapp'
+        AND (c.record_id = $1 OR ($2::text[] <> '{}' AND c.handle = ANY($2::text[])))
       ORDER BY m.created_at ASC
       LIMIT 500`,
-    [req.params.id],
+    // Bound as a real array even when empty, and guarded by `<> '{}'` above:
+    // rule 8's cousin — every parameter a statement names has to be bound, and
+    // an empty list must not quietly match everything.
+    [req.params.id, handles],
   );
   // Both routes in one column, because the customer had one conversation even
   // if it reached them two ways. `route` says which, on every line.
