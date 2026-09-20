@@ -40,6 +40,7 @@ const BusinessChats = lazy(() => import('./BusinessChats'));
 const CampaignsAdmin = lazy(() => import('./admin/CampaignsAdmin'));
 const WhatsAppTemplatesAdmin = lazy(() => import('./admin/WhatsAppTemplatesAdmin'));
 const WhatsAppAdmin = lazy(() => import('./admin/WhatsAppAdmin'));
+const Reports = lazy(() => import('./Reports'));
 
 interface Tab {
   path: string;
@@ -67,6 +68,30 @@ const TABS: Tab[] = [
     capability: 'whatsapp.templates',
     icon: MessageCircle,
     element: <WhatsAppTemplatesAdmin />,
+  },
+  {
+    /*
+      Reports, folded in on the owner's instruction — *"merge this reports
+      module into this whatsapp module only"*, 20 September 2026. It is the
+      same page, not a copy: it still carries its own Records / Messaging
+      split, and `/reports` still answers so nothing bookmarked breaks.
+
+      Worth knowing before moving it back: the Records half counts contacts
+      and units, which has nothing to do with WhatsApp, so somebody looking
+      for "contacts by source" now looks under WhatsApp. That is his call and
+      it is recorded here rather than argued with.
+    */
+    path: 'reports',
+    label: 'Reports',
+    /*
+      No capability, deliberately. Reports was a header tab everybody could
+      open, and there is no `reports.view` capability in this CRM to gate it
+      with — inventing one here would take the screen away from the whole
+      team until an admin ticked it on every profile, which on the day it
+      shipped would read as the merge having broken Reports.
+    */
+    icon: BarChart3,
+    element: <Reports />,
   },
   {
     path: 'health',

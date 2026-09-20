@@ -158,6 +158,36 @@ export default function Layout(): JSX.Element {
             arrangedCapture={arrangedCapture}
           />
 
+          {/*
+            WhatsApp, out of the menu and onto the bar.
+
+            **20 September 2026, the owner:** *"bring this module right into
+            the top header where that dropdown of leads and all is there …
+            give it some tacky color maybe green or something else to
+            highlight to team that this is whatsapp chat system here."*
+
+            Green, and the only coloured thing on the bar, which is the whole
+            point: one button the eye lands on without reading. It is not
+            `lg:` like the switcher beside it — a rep on a laptop at 1200px or
+            a tablet is exactly who lives in this screen, and the rule this
+            repo already wrote down is that a destination living only in the
+            switcher is invisible below 1024px.
+          */}
+          <NavLink
+            to="/whatsapp"
+            title="WhatsApp — the team's chats, campaigns and templates"
+            className={({ isActive }) => cn(
+              'flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-semibold transition-colors',
+              // WhatsApp's own green, and white on it clears AA at this size.
+              isActive
+                ? 'bg-[#128C7E] text-white'
+                : 'bg-[#25D366] text-white hover:bg-[#1FAF52]',
+            )}
+          >
+            <MessagesSquare className="h-4 w-4" />
+            <span className="hidden sm:inline">WhatsApp</span>
+          </NavLink>
+
           {/* Search sits beside the tabs, and shrinks before the tabs do. */}
           <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 lg:flex-none">
             <NewRecordButton modules={menuModules} />
@@ -389,18 +419,15 @@ function ModuleSwitcher({
         icon: <MapPin className="h-4 w-4" />, badge: undefined, external: false,
       }];
     }
-    if (t.kind === 'reports') {
-      return [{
-        key, to: '/reports', label: t.label ?? 'Reports',
-        icon: <BarChart3 className="h-4 w-4" />, badge: undefined, external: false,
-      }];
-    }
-    if (t.kind === 'whatsapp') {
-      return [{
-        key, to: '/whatsapp', label: t.label ?? 'WhatsApp',
-        icon: <MessagesSquare className="h-4 w-4" />, badge: undefined, external: false,
-      }];
-    }
+    /*
+      WhatsApp is not in here. It has its own green button beside this
+      switcher, on the owner's instruction — a destination the team is in all
+      day should not be one click inside a menu, and the colour is what says
+      at a glance which button is the chat system. Reports went with it: it is
+      a tab on that page now, so a second entry here would be a second door to
+      one room.
+    */
+    if (t.kind === 'whatsapp') return [];
     if (t.kind === 'link') {
       return [{
         key, to: t.value ?? '#', label: t.label ?? t.value ?? '',
@@ -609,7 +636,6 @@ function MobileNav({
           </div>
           <div className="space-y-0.5">
             <p className="mb-1 px-3 text-2xs font-semibold uppercase tracking-wider text-muted">Tools</p>
-            <DrawerLink to="/reports" icon="bar-chart-3" label="Reports" />
             {/* In the drawer as well as the header, because the switcher is
                 `lg:block` and does not exist below 1024px — the rule this
                 repo already learned twice, with Chats and then Reports. */}

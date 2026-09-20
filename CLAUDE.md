@@ -1626,10 +1626,70 @@ in `arrangeHeaderTabs` it is the one screen nobody can reach, exactly as Chats
 was. It is in the drawer too, because the switcher is `lg:block` and does not
 exist below 1024px. `tests/headerTabs.test.ts` pins both.
 
+**WhatsApp is a green button on the bar now, not a line in the switcher.**
+20 September 2026: *"bring this module right into the top header where that
+dropdown of leads and all is there … give it some tacky color maybe green or
+something else to highlight to team that this is whatsapp chat system here."*
+So `ModuleSwitcher` returns `[]` for the `whatsapp` kind and `Layout` renders
+its own `NavLink` beside it, in WhatsApp's own green. It is deliberately **not**
+`lg:` like the switcher: the rule this repo already wrote down is that a
+destination living only in the switcher is invisible below 1024px, and this is
+the screen a rep lives in.
+
+**Reports is folded into that page, on the same instruction** — *"merge this
+reports module into this whatsapp module only"*. It is the same `Reports`
+component, still carrying its own Records / Messaging split, and `/reports`
+still answers so nothing bookmarked breaks. `reports` is out of `KINDS` in
+`arrangeHeaderTabs`, so production's saved arrangement — which names it —
+drops it rather than rendering a tab beside a button that goes to the same
+place. Worth knowing before moving it back: the Records half counts contacts
+and units, which has nothing to do with WhatsApp, so "contacts by source" now
+lives under a WhatsApp heading. That is his call, recorded rather than argued
+with.
+
 **A rep with only Chats sees no tab strip**: one tab is not a choice, and a row
 of one reads as something missing. The fallback route goes to the first tab that
 person may open rather than a fixed one, so a rep is never bounced to a page they
 cannot see.
+
+## What WhatsMarketing's API can and cannot do — probed, not assumed
+
+**20 September 2026, the owner:** *"do things so as much as possible things be
+done/come from whatsmarketing to here CRM and we need very less or never to open
+whatsmarketing ever in life."*
+
+`.github/workflows/discover-whatsmarketing.yml` asked their live API which of
+twenty-five candidate endpoints exist. **Every guess 404'd except one.** What
+their API actually answers, in full:
+
+| endpoint | what it gives |
+|---|---|
+| `whatsapp/send`, `/send/file`, `/send/template` | sending |
+| `whatsapp/upload/media` | a media id |
+| `whatsapp/get/template/list` | the approved templates, **read only** |
+| `whatsapp/subscriber/list`, `whatsapp/get/conversation` | inbound, which the poller reads |
+| `whatsapp/get/message-status` | delivery receipts |
+| `user/package/list`, `users/team-member/list` | the account's plan and its people |
+| `whatsapp/catalog/list` | exists, answers `[]` |
+
+Everything else tried — phone-number lists, bots, campaigns, broadcasts, tags,
+attributes, opt-ins, business profile, wallet, balance, flows, analytics,
+reports — returns their 404 page.
+
+**So "never open WhatsMarketing again" has a hard ceiling, and it is worth
+stating plainly rather than being discovered later: a template can only be
+*read* through their API, never written.** Creating one and submitting it for
+Meta's approval happens on their site. The same goes for the account itself and
+for switching their inbound webhook on. Everything that is *about a
+conversation* can live in the CRM; everything that is *about the account*
+cannot.
+
+The probe reads only. No create, update or delete endpoint was tried, on
+purpose: one that existed would have written to the business's real account,
+which is not a thing to find out by accident. So this is evidence that the
+plausible names are absent, **not** proof that no such endpoint exists under a
+name nobody guessed — their own documentation is the authority, and the copy
+the owner sent has no create-template section.
 
 ## Reports
 
