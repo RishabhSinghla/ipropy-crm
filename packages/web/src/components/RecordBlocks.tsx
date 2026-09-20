@@ -122,9 +122,18 @@ export function HeaderFieldStrip({ module, row, fields, canEdit, className }: {
     if (!box) return;
     const measure = (): void => {
       const width = box.clientWidth;
+      /*
+        Measured from the strip's own left edge, not `offsetLeft`, which is
+        relative to the nearest *positioned* ancestor. In the split view that
+        ancestor happens to start where the strip does and the two agree; in
+        the Chats header the strip sits 390px in, so every field computed as
+        "does not fit" and the whole line went invisible — leaving a lone `…`
+        and a header that looked broken.
+      */
+      const left = box.getBoundingClientRect().left;
       let count = 0;
       for (const child of Array.from(box.children) as HTMLElement[]) {
-        if (child.offsetLeft + child.offsetWidth > width + 1) break;
+        if (child.getBoundingClientRect().right - left > width + 1) break;
         count += 1;
       }
       setFits(count);

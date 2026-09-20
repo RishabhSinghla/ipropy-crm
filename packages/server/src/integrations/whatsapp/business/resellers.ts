@@ -192,8 +192,13 @@ export const aisensyProvider: WhatsAppBusinessProvider = {
 // Gupshup — text and media, form-encoded
 // ---------------------------------------------------------------------------
 
+/*
+  Same contradiction as Meta's: `listTemplates` below really does read
+  Gupshup's own template list, and without `templateSync` the Sync button told
+  an admin the opposite.
+*/
 const GUPSHUP_CAPABILITIES: ReadonlySet<WhatsAppCapability> = new Set<WhatsAppCapability>([
-  'text', 'media', 'templates', 'messageStatus',
+  'text', 'media', 'templates', 'templateSync', 'messageStatus',
 ]);
 
 function gupshupForm(fields: Record<string, string>): string {

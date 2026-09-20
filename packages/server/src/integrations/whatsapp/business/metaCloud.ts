@@ -30,8 +30,17 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 
 export const META_PROVIDER = 'whatsapp_meta';
 
+/*
+  `templateSync` belongs here, and its absence was a plain contradiction:
+  `listTemplates` below reads `GET /{waba-id}/message_templates` — Meta's own
+  canonical list, and the reason the setup guide asks for a WABA id at all —
+  while the missing capability made Admin → WhatsApp Templates refuse the Sync
+  button with *"whatsapp_meta does not hand its template list back"*. It does.
+  Found by pressing the button on 20 September 2026; nothing had ever pressed
+  it, because no provider had ever been connected.
+*/
 const CAPABILITIES: ReadonlySet<WhatsAppCapability> = new Set<WhatsAppCapability>([
-  'text', 'media', 'templates', 'messageStatus', 'markRead',
+  'text', 'media', 'templates', 'templateSync', 'messageStatus', 'markRead',
 ]);
 
 interface MetaConfig {

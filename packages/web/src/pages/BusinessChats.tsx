@@ -10,7 +10,9 @@ import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { useFillHeight } from '../lib/fillHeight';
-import { composerMode, displayNumber, outboundTone, wentOut, whyNoTextBox } from '../lib/whatsapp';
+import {
+  bubbleTime, composerMode, dayLabel, displayNumber, outboundTone, wentOut, whyNoTextBox,
+} from '../lib/whatsapp';
 import { Avatar, Dropdown, DropdownItem, EmptyState, Select, Skeleton, Spinner } from '../components/ui';
 import { ACTION_CIRCLE } from '../lib/actionCircle';
 import { ChatRecordPane, ChatRecordPaneSkeleton, useChatRecord } from '../components/ChatRecordPane';
@@ -143,7 +145,18 @@ export default function BusinessChats(): JSX.Element {
       recordId: active!.recordId ?? undefined,
     }),
     onSuccess: () => { setDraft(''); refresh(); },
-    onError: (err: Error) => toast.error('Could not send', err.message),
+    onError: (err: Error) => {
+      /*
+        The message is already a row, marked failed with the provider's own
+        reason on it — `sendOnBusinessNumber` writes that before it throws. So
+        refresh: the rep sees their own words sitting in the thread with "NOT
+        delivered" and the reason under them, which is what WhatsApp does and
+        what the bubble is already built to draw. Without this the message
+        simply vanished off the screen and only a toast remained.
+      */
+      refresh();
+      toast.error('Could not send', err.message);
+    },
   });
 
   /*
@@ -297,7 +310,16 @@ export default function BusinessChats(): JSX.Element {
                 <Avatar name={who} size={42} className="mt-0.5" />
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-center gap-x-3 whitespace-nowrap">
-                    <h2 className="min-w-0 truncate text-xl font-extrabold tracking-tight text-slate-950 dark:text-white">{who}</h2>
+                    {/*
+                      The name floors at a readable width rather than giving
+                      way first. Sharing a row with the assignment box and the
+                      last-message line, `min-w-0 truncate` squeezed it to
+                      "Riya …" — three characters of the one thing on this
+                      screen that has to be readable. What yields instead is
+                      the last-message line below, which the queue row beside
+                      it already says.
+                    */}
+                    <h2 className="min-w-[9rem] truncate text-xl font-extrabold tracking-tight text-slate-950 dark:text-white">{who}</h2>
                     <span className="inline-flex shrink-0 items-center gap-1.5 text-sm">
                       <span className="text-xs font-normal text-muted">Assigned To:</span>
                       <Select
@@ -310,7 +332,7 @@ export default function BusinessChats(): JSX.Element {
                       />
                     </span>
                     {active.lastMessageAt && (
-                      <span className="shrink-0 text-sm text-slate-400">Last message {relativeTime(active.lastMessageAt)}</span>
+                      <span className="min-w-0 truncate text-sm text-slate-400">Last message {relativeTime(active.lastMessageAt)}</span>
                     )}
                   </div>
 
@@ -436,10 +458,27 @@ export default function BusinessChats(): JSX.Element {
               </div>
             </header>
 
-            <div className="flex-1 space-y-2 overflow-y-auto p-4">
-              {messages.map((message) => (
+            {/*
+              A tinted canvas, so a white incoming bubble reads as a bubble.
+              On white it did not: the conversation looked like a page with
+              faint boxes on it rather than like a chat, which is the whole of
+              the familiarity the owner asked for.
+            */}
+            <div className="flex-1 space-y-2 overflow-y-auto bg-slate-100 p-4 dark:bg-slate-950">
+              {messages.map((message, index) => (
+                <div key={message.id}>
+                  {/*
+                    The date once, down the middle, the way WhatsApp does it —
+                    instead of on all forty bubbles from one afternoon.
+                  */}
+                  {dayLabel(message.created_at) !== (index > 0 ? dayLabel(messages[index - 1]!.created_at) : null) && (
+                    <div className="flex justify-center py-2">
+                      <span className="rounded-md bg-white px-2.5 py-1 text-2xs font-semibold uppercase tracking-wide text-slate-500 shadow-sm dark:bg-slate-800 dark:text-slate-400">
+                        {dayLabel(message.created_at)}
+                      </span>
+                    </div>
+                  )}
                 <div
-                  key={message.id}
                   className={cn('flex', message.direction === 'outbound' ? 'justify-end' : 'justify-start')}
                 >
                   <div className={cn(
@@ -480,7 +519,7 @@ export default function BusinessChats(): JSX.Element {
                       'mt-1 flex items-center gap-1 text-2xs',
                       message.direction === 'outbound' ? 'text-white/80' : 'text-slate-400',
                     )}>
-                      {new Date(message.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      {bubbleTime(message.created_at)}
                       {message.direction === 'outbound' && (
                         <>
                           <span>·</span>
@@ -508,6 +547,7 @@ export default function BusinessChats(): JSX.Element {
                       </p>
                     )}
                   </div>
+                </div>
                 </div>
               ))}
               <div ref={endRef} />
@@ -714,13 +754,25 @@ function ChatQueueRow({ row, active, onSelect }: {
 function ChatHeaderFields({ module, record }: {
   module: DescribedModule; record: RecordEnvelope;
 }): JSX.Element | null {
-  const { headerFields } = useRecordPanes(module);
-  if (!headerFields.length) return null;
+  const { headerFields, phoneField } = useRecordPanes(module);
+  /*
+    Two of these facts are already the two biggest things on this screen: the
+    record's label is the heading, and the number is the line under it. Left
+    in, "Full Name: Riya Sharma" and "Mobile: +91 9910190056" ate the whole
+    strip and pushed Budget, Status and Next Follow-up — the facts somebody
+    actually needs mid-conversation — off the end. Both are dropped through
+    metadata (`labelFields`, the phone field the panes already found) rather
+    than by naming a field here.
+  */
+  const facts = headerFields.filter((field) => (
+    !module.labelFields.includes(field.name) && field.name !== phoneField?.name
+  ));
+  if (!facts.length) return null;
   return (
     <HeaderFieldStrip
       module={module}
       row={record}
-      fields={headerFields}
+      fields={facts}
       canEdit={record.can?.edit ?? module.permissions.edit}
       className="mt-1"
     />

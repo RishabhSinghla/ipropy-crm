@@ -115,3 +115,32 @@ export const WHATSAPP_BASE = '/whatsapp';
 export function tabHref(path: string): string {
   return `${WHATSAPP_BASE}/${path}`;
 }
+
+/**
+ * The day a message belongs to, as WhatsApp labels it.
+ *
+ * Every bubble used to carry its own full date — "20 Sept, 03:42 pm" on each
+ * of forty messages sent the same afternoon. WhatsApp prints the date once, as
+ * a chip down the middle, and leaves the clock on the bubble; that is both the
+ * familiar shape and the readable one.
+ *
+ * Compared by calendar day in the reader's own timezone, not by hours elapsed:
+ * a message at 11pm and one at 1am are different days however close they are.
+ */
+export function dayLabel(at: string | Date, now: Date = new Date()): string {
+  const when = at instanceof Date ? at : new Date(at);
+  const midnight = (d: Date): number => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((midnight(now) - midnight(when)) / 86_400_000);
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days > 1 && days < 7) return when.toLocaleDateString('en-IN', { weekday: 'long' });
+  return when.toLocaleDateString('en-IN', {
+    day: 'numeric', month: 'long', ...(when.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }),
+  });
+}
+
+/** The clock on a bubble. The date is the chip above it, not on every line. */
+export function bubbleTime(at: string | Date): string {
+  const when = at instanceof Date ? at : new Date(at);
+  return when.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+}

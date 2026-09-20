@@ -1274,6 +1274,9 @@ export const api = {
       total: number; reachable: number;
       sample: { recordId: string; label: string; to: string; preview: string; missing: string[] }[];
       skipped: { label: string; reason: string }[];
+      /** Blanks with nothing mapped to them: unfilled for everybody, so nobody
+          would get the message at all. */
+      unmapped: string[];
     }>('/api/whatsapp-business/campaigns/preview', data),
   waBizCampaignApprove: (id: string, expectedCount: number, confirmLarge?: boolean) =>
     post<{ frozen: number; skipped: number }>(

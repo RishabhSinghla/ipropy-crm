@@ -74,6 +74,9 @@ export default function WhatsAppAdmin(): JSX.Element {
   const checked = data.lastCheck;
   const minutesAgo = checked ? Math.round((Date.now() - new Date(checked.at).getTime()) / 60_000) : null;
   const stale = minutesAgo === null || minutesAgo > 5;
+  /* Whoever is actually connected. Named once, read by the two sentences below
+     that used to say "WhatsMarketing" whatever the answer was. */
+  const vendor = data.provider ? label(data.provider) : 'the provider';
   const healthy = data.connected && checked?.ok && !stale;
 
   return (
@@ -124,7 +127,12 @@ export default function WhatsAppAdmin(): JSX.Element {
                 ? <span className="text-amber-700 dark:text-amber-300">Last checked {minutesAgo} minutes ago — that is too long ago.</span>
                 : <span>Checked {minutesAgo === 0 ? 'less than a minute' : `${minutesAgo} minutes`} ago.</span>}
               {' '}
-              {checked.ok ? 'It reached WhatsMarketing fine.' : 'It could not reach WhatsMarketing.'}
+              {/* The vendor by name, from the connected card — this page used to
+                  say "WhatsMarketing" whichever provider was switched on, which
+                  is wrong on the four days somebody is trying a different one. */}
+              {checked.ok
+                ? `It reached ${vendor} fine.`
+                : `It could not reach ${vendor}.`}
             </p>
             {/* The poller's own words. Ugly on purpose: it is the one line that
                 has explained every WhatsApp problem this CRM has had. */}
@@ -192,9 +200,9 @@ export default function WhatsAppAdmin(): JSX.Element {
 
       {/* 5. The honest edge. */}
       <section className="card p-4">
-        <h2 className="text-sm font-semibold">What still needs WhatsMarketing</h2>
+        <h2 className="text-sm font-semibold">What still needs {vendor}</h2>
         <p className="mt-0.5 text-xs text-muted">
-          Everything else is here. These four are theirs or Meta's, not ours to move.
+          Everything else is here. These are theirs or Meta&rsquo;s, not ours to move.
         </p>
         <ul className="mt-2 space-y-1">
           {data.stillTheirs.map((item) => (

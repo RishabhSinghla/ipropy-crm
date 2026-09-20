@@ -1421,6 +1421,91 @@ never written and submitted for Meta's approval; their inbound webhook is
 switched off, so replies are polled rather than pushed; and the account itself
 — business profile, display name, credit — is theirs.
 
+### Opened in a browser with a provider connected, 20 September 2026
+
+Every line in this file that said *"never opened in a browser"* about WhatsApp
+was true until this. A provider **was** connected — Meta Cloud pointed at a
+local stub through its own `baseUrl` config, which is why that field being a
+setting rather than a constant paid for itself — a customer's message was put
+through the real webhook, a reply was sent, receipts came back, templates
+synced, and a campaign ran. Six faults came out of it, and **all six were
+invisible to 812 unit tests, 661 integration tests and a clean typecheck**,
+because every one of them lives past the "no provider is switched on" guard.
+
+* **Every fact in the chat header was invisible.** `HeaderFieldStrip` measured
+  with `child.offsetLeft`, which is relative to the nearest *positioned*
+  ancestor rather than to the strip. In the split view the two happen to agree;
+  in the Chats header the strip sits 390px in, so every field computed as "does
+  not fit", all of them went `invisible`, and the header showed a lone `…`. It
+  measures from `getBoundingClientRect()` now. **A latent bug the split view
+  could never have shown.**
+* **The contact's name read "Riya …".** Sharing a row with the assignment box
+  and the last-message line, `min-w-0 truncate` made the name give way first —
+  three characters of the one thing on that screen that has to be readable. The
+  name floors at `9rem`; the last-message line yields instead, and the queue row
+  beside it already says the same thing.
+* **The strip repeated the two biggest things on the screen.** "Full Name" is
+  the heading and "Mobile" is the line under it, and between them they ate the
+  whole strip. Both are dropped through metadata — `labelFields` and the phone
+  field `useRecordPanes` already finds — never by naming a field.
+* **A refused message said "Something went wrong on our end."** The server knew
+  exactly why (`whyItFailed` was already writing the reason onto the row); it
+  rethrew the raw error, which became an unhandled 500, which the client can
+  only render as that sentence. `sendOnBusinessNumber` throws a
+  `BadRequestError` carrying the same words now, and the screen refreshes on
+  failure so the rep's own message stays in the thread marked NOT delivered with
+  the reason under it — which is what WhatsApp does and what the bubble was
+  already built to draw. **Before this a failed message vanished off the
+  screen entirely.**
+* **Two providers implemented template sync and never declared it.** Meta's
+  `listTemplates` reads `GET /{waba-id}/message_templates` — the reason the
+  setup guide asks for a WABA id — and Gupshup's reads their own list, but
+  neither had `templateSync` in its capability set, so the Sync button answered
+  *"whatsapp_meta does not hand its template list back"*. It does.
+  Pinned in `tests/whatsappProvider.test.ts`.
+* **"Reached the phone" counted the customer's own messages.** An inbound row
+  is stored `delivered` the moment it arrives, and the Health tile counted every
+  status rather than outbound ones — so it read **17 against 8 sent**. A
+  delivery receipt is about a message we sent.
+* **And the Health page named WhatsMarketing whichever provider was connected.**
+  It reads the connected card's own name now.
+
+**The one that would have cost money: a campaign previewed as "Send to 84" with
+all 84 rows reading "Will be skipped".** An unmapped blank is unfilled for
+*everybody* — WhatsApp refuses a template with a hole in it — and `reachable`
+cannot see it, because it counts who has a number. So the approver is shown a
+number, approves it, and not one message goes. That is precisely the failure
+this whole feature exists to prevent, wearing the feature's own clothes.
+`previewCampaign` answers `unmapped` separately now, the dialog says *"Nobody
+would get this"* above the sample names rather than below them, and the Send
+button is disabled until the blanks are mapped.
+`tests/integration/whatsappCampaigns.test.ts` pins both halves — an unmapped
+blank is named, a mapped field that is empty on one record is still an ordinary
+per-person skip.
+
+**What the walk proved works, first time, end to end:** a customer's message
+through the real webhook opens a thread, matches the contact by number, writes
+`wa_id` and opens the 24-hour window; a free-text reply reaches the provider and
+shows as sent; delivered and read receipts arrive signature-verified and move
+the status forward only; a template syncs from the provider and its blanks fill
+per recipient; a campaign freezes its audience at approval and sends **exactly
+ten a minute** (measured — an earlier "nothing is sending" was the dev server
+restarting on every edit and resetting the timer, not a bug); and the messaging
+report counts real outbound traffic for the first time.
+
+**The familiarity half, which was the other thing asked for.** The conversation
+sits on a tinted canvas so a white incoming bubble reads as a bubble; the date
+is one chip down the middle (`dayLabel` in `lib/whatsapp.ts`) instead of a full
+date on all forty bubbles from one afternoon, and the bubble keeps the clock
+alone. `tests/whatsappDayLabel.test.ts` pins that it compares **calendar days,
+not hours elapsed** — 11pm and 1am are different days however close they are.
+
+**How to do this again, because it is the only way these are found.** Point
+Meta Cloud's `baseUrl` at a local stub that answers the Cloud API's shapes,
+switch the card on, and post to `/api/webhooks/whatsapp/meta`. A guard that
+every test trips over is a guard that hides everything behind it; the test has
+to supply the configuration, not accept the refusal.
+
 ### The Health page was an empty grey box, and the guard is why
 
 **20 September 2026, the owner, against two screenshots** — `/whatsapp/health`

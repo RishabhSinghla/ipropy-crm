@@ -196,11 +196,16 @@ function NewCampaign({ onClose }: { onClose: () => void }): JSX.Element {
             {preview.isPending ? <Spinner className="h-3.5 w-3.5" /> : <Users className="h-3.5 w-3.5" />}
             Who would get this?
           </button>
-          {/* Only after the number has been on the screen. */}
+          {/* Only after the number has been on the screen — and never while a
+              blank has nothing mapped to it, because then the number on the
+              button is not the number that would be sent. */}
           {counted && (
             <button
               className="btn-primary"
-              disabled={send.isPending || counted.reachable === 0 || (large && !confirmLarge)}
+              disabled={
+                send.isPending || counted.reachable === 0
+                || counted.unmapped.length > 0 || (large && !confirmLarge)
+              }
               onClick={() => send.mutate()}
             >
               {send.isPending ? <Spinner className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />}
@@ -261,6 +266,18 @@ function NewCampaign({ onClose }: { onClose: () => void }): JSX.Element {
               <strong className="text-lg">{counted.reachable.toLocaleString('en-IN')}</strong> people would get this
               <span className="text-muted"> — out of {counted.total.toLocaleString('en-IN')} on that list.</span>
             </p>
+            {/*
+              Said before the list of samples, not after it: a blank with
+              nothing mapped to it stops the whole campaign, so the approver
+              has to read it above the names rather than scroll past them.
+            */}
+            {counted.unmapped.length > 0 && (
+              <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
+                Nobody would get this. {counted.unmapped.join('; ')} — WhatsApp refuses a template
+                with a blank left in it. Fill the blanks in Admin → WhatsApp Templates, then preview
+                again.
+              </p>
+            )}
             {counted.reachable === 0 && (
               <p className="text-sm text-rose-600">Nobody on that list has a WhatsApp number.</p>
             )}

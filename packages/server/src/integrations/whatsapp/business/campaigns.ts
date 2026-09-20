@@ -128,6 +128,19 @@ export async function previewCampaign(input: {
   reachable: number;
   sample: { recordId: string; label: string; to: string; preview: string; missing: string[] }[];
   skipped: { label: string; reason: string }[];
+  /**
+   * Blanks that are unfilled for *everybody*, because nothing is mapped to
+   * them at all — as opposed to a mapped field that happens to be empty on one
+   * record. This is a property of the template, not of a person, and it means
+   * the campaign would reach nobody: WhatsApp refuses a template with a hole.
+   *
+   * It has to be its own answer because `reachable` cannot see it. On
+   * 20 September 2026 a campaign previewed as "Send to 84" with all 84 rows
+   * reading *"Will be skipped"* — the approver is shown a number, approves it,
+   * and not one message goes. A count that is not the count is the exact
+   * failure this feature was built to prevent.
+   */
+  unmapped: string[];
 }> {
   const page = await recordService.listRecords(input.ctx, input.module, {
     view: input.audience.view,
@@ -172,7 +185,15 @@ export async function previewCampaign(input: {
     approving needs the second.
   */
   const reachable = await countReachable(input.ctx, input.module, input.audience, phoneFields);
-  return { total: page.total, reachable, sample, skipped };
+  /*
+    Read off one sample row, because a setup gap is the same for every record.
+    "is empty on this record" is deliberately not one of these: that is a real
+    per-person skip, and the campaign still goes to everybody else.
+  */
+  const unmapped = (sample[0]?.missing ?? []).filter((gap) => (
+    gap.includes('nothing is mapped to it') || gap.includes('needs setting again')
+  ));
+  return { total: page.total, reachable, sample, skipped, unmapped };
 }
 
 /**

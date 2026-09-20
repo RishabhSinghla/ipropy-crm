@@ -141,6 +141,31 @@ describe('before anything is sent', () => {
     expect(one?.missing).toEqual([]);
   });
 
+  it('says when a blank has nothing mapped to it, because then nobody gets anything', async () => {
+    /*
+      The bug this pins, found in a browser on 20 September 2026: an unmapped
+      blank made every one of 84 sample rows read "Will be skipped" while the
+      button still said **Send to 84**. `reachable` cannot see it — it counts
+      who has a number — so the approver is shown a number, approves it, and
+      not one message goes. That is the exact failure the whole feature exists
+      to prevent, so the preview answers it separately.
+    */
+    await saveMapping(templateId, 'leads', {});
+    const blank = await previewCampaign({
+      ctx, module: 'leads', audience, templateId, agentName: 'Tester', samples: 10,
+    });
+    expect(blank.reachable, 'people with a number is unchanged').toBe(2);
+    expect(blank.unmapped.join(' ')).toMatch(/nothing is mapped to it/);
+
+    // And a mapping that IS set says nothing — an empty field on one record is
+    // a per-person skip, not a campaign that cannot go at all.
+    await saveMapping(templateId, 'leads', { 1: 'field:full_name' });
+    const filled = await previewCampaign({
+      ctx, module: 'leads', audience, templateId, agentName: 'Tester', samples: 10,
+    });
+    expect(filled.unmapped).toEqual([]);
+  });
+
   it('writes nothing while previewing', async () => {
     const { rows } = await db.query(
       `SELECT 1 FROM ipy_campaign_recipient WHERE campaign_id = $1`, [campaignId],

@@ -61,3 +61,27 @@ describe('a WhatsApp provider', () => {
     expect(cloud.capabilities.has('text') && web.capabilities.has('text')).toBe(true);
   });
 });
+
+/*
+  A provider that implements a thing must say so, or the screen refuses it.
+
+  Meta's `listTemplates` reads `GET /{waba-id}/message_templates` — the reason
+  the setup guide asks for a WABA id at all — and Gupshup's reads their own
+  list. Neither declared `templateSync`, so Admin → WhatsApp Templates answered
+  the Sync button with *"whatsapp_meta does not hand its template list back"*,
+  which is simply untrue. Found by pressing the button on 20 September 2026:
+  nothing had ever pressed it, because no provider had ever been connected.
+*/
+describe('a capability is a promise the adapter actually keeps', () => {
+  it('Meta and Gupshup both say they can fetch a template list', async () => {
+    const { metaCloudProvider } = await import('../src/integrations/whatsapp/business/metaCloud.js');
+    const { gupshupProvider } = await import('../src/integrations/whatsapp/business/resellers.js');
+    expect(metaCloudProvider.capabilities.has('templateSync')).toBe(true);
+    expect(gupshupProvider.capabilities.has('templateSync')).toBe(true);
+  });
+
+  it('AiSensy still says it cannot, because it publishes no list', async () => {
+    const { aisensyProvider } = await import('../src/integrations/whatsapp/business/resellers.js');
+    expect(aisensyProvider.capabilities.has('templateSync')).toBe(false);
+  });
+});

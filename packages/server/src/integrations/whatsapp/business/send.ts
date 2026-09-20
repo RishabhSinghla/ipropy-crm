@@ -340,13 +340,23 @@ export async function sendOnBusinessNumber(input: BusinessSendInput): Promise<Bu
   } catch (err) {
     // The failure is on the message, where a rep can see it and press Retry —
     // not only in a log nobody reads.
+    const why = whyItFailed((err as Error).message).slice(0, 500);
     await db.query(
       `UPDATE ipy_message SET status = 'failed', error_message = $2 WHERE id = $1`,
       // Translated where the code is one we know, and never instead of the
       // provider's own words — see `whyItFailed`.
-      [queued!.id, whyItFailed((err as Error).message).slice(0, 500)],
+      [queued!.id, why],
     );
     logger.warn({ err, provider: provider.name }, 'WhatsApp business send failed');
-    throw err;
+    /*
+      The same sentence goes back to the screen, not only onto the row. A
+      provider refusing a message is an outcome a rep has to read — "outside
+      the 24-hour window", "that template is not approved" — and rethrowing the
+      raw error made it an unhandled 500, which the client can only render as
+      *"Something went wrong on our end."* That tells a rep nothing and sends
+      them hunting. Checked in a browser on 20 September 2026: the server knew
+      exactly why and the screen did not.
+    */
+    throw new BadRequestError(why);
   }
 }

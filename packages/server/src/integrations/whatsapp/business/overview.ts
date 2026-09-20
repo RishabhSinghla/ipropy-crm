@@ -71,7 +71,11 @@ export async function whatsAppOverview(): Promise<WhatsAppOverview> {
     `SELECT COUNT(*) FILTER (WHERE m.direction = 'inbound')                        AS inbound,
             COUNT(*) FILTER (WHERE m.direction = 'outbound')                       AS outbound,
             COUNT(*) FILTER (WHERE m.direction = 'outbound' AND m.status = 'failed') AS failed,
-            COUNT(*) FILTER (WHERE m.status IN ('delivered','read'))               AS delivered
+            -- Outbound only. An inbound row is stored 'delivered' the moment it
+            -- arrives, so counting every status made "Reached the phone" larger
+            -- than "Sent" — 17 against 8 on the day this was first opened with a
+            -- provider connected. A delivery receipt is about a message we sent.
+            COUNT(*) FILTER (WHERE m.direction = 'outbound' AND m.status IN ('delivered','read')) AS delivered
        FROM ipy_message m
        JOIN ipy_conversation c ON c.id = m.conversation_id
       WHERE c.channel = 'whatsapp' AND m.created_at >= date_trunc('day', now())`,
