@@ -1,9 +1,9 @@
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { recordStrength, relativeTime, type FieldMeta, type ModuleMeta, type RecordEnvelope, type TimelineEntry } from '@ipropy/shared';
+import { recordStrength, relativeTime, type FieldMeta, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
   ArrowRightLeft, ArrowUpDown, Check, FileText, Link2, MessageCircle, MoreHorizontal,
-  Phone, Send, Sparkles, Star, Trash2, Users,
+  Phone, Sparkles, Star, Trash2, Users,
 } from 'lucide-react';
 import { FieldValue } from './FieldRenderer';
 import { CallButton, CallDispositionProvider } from './CallDisposition';
@@ -14,14 +14,15 @@ import { WhatsAppButton } from './WhatsAppButton';
 import { TagButton, TagChips } from './TagButton';
 import { CallsTab, FilesTab, RecordCollaboratorsPanel, TimelineTab } from '../pages/RecordDetail';
 import { EditableField, isInlineEditable } from './EditableField';
+import { FieldBlock, HeaderFieldStrip, NotesPanel } from './RecordBlocks';
+import { useRecordPanes, type DescribedModule } from '../lib/recordPanes';
 import { invalidateRecordQueries } from '../lib/invalidate';
-import { assignmentField, pipelineFieldOf, subtitleFieldsOf } from '../lib/fields';
 import { ModuleIcon } from './Layout';
 import { Avatar, Badge, ConfirmDialog, Dropdown, DropdownItem, Modal, Spinner } from './ui';
 import { ACTION_BASE, ACTION_CIRCLE, ACTION_REST } from '../lib/actionCircle';
 import { api } from '../lib/api';
 import { cn, restrictionForField } from '../lib/utils';
-import { toast, useApp } from '../lib/store';
+import { toast } from '../lib/store';
 
 type DeskTabKey = 'overview' | 'timeline' | 'matching' | 'files' | 'calls' | 'whatsapp';
 
@@ -30,18 +31,6 @@ type DeskTabKey = 'overview' | 'timeline' | 'matching' | 'files' | 'calls' | 'wh
  * and the two things writing needs — what this profile may do, and which
  * picklist narrows which.
  */
-type DescribedModule = ModuleMeta & {
-  permissions: { view: boolean; create: boolean; edit: boolean; delete: boolean };
-  picklistDependencies: { sourceField: string; targetField: string; mapping: Record<string, string[]> }[];
-  layouts?: { id: string; name: string; type: string; is_default: boolean; config: unknown }[];
-};
-
-/** What the Layout Designer arranged, read the same way the record page reads it. */
-interface DetailLayout {
-  blocks?: { key: string; label: string; columns: number; collapsed?: boolean; fields: string[] }[];
-  headerFields?: string[];
-}
-
 /*
   Where the divider sits, remembered in the browser.
 
@@ -112,20 +101,6 @@ function SplitHandle({ label, onDrag }: { label: string; onDrag: (deltaX: number
   );
 }
 
-/**
- * Header fields the owner asked to read in Basic Information instead.
- *
- * 19 September 2026: "Lost Reason, Contact Type, Unit Number be removed from
- * the header of the split pane on the right side and be moved in the basic
- * information below where they can be inline editable."
- *
- * By field name and not by label, because a label is something an admin
- * renames on a Tuesday and a name is the key everything else in this CRM uses.
- * Contact Type and Unit Number are not listed here — they are whatever an
- * admin flagged as the queue's subtitle, so they are found through that flag
- * rather than named twice.
- */
-const DEMOTED_FROM_HEADER = new Set(['lost_reason']);
 
 /** One choice in the queue's sorting menu: a column to order by, and which way. */
 interface SortChoice {
@@ -196,11 +171,9 @@ export function IpropyWorkspace({
     Wrapping was the old behaviour, and a header that grows to two or three
     rows eats the screen the work happens on. Clipping alone would hide fields
     silently, so the row is measured and a `…` appears when something is out of
-    sight — the cue to go and shorten the list in Admin → Split View.
+    sight — the cue to go and shorten the list in Admin → Split View. That
+    measuring lives in `HeaderFieldStrip` now, shared with the Chats header.
   */
-  const strip = useRef<HTMLDivElement>(null);
-  /** How many of the header's fields fit on the line; the rest are hidden. */
-  const [fits, setFits] = useState(Number.MAX_SAFE_INTEGER);
   const [paneTop, setPaneTop] = useState(0);
   useEffect(() => {
     const measure = (): void => {
@@ -248,175 +221,16 @@ export function IpropyWorkspace({
     });
   }, []);
 
-  const layout = useMemo<DetailLayout>(
-    () => (module.layouts?.find((l) => l.type === 'detail' && l.is_default)?.config ?? {}) as DetailLayout,
-    [module.layouts],
-  );
-  const fieldMap = useMemo(() => new Map(module.fields.map((field) => [field.name, field])), [module.fields]);
-
   /*
-    What Admin → Split View says this module shows, if anything.
+    Which fields this module's panes show — the admin's Split View
+    arrangement, then the Layout Designer's, then the module's own flags.
 
-    Three ordered lists, each of which **wins over the shipped answer only when
-    it is not empty**. That is the whole safety of the setting: a module nobody
-    has arranged behaves exactly as it did before the screen existed, and an
-    admin who clears a list gets the fallback back rather than a blank pane.
+    One hook, because the WhatsApp Chats screen shows the same record beside a
+    conversation and must reach the same answer. A second copy of this
+    reasoning is the mistake this repo keeps finding months later.
   */
-  const panes = useApp((st) => st.user?.ui?.splitView?.[module.name]) ?? null;
-  const pickFields = useMemo(() => (names: string[] | undefined): FieldMeta[] => (names ?? [])
-    .map((name) => fieldMap.get(name))
-    .filter((field): field is FieldMeta => Boolean(field && field.isActive && field.displayType !== 'hidden')),
-  [fieldMap]);
-  const assignedField = useMemo(() => assignmentField(module.fields), [module.fields]);
-  /*
-    Whatever an admin flagged with `config.listSubtitle`, in the order the flag
-    gives: a contact reads `Buyer — 304`, a unit reads its Unit Number. Named
-    by metadata rather than in this file, like every other field here.
-  */
-  const subtitleFields = useMemo(() => {
-    const chosen = pickFields(panes?.queue);
-    return chosen.length ? chosen : subtitleFieldsOf(module.fields);
-  }, [panes?.queue, pickFields, module.fields]);
-  /*
-    The module's own pipeline field — Lead Status on a contact, Property Status
-    on a unit — through the one helper that knows a rename moves a field's name
-    and leaves its column alone. Production's leads module says `status` and
-    has called that field `lead_status` for some time, so matching on the name
-    finds nothing there.
-
-    There is deliberately no fallback guess any more. It used to take the first
-    field whose *name* contained "status", and both modules carry others —
-    `kyc_status` on a contact, `possession_status` on a unit — so a guess that
-    lands on one of those shows every row as blank, which reads as the feature
-    being broken rather than as the wrong field being read.
-  */
-  const statusField = useMemo(() => pipelineFieldOf(module), [module]);
-  const followUpField = useMemo(() => module.fields.find((f) => f.columnName === 'next_followup_at') ?? module.fields.find((f) => /next.*follow.*up/i.test(f.name)), [module.fields]);
-  const phoneField = useMemo(() => module.fields.find((f) => f.uitype === 'phone'), [module.fields]);
+  const { headerFields, blocks, subtitleFields, assignedField, statusField, followUpField, phoneField } = useRecordPanes(module);
   const phoneValue = active && phoneField ? displayOf(active, phoneField) : '';
-
-  /*
-    The header strip: what the Layout Designer put there, plus the phone, the
-    follow-up, the status and the module's own fact when an admin has not named
-    them. Identical to the record page's rule on purpose — an admin arranges a
-    header once, for both screens.
-
-    The assignment field is deliberately **not** here. It goes on the name line
-    instead, between the name and when the record was last touched, which is
-    where the owner asked for it.
-  */
-  const headerFields = useMemo(() => {
-    const chosen = pickFields(panes?.header);
-    if (chosen.length) return chosen.filter((field) => field.name !== assignedField?.name);
-
-    const names: string[] = [...(layout.headerFields ?? [])];
-    for (const field of [phoneField, followUpField, statusField]) {
-      if (field && !names.includes(field.name)) names.push(field.name);
-    }
-    return names
-      .filter((name) => name !== assignedField?.name)
-      .filter((name) => !DEMOTED_FROM_HEADER.has(name))
-      // Contact Type and Unit Number already read on every queue row, under
-      // the name. Repeating them two inches away said the same thing twice
-      // and crowded out the header's job, which is the handful of facts you
-      // act on: who, their number, what is next and where they are up to.
-      .filter((name) => !subtitleFields.some((field) => field.name === name))
-      .map((name) => fieldMap.get(name))
-      .filter((field): field is FieldMeta => Boolean(field && field.isActive && field.displayType !== 'hidden'));
-  }, [panes?.header, pickFields, layout.headerFields, fieldMap, assignedField, phoneField, followUpField, statusField, subtitleFields]);
-
-  /*
-    A window listener is not enough here: the strip also narrows when the
-    queue's divider is dragged, which moves no window. `ResizeObserver` fires
-    on the element itself, so the `…` is right in both cases.
-  */
-  useEffect(() => {
-    const box = strip.current;
-    if (!box) return;
-    /*
-      Which fields fit, counted rather than clipped.
-
-      Clipping alone cut the last one through the middle of a word — "Budg…" —
-      which reads as a broken screen rather than as a full line. The ones that
-      do not fit are made **invisible rather than unmounted**: they keep their
-      space, so the measurement that produced this count stays true and the
-      count cannot oscillate between two answers on every frame.
-    */
-    const measure = (): void => {
-      const width = box.clientWidth;
-      let count = 0;
-      for (const child of Array.from(box.children) as HTMLElement[]) {
-        if (child.offsetLeft + child.offsetWidth > width + 1) break;
-        count += 1;
-      }
-      setFits(count);
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(box);
-    return () => observer.disconnect();
-  }, [headerFields, active?.id]);
-
-  const blocks = useMemo(() => {
-    /*
-      The record's own blocks, as the Layout Designer arranged them, so this
-      pane reads like the record page rather than like a second opinion about
-      the same record. With no layout saved it falls back to every field in
-      sequence, which is what this card used to show.
-    */
-    const identity = new Set(module.labelFields);
-    const usable = (field: FieldMeta | undefined): field is FieldMeta =>
-      Boolean(field && field.isActive && field.displayType !== 'hidden' && field.uitype !== 'autonumber');
-
-    /*
-      An admin's own list is one card in their order. Deliberately flat: the
-      blocks are the Layout Designer's grouping, and a second screen inventing
-      groups of its own would be two answers to "which section is this in".
-    */
-    const chosen = pickFields(panes?.form).filter(usable);
-    if (chosen.length) return [{ key: 'chosen', label: 'Details', columns: 2, fields: chosen }];
-
-    const arranged = (layout.blocks ?? [])
-      .map((block) => ({
-        key: block.key,
-        label: block.label,
-        columns: block.columns,
-        fields: block.fields.map((name) => fieldMap.get(name)).filter(usable),
-      }))
-      .filter((block) => block.fields.length);
-
-    if (arranged.length) {
-      /*
-        A field taken off the header has to land somewhere, or the owner has
-        simply lost it. Lost Reason, Contact Type and Unit Number are header
-        fields on this layout and are not in any block, so demoting them
-        without this would delete them from the screen rather than move them —
-        and a value you can no longer see is one you can no longer edit.
-
-        They go into the first block, which is Basic Information, where
-        `FieldBlock` already renders them inline-editable like everything else.
-      */
-      const placed = new Set(arranged.flatMap((block) => block.fields.map((field) => field.name)));
-      const homeless = [...DEMOTED_FROM_HEADER, ...subtitleFields.map((field) => field.name)]
-        .filter((name) => !placed.has(name))
-        .map((name) => fieldMap.get(name))
-        .filter(usable);
-      if (homeless.length) {
-        arranged[0] = { ...arranged[0]!, fields: [...arranged[0]!.fields, ...homeless] };
-      }
-      return arranged;
-    }
-
-    return [{
-      key: 'all',
-      label: 'Basic Information',
-      columns: 2,
-      fields: module.fields
-        .filter(usable)
-        .filter((field) => !identity.has(field.name))
-        .sort((a, b) => a.sequence - b.sequence),
-    }];
-  }, [panes?.form, pickFields, layout.blocks, fieldMap, module.fields, module.labelFields, subtitleFields]);
 
   /*
     What the queue's one menu can do. Ordering and the follow-up windows are
@@ -425,13 +239,13 @@ export function IpropyWorkspace({
   */
   const sortChoices = useMemo<SortChoice[]>(() => {
     const out: SortChoice[] = [{ key: 'recent', label: 'Recently updated' }];
-    const nameField = module.labelFields.map((name) => fieldMap.get(name)).find(Boolean);
+    const nameField = module.labelFields.map((name) => module.fields.find((f) => f.name === name)).find(Boolean);
     if (nameField) out.push({ key: 'name', label: `${nameField.label} A–Z`, sort: { by: nameField.name, dir: 'asc' } });
     for (const field of subtitleFields) out.push({ key: `subtitle:${field.name}`, label: `${field.label} A–Z`, sort: { by: field.name, dir: 'asc' } });
     if (statusField) out.push({ key: 'status', label: `${statusField.label} A–Z`, sort: { by: statusField.name, dir: 'asc' } });
     if (followUpField) out.push({ key: 'task', label: 'Task, soonest first', sort: { by: followUpField.name, dir: 'asc' } });
     return out;
-  }, [module.labelFields, fieldMap, subtitleFields, statusField, followUpField]);
+  }, [module.labelFields, module.fields, subtitleFields, statusField, followUpField]);
 
   const activeSort = sortChoices.find((choice) => choice.sort && choice.sort.by === sortBy) ?? sortChoices[0]!;
 
@@ -713,40 +527,9 @@ export function IpropyWorkspace({
               Every header value the record page carries, each one typed in
               where it stands. The owner's instruction: "Full of the header
               things phone number, next follow-up all other things be in
-              line editable."
+              line editable." The same strip the WhatsApp chat header shows.
             */}
-            <div className="mt-2 flex items-center gap-2 pb-0.5 text-sm font-medium text-slate-800 dark:text-slate-100">
-              <div ref={strip} data-testid="header-fields" className="flex min-w-0 flex-1 items-center gap-x-3.5 overflow-hidden whitespace-nowrap">
-              {headerFields.map((field, index) => (
-                <span key={field.name} className={cn('inline-flex shrink-0 items-center gap-1', index >= fits && 'invisible')}>
-                  <span className="shrink-0 text-xs font-normal text-muted">{field.label}:</span>
-                  {canEdit && isInlineEditable(field) ? (
-                    <EditableField
-                      module={module.name}
-                      recordId={active.id}
-                      field={field}
-                      value={active.values[field.name]}
-                      display={active.display?.[field.name]}
-                      compact
-                      siblings={active.values}
-                      restrictTo={restrictionForField(module.picklistDependencies, active.values, field.name)}
-                      onSaved={() => invalidateRecordQueries(queryClient, module.name, active.id)}
-                    />
-                  ) : (
-                    <FieldValue field={field} value={active.values[field.name]} display={active.display?.[field.name]} compact />
-                  )}
-                </span>
-              ))}
-              </div>
-              {fits < headerFields.length && (
-                <span
-                  className="shrink-0 cursor-default select-none text-base leading-none tracking-widest text-slate-400"
-                  title="More fields than fit on one line. Choose fewer in Admin → Split View."
-                >
-                  …
-                </span>
-              )}
-            </div>
+            <HeaderFieldStrip module={module} row={active} fields={headerFields} canEdit={canEdit} className="mt-2" />
 
           <nav className="mt-1.5 flex max-w-full overflow-x-auto" aria-label="Record workspace sections">
             <DeskTab active={tab === 'overview'} onClick={() => setTab('overview')}>Overview</DeskTab>
@@ -946,73 +729,6 @@ function StrengthBar({ module, row, className, slim = false }: { module: ModuleM
  * than on its own page. Gating it on that setting is what put an Edit button
  * here, which is the thing the owner asked to be rid of.
  */
-function FieldBlock({ module, title, columns, fields, row, canEdit }: {
-  module: DescribedModule; title: string; columns: number; fields: FieldMeta[]; row: RecordEnvelope; canEdit: boolean;
-}): JSX.Element {
-  const queryClient = useQueryClient();
-  return <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-    <header className="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
-      <p className="text-base font-bold text-slate-900 dark:text-white">{title}</p>
-    </header>
-    <dl className={cn('grid gap-x-8 gap-y-4 p-5', columns >= 3 ? 'sm:grid-cols-3' : columns === 1 ? '' : 'sm:grid-cols-2')}>{fields.map((field) => <div key={field.name}>
-      <dt className="mb-1.5 text-2xs font-bold uppercase tracking-wide text-slate-500">{field.label}{field.isMandatory && <span className="ml-0.5 text-rose-500">*</span>}</dt>
-      {/*
-        The whole cell is the target, not just the value inside it.
-
-        `EditableField` takes the click on its own box, which is only as wide
-        as the value — so on an empty field that box is a dash in the middle of
-        a wide cell and a click anywhere else in it hits nothing at all. That
-        reads as inline editing being broken, which is the opposite of the ask.
-        A click on the cell forwards to the field's own "Change …" control, so
-        there is still exactly one thing that opens an editor.
-      */}
-      <dd
-        className={cn(
-          'min-h-10 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-100',
-          canEdit && isInlineEditable(field) && 'cursor-pointer hover:border-brand-300',
-        )}
-        onClick={(event) => {
-          if (event.target !== event.currentTarget) return;
-          event.currentTarget.querySelector<HTMLButtonElement>('button')?.click();
-        }}
-      >
-        {canEdit && isInlineEditable(field)
-          ? <EditableField
-              module={module.name}
-              recordId={row.id}
-              field={field}
-              value={row.values[field.name]}
-              display={row.display?.[field.name]}
-              siblings={row.values}
-              restrictTo={restrictionForField(module.picklistDependencies, row.values, field.name)}
-              onSaved={() => invalidateRecordQueries(queryClient, module.name, row.id)}
-            />
-          : <FieldValue field={field} value={row.values[field.name]} display={row.display?.[field.name]} compact />}
-      </dd>
-    </div>)}</dl>
-  </section>;
-}
-
-/**
- * The team's notes, beside the record's own fields rather than in a column of
- * their own. Two panes, as the owner asked on 19 September.
- */
-function NotesPanel({ module, record }: { module: string; record: RecordEnvelope }): JSX.Element {
-  const queryClient = useQueryClient();
-  const [note, setNote] = useState('');
-  const { data: entries, isLoading } = useQuery({ queryKey: ['timeline', module, record.id, 'comment'], queryFn: () => api.timeline(module, record.id, ['comment']) });
-  const add = useMutation({
-    mutationFn: () => api.addComment(module, record.id, note.trim()),
-    onSuccess: () => { setNote(''); void queryClient.invalidateQueries({ queryKey: ['timeline', module, record.id] }); toast.success('Note added'); },
-    onError: (error: Error) => toast.error('Could not add note', error.message),
-  });
-  return <section className="h-fit overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-    <header className="flex h-12 items-center gap-2 border-b border-slate-200 px-5 dark:border-slate-800"><FileText className="h-4 w-4 text-brand-600" /><h3 className="font-bold text-slate-900 dark:text-white">Notes</h3></header>
-    <div className="p-4"><textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="Add a note for the team… type @ to notify someone" className="min-h-24 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm outline-none placeholder:text-slate-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-800" /><div className="mt-2 flex items-center justify-between"><span className="text-2xs text-slate-400">⌘↵ to post</span><button disabled={!note.trim() || add.isPending} onClick={() => add.mutate()} className="btn-primary btn-sm"><Send className="h-3.5 w-3.5" />{add.isPending ? 'Posting…' : 'Post'}</button></div></div>
-    <div className="max-h-[25rem] space-y-4 overflow-y-auto border-t border-slate-100 p-5 dark:border-slate-800">{isLoading ? <p className="text-sm text-slate-400">Loading notes…</p> : entries?.length ? entries.map((entry) => <NoteEntry key={entry.id} entry={entry} />) : <div className="py-10 text-center"><FileText className="mx-auto h-9 w-9 text-slate-300" /><p className="mt-3 text-sm font-semibold text-slate-500">No notes yet</p><p className="mt-1 text-xs text-slate-400">Internal team comments appear here.</p></div>}</div>
-  </section>;
-}
-function NoteEntry({ entry }: { entry: TimelineEntry }): JSX.Element { return <article><p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{entry.title}</p><p className="mt-0.5 text-2xs text-slate-400">{entry.actorName ?? 'iPROPY'} · {relativeTime(entry.at)}</p>{entry.body && <p className="mt-1.5 whitespace-pre-wrap text-sm leading-5 text-slate-600 dark:text-slate-300">{entry.body}</p>}</article>; }
 function DeskTab({ active = false, onClick, children }: { active?: boolean; onClick: () => void; children: React.ReactNode }): JSX.Element { return <button onClick={onClick} className={cn('flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-semibold transition-colors', active ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200')}>{children}</button>; }
 /**
  * The record's stage, as the CRM draws a stage everywhere else.

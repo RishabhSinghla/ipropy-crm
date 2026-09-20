@@ -5,7 +5,7 @@ import {
   Building2, CalendarClock, Check, CheckCheck, Clock, Inbox, MailOpen, MessageCircle,
   MoreHorizontal, Paperclip, Search, Send, UserPlus,
 } from 'lucide-react';
-import { relativeTime } from '@ipropy/shared';
+import { relativeTime, type RecordEnvelope } from '@ipropy/shared';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
@@ -13,6 +13,9 @@ import { useFillHeight } from '../lib/fillHeight';
 import { composerMode, displayNumber, outboundTone, wentOut, whyNoTextBox } from '../lib/whatsapp';
 import { Avatar, Dropdown, DropdownItem, EmptyState, Select, Skeleton, Spinner } from '../components/ui';
 import { ACTION_CIRCLE } from '../lib/actionCircle';
+import { ChatRecordPane, ChatRecordPaneSkeleton, useChatRecord } from '../components/ChatRecordPane';
+import { HeaderFieldStrip } from '../components/RecordBlocks';
+import { useRecordPanes, type DescribedModule } from '../lib/recordPanes';
 import { readMessageMedia, WhatsAppMedia } from '../components/WhatsAppMedia';
 import { SharePropertyDialog } from '../components/SharePropertyDialog';
 
@@ -109,6 +112,15 @@ export default function BusinessChats(): JSX.Element {
   const active = (conversations ?? []).find((row) => row.id === activeId) ?? picked;
   /** What to call them: the CRM's name for this person, else the number. */
   const who = active ? (active.recordLabel ?? active.contactName ?? active.handle) : '';
+  /*
+    The record behind this conversation, on the same query keys the record
+    page and the split view use — so an edit made here refreshes there, and
+    opening one warms the other.
+  */
+  const { module: recordModule, record: recordRow } = useChatRecord(
+    active?.recordModule ?? null,
+    active?.recordId ?? null,
+  );
   const messages = (thread?.messages ?? []) as unknown as BizMessage[];
   /*
     **Both halves, not just the clock.** A free reply needs an open 24-hour
@@ -308,6 +320,19 @@ export default function BusinessChats(): JSX.Element {
                     Facts, not controls: the controls are the circles beside
                     them.
                   */}
+                  {/*
+                    The record's own facts, the same strip the split view's
+                    header carries — Contact Type, Mobile, Unit Number,
+                    Budget, Next Follow-up, Lead Status, whatever the admin
+                    arranged. The owner asked for exactly this on 20 September:
+                    *"I need those things in header which are there in
+                    screenshot 2"*. Editable where they stand, so a budget can
+                    be corrected mid-conversation without leaving it.
+                  */}
+                  {recordModule && recordRow && (
+                    <ChatHeaderFields module={recordModule} record={recordRow} />
+                  )}
+
                   <div className="mt-1 flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-xs">
                     <span className="shrink-0 font-semibold text-slate-600 dark:text-slate-300">{displayNumber(active.handle, active.waId)}</span>
                     <span className="text-slate-300">·</span>
@@ -591,62 +616,30 @@ export default function BusinessChats(): JSX.Element {
         />
       )}
 
-      {/* The CRM, linked rather than copied */}
-      {active && (
-        <aside className="hidden w-72 shrink-0 flex-col gap-3 overflow-y-auto border-l border-slate-200 bg-slate-50 p-3 xl:flex dark:border-slate-800 dark:bg-slate-950/40">
-          {/* Cards, the same ones the record page uses, so this column reads
-              as part of the CRM rather than as a sidebar bolted to a chat. */}
-          <div className="card p-3">
-            <h3 className="mb-2 text-2xs font-bold uppercase tracking-wider text-muted">Contact</h3>
-            {active.recordId && active.recordModule ? (
-              <>
-                <Link
-                  to={`/${active.recordModule}/${active.recordId}`}
-                  className="flex items-center gap-2.5 rounded-lg p-1 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
-                >
-                  <Avatar name={who} size={36} />
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-bold text-slate-900 dark:text-slate-100">{active.recordLabel}</span>
-                    <span className="block text-2xs text-muted">Open the record</span>
-                  </span>
-                </Link>
-                <p className="mt-2 text-2xs leading-4 text-muted">
-                  Status, requirement, budget, follow-ups and notes live on the record — one copy,
-                  so nothing here can disagree with it.
-                </p>
-              </>
-            ) : (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-                <p className="font-semibold">Nobody in the CRM holds this number.</p>
-                <p className="mt-1">Create a contact or link an existing one from the Chats list — the CRM never
-                  makes a second contact on its own.</p>
-              </div>
-            )}
-          </div>
+      {/*
+        The contact itself, not a card about it.
 
-          <div className="card p-3">
-            <h3 className="mb-2 text-2xs font-bold uppercase tracking-wider text-muted">This chat</h3>
-            <dl className="space-y-1.5 text-xs">
-              <div className="flex items-center justify-between gap-2">
-                <dt className="text-muted">Number</dt>
-                <dd className="truncate font-semibold">{displayNumber(active.handle, active.waId)}</dd>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <dt className="text-muted">Assigned to</dt>
-                <dd className="truncate font-semibold">{active.assignedName ?? 'Nobody'}</dd>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <dt className="text-muted">State</dt>
-                <dd className="truncate font-semibold capitalize">{active.status}</dd>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <dt className="text-muted">Free replies</dt>
-                {/* The 24-hour window, said in words. "Window" is WhatsApp's
-                    vocabulary, not a rep's. */}
-                <dd className="truncate font-semibold">{mode === 'text' ? 'Allowed now' : 'Template only'}</dd>
-              </div>
-            </dl>
-          </div>
+        **20 September 2026, the owner:** *"I don't want to switch screen
+        during whatsapp chat and then and there I want all info of that record
+        everything in the right pane."* So this is the record's own field
+        cards and notes box — the same components the split view renders, from
+        the same metadata — every value editable where it stands.
+      */}
+      {active && (
+        <aside className="hidden w-[24rem] shrink-0 flex-col overflow-y-auto border-l border-slate-200 bg-slate-50 p-3 xl:flex 2xl:w-[28rem] dark:border-slate-800 dark:bg-slate-950/40">
+          {active.recordId && active.recordModule ? (
+            recordModule && recordRow
+              ? <ChatRecordPane module={recordModule} record={recordRow} />
+              : <ChatRecordPaneSkeleton />
+          ) : (
+            <div className="card border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+              <p className="font-semibold">Nobody in the CRM holds this number.</p>
+              <p className="mt-1">
+                Create a contact or link an existing one — the CRM never makes a second
+                contact on its own.
+              </p>
+            </div>
+          )}
         </aside>
       )}
     </div>
@@ -708,5 +701,28 @@ function ChatQueueRow({ row, active, onSelect }: {
         )}
       </span>
     </button>
+  );
+}
+
+/**
+ * The record's fact strip in the chat header.
+ *
+ * A component of its own only because `useRecordPanes` is a hook and the
+ * header is rendered inside a conditional — calling it there would break the
+ * rules of hooks. It renders the identical strip the split view's header does.
+ */
+function ChatHeaderFields({ module, record }: {
+  module: DescribedModule; record: RecordEnvelope;
+}): JSX.Element | null {
+  const { headerFields } = useRecordPanes(module);
+  if (!headerFields.length) return null;
+  return (
+    <HeaderFieldStrip
+      module={module}
+      row={record}
+      fields={headerFields}
+      canEdit={record.can?.edit ?? module.permissions.edit}
+      className="mt-1"
+    />
   );
 }

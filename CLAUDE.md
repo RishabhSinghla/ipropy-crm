@@ -1203,6 +1203,43 @@ the same button looks different depending on which page you arrived from. The `*
 string stays separate from the shape because a button that is *on* needs its own
 background, and a later `bg-*` in the same class list does not win.
 
+**The whole contact sits beside the conversation now, and one set of
+components draws it everywhere.** 20 September 2026, the owner: *"I don't
+need it there instead all those details … I do not want to switch screen
+during whatsapp chat and then and there I want all info of that record
+everything in the right pane."* The pane used to hold two summary cards and a
+link, so answering "what is their budget" meant leaving the chat and coming
+back to two new messages.
+
+Three pieces came out of `IpropyWorkspace.tsx` rather than being copied, which
+is the whole point:
+
+* **`lib/recordPanes.ts` — `useRecordPanes(module)`** decides which fields a
+  record's header strip and field cards show: Admin → Split View first, the
+  Layout Designer second, the module's own flags last. **No screen names a
+  field.** A copy of this reasoning would drift, and the way it drifts is that
+  one screen learns about a new Split View setting and the other does not, so
+  the same record reads differently depending on where you came from.
+* **`components/RecordBlocks.tsx` — `FieldBlock`, `NotesPanel`,
+  `HeaderFieldStrip`.** The strip owns its own `ResizeObserver` and the
+  count-what-fits rule (invisible rather than unmounted, or the measurement
+  that produced the count stops being true). `data-testid="header-fields"` is
+  still on it, so `e2e/splitViewHeader.spec.ts` measures the same element.
+* **`components/ChatRecordPane.tsx`** puts those cards in the Chats right
+  column, on **the same query keys** the record page and the split view use —
+  so an edit made in the chat invalidates the record page, and opening one
+  warms the other.
+
+The chat header carries the same strip (`ChatHeaderFields`), which is a
+component of its own only because `useRecordPanes` is a hook and the header
+renders inside a conditional.
+
+**Unproven in a browser**, like everything else on this screen: the Chats
+pane only renders when a provider is connected and none is on a developer's
+database. What is proved is that the split view is unchanged — typecheck,
+967 unit tests and the full build are green, and its specs still find the
+strip they measure.
+
 **The inbox is shared, and who sees what is the rule that matters.** An admin sees every
 thread; everybody else sees their own and the unassigned queue, and **not** one another rep
 is working — two people answering one customer is what a shared inbox exists to prevent.
