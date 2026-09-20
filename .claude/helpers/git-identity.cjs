@@ -89,3 +89,4 @@ try {
   // state this repo was already in, and it is not worth a failed start.
   process.exit(0);
 }
+
