@@ -42,9 +42,9 @@ jobs:
            GROUP BY 1, 2 ORDER BY 1, 3 DESC;
 
           \echo '=== has a template EVER been delivered? ==='
-          SELECT count(*) FILTER (WHERE template_name IS NOT NULL)            AS template_attempts,
-                 count(*) FILTER (WHERE template_name IS NOT NULL
-                                    AND status IN ('sent','delivered','read')) AS template_arrived
+          SELECT count(*) FILTER (WHERE m.template_name IS NOT NULL)          AS template_attempts,
+                 count(*) FILTER (WHERE m.template_name IS NOT NULL
+                                    AND m.status IN ('sent','delivered','read')) AS template_arrived
             FROM ipy_message m JOIN ipy_conversation c ON c.id = m.conversation_id
            WHERE c.channel = 'whatsapp' AND m.direction = 'outbound';
 
@@ -72,16 +72,31 @@ jobs:
            WHERE c.channel = 'whatsapp'
              AND NOT EXISTS (SELECT 1 FROM ipy_message m WHERE m.conversation_id = c.id);
 
-          \echo '=== threads whose handle is not a phone number (groups, ids) ==='
-          SELECT handle, record_id IS NOT NULL AS linked, last_message_at
+          -- The business inbox shows only `wa_account_id IS NULL`, so the
+          -- imported personal-WhatsApp threads should all sit on the other
+          -- side of that line. This proves it rather than assuming it: a
+          -- group id showing up in the team's queue is the failure to catch.
+          \echo '=== which road each thread is on (business inbox = no account) ==='
+          SELECT (wa_account_id IS NULL) AS in_the_business_inbox,
+                 count(*),
+                 count(*) FILTER (WHERE handle !~ '^[0-9]{10}$') AS odd_handles
+            FROM ipy_conversation WHERE channel = 'whatsapp'
+           GROUP BY 1 ORDER BY 1 DESC;
+
+          \echo '=== every thread the business inbox actually shows ==='
+          SELECT handle, record_id IS NOT NULL AS linked, unread_count, last_message_at
             FROM ipy_conversation
-           WHERE channel = 'whatsapp' AND handle !~ '^[0-9]{10}$'
-           ORDER BY last_message_at DESC NULLS LAST LIMIT 20;
+           WHERE channel = 'whatsapp' AND wa_account_id IS NULL
+           ORDER BY last_message_at DESC NULLS LAST;
 
           \echo '=== templates: can the CRM see them, and are the blanks mapped? ==='
+          -- Every template read "0 blanks" on the first run, which is either
+          -- ten templates with no placeholders or ten templates whose wording
+          -- never synced. The length of the body is what tells the two apart.
           SELECT name, status,
+                 length(coalesce(body_text, '')) AS wording_length,
                  (SELECT count(*) FROM jsonb_object_keys(variable_map)) AS blanks_mapped,
-                 (length(body_text) - length(replace(body_text, '{{', ''))) / 2 AS blanks_in_wording
+                 (length(coalesce(body_text, '')) - length(replace(coalesce(body_text, ''), '{{', ''))) / 2 AS blanks_in_wording
             FROM ipy_whatsapp_template ORDER BY name;
 
           \echo '=== who is actually using the inbox ==='
