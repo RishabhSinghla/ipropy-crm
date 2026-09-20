@@ -20,6 +20,7 @@ import { metadataRouter } from './api/routes/metadata.js';
 import { recordsRouter } from './api/routes/records.js';
 import { viewsRouter } from './api/routes/views.js';
 import { dashboardsRouter } from './api/routes/dashboards.js';
+import { reportsRouter } from './api/routes/reports.js';
 import { adminRouter } from './api/routes/admin.js';
 import { commsRouter } from './api/routes/comms.js';
 import { whatsappBusinessRouter } from './api/routes/whatsappBusiness.js';
@@ -299,6 +300,7 @@ export function createApp(): Express {
   app.use('/api/meta', metadataRouter);
   app.use('/api/views', viewsRouter);
   app.use('/api/dashboards', dashboardsRouter);
+  app.use('/api/reports', reportsRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api/comms', commsRouter);
   // The official business number, and the only WhatsApp route there is. The

@@ -130,6 +130,21 @@ test.describe('accessibility', () => {
     expect(violations, summarise(violations)).toEqual([]);
   });
 
+  test('reports has no violations', async ({ page }) => {
+    // Both halves: a chart is the easiest place in this CRM to fail a contrast
+    // or a focus rule, and the WhatsApp tab draws a second one.
+    await page.goto('/reports');
+    await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('.recharts-surface').first()).toBeVisible({ timeout: 20_000 });
+    const records = await scan(page);
+    expect(records.violations, summarise(records.violations)).toEqual([]);
+
+    await page.getByRole('button', { name: 'WhatsApp' }).click();
+    await expect(page.getByText(/sent · .* received|No messages yet/)).toBeVisible({ timeout: 20_000 });
+    const messaging = await scan(page);
+    expect(messaging.violations, summarise(messaging.violations)).toEqual([]);
+  });
+
   test('the WhatsApp link screen has no violations', async ({ page }) => {
     await page.goto('/settings');
     await page.getByRole('button', { name: 'WhatsApp' }).click();

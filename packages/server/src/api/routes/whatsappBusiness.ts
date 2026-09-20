@@ -71,6 +71,24 @@ whatsappBusinessRouter.use(requireAuth, blockApiKey);
  * send free text (AiSensy's campaign API is templates only) should show the
  * template picker rather than a message box that fails on send.
  */
+/**
+ * What the number did — the last item on the owner's list for this route.
+ *
+ * Counted from the CRM's own rows, never the vendor's dashboard, and under the
+ * inbox's own visibility rule so a rep cannot read off how many conversations
+ * their colleagues are having.
+ */
+whatsappBusinessRouter.get('/report', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const days = Number(req.query.days ?? 30);
+  const { messagingReport } = await import('../../integrations/whatsapp/business/report.js');
+  res.json(await messagingReport({
+    userId: user.id,
+    isAdmin: user.isAdmin,
+    days: Number.isFinite(days) ? days : 30,
+  }));
+}));
+
 whatsappBusinessRouter.get('/status', asyncHandler(async (_req, res) => {
   const provider = activeBusinessProvider();
   if (!provider) {

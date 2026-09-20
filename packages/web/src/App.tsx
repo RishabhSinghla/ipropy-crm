@@ -29,6 +29,7 @@ const SharedMatchesPage = lazy(() => import('./pages/SharedMatches'));
 const PublicFormPage = lazy(() => import('./pages/PublicForm'));
 const SiteCapture = lazy(() => import('./pages/SiteCapture'));
 const SettingsPage = lazy(() => import('./pages/Settings'));
+const ReportsPage = lazy(() => import('./pages/Reports'));
 const AdminPage = lazy(() => import('./pages/admin/Admin'));
 
 function RequireAuth({ children }: { children: JSX.Element }): JSX.Element {
@@ -103,6 +104,9 @@ export default function App(): JSX.Element {
               <Route path="capture" element={<SiteCapture />} />
 
               <Route path="settings" element={<SettingsPage />} />
+              {/* Above the generic `:module` route, like /chats: otherwise
+                  "reports" is looked up as a module and 404s. */}
+              <Route path="reports" element={<ReportsPage />} />
               {/* The official business number's shared inbox. Above the generic
                   `:module` route, which would otherwise treat "chats" as a
                   module name and 404 on the metadata lookup. It is no longer a

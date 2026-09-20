@@ -6,7 +6,7 @@ import { waDigits } from '../src/lib/whatsapp';
 describe('arrangeHeaderTabs', () => {
   it('ships Dashboard, the modules and Site visit when nothing is arranged', () => {
     const tabs = arrangeHeaderTabs(null, ['leads', 'properties']);
-    expect(tabs.map((t) => t.kind)).toEqual(['dashboard', 'module', 'module', 'capture']);
+    expect(tabs.map((t) => t.kind)).toEqual(['dashboard', 'module', 'module', 'reports', 'capture']);
   });
 
   /*
@@ -22,7 +22,24 @@ describe('arrangeHeaderTabs', () => {
       { kind: 'module', value: 'leads' },
     ] as unknown as HeaderTab[];
     const tabs = arrangeHeaderTabs(saved, ['leads']);
-    expect(tabs.map((t) => t.kind)).toEqual(['dashboard', 'module']);
+    expect(tabs.map((t) => t.kind)).toEqual(['dashboard', 'module', 'reports']);
+  });
+
+  /*
+    The other half of the same rule, and the reason it is written down: an
+    arrangement saved before Reports existed — which is every arrangement on
+    production — cannot have meant to leave it out, so it is appended rather
+    than being the one screen nobody can reach.
+  */
+  it('appends Reports to an arrangement saved before the page existed', () => {
+    const saved = [{ kind: 'dashboard' }, { kind: 'module', value: 'leads' }] as HeaderTab[];
+    expect(arrangeHeaderTabs(saved, ['leads']).some((t) => t.kind === 'reports')).toBe(true);
+  });
+
+  it('does not add a second Reports when the arrangement already names it', () => {
+    const saved = [{ kind: 'reports' }, { kind: 'dashboard' }] as HeaderTab[];
+    const tabs = arrangeHeaderTabs(saved, []);
+    expect(tabs.filter((t) => t.kind === 'reports')).toHaveLength(1);
   });
 
   it('still appends a module the arrangement does not name', () => {

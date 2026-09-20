@@ -908,6 +908,39 @@ export const api = {
   updateView: (module: string, id: string, data: Record<string, unknown>) => put(`/api/views/${module}/${id}`, data),
   deleteView: (module: string, id: string) => del(`/api/views/${module}/${id}`),
 
+  // --- reports ------------------------------------------------------------
+  waBizReport: (days: number) => get<{
+    days: number;
+    byDay: { day: string; inbound: number; outbound: number }[];
+    outcomes: { status: string; count: number }[];
+    campaigns: { id: string; name: string; status: string; sent: number; failed: number; skipped: number; pending: number }[];
+    totals: { inbound: number; outbound: number; conversations: number };
+  }>(`/api/whatsapp-business/report?days=${days}`),
+  reports: () => get<{
+    id: string; name: string; description: string | null; module: string; type: string;
+    config: Record<string, unknown>; isShared: boolean; isMine: boolean;
+  }[]>('/api/reports'),
+  runReport: (type: string, config: Record<string, unknown>) =>
+    post<Record<string, unknown>>('/api/reports/run', { type, config }),
+  createReport: (data: Record<string, unknown>) => post<{ id: string; isShared: boolean }>('/api/reports', data),
+  updateReport: (id: string, data: Record<string, unknown>) =>
+    patch<{ id: string; isShared: boolean }>(`/api/reports/${id}`, data),
+  deleteReport: (id: string) => del(`/api/reports/${id}`),
+  /**
+   * The answer on screen, as a spreadsheet.
+   *
+   * Through `request` rather than a bare `fetch`, so it carries the session and
+   * survives an expired token like every other call; and through `deliverFile`,
+   * because an `<a download>` does nothing at all inside the phone app.
+   */
+  exportReport: async (type: string, config: Record<string, unknown>, title: string) => {
+    const res = await request<Response>('/api/reports/export', {
+      method: 'POST', body: { type, config, title }, raw: true,
+    });
+    const { deliverFile } = await import('./nativeActions');
+    await deliverFile(await res.blob(), `${title || 'report'}.csv`);
+  },
+
   // --- dashboards --------------------------------------------------------
   dashboards: () => get<(Dashboard & { canEdit: boolean })[]>('/api/dashboards'),
   dashboard: (id: string) => get<Dashboard & { canEdit: boolean }>(`/api/dashboards/${id}`),

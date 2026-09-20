@@ -5,7 +5,7 @@ import { relativeTime, type HeaderTab } from '@ipropy/shared';
 import {
   AtSign, Bell, Cake, Check, Facebook, Flame, Globe, Instagram, Linkedin, Lock, LogOut, Menu,
   MessageCircle, Moon, Search, Settings, Shield, Sparkles, Sun, Twitter, Upload, X, Youtube,
-  LayoutDashboard, MapPin, Building2, Plus, ChevronDown,
+  BarChart3, LayoutDashboard, MapPin, Building2, Plus, ChevronDown,
 } from 'lucide-react';
 import { applyBrandColour, toast, useApp } from '../lib/store';
 import { api, authedFileUrl, type ModuleSummary, type SearchHit } from '../lib/api';
@@ -389,6 +389,12 @@ function ModuleSwitcher({
         icon: <MapPin className="h-4 w-4" />, badge: undefined, external: false,
       }];
     }
+    if (t.kind === 'reports') {
+      return [{
+        key, to: '/reports', label: t.label ?? 'Reports',
+        icon: <BarChart3 className="h-4 w-4" />, badge: undefined, external: false,
+      }];
+    }
     if (t.kind === 'link') {
       return [{
         key, to: t.value ?? '#', label: t.label ?? t.value ?? '',
@@ -597,6 +603,7 @@ function MobileNav({
           </div>
           <div className="space-y-0.5">
             <p className="mb-1 px-3 text-2xs font-semibold uppercase tracking-wider text-muted">Tools</p>
+            <DrawerLink to="/reports" icon="bar-chart-3" label="Reports" />
             <DrawerLink to="/settings" icon="settings" label="Settings" />
           </div>
         </nav>

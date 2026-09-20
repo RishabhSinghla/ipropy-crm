@@ -1,6 +1,6 @@
 import type { HeaderTab } from '@ipropy/shared';
 
-const KINDS = new Set<HeaderTab['kind']>(['dashboard', 'capture', 'module', 'link']);
+const KINDS = new Set<HeaderTab['kind']>(['dashboard', 'capture', 'module', 'reports', 'link']);
 
 /**
  * The header's tabs: the admin's arrangement, with nothing orphaned.
@@ -16,6 +16,7 @@ export function arrangeHeaderTabs(arranged: HeaderTab[] | null, moduleNames: str
     return [
       { kind: 'dashboard' as const },
       ...moduleNames.map((name) => ({ kind: 'module' as const, value: name })),
+      { kind: 'reports' as const },
       { kind: 'capture' as const },
     ];
   }
@@ -38,6 +39,11 @@ export function arrangeHeaderTabs(arranged: HeaderTab[] | null, moduleNames: str
     out. Chats had one until 19 September 2026, when the header entry was
     removed on the owner's instruction — its page is still reached from the
     WhatsApp icon beside a number.
+
+    Reports is the line that rule was written for: production's arrangement was
+    saved before the page existed, so without this it would be the one screen
+    nobody could reach.
   */
+  if (!placed.some((t) => t.kind === 'reports')) placed.push({ kind: 'reports' as const });
   return placed;
 }

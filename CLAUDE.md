@@ -1288,7 +1288,8 @@ not the same decision.
 Migration `161`. Admin → Campaigns. **Never exercised against a real provider**, like
 everything else on this route: what is proved is the ceiling, the freeze, the
 once-per-number rule, the skip reasons, and the screen refusing to offer a Send button
-before a preview (`e2e/campaigns.spec.ts`). **Still to build: reports.**
+before a preview (`e2e/campaigns.spec.ts`). Reports followed on 20 September — see
+**Reports** below.
 
 ## Photos, documents and voice notes
 
@@ -1399,7 +1400,8 @@ screen only renders when a provider is connected, and none is. Proved instead ag
 real database — the wording, the label, the revoke-on-failure, the permission refusal and
 both follow-up guards (7 tests).
 
-**Still to build, in his order:** campaigns, then reports.
+**His order for this route is done:** the inbox, templates, media, sharing a unit,
+campaigns, and reports.
 
 **The avatar on the row stayed, and a percentage chip that replaced it was rolled back the
 same day** (18 September). The owner asked for the chip, saw it on production, and asked for
@@ -1435,6 +1437,78 @@ during the handshake after a scan and cannot be re-requested; Baileys must be on
 ago; and pacing belongs in the CRM, never in a laptop script that forgets on restart. It
 must also decide, up front, that a business CRM has no business storing a rep's personal
 chats.
+
+## Reports
+
+**20 September 2026, the owner: "now start reports"** — the last item in his own
+order for this phase, after campaigns.
+
+**A report is a saved `WidgetConfig`, and that is the whole design.** The engine to
+answer one already existed: `core/analytics/widgets.ts` runs a config against any
+module, through the same permission-scoped SQL every list uses, and that is what a
+dashboard tile is. What was missing was somewhere to *keep* a question away from a
+dashboard's grid. A second query engine for reporting would have drifted from the
+first the day somebody deleted a field.
+
+* **Nothing is cached, deliberately.** `ipy_report` (migration `162`) stores the
+  question; running it is a live query **as the person asking**. A shared report
+  opened by a manager and by a rep is one question over two different sets of
+  records — which is what "shared" has to mean in a CRM with a role hierarchy. A
+  stored total would be one number for everybody, which is a permissions leak
+  wearing a chart. `tests/integration/reports.test.ts` proves the two answers differ.
+* **Sharing is the same decision as sharing a dashboard**, so it is the same
+  capability (`dashboards.share`) rather than a new one. A new capability is held
+  by nobody until an admin ticks it on every profile, so on the day it shipped the
+  feature would read as broken.
+* **The export is the answer, not the records behind it.** "Contacts by source"
+  exports as five lines. Exporting the records is what the list's own export is
+  for, and that is gated on `records.export`; this is not a way round it, because
+  a count of records is not the records. Values are prefixed against spreadsheet
+  formula injection and the file carries a BOM, or Excel reads a Devanagari name
+  as mojibake and the file looks corrupt.
+* **The screen is one sentence:** *how many / total of / average of — contacts —
+  grouped by — status — this month*, then a shape (bars, pie, over time, table,
+  one number). It answers **before** anybody configures it: a report page that
+  opens empty asking for four choices is one nobody uses.
+
+**`ChartFrame`, `SeriesSummary` and `formatValue` moved out of `Dashboard.tsx`**
+into `components/ChartFrame.tsx`. Copying them would have been quicker and is the
+mistake this repo keeps finding months later — the accessibility handling in
+`ChartFrame` is subtle (recharts renders unlabelled `<path role="img">` and
+re-adds `tabindex` on every resize), and a second copy would drift from it in
+silence.
+
+**Reports had to be appended to the header arrangement, and that line is the one
+the Chats note predicted.** Production's saved arrangement was written before this
+page existed, so without `arrangeHeaderTabs` appending a `reports` entry it would
+have been the one screen nobody could reach — invisible in exactly the way Chats
+was. It is in the drawer too, because the switcher is `lg:block` and does not exist
+below 1024px.
+
+### The WhatsApp half of it
+
+The second tab answers the three questions somebody actually asks of the business
+number: how much came in and went out per day, what happened to the messages sent
+(delivered, read, failed), and how each campaign ended.
+
+* **Counted from the CRM's own rows, never a vendor dashboard** — the rule this
+  whole phase was built on, and why the numbers survive changing provider.
+* **Who may count is who may read.** `visibility()` in `business/inbox.ts` is
+  exported and reused rather than copied: an admin counts every thread, everybody
+  else counts their own and the unassigned queue. A report that counted everything
+  would tell a rep exactly how many conversations their colleagues are having,
+  which is the thing the shared inbox deliberately does not show. Campaigns are an
+  admin-only block for the same reason.
+* Rule 8's cousin again: the day window is `($n::text || ' days')::interval`, cast
+  at the point of use, because a bare parameter beside `interval` deduces two types
+  and Postgres refuses the whole statement.
+
+Proved by `tests/integration/reports.test.ts` (5), `e2e/reports.spec.ts` (4,
+including that the page is reachable from the navigation rather than only by URL)
+and an a11y scan of both tabs in both themes. **What has never been seen is a
+messaging report with real outbound traffic**, because nothing has ever been sent
+on the business number — the tab reads from two inbound days on a developer's
+database.
 
 ## Tags: what they count, where they show, and which module they belong to
 

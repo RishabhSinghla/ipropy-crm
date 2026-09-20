@@ -1,6 +1,6 @@
 import { type JSX, useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Globe, GripVertical, LayoutDashboard, MapPin, MessageCircle, Plus, Save, Trash2 } from 'lucide-react';
+import { BarChart3, Globe, GripVertical, LayoutDashboard, MapPin, MessageCircle, Plus, Save, Trash2 } from 'lucide-react';
 import type { HeaderTab } from '@ipropy/shared';
 import { api } from '../../lib/api';
 import { toast } from '../../lib/store';
@@ -86,6 +86,7 @@ export default function HeaderTabsAdmin(): JSX.Element {
     switch (t.kind) {
       case 'dashboard': return t.label ?? 'Dashboard';
       case 'capture': return t.label ?? 'Site visit';
+      case 'reports': return t.label ?? 'Reports';
       case 'module': {
         const m = entityModules.find((x) => x.name === t.value);
         return t.label ?? m?.label ?? t.value ?? 'Module';
@@ -120,6 +121,7 @@ export default function HeaderTabsAdmin(): JSX.Element {
             <span key={i} className="flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1 text-sm font-medium text-slate-700 shadow-sm dark:bg-slate-900 dark:text-slate-200">
               {t.kind === 'dashboard' && <LayoutDashboard className="h-3.5 w-3.5" />}
               {t.kind === 'capture' && <MapPin className="h-3.5 w-3.5" />}
+              {t.kind === 'reports' && <BarChart3 className="h-3.5 w-3.5" />}
               {t.kind === 'module' && <Globe className="h-3.5 w-3.5 text-slate-400" />}
               {t.kind === 'link' && <Globe className="h-3.5 w-3.5 text-slate-400" />}
               {labelFor(t)}
@@ -145,6 +147,7 @@ export default function HeaderTabsAdmin(): JSX.Element {
                 options={[
                   { value: 'dashboard', label: 'Dashboard' },
                   { value: 'capture', label: 'Site visit' },
+                  { value: 'reports', label: 'Reports' },
                   { value: 'module', label: 'A module' },
                   { value: 'link', label: 'A link' },
                 ]}

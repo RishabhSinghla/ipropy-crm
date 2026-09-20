@@ -47,8 +47,12 @@ export interface InboxConversation {
  * looking at an empty inbox. That is CLAUDE.md rule 8, and this is the fifth
  * time this codebase has met it; the integration test above is what caught it
  * here rather than production.
+ *
+ * Exported, because the messaging report has to answer "how many" under the
+ * same rule that decides "which": two copies would be two different answers to
+ * one question about the same threads.
  */
-function visibility(userId: string, isAdmin: boolean, nextIndex: number): {
+export function visibility(userId: string, isAdmin: boolean, nextIndex: number): {
   clause: string; params: unknown[];
 } {
   return isAdmin
