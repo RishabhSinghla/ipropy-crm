@@ -741,6 +741,54 @@ complete and unbuilt.
 
 ---
 
+## Two developers, one repo, and whose Claude made the commit
+
+**20 September 2026, the owner:** *"I see my name everywhere why not other dev name
+so we get to know this deployment to prod be his code or my code."*
+
+Both developers work from their own Claude Code account, and every commit read
+`Claude <noreply@anthropic.com>` — so the commit list, the deployments page and
+`git log` all said `claude` for both of them, and nothing said whose change went live.
+
+`CLAUDE_CODE_USER_EMAIL` is the one thing that genuinely differs between the two
+sessions, so `.claude/helpers/git-identity.cjs` (a SessionStart hook) reads it and
+sets `user.name` / `user.email` **repo-locally** — not globally, because this is the
+only repo the two accounts share and a global change would follow a session into
+somebody else's work. Adding a teammate is one line in its `PEOPLE` table; an account
+nobody has added still gets a distinct name derived from its address rather than a
+wrong one, because a commit attributed to the wrong person is worse than one
+attributed to an email. The name keeps "(via Claude)" on purpose — a log that reads
+as if a person typed every line misleads whoever reads it next.
+
+**The GitHub "Verified" tick is given up, and it was a decision rather than an
+oversight.** That badge checks the *committer* against the key that signed the
+commit, and these are SSH-signed by the Claude account's key. Measured both ways
+rather than assumed:
+
+| what changed | GitHub links it to | verification |
+|---|---|---|
+| author **and** committer | the developer | `false` — `unknown_key` |
+| author only | the developer | `true` — `valid` |
+
+The second row is strictly better and is **not reachable automatically**: git has no
+`committer.name` config key — it reads `GIT_COMMITTER_*` from the environment and
+falls back to `user.*` — and the shells this tool runs are non-interactive and source
+no profile, so there is nowhere to put those exports that every commit would read.
+A `.bashrc` block was tried and did nothing. A name that is always right beat a tick
+that appears only when somebody remembers a prefix. `main` does not require signed
+commits (an unverified one pushed cleanly), so nothing breaks. To have both on one
+commit: `GIT_COMMITTER_NAME=Claude GIT_COMMITTER_EMAIL=noreply@anthropic.com git commit …`
+
+**What this does not fix, and cannot from here:** the *deployments* page says
+"Deployed by RishabhSinghla" on every row regardless. That is Render's GitHub
+integration acting under whoever authorised it, not anything this repo controls. The
+commit each row links to now carries the right author, which is the readable half.
+
+**And the bug this file caused on its way in, because it is the house pattern:** the
+hook wrapped everything in a `try` that exited 0 silently, so when an edit removed the
+name table it looked like it had run while every commit still said `Claude`. A hook is
+the easiest place in the repo for a silent failure to hide. It says why it failed now.
+
 ## Connected apps (MCP)
 
 `packages/mcp` exposes the CRM to Claude, ChatGPT or any MCP client. It holds **no**

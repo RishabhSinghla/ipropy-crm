@@ -3,9 +3,9 @@
  * Make a commit say which developer's Claude made it.
  *
  * Two people work on this repo, each from their own Claude Code account, and
- * every session commits as `Claude <noreply@anthropic.com>` — so GitHub's
+ * every session committed as `Claude <noreply@anthropic.com>` — so GitHub's
  * commit list, the deployments page and `git log` all read `claude` for both
- * of them. Nobody can tell whose change went to production, which is the
+ * of them. Nobody could tell whose change went to production, which is the
  * question you actually ask when something breaks.
  *
  * Claude Code hands every session the signed-in account's address in
@@ -16,18 +16,22 @@
  * committed) rather than globally: this is the only repo two accounts share,
  * and a global change would follow a session into somebody else's work.
  *
- * Deliberately NOT done here:
+ * Two things decided on purpose:
  *
- *  * **The committer is left alone.** Git records an author and a committer
- *    separately, and GitHub's "Verified" badge is about the committer matching
- *    whatever key signed the commit. These commits are SSH-signed by the
- *    Claude account's key, so rewriting the committer would trade a readable
- *    name for an unverified commit. The author is what GitHub's list shows,
- *    which is the half that had to change. Git config cannot set the two
- *    apart, so `GIT_COMMITTER_*` is exported for the shell the session runs
- *    its commits in.
+ *  * **The GitHub "Verified" tick is given up, knowingly.** That badge checks
+ *    the *committer* against the key that signed the commit, and these are
+ *    SSH-signed by the Claude account's key. Measured both ways on
+ *    20 September 2026: changing the author alone keeps `verified: true` and
+ *    still links the commit to the developer's own account — but git has no
+ *    `committer.name` config key, so splitting author from committer needs
+ *    `GIT_COMMITTER_*` in the environment, and the shells this tool runs are
+ *    non-interactive and source no profile. There is nowhere to put it that
+ *    every commit would read. A name that is always right beat a tick that
+ *    appears only when somebody remembers a prefix, and `main` does not
+ *    require signed commits, so nothing breaks. Both, on one commit:
+ *    `GIT_COMMITTER_NAME=Claude GIT_COMMITTER_EMAIL=noreply@anthropic.com git commit …`
  *  * **Nothing is guessed.** An account not in the table below still gets a
- *    distinct name — derived from its address — rather than a wrong one. A
+ *    distinct name, derived from its address, rather than a wrong one. A
  *    commit attributed to the wrong person is worse than one attributed to an
  *    email.
  */
@@ -36,9 +40,9 @@ const { execFileSync } = require('node:child_process');
 /**
  * Who each account is, in the words a person would use.
  *
- * Add a line when somebody joins. The email is whatever their Claude account
- * signs in with, which is not necessarily their GitHub address — GitHub links
- * the avatar only when the two match, and the name is readable either way.
+ * Add a line when somebody joins. The address is whatever their Claude account
+ * signs in with, which is not necessarily their GitHub one — GitHub links the
+ * avatar only when the two match, and the name reads correctly either way.
  */
 const PEOPLE = {
   'rishabhsinghla2112@gmail.com': 'Rishabh Singhla',
@@ -61,8 +65,8 @@ function git(args) {
 
 try {
   const email = process.env.CLAUDE_CODE_USER_EMAIL;
-  // No account address means nothing to distinguish, so change nothing rather
-  // than stamping a commit with a name that is not anybody's.
+  // No account address means nothing to tell the two sessions apart, so change
+  // nothing rather than stamping a commit with a name that is not anybody's.
   if (!email) process.exit(0);
 
   // A git repo, or there is nothing to configure.
@@ -72,8 +76,8 @@ try {
   /*
     "(via Claude)" stays in the name on purpose. These commits are written by
     Claude on somebody's behalf, and a log that reads as if a person typed
-    every line is a log that misleads the next person to read it. The point is
-    to say *whose* Claude, not to hide that it was one.
+    every line misleads whoever reads it next. The point is to say *whose*
+    Claude, not to hide that it was one.
   */
   const authorName = `${person} (via Claude)`;
 
@@ -81,12 +85,17 @@ try {
   git(['config', 'user.email', email]);
 
   console.log(
-    `[identity] commits from this session are authored by ${authorName} <${email}>. `
-    + 'Edit .claude/helpers/git-identity.cjs to add a teammate.',
+    `[identity] commits from this session are by ${authorName} <${email}>. `
+    + 'Add a teammate in .claude/helpers/git-identity.cjs.',
   );
-} catch {
-  // Never block a session over a name. A commit that says `Claude` is the
-  // state this repo was already in, and it is not worth a failed start.
+} catch (err) {
+  /*
+    Never block a session over a name — and never fail quietly either.
+    An earlier version of this file swallowed a `ReferenceError` and exited 0,
+    so it looked like it had run while every commit still said `Claude`. That
+    is the exact failure this repo keeps meeting, and a hook is the easiest
+    place in the world for it to hide.
+  */
+  console.log(`[identity] could not set the commit author (${err.message}); commits will say Claude.`);
   process.exit(0);
 }
-
