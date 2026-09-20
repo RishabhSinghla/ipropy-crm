@@ -59,3 +59,35 @@ export function readMessageMedia(value: unknown): MessageMedia | null {
   // the vendor's link instead would be a square that breaks silently later.
   return media.attachmentId ? media : null;
 }
+
+/**
+ * A number a person can read, from a matching key that is not one.
+ *
+ * `ipy_conversation.handle` is the last ten digits — deliberately, because it
+ * is what matches a contact however their mobile is stored. Printing it with a
+ * `+` in front produced **`+9811533633`** on the Chats header: a plus sign
+ * glued to a number that has no country code, which is not any number in the
+ * world. `wa_id` is WhatsApp's own full id and is what to show when there is
+ * one; without it the ten digits stand alone, unprefixed, rather than
+ * pretending to a country code nobody knows.
+ */
+export function displayNumber(handle: string, waId?: string | null): string {
+  const full = (waId ?? '').replace(/\D/g, '');
+  if (full.length > 10) return `+${full.slice(0, full.length - 10)} ${full.slice(-10)}`;
+  return handle;
+}
+
+/** The bubble's colour: a refused message must never look delivered. */
+export function outboundTone(status: string): string {
+  if (status === 'failed') return 'bg-rose-600';
+  if (status === 'queued') return 'bg-emerald-600/60';
+  return 'bg-emerald-600';
+}
+
+/** What became of it, in a person's words rather than a column value. */
+export function wentOut(status: string): string {
+  const said: Record<string, string> = {
+    queued: 'sending', sent: 'sent', delivered: 'delivered', read: 'read',
+  };
+  return said[status] ?? status;
+}

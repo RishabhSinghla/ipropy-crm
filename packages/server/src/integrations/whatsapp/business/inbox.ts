@@ -35,6 +35,8 @@ export interface InboxConversation {
   lastMessagePreview: string | null;
   /** Whether a free reply is allowed, or only an approved template. */
   windowOpen: boolean;
+  /** WhatsApp's own full number, so a screen can print one a person recognises. */
+  waId: string | null;
 }
 
 /**
@@ -106,12 +108,13 @@ export async function listConversations(input: {
     assigned_name: string | null; status: string; unread_count: number;
     last_message_at: string | null; last_message_preview: string | null;
     window_expires_at: string | null;
+    wa_id: string | null;
   }>(
     `SELECT c.id, c.handle, c.contact_name, c.record_id, c.record_module,
             r.label AS record_label, c.assigned_to,
             trim(u.first_name || ' ' || u.last_name) AS assigned_name,
             c.status, c.unread_count, c.last_message_at, c.last_message_preview,
-            c.window_expires_at
+            c.window_expires_at, c.wa_id
        FROM ipy_conversation c
        LEFT JOIN ipy_record r ON r.id = c.record_id
        LEFT JOIN ipy_user u ON u.id = c.assigned_to
@@ -136,6 +139,7 @@ export async function listConversations(input: {
     lastMessageAt: row.last_message_at,
     lastMessagePreview: row.last_message_preview,
     windowOpen: Boolean(row.window_expires_at && new Date(row.window_expires_at).getTime() > now),
+    waId: row.wa_id,
   }));
 }
 

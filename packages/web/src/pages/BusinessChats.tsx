@@ -9,6 +9,8 @@ import { relativeTime } from '@ipropy/shared';
 import { api } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
+import { useFillHeight } from '../lib/fillHeight';
+import { displayNumber, outboundTone, wentOut } from '../lib/whatsapp';
 import { Avatar, EmptyState, Select, Skeleton, Spinner } from '../components/ui';
 import { readMessageMedia, WhatsAppMedia } from '../components/WhatsAppMedia';
 import { SharePropertyDialog } from '../components/SharePropertyDialog';
@@ -63,6 +65,7 @@ export default function BusinessChats(): JSX.Element {
   const [draft, setDraft] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
 
+  const [shell, shellHeight] = useFillHeight<HTMLDivElement>();
   const { data: status } = useQuery({ queryKey: ['wa-biz', 'status'], queryFn: () => api.waBizStatus() });
   const { data: conversations, isLoading } = useQuery({
     queryKey: ['wa-biz', 'conversations', filter, search],
@@ -185,7 +188,13 @@ export default function BusinessChats(): JSX.Element {
   }
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden">
+    /*
+      Measured, not guessed. `calc(100vh - 3.5rem)` assumed this screen sat
+      directly under the app header; from 20 September it also sits under the
+      WhatsApp page's tab strip, and the composer went off the bottom edge.
+      See `useFillHeight` — the second time this exact guess has cost a bug.
+    */
+    <div ref={shell} style={{ height: shellHeight ?? undefined }} className="flex overflow-hidden">
       {/* The queue */}
       <aside className="flex w-80 shrink-0 flex-col border-r border-slate-200 dark:border-slate-800">
         <div className="space-y-2 border-b border-slate-100 p-3 dark:border-slate-800">
@@ -255,7 +264,7 @@ export default function BusinessChats(): JSX.Element {
             <header className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-4 py-2.5 dark:border-slate-800 dark:bg-slate-900">
               <div className="min-w-0">
                 <p className="truncate text-sm font-bold">{active.recordLabel ?? active.contactName ?? active.handle}</p>
-                <p className="text-2xs text-muted">+{active.handle} · {active.assignedName ?? 'Unassigned'}</p>
+                <p className="text-2xs text-muted">{displayNumber(active.handle, active.waId)} · {active.assignedName ?? 'Unassigned'}</p>
               </div>
               <div className="ml-auto flex flex-wrap items-center gap-1.5">
                 {/* Somebody else has this thread open. Shown rather than
@@ -329,8 +338,11 @@ export default function BusinessChats(): JSX.Element {
                 >
                   <div className={cn(
                     'max-w-[70%] rounded-2xl px-3 py-2 text-sm shadow-sm',
+                    // A refused message must not wear the same green as a
+                    // delivered one. Same rule as the record's tab; this is
+                    // the second screen it had to be applied to.
                     message.direction === 'outbound'
-                      ? 'rounded-br-sm bg-emerald-600 text-white'
+                      ? `rounded-br-sm text-white ${outboundTone(message.status)}`
                       : 'rounded-bl-sm bg-white text-slate-800 dark:bg-slate-800 dark:text-slate-100',
                   )}>
                     {(() => {
@@ -346,16 +358,16 @@ export default function BusinessChats(): JSX.Element {
                     )}
                     <p className={cn(
                       'mt-1 flex items-center gap-1 text-2xs',
-                      message.direction === 'outbound' ? 'text-emerald-100' : 'text-slate-400',
+                      message.direction === 'outbound' ? 'text-white/80' : 'text-slate-400',
                     )}>
                       {new Date(message.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                       {message.direction === 'outbound' && (
                         <>
                           <span>·</span>
                           {message.status === 'failed'
-                            ? <span title={message.error_message ?? ''}>failed</span>
+                            ? <span className="font-semibold">NOT delivered</span>
                             : <span className="inline-flex items-center gap-0.5">
-                              <CheckCheck className="h-3 w-3" />{message.status}
+                              <CheckCheck className="h-3 w-3" />{wentOut(message.status)}
                             </span>}
                           {/* Which road it took, because the business number
                               and a rep's own phone are different phones. */}
@@ -363,6 +375,18 @@ export default function BusinessChats(): JSX.Element {
                         </>
                       )}
                     </p>
+                    {/*
+                      The reason, on the bubble rather than in a `title`
+                      attribute. A tooltip is invisible on a touchscreen and
+                      unfindable on a desktop, and "outside the 24-hour window"
+                      is the difference between a rep fixing it in ten seconds
+                      and a rep hunting.
+                    */}
+                    {message.direction === 'outbound' && message.status === 'failed' && (
+                      <p className="mt-1 rounded bg-white/15 px-1.5 py-1 text-2xs leading-snug">
+                        {message.error_message ?? 'WhatsApp gave no reason.'}
+                      </p>
+                    )}
                   </div>
                 </div>
               ))}
