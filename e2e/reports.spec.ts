@@ -54,9 +54,19 @@ test('the WhatsApp half counts what the number did', async ({ page }) => {
   ).toBeVisible({ timeout: 20_000 });
 });
 
+/*
+  Reports moved inside the WhatsApp page on 20 September 2026, on the owner's
+  instruction, so it is no longer in the module switcher. The promise this
+  spec exists for is unchanged and is the one that matters: **a screen you can
+  only reach by typing a URL is a screen nobody uses.** So it now walks the
+  route a person actually takes — the green WhatsApp button on the header,
+  then the Reports tab.
+*/
 test('Reports is reachable from the navigation, not only by URL', async ({ page }) => {
   await page.goto('/dashboard');
-  await page.getByRole('button', { name: 'Switch module' }).click();
+  await page.getByRole('link', { name: 'WhatsApp' }).click();
+  await expect(page).toHaveURL(/\/whatsapp\//);
   await page.getByRole('link', { name: 'Reports' }).click();
-  await expect(page).toHaveURL(/\/reports$/);
+  await expect(page).toHaveURL(/\/whatsapp\/reports$/);
+  await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible({ timeout: 30_000 });
 });

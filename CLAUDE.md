@@ -1669,12 +1669,20 @@ their API actually answers, in full:
 | `whatsapp/get/template/list` | the approved templates, **read only** |
 | `whatsapp/subscriber/list`, `whatsapp/get/conversation` | inbound, which the poller reads |
 | `whatsapp/get/message-status` | delivery receipts |
-| `user/package/list`, `users/team-member/list` | the account's plan and its people |
+| `user/package/list` | answers *"You do not have any Team Role yet"* — no plan data |
+| `users/team-member/list` | exists, answers `[]` |
 | `whatsapp/catalog/list` | exists, answers `[]` |
 
 Everything else tried — phone-number lists, bots, campaigns, broadcasts, tags,
 attributes, opt-ins, business profile, wallet, balance, flows, analytics,
 reports — returns their 404 page.
+
+**The conclusion is that there is nothing left to pull in.** Every endpoint of
+theirs that carries data is already read by this CRM, and the three that are
+not — package, team members, catalogue — answer with nothing for this account.
+So the module is not unfinished for want of effort; it is at the ceiling their
+API sets. Anyone asked to "bring more across" should read this table first
+rather than start guessing endpoint names again.
 
 **So "never open WhatsMarketing again" has a hard ceiling, and it is worth
 stating plainly rather than being discovered later: a template can only be
