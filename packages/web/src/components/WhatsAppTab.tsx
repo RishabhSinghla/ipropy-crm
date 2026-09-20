@@ -37,6 +37,21 @@ export function WhatsAppTab({ module, recordId, mobile }: {
   const { data: messages, isLoading } = useQuery({
     queryKey: ['whatsapp', 'contact', module, recordId],
     enabled: onBusiness,
+    /*
+      **It has to refresh itself.** 20 September: the owner replied from his
+      own phone, the CRM stored it within a minute — and the tab he was
+      staring at never changed, because it fetched once when it opened and
+      then sat there. From where he sat that is indistinguishable from the
+      message never arriving, and it is what "it didn't show it here ASAP and
+      not till now" actually was.
+
+      Fifteen seconds, and again whenever the window is focused: a rep
+      switching back from WhatsApp on their phone should find the CRM already
+      caught up. It is a handful of small reads on a tab somebody has
+      deliberately opened, not a background poll across the app.
+    */
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
     queryFn: async () => ((await api.waBizContactMessages(module, recordId)).messages.map((row) => ({
         id: String(row.id),
         direction: row.direction as 'inbound' | 'outbound',
