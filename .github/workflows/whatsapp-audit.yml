@@ -1,0 +1,91 @@
+# Is the WhatsApp half of the CRM actually working? Read-only.
+#
+# Written 20 September 2026 because the owner asked the only question that
+# matters — "is the foundation strong, and can I stop opening whatsmarketing"
+# — and said he doubted it. A reassuring answer is worth nothing; this asks
+# production for evidence, one promise at a time, and prints what it finds
+# including the zeros. A feature that has never once run is the thing worth
+# knowing, and it is invisible from every screen.
+#
+# Nothing here writes. No credential is printed.
+name: WhatsApp audit
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install PostgreSQL 18 client
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: Every promise, with its evidence
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          \echo '=== messages, by direction and outcome ==='
+          SELECT m.direction, m.status, count(*),
+                 min(m.created_at) AS first, max(m.created_at) AS latest
+            FROM ipy_message m JOIN ipy_conversation c ON c.id = m.conversation_id
+           WHERE c.channel = 'whatsapp'
+           GROUP BY 1, 2 ORDER BY 1, 3 DESC;
+
+          \echo '=== has a template EVER been delivered? ==='
+          SELECT count(*) FILTER (WHERE template_name IS NOT NULL)            AS template_attempts,
+                 count(*) FILTER (WHERE template_name IS NOT NULL
+                                    AND status IN ('sent','delivered','read')) AS template_arrived
+            FROM ipy_message m JOIN ipy_conversation c ON c.id = m.conversation_id
+           WHERE c.channel = 'whatsapp' AND m.direction = 'outbound';
+
+          \echo '=== has a photo or document ever moved, either way? ==='
+          SELECT direction, type, count(*)
+            FROM ipy_message m JOIN ipy_conversation c ON c.id = m.conversation_id
+           WHERE c.channel = 'whatsapp' AND m.type <> 'text'
+           GROUP BY 1, 2 ORDER BY 1, 2;
+          SELECT count(*) AS whatsapp_files_kept_in_the_crm
+            FROM ipy_attachment WHERE category = 'whatsapp';
+
+          \echo '=== delivery receipts: does the CRM learn what arrived? ==='
+          SELECT count(*) FILTER (WHERE delivered_at IS NOT NULL) AS delivered_stamped,
+                 count(*) FILTER (WHERE read_at IS NOT NULL)      AS read_stamped
+            FROM ipy_message m JOIN ipy_conversation c ON c.id = m.conversation_id
+           WHERE c.channel = 'whatsapp' AND m.direction = 'outbound';
+
+          \echo '=== campaigns: has one ever run? ==='
+          SELECT count(*) AS campaigns FROM ipy_campaign;
+          SELECT status, count(*) FROM ipy_campaign_recipient GROUP BY 1 ORDER BY 2 DESC;
+
+          \echo '=== threads with no messages at all (a failed send leaves one) ==='
+          SELECT count(*) AS empty_threads
+            FROM ipy_conversation c
+           WHERE c.channel = 'whatsapp'
+             AND NOT EXISTS (SELECT 1 FROM ipy_message m WHERE m.conversation_id = c.id);
+
+          \echo '=== threads whose handle is not a phone number (groups, ids) ==='
+          SELECT handle, record_id IS NOT NULL AS linked, last_message_at
+            FROM ipy_conversation
+           WHERE channel = 'whatsapp' AND handle !~ '^[0-9]{10}$'
+           ORDER BY last_message_at DESC NULLS LAST LIMIT 20;
+
+          \echo '=== templates: can the CRM see them, and are the blanks mapped? ==='
+          SELECT name, status,
+                 (SELECT count(*) FROM jsonb_object_keys(variable_map)) AS blanks_mapped,
+                 (length(body_text) - length(replace(body_text, '{{', ''))) / 2 AS blanks_in_wording
+            FROM ipy_whatsapp_template ORDER BY name;
+
+          \echo '=== who is actually using the inbox ==='
+          SELECT COALESCE(NULLIF(trim(u.first_name || ' ' || u.last_name), ''), u.email, '(nobody)') AS assigned_to, count(*)
+            FROM ipy_conversation c LEFT JOIN ipy_user u ON u.id = c.assigned_to
+           WHERE c.channel = 'whatsapp' GROUP BY 1 ORDER BY 2 DESC;
+          SQL
