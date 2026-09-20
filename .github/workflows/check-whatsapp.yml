@@ -89,6 +89,40 @@ jobs:
            LIMIT 10;
           SQL
 
+          echo "--- why a send failed, which the message row already knows ---"
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT m.created_at,
+                 left(coalesce(m.body, '(template)'), 24) AS body,
+                 m.status,
+                 -- The whole point of this block. A send that failed has a
+                 -- reason on it, and until now nothing printed it, so every
+                 -- failure looked identical from outside the container.
+                 left(coalesce(m.error_message, '(no reason recorded)'), 160) AS why
+            FROM ipy_message m
+            JOIN ipy_conversation c ON c.id = m.conversation_id
+           WHERE c.channel = 'whatsapp' AND m.direction = 'outbound'
+           ORDER BY m.created_at DESC
+           LIMIT 8;
+          SQL
+
+          echo "--- is a conversation attached to a record? (the WhatsApp tab needs this) ---"
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT c.handle,
+                 c.record_id IS NOT NULL AS linked_to_a_record,
+                 c.record_module,
+                 -- And whether a contact with that number exists at all: an
+                 -- unlinked thread with a matching contact is a bug, one with
+                 -- no contact is simply a stranger.
+                 (SELECT count(*)::int FROM ipy_e_leads l
+                    WHERE right(regexp_replace(coalesce(l.mobile, ''), '\D', '', 'g'), 10) = c.handle
+                       OR right(regexp_replace(coalesce(l.whatsapp_number, ''), '\D', '', 'g'), 10) = c.handle
+                 ) AS contacts_with_that_number
+            FROM ipy_conversation c
+           WHERE c.channel = 'whatsapp'
+           ORDER BY c.last_message_at DESC NULLS LAST
+           LIMIT 8;
+          SQL
+
           echo "--- what the poller has claimed (proof it is running) ---"
           psql "$PROD_DATABASE_URL" -tAc "
             SELECT 'deliveries claimed: ' || count(*)
