@@ -55,64 +55,67 @@ const SUBSCRIBERS_PER_VISIT = 40;
 const MESSAGES_PER_THREAD = 15;
 
 /**
- * How far back each visit looks, beyond the last one.
+ * **Identity decides what is stored, never the clock.**
  *
- * **The bug this exists for, measured on production 20 September 2026.** The
- * owner sent "hey" at 12:57 IST. The poller reported, twenty minutes later,
- * that it could see that exact message from that exact number — and that it
- * had dropped nothing: no missing id, nothing unreadable, nothing the store
- * refused. It had simply arrived *behind the watermark*, because the
- * watermark was already at 13:17.
+ * This replaced a moving watermark, and the reason is the whole of 20
+ * September 2026. The poller remembered when it last looked and skipped
+ * anything stamped earlier. That is correct only if a message becomes
+ * readable the moment it is stamped — and WhatsMarketing's does not. The
+ * owner's "hey" was stamped 07:27:30 UTC, was still invisible to a visit at
+ * 07:45, and first appeared at 07:48. By then the watermark was past it, so
+ * it was skipped, and it would have been skipped for ever. The poller
+ * reported success every single minute throughout.
  *
- * The mistake was treating the vendor's timestamp as the moment the message
- * became readable. It is not. WhatsMarketing's conversation endpoint publishes
- * a message some minutes after it is stamped — its position in the
- * most-recent-forty subscriber list moves on their clock, not ours — so a
- * watermark that marches to "when this visit started" is always a few minutes
- * ahead of what the vendor will show next. Every message landing in that gap
- * is skipped permanently, and the only symptom is a customer's reply that
- * never appears, with a poller reporting success every single minute.
+ * Widening the window was tried twice, fifteen minutes and then forty-five,
+ * and both are the same bug with a longer fuse: any window is a bet on the
+ * vendor's worst lag, and losing the bet is silent. **So the window is gone.**
+ * Every visit offers everything it can see, and a message is stored exactly
+ * once because `receiveInbound` claims it by a unique insert on its provider
+ * message id. Identity is a fact; a timestamp is a guess about somebody
+ * else's clock.
  *
- * **How long the lag actually is, measured rather than assumed.** That same
- * message was stamped 07:27:30 UTC and was still invisible to a visit at
- * 07:45; it first appeared in a report at 07:48. So the lag on a real account
- * is around twenty minutes, not the two or three a quarter-hour window was
- * sized for — fifteen minutes would have missed this exact message. Forty-five
- * gives it more than double the worst lag seen. If a reply ever goes missing
- * again, this number is the first thing to raise, and the report's "newest
- * customer message visible anywhere" against the watermark is how to tell.
+ * Two bounds keep that honest rather than expensive:
  *
- * So each visit re-reads the last three quarters of an hour. That is not sloppiness:
- * `receiveInbound` claims every message by a unique insert and refuses the
- * repeat, so an extra look costs one refused insert and a dropped message
- * costs a customer. When the two are not symmetrical, look again.
+ *  * `HISTORY_FLOOR_DAYS` — a floor, not a watermark. It never advances past
+ *    a message that has not been seen, because it is measured from now and
+ *    sits a week behind any lag a vendor could plausibly have. It exists so a
+ *    vendor that suddenly returns a year of history does not import a year.
+ *  * `seen` — the ids already offered, so the repeat costs nothing. It is
+ *    seeded from the database on the first visit of a process, which is what
+ *    makes a restart free as well.
+ *
+ * `seen` is an optimisation and never the guarantee. The unique index is the
+ * guarantee, and it holds even if this set is empty, wrong or cleared.
  */
-const LOOK_BACK_MS = 45 * 60 * 1000;
+const HISTORY_FLOOR_DAYS = 7;
 
-/**
- * Only look at threads that have moved since the last visit.
- *
- * Without this every tick would re-read forty whole conversations for nothing.
- * An hour's grace on the first run picks up anything that arrived while the
- * CRM was being deployed.
- */
-let lastVisit = new Date(Date.now() - 60 * 60 * 1000);
-
-/**
- * Message ids this process has already offered to the store.
- *
- * The look-back above means the same message is read again every minute for a
- * quarter of an hour. The database would refuse each repeat correctly, but
- * `receiveInbound` resolves the contact *before* it opens the transaction, so
- * a repeat still costs a lookup per message per minute. This skips the second
- * and later sightings for free.
- *
- * Memory only, and deliberately so: it is an optimisation, never the
- * guarantee. The unique index is the guarantee, and a restart simply pays for
- * one more look.
- */
 const seen = new Set<string>();
-const SEEN_CEILING = 5_000;
+let seenSeeded = false;
+
+/**
+ * Fill `seen` from what the database has already claimed.
+ *
+ * One query per process. Without it the first visit after every deploy offers
+ * a few hundred already-stored messages back to `receiveInbound`, which
+ * resolves a contact before it opens its transaction — correct, and needlessly
+ * slow. A failure here is not worth stopping for: the unique index still
+ * refuses every repeat, so the cost of an empty set is time, not duplicates.
+ */
+async function seedSeen(): Promise<void> {
+  if (seenSeeded) return;
+  seenSeeded = true;
+  try {
+    const rows = await db.query<{ event_key: string }>(
+      `SELECT event_key FROM ipy_wa_webhook_event
+        WHERE provider = $1 AND kind = 'message'`,
+      [WHATSMARKETING_PROVIDER],
+    );
+    for (const row of rows.rows) seen.add(row.event_key);
+    logger.info({ known: seen.size }, 'whatsmarketing poller knows what it has already stored');
+  } catch (err) {
+    logger.warn({ err }, 'could not seed the whatsmarketing seen-set; the unique index still holds');
+  }
+}
 
 interface Conf { baseUrl: string; apiToken: string; phoneNumberId: string }
 
@@ -291,8 +294,10 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
   const c = conf();
   if (!c) return { checked: 0, stored: 0 };
 
-  const since = lastVisit;
-  const visitStarted = new Date();
+  await seedSeen();
+  // A floor, not a watermark: measured from now and a week behind, so it can
+  // never creep past a message nobody has seen.
+  const floor = new Date(Date.now() - HISTORY_FLOOR_DAYS * 24 * 60 * 60 * 1000);
 
   lastOutcome = '';
   const list = await call(c, '/whatsapp/subscriber/list', {
@@ -338,6 +343,8 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
   let noId = 0;
   let unreadable = 0;
   let refused = 0;
+  let tooOld = 0;
+  let known = 0;
 
   const subscribers = rowsOf(list.message);
   /*
@@ -372,16 +379,11 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
         newestFrom = handle;
       }
       /*
-        `<`, not `<=`, and the watermark overlaps by a second below.
-
-        Their timestamps carry seconds and no more, so a reply that lands in
-        the same second the last visit started reads as equal to the watermark
-        and would be skipped for ever. Offering a message twice costs nothing —
-        `receiveInbound` claims each one by a unique insert and refuses the
-        repeat — while dropping one loses a customer's message silently. When
-        the two are not symmetrical, err towards the duplicate.
+        The only thing a timestamp decides here: whether this is history
+        rather than a message. Nothing else — see the note on identity above,
+        and the day it cost.
       */
-      if (sentAt < since) continue;
+      if (sentAt < floor) { tooOld += 1; continue; }
 
       const providerMessageId = String(row.wa_message_id ?? row.id ?? '');
       if (!providerMessageId) { noId += 1; continue; }
@@ -415,7 +417,6 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
         if (await receiveInbound(WHATSMARKETING_PROVIDER, message)) stored += 1;
         else refused += 1;
         // Remembered either way: stored, or already known to the database.
-        if (seen.size >= SEEN_CEILING) seen.clear();
         seen.add(providerMessageId);
       } catch (err) {
         logger.warn({ err, providerMessageId }, 'could not store a polled WhatsApp reply');
@@ -424,18 +425,6 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
     }
   }
 
-  /*
-    The watermark moves only once the visit is through, and to when the visit
-    *started* rather than to now. A message that landed while this was running
-    would otherwise fall in the gap between the two and never be looked at
-    again — the classic off-by-one in every poller, and invisible when it bites
-    because the only symptom is one customer's reply that never appeared.
-  */
-  // Back by the look-back, not by a second. The second of overlap only ever
-  // covered their timestamps having no sub-second part; it did nothing about
-  // a message published minutes after it is stamped, which is the failure
-  // that actually happened. See LOOK_BACK_MS.
-  lastVisit = new Date(visitStarted.getTime() - LOOK_BACK_MS);
   if (stored) logger.info({ checked, stored }, 'pulled WhatsApp replies from WhatsMarketing');
 
   /*
@@ -448,23 +437,24 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
     lastOutcome
       || `WhatsMarketing listed ${listed} subscriber${listed === 1 ? '' : 's'}; `
         + `read ${checked} thread${checked === 1 ? '' : 's'}; `
-        + `stored ${stored} new message${stored === 1 ? '' : 's'} since ${since.toISOString()}; `
+        + `stored ${stored} new message${stored === 1 ? '' : 's'}; `
         + `newest customer message visible anywhere: ${newestFromAnyone?.toISOString() ?? 'none'}`
         + `${newestFrom ? ` from ${newestFrom}` : ''}; `
-        + `dropped past the watermark: ${noId} with no id, ${unreadable} unreadable, `
-        + `${refused} refused by the store.`,
+        + `${known} already held; `
+        + `dropped: ${noId} with no id, ${unreadable} unreadable, `
+        + `${refused} refused by the store, ${tooOld} older than ${HISTORY_FLOOR_DAYS} days.`,
   );
   return { checked, stored };
 }
 
 /**
- * For the test, which must not inherit a watermark — or a seen id — from
- * another case. Both are process-wide on purpose in production and both would
- * otherwise leak between cases, which reads as a message being dropped.
+ * For the test, which must not inherit a seen id from another case. The set is
+ * process-wide on purpose in production, and leaking between cases reads
+ * exactly like a message being dropped.
  */
-export function __resetPollWatermark(at: Date): void {
-  lastVisit = at;
+export function __resetPollWatermark(_at?: Date): void {
   seen.clear();
+  seenSeeded = false;
 }
 
 /*

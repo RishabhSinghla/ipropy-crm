@@ -984,41 +984,44 @@ CRM's own ids, never instead of them.
   contact, opens the window and notifies an agent, and so re-reading a thread
   is free. Two things in it are pinned by `tests/whatsMarketingPoll.test.ts`
   because they fail silently: a row from `sender: 'bot'` must never be replayed
-  as something the customer said, and **each visit re-reads the last
-  three quarters of an hour** (`LOOK_BACK_MS`).
+  as something the customer said, and **identity decides what is stored, never
+  the clock**.
 
-  That second one was the whole bug, found on 20 September 2026 and worth
-  keeping. The owner sent "hey" at 12:57 IST. Twenty minutes later the poller
-  reported that it could see that exact message from that exact number, and
-  that it had dropped nothing — no missing id, nothing unreadable, nothing the
-  store refused. It had arrived **behind the watermark**, which was already at
-  13:17. The mistake was treating the vendor's timestamp as the moment the
-  message becomes readable: WhatsMarketing publishes a message some minutes
-  after it is stamped, and a subscriber's position in the most-recent-forty
-  list moves on their clock. A watermark set to "when this visit started" is
-  therefore permanently a few minutes ahead of what they will show next, and
-  **every message landing in that gap is skipped for ever while the poller
-  reports success every single minute.** `receiveInbound` claims each message
-  by a unique insert, so an extra look costs one refused insert and a dropped
-  message costs a customer. An in-memory `seen` set skips the repeats cheaply —
-  an optimisation, never the guarantee; the unique index is the guarantee.
+  That second one cost 20 September 2026 and is the rule to keep. The poller
+  remembered when it last looked and skipped anything stamped earlier — correct
+  only if a message becomes readable the moment it is stamped, and
+  WhatsMarketing's does not. The owner's "hey" was stamped 07:27:30 UTC, was
+  still invisible to a visit at 07:45, and first appeared at 07:48. By then the
+  watermark was past it, so it was skipped, and would have been skipped for
+  ever. **The poller reported success every single minute throughout.**
 
-  **The window was sized from a measurement, and the first guess was wrong.**
-  That message was stamped 07:27:30 UTC, was still invisible to a visit at
-  07:45, and first appeared at 07:48 — a lag of around twenty minutes, where
-  fifteen had been assumed. A quarter of an hour would have missed the very
-  message it was written for. Forty-five minutes is more than double the worst
-  lag seen; if a reply goes missing again this is the first number to raise,
-  and the way to tell is the report's "newest customer message visible
-  anywhere" against the watermark in the same line.
+  Widening the window was tried twice — fifteen minutes, then forty-five — and
+  both are the same bug with a longer fuse: any window is a bet on somebody
+  else's worst lag, and losing it is silent. So the window is gone. Every visit
+  offers everything it can see and `receiveInbound`'s unique insert on the
+  provider message id decides what is new. Identity is a fact; a timestamp is a
+  guess about another company's clock. Two bounds keep it cheap rather than
+  honest-but-expensive: `HISTORY_FLOOR_DAYS` (a *floor*, measured from now and
+  a week back, so it can never creep past something unseen — it exists only so
+  a vendor returning a year of history does not import a year) and a `seen`
+  set seeded once per process from `ipy_wa_webhook_event`, which makes both the
+  repeat visit and the restart free. `seen` is an optimisation and never the
+  guarantee.
 
-  **The diagnosis came from the report, not from the vendor.** `whatsapp.last_poll`
-  now carries the handle the newest visible message came from and the count of
-  messages dropped past the watermark, by cause. Before that, "stored 0" covered
-  four different failures. The raw-thread route was tried first and could not
-  work: the probe workflow needs a repository secret that is not set, and the
-  live key exists only encrypted inside the CRM — printing a credential to fetch
-  a diagnosis is the wrong trade.
+  **Store everything, announce what is fresh.** `ANNOUNCE_WITHIN_MS` in
+  `business/inbound.ts` is six hours: a message older than that is written to
+  the inbox, the record and the timeline, and rings nobody. Without it the
+  first visit after a vendor is connected — or after its lag catches up — buzzes
+  the team's phones about conversations from Tuesday, and a team that switches
+  notifications off is how the useful ones get lost.
+
+  **The diagnosis came from the poller's own report, not from the vendor.**
+  `whatsapp.last_poll` carries the handle the newest visible message came from,
+  how many were already held, and what was dropped, by cause. Before that,
+  "stored 0" covered five different failures. The raw-thread probe was tried
+  first and cannot work: it needs a repository secret that is not set, and the
+  live key exists only encrypted inside the CRM — printing a credential to
+  fetch a diagnosis is the wrong trade.
 
   Two more things worth knowing before touching it. Their templates are addressed by a
   numeric `template_id` from their dashboard, so a name is resolved through their list

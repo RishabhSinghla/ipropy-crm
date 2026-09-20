@@ -36,6 +36,15 @@ const MODULE = 'leads';
 const EVENT_MEMORY_DAYS = 30;
 
 /**
+ * How recent a message has to be to be worth interrupting somebody about.
+ *
+ * Six hours covers a working day's worth of lateness — a vendor publishing
+ * twenty minutes behind, a container that was restarting, a webhook enabled
+ * mid-afternoon — while keeping a genuine backfill silent.
+ */
+const ANNOUNCE_WITHIN_MS = 6 * 60 * 60 * 1000;
+
+/**
  * Has this exact delivery been handled before?
  *
  * The insert *is* the check: two webhook deliveries racing each other both ask
@@ -243,9 +252,36 @@ export async function receiveInbound(
     }
   }
 
-  // The rep whose lead this is, or every admin when nobody owns it. Through
-  // `notify`, so it reaches the bell *and* the phone rather than only the bell.
-  await tellSomebody(stored, message);
+  /*
+    Store everything; announce what is fresh.
+
+    The poller offers every message it can see on every visit and lets the
+    unique insert decide what is new, which is what stopped replies going
+    missing — but "new to the database" and "news to a person" are not the
+    same thing. The first visit after a vendor is connected, or after their
+    lag catches up, legitimately stores a batch of older messages, and a
+    phone buzzing at midnight about a conversation from Tuesday teaches the
+    team to switch notifications off. That is how the useful ones get lost.
+
+    So the bell and the push are for the last few hours. Everything else is
+    in the inbox, on the record and in the timeline, where somebody looks on
+    purpose.
+  */
+  // `new Date(...)` rather than `.getTime()` straight off: the type says Date,
+  // and a provider adapter handing back a string would otherwise throw here,
+  // after the message is safely stored, and lose the announcement rather than
+  // the message. Cheap insurance on the last step.
+  const age = Date.now() - new Date(message.sentAt).getTime();
+  if (age <= ANNOUNCE_WITHIN_MS) {
+    // The rep whose lead this is, or every admin when nobody owns it. Through
+    // `notify`, so it reaches the bell *and* the phone rather than only the bell.
+    await tellSomebody(stored, message);
+  } else {
+    logger.info(
+      { messageId: stored.messageId, ageMinutes: Math.round(age / 60_000) },
+      'stored an older WhatsApp message without announcing it',
+    );
+  }
   return stored;
 }
 
