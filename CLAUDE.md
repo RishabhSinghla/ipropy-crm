@@ -1159,6 +1159,26 @@ first time the two disagree nobody knows which is true. `/chats` **is** the busi
 screen it used to fall back to was removed on 19 September 2026. It is no longer a header
 tab; the WhatsApp icon beside a phone number is the way in.
 
+**It wears the split view's clothes, and that was an instruction.** 20 September 2026,
+against a screenshot of the leads page: *"you've got this page and the beauty of this page
+right, similar beauty and type I want for my whatsapp module page also"*. So the queue row
+**is** the split view's row rather than something like it — the open one marked by a `span`
+and not a `border-l` (two `border-*` utilities on one row let Tailwind's stylesheet order
+pick the colour, and the marker came out slate on slate once), a bold name, the last
+message under it, and the time above one chip on the right. Two lines each side; two chips
+on two lines with two different right edges is what makes a queue look ragged.
+
+The conversation header is the record header: avatar, one name line that truncates rather
+than wraps, a fact strip under it that never wraps, and the actions as the same grey
+circles that fill with their own colour on hover. It was five bordered buttons and two
+dropdowns wrapping onto a second row, which is what he was looking at when he asked.
+`ACTION_BASE` / `ACTION_REST` / `ACTION_CIRCLE` moved out of `IpropyWorkspace.tsx` into
+**`lib/actionCircle.ts`** for the reason this repo keeps re-learning: a second copy of
+three class strings is a second thing to keep in step, and the first time they disagree
+the same button looks different depending on which page you arrived from. The `*_REST`
+string stays separate from the shape because a button that is *on* needs its own
+background, and a later `bg-*` in the same class list does not win.
+
 **The inbox is shared, and who sees what is the rule that matters.** An admin sees every
 thread; everybody else sees their own and the unassigned queue, and **not** one another rep
 is working — two people answering one customer is what a shared inbox exists to prevent.

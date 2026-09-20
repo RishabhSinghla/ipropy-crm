@@ -95,7 +95,7 @@ export default function WhatsAppPage(): JSX.Element {
     */
     <div>
       {showStrip && (
-        <nav className="flex gap-1 border-b border-slate-200 px-4 pt-3 dark:border-slate-800" aria-label="WhatsApp">
+        <nav className="flex gap-1 border-b border-slate-200 bg-white px-4 pt-3 dark:border-slate-800 dark:bg-slate-900" aria-label="WhatsApp">
           {tabs.map((tab) => (
             <NavLink
               key={tab.path}

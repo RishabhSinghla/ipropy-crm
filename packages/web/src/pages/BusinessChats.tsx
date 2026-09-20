@@ -2,8 +2,8 @@ import { type JSX, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
-  Building2, CalendarClock, CheckCheck, CircleUser, Clock, Inbox, MessageCircle, Paperclip,
-  Search, Send, UserPlus,
+  Building2, CalendarClock, Check, CheckCheck, Clock, Inbox, MailOpen, MessageCircle,
+  MoreHorizontal, Paperclip, Search, Send, UserPlus,
 } from 'lucide-react';
 import { relativeTime } from '@ipropy/shared';
 import { api } from '../lib/api';
@@ -11,7 +11,8 @@ import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { useFillHeight } from '../lib/fillHeight';
 import { composerMode, displayNumber, outboundTone, wentOut, whyNoTextBox } from '../lib/whatsapp';
-import { Avatar, EmptyState, Select, Skeleton, Spinner } from '../components/ui';
+import { Avatar, Dropdown, DropdownItem, EmptyState, Select, Skeleton, Spinner } from '../components/ui';
+import { ACTION_CIRCLE } from '../lib/actionCircle';
 import { readMessageMedia, WhatsAppMedia } from '../components/WhatsAppMedia';
 import { SharePropertyDialog } from '../components/SharePropertyDialog';
 
@@ -106,6 +107,8 @@ export default function BusinessChats(): JSX.Element {
   */
   const [picked, setPicked] = useState<ChatRow | null>(null);
   const active = (conversations ?? []).find((row) => row.id === activeId) ?? picked;
+  /** What to call them: the CRM's name for this person, else the number. */
+  const who = active ? (active.recordLabel ?? active.contactName ?? active.handle) : '';
   const messages = (thread?.messages ?? []) as unknown as BizMessage[];
   /*
     **Both halves, not just the clock.** A free reply needs an open 24-hour
@@ -247,33 +250,12 @@ export default function BusinessChats(): JSX.Element {
             <p className="p-6 text-center text-xs text-muted">Nothing here yet.</p>
           )}
           {(conversations ?? []).map((row) => (
-            <button
+            <ChatQueueRow
               key={row.id}
-              type="button"
-              onClick={() => { setActiveId(row.id); setPicked(row); }}
-              className={cn(
-                'flex w-full items-start gap-2.5 border-b border-slate-100 px-3 py-2.5 text-left transition-colors dark:border-slate-800',
-                row.id === activeId ? 'bg-brand-50 dark:bg-brand-950/30' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60',
-              )}
-            >
-              <Avatar name={row.recordLabel ?? row.contactName ?? row.handle} size={32} />
-              <span className="min-w-0 flex-1">
-                <span className="flex items-center gap-1.5">
-                  <span className="truncate text-sm font-semibold">{row.recordLabel ?? row.contactName ?? row.handle}</span>
-                  {row.unreadCount > 0 && (
-                    <span className="rounded-full bg-emerald-600 px-1.5 text-2xs font-bold text-white">{row.unreadCount}</span>
-                  )}
-                </span>
-                <span className="mt-0.5 block truncate text-xs text-muted">{row.lastMessagePreview ?? 'No messages yet'}</span>
-                <span className="mt-1 flex flex-wrap items-center gap-1.5 text-2xs text-slate-400">
-                  {row.assignedName
-                    ? <span className="inline-flex items-center gap-1"><CircleUser className="h-3 w-3" />{row.assignedName}</span>
-                    : <span className="rounded bg-amber-100 px-1 font-semibold text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">Unassigned</span>}
-                  {row.status !== 'open' && <span className="rounded bg-slate-100 px-1 dark:bg-slate-800">{row.status}</span>}
-                  {row.lastMessageAt && <span>{relativeTime(row.lastMessageAt)}</span>}
-                </span>
-              </span>
-            </button>
+              row={row}
+              active={row.id === activeId}
+              onSelect={() => { setActiveId(row.id); setPicked(row); }}
+            />
           ))}
         </div>
       </aside>
@@ -286,72 +268,146 @@ export default function BusinessChats(): JSX.Element {
           </div>
         ) : (
           <>
-            <header className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-4 py-2.5 dark:border-slate-800 dark:bg-slate-900">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-bold">{active.recordLabel ?? active.contactName ?? active.handle}</p>
-                <p className="text-2xs text-muted">{displayNumber(active.handle, active.waId)} · {active.assignedName ?? 'Unassigned'}</p>
-              </div>
-              <div className="ml-auto flex flex-wrap items-center gap-1.5">
-                {/* Somebody else has this thread open. Shown rather than
-                    guessed at, because two replies to one customer is the
-                    thing a shared inbox is supposed to prevent. */}
-                {(thread?.alsoViewing ?? []).length > 0 && (
-                  <span className="rounded-md bg-amber-100 px-2 py-1 text-2xs font-semibold text-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
-                    {(thread!.alsoViewing).join(', ')} also here
-                  </span>
-                )}
-                {active.assignedTo !== me?.id && (
-                  <button className="btn-secondary btn-sm" onClick={() => void api.waBizTake(active.id).then(refresh)}>
-                    <UserPlus className="h-3.5 w-3.5" /> Take
+            {/*
+              The record header from the split view, wearing the same clothes.
+
+              One line for who this is — avatar, name, who holds it, when they
+              last wrote — and one strip of facts under it that never wraps.
+              The controls are the same grey circles: at rest one weight of
+              grey, filling with their own colour under the cursor, because
+              four tinted circles in a row read as four warnings. It used to be
+              five bordered buttons and two dropdowns wrapping onto a second
+              row, which is what the owner was looking at when he asked for
+              this page to look like that one.
+            */}
+            <header className="border-b border-slate-200 bg-white px-4 py-2.5 dark:border-slate-800 dark:bg-slate-900">
+              <div className="flex min-w-0 items-start gap-3">
+                <Avatar name={who} size={42} className="mt-0.5" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 items-center gap-x-3 whitespace-nowrap">
+                    <h2 className="min-w-0 truncate text-xl font-extrabold tracking-tight text-slate-950 dark:text-white">{who}</h2>
+                    <span className="inline-flex shrink-0 items-center gap-1.5 text-sm">
+                      <span className="text-xs font-normal text-muted">Assigned To:</span>
+                      <Select
+                        value={active.assignedTo ?? ''}
+                        onChange={(value) => void api.waBizAssign(active.id, value || null).then(refresh)}
+                        placeholder="Unassigned"
+                        options={[{ value: '', label: 'Unassigned' }, ...(users ?? []).map((user) => ({
+                          value: String(user.id), label: String(user.fullName ?? user.email),
+                        }))]}
+                      />
+                    </span>
+                    {active.lastMessageAt && (
+                      <span className="shrink-0 text-sm text-slate-400">Last message {relativeTime(active.lastMessageAt)}</span>
+                    )}
+                  </div>
+
+                  {/*
+                    The facts, on one line under the name — the number, whether
+                    a free reply can go at all, and where the thread stands.
+                    Facts, not controls: the controls are the circles beside
+                    them.
+                  */}
+                  <div className="mt-1 flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-xs">
+                    <span className="shrink-0 font-semibold text-slate-600 dark:text-slate-300">{displayNumber(active.handle, active.waId)}</span>
+                    <span className="text-slate-300">·</span>
+                    {mode === 'text'
+                      ? <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-2xs font-bold text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-200">Can reply freely</span>
+                      : <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-2xs font-bold text-amber-900 dark:bg-amber-950/60 dark:text-amber-200">Template only</span>}
+                    <span className="shrink-0 rounded bg-slate-200 px-1.5 py-0.5 text-2xs font-bold capitalize text-slate-700 dark:bg-slate-700 dark:text-slate-200">{active.status}</span>
+                    {/* Somebody else has this thread open. Shown rather than
+                        guessed at, because two replies to one customer is the
+                        thing a shared inbox is supposed to prevent. */}
+                    {(thread?.alsoViewing ?? []).length > 0 && (
+                      <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-2xs font-bold text-amber-900 dark:bg-amber-950/60 dark:text-amber-200">
+                        {(thread!.alsoViewing).join(', ')} also here
+                      </span>
+                    )}
+                    <label className="ml-auto flex shrink-0 items-center gap-1 rounded-md border border-slate-200 px-2 py-0.5 text-2xs dark:border-slate-700" title="Chase them on a day">
+                      <CalendarClock className="h-3.5 w-3.5 text-slate-400" />
+                      <span className="text-muted">Follow up</span>
+                      {/*
+                        A date, not a dialog. Deciding to chase somebody on
+                        Tuesday takes one tap, and anything longer gets skipped
+                        in the middle of a conversation — which is how
+                        follow-ups stop happening.
+                      */}
+                      <input
+                        type="date"
+                        aria-label="Follow up on"
+                        className="bg-transparent text-2xs outline-none"
+                        min={new Date().toISOString().slice(0, 10)}
+                        value={followUpOn}
+                        disabled={followUp.isPending}
+                        onChange={(event) => {
+                          setFollowUpOn(event.target.value);
+                          if (event.target.value) followUp.mutate(event.target.value);
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                <span className="mt-1 flex shrink-0 items-center gap-2">
+                  {active.assignedTo !== me?.id && (
+                    <button
+                      className={cn(ACTION_CIRCLE, 'hover:bg-emerald-600')}
+                      aria-label="Take this chat"
+                      title="Take this chat"
+                      onClick={() => void api.waBizTake(active.id).then(refresh)}
+                    >
+                      <UserPlus className="h-4 w-4" />
+                    </button>
+                  )}
+                  <button
+                    className={cn(ACTION_CIRCLE, 'hover:bg-brand-600')}
+                    aria-label="Send a property"
+                    title="Send a property to this buyer"
+                    onClick={() => setSharing(true)}
+                  >
+                    <Building2 className="h-4 w-4" />
                   </button>
-                )}
-                <button
-                  className="btn-secondary btn-sm"
-                  title="Send a property to this buyer"
-                  onClick={() => setSharing(true)}
-                >
-                  <Building2 className="h-3.5 w-3.5" /> Send a property
-                </button>
-                {/*
-                  A date, not a dialog. Deciding to chase somebody on Tuesday
-                  takes one tap, and anything longer gets skipped in the middle
-                  of a conversation — which is how follow-ups stop happening.
-                */}
-                <label className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-2xs dark:border-slate-700" title="Chase them on a day">
-                  <CalendarClock className="h-3.5 w-3.5 text-slate-400" />
-                  <input
-                    type="date"
-                    aria-label="Follow up on"
-                    className="bg-transparent text-2xs outline-none"
-                    min={new Date().toISOString().slice(0, 10)}
-                    value={followUpOn}
-                    disabled={followUp.isPending}
-                    onChange={(event) => {
-                      setFollowUpOn(event.target.value);
-                      if (event.target.value) followUp.mutate(event.target.value);
-                    }}
-                  />
-                </label>
-                <Select
-                  value={active.assignedTo ?? ''}
-                  onChange={(value) => void api.waBizAssign(active.id, value || null).then(refresh)}
-                  placeholder="Assign to…"
-                  options={[{ value: '', label: 'Unassigned' }, ...(users ?? []).map((user) => ({
-                    value: String(user.id), label: String(user.fullName ?? user.email),
-                  }))]}
-                />
-                <Select
-                  value={active.status}
-                  onChange={(value) => void api.waBizStatusSet(active.id, value as 'open' | 'pending' | 'resolved').then(refresh)}
-                  options={[
-                    { value: 'open', label: 'Open' },
-                    { value: 'pending', label: 'Pending' },
-                    { value: 'resolved', label: 'Resolved' },
-                  ]}
-                />
-                <button className="btn-ghost btn-sm" onClick={() => void api.waBizUnread(active.id).then(refresh)}>
-                  Mark unread
-                </button>
+                  <button
+                    className={cn(ACTION_CIRCLE, 'hover:bg-slate-600')}
+                    aria-label="Mark unread"
+                    title="Mark unread"
+                    onClick={() => void api.waBizUnread(active.id).then(refresh)}
+                  >
+                    <MailOpen className="h-4 w-4" />
+                  </button>
+                  {/*
+                    Open / Pending / Resolved in the menu the record page has,
+                    rather than a dropdown of its own taking a third of the
+                    header. The one it is on is ticked, so the menu also says
+                    where the thread stands.
+                  */}
+                  <Dropdown
+                    align="right"
+                    className="min-w-[12rem]"
+                    trigger={(
+                      <button className={cn(ACTION_CIRCLE, 'hover:bg-slate-600')} aria-label="More actions" title="More actions">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </button>
+                    )}
+                  >
+                    {(close) => (
+                      <>
+                        {(['open', 'pending', 'resolved'] as const).map((value) => (
+                          <DropdownItem
+                            key={value}
+                            icon={active.status === value ? <Check className="h-3.5 w-3.5" /> : <span className="h-3.5 w-3.5" />}
+                            onClick={() => {
+                              close();
+                              void api.waBizStatusSet(active.id, value).then(refresh);
+                            }}
+                          >
+                            <span className="capitalize">{value}</span>
+                          </DropdownItem>
+                        ))}
+                      </>
+                    )}
+                  </Dropdown>
+                </span>
               </div>
             </header>
 
@@ -537,31 +593,120 @@ export default function BusinessChats(): JSX.Element {
 
       {/* The CRM, linked rather than copied */}
       {active && (
-        <aside className="hidden w-72 shrink-0 flex-col border-l border-slate-200 bg-white p-4 xl:flex dark:border-slate-800 dark:bg-slate-900">
-          <h3 className="mb-3 text-sm font-bold">Contact</h3>
-          {active.recordId && active.recordModule ? (
-            <>
-              <Link
-                to={`/${active.recordModule}/${active.recordId}`}
-                className="block rounded-lg border border-slate-200 p-3 hover:border-brand-300 dark:border-slate-700"
-              >
-                <p className="truncate text-sm font-semibold">{active.recordLabel}</p>
-                <p className="mt-0.5 text-2xs text-muted">Open the record</p>
-              </Link>
-              <p className="mt-3 text-2xs leading-4 text-muted">
-                Status, requirement, budget, follow-ups and notes live on the record — one copy,
-                so nothing here can disagree with it.
-              </p>
-            </>
-          ) : (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-              <p className="font-semibold">Nobody in the CRM holds this number.</p>
-              <p className="mt-1">Create a contact or link an existing one from the Chats list — the CRM never
-                makes a second contact on its own.</p>
-            </div>
-          )}
+        <aside className="hidden w-72 shrink-0 flex-col gap-3 overflow-y-auto border-l border-slate-200 bg-slate-50 p-3 xl:flex dark:border-slate-800 dark:bg-slate-950/40">
+          {/* Cards, the same ones the record page uses, so this column reads
+              as part of the CRM rather than as a sidebar bolted to a chat. */}
+          <div className="card p-3">
+            <h3 className="mb-2 text-2xs font-bold uppercase tracking-wider text-muted">Contact</h3>
+            {active.recordId && active.recordModule ? (
+              <>
+                <Link
+                  to={`/${active.recordModule}/${active.recordId}`}
+                  className="flex items-center gap-2.5 rounded-lg p-1 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
+                >
+                  <Avatar name={who} size={36} />
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-bold text-slate-900 dark:text-slate-100">{active.recordLabel}</span>
+                    <span className="block text-2xs text-muted">Open the record</span>
+                  </span>
+                </Link>
+                <p className="mt-2 text-2xs leading-4 text-muted">
+                  Status, requirement, budget, follow-ups and notes live on the record — one copy,
+                  so nothing here can disagree with it.
+                </p>
+              </>
+            ) : (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                <p className="font-semibold">Nobody in the CRM holds this number.</p>
+                <p className="mt-1">Create a contact or link an existing one from the Chats list — the CRM never
+                  makes a second contact on its own.</p>
+              </div>
+            )}
+          </div>
+
+          <div className="card p-3">
+            <h3 className="mb-2 text-2xs font-bold uppercase tracking-wider text-muted">This chat</h3>
+            <dl className="space-y-1.5 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <dt className="text-muted">Number</dt>
+                <dd className="truncate font-semibold">{displayNumber(active.handle, active.waId)}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <dt className="text-muted">Assigned to</dt>
+                <dd className="truncate font-semibold">{active.assignedName ?? 'Nobody'}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <dt className="text-muted">State</dt>
+                <dd className="truncate font-semibold capitalize">{active.status}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <dt className="text-muted">Free replies</dt>
+                {/* The 24-hour window, said in words. "Window" is WhatsApp's
+                    vocabulary, not a rep's. */}
+                <dd className="truncate font-semibold">{mode === 'text' ? 'Allowed now' : 'Template only'}</dd>
+              </div>
+            </dl>
+          </div>
         </aside>
       )}
     </div>
+  );
+}
+
+/**
+ * One chat in the queue, shaped like the split view's own queue row.
+ *
+ * The owner asked for this screen to feel like that page, so it is the same
+ * row and not an approximation of it: the bar marking the open one is an
+ * element rather than a border (two `border-l` utilities on one row let
+ * Tailwind's stylesheet order decide the colour, and the marker came out slate
+ * on slate once), the name is bold, the second line is the thing the row is
+ * about, and the right-hand column carries the time above a single chip — two
+ * lines each side. Two chips on two lines with two different right edges is
+ * what makes a queue look ragged.
+ *
+ * Which chip, in order, is what the reader has to act on: how many are waiting,
+ * then nobody has picked this up, then a thread somebody has parked, then who
+ * holds it.
+ */
+function ChatQueueRow({ row, active, onSelect }: {
+  row: ChatRow; active: boolean; onSelect: () => void;
+}): JSX.Element {
+  const who = row.recordLabel ?? row.contactName ?? row.handle;
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        'relative flex w-full items-start gap-2.5 border-b border-slate-100 px-3 py-2.5 text-left transition-colors dark:border-slate-800',
+        active ? 'bg-brand-50 dark:bg-brand-950/50' : 'hover:bg-slate-50 dark:hover:bg-slate-800/70',
+      )}
+    >
+      {active && <span className="absolute inset-y-0 left-0 w-1 bg-brand-600" aria-hidden />}
+      <span className="relative shrink-0">
+        <Avatar name={who} size={36} />
+        {row.unreadCount > 0 && (
+          <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-500 dark:border-slate-900" title="Waiting for a reply" />
+        )}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-bold text-slate-900 dark:text-slate-100">{who}</span>
+        <span className="mt-1 block truncate text-xs text-slate-500">{row.lastMessagePreview ?? 'No messages yet'}</span>
+      </span>
+      <span className="flex shrink-0 flex-col items-end gap-1">
+        {row.lastMessageAt
+          ? <span className="px-1.5 py-0.5 text-2xs font-bold text-slate-400">{relativeTime(row.lastMessageAt)}</span>
+          : <span className="px-1.5 py-0.5 text-2xs font-bold text-slate-300">—</span>}
+        {row.unreadCount > 0 ? (
+          <span className="rounded-full bg-emerald-600 px-1.5 py-0.5 text-2xs font-bold text-white">{row.unreadCount} new</span>
+        ) : !row.assignedName ? (
+          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-2xs font-bold text-amber-900 dark:bg-amber-950/60 dark:text-amber-200">Unassigned</span>
+        ) : row.status !== 'open' ? (
+          <span className="rounded bg-slate-200 px-1.5 py-0.5 text-2xs font-bold capitalize text-slate-700 dark:bg-slate-700 dark:text-slate-200">{row.status}</span>
+        ) : (
+          <span className="max-w-[7rem] truncate px-1.5 py-0.5 text-2xs font-semibold text-slate-400">{row.assignedName}</span>
+        )}
+      </span>
+    </button>
   );
 }
