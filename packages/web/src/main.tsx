@@ -8,6 +8,8 @@ import { startErrorReporting } from './lib/errorReporting';
 import { boot, isNative } from './lib/native';
 import { startNativeBridges } from './lib/nativeBridges';
 import { fetchUpdateInBackground, markBundleHealthy } from './lib/liveUpdate';
+import { startAppPresence } from './lib/appPresence';
+import { startDialWatch } from './lib/dialWatch';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -60,6 +62,17 @@ void boot().catch(() => undefined).then(() => {
 
   // Back button, deep links, push, connectivity — all no-ops in a browser.
   void startNativeBridges();
+
+  // And this phone telling the CRM it is reachable, which is what makes a desk
+  // Call able to say so *before* somebody presses it. No-op in a browser.
+  startAppPresence();
+
+  /*
+    And the phone looking for a call the CRM has queued for it, on its own
+    timer rather than only when a socket event arrives. The socket is the fast
+    path; this is the one that works when there is no socket at all.
+  */
+  startDialWatch();
 
   /*
     This bundle has painted, so it works. Said before anything else, because

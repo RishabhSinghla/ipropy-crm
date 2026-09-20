@@ -2382,6 +2382,72 @@ Two changes, both of which work with the app exactly as it is installed today:
 **The failure message names the thing a rep can act on**: open the app on the phone. It
 used to say the app needed updating, which is true and is not something a rep can do.
 
+### Is the phone reachable, and has it allowed anything?
+
+Two questions the CRM could not answer about a handset, so "Call not going" had no
+diagnosis on either side of it.
+
+**Reachability** (migration `165`, `lib/phoneStatus.ts`, `components/PhoneStatus.tsx`).
+`last_sync_at` was the only fact there was and **it is not liveness**: `SyncWorker` wakes
+every fifteen minutes and returns *without contacting the CRM* when there are no new
+calls, so a perfectly healthy phone on a quiet morning looks identical to one switched
+off. `ipy_device` now carries `last_seen_at` (stamped by `authenticateDevice`, so every
+device-token request counts) and `app_open_at` (a 60-second heartbeat from
+`lib/appPresence.ts` while the app is open and visible). Settings → Phones reads them as
+**App open · Idle · Offline · Never**, beside how the last Call ended — `expired` being
+the exact failure the owner kept meeting. Only "App open" means pressing Call will ring
+it, because the instruction travels over the app's own connection.
+
+**The phone now looks for a waiting call on its own timer** (`lib/dialWatch.ts`, every
+five seconds while visible). `/dial/pending` existed and **nothing on a schedule ever
+called it** — only the socket event and a reconnect did, so a phone whose socket was
+asleep collected nothing, for ever. `takePendingDial` lives in that file and is imported
+by `realtime.ts` rather than copied: the socket is the fast path, the timer is the one
+that works when there is no socket at all, and two copies of the claim would eventually
+disagree about how a command is closed out.
+
+**The claim is one statement** — `FOR UPDATE SKIP LOCKED` inside a CTE that updates in
+the same breath — because the socket and the timer both look, and both being handed the
+same command rings the customer twice.
+`tests/integration/thePhoneIsReachable.test.ts` races two callers at it. **It has to
+clear the account's other queued commands first**: another suite dialling from the same
+admin leaves a row behind, two callers then each legitimately claim a *different*
+command, and the test fails while the thing it is about works perfectly. Same rule as the
+dashboard specs — a test that depends on what is already in the database reports the
+machine it ran on.
+
+### Android asks for nothing at install time
+
+**20 September 2026, the owner:** *"if APK need any permission please ask before install
+app, make the working structure."*
+
+Installing an APK grants it **nothing**. Every permission is asked for later, from inside
+the app, by the code that needs it — so a handset can be installed, signed into, and
+still unable to ring anybody, with nothing on screen saying which answer is missing. That
+is precisely what production was doing.
+
+`lib/phonePermissions.ts` is the checklist as **data** (pure, node-tested) and
+`components/PhoneSetup.tsx` draws it: pair, Phone, Call logs, Notifications, and Location
+only once somebody has switched location on. It is on the app's **You** tab whenever
+something required is outstanding — not only in Settings, because a rep who has just
+installed the app has no reason to go hunting for a permission nobody told them about —
+and on the browser's download card as *what the phone will ask you to allow*, before
+anybody installs it.
+
+Three rules in it:
+
+* **A row is redrawn from the plugin's own answer, never from the fact a button was
+  pressed.** After two refusals Android stops showing the dialog at all and answers
+  "denied" without one; a tick there is a lie the rep then acts on.
+* **"While using the app" is not location granted.** `backgroundLocationGranted` is the
+  test, because foreground-only reports nothing once the screen goes off — a map that
+  quietly stops moving rather than one that says it is off. Android will not grant "all
+  the time" from a pop-up either, so that row asks for what it can and then opens the
+  app's own settings page.
+* **It lives in the web bundle**, which is the half that updates itself from production.
+  So it reaches every installed handset with no APK rebuild — which is just as well,
+  since this container has a JDK and no Android SDK.
+
 **Still true and still not buildable here:** `placeCall` itself — the ACTION_CALL path
 that needs no tap — is Android code that has never been compiled, because this container
 has a JDK and no Android SDK.

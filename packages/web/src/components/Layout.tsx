@@ -178,10 +178,16 @@ export default function Layout(): JSX.Element {
             title="WhatsApp — the team's chats, campaigns and templates"
             className={({ isActive }) => cn(
               'flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-semibold transition-colors',
-              // WhatsApp's own green, and white on it clears AA at this size.
+              /*
+                WhatsApp's green, darkened until white on it clears AA — the
+                brand's own #25D366 lands at 1.98:1 under white text and its
+                teal #128C7E at 4.14, both short of 4.5 for 14px semibold. It
+                still reads as WhatsApp; it failed every accessibility spec in
+                the suite, because this button is on every signed-in page.
+              */
               isActive
-                ? 'bg-[#128C7E] text-white'
-                : 'bg-[#25D366] text-white hover:bg-[#1FAF52]',
+                ? 'bg-[#075E54] text-white'
+                : 'bg-[#0B8043] text-white hover:bg-[#097A41]',
             )}
           >
             <MessagesSquare className="h-4 w-4" />

@@ -180,7 +180,9 @@ export default function SharedMatchesPage(): JSX.Element {
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-white"
-                style={{ backgroundColor: '#25D366' }}
+                /* Darkened from the brand's #25D366, which is 1.98:1 under
+                   white text. This page is public and is scanned too. */
+                style={{ backgroundColor: '#0B8043' }}
               >
                 <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
               </a>

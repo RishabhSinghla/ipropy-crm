@@ -20,6 +20,7 @@ import {
   callSyncStatus, callSyncSupported, disableCallSync, enableCallSync, syncCallsNow,
   type CallSyncStatus,
 } from '../lib/callSync';
+import { PhoneSetup, usePhoneSetup } from '../components/PhoneSetup';
 import { Avatar, AppBar, Group, Row } from './primitives';
 import { ConfirmDialog, Spinner } from '../components/ui';
 
@@ -32,6 +33,14 @@ export default function MobileYou(): JSX.Element {
   const [calls, setCalls] = useState<CallSyncStatus | null>(null);
   const [callsBusy, setCallsBusy] = useState(false);
   const [signOut, setSignOut] = useState(false);
+
+  /*
+    What this handset has still not allowed. Shown at the top of this page and
+    nowhere else on the phone: a rep who has just installed the app has no
+    reason to go looking in Settings for a permission they were never told
+    about, and "Call not going" is what that looks like from a desk.
+  */
+  const setup = usePhoneSetup();
 
   useEffect(() => {
     void currentSubscription().then((s) => setAlerts(Boolean(s) && permissionState() === 'granted'));
@@ -76,6 +85,12 @@ export default function MobileYou(): JSX.Element {
             <p className="truncate text-[14px] text-muted">{user?.email}</p>
           </div>
         </div>
+
+        {setup.blocking.length > 0 && (
+          <div className="px-4 pt-4">
+            <PhoneSetup />
+          </div>
+        )}
 
         <Group title="This phone">
           <Row

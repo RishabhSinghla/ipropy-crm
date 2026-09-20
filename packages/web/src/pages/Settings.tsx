@@ -15,6 +15,8 @@ import { Avatar, Badge, ConfirmDialog, EmptyState, Modal, Select, Skeleton, Spin
 import { copyText } from '../lib/nativeActions';
 import { isNative } from '../lib/native';
 import { updateAvailable, UNKNOWN_VERSION } from '../lib/appVersion';
+import { PhoneStatus } from '../components/PhoneStatus';
+import { PhoneSetup } from '../components/PhoneSetup';
 import {
   callSyncStatus, callSyncSupported, disableCallSync, enableCallSync, openAppSettings,
   syncCallsNow, type CallSyncStatus,
@@ -981,6 +983,26 @@ function GetTheApp(): JSX.Element | null {
         </a>
       </div>
 
+      {/*
+        What it will ask for, before anybody installs it — the owner asked for
+        exactly this. Android grants an app nothing at install time, so these
+        are questions the handset will put to whoever is holding it, one at a
+        time, with the app's own checklist in front of them.
+      */}
+      <div className="rounded-lg border border-slate-100 p-3 dark:border-slate-800">
+        <p className="text-sm font-medium">What the phone will ask you to allow</p>
+        <ul className="mt-2 space-y-1 text-2xs text-muted">
+          <li><strong>Phone</strong> — so pressing Call in the CRM rings the number on that handset.</li>
+          <li><strong>Call logs</strong> — so calls made and taken file themselves against the right contact.</li>
+          <li><strong>Notifications</strong> — so follow-ups reach the rep when the app is closed. Optional.</li>
+          <li><strong>Location, all the time</strong> — only if you switch the team map on. Optional.</li>
+        </ul>
+        <p className="mt-2 text-2xs text-muted">
+          None of these are granted by installing. The app shows this list on its own You tab and
+          asks for them one at a time, and calling does not work until the first two are allowed.
+        </p>
+      </div>
+
       <ol className="space-y-2 border-t border-slate-100 pt-4 text-sm text-muted dark:border-slate-800">
         <li>
           <span className="font-medium text-slate-700 dark:text-slate-200">1. Let the phone install it.</span>{' '}
@@ -1230,9 +1252,21 @@ function PhonesTab(): JSX.Element {
   return (
     <div className="space-y-4">
 
+    {/* First, because on the handset itself nothing below can work until these
+        are allowed — and Android asks for none of them at install time. */}
+    <PhoneSetup />
+
     <ThisPhone />
 
     <GetTheApp />
+
+    {/* Can the CRM reach each handset *right now* — which is a different
+        question from whether it has ever synced, and the one somebody asks
+        after pressing Call and hearing nothing. */}
+    <div className="space-y-2">
+      <p className="text-sm font-medium">Are the phones reachable?</p>
+      <PhoneStatus />
+    </div>
 
     <div className="card space-y-5 p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">

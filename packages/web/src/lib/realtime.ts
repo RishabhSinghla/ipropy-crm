@@ -13,8 +13,7 @@ import { io, type Socket } from 'socket.io-client';
 import { api, tokenStore } from './api';
 import { invalidateRecordQueries } from './invalidate';
 import { apiBase, isNative } from './native';
-import { callSyncSupported, placeCallFromPhone } from './callSync';
-import { dial } from './nativeActions';
+import { takePendingDial } from './dialWatch';
 
 let socket: Socket | null = null;
 
@@ -81,29 +80,6 @@ export function useRealtime(enabled: boolean): void {
     const onCall = (): void => {
       void qc.invalidateQueries({ queryKey: ['calls'] });
       void qc.invalidateQueries({ queryKey: ['timeline'] });
-    };
-    let takingDial = false;
-    const takePendingDial = async (): Promise<void> => {
-      if (!isNative || takingDial) return;
-      takingDial = true;
-      try {
-        const { command } = await api.pendingDial();
-        if (!command) return;
-        const placed = callSyncSupported
-          ? await placeCallFromPhone(command.number, command.id)
-          : { placed: false, reason: 'not-android' };
-        if (placed.placed) return;
-
-        // Older installed builds do not contain the native caller. They can
-        // still open the handset dialler, which is a useful and honest fallback.
-        dial(command.number);
-        await api.closeDial(command.id, { ok: true, via: 'dialler' }).catch(() => undefined);
-      } catch {
-        // A reconnect can race the database write. The next reconnect retries
-        // this short read, while the desktop still has its normal fallback.
-      } finally {
-        takingDial = false;
-      }
     };
     /*
       The CRM telling this phone to ring somebody.

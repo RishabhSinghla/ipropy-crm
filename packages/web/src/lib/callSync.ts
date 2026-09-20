@@ -122,6 +122,21 @@ export async function enableCallSync(options: {
   });
 }
 
+/**
+ * Ask Android for the two call permissions, on their own.
+ *
+ * `enableCallSync` asks for them as part of pairing, which is right the first
+ * time and wrong every time after: a rep who tapped Deny once, or who revoked
+ * a permission later, is already paired and has nothing left to press. This is
+ * that button. Android only shows a dialog while it is willing to — after two
+ * refusals it answers "denied" without one, which is what `openAppSettings`
+ * exists for.
+ */
+export async function askForCallPermissions(): Promise<CallSyncStatus> {
+  if (!callSyncSupported) return UNAVAILABLE;
+  return CallSync.requestCallPermissions();
+}
+
 export async function disableCallSync(): Promise<CallSyncStatus> {
   if (!callSyncSupported) return UNAVAILABLE;
   return CallSync.unpair();

@@ -620,6 +620,24 @@ telephonyRouter.post('/devices', asyncHandler(async (req, res) => {
  * phone, because the caller's fallback (the laptop's own dialler) is a working
  * answer and not a failure.
  */
+/**
+ * "The app is open on my phone."
+ *
+ * Sent by the app's own screens every minute while it is in the foreground.
+ * It exists because that is the fact a desk Call depends on and the one thing
+ * nobody could see: the instruction reaches a handset over the app's own
+ * connection, so a closed app cannot be rung however healthy the phone is.
+ *
+ * In the screens rather than the native half on purpose — those update
+ * themselves from the server, so every handset already in the field starts
+ * reporting without anybody installing anything.
+ */
+telephonyRouter.post('/devices/app-open', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const { markAppOpen } = await import('../../integrations/telephony/deviceSync.js');
+  res.json(await markAppOpen(user.id));
+}));
+
 telephonyRouter.post('/dial', asyncHandler(async (req, res) => {
   const user = getUser(req);
   await assertCapability(user, 'telephony.call');

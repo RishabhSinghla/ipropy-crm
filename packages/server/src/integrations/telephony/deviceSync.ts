@@ -100,6 +100,19 @@ export async function authenticateDevice(token: string | undefined): Promise<Aut
   );
   if (!row) throw new UnauthorizedError('This device is not paired, or its access was revoked');
 
+  /*
+    Heard from. Every device-token request stamps this, which is the only way
+    the CRM can tell a quiet phone from an absent one: the background worker
+    returns without contacting the server at all when there are no new calls,
+    so `last_sync_at` stands still on a handset that is working perfectly.
+
+    Deliberately not awaited — a status column is never worth delaying a call
+    upload for, and a failed stamp costs a slightly stale "last seen" rather
+    than a lost call.
+  */
+  void db.query(`UPDATE ipy_device SET last_seen_at = now() WHERE id = $1`, [row.id])
+    .catch(() => undefined);
+
   return { id: row.id, userId: row.user_id, phoneNumber: row.phone_number };
 }
 
@@ -395,14 +408,54 @@ export async function listDevices(userId: string, isAdmin: boolean): Promise<Rec
   const rows = await db.query(
     `SELECT d.id, d.label, d.platform, d.token_preview, d.phone_number, d.model,
             d.app_version, d.is_active, d.last_sync_at, d.last_sync_count, d.created_at,
+            d.last_seen_at, d.app_open_at,
             trim(u.first_name || ' ' || u.last_name) AS user_name,
-            (SELECT count(*) FROM ipy_call c WHERE c.device_id = d.id)::int AS call_count
+            (SELECT count(*) FROM ipy_call c WHERE c.device_id = d.id)::int AS call_count,
+            /*
+              How the last call instruction ended, which is the question
+              anybody looking at this list is really asking: "why did pressing
+              Call do nothing?". "expired" means the phone never collected it.
+            */
+            (SELECT c.status FROM ipy_device_command c
+              WHERE c.device_id = d.id AND c.kind = 'dial'
+              ORDER BY c.created_at DESC LIMIT 1) AS last_dial_status,
+            (SELECT c.created_at FROM ipy_device_command c
+              WHERE c.device_id = d.id AND c.kind = 'dial'
+              ORDER BY c.created_at DESC LIMIT 1) AS last_dial_at
      FROM ipy_device d JOIN ipy_user u ON u.id = d.user_id
      WHERE d.user_id = $1 OR $2
-     ORDER BY d.created_at DESC`,
+     ORDER BY d.app_open_at DESC NULLS LAST, d.last_seen_at DESC NULLS LAST, d.created_at DESC`,
     [userId, isAdmin],
   );
   return rows.rows;
+}
+
+/**
+ * The app on this person's phone is open right now.
+ *
+ * Sent by the app's own screens, which update themselves from the server — so
+ * every handset already installed starts reporting this without anybody
+ * installing anything, which is the whole reason it is here rather than in the
+ * native half.
+ *
+ * It stamps **the phone a desk Call would ring** — the same "most recently
+ * synced active device" `queueDial` picks — because that is the exact promise
+ * the status is used to make. Picking by recency is safe here and nowhere
+ * else: every device considered belongs to this same person.
+ */
+export async function markAppOpen(userId: string): Promise<{ deviceId: string | null }> {
+  const row = await db.queryOne<{ id: string }>(
+    `UPDATE ipy_device SET app_open_at = now(), last_seen_at = now()
+      WHERE id = (
+        SELECT id FROM ipy_device
+         WHERE user_id = $1 AND is_active = true
+         ORDER BY last_sync_at DESC NULLS LAST, created_at DESC
+         LIMIT 1
+      )
+      RETURNING id`,
+    [userId],
+  );
+  return { deviceId: row?.id ?? null };
 }
 
 export async function revokeDevice(deviceId: string, userId: string, isAdmin: boolean): Promise<void> {

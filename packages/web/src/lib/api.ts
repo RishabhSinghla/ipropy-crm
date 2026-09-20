@@ -1034,6 +1034,8 @@ export const api = {
     post<{ deviceId: string; token: string; note: string }>('/api/telephony/devices', data),
   revokeDevice: (id: string) => del(`/api/telephony/devices/${id}`),
   /** Ring a number from the signed-in user's own paired phone. */
+  /** The app saying it is open, so a desk Call knows it can reach this phone. */
+  appIsOpen: () => post<{ deviceId: string | null }>('/api/telephony/devices/app-open', {}),
   dialOnPhone: (data: { to: string; module?: string; recordId?: string }) =>
     post<{ sent: boolean; reason?: string; device?: string; commandId?: string; expiresAt?: string }>('/api/telephony/dial', data),
   /** Claim one waiting desk-call instruction when the native app reconnects. */
