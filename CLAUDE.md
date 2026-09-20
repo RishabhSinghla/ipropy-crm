@@ -760,9 +760,22 @@ every properly signed update after it, months later, on somebody else's phone.
 date.** The APK published on 20 September 2026 — 2.1.0, versionCode 3 —
 **contains it**, along with the `CALL_PHONE` permission and the pending-dial
 poll. Read out of the published APK itself (`unzip`, then `grep -a` the dex and
-`strings -el` the binary manifest), not assumed. So a desk Call ringing a
-phone on its own needs a **reinstall from the CRM's own download page**, not a
-rebuild — the three handsets paired since August are running something older.
+`strings -el` the binary manifest), not assumed.
+
+**The phones are the half nobody had checked, and `ipy_device.app_version`
+records it.** Read off production the same day
+(`.github/workflows/which-app-version.yml`, read-only): **every handset that
+has ever synced reports `1.0.0`**, against 2.1.0 on the download page. Fifteen
+paired rows, three of them ever syncing; the Redmi Note 7 Pro uploaded 63
+calls at 14:02 that afternoon, so pairing and call sync work perfectly on
+1.0.0 — it is only the dialling half that is missing. Dial instructions now
+stand at **162, none collected, none reporting how**.
+
+So the thing standing between a desk Call and a ringing phone is **a reinstall
+on each handset, not a rebuild and not Android Studio**. Nothing in this repo
+can do it: somebody has to open the CRM on each phone and install 2.1.0. Until
+then the fixes above are correct and unreachable, which is its own trap —
+`app_version` is the field that tells you which.
 
 ---
 
