@@ -174,6 +174,21 @@ describe('dialling from the CRM', () => {
   });
 
   it('lets a phone claim a call it missed while the app was asleep', async () => {
+    /*
+      Empty the queue first, and that is about the endpoint's contract rather
+      than about tidiness. `/dial/pending` hands back the **oldest** waiting
+      command — correct, because it is a queue and a phone that has been
+      offline owes its earliest caller first. An earlier case in this file
+      leaves one behind, so without this the assertion below reads that one
+      and fails with two unrelated uuids, which looks like the endpoint
+      picking at random.
+    */
+    await db.query(
+      `DELETE FROM ipy_device_command
+        WHERE kind = 'dial' AND status = 'queued'
+          AND user_id = (SELECT id FROM ipy_user WHERE email = 'admin@ipropy.com')`,
+    );
+
     const queued = await request(app)
       .post('/api/telephony/dial')
       .set('Authorization', `Bearer ${token}`)

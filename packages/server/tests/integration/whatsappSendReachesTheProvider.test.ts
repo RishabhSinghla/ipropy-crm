@@ -72,11 +72,34 @@ describe('sending on the business number', () => {
       24-hour window, which is shut because this conversation has never had an
       inbound message. Reaching that refusal is the proof: the opt-out query
       ran and answered no.
+
+      **The number carries its country code**, and that is the point of this
+      line rather than an incidental detail. Ten digits is a matching key, not
+      a destination, and `sendOnBusinessNumber` now refuses a number it cannot
+      dial *before* it looks at the window — see the case below. Writing this
+      one with a bare ten digits is what made it pass for the wrong reason
+      until 20 September 2026.
     */
     await expect(sendOnBusinessNumber({
       // A different number in its **last ten digits**, which is what the
       // opt-out list matches on — a different prefix alone is the same person.
-      userId, to: `7${String(stamp + 7).slice(-9)}`, text: 'hello',
+      userId, to: `917${String(stamp + 7).slice(-9)}`, text: 'hello',
     })).rejects.toThrow(/24-hour window/);
+  });
+
+  it('refuses a number it cannot dial, rather than guessing at +91', async () => {
+    /*
+      Ten digits and no record to read a country code off. WhatsApp reads ten
+      digits as a different person from the one who wrote in, which is how
+      every free-text reply this CRM ever attempted came back as "outside the
+      24-hour window" while the window was plainly open.
+
+      The refusal has to name the missing country code. Assuming +91 would send
+      an NRI buyer's message to a stranger in India, and that cannot be taken
+      back.
+    */
+    await expect(sendOnBusinessNumber({
+      userId, to: `7${String(stamp + 9).slice(-9)}`, text: 'hello',
+    })).rejects.toThrow(/country code/i);
   });
 });
