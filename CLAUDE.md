@@ -772,6 +772,39 @@ rather than falling back to the debug key, for the reason `build.gradle`
 already states: a debug-signed release installs perfectly and then blocks
 every properly signed update after it, months later, on somebody else's phone.
 
+**But "it must be the same key or the team cannot update" was already false
+when that message was written, and the message is what blocked the next
+release.** Read out of the two published APKs on 21 September 2026 with
+`packages/app/scripts/which-key-signed-it.py` — no SDK needed, it reads the
+APK Signing Block directly:
+
+| build | signer | key made |
+|---|---|---|
+| 1.0.0, 12 Sep, what most handsets run | `A2:55:AD:0D…` | 12 Sep 05:37 GMT |
+| 2.1.0, 20 Sep, on the download page | `D6:CD:55:3B…` | 20 Sep 11:07 GMT |
+
+**Two different keys, same subject, and no rotation lineage** — both APKs
+carry a v2 block only, no v3.1, so this was a clean break rather than a
+rotation. Somebody re-ran `make-release-key.sh` on 20 September. The
+consequence is the part that matters: **every phone still on 1.0.0 has to
+uninstall before it can take 2.1.0 or anything after it, whichever key is
+used.** Preserving the Mac's key saves exactly the phones that already have
+2.1.0 — which on 21 September was one handset, the one being tested on.
+
+So the real choice is 3 uninstalls versus 4, not "nobody" versus "everybody",
+and `build-the-app.yml` says so at the point of failure now instead of
+repeating a rule that had already been broken. It also offers the second road
+(`make_new_key`), which generates a keystore on the runner and **saves it to
+the repository's own secrets before building with it**, through the
+`SECRET_WRITE_TOKEN` PAT that `create-api-key.yml` already uses. A key made
+and then lost would leave an app nobody could ever update, so the token is
+checked before `keytool` runs rather than after.
+
+**The lesson is the one this repo keeps re-learning in a new costume:** a
+refusal message is a claim about the world, and it goes stale like any other.
+This one was written on 20 September, was true for about four hours, and was
+still being quoted as a blocker a day later.
+
 **And the note that said every installed copy predates `placeCall` is out of
 date.** The APK published on 20 September 2026 — 2.1.0, versionCode 3 —
 **contains it**, along with the `CALL_PHONE` permission and the pending-dial
