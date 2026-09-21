@@ -69,7 +69,14 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      # `packages: ''` on purpose. The action's default is `tools`, a package
+      # Google removed from the SDK repository -- so it fetches the index,
+      # reports "Failed to find package 'tools'" and fails the build in twenty
+      # seconds, before a line of this app is compiled. Gradle resolves the
+      # platform and build-tools it actually needs on its own.
       - uses: android-actions/setup-android@v3
+        with:
+          packages: ''
 
       - name: Put the signing key in place
         env:
