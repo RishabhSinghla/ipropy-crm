@@ -29,15 +29,15 @@
     "vtiger:migrate": "tsx src/scripts/vtiger/migrate.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.123.0",
-    "@aws-sdk/client-s3": "^3.1126.0",
+    "@anthropic-ai/sdk": "^0.126.0",
+    "@aws-sdk/client-s3": "^3.1135.0",
     "@ipropy/mcp": "*",
     "@ipropy/shared": "*",
-    "@sentry/node": "^10.73.0",
+    "@sentry/node": "^10.75.0",
     "@simplewebauthn/server": "^13.3.2",
     "archiver": "^8.0.0",
     "bcryptjs": "^3.0.3",
-    "compression": "^1.7.5",
+    "compression": "^1.8.2",
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
     "exceljs": "^4.4.0",
@@ -48,7 +48,7 @@
     "helmet": "^8.0.0",
     "imapflow": "^1.7.8",
     "jsonwebtoken": "^9.0.2",
-    "multer": "^2.3.0",
+    "multer": "^2.4.0",
     "nodemailer": "^9.1.1",
     "pg": "^8.23.0",
     "pino": "^10.3.1",
@@ -76,7 +76,7 @@
     "supertest": "^7.2.2",
     "tsx": "^4.23.13",
     "typescript": "^5.7.2",
-    "vitest": "^5.0.0",
+    "vitest": "^5.0.1",
     "yauzl": "^3.4.0"
   }
 }
