@@ -15,6 +15,25 @@ import { test, expect } from '@playwright/test';
 test.beforeEach(async ({ page }) => {
   // Wide enough for the desktop table — below 1024px the list renders as cards.
   await page.setViewportSize({ width: 1100, height: 800 });
+
+  /*
+    A grid wide enough to scroll, made rather than hoped for.
+
+    The table is `table-fixed w-full`, so with the shipped widths the columns
+    shrink to fit and there is nothing to scroll sideways at all — which is a
+    fact about this browser's saved layout, not about the pinning, and it is
+    what made this spec read as a failing feature for a day. Column widths live
+    in localStorage per browser (`lib/columnWidths.ts`), so setting a wide one
+    is the same thing a rep does by dragging a divider.
+  */
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('ipropy.colwidths.leads', JSON.stringify({
+        full_name: 420, mobile: 320, email: 420, lead_status: 320, contact_type: 320,
+      }));
+    } catch { /* a private window; the assertion below says so */ }
+  });
+
   await page.goto('/leads');
   await expect(page.locator('tbody tr').first()).toBeVisible({ timeout: 30_000 });
 });
@@ -48,13 +67,31 @@ test('the checkbox and the name are pinned to the left of the grid', async ({ pa
 */
 test('the name does not move when the table scrolls sideways', async ({ page }) => {
   const name = page.locator('tbody tr').first().locator('td').nth(1);
+  /*
+    The table's **own** horizontal scroller, and nothing else.
+
+    This used to walk up until it found any ancestor with something to scroll,
+    which on a window where the columns happen to fit sails past the table's
+    container and lands on an unrelated one. Scrolling that moves the whole
+    table, pinned cell included, and the test fails about a column that is
+    pinned perfectly well — which is how this spent a day being read as a real
+    bug. The column widths are per browser, so which machine this runs on
+    decides whether the table overflows at all: the same rule as the unique
+    markers, applied to a saved layout.
+  */
   const handle = await page.locator('table').first().evaluateHandle((table) => {
     let el: HTMLElement | null = table.parentElement;
-    while (el && el.scrollWidth - el.clientWidth < 40) el = el.parentElement;
-    return el;
+    while (el) {
+      const overflow = getComputedStyle(el).overflowX;
+      if (overflow === 'auto' || overflow === 'scroll') return el;
+      el = el.parentElement;
+    }
+    return null;
   });
   const scroller = handle.asElement();
-  if (!scroller) test.skip(true, 'this list fits the window, so there is nothing to scroll');
+  if (!scroller) test.skip(true, 'this list has no horizontal scroller');
+  const room = await scroller!.evaluate((el) => (el as HTMLElement).scrollWidth - (el as HTMLElement).clientWidth);
+  expect(room, 'the grid has nothing to scroll sideways, so this proves nothing').toBeGreaterThanOrEqual(40);
 
   const before = Math.round((await name.boundingBox())!.x);
   await scroller!.evaluate((el) => { (el as HTMLElement).scrollLeft = (el as HTMLElement).scrollWidth; });

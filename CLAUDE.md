@@ -1765,6 +1765,24 @@ scrolled right left every row anonymous, because the column saying who this is s
 away with the rest. `.list-stick-select` / `.list-stick-first` in `styles.css`, pinned by
 `e2e/stickyName.spec.ts`.
 
+**The pinned name column was never broken, and the spec that said so was
+measuring a different scroller.** 21 September 2026: `stickyName.spec.ts`
+walked up from the table until it found *any* ancestor with something to
+scroll. The table is `table-fixed w-full`, so with the shipped column widths
+the columns shrink to fit and its own container has nothing to scroll — the
+walk sailed past it, landed on an unrelated scroller, scrolled that, and the
+whole table moved with the pinned cell inside it. Read as a live bug for a
+day, including here.
+Two halves to the fix, and the second is the rule: it takes the table's **own**
+horizontal scroller (nearest ancestor whose `overflow-x` is auto or scroll),
+and it **makes the grid wide** by writing column widths into
+`ipropy.colwidths.leads` before the page loads, rather than hoping this
+browser's saved layout overflows. A skipped assertion proves nothing, and
+whether a grid scrolls sideways is a fact about the machine it ran on — the
+same rule as the unique markers, applied to a saved layout. Before concluding
+a browser is at fault, note that a sticky `<td>` in a `border-collapse` table
+was checked directly in this container's Chromium and works.
+
 **And the trap that was hiding in plain sight: `.list-head` says `sticky top-0`, and the
 header cell also carried Tailwind's `relative`.** A utility wins on source order, so every
 column heading in the CRM was `position: relative` and the whole header row scrolled away
