@@ -56,6 +56,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # `secrets` is not a context an `if:` may read -- GitHub refuses to parse
+    # the whole file, so the workflow cannot be started at all and the error
+    # names a line rather than the rule. A job-level `env` *may* read secrets,
+    # and `if:` may read `env`, so the question is asked once here and the
+    # steps below test the answer. It is a string, never a boolean.
+    env:
+      HAVE_KEY: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -87,7 +94,7 @@ jobs:
       # update — strictly worse than refusing. So the write token is checked
       # before keytool runs, not after.
       - name: Make a signing key and keep it
-        if: ${{ inputs.make_new_key && secrets.ANDROID_KEYSTORE_BASE64 == '' }}
+        if: ${{ inputs.make_new_key && env.HAVE_KEY == 'false' }}
         env:
           GH_TOKEN: ${{ secrets.SECRET_WRITE_TOKEN }}
         run: |
@@ -125,7 +132,12 @@ jobs:
           echo "::notice::Every phone must uninstall iPropy once before installing this build."
 
       - name: Put the signing key in place
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        # Only when the repository already held one. The make-a-key step above
+        # writes both files itself, and a secret written during this run is not
+        # visible to this run -- so letting this also run on that path would
+        # overwrite a perfectly good keystore with an empty one and fail at
+        # signing, several minutes later, saying nothing about why.
+        if: ${{ env.HAVE_KEY == 'true' }}
         env:
           KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
