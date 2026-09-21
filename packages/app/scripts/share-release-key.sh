@@ -22,20 +22,44 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
-KEYSTORE="$HERE/android/ipropy-release.keystore"
 PROPS="$HERE/android/keystore.properties"
 REPO="${REPO:-RishabhSinghla/ipropy-crm}"
 
-if [ ! -f "$KEYSTORE" ] || [ ! -f "$PROPS" ]; then
+# `keystore.properties` names its own file, so read the name from there rather
+# than assuming one. Whoever ran `make-release-key.sh` may have called it
+# anything, and a script that knows only one name sends somebody back to a chat
+# window to ask -- which is the round trip this exists to avoid.
+KEYSTORE=""
+if [ -f "$PROPS" ]; then
+  NAMED="$(grep -E '^storeFile=' "$PROPS" | head -1 | cut -d= -f2-)"
+  case "$NAMED" in
+    /*) KEYSTORE="$NAMED" ;;
+    ?*) KEYSTORE="$HERE/android/$NAMED" ;;
+  esac
+fi
+
+# Nothing named, or named something that is not there: take the only keystore
+# in that folder, when there is exactly one.
+if [ -z "$KEYSTORE" ] || [ ! -f "$KEYSTORE" ]; then
+  FOUND="$(ls "$HERE"/android/*.keystore "$HERE"/android/*.jks 2>/dev/null || true)"
+  if [ "$(printf '%s' "$FOUND" | grep -c .)" = "1" ]; then KEYSTORE="$FOUND"; fi
+fi
+
+if [ ! -f "$PROPS" ] || [ -z "$KEYSTORE" ] || [ ! -f "$KEYSTORE" ]; then
   echo "No signing key on this machine."
-  echo "  looked for: $KEYSTORE"
-  echo "              $PROPS"
+  echo "  looked in: $HERE/android/"
+  echo "  needs:     keystore.properties, and the .keystore or .jks it names"
+  echo
+  echo "What is actually there:"
+  ls -1 "$HERE"/android/ 2>/dev/null | grep -Ei 'keystore|\.jks' || echo "  (nothing that looks like a key)"
   echo
   echo "This has to run on the laptop that built the version already on the"
   echo "team's phones. A key made here instead would produce an app every rep"
   echo "must uninstall before they can install it."
   exit 1
 fi
+
+echo "Using $KEYSTORE"
 
 if ! command -v gh >/dev/null 2>&1; then
   echo "The GitHub CLI is not installed. On a Mac: brew install gh && gh auth login"
