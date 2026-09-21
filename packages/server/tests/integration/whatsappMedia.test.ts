@@ -140,7 +140,11 @@ describe('the link a reseller fetches from', () => {
     expect(mediaLinkValid('99999999-2222-3333-4444-555555555555', exp, sig)).toBe(false);
     // A longer life, claimed by editing the URL.
     expect(mediaLinkValid(id, exp + 86_400, sig)).toBe(false);
-    expect(mediaLinkValid(id, exp, `${sig.slice(0, -1)}0`)).toBe(false);
+    // Change a character to a *different* valid hex digit. Appending `0`
+    // incorrectly left the signature unchanged whenever it already ended in
+    // `0`, making this security test flaky.
+    const alteredSignature = `${sig.slice(0, -1)}${sig.endsWith('0') ? '1' : '0'}`;
+    expect(mediaLinkValid(id, exp, alteredSignature)).toBe(false);
     expect(mediaLinkValid(id, exp, 'short')).toBe(false);
   });
 
