@@ -109,14 +109,14 @@ jobs:
           ALIAS=ipropy
 
           keytool -genkeypair -noprompt \
-            -keystore packages/app/android/release.jks -storetype PKCS12 \
+            -keystore packages/app/android/app/release.jks -storetype PKCS12 \
             -alias "$ALIAS" -keyalg RSA -keysize 2048 -validity 10950 \
             -storepass "$STORE_PASSWORD" -keypass "$STORE_PASSWORD" \
             -dname "C=IN, ST=Maharashtra, L=Pune, O=iPropy, OU=iPropy CRM, CN=iPropy"
 
           # Saved before anything is built with it. `--body -` reads stdin, so
           # no value becomes an argument — those show up in `ps` and in traces.
-          base64 -w0 < packages/app/android/release.jks \
+          base64 -w0 < packages/app/android/app/release.jks \
             | gh secret set ANDROID_KEYSTORE_BASE64 --repo "$GITHUB_REPOSITORY" --body -
           printf '%s' "$STORE_PASSWORD" | gh secret set ANDROID_KEYSTORE_PASSWORD --repo "$GITHUB_REPOSITORY" --body -
           printf '%s' "$ALIAS"          | gh secret set ANDROID_KEY_ALIAS        --repo "$GITHUB_REPOSITORY" --body -
@@ -145,7 +145,7 @@ jobs:
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          printf '%s' "$KEYSTORE" | base64 -d > packages/app/android/release.jks
+          printf '%s' "$KEYSTORE" | base64 -d > packages/app/android/app/release.jks
           cat > packages/app/android/keystore.properties <<PROPS
           storeFile=release.jks
           storePassword=$STORE_PASSWORD
