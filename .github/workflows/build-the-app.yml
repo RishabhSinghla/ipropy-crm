@@ -68,7 +68,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
 
       # JDK 21, not 17. Capacitor 8's plugins declare a Java 21 toolchain and
