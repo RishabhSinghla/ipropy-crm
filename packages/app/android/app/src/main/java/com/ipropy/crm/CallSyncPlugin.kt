@@ -1,10 +1,12 @@
 package com.ipropy.crm
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.telecom.TelecomManager
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.getcapacitor.JSObject
@@ -44,6 +46,7 @@ import com.ipropy.crm.callsync.SyncWorker
     permissions = [
         Permission(alias = CallSyncPlugin.CALL_LOG, strings = [Manifest.permission.READ_CALL_LOG]),
         Permission(alias = CallSyncPlugin.PLACE_CALL, strings = [Manifest.permission.CALL_PHONE]),
+        Permission(alias = CallSyncPlugin.END_CALL, strings = [Manifest.permission.ANSWER_PHONE_CALLS]),
         Permission(alias = CallSyncPlugin.LOCATION, strings = [
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION,
@@ -68,6 +71,7 @@ class CallSyncPlugin : Plugin() {
         put("paired", prefs.token != null)
         put("callLogGranted", getPermissionState(CALL_LOG)?.toString() == "granted")
         put("callPhoneGranted", getPermissionState(PLACE_CALL)?.toString() == "granted")
+        put("canEndCall", canEndCall())
         put("locationGranted", getPermissionState(LOCATION)?.toString() == "granted")
         put("backgroundLocationGranted", hasBackgroundLocation())
         put("lastSyncAt", prefs.lastSyncAt)
@@ -254,6 +258,102 @@ class CallSyncPlugin : Plugin() {
         }
     }
 
+    /**
+     * End the call this handset is on, because the CRM asked it to.
+     *
+     * `TelecomManager.endCall()` with `ANSWER_PHONE_CALLS`, and **not** the
+     * default-dialler role. Read off Android's own reference on 21 September
+     * 2026 rather than assumed: the role would mean replacing the phone app
+     * the rep already uses, in-call screen and all, to reach the same button.
+     * This costs one permission dialog and changes nothing else about their
+     * phone.
+     *
+     * Three honest refusals, each reported rather than thrown:
+     *
+     *  * **Below Android 9** the method does not exist at all.
+     *  * **Permission refused**, which the rep may do and may later undo.
+     *  * **`false` from Telecom** — an emergency call, which Android will not
+     *    let any app end, or an OEM that refuses anyway. The CRM says the call
+     *    is still up instead of claiming it cut one off.
+     *
+     * Deprecated in API 29 and still present. If a future Android removes it,
+     * this answers false and the desk's End button goes dead on its own,
+     * which is the failure mode to want.
+     */
+    @PluginMethod
+    fun endCall(call: PluginCall) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            finishEnd(call, false, "android-too-old")
+            return
+        }
+        if (getPermissionState(END_CALL)?.toString() != "granted") {
+            requestPermissionForAlias(END_CALL, call, "afterEndCall")
+            return
+        }
+        endNow(call)
+    }
+
+    @PermissionCallback
+    private fun afterEndCall(call: PluginCall) {
+        if (getPermissionState(END_CALL)?.toString() != "granted") {
+            finishEnd(call, false, "permission-refused")
+            return
+        }
+        endNow(call)
+    }
+
+    private fun endNow(call: PluginCall) {
+        try {
+            val telecom = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
+            @Suppress("DEPRECATION")
+            val ended = telecom.endCall()
+            finishEnd(call, ended, if (ended) null else "no-call-to-end")
+        } catch (e: SecurityException) {
+            finishEnd(call, false, "permission-refused")
+        } catch (e: Exception) {
+            finishEnd(call, false, e.message ?: "failed")
+        }
+    }
+
+    private fun finishEnd(call: PluginCall, ended: Boolean, reason: String?) {
+        report(call.getString("commandId"), ended, reason)
+        val result = JSObject().put("ended", ended)
+        if (reason != null) result.put("reason", reason)
+        call.resolve(result)
+    }
+
+    /**
+     * Whether this handset can end a call today.
+     *
+     * Asked every minute by the app rather than remembered, because the rep
+     * can take the permission back from Android's settings at any moment and
+     * the CRM would otherwise keep offering a button that does nothing.
+     */
+    @PluginMethod
+    fun callControl(call: PluginCall) {
+        call.resolve(JSObject().put("canEndCall", canEndCall()))
+    }
+
+    /** Ask for the permission, showing Android's own dialog. */
+    @PluginMethod
+    fun requestDialerRole(call: PluginCall) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            call.resolve(JSObject().put("canEndCall", false))
+            return
+        }
+        if (canEndCall()) { call.resolve(JSObject().put("canEndCall", true)); return }
+        requestPermissionForAlias(END_CALL, call, "afterDialerRole")
+    }
+
+    @PermissionCallback
+    private fun afterDialerRole(call: PluginCall) {
+        call.resolve(JSObject().put("canEndCall", canEndCall()))
+    }
+
+    private fun canEndCall(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
+            getPermissionState(END_CALL)?.toString() == "granted"
+
     /** Close the command out, if it came from one. Best effort, off the main thread. */
     private fun report(commandId: String?, ok: Boolean, error: String?) {
         val id = commandId ?: return
@@ -305,5 +405,6 @@ class CallSyncPlugin : Plugin() {
         const val CALL_LOG = "callLog"
         const val LOCATION = "location"
         const val PLACE_CALL = "placeCall"
+        const val END_CALL = "endCall"
     }
 }

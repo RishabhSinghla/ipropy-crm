@@ -14,7 +14,7 @@
  */
 import type { CallSyncStatus } from './callSync';
 
-export type PhoneStep = 'pair' | 'callPhone' | 'callLog' | 'alerts' | 'location';
+export type PhoneStep = 'pair' | 'callPhone' | 'callLog' | 'endCall' | 'alerts' | 'location';
 
 export interface PhoneNeed {
   key: PhoneStep;
@@ -52,6 +52,12 @@ export const PHONE_NEEDS: PhoneNeed[] = [
     required: true,
   },
   {
+    key: 'endCall',
+    title: 'End a call from the CRM',
+    why: 'Lets you hang up from the computer. Your phone keeps its own dialler.',
+    required: false,
+  },
+  {
     key: 'alerts',
     title: 'Notifications',
     why: 'Follow-ups and new leads reach you when the app is closed.',
@@ -79,6 +85,7 @@ export function stepIsDone(step: PhoneStep, input: PhoneSetupInput): boolean {
     case 'pair': return s.paired;
     case 'callPhone': return s.callPhoneGranted;
     case 'callLog': return s.callLogGranted;
+    case 'endCall': return s.canEndCall === true;
     case 'alerts': return input.alerts === 'granted';
     /*
       Background and not merely foreground. "While using the app" reads as

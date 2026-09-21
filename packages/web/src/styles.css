@@ -141,6 +141,25 @@
     }
   }
 
+  /* The three bars beside a live call's clock. Tiny on purpose: it says "this
+     is happening" out of the corner of an eye and is never the thing being
+     read. Height rather than opacity, so it still reads on the dark header. */
+  @keyframes ipropy-equalise {
+    0%, 100% { height: 4px; }
+    50%      { height: 11px; }
+  }
+
+  .animate-equalise {
+    height: 4px;
+    animation: ipropy-equalise 900ms ease-in-out infinite;
+  }
+
+  /* Somebody who has asked their machine to stop moving things means it. The
+     bars stay, at a readable height, and simply do not dance. */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-equalise { animation: none; height: 8px; }
+  }
+
   /*
    * Installed as an app rather than opened in a browser.
    *

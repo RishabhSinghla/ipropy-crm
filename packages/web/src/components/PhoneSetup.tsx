@@ -27,7 +27,7 @@ import { type JSX, useCallback, useEffect, useState } from 'react';
 import { Check, ChevronRight, Settings as SettingsIcon, ShieldAlert } from 'lucide-react';
 import { toast } from '../lib/store';
 import {
-  askForCallPermissions, callSyncStatus, callSyncSupported, enableCallSync,
+  askForCallPermissions, askToEndCalls, callSyncStatus, callSyncSupported, enableCallSync,
   openAppSettings, setCallSyncLocation, type CallSyncStatus,
 } from '../lib/callSync';
 import { enablePush, permissionState } from '../lib/push';
@@ -88,6 +88,9 @@ export function PhoneSetup({ compact }: { compact?: boolean } = {}): JSX.Element
         settled(step, await enableCallSync());
       } else if (step === 'callPhone' || step === 'callLog') {
         settled(step, await askForCallPermissions());
+      } else if (step === 'endCall') {
+        await askToEndCalls();
+        refresh();
       } else if (step === 'alerts') {
         const result = await enablePush();
         if (!result.ok) toast.error('Notifications not turned on', result.message);

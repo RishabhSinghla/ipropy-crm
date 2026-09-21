@@ -642,8 +642,16 @@ telephonyRouter.post('/devices', asyncHandler(async (req, res) => {
  */
 telephonyRouter.post('/devices/app-open', asyncHandler(async (req, res) => {
   const user = getUser(req);
+  /*
+    The same heartbeat carries whether this handset is its own phone app.
+    Android can be told to hand that role back at any moment, from its own
+    settings, without the CRM hearing a thing — so it is re-stated every
+    minute rather than remembered from pairing, and the desk's End button
+    follows it.
+  */
+  const input = z.object({ canEndCall: z.boolean().optional() }).parse(req.body ?? {});
   const { markAppOpen } = await import('../../integrations/telephony/deviceSync.js');
-  res.json(await markAppOpen(user.id));
+  res.json(await markAppOpen(user.id, input.canEndCall));
 }));
 
 telephonyRouter.post('/dial', asyncHandler(async (req, res) => {
@@ -698,24 +706,81 @@ telephonyRouter.post('/dial', asyncHandler(async (req, res) => {
  * queued instruction on reconnect means opening iPropy is sufficient; nobody
  * has to return to the laptop and press Call a second time.
  */
+/**
+ * End the call the rep's own phone is on, from the desk.
+ *
+ * Android only lets the handset's **default phone app** touch a running call,
+ * so this answers `sent: false` with a reason rather than queueing something
+ * no phone will ever act on — and the screen prints that reason instead of
+ * leaving somebody pressing a button that does nothing.
+ */
+telephonyRouter.post('/hangup', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'telephony.call');
+  const input = z.object({
+    module: z.string().max(60).optional(),
+    recordId: z.string().uuid().optional(),
+  }).parse(req.body ?? {});
+
+  const { queueHangUp } = await import('../../integrations/telephony/deviceSync.js');
+  const queued = await queueHangUp({
+    userId: user.id,
+    module: input.module ?? null,
+    recordId: input.recordId ?? null,
+  });
+  if (!queued) {
+    res.json({
+      sent: false,
+      reason: 'not-the-dialler',
+      detail: 'This phone is not set as its own phone app, so only the handset can end the call.',
+    });
+    return;
+  }
+
+  emitToUser(user.id, 'device:hangup', {
+    commandId: queued.commandId,
+    expiresAt: queued.expiresAt,
+  });
+
+  res.json({ sent: true, commandId: queued.commandId, device: queued.deviceLabel, expiresAt: queued.expiresAt });
+}));
+
 telephonyRouter.get('/dial/pending', asyncHandler(async (req, res) => {
   const user = getUser(req);
   await assertCapability(user, 'telephony.call');
   const row = await db.queryOne<{
-    id: string; number: string | null; module: string | null; record_id: string | null; expires_at: string;
+    id: string; kind: string; number: string | null; module: string | null;
+    record_id: string | null; expires_at: string;
   }>(
+    /*
+      Any kind, not only a dial. Hanging up travels the same road as ringing —
+      one queue, one claim, one place a command can be handed over exactly
+      once. A second road for the second verb is a second set of races.
+    */
     `WITH next_command AS (
        SELECT id FROM ipy_device_command
-        WHERE user_id = $1 AND kind = 'dial' AND status = 'queued' AND expires_at > now()
+        WHERE user_id = $1 AND status = 'queued' AND expires_at > now()
         ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED
      )
      UPDATE ipy_device_command command SET status = 'delivered', delivered_at = now()
        FROM next_command WHERE command.id = next_command.id
-     RETURNING command.id, command.payload->>'number' AS number, command.module, command.record_id, command.expires_at`,
+     RETURNING command.id, command.kind, command.payload->>'number' AS number,
+               command.module, command.record_id, command.expires_at`,
     [user.id],
   );
-  if (!row || !row.number) { res.json({ command: null }); return; }
-  res.json({ command: { id: row.id, number: row.number, module: row.module, recordId: row.record_id, expiresAt: row.expires_at } });
+  // A dial with no number is a broken row rather than a command; a hang-up
+  // carries none by design.
+  if (!row || (row.kind === 'dial' && !row.number)) { res.json({ command: null }); return; }
+  res.json({
+    command: {
+      id: row.id,
+      kind: row.kind,
+      number: row.number,
+      module: row.module,
+      recordId: row.record_id,
+      expiresAt: row.expires_at,
+    },
+  });
 }));
 
 /**

@@ -57,6 +57,31 @@ deviceRouter.get('/ping', asyncHandler(async (req, res) => {
   res.json({ ok: true, deviceId: device.id, userId: device.userId });
 }));
 
+/**
+ * The phone saying what it can do, and what it is doing.
+ *
+ * Reported rather than inferred from a version: a build can carry the
+ * end-a-call code and still not be the handset's chosen phone app, and the rep
+ * can change that in Android's settings at any moment without telling anybody.
+ * The desk reads this to decide whether to draw End at all.
+ */
+deviceRouter.post('/state', asyncHandler(async (req, res) => {
+  const device = await authenticateDevice(bearer(req.headers.authorization) ?? undefined);
+  const input = z.object({
+    canEndCall: z.boolean().optional(),
+    liveNumber: z.string().max(32).nullable().optional(),
+    liveState: z.enum(['dialling', 'ringing', 'active', 'held', 'ended']).nullable().optional(),
+  }).parse(req.body ?? {});
+
+  const { reportPhoneState } = await import('../../integrations/telephony/deviceSync.js');
+  await reportPhoneState(device, {
+    canEndCall: input.canEndCall,
+    liveNumber: input.liveNumber ?? null,
+    liveState: input.liveState ?? null,
+  });
+  res.json({ ok: true });
+}));
+
 const entrySchema = z.object({
   externalId: z.string().min(1).max(64),
   number: z.string().max(32),

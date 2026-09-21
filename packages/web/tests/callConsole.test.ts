@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  elapsedLabel, followUpFor, mayControlLiveCall, minutesFrom, outcomeCard,
+  elapsedLabel, followUpFor, mayControlLiveCall, minutesFrom, outcomeCard, splitOutcomes,
 } from '../src/lib/callConsole';
 
 describe('the call console', () => {
@@ -72,5 +72,31 @@ describe('when the outcome chases them for you', () => {
     const card = outcomeCard('Call Back Later');
     expect(card.chip).toBe('In 2 hours');
     expect(card.followUpInHours).toBe(2);
+  });
+});
+
+describe('six on the row, the rest a tap away', () => {
+  const all = [
+    'Interested', 'Not Interested', 'Call Back Later', 'Site Visit Scheduled',
+    'Budget Mismatch', 'Location Mismatch', 'Already Purchased', 'Wrong Number',
+    'Not Reachable', 'Switched Off', 'Busy', 'Language Barrier', 'Do Not Call',
+  ];
+
+  it('shows six of the thirteen first', () => {
+    const { first, rest } = splitOutcomes(all, 'Call Back Later');
+    expect(first).toHaveLength(6);
+    expect(first).toContain('Interested');
+    expect(first).toContain('Not Interested');
+    expect(rest).toContain('Site Visit Scheduled');
+    expect(first.length + rest.length).toBe(all.length);
+  });
+
+  it('never hides the outcome that is currently chosen', () => {
+    // Picking one from "more" and watching it disappear off the row showing it
+    // as chosen is the bug this exists to prevent.
+    const { first, rest } = splitOutcomes(all, 'Site Visit Scheduled');
+    expect(first).toContain('Site Visit Scheduled');
+    expect(rest).not.toContain('Site Visit Scheduled');
+    expect(first).toHaveLength(6);
   });
 });

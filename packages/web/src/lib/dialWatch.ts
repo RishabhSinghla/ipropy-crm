@@ -22,7 +22,7 @@
  * cannot both be given the same call.
  */
 import { api } from './api';
-import { callSyncSupported, placeCallFromPhone } from './callSync';
+import { callSyncSupported, endCallOnPhone, placeCallFromPhone } from './callSync';
 import { isNative } from './native';
 import { dial } from './nativeActions';
 
@@ -45,6 +45,23 @@ export async function takePendingDial(): Promise<void> {
     const { command } = await api.pendingDial();
     if (!command) return;
 
+    /*
+      Hanging up is the same road as ringing, and deliberately: one queue, one
+      claim, one place a command is handed over exactly once. It carries no
+      number — the phone ends whatever call it is on — and it lives twenty
+      seconds rather than ninety, because a late hang-up would cut off the
+      *next* conversation and there is no undoing that.
+    */
+    if (command.kind === 'hangup') {
+      const ended = await endCallOnPhone(command.id);
+      if (!ended.ended) {
+        await api.closeDial(command.id, { ok: false, error: ended.reason ?? 'could not end the call' })
+          .catch(() => undefined);
+      }
+      return;
+    }
+
+    if (!command.number) return;
     const placed = callSyncSupported
       ? await placeCallFromPhone(command.number, command.id)
       : { placed: false, reason: 'not-android' };

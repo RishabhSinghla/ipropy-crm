@@ -28,8 +28,8 @@
  */
 import { type JSX, useEffect, useMemo, useState } from 'react';
 import {
-  BellOff, Check, Clock, Copy, Mic, Pause, PhoneOff, Send, Square, ThumbsUp,
-  UserX, XCircle,
+  BellOff, Check, Clock, Copy, Mic, Pause, Phone as PhoneIcon, PhoneOff, Send, Square,
+  ThumbsUp, UserX, XCircle,
 } from 'lucide-react';
 import type { FieldMeta, RecordEnvelope } from '@ipropy/shared';
 import { useApp, toast } from '../lib/store';
@@ -37,6 +37,7 @@ import { cn } from '../lib/utils';
 import { useRecordPanes, type DescribedModule } from '../lib/recordPanes';
 import {
   elapsedLabel, INTENTS, type Intent, mayControlLiveCall, NO_LIVE_CONTROL_REASON, outcomeCard,
+  splitOutcomes,
 } from '../lib/callConsole';
 import { Avatar, Spinner } from './ui';
 import { EditableField } from './EditableField';
@@ -89,9 +90,15 @@ export interface CallConsoleProps {
   voice: {
     supported: boolean; recording: boolean; busy: boolean; toggle: () => void;
   };
+  /** Tuck it into the live bar, keeping everything typed so far. */
   onClose: () => void;
+  /** Forget this call entirely. The only way out that loses the notes. */
+  onDiscard: () => void;
   onSave: (andDialNext: boolean) => void;
   onSkipNext: () => void;
+  /** True only when a paired phone has reported itself the handset's dialler. */
+  canEndCall: boolean;
+  onHangUp: () => void;
 }
 
 export function CallConsole(props: CallConsoleProps): JSX.Element {
@@ -99,14 +106,60 @@ export function CallConsole(props: CallConsoleProps): JSX.Element {
     module, record, recordLabel, moduleName, recordId, number, startedAt, placing,
     outcomes, selected, onSelect, notes, onNotes, intent, onIntent,
     whatsAppOn, onWhatsApp, whatsAppPreview, savedAgo, nextLabel, saving, voice,
-    onClose, onSave, onSkipNext,
+    onClose, onDiscard, onSave, onSkipNext, canEndCall, onHangUp,
   } = props;
 
   const me = useApp((st) => st.user);
   const timer = useElapsed(startedAt);
-  const liveControls = mayControlLiveCall(undefined);
+  const liveControls = mayControlLiveCall({ endCall: canEndCall });
   // Whichever of the admin's own outcomes means "not a buyer", so the
   // shortcut cannot name one this CRM no longer offers.
+  /*
+    The header's fields, split the way the design splits them: two facts ride
+    beside the number on the dark row — the ones a rep says out loud, a unit
+    number and a budget — and the rest sit in the light bar under it, editable
+    where they stand. Both halves come from the admin's own header arrangement,
+    so nothing here names a field.
+  */
+  const panes = useRecordPanes(
+    module ?? ({ name: moduleName, fields: [], layouts: [], permissions: {} } as unknown as DescribedModule),
+  );
+  const headerRow = useMemo(() => {
+    const identity = new Set(module?.labelFields ?? []);
+    const pipeline = [panes.statusField, panes.followUpField].filter(Boolean) as FieldMeta[];
+    const pipelineNames = new Set(pipeline.map((f) => f.name));
+
+    /*
+      Row two is facts a rep says out loud — a unit number, a budget. So the
+      number (it has its own place beside them), the record's own name (it is
+      the heading) and the two pipeline fields (they belong on row three, where
+      they can be changed) are all out, and **an empty one is skipped**: "Email:
+      —" on a call header is noise, and two of them is the row.
+    */
+    const facts = panes.headerFields.filter((f) => (
+      f.uitype !== 'phone'
+        && !identity.has(f.name)
+        && !pipelineNames.has(f.name)
+        && Boolean(record?.display?.[f.name] ?? record?.values?.[f.name])
+    )).slice(0, 2);
+
+    /*
+      Row three is what the call changes: the stage and the chase date first,
+      because those are the two a rep edits after every conversation, then
+      whatever else the admin put in the header.
+    */
+    const usedNames = new Set([...facts.map((f) => f.name), ...pipelineNames]);
+    const others = panes.headerFields.filter((f) => (
+      f.uitype !== 'phone' && !identity.has(f.name) && !usedNames.has(f.name)
+    ));
+    return { facts, editable: [...pipeline, ...others].slice(0, 4) };
+  }, [panes.headerFields, panes.statusField, panes.followUpField, module?.labelFields, record]);
+
+  const { first: primaryOutcomes, rest: moreOutcomes } = useMemo(
+    () => splitOutcomes(outcomes, selected), [outcomes, selected],
+  );
+
+  const [showAll, setShowAll] = useState(false);
   const disqualifyingOutcome = useMemo(
     () => outcomes.find((value) => outcomeCard(value).disqualifies) ?? null,
     [outcomes],
@@ -123,6 +176,8 @@ export function CallConsole(props: CallConsoleProps): JSX.Element {
         timer={timer}
         placing={placing}
         liveControls={liveControls}
+        onHangUp={onHangUp}
+        factFields={headerRow.facts}
       />
 
       <KeyValueBar
@@ -131,19 +186,20 @@ export function CallConsole(props: CallConsoleProps): JSX.Element {
         moduleName={moduleName}
         recordId={recordId}
         savedAgo={savedAgo}
+        fields={headerRow.editable}
       />
 
-      <div className="space-y-4 px-5 py-4">
+      <div className="space-y-3 px-4 py-3">
         <section>
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <p className="flex items-center gap-1.5 text-2xs font-bold uppercase tracking-wide text-muted">
+          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+            <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-muted">
               <Check className="h-3.5 w-3.5" /> Call disposition outcome
             </p>
-            <p className="text-2xs text-muted">Select outcome to update lead pipeline</p>
+            <p className="text-[10px] text-muted">Select outcome to update lead pipeline</p>
           </div>
 
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-            {outcomes.map((value) => {
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-6">
+            {(showAll ? outcomes : primaryOutcomes).map((value) => {
               const card = outcomeCard(value);
               const Icon = ICONS[card.icon];
               const on = selected === value;
@@ -159,7 +215,7 @@ export function CallConsole(props: CallConsoleProps): JSX.Element {
                   aria-label={value}
                   onClick={() => onSelect(value)}
                   className={cn(
-                    'relative rounded-xl border p-3 text-left transition-colors',
+                    'relative rounded-lg border p-2 text-left transition-colors',
                     on
                       ? 'border-emerald-500 bg-emerald-50/70 ring-1 ring-emerald-500 dark:bg-emerald-950/40'
                       : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900',
@@ -168,18 +224,18 @@ export function CallConsole(props: CallConsoleProps): JSX.Element {
                   <div className="flex items-start justify-between gap-2">
                     <Icon className={cn('h-4 w-4', on ? 'text-emerald-600' : 'text-slate-400')} />
                     {card.chip && (
-                      <span className="text-[9px] font-semibold uppercase tracking-wide text-muted">{card.chip}</span>
+                      <span className="truncate text-[9px] font-semibold uppercase tracking-wide text-muted">{card.chip}</span>
                     )}
                     {on && <Check className="absolute right-2 top-2 h-3.5 w-3.5 text-emerald-600" />}
                   </div>
-                  <p className="mt-2 truncate text-sm font-semibold">{value}</p>
-                  <p className="truncate text-2xs text-muted">{card.hint}</p>
+                  <p className="mt-1.5 truncate text-xs font-semibold leading-tight">{value}</p>
+                  <p className="truncate text-[10px] leading-tight text-muted">{card.hint}</p>
                 </button>
               );
             })}
           </div>
 
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
             {/*
               The shortcut from the design. It selects the outcome rather than
               writing anything — the record changes when Save is pressed, like
@@ -187,19 +243,31 @@ export function CallConsole(props: CallConsoleProps): JSX.Element {
             */}
             <button
               type="button"
-              className="inline-flex items-center gap-1.5 text-2xs font-semibold text-negative hover:underline"
+              className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-negative hover:underline"
               onClick={() => onSelect(disqualifyingOutcome ?? selected)}
               disabled={!disqualifyingOutcome}
             >
               <UserX className="h-3.5 w-3.5" /> Mark disqualified / not interested
             </button>
-            <p className="text-2xs text-muted">
-              Saving writes the outcome to this record and schedules the follow-up its card names.
-            </p>
+            <div className="flex items-center gap-3">
+              {moreOutcomes.length > 0 && (
+                <button
+                  type="button"
+                  className="text-[11px] font-semibold text-brand-600 hover:underline"
+                  onClick={() => setShowAll((on) => !on)}
+                >
+                  {showAll ? 'Show the usual six' : `${moreOutcomes.length} more outcomes`}
+                </button>
+              )}
+              <p className="text-[10px] text-muted">Follow-up task auto-schedules</p>
+            </div>
           </div>
         </section>
 
-        <div className="grid gap-3 lg:grid-cols-2">
+        {/* Two panels when there is a follow-up message to send, one full-width
+            when there is not — a notes box in half a dialog with dead space
+            beside it reads as something failing to load. */}
+        <div className={cn('grid gap-2', whatsAppPreview && 'lg:grid-cols-2')}>
           {/*
             Only when a WhatsApp provider is actually connected and this
             template can be filled for this person. An "off" switch beside a
@@ -207,9 +275,9 @@ export function CallConsole(props: CallConsoleProps): JSX.Element {
             broken before.
           */}
           {whatsAppPreview && (
-            <section className="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+            <section className="rounded-lg border border-slate-200 p-2.5 dark:border-slate-800">
               <div className="flex items-center justify-between gap-2">
-                <p className="flex items-center gap-1.5 text-2xs font-bold uppercase tracking-wide text-muted">
+                <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-muted">
                   <Send className="h-3.5 w-3.5" /> WhatsApp follow-up
                 </p>
                 <label className="flex items-center gap-1.5 text-2xs font-semibold">
@@ -222,9 +290,9 @@ export function CallConsole(props: CallConsoleProps): JSX.Element {
                   Send on save
                 </label>
               </div>
-              <div className="mt-2 rounded-lg border border-emerald-100 bg-emerald-50/60 p-3 dark:border-emerald-900/50 dark:bg-emerald-950/30">
-                <p className="text-2xs font-semibold text-muted">Message preview</p>
-                <p className="mt-1 whitespace-pre-wrap text-sm italic">{whatsAppPreview.text}</p>
+              <div className="mt-1.5 rounded-lg border border-emerald-100 bg-emerald-50/60 p-2.5 dark:border-emerald-900/50 dark:bg-emerald-950/30">
+                <p className="text-[10px] font-semibold text-muted">Message preview (automated)</p>
+                <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-xs italic">{whatsAppPreview.text}</p>
               </div>
               <p className={cn('mt-2 text-2xs', whatsAppPreview.ready ? 'text-positive' : 'text-amber-700 dark:text-amber-400')}>
                 {whatsAppPreview.ready ? 'Template ready' : whatsAppPreview.reason}
@@ -232,9 +300,9 @@ export function CallConsole(props: CallConsoleProps): JSX.Element {
             </section>
           )}
 
-          <section className="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+          <section className="rounded-lg border border-slate-200 p-2.5 dark:border-slate-800">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-2xs font-bold uppercase tracking-wide text-muted">Call notes &amp; intent</p>
+              <p className="text-[11px] font-bold uppercase tracking-wide text-muted">Call notes &amp; intent</p>
               <div className="flex gap-1">
                 {INTENTS.map((value) => (
                   <button
@@ -255,8 +323,8 @@ export function CallConsole(props: CallConsoleProps): JSX.Element {
 
             <textarea
               id="call-notes"
-              className="input mt-2"
-              rows={4}
+              className="input mt-1.5 text-xs"
+              rows={3}
               value={notes}
               onChange={(e) => onNotes(e.target.value)}
               placeholder="What happened on the call?"
@@ -281,7 +349,7 @@ export function CallConsole(props: CallConsoleProps): JSX.Element {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3 dark:border-slate-800 dark:bg-slate-900/60">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-slate-50 px-4 py-2 dark:border-slate-800 dark:bg-slate-900/60">
         <p className="flex items-center gap-2 text-2xs text-muted">
           {nextLabel ? (
             <>
@@ -291,7 +359,8 @@ export function CallConsole(props: CallConsoleProps): JSX.Element {
           ) : 'Last one in this list'}
         </p>
         <div className="flex items-center gap-2">
-          <button className="btn-secondary" onClick={onClose} disabled={saving}>Close</button>
+          <button className="btn-ghost" onClick={onDiscard} disabled={saving}>Did not call</button>
+          <button className="btn-secondary" onClick={onClose} disabled={saving}>Minimise</button>
           <button className="btn-primary" disabled={saving} onClick={() => onSave(Boolean(nextLabel))}>
             {saving && <Spinner className="h-3.5 w-3.5" />}
             {nextLabel ? 'Save & dial next' : 'Save call'}
@@ -303,7 +372,7 @@ export function CallConsole(props: CallConsoleProps): JSX.Element {
 }
 
 function ConsoleHeader({
-  module, record, recordLabel, number, agent, timer, placing, liveControls,
+  module, record, recordLabel, number, agent, timer, placing, liveControls, onHangUp, factFields,
 }: {
   module: DescribedModule | undefined;
   record: RecordEnvelope | undefined;
@@ -313,6 +382,9 @@ function ConsoleHeader({
   timer: string;
   placing: boolean;
   liveControls: boolean;
+  onHangUp: () => void;
+  /** The two facts that ride beside the number on the second row. */
+  factFields: FieldMeta[];
 }): JSX.Element {
   const copy = (): void => {
     void navigator.clipboard?.writeText(number).then(
@@ -322,60 +394,76 @@ function ConsoleHeader({
   };
 
   return (
-    <div className="bg-slate-900 px-5 py-3.5 text-white">
-      <div className="flex flex-wrap items-center gap-3">
+    <div className="bg-slate-900 px-4 py-2.5 text-white">
+      {/* Row one: who, that it is live, who is calling, and the controls. */}
+      <div className="flex items-center gap-2.5">
         {module && record ? (
-          <StrengthRing fields={module.fields} values={record.values} size={34} cornerBadge>
-            <Avatar name={recordLabel} size={34} />
+          <StrengthRing fields={module.fields} values={record.values} size={28} cornerBadge>
+            <Avatar name={recordLabel} size={28} />
           </StrengthRing>
         ) : (
-          <Avatar name={recordLabel} size={34} />
+          <Avatar name={recordLabel} size={28} />
         )}
 
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="truncate text-base font-semibold">{recordLabel}</p>
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-2xs font-bold uppercase text-emerald-300">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              {placing ? 'Dialling' : 'On call'}
-            </span>
-            {agent && (
-              <span className="rounded-full bg-white/10 px-2 py-0.5 text-2xs text-slate-200">Agent: {agent}</span>
-            )}
-          </div>
-          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-2xs text-slate-300">
-            <span className="tabular-nums">{number}</span>
-            <button type="button" onClick={copy} className="inline-flex items-center gap-1 text-slate-300 hover:text-white">
-              <Copy className="h-3 w-3" /> Copy
-            </button>
-          </div>
-        </div>
-
-        <div className="ml-auto flex items-center gap-2">
-          <span className="rounded-lg bg-white/10 px-2.5 py-1 text-sm font-semibold tabular-nums" title="Time since you pressed Call">
-            {timer}
+        <p className="min-w-0 max-w-[14rem] truncate text-sm font-semibold">{recordLabel}</p>
+        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-300">
+          {/* It moves, because a live call is the one thing on this screen
+              that is happening rather than waiting. */}
+          <LivePulse />
+          {placing ? 'Dialling' : 'Live call'}
+        </span>
+        {agent && (
+          <span className="hidden shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-slate-200 sm:inline">
+            Agent: {agent}
           </span>
-          {/*
-            Drawn because the design asks for them, disabled because Android
-            only lets the handset's own dialler touch a running call. The title
-            says so rather than leaving a rep pressing a dead button.
-          */}
-          <ControlButton label="Mute" enabled={liveControls}><Mic className="h-4 w-4" /></ControlButton>
-          <ControlButton label="Hold" enabled={liveControls}><Pause className="h-4 w-4" /></ControlButton>
-          <ControlButton label="End call" enabled={liveControls} danger><PhoneOff className="h-4 w-4" /></ControlButton>
+        )}
+
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          <span
+            className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-2 py-0.5 text-xs font-semibold tabular-nums"
+            title="Time since you pressed Call"
+          >
+            <Equaliser /> {timer}
+          </span>
+          <ControlButton label="Mute" enabled={false}><Mic className="h-3.5 w-3.5" /></ControlButton>
+          <ControlButton label="Hold" enabled={false}><Pause className="h-3.5 w-3.5" /></ControlButton>
+          <ControlButton label="End call" enabled={liveControls} danger onClick={onHangUp}>
+            <PhoneOff className="h-3.5 w-3.5" />
+          </ControlButton>
         </div>
+      </div>
+
+      {/* Row two: the number, and the two facts a rep says out loud on a call. */}
+      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 pl-[38px] text-[11px] text-slate-300">
+        <span className="inline-flex items-center gap-1 tabular-nums">
+          <PhoneIcon className="h-3 w-3" /> {number}
+        </span>
+        <button type="button" onClick={copy} className="inline-flex items-center gap-1 hover:text-white">
+          <Copy className="h-3 w-3" /> Copy
+        </button>
+        {factFields.map((field) => (
+          <span key={field.name} className="inline-flex min-w-0 items-center gap-1">
+            <span className="text-slate-400">{field.label}:</span>
+            <span className="truncate font-medium text-white">
+              {String(record?.display?.[field.name] ?? record?.values?.[field.name] ?? '—')}
+            </span>
+          </span>
+        ))}
       </div>
     </div>
   );
 }
 
 function ControlButton({
-  label, enabled, danger, children,
-}: { label: string; enabled: boolean; danger?: boolean; children: JSX.Element }): JSX.Element {
+  label, enabled, danger, onClick, children,
+}: {
+  label: string; enabled: boolean; danger?: boolean; onClick?: () => void; children: JSX.Element;
+}): JSX.Element {
   return (
     <button
       type="button"
       disabled={!enabled}
+      onClick={onClick}
       title={enabled ? label : `${label} — ${NO_LIVE_CONTROL_REASON}`}
       aria-label={enabled ? label : `${label}, unavailable. ${NO_LIVE_CONTROL_REASON}`}
       className={cn(
@@ -397,27 +485,25 @@ function ControlButton({
  * it in one place and every screen agrees, this one included.
  */
 function KeyValueBar({
-  module, record, moduleName, recordId, savedAgo,
+  module, record, moduleName, recordId, savedAgo, fields,
 }: {
   module: DescribedModule | undefined;
   record: RecordEnvelope | undefined;
   moduleName: string;
   recordId: string;
   savedAgo: string | null;
+  fields: FieldMeta[];
 }): JSX.Element | null {
-  const panes = useRecordPanes(module ?? ({ name: moduleName, fields: [], layouts: [], permissions: {} } as unknown as DescribedModule));
-  const fields = useMemo<FieldMeta[]>(() => panes.headerFields.slice(0, 6), [panes.headerFields]);
-
   if (!module || !record || !fields.length) return null;
   const canEdit = record.can?.edit ?? module.permissions.edit;
 
   return (
     <div
       data-testid="call-key-values"
-      className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-slate-200 bg-slate-50 px-5 py-2 dark:border-slate-800 dark:bg-slate-900/60"
+      className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border-b border-slate-200 bg-slate-50 px-4 py-1.5 dark:border-slate-800 dark:bg-slate-900/60"
     >
       {fields.map((field) => (
-        <span key={field.name} className="flex min-w-0 items-center gap-1.5 text-2xs">
+        <span key={field.name} className="flex min-w-0 items-center gap-1 text-[11px]">
           <span className="shrink-0 text-muted">{field.label}:</span>
           {canEdit ? (
             <EditableField
@@ -435,9 +521,73 @@ function KeyValueBar({
           )}
         </span>
       ))}
-      <span className="ml-auto shrink-0 text-2xs text-positive">
-        {savedAgo ? `Autosave on · ${savedAgo}` : 'Autosave on'}
+      <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-positive dark:bg-emerald-950/40">
+        <Check className="h-3 w-3" /> {savedAgo ? `Autosave · ${savedAgo}` : 'Autosave active'}
       </span>
+    </div>
+  );
+}
+
+/** A dot that breathes. The one thing on the console that is *happening*. */
+function LivePulse(): JSX.Element {
+  return (
+    <span className="relative flex h-1.5 w-1.5">
+      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+      <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
+    </span>
+  );
+}
+
+/** Three bars that rise and fall, the way a call looks on a phone. */
+function Equaliser(): JSX.Element {
+  return (
+    <span className="flex items-end gap-[2px]" aria-hidden="true">
+      {[0, 150, 300].map((delay) => (
+        <span
+          key={delay}
+          className="w-[2px] rounded-sm bg-emerald-400 animate-equalise"
+          style={{ animationDelay: `${delay}ms` }}
+        />
+      ))}
+    </span>
+  );
+}
+
+/**
+ * The live call, still going, while the rep is looking at something else.
+ *
+ * **21 September 2026, the owner:** *"live call bar also be there so we feel
+ * energetic to call."* Closing the console used to throw the call away with
+ * it; now it tucks into this bar — the person, the clock, End where the phone
+ * allows it, and a way back into the console with the notes still in it.
+ */
+export function LiveCallBar({
+  recordLabel, number, startedAt, canEndCall, onHangUp, onOpen,
+}: {
+  recordLabel: string;
+  number: string;
+  startedAt: number | null;
+  canEndCall: boolean;
+  onHangUp: () => void;
+  onOpen: () => void;
+}): JSX.Element {
+  const timer = useElapsed(startedAt);
+  return (
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-4 pb-4 sm:px-6">
+      <div className="pointer-events-auto flex w-full max-w-xl flex-wrap items-center gap-2.5 rounded-xl bg-slate-900 px-3.5 py-2 text-white shadow-float">
+        <LivePulse />
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold">{recordLabel}</p>
+          <p className="truncate text-[11px] text-slate-300 tabular-nums">{number}</p>
+        </div>
+        <span className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-2 py-0.5 text-xs font-semibold tabular-nums">
+          <Equaliser /> {timer}
+        </span>
+        <button type="button" className="btn-secondary btn-sm" onClick={onOpen}>Back to the call</button>
+        <ControlButton label="End call" enabled={canEndCall} danger onClick={onHangUp}>
+          <PhoneOff className="h-3.5 w-3.5" />
+        </ControlButton>
+      </div>
     </div>
   );
 }

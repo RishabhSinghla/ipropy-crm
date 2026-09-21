@@ -1047,12 +1047,32 @@ export const api = {
   revokeDevice: (id: string) => del(`/api/telephony/devices/${id}`),
   /** Ring a number from the signed-in user's own paired phone. */
   /** The app saying it is open, so a desk Call knows it can reach this phone. */
-  appIsOpen: () => post<{ deviceId: string | null }>('/api/telephony/devices/app-open', {}),
+  appIsOpen: (state: { canEndCall?: boolean } = {}) =>
+    post<{ deviceId: string | null }>('/api/telephony/devices/app-open', state),
   dialOnPhone: (data: { to: string; module?: string; recordId?: string }) =>
     post<{ sent: boolean; reason?: string; device?: string; commandId?: string; expiresAt?: string }>('/api/telephony/dial', data),
   /** Claim one waiting desk-call instruction when the native app reconnects. */
-  pendingDial: () => get<{ command: { id: string; number: string; module: string | null; recordId: string | null; expiresAt: string } | null }>('/api/telephony/dial/pending'),
+  /*
+    Anything the CRM has queued for this phone — ringing somebody, or hanging
+    up on them. One queue and one claim, so a command is handed over exactly
+    once however the phone came to ask.
+  */
+  pendingDial: () => get<{
+    command: {
+      id: string; kind: 'dial' | 'hangup'; number: string | null;
+      module: string | null; recordId: string | null; expiresAt: string;
+    } | null;
+  }>('/api/telephony/dial/pending'),
   /** Did the phone actually take it? queued | delivered | done | failed | expired. */
+  /*
+    End the call the rep's own phone is on. Answers `sent: false` with a
+    reason when that phone is not its own phone app — Android gives a running
+    call to the default dialler and to nobody else.
+  */
+  hangUpOnPhone: (data: { module?: string; recordId?: string }) =>
+    post<{ sent: boolean; reason?: string; detail?: string; commandId?: string; device?: string }>(
+      '/api/telephony/hangup', data,
+    ),
   dialStatus: (id: string) => get<{ status: string; error: string | null; via?: string | null }>(`/api/telephony/dial/${id}`),
   /** The app on the phone saying what it managed to do with that instruction. */
   closeDial: (id: string, data: { ok: boolean; via?: 'app' | 'dialler'; error?: string | null }) =>

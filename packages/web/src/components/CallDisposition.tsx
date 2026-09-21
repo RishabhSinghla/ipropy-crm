@@ -10,14 +10,24 @@ import { toast } from '../lib/store';
 import { useVoiceCapture } from '../lib/useVoiceCapture';
 import { cn } from '../lib/utils';
 import { Modal } from './ui';
-import { CallConsole } from './CallConsole';
+import { CallConsole, LiveCallBar } from './CallConsole';
 import { useChatRecord } from './ChatRecordPane';
 import { followUpFor, type Intent, minutesFrom } from '../lib/callConsole';
 import { dial } from '../lib/nativeActions';
 import { isNative } from '../lib/native';
 
 interface CallActions {
-  startCall: (number: string) => Promise<void>;
+  /**
+   * Ring somebody, and open the console over the record.
+   *
+   * `from` is which handset places it, and the two are deliberately different
+   * controls on screen (21 September 2026, the owner): the **Call icon** rings
+   * the rep's Android phone, and **the number itself** hands off to whatever
+   * this computer uses for `tel:` — a softphone on a Mac or a Windows machine.
+   * One of those is a pocket; the other is a headset, and a rep wearing the
+   * headset should not have to pick up the phone.
+   */
+  startCall: (number: string, from?: 'phone' | 'desk') => Promise<void>;
 }
 
 const CallDispositionContext = createContext<CallActions | null>(null);
@@ -98,6 +108,16 @@ export function CallDispositionProvider({
   const [sendWhatsApp, setSendWhatsApp] = useState(false);
   const [savedAgo, setSavedAgo] = useState<string | null>(null);
   const [placing, setPlacing] = useState(false);
+  /*
+    Closed, but not finished.
+
+    Pressing Close used to throw the call away — the notes, the outcome, the
+    clock. A rep who wants to look something up mid-call had no way back, so
+    the console tucks into a bar at the bottom instead and everything typed so
+    far is still there when they come back to it. `discard` is the way out
+    that actually forgets.
+  */
+  const [minimised, setMinimised] = useState(false);
 
   /*
     The record itself, on the same query keys the record page and the chat
@@ -118,6 +138,33 @@ export function CallDispositionProvider({
   */
   const dispositions = useCallDispositions();
   const selected = dispositions.includes(disposition) ? disposition : (dispositions[0] ?? disposition);
+
+  /*
+    Whether this rep's phone can end a call at all.
+
+    Android hands a running call to the **default phone app** and to nobody
+    else, so this is a fact about the handset — reported by the app, not
+    inferred from a version number, because a build can carry the code and
+    still not be the chosen dialler. The console draws End dead until this
+    says otherwise, which is the difference between a control and a lie.
+  */
+  const { data: phones } = useQuery({
+    queryKey: ['device-phones'],
+    queryFn: () => api.devices(),
+    enabled: Boolean(target),
+    staleTime: 30_000,
+  });
+  const canEndCall = (phones ?? []).some((row) => (row as { can_end_call?: boolean }).can_end_call === true);
+
+  const hangUp = async (): Promise<void> => {
+    try {
+      const result = await api.hangUpOnPhone({ module, recordId });
+      if (result.sent) toast.info('Ending the call', `${result.device ?? 'Your phone'} is hanging up.`);
+      else toast.error('Could not end it from here', result.detail ?? 'Use the red button on the handset.');
+    } catch (err) {
+      toast.error('Could not end it from here', (err as Error).message);
+    }
+  };
 
   /*
     Who comes after this one, so the console can offer Save & dial next.
@@ -204,7 +251,7 @@ export function CallDispositionProvider({
     }
   });
 
-  const close = (): void => {
+  const discard = (): void => {
     voice.cancel();
     setTarget(null);
     setProviderCallId(null);
@@ -215,10 +262,14 @@ export function CallDispositionProvider({
     setSendWhatsApp(false);
     setSavedAgo(null);
     setSkipped([]);
+    setMinimised(false);
     try { localStorage.removeItem(draftKey); } catch { /* nothing to clear */ }
   };
 
-  const startCall = async (number: string): Promise<void> => {
+  /** Out of the way, still running. The bar at the bottom is what is left. */
+  const minimise = (): void => { voice.cancel(); setMinimised(true); };
+
+  const startCall = async (number: string, from: 'phone' | 'desk' = 'phone'): Promise<void> => {
     if (placingRef.current || target) return;
     placingRef.current = true;
     const clean = number.replace(/[^\d+]/g, '');
@@ -226,6 +277,16 @@ export function CallDispositionProvider({
     setStartedAt(Date.now());
     setPlacing(true);
     try {
+      /*
+        The rep asked for this one to leave from the computer, by clicking the
+        number rather than the Call button. No phone is involved and none is
+        asked: the desk hand-off is the whole intent, and queueing a command
+        for a handset as well would ring two things at once.
+      */
+      if (!isNative && from === 'desk') {
+        dial(clean);
+        return;
+      }
       /*
         The rep's own phone, wherever they pressed the button.
 
@@ -333,7 +394,7 @@ export function CallDispositionProvider({
         'Call logged',
         chaseOn ? 'Follow-up scheduled.' : 'One conversation moved forward.',
       );
-      close();
+      discard();
       void Promise.all([
         queryClient.invalidateQueries({ queryKey: ['record-calls', recordId] }),
         queryClient.invalidateQueries({ queryKey: ['timeline', module, recordId] }),
@@ -382,13 +443,15 @@ export function CallDispositionProvider({
     <CallDispositionContext.Provider value={{ startCall }}>
       {children}
       <Modal
-        open={Boolean(target)}
-        onClose={close}
+        open={Boolean(target) && !minimised}
+        onClose={minimise}
         // Still named for a screen reader; the console draws its own header.
         title={`Call with ${recordName}${target ? ` · ${target}` : ''}`}
         header={null}
-        bodyClassName="max-h-[82vh]"
-        size="xl"
+        bodyClassName="max-h-[80vh]"
+        // The screenshot is a compact panel a rep reads at a glance, not a
+        // full-width workspace. `lg` is about the width he drew it at.
+        size="lg"
       >
         <CallConsole
           module={described}
@@ -413,11 +476,30 @@ export function CallDispositionProvider({
           nextLabel={nextLabel}
           saving={saving}
           voice={voice}
-          onClose={close}
+          canEndCall={canEndCall}
+          onHangUp={() => void hangUp()}
+          onClose={minimise}
+          onDiscard={discard}
           onSave={(andDialNext) => void save(andDialNext)}
           onSkipNext={() => { if (neighbours?.nextId) setSkipped((list) => [...list, neighbours.nextId!]); }}
         />
       </Modal>
+
+      {/*
+        The call, still going, while the rep looks at something else. It is the
+        only thing on screen that moves — which is the point: a live call is
+        happening, and everything else on the page is waiting.
+      */}
+      {Boolean(target) && minimised && (
+        <LiveCallBar
+          recordLabel={recordName}
+          number={target ?? ''}
+          startedAt={startedAt}
+          canEndCall={canEndCall}
+          onHangUp={() => void hangUp()}
+          onOpen={() => setMinimised(false)}
+        />
+      )}
     </CallDispositionContext.Provider>
   );
 }

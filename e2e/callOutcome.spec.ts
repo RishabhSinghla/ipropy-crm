@@ -141,6 +141,14 @@ test('the outcome list follows the admin, not the bundle', async ({ page }) => {
     await page.locator('button[title^="Call "]').first().click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible({ timeout: 15_000 });
+
+    /*
+      The row shows the six a rep uses all day; everything else — including
+      anything an admin adds — is one tap behind "more outcomes". That tap is
+      part of the promise: an outcome added in Settings has to be reachable
+      from the console, or Settings is editing a list nobody can pick from.
+    */
+    await dialog.getByRole('button', { name: /more outcomes$/ }).click();
     await expect(dialog.getByRole('button', { name: value, exact: true })).toHaveCount(1);
     await page.keyboard.press('Escape');
   } finally {

@@ -63,3 +63,31 @@ describe('what the phone still has to allow', () => {
     expect(phoneChecklist(input).every((n) => !n.done)).toBe(true);
   });
 });
+
+describe('ending a call from the CRM', () => {
+  const paired = {
+    status: status({ paired: true, callPhoneGranted: true, callLogGranted: true }),
+    alerts: 'granted' as const,
+  };
+
+  it('is offered, and never blocks a call', () => {
+    // A rep who never grants it can still make and log calls; they just cannot
+    // hang up from the laptop.
+    expect(blockingSteps(paired)).toEqual([]);
+    expect(phoneChecklist(paired).find((n) => n.key === 'endCall')?.done).toBe(false);
+  });
+
+  it('an app too old to answer counts as not granted', () => {
+    // `canEndCall` is absent on a build that predates it, and undefined must
+    // never read as capable — the desk would draw an End button that does
+    // nothing.
+    expect(stepIsDone('endCall', paired)).toBe(false);
+  });
+
+  it('reads as done once Android has allowed it', () => {
+    expect(stepIsDone('endCall', {
+      status: status({ paired: true, canEndCall: true }),
+      alerts: 'granted',
+    })).toBe(true);
+  });
+});

@@ -14,6 +14,7 @@
  */
 import { registerPlugin } from '@capacitor/core';
 import { api } from './api';
+import { toast } from './store';
 import { apiBase, isAndroid, isNative } from './native';
 
 export interface CallSyncStatus {
@@ -29,6 +30,14 @@ export interface CallSyncStatus {
   locationEnabled: boolean;
   uploadRecordings: boolean;
   version: string;
+  /**
+   * Whether this handset may end a call on the CRM's instruction.
+   *
+   * Absent on an older build, which is why it is optional rather than false:
+   * `undefined` means "this app is too old to say", and the checklist draws
+   * it as not done either way.
+   */
+  canEndCall?: boolean;
 }
 
 interface CallSyncPlugin {
@@ -41,6 +50,12 @@ interface CallSyncPlugin {
   requestCallLog(): Promise<CallSyncStatus>;
   requestCallPermissions(): Promise<CallSyncStatus>;
   placeCall(options: { number: string; commandId?: string }): Promise<{ placed: boolean; reason?: string }>;
+  /** Ends the call this handset is on. Only the phone's own dialler may. */
+  endCall(options: { commandId?: string }): Promise<{ ended: boolean; reason?: string }>;
+  /** Whether Android has this app as the default phone app, right now. */
+  callControl(): Promise<{ canEndCall: boolean }>;
+  /** Ask for the permission that lets the CRM end a call. Android's own dialog. */
+  requestDialerRole(): Promise<{ canEndCall: boolean }>;
   requestLocation(): Promise<CallSyncStatus>;
   openAppSettings(): Promise<void>;
 }
@@ -62,6 +77,7 @@ const UNAVAILABLE: CallSyncStatus = {
   locationEnabled: false,
   uploadRecordings: false,
   version: '',
+  canEndCall: false,
 };
 
 export async function callSyncStatus(): Promise<CallSyncStatus> {
@@ -191,5 +207,50 @@ export async function placeCallFromPhone(
     return await CallSync.placeCall({ number, commandId });
   } catch (err) {
     return { placed: false, reason: (err as Error).message || 'failed' };
+  }
+}
+
+/**
+ * End the call this handset is on.
+ *
+ * Only Android's **default phone app** may, so an older build — or one the rep
+ * has not made their dialler — answers `ended: false` with a reason rather
+ * than throwing. The CRM then says so instead of claiming a call was cut off
+ * while the two people are still talking.
+ */
+export async function endCallOnPhone(commandId?: string): Promise<{ ended: boolean; reason?: string }> {
+  if (!callSyncSupported) return { ended: false, reason: 'not-a-phone' };
+  try {
+    return await CallSync.endCall({ commandId });
+  } catch (err) {
+    return { ended: false, reason: (err as Error).message || 'failed' };
+  }
+}
+
+/** Whether this handset is its own phone app today. Answers false on an old build. */
+export async function callControlState(): Promise<{ canEndCall: boolean }> {
+  if (!callSyncSupported) return { canEndCall: false };
+  try {
+    return await CallSync.callControl();
+  } catch {
+    return { canEndCall: false };
+  }
+}
+
+/**
+ * Ask for the permission that lets the CRM end a call on this handset.
+ *
+ * Not the default-dialler role, which is what "hang up from the computer"
+ * looked like it would cost: `TelecomManager.endCall()` needs
+ * `ANSWER_PHONE_CALLS` and nothing else, so the rep keeps the phone app they
+ * already use and everything else about their phone is unchanged.
+ */
+export async function askToEndCalls(): Promise<{ canEndCall: boolean }> {
+  if (!callSyncSupported) return { canEndCall: false };
+  try {
+    return await CallSync.requestDialerRole();
+  } catch (err) {
+    toast.error('Android would not ask', (err as Error).message);
+    return { canEndCall: false };
   }
 }

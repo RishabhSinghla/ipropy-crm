@@ -408,7 +408,8 @@ export async function listDevices(userId: string, isAdmin: boolean): Promise<Rec
   const rows = await db.query(
     `SELECT d.id, d.label, d.platform, d.token_preview, d.phone_number, d.model,
             d.app_version, d.is_active, d.last_sync_at, d.last_sync_count, d.created_at,
-            d.last_seen_at, d.app_open_at,
+            d.last_seen_at, d.app_open_at, d.can_end_call,
+            d.live_call_number, d.live_call_state, d.live_call_started_at,
             trim(u.first_name || ' ' || u.last_name) AS user_name,
             (SELECT count(*) FROM ipy_call c WHERE c.device_id = d.id)::int AS call_count,
             /*
@@ -443,17 +444,18 @@ export async function listDevices(userId: string, isAdmin: boolean): Promise<Rec
  * the status is used to make. Picking by recency is safe here and nowhere
  * else: every device considered belongs to this same person.
  */
-export async function markAppOpen(userId: string): Promise<{ deviceId: string | null }> {
+export async function markAppOpen(
+  userId: string, canEndCall?: boolean,
+): Promise<{ deviceId: string | null }> {
   const row = await db.queryOne<{ id: string }>(
-    `UPDATE ipy_device SET app_open_at = now(), last_seen_at = now()
-      WHERE id = (
-        SELECT id FROM ipy_device
-         WHERE user_id = $1 AND is_active = true
-         ORDER BY last_sync_at DESC NULLS LAST, created_at DESC
-         LIMIT 1
-      )
+    `UPDATE ipy_device
+        SET app_open_at = now(),
+            last_seen_at = now(),
+            can_end_call = COALESCE($2, can_end_call)
+      WHERE id = (SELECT id FROM ipy_device WHERE user_id = $1 AND is_active = true
+                   ORDER BY last_sync_at DESC NULLS LAST, created_at DESC LIMIT 1)
       RETURNING id`,
-    [userId],
+    [userId, canEndCall ?? null],
   );
   return { deviceId: row?.id ?? null };
 }
@@ -479,6 +481,15 @@ export async function revokeDevice(deviceId: string, userId: string, isAdmin: bo
  * If it is late, it is wrong, and the CRM says so rather than ringing.
  */
 const DIAL_TTL_SECONDS = 90;
+/*
+  A hang-up is worth seconds, not minutes.
+
+  A dial that arrives late rings somebody who was going to be rung anyway. A
+  hang-up that arrives late cuts off a *different* conversation — the one the
+  rep started afterwards — and there is no undoing that. Twenty seconds is
+  longer than the round trip and shorter than any next call.
+*/
+const HANGUP_TTL_SECONDS = 20;
 
 export interface QueuedDial {
   commandId: string;
@@ -574,5 +585,77 @@ export async function finishCommand(
             payload = COALESCE(payload, '{}'::jsonb) || jsonb_build_object('via', 'app')
       WHERE id = $1 AND device_id = $2`,
     [commandId, device.id, outcome.ok ? 'done' : 'failed', outcome.error ?? null],
+  );
+}
+
+/**
+ * Ask the rep's own phone to end the call it is on.
+ *
+ * Only a handset that has reported `can_end_call` is asked — Android grants
+ * that to the **default phone app** alone, which the rep has to agree to. A
+ * command queued for a phone that cannot act on it would sit there until it
+ * expired while the desk waited for a hang-up that was never possible, so the
+ * refusal happens here, with a reason the screen can print.
+ */
+export async function queueHangUp(input: {
+  userId: string;
+  module?: string | null;
+  recordId?: string | null;
+}): Promise<QueuedDial | null> {
+  const device = await db.queryOne<{ id: string; label: string }>(
+    `SELECT id, label FROM ipy_device
+      WHERE user_id = $1 AND is_active = true AND can_end_call = true
+      ORDER BY app_open_at DESC NULLS LAST, last_seen_at DESC NULLS LAST, created_at DESC
+      LIMIT 1`,
+    [input.userId],
+  );
+  if (!device) return null;
+
+  await db.query(
+    `UPDATE ipy_device_command SET status = 'expired', finished_at = now()
+      WHERE device_id = $1 AND status IN ('queued', 'delivered') AND expires_at <= now()`,
+    [device.id],
+  );
+
+  const row = await db.queryOne<{ id: string; expires_at: string }>(
+    `INSERT INTO ipy_device_command (device_id, user_id, kind, payload, module, record_id, expires_at)
+     VALUES ($1, $2, 'hangup', '{}'::jsonb, $3, $4, now() + ($5 || ' seconds')::interval)
+     RETURNING id, expires_at`,
+    [device.id, input.userId, input.module ?? null, input.recordId ?? null, String(HANGUP_TTL_SECONDS)],
+  );
+
+  return {
+    commandId: row!.id,
+    deviceId: device.id,
+    deviceLabel: device.label,
+    expiresAt: row!.expires_at,
+  };
+}
+
+/**
+ * What the phone says it can do, and what it is doing right now.
+ *
+ * Reported by the app rather than assumed from a version number: a build can
+ * carry the code and still not be the phone's chosen dialler, and the rep can
+ * change that in Android's settings at any moment without telling anybody.
+ */
+export async function reportPhoneState(device: AuthedDevice, state: {
+  canEndCall?: boolean;
+  liveNumber?: string | null;
+  liveState?: string | null;
+}): Promise<void> {
+  await db.query(
+    `UPDATE ipy_device
+        SET can_end_call = COALESCE($2, can_end_call),
+            live_call_number = $3,
+            live_call_state = $4,
+            live_call_started_at = CASE
+              WHEN $4::text IS NULL THEN NULL
+              WHEN live_call_state IS DISTINCT FROM $4::text THEN now()
+              ELSE live_call_started_at
+            END,
+            last_seen_at = now()
+      WHERE id = $1`,
+    [device.id, state.canEndCall ?? null, state.liveNumber ?? null, state.liveState ?? null],
   );
 }

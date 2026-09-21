@@ -160,9 +160,17 @@ export function FieldValue({
         <span className="inline-flex items-center gap-1.5">
           <button
             type="button"
-            onClick={(event) => { event.stopPropagation(); void callDisposition.startCall(String(value)); }}
+            /*
+              The number leaves from *this* computer, the Call button leaves
+              from the rep's phone — the owner asked for exactly that split on
+              21 September 2026. Somebody on a headset at a desk should not
+              have to pick up a handset, and somebody in the field should not
+              have their laptop try. Inside the app there is only one dialler,
+              and `startCall` knows it.
+            */
+            onClick={(event) => { event.stopPropagation(); void callDisposition.startCall(String(value), 'desk'); }}
             className="inline-flex items-center gap-1 text-left text-slate-900 hover:underline dark:text-slate-100 tnum"
-            title={`Call ${shown}`}
+            title={`Call ${shown} from this computer`}
           >
             {!compact && <Phone className="h-3 w-3" />}
             {shown}

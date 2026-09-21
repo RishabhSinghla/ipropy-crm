@@ -27,6 +27,12 @@ export interface OutcomeCard {
    * rep who wants a date says so in the header, where it is editable.
    */
   followUpInHours?: number;
+  /**
+   * One of the six a rep uses all day, which the design shows in a single
+   * row. The other seven are a tap away rather than filling the screen —
+   * thirteen cards is three rows and a scroll after every call.
+   */
+  primary?: boolean;
 }
 
 /*
@@ -36,16 +42,16 @@ export interface OutcomeCard {
   stops at six.
 */
 const CARDS: Record<string, OutcomeCard> = {
-  Interested: { icon: 'up', hint: 'High priority buyer', chip: 'Priority' },
+  Interested: { icon: 'up', hint: 'High priority buyer', chip: 'Priority', primary: true },
   'Site Visit Scheduled': { icon: 'up', hint: 'Visit booked', chip: 'Booked' },
-  'Call Back Later': { icon: 'clock', hint: 'Call later today', chip: 'In 2 hours', followUpInHours: 2 },
-  Busy: { icon: 'clock', hint: 'Call later today', chip: 'In 2 hours', followUpInHours: 2 },
-  'Not Reachable': { icon: 'unreachable', hint: 'Schedule re-dial', chip: 'Unreachable', followUpInHours: 24 },
+  'Call Back Later': { icon: 'clock', hint: 'Call later today', chip: 'In 2 hours', followUpInHours: 2, primary: true },
+  Busy: { icon: 'clock', hint: 'Call later today', chip: 'In 2 hours', followUpInHours: 2, primary: true },
+  'Not Reachable': { icon: 'unreachable', hint: 'Schedule re-dial', chip: 'Unreachable', followUpInHours: 24, primary: true },
   'Switched Off': { icon: 'unreachable', hint: 'Schedule re-dial', chip: 'Unreachable', followUpInHours: 24 },
-  'Not Interested': { icon: 'drop', hint: 'Disqualified', chip: 'Drop', disqualifies: true },
+  'Not Interested': { icon: 'drop', hint: 'Disqualified', chip: 'Drop', disqualifies: true, primary: true },
   'Already Purchased': { icon: 'drop', hint: 'Bought elsewhere', chip: 'Drop', disqualifies: true },
   'Do Not Call': { icon: 'drop', hint: 'Never contact again', chip: 'Drop', disqualifies: true },
-  'Wrong Number': { icon: 'invalid', hint: 'Update records', chip: 'Invalid', disqualifies: true },
+  'Wrong Number': { icon: 'invalid', hint: 'Update records', chip: 'Invalid', disqualifies: true, primary: true },
   'Language Barrier': { icon: 'invalid', hint: 'Hand to a colleague', chip: 'Barrier' },
   'Budget Mismatch': { icon: 'drop', hint: 'Out of budget', chip: 'Mismatch' },
   'Location Mismatch': { icon: 'drop', hint: 'Wrong area', chip: 'Mismatch' },
@@ -55,7 +61,7 @@ const CARDS: Record<string, OutcomeCard> = {
     list. `outcomeCard` reads an unfamiliar one by its words anyway; this
     spares that one the guess.
   */
-  'No Answer': { icon: 'noring', hint: 'Retry later today', chip: 'No ring', followUpInHours: 4 },
+  'No Answer': { icon: 'noring', hint: 'Retry later today', chip: 'No ring', followUpInHours: 4, primary: true },
 };
 
 /**
@@ -137,4 +143,39 @@ export function followUpFor(
   // Something already in the future is somebody's decision; only a date that
   // has been and gone is replaced.
   return new Date(existing).getTime() > now.getTime() ? null : iso;
+}
+
+/**
+ * The outcomes to show first, and the ones behind "more".
+ *
+ * Six on one row is the design, and thirteen cards is three rows and a scroll
+ * at the end of every call. The split is a flag on the card rather than a list
+ * of names here, and **the chosen outcome is always in the first group** —
+ * otherwise picking one from "more" makes it vanish from the screen that is
+ * showing it as chosen.
+ */
+export function splitOutcomes(all: string[], chosen: string): { first: string[]; rest: string[] } {
+  /*
+    The six sit in the same order every time — good first, gone last — rather
+    than in whatever order the picklist happens to be sorted in. A row a rep
+    hits a hundred times a day should be muscle memory, and "Interested" moving
+    because somebody renamed an option is how a mis-tap happens. The full list
+    below keeps the admin's own order.
+  */
+  const rank = (value: string): number => {
+    const card = outcomeCard(value);
+    if (card.disqualifies) return 3;
+    if (card.icon === 'unreachable' || card.icon === 'noring') return 2;
+    if (card.icon === 'clock') return 1;
+    return 0;
+  };
+  const first = all
+    .filter((value) => outcomeCard(value).primary)
+    .sort((a, b) => rank(a) - rank(b))
+    .slice(0, 6);
+  if (chosen && !first.includes(chosen)) {
+    // The chosen one takes the last place rather than growing the row.
+    first.splice(first.length - 1, 1, chosen);
+  }
+  return { first, rest: all.filter((value) => !first.includes(value)) };
 }

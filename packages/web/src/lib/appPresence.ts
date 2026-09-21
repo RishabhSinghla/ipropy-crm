@@ -19,6 +19,7 @@
  *    the app keeps working exactly as before and the status simply ages.
  */
 import { api } from './api';
+import { callControlState } from './callSync';
 import { isNative } from './native';
 
 /** A minute: long enough to cost nothing, short enough that "open" means open. */
@@ -29,7 +30,14 @@ let timer: ReturnType<typeof setInterval> | null = null;
 async function announce(): Promise<void> {
   if (document.visibilityState !== 'visible') return;
   try {
-    await api.appIsOpen();
+    /*
+      The same breath says whether this handset is its own phone app, which is
+      what lets the desk draw End as a control rather than a promise. Android
+      can take that role back from its own settings without telling anybody,
+      so it is asked every minute rather than remembered.
+    */
+    const { canEndCall } = await callControlState();
+    await api.appIsOpen({ canEndCall });
   } catch {
     // A status column is never worth a toast.
   }

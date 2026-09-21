@@ -2696,6 +2696,79 @@ and scroll lock to keep in step.
   write per keystroke against a call that does not exist yet is a row per
   keystroke.
 
+### Ending the call from the computer, and the three rows
+
+**21 September 2026, the owner:** *"I need to end call from popup … only call
+icon button make call from android default dialler, if agent click on number
+then the call should be transfer to action for mac/window dialler, live call
+bar also be there."* Then, against the first build: *"the form too big, please
+make it small as actual screenshot, and also the header first row, second row,
+third row should be same as per screenshot."*
+
+**The expensive assumption was mine, and reading Android's own reference killed
+it.** "Hang up from the desk" was written down here as needing the
+**default-dialler role** — `InCallService`, `ROLE_DIALER`, an in-call screen of
+our own, and every call on the rep's phone going through iPropy. It does not.
+`TelecomManager.endCall()` (API 28) requires **`ANSWER_PHONE_CALLS` and nothing
+else**: one permission dialog, and the rep keeps the phone app they already
+use. Deprecated in API 29 and still documented and still present — deprecated
+is not removed — and it cannot end an emergency call, which is Android's
+decision and the right one. **Check the live reference before pricing a feature
+in someone else's UI.**
+
+* **`ipy_device.can_end_call`** (migration `167`) is what the desk reads.
+  Reported by the app every minute on the same heartbeat as `app_open_at`,
+  never inferred from a version: a build can carry the code while the rep has
+  taken the permission back in Android's settings, and the End button follows
+  that within the minute.
+* **A hang-up lives twenty seconds**, against a dial's ninety. A late dial
+  rings somebody who was going to be rung anyway; a late hang-up cuts off the
+  *next* conversation, and there is no undoing that.
+* **One queue, one claim.** `/dial/pending` hands over any kind now, not only
+  a dial, so the socket path and the five-second timer still cannot both be
+  given the same command. A hang-up carries no number on purpose — the phone
+  ends the call it is on, and a number there would invite ending the wrong one.
+* **`POST /hangup` refuses rather than queueing** for a phone that cannot act,
+  and the screen prints the reason. Pinned by
+  `tests/integration/hangUpFromTheDesk.test.ts`, which also had to clear the
+  account's other queued commands first — the same lesson as the reachability
+  suite, met again.
+
+**Two buttons, two diallers, and that split is the instruction.** The **Call
+icon** rings the rep's Android phone, as it always has. **The number itself**
+now hands off to whatever this computer uses for `tel:` — a softphone on a Mac
+or a Windows machine — through `startCall(number, 'desk')`, which opens the
+console and asks no handset at all. Somebody on a headset should not have to
+pick up a phone; somebody in the field should not have their laptop try. In
+the app there is one dialler and `startCall` knows it.
+
+**The live call bar** (`LiveCallBar`): Close used to throw the call away —
+notes, outcome, clock. It **minimises** now, into a bar with the person, the
+timer, End where the phone allows it, and the way back in with everything still
+typed. *Did not call* is the one way out that forgets. The pulse and the
+three-bar equaliser are the only things on the page that move, which is the
+point.
+
+**The header is three rows, and which field lands on which is metadata.**
+Row one is who, the live pill, the agent and the controls; row two is the
+number, Copy, and **two facts a rep says out loud** — an empty one is skipped,
+because "Email: —" on a call header is noise and two of them is the row; row
+three is what the call *changes*, the stage and the chase date first
+(`statusField`/`followUpField`, found by uitype, never by name), editable where
+they stand. The record's own name is dropped from both (`module.labelFields`),
+since it is the heading.
+
+**Six outcome cards, not thirteen.** The picklist has thirteen and that is
+three rows and a scroll after every call, so `splitOutcomes` shows the six a
+rep uses all day — **in a fixed order, good first and gone last**, because a
+row hit a hundred times a day should be muscle memory and an option renamed in
+Settings must not move "Interested" under somebody's thumb. The rest are one
+tap behind *"N more outcomes"*, which is also where an outcome an admin adds
+appears — the e2e spec taps it, because Settings editing a list nobody can
+reach is the bug that would replace the old one. **The chosen outcome is always
+in the first six**, or picking one from "more" makes it vanish off the row
+showing it as chosen.
+
 `e2e/callOutcome.spec.ts` was rewritten around the cards and still proves the
 same four promises (the list is the admin's, a save reaches the Calls tab, there
 is no free-text path, an option added in Settings appears), plus the key-value
