@@ -803,7 +803,7 @@ export default function ListView(): JSX.Element {
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-w-0 flex-col">
       {/* Header */}
       {/*
         The toolbar reads as a bar now, not as the top of the page.
