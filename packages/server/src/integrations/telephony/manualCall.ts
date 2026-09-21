@@ -26,6 +26,8 @@ export async function logManualCall(input: {
   durationSeconds: number;
   disposition?: string;
   notes?: string;
+  /** The rep's own read of the conversation: 'hot' | 'warm' | 'cold'. */
+  intent?: string | null;
 }): Promise<{ callId: string }> {
   const agent = await db.queryOne<{ phone: string | null }>(`SELECT phone FROM ipy_user WHERE id = $1`, [input.userId]);
   const numberTail = input.toNumber.replace(/\D/g, '').slice(-10);
@@ -55,9 +57,13 @@ export async function logManualCall(input: {
               notes = COALESCE($3, notes),
               record_id = COALESCE($4, record_id),
               record_module = COALESCE($5, record_module),
+              intent = COALESCE($6, intent),
               disposition_at = CASE WHEN $2::text IS NULL THEN disposition_at ELSE now() END
         WHERE id = $1`,
-      [synced.id, input.disposition ?? null, input.notes ?? null, input.recordId, input.module],
+      [
+        synced.id, input.disposition ?? null, input.notes ?? null,
+        input.recordId, input.module, input.intent ?? null,
+      ],
     );
     return { callId: synced.id };
   }
@@ -78,9 +84,9 @@ export async function logManualCall(input: {
     `INSERT INTO ipy_call
       (direction, from_number, to_number, user_id, record_id, record_module,
        status, duration_seconds, provider, source, disposition, disposition_at,
-       notes, started_at, ended_at)
+       notes, intent, started_at, ended_at)
      VALUES ($1,$2,$3,$4,$5,$6,'completed',$7::int,'manual','manual',$8,
-             CASE WHEN $8::text IS NULL THEN NULL ELSE now() END, $9,
+             CASE WHEN $8::text IS NULL THEN NULL ELSE now() END, $9, $10,
              now() - make_interval(secs => $7::int), now())
      RETURNING id`,
     [
@@ -89,6 +95,7 @@ export async function logManualCall(input: {
       input.direction === 'outbound' ? input.toNumber : (agent?.phone ?? 'agent'),
       input.userId, input.recordId, input.module,
       input.durationSeconds, input.disposition ?? null, input.notes ?? null,
+      input.intent ?? null,
     ],
   );
 

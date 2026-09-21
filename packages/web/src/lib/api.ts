@@ -1035,7 +1035,10 @@ export const api = {
   createEmailTemplate: (data: Record<string, unknown>) => post<{ id: string }>('/api/comms/email/templates', data),
   deleteEmailTemplate: (id: string) => del(`/api/comms/email/templates/${id}`),
   // --- telephony ----------------------------------------------------------
-  setDisposition: (id: string, data: { disposition: string; notes?: string; followUpAt?: string | null }) =>
+  setDisposition: (id: string, data: {
+    disposition: string; notes?: string; followUpAt?: string | null;
+    intent?: 'hot' | 'warm' | 'cold' | null;
+  }) =>
     post(`/api/telephony/calls/${id}/disposition`, data),
   recordingUrl: (callId: string) => authedFileUrl(`/api/telephony/calls/${callId}/recording`),
   devices: () => get<Record<string, unknown>[]>('/api/telephony/devices'),

@@ -115,6 +115,9 @@ telephonyRouter.post('/log', asyncHandler(async (req, res) => {
     durationSeconds: z.number().int().min(0).max(36_000),
     disposition: z.string().optional(),
     notes: z.string().optional(),
+    // How warm they sounded, as the rep read it. Deliberately not the record's
+    // `rating`, which the scorer owns and overwrites.
+    intent: z.enum(['hot', 'warm', 'cold']).nullable().optional(),
   }).refine((value) => !value.recordId || Boolean(value.module), {
     message: 'The record module is required when linking a call',
   }).parse(req.body);
@@ -134,6 +137,7 @@ telephonyRouter.post('/log', asyncHandler(async (req, res) => {
     durationSeconds: input.durationSeconds,
     disposition: input.disposition,
     notes: input.notes,
+    intent: input.intent ?? null,
   }));
 }));
 
@@ -186,7 +190,7 @@ telephonyRouter.get('/calls', asyncHandler(async (req, res) => {
 
   const rows = await db.query(
     `SELECT c.id, c.direction, c.from_number, c.to_number, c.status, c.duration_seconds,
-            c.recording_url, c.disposition, c.notes, c.ai_summary, c.ai_sentiment,
+            c.recording_url, c.disposition, c.notes, c.intent, c.ai_summary, c.ai_sentiment,
             c.ai_next_actions, c.ai_objections, c.ai_score, c.ai_talk_ratio,
             c.started_at, c.ended_at, c.source, c.device_id, c.user_id,
             -- The call happened and stays on the log; the link to a deleted
@@ -447,6 +451,7 @@ telephonyRouter.post('/calls/:id/disposition', asyncHandler(async (req, res) => 
     disposition: z.string().min(1).max(60),
     notes: z.string().max(4000).optional(),
     followUpAt: z.string().datetime().nullable().optional(),
+    intent: z.enum(['hot', 'warm', 'cold']).nullable().optional(),
   }).parse(req.body);
 
   /*
@@ -485,10 +490,13 @@ telephonyRouter.post('/calls/:id/disposition', asyncHandler(async (req, res) => 
       to_number: string; from_number: string | null; direction: string;
     }>(
       `UPDATE ipy_call SET disposition = $2, notes = COALESCE($3, notes),
-              disposition_at = now(), follow_up_at = $4
+              disposition_at = now(), follow_up_at = $4, intent = COALESCE($7, intent)
        WHERE id = $1 AND (user_id = $5 OR $6)
        RETURNING id, record_id, record_module, to_number, from_number, direction`,
-      [req.params.id, input.disposition, input.notes ?? null, input.followUpAt ?? null, user.id, user.isAdmin],
+      [
+        req.params.id, input.disposition, input.notes ?? null, input.followUpAt ?? null,
+        user.id, user.isAdmin, input.intent ?? null,
+      ],
     );
     if (!updated || !before) return null;
 

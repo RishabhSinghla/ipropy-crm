@@ -1,12 +1,18 @@
-import { createContext, type JSX, type ReactNode, useContext, useRef, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { Mic, Phone, Square } from 'lucide-react';
+import {
+  createContext, type JSX, type ReactNode, useContext, useEffect, useRef, useState,
+} from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Phone } from 'lucide-react';
 import { api } from '../lib/api';
 import { useCallDispositions } from '../lib/callDispositions';
 import { toast } from '../lib/store';
 import { useVoiceCapture } from '../lib/useVoiceCapture';
 import { cn } from '../lib/utils';
-import { Modal, Spinner } from './ui';
+import { Modal } from './ui';
+import { CallConsole } from './CallConsole';
+import { useChatRecord } from './ChatRecordPane';
+import { followUpFor, type Intent, minutesFrom } from '../lib/callConsole';
 import { dial } from '../lib/nativeActions';
 import { isNative } from '../lib/native';
 
@@ -80,14 +86,25 @@ export function CallDispositionProvider({
   children: ReactNode;
 }): JSX.Element {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
   const [target, setTarget] = useState<string | null>(null);
   const [providerCallId, setProviderCallId] = useState<string | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
-  const [durationMinutes, setDurationMinutes] = useState(1);
+  const [durationMinutes] = useState(1);
   const [disposition, setDisposition] = useState('Call Back Later');
-  const [nextFollowUp, setNextFollowUp] = useState('');
   const [notes, setNotes] = useState('');
+  const [intent, setIntent] = useState<Intent | null>(null);
+  const [sendWhatsApp, setSendWhatsApp] = useState(false);
+  const [savedAgo, setSavedAgo] = useState<string | null>(null);
   const [placing, setPlacing] = useState(false);
+
+  /*
+    The record itself, on the same query keys the record page and the chat
+    pane use — so the values edited in the console's key bar invalidate every
+    other screen showing them, and opening one warms the other.
+  */
+  const { module: described, record } = useChatRecord(target ? module : null, target ? recordId : null);
   const [saving, setSaving] = useState(false);
   const placingRef = useRef(false);
   const savingRef = useRef(false);
@@ -101,6 +118,82 @@ export function CallDispositionProvider({
   */
   const dispositions = useCallDispositions();
   const selected = dispositions.includes(disposition) ? disposition : (dispositions[0] ?? disposition);
+
+  /*
+    Who comes after this one, so the console can offer Save & dial next.
+
+    The neighbour endpoint answers ids, which is all a list knows; the name
+    and the number come from the record itself. Asked for only while the
+    console is open, so an idle record page costs nothing.
+  */
+  const { data: neighbours } = useQuery({
+    queryKey: ['call-next', module, recordId],
+    queryFn: () => api.neighbours(module, recordId),
+    enabled: Boolean(target),
+    staleTime: 60_000,
+  });
+  const [skipped, setSkipped] = useState<string[]>([]);
+  const nextId = neighbours?.nextId && !skipped.includes(neighbours.nextId) ? neighbours.nextId : null;
+  const { data: nextRecord } = useQuery({
+    queryKey: ['record', module, nextId],
+    queryFn: () => api.record(module, nextId!),
+    enabled: Boolean(target && nextId),
+  });
+
+  /*
+    The follow-up message, and whether it could go at all.
+
+    Three things have to be true before this is offered: a provider is
+    connected, an approved template exists, and its blanks fill for *this*
+    person. A switch beside a preview that could never send is the shape of
+    promise this CRM has broken before, so a template with a hole in it is
+    shown with the reason and the switch is dead.
+  */
+  const { data: waStatus } = useQuery({
+    queryKey: ['wa-biz-status'],
+    queryFn: () => api.waBizStatus(),
+    enabled: Boolean(target),
+    staleTime: 5 * 60_000,
+  });
+  const { data: waTemplates } = useQuery({
+    queryKey: ['wa-biz-templates-saved'],
+    queryFn: () => api.waBizSavedTemplates(),
+    enabled: Boolean(target && waStatus?.connected),
+    staleTime: 5 * 60_000,
+  });
+  const template = (waTemplates ?? []).find((t) => t.status?.toLowerCase() === 'approved') ?? (waTemplates ?? [])[0];
+  const { data: waPreview } = useQuery({
+    queryKey: ['wa-biz-preview', template?.id, module, recordId],
+    queryFn: () => api.waBizTemplatePreview(template!.id, module, recordId),
+    enabled: Boolean(target && template),
+  });
+  const whatsAppPreview = template && waPreview
+    ? {
+      text: waPreview.preview,
+      ready: (waPreview.missing ?? []).length === 0,
+      reason: (waPreview.missing ?? []).map((m) => `${m.slot}: ${m.reason}`).join(' · ') || undefined,
+    }
+    : null;
+
+  /*
+    The note, kept in this browser while the call is still going.
+
+    Not a server write: a draft saved every few seconds against a call that
+    does not exist yet would be a row per keystroke. This is the same promise
+    a phone's own notes app makes — close the laptop lid and the words are
+    still there when Save is finally pressed.
+  */
+  const draftKey = `ipropy.callDraft.${module}.${recordId}`;
+  useEffect(() => {
+    if (!target) return;
+    const timer = window.setInterval(() => {
+      try {
+        localStorage.setItem(draftKey, JSON.stringify({ notes, intent, disposition: selected }));
+        setSavedAgo('just now');
+      } catch { /* a private window, and the words are still on screen */ }
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [target, draftKey, notes, intent, selected]);
 
   const voice = useVoiceCapture(async (audio) => {
     try {
@@ -116,10 +209,13 @@ export function CallDispositionProvider({
     setTarget(null);
     setProviderCallId(null);
     setStartedAt(null);
-    setDurationMinutes(1);
     setDisposition('Call Back Later');
-    setNextFollowUp('');
     setNotes('');
+    setIntent(null);
+    setSendWhatsApp(false);
+    setSavedAgo(null);
+    setSkipped([]);
+    try { localStorage.removeItem(draftKey); } catch { /* nothing to clear */ }
   };
 
   const startCall = async (number: string): Promise<void> => {
@@ -180,38 +276,63 @@ export function CallDispositionProvider({
     }
   };
 
-  const save = async (): Promise<void> => {
+  const save = async (andDialNext: boolean): Promise<void> => {
     if (!target || savingRef.current) return;
-    const today = new Date().toISOString().slice(0, 10);
-    if (nextFollowUp && nextFollowUp < today) {
-      toast.error('Choose today or a future date', 'A next follow-up is a task and cannot be scheduled in the past.');
-      return;
-    }
     savingRef.current = true;
     setSaving(true);
+    /*
+      Captured before the writes, because closing the console clears them and
+      dialling the next person needs both.
+    */
+    const goTo = andDialNext ? nextId : null;
     try {
+      const connected = !['No Answer', 'Busy', 'Switched Off', 'Not Reachable'].includes(selected);
       if (providerCallId) {
         await api.setDisposition(providerCallId, {
           disposition: selected,
           notes: notes.trim() || undefined,
+          intent,
         });
       } else {
-        const elapsed = startedAt ? Math.max(1, Math.round((Date.now() - startedAt) / 60_000)) : 1;
-        const connected = !['No Answer', 'Busy', 'Switched Off', 'Not Reachable'].includes(selected);
         await api.logCall({
           to: target, recordId, module, direction: 'outbound',
-          durationSeconds: connected ? Math.max(durationMinutes, elapsed) * 60 : 0,
+          durationSeconds: connected ? minutesFrom(startedAt, Date.now(), durationMinutes) * 60 : 0,
           disposition: selected,
           notes: notes.trim() || undefined,
+          intent,
         });
       }
-      if (nextFollowUp) await api.update(module, recordId, { [followUpField]: nextFollowUp });
+
+      /*
+        The outcome chases them for you, and never argues with a date somebody
+        has already chosen — the console's key bar lets a rep pick one while
+        the call is still running.
+      */
+      const chaseOn = followUpFor(
+        selected,
+        (record?.values?.[followUpField] as string | null | undefined) ?? null,
+        new Date(),
+      );
+      if (chaseOn) await api.update(module, recordId, { [followUpField]: chaseOn });
+
+      /*
+        The follow-up message, sent only if the rep left the switch on and the
+        template's blanks all filled. A refusal here must not lose the call
+        that has just been written, so it is reported and stepped over.
+      */
+      if (sendWhatsApp && template && whatsAppPreview?.ready) {
+        try {
+          await api.waBizSendTemplate({ templateId: template.id, module, recordId, to: target });
+          toast.success('WhatsApp sent', 'The follow-up message is on its way.');
+        } catch (err) {
+          toast.error('The call is saved, the message is not', (err as Error).message);
+        }
+      }
+
       toast.success(
         'Call logged',
-        nextFollowUp ? 'Nice work — your next follow-up is scheduled.' : 'One conversation moved forward. Keep the momentum going.',
+        chaseOn ? 'Follow-up scheduled.' : 'One conversation moved forward.',
       );
-      // Close as soon as the write succeeds. Refetching the tabs is background
-      // work and must never hold the form on screen after Save.
       close();
       void Promise.all([
         queryClient.invalidateQueries({ queryKey: ['record-calls', recordId] }),
@@ -220,6 +341,14 @@ export function CallDispositionProvider({
         queryClient.invalidateQueries({ queryKey: ['records', module] }),
         queryClient.invalidateQueries({ queryKey: ['task-count', module] }),
       ]);
+
+      /*
+        Dial next. The console belongs to whichever record is open, so this
+        cannot switch person by itself — it opens the next record and asks it
+        to start, which is also what makes the queue work identically from the
+        split view, the table and a record's own page.
+      */
+      if (goTo) navigate(`/${module}/${goTo}?dial=1`);
     } catch (err) {
       toast.error('Could not log the call', (err as Error).message);
     } finally {
@@ -228,75 +357,66 @@ export function CallDispositionProvider({
     }
   };
 
+  /*
+    Arriving from Save & dial next: ring this person straight away, once, and
+    take the flag off the address so a refresh does not re-dial somebody who
+    has already been called.
+  */
+  const phoneField = described?.fields.find((f) => f.uitype === 'phone');
+  const autoNumber = phoneField ? (record?.display?.[phoneField.name] ?? record?.values?.[phoneField.name]) : null;
+  const dialParam = params.get('dial');
+  useEffect(() => {
+    if (dialParam !== '1' || target || !autoNumber) return;
+    const next = new URLSearchParams(params);
+    next.delete('dial');
+    setParams(next, { replace: true });
+    void startCall(String(autoNumber));
+    // `startCall` is recreated on every render and guards itself with a ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dialParam, autoNumber, target]);
+
+  const recordName = String(record?.display?.full_name ?? record?.label ?? recordLabel);
+  const nextLabel = nextRecord ? String(nextRecord.display?.full_name ?? nextRecord.label ?? 'Next record') : null;
+
   return (
     <CallDispositionContext.Provider value={{ startCall }}>
       {children}
       <Modal
         open={Boolean(target)}
         onClose={close}
-        title={`Log call with ${recordLabel}${target ? ` · ${target}` : ''}`}
-        size="sm"
-        footer={(
-          <>
-            <button className="btn-secondary" onClick={close} disabled={saving}>Did not call</button>
-            <button className="btn-primary" disabled={saving || placing} onClick={() => void save()}>
-              {saving && <Spinner className="h-3.5 w-3.5" />} Save call
-            </button>
-          </>
-        )}
+        // Still named for a screen reader; the console draws its own header.
+        title={`Call with ${recordName}${target ? ` · ${target}` : ''}`}
+        header={null}
+        bodyClassName="max-h-[82vh]"
+        size="xl"
       >
-        <div className="space-y-3">
-          <div>
-            <label className="label" htmlFor="call-outcome">Outcome</label>
-            <select id="call-outcome" className="input" value={selected} onChange={(event) => setDisposition(event.target.value)}>
-              {dispositions.map((value) => <option key={value} value={value}>{value}</option>)}
-            </select>
-          </div>
-          {!providerCallId && (
-            <div>
-              <label className="label" htmlFor="call-duration">Approximate duration (minutes)</label>
-              <input
-                id="call-duration" className="input tnum" type="number" min={0} max={600}
-                value={durationMinutes}
-                onChange={(event) => setDurationMinutes(Math.max(0, Number(event.target.value) || 0))}
-              />
-            </div>
-          )}
-          <div>
-            <label className="label" htmlFor="call-next-follow-up">Next follow-up (task)</label>
-            <input
-              id="call-next-follow-up"
-              className="input"
-              type="date"
-              min={new Date().toISOString().slice(0, 10)}
-              value={nextFollowUp}
-              onChange={(event) => setNextFollowUp(event.target.value)}
-            />
-          </div>
-          <div>
-            <div className="mb-1 flex items-center justify-between gap-2">
-              <label className="label mb-0" htmlFor="call-notes">Disposition notes (optional)</label>
-              <button
-                type="button"
-                className={cn('btn-ghost btn-sm', voice.recording && 'text-red-600')}
-                onClick={voice.toggle}
-                disabled={!voice.supported || voice.busy}
-                title={voice.recording ? 'Stop dictation' : 'Speak disposition notes'}
-              >
-                {voice.busy ? <Spinner className="h-3.5 w-3.5" />
-                  : voice.recording ? <Square className="h-3.5 w-3.5 fill-current" />
-                    : <Mic className="h-3.5 w-3.5" />}
-                {voice.recording ? 'Stop' : voice.busy ? 'Writing…' : 'Speak'}
-              </button>
-            </div>
-            <textarea
-              id="call-notes" className="input" rows={4} value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-              placeholder="What happened on the call?"
-            />
-          </div>
-          {placing && <p className="text-xs text-muted">Connecting the call…</p>}
-        </div>
+        <CallConsole
+          module={described}
+          record={record}
+          recordLabel={recordName}
+          moduleName={module}
+          recordId={recordId}
+          number={target ?? ''}
+          startedAt={startedAt}
+          placing={placing}
+          outcomes={dispositions}
+          selected={selected}
+          onSelect={setDisposition}
+          notes={notes}
+          onNotes={setNotes}
+          intent={intent}
+          onIntent={setIntent}
+          whatsAppOn={sendWhatsApp}
+          onWhatsApp={setSendWhatsApp}
+          whatsAppPreview={whatsAppPreview}
+          savedAgo={savedAgo}
+          nextLabel={nextLabel}
+          saving={saving}
+          voice={voice}
+          onClose={close}
+          onSave={(andDialNext) => void save(andDialNext)}
+          onSkipNext={() => { if (neighbours?.nextId) setSkipped((list) => [...list, neighbours.nextId!]); }}
+        />
       </Modal>
     </CallDispositionContext.Provider>
   );

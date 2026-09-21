@@ -2617,6 +2617,81 @@ several possible faults the owner actually met. A phone with no version on
 screen and no error message cannot be diagnosed from here, which is the whole
 reason that card now exists.
 
+## The call console
+
+**21 September 2026, the owner, with a design of his own:** *"can you redesign
+this UI/UX of click-to-call popup form and next-to-call dialler with fully
+functional features, editable key values as per given screenshot."* What it
+replaced asked for an outcome, a duration and a date.
+
+`components/CallConsole.tsx` draws it; `lib/callConsole.ts` holds the decisions,
+pure, so a `node` test can read them without dragging the store in. The console
+renders inside the ordinary `Modal` — which gained an optional `header` and
+`bodyClassName` for it, rather than growing a second focus trap, Escape handler
+and scroll lock to keep in step.
+
+* **No screen names a field.** The key values in the bar under the header are
+  whatever Admin → Split View says this module's header shows, through the same
+  `useRecordPanes` the record page and the chat pane read, and they are edited
+  where they stand with `EditableField`. So Budget appearing there is an admin's
+  decision, made once, and every screen agrees.
+* **The outcome cards are the admin's picklist**, through `useCallDispositions`,
+  never a list of six written here. `outcomeCard` gives each value an icon, a
+  hint and a corner chip, and **reads an outcome nobody has described by its
+  words** rather than dropping it — an admin who adds "Site Visit Fixed" gets a
+  card, because the alternative is a rep who cannot record what happened.
+  `aria-label` is the outcome itself: without it a screen reader announces the
+  chip first ("Priority Interested High priority buyer").
+* **The chip and the schedule cannot disagree.** "In 2 hours" is printed from
+  `followUpInHours` on the same card the save reads, so a card promising two
+  hours and a follow-up landing tomorrow is not expressible. It **never
+  overwrites a date already in the future** — the header lets a rep book
+  Saturday's site visit mid-call, and a card quietly replacing it is the bug
+  that would follow.
+* **Mute, hold and End are drawn and dead on purpose.** Android only lets the
+  handset's **default phone app** touch a call that is already running; iPropy
+  hands a number to the dialler and reads the call log afterwards. A red End
+  button that ends nothing is the exact failure this repo keeps writing down, so
+  they carry the reason in their `title` and light up on their own when
+  `mayControlLiveCall` says the app can (it cannot today, and that needs the
+  `InCallService`/`ROLE_DIALER` work, which is Android code and needs an SDK).
+  The e2e spec asserts they are **disabled**, so nobody quietly enables one.
+* **The timer counts what can honestly be counted** — time since Call was
+  pressed, not time the two people have been talking, which no browser knows.
+* **Hot / Warm / Cold is on the call, not the record.** The obvious home looks
+  like `leads.rating` and is the wrong one: that field is read-only because the
+  scorer owns it, and when it was editable an edit was accepted, audited, and
+  overwritten moments later — the rep saw Hot and the database kept Warm.
+  Migration `166` adds `ipy_call.intent`, checked to the three words.
+* **The WhatsApp follow-up is offered only when it could actually go**: a
+  provider connected, an approved template, and its blanks filling for *this*
+  person through the existing `/templates/:id/preview`, which resolves as the
+  person asking. A template with a hole in it shows the reason with the switch
+  dead. A refused send never loses the call that was just written.
+* **Save & dial next** reads `GET /records/:module/:id/neighbours` — the same
+  order the list is in — and then *navigates* to that record with `?dial=1`
+  rather than swapping the person underneath the console. The provider belongs
+  to whichever record is open, which is what makes the queue behave identically
+  from the split view, the table and a record's own page. The flag is stripped
+  on arrival, so a refresh cannot re-ring somebody already called.
+* **The draft is this browser's**, every five seconds, cleared on save. A server
+  write per keystroke against a call that does not exist yet is a row per
+  keystroke.
+
+`e2e/callOutcome.spec.ts` was rewritten around the cards and still proves the
+same four promises (the list is the admin's, a save reaches the Calls tab, there
+is no free-text path, an option added in Settings appears), plus the key-value
+bar and the disabled End button. An a11y scan covers the console in both themes
+and **creates its own lead with a number** — the first row in the list may have
+none, and a spec that depends on what is already in the database reports the
+machine it ran on.
+
+**One fact worth keeping: `No Answer` is not one of this CRM's outcomes.**
+`CALL_DISPOSITIONS` has thirteen and that is not among them, so the first cut of
+the cards described an outcome the server refuses — caught by
+`tests/integration/callConsoleSaves.test.ts`, which is the only layer that runs
+the picklist check. It has a card anyway, for the admin who adds it.
+
 ## Every request appears twice in development, and once in production
 
 `main.tsx` wraps the app in `React.StrictMode`, which double-invokes effects in

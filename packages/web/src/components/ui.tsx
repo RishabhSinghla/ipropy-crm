@@ -92,14 +92,26 @@ export function Avatar({
 // ---------------------------------------------------------------------------
 
 export function Modal({
-  open, onClose, title, children, footer, size = 'md',
+  open, onClose, title, header, children, footer, size = 'md', bodyClassName,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
+  /**
+   * A header of the caller's own, in place of the title bar.
+   *
+   * The call console wears a dark header with the customer, the timer and the
+   * call controls in it, and a second modal implementation to get that is a
+   * second focus trap, a second Escape handler and a second scroll lock to
+   * keep in step. `title` is still required and still names the dialog for a
+   * screen reader.
+   */
+  header?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
+  /** For a body that owns its own padding, like the console's panels. */
+  bodyClassName?: string;
 }): JSX.Element | null {
   const panelRef = useRef<HTMLDivElement>(null);
   // Callers naturally create `onClose` inline. Keeping it in a ref prevents
@@ -171,15 +183,17 @@ export function Modal({
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className={cn('relative z-10 w-full rounded-xl bg-white shadow-float dark:bg-slate-900', widths[size])}
+        className={cn('relative z-10 w-full overflow-hidden rounded-xl bg-white shadow-float dark:bg-slate-900', widths[size])}
       >
-        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3.5 dark:border-slate-800">
-          <h2 className="text-base font-semibold">{title}</h2>
-          <button onClick={onClose} className="btn-ghost -mr-2 p-1.5" aria-label="Close">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="max-h-[70vh] overflow-y-auto px-5 py-4">{children}</div>
+        {header === undefined ? (
+          <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3.5 dark:border-slate-800">
+            <h2 className="text-base font-semibold">{title}</h2>
+            <button onClick={onClose} className="btn-ghost -mr-2 p-1.5" aria-label="Close">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        ) : header}
+        <div className={cn('max-h-[70vh] overflow-y-auto', bodyClassName ?? 'px-5 py-4')}>{children}</div>
         {footer && (
           <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-3 dark:border-slate-800">
             {footer}

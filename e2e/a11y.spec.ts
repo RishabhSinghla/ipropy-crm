@@ -112,6 +112,49 @@ test.describe('accessibility', () => {
     expect(violations, summarise(violations)).toEqual([]);
   });
 
+  test('the call console has no violations', async ({ page }) => {
+    /*
+      A new screen with a dark header, six outcome cards, three disabled call
+      controls and a set of coloured intent chips — every one of which is a
+      place a contrast or a missing name hides. It is also the screen a rep is
+      on immediately after every call, which is the worst possible moment to
+      meet an unreadable control.
+    */
+    /*
+      Its own lead with its own number. Picking whatever is first in the list
+      is how a spec ends up reporting the machine it ran on — that record may
+      have no phone, and the console only opens from a number.
+    */
+    await page.goto('/leads');
+    const id = await page.evaluate(async () => {
+      const token = localStorage.getItem('ipropy.token');
+      const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+      const stamp = Date.now();
+      const res = await fetch('/api/records/leads', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          full_name: `A11y Console ${stamp}`,
+          mobile: `96${String(stamp).slice(-8)}`,
+          country_code: '91',
+        }),
+      });
+      const body = await res.json() as { id?: string };
+      return body.id ?? '';
+    });
+    expect(id, 'could not create the lead this scan needs').not.toBe('');
+
+    await page.goto(`/leads/${id}`);
+    const call = page.locator('button[title^="Call "]').first();
+    await expect(call).toBeVisible({ timeout: 20_000 });
+    await call.click();
+    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('dialog').locator('button[aria-pressed]').first()).toBeVisible();
+    const { violations } = await scan(page);
+    expect(violations, summarise(violations)).toEqual([]);
+    await page.keyboard.press('Escape');
+  });
+
   test('the pipeline breakdown panel has no violations', async ({ page }) => {
     await page.goto('/leads');
     await waitForRecords(page);
