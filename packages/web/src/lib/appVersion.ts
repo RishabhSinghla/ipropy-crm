@@ -52,42 +52,43 @@ export function updateAvailable(installed: string | null | undefined, published:
 export const UNKNOWN_VERSION = 'an older build';
 
 /**
- * The last build signed with the **old** key.
+ * The builds signed with a **different** key from the one shipping now.
  *
  * Android refuses an update signed by a different key from the one already on
- * the phone: it answers *"App not installed"* and says nothing about why. A new
- * signing key was generated on 20 September 2026, so there is exactly one such
- * boundary in this app's history, read out of the published APKs themselves
- * with `packages/app/scripts/which-key-signed-it.py` rather than assumed:
+ * the phone: it answers *"App not installed"* and says nothing about why. This
+ * app has been signed by two keys, and **the published build is back on the
+ * original one** — read out of the APKs themselves with
+ * `packages/app/scripts/which-key-signed-it.py`, never assumed:
  *
- *   1.0.0  `A2:55:AD:0D…`  key made 12 Sep 05:37 GMT
- *   2.0.0  `D6:CD:55:3B…`  key made 20 Sep 11:07 GMT
- *   2.1.0  `D6:CD:55:3B…`  the same key
+ *   1.0.0  `A2:55:AD:0D…`  the original key, 12 Sep
+ *   2.0.0  `D6:CD:55:3B…`  a second key made on 20 Sep, on another machine
+ *   2.1.0  `D6:CD:55:3B…`  the same second key
+ *   2.2.0  `A2:55:AD:0D…`  **the original again** — built 21 Sep from the key
+ *                          its owner shared into the repository's secrets
  *
- * So a phone on 1.0.0 must uninstall before it can install anything newer, and
- * a phone on 2.0.0 or later updates over the top as usual. Until this existed
- * both screens told every rep the new build installs over the top, which is
- * true for one phone in the business and false for the three that need it.
+ * So the odd ones out are 2.0.0 and 2.1.0, and everything else updates in
+ * place. **This was the other way round for half an hour on 21 September**,
+ * written before 2.2.0 existed and on the reasonable assumption that a new
+ * key, once adopted, is the one that stays. It was not: the two developers
+ * hold different keys and whichever one builds decides. Hence the list rather
+ * than a boundary — a "newer than X" rule cannot express a key that comes
+ * back.
  */
-const LAST_OLD_KEY_BUILD = '1.0.0';
+const OTHER_KEY_BUILDS = ['2.0.0', '2.1.0'];
 
 /**
- * Does this phone have to uninstall before it can take a new build?
+ * Does this phone have to uninstall before it can take the published build?
  *
- * **An unknown version counts as yes**, for the same reason `updateAvailable`
- * counts it as behind: a build too old to name itself is older than 1.0.0, so
- * it is on the old key or on no key anybody has a record of. Being told to
- * uninstall when you did not need to costs one extra tap; not being told costs
- * a flat refusal from Android and a rep who reports the app as broken.
+ * **An unknown version counts as yes.** A build too old to name itself cannot
+ * be checked against the list, and being told to uninstall when you need not
+ * costs one extra tap — while not being told costs a flat refusal from Android
+ * and a rep who reports the app as broken.
  */
 export function needsUninstallFirst(installed: string | null | undefined): boolean {
   const have = parts(installed);
   if (!have.length) return true;
-  const boundary = parts(LAST_OLD_KEY_BUILD);
-  for (let i = 0; i < Math.max(have.length, boundary.length); i += 1) {
-    const a = have[i] ?? 0;
-    const b = boundary[i] ?? 0;
-    if (a !== b) return a < b;   // newer than the boundary → installs over the top
-  }
-  return true;                   // exactly the boundary build → the old key
+  return OTHER_KEY_BUILDS.some((build) => {
+    const other = parts(build);
+    return other.length === have.length && other.every((n, i) => n === have[i]);
+  });
 }

@@ -1013,12 +1013,12 @@ function GetTheApp(): JSX.Element | null {
         */}
         <li>
           <span className="font-medium text-slate-700 dark:text-slate-200">
-            1. If iPropy is already on that phone, uninstall it first.
+            1. Only if that phone is on 2.0.0 or 2.1.0: uninstall iPropy first.
           </span>{' '}
-          Only for handsets installed before 20 September. Android refuses to replace an app that
-          was signed with a different key and says only &ldquo;App not installed&rdquo;. The app
-          itself says which phones need this, under <em>This phone&apos;s app</em>. Nothing in the
-          CRM is lost — the rep signs in again and the phone re-pairs.
+          Those two builds were signed with a different key, and Android refuses to replace an app
+          signed by another key — it says only &ldquo;App not installed&rdquo;. Every other phone,
+          including anything on 1.0.0, updates straight over the top. The app itself says which,
+          under <em>This phone&apos;s app</em>. Nothing in the CRM is lost either way.
         </li>
         <li>
           <span className="font-medium text-slate-700 dark:text-slate-200">2. Let the phone install it.</span>{' '}

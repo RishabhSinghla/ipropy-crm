@@ -1,42 +1,40 @@
 /**
  * Which phones have to uninstall before they can update.
  *
- * A new signing key was generated on 20 September 2026 and Android refuses an
- * update signed by a different key than the build already installed — it says
- * *"App not installed"* and nothing else. Both of the CRM's own screens told
- * every rep the new build installs "over the top", which was true for the one
- * handset already on 2.1.0 and false for the three that needed it.
+ * Two developers hold two different signing keys, and whichever one builds
+ * decides. 1.0.0 and 2.2.0 are on the original; 2.0.0 and 2.1.0 are on a
+ * second key made on another machine. Android refuses an update signed by a
+ * different key than what is installed — *"App not installed"*, and nothing
+ * else — so the answer is a list of the odd ones out, not a version boundary.
  */
 import { describe, expect, it } from 'vitest';
 import { needsUninstallFirst, updateAvailable } from '../src/lib/appVersion';
 
-describe('crossing the signing-key boundary', () => {
-  it('1.0.0 has to uninstall, because it is on the old key', () => {
-    expect(needsUninstallFirst('1.0.0')).toBe(true);
+describe('crossing a signing-key change', () => {
+  it('1.0.0 updates in place, because 2.2.0 is on the same original key', () => {
+    expect(needsUninstallFirst('1.0.0')).toBe(false);
   });
 
-  it('2.0.0 and later install over the top', () => {
-    // Read off the published APKs: 2.0.0 and 2.1.0 share one key.
-    expect(needsUninstallFirst('2.0.0')).toBe(false);
-    expect(needsUninstallFirst('2.1.0')).toBe(false);
+  it('2.0.0 and 2.1.0 must uninstall — they are the odd ones out', () => {
+    expect(needsUninstallFirst('2.0.0')).toBe(true);
+    expect(needsUninstallFirst('2.1.0')).toBe(true);
+  });
+
+  it('the build being shipped never asks for an uninstall of itself', () => {
     expect(needsUninstallFirst('2.2.0')).toBe(false);
-    expect(needsUninstallFirst('10.0.0')).toBe(false);
   });
 
   it('a build too old to name itself counts as needing it', () => {
-    // Being told to uninstall when you need not costs a tap. Not being told
-    // costs a flat refusal nobody can interpret.
     expect(needsUninstallFirst(null)).toBe(true);
     expect(needsUninstallFirst('')).toBe(true);
     expect(needsUninstallFirst('nightly')).toBe(true);
   });
 
   it('is a separate question from whether there is an update at all', () => {
-    // 2.1.0 is current and still needed no uninstall; the two must not be
-    // read off one another.
-    expect(updateAvailable('2.1.0', '2.1.0')).toBe(false);
-    expect(needsUninstallFirst('2.1.0')).toBe(false);
+    // 1.0.0 is behind and needs no uninstall; 2.1.0 is behind and does.
     expect(updateAvailable('1.0.0', '2.2.0')).toBe(true);
-    expect(needsUninstallFirst('1.0.0')).toBe(true);
+    expect(needsUninstallFirst('1.0.0')).toBe(false);
+    expect(updateAvailable('2.1.0', '2.2.0')).toBe(true);
+    expect(needsUninstallFirst('2.1.0')).toBe(true);
   });
 });
