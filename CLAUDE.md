@@ -795,15 +795,41 @@ So the real choice is 3 uninstalls versus 4, not "nobody" versus "everybody",
 and `build-the-app.yml` says so at the point of failure now instead of
 repeating a rule that had already been broken. It also offers the second road
 (`make_new_key`), which generates a keystore on the runner and **saves it to
-the repository's own secrets before building with it**, through the
-`SECRET_WRITE_TOKEN` PAT that `create-api-key.yml` already uses. A key made
-and then lost would leave an app nobody could ever update, so the token is
+the repository's own secrets before building with it**. A key made and then
+lost would leave an app nobody could ever update, so the write token is
 checked before `keytool` runs rather than after.
+
+**That second road is blocked too, and the reason is a note in this file that
+was wrong.** It said the `SECRET_WRITE_TOKEN` PAT is one `create-api-key.yml`
+"already uses". That workflow *reads* it and carries a branch for its absence —
+which is the branch it has always taken. Run 4 of `build-the-app.yml` on
+21 September printed `GH_TOKEN:` empty: **the secret does not exist.** Checking
+a name appears in a workflow is not checking the secret is set, and the
+difference cost a second blocked release.
+
+**And `secrets` may not be used in a step's `if:`.** It is absent from
+GitHub's context-availability table for `steps.if`, and a workflow that tries
+fails to *parse* — so it cannot be dispatched at all, and the error names a
+line rather than the rule. The question is asked once in a job-level `env`
+(which may read secrets) and the steps test that.
 
 **The lesson is the one this repo keeps re-learning in a new costume:** a
 refusal message is a claim about the world, and it goes stale like any other.
 This one was written on 20 September, was true for about four hours, and was
 still being quoted as a blocker a day later.
+
+**The team was about to be told the wrong thing by two of the CRM's own
+screens, and that was the one thing fixable without a human.** Both the
+download card and the in-app *This phone's app* card said the new build
+installs "over the top". Across the key change it does not: Android answers
+**"App not installed"** and gives no reason, so a rep updating a handset would
+have reported the app as broken. `needsUninstallFirst` in `lib/appVersion.ts`
+holds the boundary, read off the published APKs rather than assumed — **1.0.0
+is on the old key; 2.0.0 and 2.1.0 share the new one** — so only the phones
+that must uninstall are told to, and an unreadable version counts as yes for
+the same reason it counts as behind. It is in the web bundle, which every
+installed handset updates itself from, so it needed no key, no token and
+nobody. `tests/appNeedsUninstall.test.ts` pins it.
 
 **And the note that said every installed copy predates `placeCall` is out of
 date.** The APK published on 20 September 2026 — 2.1.0, versionCode 3 —

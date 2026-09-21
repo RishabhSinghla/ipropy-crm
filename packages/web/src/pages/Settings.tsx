@@ -14,7 +14,7 @@ import { currentSubscription, disablePush, enablePush, permissionState, pushSupp
 import { Avatar, Badge, ConfirmDialog, EmptyState, Modal, Select, Skeleton, Spinner, Tabs } from '../components/ui';
 import { copyText } from '../lib/nativeActions';
 import { isNative } from '../lib/native';
-import { updateAvailable, UNKNOWN_VERSION } from '../lib/appVersion';
+import { needsUninstallFirst, updateAvailable, UNKNOWN_VERSION } from '../lib/appVersion';
 import { PhoneStatus } from '../components/PhoneStatus';
 import { PhoneSetup } from '../components/PhoneSetup';
 import {
@@ -1004,18 +1004,34 @@ function GetTheApp(): JSX.Element | null {
       </div>
 
       <ol className="space-y-2 border-t border-slate-100 pt-4 text-sm text-muted dark:border-slate-800">
+        {/*
+          Step zero, and it is the one that stops people. A new signing key was
+          generated on 20 September 2026, so a handset still on 1.0.0 — which
+          on 21 September was every phone in the business but one — is refused
+          with a flat "App not installed" and no reason. This card is read at a
+          desk before anybody walks over to a phone, so it has to say it here.
+        */}
         <li>
-          <span className="font-medium text-slate-700 dark:text-slate-200">1. Let the phone install it.</span>{' '}
+          <span className="font-medium text-slate-700 dark:text-slate-200">
+            1. If iPropy is already on that phone, uninstall it first.
+          </span>{' '}
+          Only for handsets installed before 20 September. Android refuses to replace an app that
+          was signed with a different key and says only &ldquo;App not installed&rdquo;. The app
+          itself says which phones need this, under <em>This phone&apos;s app</em>. Nothing in the
+          CRM is lost — the rep signs in again and the phone re-pairs.
+        </li>
+        <li>
+          <span className="font-medium text-slate-700 dark:text-slate-200">2. Let the phone install it.</span>{' '}
           Android will warn that the file came from outside the Play Store. Choose Settings on that
           warning and allow your browser to install apps, then tap the downloaded file again.
         </li>
         <li>
-          <span className="font-medium text-slate-700 dark:text-slate-200">2. Sign in.</span>{' '}
+          <span className="font-medium text-slate-700 dark:text-slate-200">3. Sign in.</span>{' '}
           The same email and password as the website. There is no pairing token to copy any
           more — the app mints its own the moment you switch call logging on.
         </li>
         <li>
-          <span className="font-medium text-slate-700 dark:text-slate-200">3. Turn on call logging.</span>{' '}
+          <span className="font-medium text-slate-700 dark:text-slate-200">4. Turn on call logging.</span>{' '}
           Settings &rarr; Phones &rarr; <em>Turn on call logging</em>, on the handset itself. Say yes
           to the call-log permission when Android asks. If you also want the phone to report where
           it is, Android will not let the app ask for that in a pop-up: open the app&apos;s own
@@ -1085,6 +1101,7 @@ function ThisPhonesApp({ published, url }: { published: string; url: string }): 
 
   const installed = status?.version ?? '';
   const behind = updateAvailable(installed, published);
+  const mustUninstall = needsUninstallFirst(installed);
 
   return (
     <div className="card space-y-3 p-5">
@@ -1097,8 +1114,9 @@ function ThisPhonesApp({ published, url }: { published: string; url: string }): 
           </p>
         </div>
         {behind && (
-          /* A plain anchor, as on the website: Android installs the new one
-             over the top and the sign-in survives it. */
+          /* A plain anchor, as on the website. Whether Android will take it
+             over the top depends on the signing key, which is what
+             `needsUninstallFirst` answers — see the note below the button. */
           <a href={url} className="btn-primary btn-sm shrink-0" download>
             <Download className="h-3.5 w-3.5" /> Update the app
           </a>
@@ -1109,7 +1127,17 @@ function ThisPhonesApp({ published, url }: { published: string; url: string }): 
         <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
           This phone is behind. Until it is updated, pressing Call in the CRM on a computer
           cannot ring this handset — that part of the app only exists in the newer build.
-          Tap Update, then let Android install it over the top.
+          {mustUninstall ? (
+            <>
+              {' '}
+              <strong>Uninstall iPropy from this phone first</strong>, then tap Update and install
+              it. This build was signed with an older key, so Android will refuse to put the new
+              one over the top — it answers &ldquo;App not installed&rdquo; and says nothing about
+              why. You will sign in again afterwards; nothing in the CRM is lost.
+            </>
+          ) : (
+            ' Tap Update, then let Android install it over the top.'
+          )}
         </p>
       ) : (
         <p className="text-sm text-muted">
