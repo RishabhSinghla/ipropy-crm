@@ -748,6 +748,22 @@ version read back out of the APK, and a check that `placeCall` and
 `CALL_PHONE` are actually inside the build before it is published — their
 absence is invisible until a rep presses Call.
 
+**The signing key is the whole blocker, and on 21 September it stopped a
+release the owner had asked for.** The end-a-call work needs a new APK; the
+runner refuses to build one without the key that signed what is on the
+handsets; that key exists on one laptop and nowhere else — not in the repo,
+not in its history, not in any session's container (all three were checked
+rather than assumed). This container cannot make a replacement either: it has
+`keytool`, and creating a signing key is refused here as a secret-store write,
+which is the right refusal. **So an app release cannot be completed from a
+Claude session alone until the key is in the repository's Actions secrets.**
+`packages/app/scripts/share-release-key.sh` is one command, run on the machine
+that holds the key, that puts it there through `gh secret set` — nothing is
+printed, pasted or typed. Until somebody runs it, every app change is written,
+tested and unreachable, which is the state the phones have been in since
+1.0.0. And note `dl.google.com` is refused by this container's egress proxy,
+re-checked the same day, so building locally is not a way round it.
+
 **The one thing a runner cannot invent is the signing key.** Android refuses
 an update signed by a different key from the version already on the phone, and
 2.1.0 was signed on a developer's Mac, so the workflow needs that same
