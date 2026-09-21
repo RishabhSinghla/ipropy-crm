@@ -104,8 +104,8 @@
          `TelecomManager.endCall()` (API 28) needs this and nothing else: not
          the default-dialler role, and no in-call screen of our own. Checked
          against Android's own reference on 21 September 2026 rather than from
-         memory, because the cheap assumption -- that only the phone app may
-         hang up -- would have cost a takeover of every call on the rep's
+         memory, because the cheap assumption (that only the phone app may
+         hang up) would have cost a takeover of every call on the rep's
          handset to reach the same button.
 
          Deprecated in API 29 and still documented and still present;
