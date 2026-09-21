@@ -1,8 +1,8 @@
 {
-  "versionName": "2.1.0",
-  "versionCode": 3,
+  "versionName": "2.2.0",
+  "versionCode": 4,
   "minSdk": 24,
-  "sizeBytes": 11781934,
-  "sha256": "87e76592092e37fd833c5d6dc8c6e7c7340b8537a8fc1949decf67f4632302c4",
-  "builtAt": "2026-09-20T13:41:48Z"
+  "sizeBytes": 11744767,
+  "sha256": "cbe69b33cba9ddfe28e7d28624c317f1f9ef1b95680c2e9eac1e3881e92b255f",
+  "builtAt": "2026-09-21T03:17:30Z"
 }
