@@ -36,6 +36,7 @@ import { cn } from '../lib/utils';
 import { tap } from '../lib/nativeActions';
 import { useBottomBarHeight } from './useBottomBarHeight';
 import { callSyncStatus, callSyncSupported, enableCallSync, type CallSyncStatus } from '../lib/callSync';
+import { isNative, previewingTheAppShell } from '../lib/native';
 
 import MobileList from './List';
 import MobileRecord from './Record';
@@ -108,6 +109,7 @@ export default function MobileShell(): JSX.Element {
         other. A phone is narrower than the cap, so this changes nothing there.
       */}
       <main className="mx-auto min-h-0 w-full max-w-2xl flex-1">
+        <PreviewBanner />
         <DesktopCallingSetup />
         <Suspense fallback={<Loading />}>
           <Routes>
@@ -231,5 +233,32 @@ function TabBar(): JSX.Element | null {
         ))}
       </div>
     </nav>
+  );
+}
+
+/**
+ * A way back out of the browser preview.
+ *
+ * `?app=1` is sticky on purpose — it has to survive every navigation, or the
+ * first link you follow drops you back into the website. The cost of sticky is
+ * somebody opening the CRM on their laptop tomorrow, finding a phone-shaped
+ * product and no obvious reason why, so the flag says so and offers the exit.
+ *
+ * It never shows in the real app: `isNative` is the only thing that can be
+ * true there, and `previewingTheAppShell` is false unless somebody asked for
+ * it in this browser.
+ */
+function PreviewBanner(): JSX.Element | null {
+  if (isNative || !previewingTheAppShell(typeof window === 'undefined' ? undefined : window)) {
+    return null;
+  }
+  return (
+    <div className="flex items-center justify-between gap-2 bg-amber-100 px-3 py-1.5 text-2xs text-amber-900 dark:bg-amber-950/60 dark:text-amber-200">
+      <span>
+        <strong>App preview.</strong> These are the phone screens. The camera, call log and
+        dialler are not here — a browser has none of them.
+      </span>
+      <a className="shrink-0 font-semibold underline" href="/?app=0">Back to the website</a>
+    </div>
   );
 }

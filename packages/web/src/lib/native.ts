@@ -38,9 +38,54 @@ export const isNative: boolean = Capacitor.isNativePlatform();
  * the older iOS one, and Safari still reports only that on some versions, so
  * both are asked.
  */
-export const isInstalledApp: boolean = isNative || launchedFromAHomeScreen(
-  typeof window === 'undefined' ? undefined : window,
-);
+export const isInstalledApp: boolean = isNative
+  || launchedFromAHomeScreen(typeof window === 'undefined' ? undefined : window)
+  || previewingTheAppShell(typeof window === 'undefined' ? undefined : window);
+
+/** Where the browser preview flag is remembered, so it survives navigation. */
+const PREVIEW_KEY = 'ipropy.previewApp';
+
+/**
+ * Is somebody deliberately previewing the app's screens in a desktop browser?
+ *
+ * `?app=1` switches it on and it is remembered; `?app=0` switches it off. It
+ * exists because reviewing an app change used to mean: deploy, pick up the
+ * phone, open Chrome, sign in, download the APK, install it, find the screen,
+ * and photograph it to show somebody. Every one of those steps is between a
+ * change and an opinion about it, and the screens are ordinary React either
+ * way.
+ *
+ * **It moves the shell and nothing else.** `isNative` is untouched, so the
+ * camera, the call log, the dialler and the rest stay exactly as absent as
+ * they are in any browser — which is the separation this file already draws
+ * between "Capacitor is underneath" and "somebody expects an app". Previewing
+ * cannot therefore give a false pass on a native feature, and that is the
+ * whole reason it is safe.
+ *
+ * Opt-in only, and never inferred from the window's width. The app is
+ * deliberately not a breakpoint: a phone *browser* keeps the responsive web
+ * layout, and the phone-width e2e specs keep testing what they were written
+ * against.
+ */
+export function previewingTheAppShell(win?: {
+  location?: { search?: string };
+  localStorage?: { getItem(k: string): string | null; setItem(k: string, v: string): void; removeItem(k: string): void };
+}): boolean {
+  if (!win) return false;
+  const asked = new URLSearchParams(win.location?.search ?? '').get('app');
+  try {
+    if (asked === '1') { win.localStorage?.setItem(PREVIEW_KEY, '1'); return true; }
+    if (asked === '0') { win.localStorage?.removeItem(PREVIEW_KEY); return false; }
+    return win.localStorage?.getItem(PREVIEW_KEY) === '1';
+  } catch {
+    /*
+      Private windows and blocked site data throw on both reads and writes, so
+      the flag answers for this page load alone rather than taking the whole
+      app down with it.
+    */
+    return asked === '1';
+  }
+}
 
 /**
  * Did this page come from an icon rather than a browser tab?

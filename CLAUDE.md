@@ -722,6 +722,30 @@ Four rules that matter here:
   would be signed out hourly. The app uses the body path `/api/auth/refresh`
   already accepts.
 
+**The app's screens open in a desktop browser with `?app=1`** — 24 September
+2026, the owner: reviewing an app change meant deploy, pick up the phone, open
+Chrome, sign in, download the APK, install it, find the screen, photograph it.
+Seven steps between a change and an opinion about it, and the screens are
+ordinary React either way. `crm.ipropy.com/?app=1` now mounts the app's own
+shell in any browser, sticky until `?app=0`, with a banner carrying the way
+out.
+
+**It moves the shell and never `isNative`**, which is the property that makes
+it safe and the reason this file's existing split earns its keep: `isNative`
+means Capacitor is underneath and the camera, call log and dialler can be
+called; `isInstalledApp` means somebody expects an app. Only the second is
+overridden, so a preview **cannot** report that a native feature works. It is
+opt-in and never inferred from width — the app is still not a breakpoint, and
+the phone-width specs still test what they were written against.
+`tests/appPreview.test.ts` pins all of it, including hostile storage.
+
+**And the APK does not need downloading again for a screen change.** That is
+what `lib/liveUpdate.ts` is for: the app asks the server what bundle it is
+serving and swaps to it on the next launch. Reopening the app is the update.
+A new APK is needed only when the **native** half moves — a plugin, a
+permission, the call-log engine, the icon — which is rare, and which
+*This phone's app* in Settings is what says.
+
 The standalone `companion-android/` call-sync app is folded in. Its engine came
 across unchanged except for one fix worth knowing: **all three call-log queries
 appended a row cap to the sort order**, which from Android 11 the call-log
