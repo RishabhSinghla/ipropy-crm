@@ -6,7 +6,7 @@ import {
   MoreHorizontal, Paperclip, Search, Send, UserPlus,
 } from 'lucide-react';
 import { relativeTime, type RecordEnvelope } from '@ipropy/shared';
-import { api } from '../lib/api';
+import { api, type ModuleSummary } from '../lib/api';
 import { toast, useApp } from '../lib/store';
 import { cn } from '../lib/utils';
 import { useFillHeight } from '../lib/fillHeight';
@@ -14,6 +14,7 @@ import {
   bubbleTime, composerMode, dayLabel, displayNumber, outboundTone, wentOut, whyNoTextBox,
 } from '../lib/whatsapp';
 import { Avatar, Dropdown, DropdownItem, EmptyState, Select, Skeleton, Spinner } from '../components/ui';
+import { badgeVars } from '../lib/color';
 import { ACTION_CIRCLE } from '../lib/actionCircle';
 import { ChatRecordPane, ChatRecordPaneSkeleton, useChatRecord } from '../components/ChatRecordPane';
 import { HeaderFieldStrip } from '../components/RecordBlocks';
@@ -47,6 +48,34 @@ const FILTERS: { value: Filter; label: string }[] = [
   { value: 'resolved', label: 'Resolved' },
 ];
 
+/*
+  One dropdown, two kinds of answer: how a thread stands, and which module the
+  person on the other end is a record of. A module entry is prefixed so the two
+  cannot collide, and the modules themselves come from the CRM's own metadata —
+  there are two today and an admin may add a third with no deploy, so no module
+  is ever named in this file.
+*/
+const MODULE_PREFIX = 'module:';
+
+/** A chat's module sticker: small enough to skim, big enough to tell apart. */
+function ModuleSticker({ module, modules }: {
+  module: string | null; modules: ModuleSummary[] | undefined;
+}): JSX.Element | null {
+  const meta = (modules ?? []).find((entry) => entry.name === module);
+  if (!meta) return null;
+  return (
+    <span
+      // The admin's own module colour, through `badgeVars` so the text clears
+      // WCAG AA on its own tint in both themes rather than landing at 2-3:1.
+      style={badgeVars(meta.color)}
+      className="badge-tinted shrink-0 rounded px-1 py-px text-[10px] font-bold uppercase tracking-wide"
+      title={`A record in ${meta.label}`}
+    >
+      {meta.singularLabel || meta.label}
+    </span>
+  );
+}
+
 /** One row of the queue, as `listConversations` returns it. */
 type ChatRow = Awaited<ReturnType<typeof api.waBizConversations>>[number];
 
@@ -69,6 +98,9 @@ export default function BusinessChats(): JSX.Element {
   const queryClient = useQueryClient();
   const me = useApp((state) => state.user);
   const [filter, setFilter] = useState<Filter>('all');
+  // Empty means every module. Set from the same dropdown, prefixed so a module
+  // name can never be mistaken for a status.
+  const [moduleFilter, setModuleFilter] = useState('');
   const [search, setSearch] = useState('');
   const [activeId, setActiveId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
@@ -77,8 +109,8 @@ export default function BusinessChats(): JSX.Element {
   const [shell, shellHeight] = useFillHeight<HTMLDivElement>();
   const { data: status } = useQuery({ queryKey: ['wa-biz', 'status'], queryFn: () => api.waBizStatus() });
   const { data: conversations, isLoading } = useQuery({
-    queryKey: ['wa-biz', 'conversations', filter, search],
-    queryFn: () => api.waBizConversations(filter, search),
+    queryKey: ['wa-biz', 'conversations', filter, search, moduleFilter],
+    queryFn: () => api.waBizConversations(filter, search, moduleFilter),
     // A customer writing while somebody reads is the point of the screen.
     refetchInterval: 15_000,
   });
@@ -89,6 +121,9 @@ export default function BusinessChats(): JSX.Element {
     refetchInterval: activeId ? 10_000 : false,
   });
   const { data: users } = useQuery({ queryKey: ['users'], queryFn: () => api.users() });
+  // For the "Contacts chats" entries in the dropdown and the sticker on each
+  // row. Metadata, so a module an admin adds appears here with no deploy.
+  const { data: modules } = useQuery({ queryKey: ['modules'], queryFn: () => api.modules() });
   const { data: templates } = useQuery({
     queryKey: ['wa-biz', 'templates', 'saved'],
     queryFn: () => api.waBizSavedTemplates(),
@@ -263,9 +298,25 @@ export default function BusinessChats(): JSX.Element {
             />
           </div>
           <Select
-            value={filter}
-            onChange={(value) => setFilter(value as Filter)}
-            options={FILTERS.map((entry) => ({ value: entry.value, label: entry.label }))}
+            value={moduleFilter ? `${MODULE_PREFIX}${moduleFilter}` : filter}
+            onChange={(value) => {
+              if (value.startsWith(MODULE_PREFIX)) {
+                setModuleFilter(value.slice(MODULE_PREFIX.length));
+                setFilter('all');
+                return;
+              }
+              setModuleFilter('');
+              setFilter(value as Filter);
+            }}
+            options={[
+              ...FILTERS.map((entry) => ({ value: entry.value, label: entry.label })),
+              ...(modules ?? [])
+                .filter((entry) => entry.isEntity && entry.showInMenu)
+                .map((entry) => ({
+                  value: `${MODULE_PREFIX}${entry.name}`,
+                  label: `${entry.label} chats`,
+                })),
+            ]}
           />
         </div>
 
@@ -279,6 +330,7 @@ export default function BusinessChats(): JSX.Element {
               key={row.id}
               row={row}
               active={row.id === activeId}
+              modules={modules}
               onSelect={() => { setActiveId(row.id); setPicked(row); }}
             />
           ))}
@@ -320,17 +372,12 @@ export default function BusinessChats(): JSX.Element {
                       it already says.
                     */}
                     <h2 className="min-w-[9rem] truncate text-xl font-extrabold tracking-tight text-slate-950 dark:text-white">{who}</h2>
-                    <span className="inline-flex shrink-0 items-center gap-1.5 text-sm">
-                      <span className="text-xs font-normal text-muted">Assigned To:</span>
-                      <Select
-                        value={active.assignedTo ?? ''}
-                        onChange={(value) => void api.waBizAssign(active.id, value || null).then(refresh)}
-                        placeholder="Unassigned"
-                        options={[{ value: '', label: 'Unassigned' }, ...(users ?? []).map((user) => ({
-                          value: String(user.id), label: String(user.fullName ?? user.email),
-                        }))]}
-                      />
-                    </span>
+                    <AssignedTo
+                      assignedTo={active.assignedTo}
+                      assignedName={active.assignedName}
+                      users={users}
+                      onChange={(value) => void api.waBizAssign(active.id, value).then(refresh)}
+                    />
                     {active.lastMessageAt && (
                       <span className="min-w-0 truncate text-sm text-slate-400">Last message {relativeTime(active.lastMessageAt)}</span>
                     )}
@@ -687,6 +734,63 @@ export default function BusinessChats(): JSX.Element {
 }
 
 /**
+ * Who holds this thread, drawn the way the record page draws it: the label,
+ * a small face, the name — and a dropdown only once somebody clicks it.
+ *
+ * The owner asked for the two screens to say this the same way. A permanently
+ * open select box is a control shouting for attention on a line whose job is
+ * to say who this conversation is with; the record page shows the answer and
+ * lets you change it, and so does this.
+ */
+function AssignedTo({ assignedTo, assignedName, users, onChange }: {
+  assignedTo: string | null;
+  assignedName: string | null;
+  users: Record<string, unknown>[] | undefined;
+  onChange: (value: string | null) => void;
+}): JSX.Element {
+  const [editing, setEditing] = useState(false);
+
+  if (editing) {
+    return (
+      <span className="inline-flex shrink-0 items-center gap-1.5 text-sm">
+        <span className="text-xs font-normal text-muted">Assigned To:</span>
+        <Select
+          value={assignedTo ?? ''}
+          autoFocus
+          onChange={(value) => { onChange(value || null); setEditing(false); }}
+          onBlur={() => setEditing(false)}
+          placeholder="Unassigned"
+          options={[{ value: '', label: 'Unassigned' }, ...(users ?? []).map((user) => ({
+            value: String(user.id), label: String(user.fullName ?? user.email),
+          }))]}
+        />
+      </span>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setEditing(true)}
+      title="Change who holds this chat"
+      className="inline-flex shrink-0 items-center gap-1.5 rounded px-1 py-0.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
+    >
+      <span className="text-xs font-normal text-muted">Assigned To:</span>
+      {assignedName ? (
+        <>
+          <Avatar name={assignedName} size={18} />
+          <span className="font-semibold text-slate-800 dark:text-slate-100">{assignedName}</span>
+        </>
+      ) : (
+        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-2xs font-bold text-amber-900 dark:bg-amber-950/60 dark:text-amber-200">
+          Unassigned
+        </span>
+      )}
+    </button>
+  );
+}
+
+/**
  * One chat in the queue, shaped like the split view's own queue row.
  *
  * The owner asked for this screen to feel like that page, so it is the same
@@ -702,8 +806,8 @@ export default function BusinessChats(): JSX.Element {
  * then nobody has picked this up, then a thread somebody has parked, then who
  * holds it.
  */
-function ChatQueueRow({ row, active, onSelect }: {
-  row: ChatRow; active: boolean; onSelect: () => void;
+function ChatQueueRow({ row, active, onSelect, modules }: {
+  row: ChatRow; active: boolean; onSelect: () => void; modules: ModuleSummary[] | undefined;
 }): JSX.Element {
   const who = row.recordLabel ?? row.contactName ?? row.handle;
   return (
@@ -723,7 +827,12 @@ function ChatQueueRow({ row, active, onSelect }: {
         )}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-bold text-slate-900 dark:text-slate-100">{who}</span>
+        {/* The name gives way before the sticker does: which module this is
+            is one word, and losing it is what the sticker exists to prevent. */}
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">{who}</span>
+          <ModuleSticker module={row.recordModule} modules={modules} />
+        </span>
         <span className="mt-1 block truncate text-xs text-slate-500">{row.lastMessagePreview ?? 'No messages yet'}</span>
       </span>
       <span className="flex shrink-0 flex-col items-end gap-1">

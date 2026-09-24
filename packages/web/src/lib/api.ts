@@ -1265,12 +1265,12 @@ export const api = {
     name: string; language: string; category: string; status: string;
     bodyText: string | null; variableCount: number;
   }[]>('/api/whatsapp-business/templates'),
-  waBizConversations: (filter = 'all', search = '') => get<{
+  waBizConversations: (filter = 'all', search = '', module = '') => get<{
     id: string; handle: string; contactName: string | null; recordId: string | null;
     recordModule: string | null; recordLabel: string | null; assignedTo: string | null;
     assignedName: string | null; status: string; unreadCount: number;
     lastMessageAt: string | null; lastMessagePreview: string | null; waId: string | null; windowOpen: boolean;
-  }[]>(`/api/whatsapp-business/conversations${qs({ filter, search: search || undefined })}`),
+  }[]>(`/api/whatsapp-business/conversations${qs({ filter, search: search || undefined, module: module || undefined })}`),
   waBizMessages: (conversationId: string) => get<{
     messages: Record<string, unknown>[]; alsoViewing: string[];
   }>(`/api/whatsapp-business/conversations/${conversationId}/messages`),

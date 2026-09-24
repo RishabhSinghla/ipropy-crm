@@ -11,7 +11,7 @@
  */
 import { db } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
-import type { HeaderTab, SplitViewLayout, UiSettings } from '@ipropy/shared';
+import type { HeaderTab, ListViews, SplitViewLayout, UiSettings } from '@ipropy/shared';
 
 const DEFAULTS: UiSettings = {
   inlineEdit: false,
@@ -20,6 +20,7 @@ const DEFAULTS: UiSettings = {
   socialPosition: 'right',
   listColumns: null,
   splitView: null,
+  listViews: null,
 };
 
 /**
@@ -28,6 +29,23 @@ const DEFAULTS: UiSettings = {
  * Exported for its tests: this is the one place a bad settings row is stopped
  * from reaching every table in the CRM.
  */
+/**
+ * Which list views are on, ignoring anything that is not a boolean.
+ *
+ * Exported for its tests. **The last view on cannot be switched off here**: a
+ * row saying every view is off would leave every module with no way to show a
+ * record, and a settings row should not be able to cause a blank page. When
+ * nothing survives, the answer is null — as shipped, all three.
+ */
+export function readListViews(value: unknown): ListViews | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  const on = (key: string): boolean => row[key] !== false;
+  const views: ListViews = { table: on('table'), kanban: on('kanban'), ipropy: on('ipropy') };
+  if (!views.table && !views.kanban && !views.ipropy) return null;
+  return views;
+}
+
 export function readColumns(value: unknown): Record<string, string[]> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const out: Record<string, string[]> = {};
@@ -117,6 +135,7 @@ export async function uiSettings(): Promise<UiSettings> {
       */
       listColumns: readColumns(map.get('ui.list_columns')),
       splitView: readSplitView(map.get('ui.split_view')),
+      listViews: readListViews(map.get('ui.list_views')),
     };
     return cached;
   } catch (err) {

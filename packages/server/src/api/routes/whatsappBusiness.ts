@@ -202,10 +202,17 @@ whatsappBusinessRouter.get('/conversations', asyncHandler(async (req, res) => {
   const user = getUser(req);
   const query = z.object({
     filter: z.enum(filters).default('all'),
+    // A module name, checked as an identifier rather than against a list:
+    // there are two modules today and an admin may add a third with no deploy.
+    module: z.string().regex(/^[a-z_][a-z0-9_]*$/i).max(64).optional(),
     search: z.string().max(120).optional(),
   }).parse(req.query ?? {});
   res.json(await listConversations({
-    userId: user.id, isAdmin: user.isAdmin, filter: query.filter, search: query.search,
+    userId: user.id,
+    isAdmin: user.isAdmin,
+    filter: query.filter,
+    module: query.module,
+    search: query.search,
   }));
 }));
 

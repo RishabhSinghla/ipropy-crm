@@ -53,17 +53,40 @@ export function saveListMode(module: string | undefined, mode: ListMode): void {
   } catch { /* a browser that refuses storage still gets a working list */ }
 }
 
+/** All three, in the order the buttons sit in. */
+export const ALL_LIST_MODES: ListMode[] = ['table', 'kanban', 'ipropy'];
+
 /**
- * The one place the three sources are ranked, so the list and its test cannot
+ * Which views the admin has left switched on, in Admin → List Views.
+ *
+ * `null` — no setting saved, or a malformed one — means all three, so a list
+ * always has somewhere to go. The same reason the last view on cannot be
+ * switched off: a module with no view is a blank page.
+ */
+export function enabledListModes(setting: Partial<Record<ListMode, boolean>> | null | undefined): ListMode[] {
+  const on = ALL_LIST_MODES.filter((mode) => setting?.[mode] !== false);
+  return on.length ? on : ALL_LIST_MODES;
+}
+
+/**
+ * The one place the sources are ranked, so the list and its test cannot
  * disagree about what "default" means.
+ *
+ * A view the admin has switched off is not a choice anybody can still hold —
+ * somebody who chose the board last week, on a CRM where the board is now off,
+ * gets the first view that is on rather than a button that is not there.
  */
 export function resolveListMode(
   chosen: ListMode | null,
   viewMode: string | null | undefined,
+  allowed: ListMode[] = ALL_LIST_MODES,
 ): ListMode {
-  if (chosen) return chosen;
+  const on = allowed.length ? allowed : ALL_LIST_MODES;
+  const first = on.includes(DEFAULT_LIST_MODE) ? DEFAULT_LIST_MODE : on[0]!;
+  if (chosen && on.includes(chosen)) return chosen;
+  if (chosen) return first;
   // A saved view naming a board or a desk means it; a view that says `table`
   // is almost always one that predates the desk and simply never chose.
-  if (viewMode === 'kanban' || viewMode === 'ipropy') return viewMode;
-  return DEFAULT_LIST_MODE;
+  if ((viewMode === 'kanban' || viewMode === 'ipropy') && on.includes(viewMode)) return viewMode;
+  return first;
 }

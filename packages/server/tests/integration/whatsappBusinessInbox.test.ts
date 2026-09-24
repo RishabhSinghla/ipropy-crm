@@ -22,6 +22,7 @@ const stamp = Date.now();
 const MINE = `9111${String(stamp).slice(-6)}`;
 const QUEUE = `9222${String(stamp).slice(-6)}`;
 const THEIRS = `9333${String(stamp).slice(-6)}`;
+const ON_A_LEAD = `9444${String(stamp).slice(-6)}`;
 
 let rep = '';
 let otherRep = '';
@@ -50,10 +51,18 @@ beforeAll(async () => {
   conversations.mine = await conversation(MINE, rep);
   conversations.queue = await conversation(QUEUE, null);
   conversations.theirs = await conversation(THEIRS, otherRep);
+  conversations.onALead = await conversation(ON_A_LEAD, admin);
+  // Attached to a module, which is what "Contacts chats" filters on. No
+  // record: the filter reads `record_module`, and a thread nobody has linked
+  // has none — which is exactly the row that must not appear under either.
+  await db.query(`UPDATE ipy_conversation SET record_module = 'leads' WHERE id = $1`, [conversations.onALead]);
 });
 
 afterAll(async () => {
-  await db.query(`DELETE FROM ipy_conversation WHERE handle IN ($1,$2,$3)`, [MINE, QUEUE, THEIRS]);
+  await db.query(
+    `DELETE FROM ipy_conversation WHERE handle IN ($1,$2,$3,$4)`,
+    [MINE, QUEUE, THEIRS, ON_A_LEAD],
+  );
 });
 
 describe('the shared WhatsApp inbox', () => {
@@ -126,5 +135,40 @@ describe('the shared WhatsApp inbox', () => {
     expect((await db.queryOne<{ status: string }>(
       `SELECT status FROM ipy_conversation WHERE id = $1`, [conversations.mine],
     ))!.status).toBe('open');
+  });
+});
+
+/**
+ * "Contacts chats" and "Inventories chats" in the queue's dropdown.
+ *
+ * The filter is a module *name* rather than a list written in the code: there
+ * are two modules today and an admin may add a third with no deploy. A thread
+ * nobody has linked to a record belongs to no module and is correctly in
+ * neither — which is the half worth pinning, because an unlinked thread
+ * appearing under both would be invisible until somebody counted.
+ */
+describe('filtering the inbox by module', () => {
+  it('shows only the threads on that module', async () => {
+    const rows = await listConversations({
+      userId: admin, isAdmin: true, filter: 'all', module: 'leads',
+    });
+    const handles = rows.map((row) => row.handle);
+    expect(handles).toContain(ON_A_LEAD);
+    expect(handles).not.toContain(QUEUE);
+  });
+
+  it('leaves a thread nobody has linked out of every module', async () => {
+    const rows = await listConversations({
+      userId: admin, isAdmin: true, filter: 'all', module: 'properties',
+    });
+    expect(rows.map((row) => row.handle)).not.toContain(ON_A_LEAD);
+    expect(rows.map((row) => row.handle)).not.toContain(QUEUE);
+  });
+
+  it('still shows everything when no module is named', async () => {
+    const rows = await listConversations({ userId: admin, isAdmin: true, filter: 'all' });
+    const handles = rows.map((row) => row.handle);
+    expect(handles).toContain(ON_A_LEAD);
+    expect(handles).toContain(QUEUE);
   });
 });

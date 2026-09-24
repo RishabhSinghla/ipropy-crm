@@ -15,7 +15,7 @@ import { FieldInput, FieldValue } from '../components/FieldRenderer';
 import { EditableField, isInlineEditable } from '../components/EditableField';
 import { assignmentField, byLabel, fieldByKey, pipelineFieldOf, subtitleFieldsOf, withQueueSubtitle } from '../lib/fields';
 import { DEFAULT_PAGE_SIZE, loadPageSize, PAGE_SIZE_OPTIONS, savePageSize } from '../lib/pageSize';
-import { loadListMode, resolveListMode, saveListMode, type ListMode } from '../lib/listMode';
+import { enabledListModes, loadListMode, resolveListMode, saveListMode, type ListMode } from '../lib/listMode';
 import { FilterBuilder, countConditions } from '../components/FilterBuilder';
 import {
   Avatar, Badge, ConfirmDialog, Dropdown, DropdownItem, EmptyState, Modal, Select, Skeleton, Spinner,
@@ -90,8 +90,11 @@ export default function ListView(): JSX.Element {
     remembered — a mode set in one place and forgotten in another is how a
     preference comes to feel random.
   */
+  // Which views the admin left on, in Admin → List Views. All three by default.
+  const listViewSetting = useApp((st) => st.user?.ui?.listViews);
+  const allowedModes = useMemo(() => enabledListModes(listViewSetting), [listViewSetting]);
   const [displayMode, setDisplayMode] = useState<ListMode>(
-    () => resolveListMode(loadListMode(moduleName), null),
+    () => resolveListMode(loadListMode(moduleName), null, allowedModes),
   );
   const chooseMode = (mode: ListMode): void => {
     setDisplayMode(mode);
@@ -333,7 +336,7 @@ export default function ListView(): JSX.Element {
     // The person's own choice outranks the view: a saved list that predates the
     // desk says `table` because nothing else existed, not because anybody
     // chose it.
-    setDisplayMode(resolveListMode(loadListMode(moduleName), activeView.displayMode));
+    setDisplayMode(resolveListMode(loadListMode(moduleName), activeView.displayMode, allowedModes));
 
     // Same view, same definition, later render — metadata arriving is not a
     // view change, and must not overwrite a sort the user chose since.
@@ -982,15 +985,20 @@ export default function ListView(): JSX.Element {
               )}
             </button>
 
-            <div className="inline-flex overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
-              <button
+            {/* Only the views the admin left on, and nothing at all when
+                there is one: a row of one button is not a choice. */}
+            <div className={cn(
+              'inline-flex overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700',
+              allowedModes.length < 2 && 'hidden',
+            )}>
+              {allowedModes.includes('table') && <button
                 onClick={() => chooseMode('table')}
                 className={cn('px-2 py-1.5', displayMode === 'table' ? 'bg-slate-100 dark:bg-slate-800' : 'hover:bg-slate-50 dark:hover:bg-slate-800')}
                 title="Table"
               >
                 <List className="h-3.5 w-3.5" />
-              </button>
-              <button
+              </button>}
+              {allowedModes.includes('kanban') && <button
                 onClick={() => chooseMode('kanban')}
                 disabled={!stageField && !activeView?.groupBy}
                 className={cn(
@@ -1000,15 +1008,15 @@ export default function ListView(): JSX.Element {
                 title={stageField ? 'Kanban' : 'This module has no pipeline field'}
               >
                 <LayoutGrid className="h-3.5 w-3.5" />
-              </button>
-              <button
+              </button>}
+              {allowedModes.includes('ipropy') && <button
                 onClick={() => chooseMode('ipropy')}
                 className={cn('px-2 py-1.5', displayMode === 'ipropy' ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200' : 'hover:bg-slate-50 dark:hover:bg-slate-800')}
                 title="Split view"
                 aria-label="Split view"
               >
                 <PanelLeftOpen className="h-3.5 w-3.5" />
-              </button>
+              </button>}
             </div>
 
             <Dropdown

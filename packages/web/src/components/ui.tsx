@@ -406,7 +406,7 @@ export function Tabs({
 // ---------------------------------------------------------------------------
 
 export function Select({
-  value, onChange, options, placeholder, className, disabled,
+  value, onChange, options, placeholder, className, disabled, autoFocus, onBlur,
 }: {
   value: string | null | undefined;
   onChange: (value: string) => void;
@@ -414,6 +414,10 @@ export function Select({
   placeholder?: string;
   className?: string;
   disabled?: boolean;
+  /** For a dropdown that appears because somebody clicked the value it replaces. */
+  autoFocus?: boolean;
+  /** Clicking away without choosing: the caller usually puts the value back. */
+  onBlur?: () => void;
 }): JSX.Element {
   return (
     <div className="relative">
@@ -421,6 +425,8 @@ export function Select({
         className={cn('input appearance-none pr-8', className)}
         value={value ?? ''}
         disabled={disabled}
+        autoFocus={autoFocus}
+        onBlur={onBlur}
         onChange={(e) => onChange(e.target.value)}
       >
         {placeholder && <option value="">{placeholder}</option>}

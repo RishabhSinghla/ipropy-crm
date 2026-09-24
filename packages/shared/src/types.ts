@@ -257,6 +257,13 @@ export interface Dashboard {
 // ---------------------------------------------------------------------------
 
 /** How lists behave. Org-wide, set in Admin → Settings, sent with the user. */
+/** The three ways a list can be shown. `ipropy` is the split view's stored name. */
+export interface ListViews {
+  table: boolean;
+  kanban: boolean;
+  ipropy: boolean;
+}
+
 export interface UiSettings {
   /** Click a value in a list and type into it. Off by default: too easy to trigger by accident. */
   inlineEdit: boolean;
@@ -296,6 +303,16 @@ export interface UiSettings {
    * it does today.
    */
   splitView: Record<string, SplitViewLayout> | null;
+  /**
+   * Which of the three list views the team may use.
+   *
+   * All three ship on. A team that only works the split view still saw three
+   * buttons, and three ways for two people to be looking at the same list
+   * differently. `null` means "as shipped" — all three — so a missing or
+   * malformed row can never leave a module with no way to show its records.
+   * The last one on cannot be switched off, for the same reason.
+   */
+  listViews: ListViews | null;
 }
 
 /** One module's split-view arrangement. Every list is ordered and may be empty. */

@@ -66,6 +66,15 @@ export async function listConversations(input: {
   userId: string;
   isAdmin: boolean;
   filter: InboxFilter;
+  /**
+   * Only threads attached to a record of this module — "Contacts chats",
+   * "Inventories chats".
+   *
+   * A module *name*, never a list of them written here: there are two today
+   * and an admin can add a third without a deploy. A thread nobody has linked
+   * to a record has no module and is correctly left out of both.
+   */
+  module?: string;
   search?: string;
   limit?: number;
 }): Promise<InboxConversation[]> {
@@ -89,6 +98,11 @@ export async function listConversations(input: {
   if (input.filter === 'open') where.push(`c.status = 'open'`);
   if (input.filter === 'pending') where.push(`c.status = 'pending'`);
   if (input.filter === 'resolved') where.push(`c.status = 'resolved'`);
+
+  if (input.module?.trim()) {
+    params.push(input.module.trim());
+    where.push(`c.record_module = $${params.length}`);
+  }
 
   if (input.search?.trim()) {
     params.push(`%${input.search.trim().toLowerCase()}%`);

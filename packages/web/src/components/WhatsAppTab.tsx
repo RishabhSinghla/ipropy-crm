@@ -1,12 +1,12 @@
 import { type JSX, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { MessageCircle, Send } from 'lucide-react';
+import { Clock, MessageCircle, Send } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
 import { readMessageMedia, WhatsAppMedia } from './WhatsAppMedia';
-import { composerMode, whyNoTextBox } from '../lib/whatsapp';
-import { EmptyState, Skeleton, Spinner } from './ui';
+import { bubbleTime, composerMode, dayLabel, outboundTone, wentOut, whyNoTextBox } from '../lib/whatsapp';
+import { EmptyState, Select, Skeleton, Spinner } from './ui';
 
 /**
  * This contact's WhatsApp history, on the contact.
@@ -94,15 +94,51 @@ export function WhatsAppTab({ module, recordId, mobile }: {
     enabled: onBusiness && Boolean(mobile),
     refetchInterval: 30_000,
   });
-  const canText = composerMode(business?.capabilities ?? [], Boolean(thread?.windowOpen)) === 'text';
-  const linked = onBusiness && canText;
+  const mode = composerMode(business?.capabilities ?? [], Boolean(thread?.windowOpen));
+  const linked = onBusiness && mode === 'text';
+
+  /*
+    **When a free reply cannot go, an approved template still can.** Until now
+    this tab answered a shut window with a dead box and nothing else, so a rep
+    on a record had no way to reach the customer at all and had to go and find
+    the Chats screen. Same controls as that screen, same server call — the
+    blanks are filled by `resolveTemplate` as the person asking, so this cannot
+    put a value in front of a customer that the rep was not allowed to read.
+  */
+  const [templateId, setTemplateId] = useState('');
+  const { data: templates } = useQuery({
+    queryKey: ['wa-biz', 'templates', 'saved'],
+    queryFn: () => api.waBizSavedTemplates(),
+    enabled: onBusiness && mode === 'template',
+  });
+  const { data: preview } = useQuery({
+    queryKey: ['wa-biz', 'template-preview', templateId, module, recordId],
+    queryFn: () => api.waBizTemplatePreview(templateId, module, recordId),
+    enabled: Boolean(templateId),
+  });
+  const sendTemplate = useMutation({
+    mutationFn: () => api.waBizSendTemplate({ templateId, module, recordId, to: mobile! }),
+    onSuccess: () => {
+      setTemplateId('');
+      void queryClient.invalidateQueries({ queryKey: ['whatsapp', 'contact', module, recordId] });
+      void queryClient.invalidateQueries({ queryKey: ['wa-biz', 'thread', mobile, module, recordId] });
+    },
+    onError: (err: Error) => toast.error('Could not send the template', err.message),
+  });
 
   if (isLoading) return <div className="space-y-2 p-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>;
 
+  const conversation = messages ?? [];
+
   return (
     <div className="flex h-full flex-col">
-      <div className="flex-1 space-y-2 overflow-y-auto p-4">
-        {(messages ?? []).length === 0 && (
+      {/*
+        A tinted canvas, the same one the Chats screen uses, so a white
+        incoming bubble reads as a bubble. On white the thread looked like a
+        page with faint boxes on it rather than like a chat.
+      */}
+      <div className="flex-1 space-y-2 overflow-y-auto bg-slate-100 p-4 dark:bg-slate-950">
+        {conversation.length === 0 && (
           <EmptyState
             icon={<MessageCircle className="h-8 w-8" />}
             title="No WhatsApp yet"
@@ -111,28 +147,34 @@ export function WhatsAppTab({ module, recordId, mobile }: {
               : 'Ask an admin to connect the WhatsApp Business number in Admin → Integrations.'}
           />
         )}
-        {(messages ?? []).map((m) => (
-          <div key={m.id} className={cn('flex', m.direction === 'outbound' ? 'justify-end' : 'justify-start')}>
+        {conversation.map((m, index) => (
+          <div key={m.id}>
+          {/* The date once, down the middle, the way WhatsApp does it —
+              instead of on all forty bubbles from one afternoon. */}
+          {dayLabel(m.createdAt) !== (index > 0 ? dayLabel(conversation[index - 1]!.createdAt) : null) && (
+            <div className="flex justify-center py-2">
+              <span className="rounded-md bg-white px-2.5 py-1 text-2xs font-semibold uppercase tracking-wide text-slate-500 shadow-sm dark:bg-slate-800 dark:text-slate-400">
+                {dayLabel(m.createdAt)}
+              </span>
+            </div>
+          )}
+          <div className={cn('flex', m.direction === 'outbound' ? 'justify-end' : 'justify-start')}>
             <div
               className={cn(
-                'max-w-[75%] rounded-xl px-3 py-2 text-sm shadow-sm',
+                'max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow-sm',
+                /*
+                  **A message that did not go must not look like one that
+                  did.** Until 20 September every outbound line here was the
+                  same green and said "sent via the business number" —
+                  including six that WhatsApp had refused outright. The owner
+                  was looking at a screen telling him his customer had been
+                  messaged. `outboundTone` is the one place that decides, so
+                  this tab and the Chats screen cannot disagree about what a
+                  refused message looks like.
+                */
                 m.direction !== 'outbound'
-                  ? 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-100'
-                  /*
-                    **A message that did not go must not look like one that
-                    did.** Until 20 September every outbound line here was the
-                    same green and said "sent via the business number" —
-                    including six that WhatsApp had refused outright. The owner
-                    was looking at a screen telling him his customer had been
-                    messaged. That is the exact failure this repo already
-                    warns about for the adapter, and it had been sitting in the
-                    screen the whole time.
-                  */
-                  : m.status === 'failed'
-                    ? 'bg-rose-600 text-white'
-                    : m.status === 'queued'
-                      ? 'bg-emerald-600/60 text-white'
-                      : 'bg-emerald-600 text-white',
+                  ? 'bg-white text-slate-800 dark:bg-slate-800 dark:text-slate-100'
+                  : cn(outboundTone(m.status), 'text-white'),
               )}
             >
               {(() => {
@@ -149,10 +191,11 @@ export function WhatsAppTab({ module, recordId, mobile }: {
                 </p>
               )}
               <p className={cn('mt-1 text-[10px]', m.direction === 'outbound' ? 'text-white/80' : 'text-muted')}>
-                {new Date(m.createdAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+                {bubbleTime(m.createdAt)}
                 {/* Which number it left from — older rows may name a rep's
                     own phone, from before that route was removed. */}
-                {m.direction === 'outbound' && m.sentVia && ` · ${WENT[m.status] ?? 'sent'} via ${m.sentVia}`}
+                {m.direction === 'outbound' && m.sentVia
+                  && ` · ${m.status === 'failed' ? 'NOT delivered' : wentOut(m.status)} via ${m.sentVia}`}
               </p>
               {/*
                 The reason, in the provider's own words. "Not delivered" alone
@@ -166,11 +209,56 @@ export function WhatsAppTab({ module, recordId, mobile }: {
               )}
             </div>
           </div>
+          </div>
         ))}
       </div>
 
+      {/*
+        The window has shut, so nothing free may go — but an approved template
+        still can, and this is where a rep already is. Without it the only way
+        to reach the customer from a record was to leave the record.
+      */}
+      {onBusiness && mode === 'template' && mobile && (
+        <div className="space-y-2 border-t border-slate-200 bg-amber-50 px-3 py-2 dark:border-slate-800 dark:bg-amber-950/40">
+          <p className="flex items-center gap-1.5 text-xs text-amber-900 dark:text-amber-200">
+            <Clock className="h-3.5 w-3.5" />
+            {whyNoTextBox(business?.capabilities ?? [], business?.provider ?? null)}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={templateId}
+              onChange={setTemplateId}
+              placeholder="Choose an approved template…"
+              options={(templates ?? [])
+                .filter((template) => template.status.toUpperCase() === 'APPROVED')
+                .map((template) => ({ value: template.id, label: `${template.name} (${template.language})` }))}
+            />
+            <button
+              className="btn-primary btn-sm"
+              disabled={!templateId || sendTemplate.isPending || Boolean(preview?.missing.length)}
+              onClick={() => sendTemplate.mutate()}
+            >
+              {sendTemplate.isPending ? <Spinner className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />}
+              Send template
+            </button>
+          </div>
+          {preview && (
+            <div className="rounded-md bg-white/70 p-2 text-xs dark:bg-slate-900/60">
+              <p className="whitespace-pre-wrap">{preview.preview}</p>
+              {preview.missing.length > 0 && (
+                // Named, not counted: this is fixable in ten seconds on the
+                // record itself, and "failed" would send somebody hunting.
+                <p className="mt-1 font-semibold text-rose-700 dark:text-rose-300">
+                  {preview.missing.map((gap) => `{{${gap.slot}}} ${gap.reason}`).join('; ')}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       <form
-        className="flex items-end gap-2 border-t border-slate-200 p-3 dark:border-slate-800"
+        className="flex items-end gap-2 border-t border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900"
         onSubmit={(e) => { e.preventDefault(); if (draft.trim()) send.mutate(draft.trim()); }}
       >
         <textarea
@@ -197,18 +285,3 @@ export function WhatsAppTab({ module, recordId, mobile }: {
     </div>
   );
 }
-
-/**
- * What actually became of an outbound message, in a person's words.
- *
- * Not "status: failed" — a rep reads this between calls. And never the word
- * "sent" for something WhatsApp refused, which is what this screen said about
- * six messages on 20 September while the owner watched.
- */
-const WENT: Record<string, string> = {
-  queued: 'sending',
-  sent: 'sent',
-  delivered: 'delivered',
-  read: 'read',
-  failed: 'NOT delivered',
-};

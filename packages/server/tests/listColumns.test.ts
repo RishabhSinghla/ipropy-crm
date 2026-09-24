@@ -7,7 +7,7 @@
  * with no columns is not something a bad row should be able to cause.
  */
 import { describe, expect, it } from 'vitest';
-import { readColumns, readSplitView } from '../src/core/settings/ui.js';
+import { readColumns, readListViews, readSplitView } from '../src/core/settings/ui.js';
 
 describe('the table view setting', () => {
   it('reads a module to its columns, in order', () => {
@@ -69,5 +69,33 @@ describe('the split view setting', () => {
   it('ignores entries that are not usable names, and keeps the rest', () => {
     expect(readSplitView({ leads: { queue: ['contact_type', 7, null, '  ', 'unit_no'] } }))
       .toEqual({ leads: { queue: ['contact_type', 'unit_no'], header: [], form: [] } });
+  });
+});
+
+/**
+ * Which list views are on.
+ *
+ * The one failure worth guarding: a row saying every view is off would leave
+ * every module with no way to show a record. The screen refuses it and so does
+ * this, because a settings row must not be able to cause a blank page.
+ */
+describe('readListViews', () => {
+  it('reads all three as saved', () => {
+    expect(readListViews({ table: false, kanban: true, ipropy: true }))
+      .toEqual({ table: false, kanban: true, ipropy: true });
+  });
+
+  it('treats anything that is not `false` as on, so a new view is never hidden by an old row', () => {
+    expect(readListViews({ table: true })).toEqual({ table: true, kanban: true, ipropy: true });
+  });
+
+  it('answers null for a malformed row, which means "as shipped"', () => {
+    expect(readListViews(null)).toBeNull();
+    expect(readListViews('table')).toBeNull();
+    expect(readListViews(['table'])).toBeNull();
+  });
+
+  it('refuses a row that would switch every view off', () => {
+    expect(readListViews({ table: false, kanban: false, ipropy: false })).toBeNull();
   });
 });

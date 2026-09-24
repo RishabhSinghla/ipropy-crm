@@ -1141,3 +1141,45 @@ and an a11y scan of both tabs in both themes. **What has never been seen is a
 messaging report with real outbound traffic**, because nothing has ever been sent
 on the business number — the tab reads from two inbound days on a developer's
 database.
+
+---
+
+## Five things the owner asked for on 24 September
+
+* **The queue filters by module.** "Contacts chats" and "Inventories chats" sit
+  under the seven status filters in the same dropdown, prefixed `module:` so a
+  module name can never be mistaken for a status. The entries come from the
+  CRM's own metadata — there are two modules today and an admin may add a third
+  with no deploy, so **no module is named in the screen or in the route**; the
+  server takes a module name and filters `c.record_module`.
+  **A thread nobody has linked to a record has no module and is in neither**,
+  which is the half worth pinning — one appearing under both would be invisible
+  until somebody counted. `tests/integration/whatsappBusinessInbox.test.ts`.
+
+* **Every row wears a sticker saying which it is.** The module's own
+  `singularLabel` in the admin's own module colour, through `badgeVars` so the
+  text clears WCAG AA on its own tint in both themes rather than landing at
+  2–3:1 — the pattern this repo's conventions already name. The name truncates
+  before the sticker does: which module a chat belongs to is one word, and
+  losing it is the whole point of having it.
+
+* **"Assigned To" reads like the record page.** It was a permanently open
+  select box on the line whose job is to say who the conversation is *with*;
+  it is the label, a small face and the name now, and becomes a dropdown when
+  somebody clicks it. `Select` gained optional `autoFocus` and `onBlur` for
+  that rather than the screen growing a second kind of dropdown.
+
+* **The record's WhatsApp tab caught up with the Chats screen.** Same tinted
+  canvas (a white bubble on a white page does not read as a bubble), the date
+  once down the middle instead of on all forty bubbles from one afternoon, the
+  clock alone on each bubble, and `outboundTone`/`wentOut` rather than a second
+  ladder of statuses written in that file — two copies would eventually
+  disagree about what a *refused* message looks like, which is the exact bug
+  that put six failures in front of the owner in green on 20 September.
+  **And the template path is there now.** A shut 24-hour window used to leave
+  that tab with a dead box and nothing else, so a rep on a record could not
+  reach the customer at all without going and finding the Chats screen. Same
+  controls, same server call, blanks filled as the person asking.
+
+* **Which list views exist is now an admin decision** — see
+  [`SCREENS.md`](SCREENS.md).

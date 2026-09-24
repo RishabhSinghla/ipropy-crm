@@ -352,3 +352,28 @@ rather than refusing the module, and a module with nothing chosen anywhere is dr
 `e2e/splitViewAdmin.spec.ts`, which does the round trip against a real browser — choose a
 field, save, see it in the queue, clear it, see the shipped answer come back. That spec
 writes a **global** setting, so it restores it in `afterAll` whatever happens.
+
+---
+
+## Which list views exist is the admin's decision
+
+**24 September 2026, the owner:** the three views — table, board, split — are
+now switched on and off for the whole team in **Admin → List Views**, beside
+Table View and Split View.
+
+* **All three ship on**, so the screen changes nothing on the day it lands.
+* **The last one on cannot be switched off.** A module with no view is a blank
+  page, so the screen refuses it *and* `readListViews` on the server ignores a
+  row that says so anyway. Two guards, because it is the one mistake this
+  screen could make that a person could not then undo from the screen itself.
+* **A remembered choice that is no longer on is not a choice.** Somebody who
+  picked the board last week, on a CRM where the board is now off, lands on the
+  first view that *is* on rather than on a button that is not there
+  (`resolveListMode` takes the allowed list; `tests/listViews.test.ts`).
+* **One view left means no button strip at all** — a row of one is not a choice
+  and reads as something missing.
+* Stored in `ui.list_views` (migration `168`), which needed a row seeded under
+  the `ui` category up front for the reason migration `160` already records: a
+  new key inserted by `PUT /api/admin/settings` lands in `general`, the admin
+  screen asks for `ui`, and the symptom is a page that saves and reads back
+  empty. **Any new `ui.*` setting needs that line.**
