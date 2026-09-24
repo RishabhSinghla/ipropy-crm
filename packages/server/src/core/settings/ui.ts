@@ -99,10 +99,17 @@ export function invalidateUiSettings(): void {
 export async function uiSettings(): Promise<UiSettings> {
   if (cached) return cached;
   try {
+    /*
+      Every `ui.` row, rather than a list of names kept in step by hand.
+
+      That list existed and `ui.list_views` was added to the reader below
+      without being added to it, so the setting was fetched by nobody, read as
+      absent, and Admin -> List Views saved perfectly and changed nothing —
+      which is exactly what a switch that does not work looks like. A prefix
+      cannot fall behind: a new `ui.` setting needs a reader and nothing else.
+    */
     const { rows } = await db.query<{ key: string; value: unknown }>(
-      `SELECT key, value FROM ipy_setting WHERE key = ANY($1)`,
-      [['ui.inline_edit', 'ui.open_in_new_tab', 'ui.header_tabs', 'ui.social_position',
-        'ui.list_columns', 'ui.split_view']],
+      `SELECT key, value FROM ipy_setting WHERE key LIKE 'ui.%'`,
     );
     const map = new Map(rows.map((r) => [r.key, r.value]));
     // Only an explicit boolean counts. A row that has never been saved, or one

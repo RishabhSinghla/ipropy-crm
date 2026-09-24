@@ -372,6 +372,20 @@ Table View and Split View.
   (`resolveListMode` takes the allowed list; `tests/listViews.test.ts`).
 * **One view left means no button strip at all** — a row of one is not a choice
   and reads as something missing.
+* **It shipped broken, and the way it broke is worth more than the feature.**
+  `uiSettings()` fetched a **hand-written list of key names** and handed each
+  one to its reader. `ui.list_views` got a reader and was never added to that
+  list, so it was read as absent every time: the screen saved successfully,
+  said so, and changed nothing — which is indistinguishable from a switch that
+  does not work. Nothing could see it. The reader's own unit tests passed (they
+  call it directly), typecheck passed (a list of strings is a list of strings),
+  and the row really was written. **Only the round trip fails**, so that is what
+  `tests/integration/uiSettingsReachTheApp.test.ts` does — save it, ask the app,
+  look — and it was checked both ways: it fails on the old code and passes on
+  the new.
+  The fix is not "remember to add the key": the query reads `WHERE key LIKE
+  'ui.%'`, so it cannot fall behind a reader again. **A new `ui.` setting needs
+  a reader and nothing else.**
 * Stored in `ui.list_views` (migration `168`), which needed a row seeded under
   the `ui` category up front for the reason migration `160` already records: a
   new key inserted by `PUT /api/admin/settings` lands in `general`, the admin

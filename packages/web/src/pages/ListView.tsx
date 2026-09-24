@@ -96,6 +96,17 @@ export default function ListView(): JSX.Element {
   const [displayMode, setDisplayMode] = useState<ListMode>(
     () => resolveListMode(loadListMode(moduleName), null, allowedModes),
   );
+  /*
+    An admin switching a view off while somebody is looking at it. Without
+    this the button disappears and the view stays, so a rep is left in a view
+    that is no longer offered with no way back to it if they leave.
+  */
+  useEffect(() => {
+    if (!allowedModes.includes(displayMode)) {
+      setDisplayMode(resolveListMode(loadListMode(moduleName), null, allowedModes));
+    }
+  }, [allowedModes, displayMode, moduleName]);
+
   const chooseMode = (mode: ListMode): void => {
     setDisplayMode(mode);
     saveListMode(moduleName, mode);
