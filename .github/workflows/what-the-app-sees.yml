@@ -66,6 +66,23 @@ jobs:
           file /tmp/bundle.zip 2>/dev/null || true
           echo
 
+          # Adding the CRM to an iPhone's Home Screen is the ONLY way to
+          # install it on iOS without paying Apple, so these four files are
+          # the iOS app until somebody does. A 404 on any of them is an
+          # install that silently degrades to a browser bookmark.
+          echo "=== what an iPhone needs for Add to Home Screen ==="
+          for path in /manifest.webmanifest /icons/apple-touch-icon.png /icons/icon-192.png /icons/icon-512.png; do
+            curl -fsS -m 25 -o /dev/null -w "$path -> %{http_code} %{content_type} %{size_download}b\n" \
+              "$BASE$path" || echo "$path -> MISSING"
+          done
+          # `apple-mobile-web-app-capable` is what makes the icon open
+          # full-screen rather than in a Safari tab with its chrome.
+          echo "--- the tags in the page itself:"
+          curl -fsS -m 25 "$BASE/" 2>/dev/null \
+            | grep -oE '<(link|meta)[^>]*(manifest|apple-touch-icon|apple-mobile-web-app-capable|viewport-fit)[^>]*>' \
+            || echo "none found -- an iPhone would make a bookmark, not an app"
+          echo
+
           echo "=== what somebody installing the app today would get ==="
           curl -fsS -m 25 "$BASE/api/public/companion" || echo "no build published"
           echo
