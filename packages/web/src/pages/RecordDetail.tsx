@@ -3041,7 +3041,7 @@ function LiveCallDeck(): JSX.Element | null {
   // Floating, for the same reason as in the split view: in the flow it shoved
   // every button in the header sideways the moment Call was pressed.
   return (
-    <div className="absolute right-3 top-2 z-30">
+    <div className="absolute right-3 top-14 z-30">
       <CallDeck {...calls.deck} />
     </div>
   );

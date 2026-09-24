@@ -1,8 +1,9 @@
-import { type JSX, useEffect, useState } from 'react';
-import { Grid3x3, MicOff, PhoneOff, X } from 'lucide-react';
+import { type JSX, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
+import { Grid3x3, GripVertical, MicOff, PhoneOff, RotateCcw, X } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { elapsedLabel, mayControlLiveCall, NO_LIVE_CONTROL_REASON } from '../lib/callConsole';
 import { Spinner } from './ui';
+import { type DeckSpot, forgetDeckSpot, keepOnScreen, loadDeckSpot, saveDeckSpot } from '../lib/dragDeck';
 
 /**
  * The live call, in the record's own header.
@@ -54,13 +55,36 @@ export function CallDeck({
 }: CallDeckProps): JSX.Element {
   const timer = useElapsed(startedAt);
   const liveControls = mayControlLiveCall({ endCall: canEndCall });
+  const { box, spot, grab, putBack } = useMovable();
 
   return (
     <div
+      ref={box}
       data-testid="call-deck"
+      /*
+        Docked in the header until somebody moves it, and pinned to the window
+        once they have. Two positions rather than one because the dock has to
+        follow the header as the page scrolls, and a deck dropped somewhere
+        deliberately has to stay exactly where it was put.
+      */
+      style={spot ? { position: 'fixed', left: spot.left, top: spot.top, right: 'auto' } : undefined}
       className="w-[19rem] shrink-0 rounded-xl bg-slate-900 px-2.5 py-1.5 text-white shadow-float dark:bg-black"
     >
       <div className="flex items-center gap-2">
+        {/*
+          The grip. Dragging from anywhere else would mean a rep who meant to
+          press End nudges the deck instead, mid-call.
+        */}
+        <button
+          type="button"
+          onPointerDown={grab}
+          onDoubleClick={putBack}
+          title={spot ? 'Drag to move · double-click to put it back in the header' : 'Drag to move it anywhere'}
+          aria-label="Move the call panel"
+          className="-ml-1 cursor-grab touch-none text-slate-500 hover:text-white active:cursor-grabbing"
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
         <span className="text-sm font-bold tabular-nums">
           {placing ? 'Ringing…' : timer}
         </span>
@@ -71,6 +95,11 @@ export function CallDeck({
           <DeckButton label="End call" enabled={canEndCall} danger onClick={onHangUp}>
             <PhoneOff className="h-3.5 w-3.5" />
           </DeckButton>
+          {spot && (
+            <DeckButton label="Put it back in the header" enabled onClick={putBack}>
+              <RotateCcw className="h-3.5 w-3.5" />
+            </DeckButton>
+          )}
           <DeckButton label="Did not call" enabled onClick={onDiscard}>
             <X className="h-3.5 w-3.5" />
           </DeckButton>
@@ -114,6 +143,68 @@ export function CallDeck({
       </div>
     </div>
   );
+}
+
+/**
+ * Pick the deck up, put it down, and find it there next time.
+ *
+ * It starts docked — no `spot`, so the header positions it — and switches to
+ * being pinned to the window **at the pixel it already occupies**, so the
+ * first drag does not make it jump before it moves. `setPointerCapture` is
+ * what keeps a fast drag from letting go halfway across the screen, the same
+ * reason the split view's own divider uses it.
+ */
+function useMovable(): {
+  box: React.RefObject<HTMLDivElement | null>;
+  spot: DeckSpot | null;
+  grab: (event: ReactPointerEvent<HTMLElement>) => void;
+  putBack: () => void;
+} {
+  const box = useRef<HTMLDivElement | null>(null);
+  const [spot, setSpot] = useState<DeckSpot | null>(() => loadDeckSpot());
+
+  // A deck left near an edge, on a window that has since been made smaller,
+  // would be off the screen with a live call inside it.
+  useEffect(() => {
+    if (!spot) return;
+    const onResize = (): void => setSpot((current) => (current ? keepOnScreen(
+      current,
+      { width: box.current?.offsetWidth ?? 304, height: box.current?.offsetHeight ?? 80 },
+      { width: window.innerWidth, height: window.innerHeight },
+    ) : current));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [spot]);
+
+  const grab = (event: ReactPointerEvent<HTMLElement>): void => {
+    const rect = box.current?.getBoundingClientRect();
+    if (!rect) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const from = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+
+    const move = (e: PointerEvent): void => {
+      setSpot(keepOnScreen(
+        { left: e.clientX - from.x, top: e.clientY - from.y },
+        { width: rect.width, height: rect.height },
+        { width: window.innerWidth, height: window.innerHeight },
+      ));
+    };
+    const drop = (): void => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', drop);
+      setSpot((current) => { if (current) saveDeckSpot(current); return current; });
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', drop);
+    // Pinned where it already is, so the drag starts from here rather than
+    // snapping to the pointer.
+    setSpot({ left: rect.left, top: rect.top });
+  };
+
+  const putBack = (): void => { forgetDeckSpot(); setSpot(null); };
+
+  return { box, spot, grab, putBack };
 }
 
 /** The clock, ticking. Nothing else on the page moves while a call is live. */

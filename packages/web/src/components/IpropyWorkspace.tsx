@@ -470,6 +470,14 @@ export function IpropyWorkspace({
                   text is where a chip goes unread, and the owner asked for
                   them beside the icons in every view. */}
               <TagChips module={module.name} tags={active.tags} className="mr-0.5 max-w-[16rem]" />
+              {/*
+                The line the owner asked for twice: everything to its left is
+                the record, everything to its right is what you *do* with it —
+                the controls and, under them, the call. One hairline, because a
+                heavier rule in a header this tight reads as a border somebody
+                forgot to remove.
+              */}
+              <span className="mx-1.5 h-8 w-px shrink-0 rounded bg-slate-300 dark:bg-slate-600" aria-hidden />
               <button
                 aria-label={active.starred ? 'Remove from starred' : 'Star this record'}
                 title={active.starred ? 'Remove from starred' : 'Star this record'}
@@ -808,7 +816,7 @@ function LiveCallDeck(): JSX.Element | null {
     top-right corner he drew it in.
   */
   return (
-    <div className="absolute right-3 top-2 z-30">
+    <div className="absolute right-3 top-12 z-30">
       <CallDeck {...calls.deck} />
     </div>
   );

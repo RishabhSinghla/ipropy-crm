@@ -734,3 +734,33 @@ sideways the instant Call was pressed, and pulled them back when the call ended
 absolutely in the header's top-right corner it changes no other element's
 position at all, which is both what he drew and the only way a control that
 appears mid-layout can avoid moving the page.
+
+### The deck moves, and the header has a line down it
+
+**24 September 2026, the owner:** *"I want this call panel to be movable …
+by default it should be there in header only … you have put it in wrong place
+it should be just a little below so things dont hide underneath it."*
+
+* **Docked until somebody moves it.** No saved spot means the header positions
+  it; a drag pins it to the window **at the pixel it already occupies**, so the
+  first drag does not make it jump before it moves. Where it is left is
+  remembered in this browser, like the split view's width and the list mode —
+  a working habit, nobody else's business, and a round trip to ask where
+  somebody likes their call panel is slow at exactly the wrong moment.
+* **Dragged by a grip and nothing else.** Dragging from anywhere on it would
+  mean a rep who meant to press End nudges the deck instead, mid-call.
+  `setPointerCapture`, for the same reason the split view's divider uses it: a
+  fast drag must not let go halfway across the screen.
+* **It cannot be lost.** `keepOnScreen` holds enough of it in view to grab —
+  on the drop *and* when the window is later made smaller. A deck off the edge
+  with a live call inside it and no reachable End is the failure worth
+  guarding, and `tests/dragDeck.test.ts` is only about that.
+* **A way back.** A button appears on the deck once it has been moved, and a
+  double-click on the grip does the same.
+* **The dock sits below the action circles**, not over them. It was covering
+  the star, the tag and the three dots — which is what "things hide underneath
+  it" was.
+* **The divider** runs between the record and what you do with it: to its left
+  the name, the assignment and the fields; to its right the controls and, under
+  them, the call. One hairline — a heavier rule in a header this tight reads as
+  a border somebody forgot to remove.
