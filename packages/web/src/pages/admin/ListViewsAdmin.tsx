@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Columns2, LayoutGrid, List, Save } from 'lucide-react';
 import type { ListViews } from '@ipropy/shared';
 import { api } from '../../lib/api';
-import { toast } from '../../lib/store';
+import { toast, useApp } from '../../lib/store';
 import { cn } from '../../lib/utils';
 import { Skeleton, Spinner } from '../../components/ui';
 
@@ -75,6 +75,9 @@ export default function ListViewsAdmin(): JSX.Element {
       await api.saveSettings({ 'ui.list_views': chosen });
       await queryClient.invalidateQueries({ queryKey: ['settings', 'ui'] });
       await queryClient.invalidateQueries({ queryKey: ['me'] });
+      // The store reads `me` only at start-up, so without this the save is
+      // real and invisible until somebody reloads the page.
+      await useApp.getState().refreshUser();
       toast.success('List views saved', 'Everybody sees these views above every list.');
     } catch (err) {
       toast.error('Could not save the list views', (err as Error).message);

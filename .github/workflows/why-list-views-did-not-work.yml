@@ -27,21 +27,38 @@ jobs:
       - name: Is the fix deployed?
         run: |
           echo "--- what production is serving ---"
-          # The health endpoint carries the version; the entry chunk carries the
-          # code. `grep -a` because a fetched bundle is binary to BSD grep and
-          # silently prints nothing, which reads as a failed deploy.
           curl -fsS https://crm.ipropy.com/api/health || echo "health did not answer"
           echo
           html=$(curl -fsS https://crm.ipropy.com/ || true)
           entry=$(printf '%s' "$html" | grep -ao '/assets/index-[A-Za-z0-9_-]*\.js' | head -1)
           echo "entry chunk: ${entry:-NONE FOUND}"
-          if [ -n "$entry" ]; then
-            bundle=$(curl -fsS "https://crm.ipropy.com$entry" || true)
-            # A string only the new code has: the admin page's own heading.
-            printf '%s' "$bundle" | grep -aq 'List views' \
-              && echo "RESULT: the List Views screen IS in the deployed bundle" \
-              || echo "RESULT: the List Views screen is NOT in the deployed bundle — production is behind"
-          fi
+          [ -n "$entry" ] || exit 0
+
+          # The admin screens are lazy chunks: their filenames live INSIDE the
+          # entry chunk, not in index.html. Grepping only what the HTML names
+          # finds nothing and reads as a failed deploy — the trap CLAUDE.md
+          # already records, walked into once while chasing this very bug.
+          curl -fsS "https://crm.ipropy.com$entry" -o /tmp/entry.js
+          echo "entry chunk bytes: $(wc -c < /tmp/entry.js)"
+
+          found_list_views=no
+          found_fix=no
+          for chunk in $(grep -ao '"\./assets/[A-Za-z0-9_-]*\.js"' /tmp/entry.js | tr -d '"' | sed 's|^\./|/|' | sort -u); do
+            curl -fsS "https://crm.ipropy.com$chunk" -o /tmp/c.js 2>/dev/null || continue
+            # `grep -a`: a fetched bundle is binary to grep and silently prints
+            # nothing otherwise.
+            if grep -aq 'List views' /tmp/c.js; then
+              echo "  the List Views screen is in $chunk"
+              found_list_views=yes
+            fi
+            if grep -aq 'At least one view has to stay on' /tmp/c.js; then
+              found_fix=yes
+            fi
+          done
+
+          echo
+          echo "RESULT the List Views admin screen deployed: $found_list_views"
+          echo "RESULT the guard from the newest commit deployed: $found_fix"
 
       - name: Install PostgreSQL 18 client
         run: |
@@ -55,9 +72,13 @@ jobs:
         env:
           PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
         run: |
-          echo "--- did migration 168 run? ---"
+          echo "--- what the migration table looks like ---"
           psql "$PROD_DATABASE_URL" -P pager=off -c \
-            "SELECT filename, applied_at FROM ipy_migration WHERE filename LIKE '16%' ORDER BY filename;"
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'ipy_migration';"
+
+          echo "--- the last few migrations applied there ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -c \
+            "SELECT * FROM ipy_migration ORDER BY 1 DESC LIMIT 6;"
 
           echo "--- every ui. setting, with its category ---"
           psql "$PROD_DATABASE_URL" -P pager=off -c \

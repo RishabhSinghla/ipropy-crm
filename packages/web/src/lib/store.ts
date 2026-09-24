@@ -16,6 +16,17 @@ interface AppState {
   offline: boolean;
 
   bootstrap: () => Promise<void>;
+  /**
+   * Re-read the signed-in person from the server.
+   *
+   * The settings an admin changes — which list views exist, the table's
+   * columns, the split view's fields — ride along on `/api/auth/me`, and this
+   * store reads that **once, at start-up**. So an admin could save a setting,
+   * see it succeed, click through to a list and find nothing had changed,
+   * because the only thing that re-reads `me` is a full page load. Invalidating
+   * a React Query key does not help: `user` lives here, not in that cache.
+   */
+  refreshUser: () => Promise<void>;
   /** `identifier` is an email address or a mobile number. */
   login: (identifier: string, password: string) => Promise<void>;
   /** Sign in with a device passkey (Face ID / Touch ID / Android biometrics). */
@@ -229,6 +240,17 @@ export const useApp = create<AppState>((set, get) => ({
   aiAvailable: false,
   sttAvailable: false,
   offline: false,
+
+  refreshUser: async () => {
+    try {
+      const user = await api.me();
+      cacheUser(user);
+      set({ user });
+    } catch {
+      // A settings page is not worth signing somebody out over. The save
+      // itself succeeded; the next page load will read it.
+    }
+  },
 
   bootstrap: async () => {
     applyTheme(get().theme);

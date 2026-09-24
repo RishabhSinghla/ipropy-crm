@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, ChevronUp, RotateCcw, Save } from 'lucide-react';
 import type { FieldMeta } from '@ipropy/shared';
 import { api } from '../../lib/api';
-import { toast } from '../../lib/store';
+import { toast, useApp } from '../../lib/store';
 import { cn } from '../../lib/utils';
 import { Select, Skeleton, Spinner } from '../../components/ui';
 
@@ -87,6 +87,9 @@ export default function TableViewAdmin(): JSX.Element {
       await api.saveSettings({ 'ui.list_columns': chosen });
       await queryClient.invalidateQueries({ queryKey: ['settings', 'ui'] });
       await queryClient.invalidateQueries({ queryKey: ['me'] });
+      // The store reads `me` only at start-up, so without this the save is
+      // real and invisible until somebody reloads the page.
+      await useApp.getState().refreshUser();
       toast.success('Table view saved', 'Everybody sees these columns, in this order.');
     } catch (err) {
       toast.error('Could not save the table view', (err as Error).message);
