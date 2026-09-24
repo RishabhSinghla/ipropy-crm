@@ -391,3 +391,34 @@ Table View and Split View.
   new key inserted by `PUT /api/admin/settings` lands in `general`, the admin
   screen asks for `ui`, and the symptom is a page that saves and reads back
   empty. **Any new `ui.*` setting needs that line.**
+
+---
+
+## A record opens in the split view, wherever the link came from
+
+**24 September 2026, the owner**, having switched the table and the board off:
+*"when I use global search and open record it opens whole full record and not
+like in split view … I want split view to be only opened."*
+
+Global search, the WhatsApp screens, Save & Next and a pasted URL all point at
+`/{module}/{id}`, the record page — so switching the other views off still left
+half the CRM opening records full width.
+
+* **The redirect lives on the record page, not on every link.** There is one
+  address for a record and every road already uses it, so a road added next
+  month is covered without anybody remembering to add it. `RecordDetail` sends
+  the browser to `/{module}?open={id}` when this person's list mode resolves to
+  the split view, and renders exactly as before for anybody who has chosen the
+  table or the board, or where an admin has switched the split view off.
+* **`?open=` may name a record the queue has never heard of.** Global search
+  reaches all 22,981 contacts and the queue is one page of fifty, so the pane
+  fetches by id rather than looking among the rows — and keeps that record when
+  the queue refreshes under it, which is the condition that was missing when it
+  snapped back to the first row.
+* **A link naming a record that is gone falls back to the first row.** An empty
+  pane beside a full queue reads as the screen being broken rather than as one
+  link being wrong.
+* **`ListView` writes the address from its own state**, so anything it does not
+  name is dropped a heartbeat after arrival — which is exactly what happened to
+  `open` the first time. It carries `open` and `dial` through now. **Any new
+  parameter somebody else puts on a list URL needs the same line.**

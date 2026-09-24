@@ -726,3 +726,11 @@ back:** the free-text call note, the Hot/Warm/Cold intent, the voice-dictated
 note, and the WhatsApp follow-up switch. Notes have a home already — the Notes
 panel is on screen beside the call. The other three are not offered anywhere
 now; `ipy_call.intent` still exists and is simply never written.
+
+**The deck floats, and that is the fix rather than a shortcut.** Sitting in the
+header's own row it pushed the name, the assignment and every action circle
+sideways the instant Call was pressed, and pulled them back when the call ended
+— the bounce the owner reported the same day, with a screenshot. Positioned
+absolutely in the header's top-right corner it changes no other element's
+position at all, which is both what he drew and the only way a control that
+appears mid-layout can avoid moving the page.

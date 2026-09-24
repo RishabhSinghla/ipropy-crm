@@ -11,6 +11,7 @@ import { toast, useApp } from '../lib/store';
 import { useWatchRecord } from '../lib/realtime';
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { useCallDispositions } from '../lib/callDispositions';
+import { enabledListModes, loadListMode, resolveListMode } from '../lib/listMode';
 import { useVoiceCapture } from '../lib/useVoiceCapture';
 import { loadListNav } from '../lib/listNav';
 import { cn, looksLikeHtml, renderMarkdown, restrictionForField, sanitiseRichText } from '../lib/utils';
@@ -56,6 +57,34 @@ export default function RecordDetail(): JSX.Element {
     : '';
   const queryClient = useQueryClient();
   const { user } = useApp();
+
+  /*
+    **The split view is where a record opens, wherever the link came from.**
+
+    24 September 2026, the owner: *"I want split view to be only opened"* —
+    global search, a chat, Save & Next, a pasted URL. Each of those pointed at
+    this page, so switching off the table and the board still left half the CRM
+    opening records full-width.
+
+    Doing it here rather than at every link is the whole point: there is one
+    address for a record and every one of those roads already uses it, so a
+    road added next month is covered without anybody remembering to.
+
+    `?dial=1` travels with it, or Save & Next would open the next person and
+    ring nobody. Anybody who has chosen the table or the board — or an admin
+    who has switched the split view off — lands here exactly as before.
+  */
+  const listViewSetting = useApp((state) => state.user?.ui?.listViews);
+  const opensInSplitView = useMemo(
+    () => resolveListMode(loadListMode(moduleName), null, enabledListModes(listViewSetting)) === 'ipropy',
+    [moduleName, listViewSetting],
+  );
+  useEffect(() => {
+    if (!opensInSplitView || !moduleName || !id) return;
+    const query = new URLSearchParams({ open: id });
+    if (detailParams.get('dial')) query.set('dial', detailParams.get('dial')!);
+    navigate(`/${moduleName}?${query.toString()}`, { replace: true });
+  }, [opensInSplitView, moduleName, id, detailParams, navigate]);
 
   const [tab, setTab] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -356,7 +385,9 @@ export default function RecordDetail(): JSX.Element {
     <WhatsAppComposerProvider recordId={record.id} module={moduleName!} recordLabel={record.label}>
     <div className="mx-auto max-w-[1600px] p-4 sm:p-6">
       {/* Header */}
-      <div className="card mb-4 overflow-visible">
+      <div className="card relative mb-4 overflow-visible">
+        {/* The live call, floating in this card's top-right corner. */}
+        <LiveCallDeck />
         {/* Two rows, not three.
 
             The nav row held nothing but a back arrow and a record counter and
@@ -418,10 +449,6 @@ export default function RecordDetail(): JSX.Element {
               >
                 <Star className={cn('h-4 w-4', record.starred && 'fill-amber-400 text-amber-400')} />
               </button>
-
-              {/* The live call, in the header rather than over the record.
-                  The same deck the split view draws, from the same provider. */}
-              <LiveCallDeck />
 
               {phone && <WhatsAppButton to={phone} />}
               {phone && <CallButton to={phone} />}
@@ -3011,10 +3038,11 @@ function CallEditHistory({ callId }: { callId: string }): JSX.Element {
 function LiveCallDeck(): JSX.Element | null {
   const calls = useCallDisposition();
   if (!calls?.deck) return null;
+  // Floating, for the same reason as in the split view: in the flow it shoved
+  // every button in the header sideways the moment Call was pressed.
   return (
-    <span className="flex shrink-0 items-center gap-2">
-      <span className="h-16 w-px bg-slate-200 dark:bg-slate-700" aria-hidden />
+    <div className="absolute right-3 top-2 z-30">
       <CallDeck {...calls.deck} />
-    </span>
+    </div>
   );
 }

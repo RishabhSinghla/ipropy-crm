@@ -380,11 +380,24 @@ export default function ListView(): JSX.Element {
     if (page > 1) next.set('page', String(page));
     if (pageSize !== DEFAULT_PAGE_SIZE) next.set('pageSize', String(pageSize));
     if (countConditions(filter)) next.set('filter', JSON.stringify(filter));
+    /*
+      **Carried, not rebuilt.** This effect writes the address from the list's
+      own state, so anything it does not name is silently dropped — and `open`
+      is named by somebody else entirely: global search, a chat, Save & Next.
+      Without these two lines a record link landed on the list and then lost
+      the record a heartbeat later, which reads exactly like the link being
+      ignored. `dial` travels the same way; the call provider takes it off the
+      address itself once it has rung, and this simply stops fighting it.
+    */
+    const open = searchParams.get('open');
+    if (open) next.set('open', open);
+    const dial = searchParams.get('dial');
+    if (dial) next.set('dial', dial);
 
     if (next.toString() !== searchParams.toString()) {
       setSearchParams(next, { replace: true });
     }
-  }, [moduleName, hydratedFor, activeView?.id, search, sortBy, sortDir, page, pageSize, filter]);
+  }, [moduleName, hydratedFor, activeView?.id, search, sortBy, sortDir, page, pageSize, filter, searchParams]);
 
   /**
    * Owner defaults to whoever is adding the record. Status and stage come from
@@ -1219,6 +1232,9 @@ export default function ListView(): JSX.Element {
           <IpropyWorkspace
             module={meta}
             rows={rows}
+            // `?open=` — a record named in the address, from global search, a
+            // chat, or Save & Next. It may not be on this page at all.
+            openId={searchParams.get('open')}
             selected={selected}
             attentionIds={unseen}
             onToggleSelect={(id, checked) => {

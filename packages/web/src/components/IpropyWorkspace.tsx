@@ -135,7 +135,7 @@ interface SortChoice {
  */
 export function IpropyWorkspace({
   module, rows, selected, attentionIds, onToggleSelect, onToggleAll, onDelete,
-  sortBy, sortDir, onSort,
+  openId, sortBy, sortDir, onSort,
 }: {
   module: DescribedModule; rows: RecordEnvelope[];
   selected: Set<string>; attentionIds: Set<string>; onToggleSelect: (id: string, checked: boolean) => void;
@@ -143,11 +143,19 @@ export function IpropyWorkspace({
   onToggleAll?: (checked: boolean) => void;
   /** Absent when this profile may not delete — the button is not offered at all. */
   onDelete?: (row: RecordEnvelope) => void;
+  /**
+   * A record to open straight away, named in the address as `?open=`.
+   *
+   * It may not be in the queue at all — global search reaches all 22,981
+   * contacts and the queue is one page of fifty — so the pane fetches it by id
+   * rather than looking for it among the rows.
+   */
+  openId?: string | null;
   /** The list's own ordering, so the queue's menu drives the same query the table does. */
   sortBy?: string; sortDir?: 'asc' | 'desc';
   onSort?: (by: string | undefined, dir: 'asc' | 'desc') => void;
 }): JSX.Element {
-  const [activeId, setActiveId] = useState<string | null>(rows[0]?.id ?? null);
+  const [activeId, setActiveId] = useState<string | null>(openId ?? rows[0]?.id ?? null);
   const [tab, setTab] = useState<DeskTabKey>('overview');
   const [queueWidth, setQueueWidth] = useState(() => loadSplit(360));
   const queryClient = useQueryClient();
@@ -200,18 +208,41 @@ export function IpropyWorkspace({
     onSuccess: (_result, row) => invalidateRecordQueries(queryClient, module.name, row.id),
     onError: (error: Error) => toast.error('Could not change that', error.message),
   });
-  useEffect(() => setActiveId((current) => rows.some((row) => row.id === current) ? current : (rows[0]?.id ?? null)), [rows]);
+  // Somebody arriving on a link that names a record: open that one.
+  useEffect(() => { if (openId) setActiveId(openId); }, [openId]);
+  /*
+    Keep the open record when the queue changes under it — **including one that
+    is not in the queue at all.** A record reached from global search or from a
+    chat is almost never on the fifty rows showing, and without that second
+    condition the pane snapped back to the first row the moment the list
+    refreshed.
+  */
+  useEffect(() => setActiveId((current) => (
+    current && (current === openId || rows.some((row) => row.id === current))
+      ? current
+      : (rows[0]?.id ?? null)
+  )), [rows, openId]);
 
-  const listRow = rows.find((row) => row.id === activeId) ?? rows[0] ?? null;
+  const listRow = rows.find((row) => row.id === activeId) ?? (activeId ? null : rows[0] ?? null);
 
-  const { data: fetched } = useQuery({
-    queryKey: ['record', module.name, listRow?.id],
-    queryFn: () => api.record(module.name, listRow!.id),
-    enabled: Boolean(listRow?.id),
+  const { data: fetched, isError: notThere } = useQuery({
+    queryKey: ['record', module.name, activeId],
+    queryFn: () => api.record(module.name, activeId!),
+    enabled: Boolean(activeId),
+    retry: false,
   });
+  /*
+    A link naming a record that is gone, or never existed — a stale bookmark, a
+    deleted lead, a mistyped address. Without this the pane sat empty with a
+    queue full of records beside it, which reads as the screen being broken
+    rather than as one link being wrong.
+  */
+  useEffect(() => {
+    if (notThere) setActiveId(rows[0]?.id ?? null);
+  }, [notThere, rows]);
   // The row stands in while the record loads, so the pane never blanks between
   // two selections. Its values are right, there are simply fewer of them.
-  const active = fetched && fetched.id === listRow?.id ? fetched : listRow;
+  const active = fetched && fetched.id === activeId ? fetched : listRow;
 
   const resize = useCallback((delta: number) => {
     const [min, max] = QUEUE_LIMITS;
@@ -372,7 +403,7 @@ export function IpropyWorkspace({
       {active && <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
         {/* Sticky, so the name, the assignment and the tabs stay on screen
             while the fields below them scroll. */}
-        <header className="sticky top-0 z-10 border-b border-slate-200 bg-white px-4 pt-2 dark:border-slate-800 dark:bg-slate-900 sm:px-5">
+        <header className="relative sticky top-0 z-10 border-b border-slate-200 bg-white px-4 pt-2 dark:border-slate-800 dark:bg-slate-900 sm:px-5">
           {/*
             The actions live on the name's own line, at the end of it.
 
@@ -384,6 +415,13 @@ export function IpropyWorkspace({
             plain light circles, one weight of grey, no colour per button. The
             colours made four ordinary controls look like four warnings.
           */}
+          {/*
+            The live call, floating in the header's top-right corner — where
+            the owner drew it, and out of the layout so nothing moves when it
+            appears.
+          */}
+          <LiveCallDeck />
+
           <div className="flex min-w-0 items-start gap-3">
             <Avatar name={active.label} size={42} className="mt-0.5" />
             <div className="min-w-0 flex-1">
@@ -521,15 +559,6 @@ export function IpropyWorkspace({
                   </>
                 )}
               </Dropdown>
-
-              {/*
-                The live call, docked in the header the rep is already reading —
-                24 September 2026, the owner: no dialog over the record, because
-                the record is the thing you need while you are talking. Last in
-                the row and behind a divider of his own, so it never crowds the
-                controls that belong to the record.
-              */}
-              <LiveCallDeck />
             </span>
           </div>
 
@@ -770,10 +799,17 @@ function dueLabel(value: unknown): { label: string; tone: string } | null { if (
 function LiveCallDeck(): JSX.Element | null {
   const calls = useCallDisposition();
   if (!calls?.deck) return null;
+  /*
+    **It floats, and that is the fix rather than the shortcut.** Sitting in the
+    header's own row, the deck appearing pushed the name, the assignment and
+    every action circle sideways the instant Call was pressed, and pulled them
+    back when the call ended — the bounce the owner reported. Taken out of the
+    flow it changes no other element's position at all, and it lands in the
+    top-right corner he drew it in.
+  */
   return (
-    <>
-      <span className="mx-0.5 h-10 w-px shrink-0 bg-slate-200 dark:bg-slate-700" aria-hidden />
+    <div className="absolute right-3 top-2 z-30">
       <CallDeck {...calls.deck} />
-    </>
+    </div>
   );
 }
