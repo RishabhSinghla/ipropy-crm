@@ -9,8 +9,9 @@
  * a default that is no longer on it, is a console a rep cannot save, and no
  * server test can see it.
  *
- * The outcome is a row of cards now rather than a dropdown (21 September
- * 2026, the owner's own design), so these read the cards — but the promises
+ * The call lives in the record's own header now rather than in a dialog over
+ * it (24 September 2026, the owner's own design), so these read the deck in
+ * the header — the surface changed twice and the promises
  * are the same ones, deliberately: the list is the admin's, a save reaches the
  * Calls tab, and there is no way to send an outcome the list does not offer.
  */
@@ -46,53 +47,51 @@ test('they open it from the list', async ({ page, context }) => {
   await detail.close();
 });
 
-test('tapping the number asks what happened, with the admin\'s own outcomes', async ({ page }) => {
+test('tapping the number opens the deck in the header, not a dialog over the record', async ({ page }) => {
   await page.goto(recordUrl);
   // The number is a button on the record, not a tel: link — tapping it is what
-  // opens the outcome form behind the dialler. Matched on its title: the
-  // accessible name is the number itself, which changes every run.
+  // starts the call. Matched on its title: the accessible name is the number
+  // itself, which changes every run.
   await page.locator('button[title^="Call "]').first().click();
 
-  const dialog = page.getByRole('dialog');
-  await expect(dialog).toBeVisible({ timeout: 15_000 });
-
-  // The real list, not one lonely card: the picklist ships with thirteen and
-  // an admin only ever adds to it.
-  const cards = dialog.locator('button[aria-pressed]');
-  expect(await cards.count(), 'the outcome list did not load').toBeGreaterThan(5);
-
-  // Exactly one is chosen when it opens, or the first save goes in blind.
-  await expect(dialog.locator('button[aria-pressed="true"]')).toHaveCount(1);
-
-  // The record's own key values are on the console and editable where they
-  // stand — that is what makes it a console rather than a form.
-  await expect(dialog.getByTestId('call-key-values')).toBeVisible();
+  const deck = page.getByTestId('call-deck');
+  await expect(deck).toBeVisible({ timeout: 15_000 });
 
   /*
-    And the three live-call controls are drawn and dead, on purpose. Android
-    only lets the handset's own dialler end a call, and a red End button that
-    ends nothing is the exact failure this repo keeps writing down.
+    The whole point of the change: the record stays readable and editable while
+    the call runs. A dialog here would be the thing it replaced.
   */
-  const endCall = dialog.getByRole('button', { name: /end call/i });
+  expect(await page.getByRole('dialog').count(), 'a dialog opened over the record').toBe(0);
+  await expect(page.getByRole('heading', { name })).toBeVisible();
+
+  // The real list, not one lonely option: the picklist ships with thirteen and
+  // an admin only ever adds to it.
+  const outcomes = deck.getByRole('combobox', { name: /how the call went/i });
+  expect(await outcomes.locator('option').count(), 'the outcome list did not load').toBeGreaterThan(5);
+
+  /*
+    Mute, keypad and End are drawn and dead, on purpose. Android hands a
+    running call to the handset's own dialler and to nobody else, and a red
+    End button that ends nothing is the exact failure this repo keeps writing
+    down.
+  */
+  const endCall = deck.getByRole('button', { name: /end call/i });
   await expect(endCall).toBeDisabled();
   await expect(endCall).toHaveAttribute('title', /dialler end a call/i);
-  await page.keyboard.press('Escape');
+  await deck.getByRole('button', { name: /did not call/i }).click();
+  await expect(deck).toBeHidden();
 });
 
 test('saving the outcome records the call on the lead', async ({ page }) => {
   await page.goto(recordUrl);
   await page.locator('button[title^="Call "]').first().click();
 
-  const dialog = page.getByRole('dialog');
-  await expect(dialog).toBeVisible({ timeout: 15_000 });
-  await dialog.getByRole('button', { name: 'Interested', exact: true }).click();
-  await dialog.locator('#call-notes').fill('wants a 3 BHK, will visit Sunday');
-  // How warm they sounded, which lands on the call and never on the record's
-  // own rating — the scorer owns that one.
-  await dialog.getByRole('button', { name: /^hot$/i }).click();
-  await dialog.getByRole('button', { name: /save (call|& dial next)/i }).click();
+  const deck = page.getByTestId('call-deck');
+  await expect(deck).toBeVisible({ timeout: 15_000 });
+  await deck.getByRole('combobox', { name: /how the call went/i }).selectOption('Interested');
+  await deck.getByRole('button', { name: /^save/i }).click();
 
-  await expect(dialog).toBeHidden({ timeout: 20_000 });
+  await expect(deck).toBeHidden({ timeout: 20_000 });
 
   // The Calls tab is where the rep looks next, and an outcome that does not
   // show up there reads as a call that was not logged at all.
@@ -102,21 +101,20 @@ test('saving the outcome records the call on the lead', async ({ page }) => {
 });
 
 test('an outcome the list does not offer cannot be sent', async ({ page }) => {
-  // The guard that keeps reports honest, from the browser's side: every
-  // outcome is a card the list drew, so there is no free-text path to the
-  // endpoint at all.
+  // The guard that keeps reports honest, from the browser's side: the outcome
+  // is a list the picklist drew, so there is no free-text path to the endpoint.
   await page.goto(recordUrl);
   await page.locator('button[title^="Call "]').first().click();
-  const dialog = page.getByRole('dialog');
-  await expect(dialog).toBeVisible({ timeout: 15_000 });
-  expect(await dialog.locator('input[type="text"]').count()).toBe(0);
-  expect(await dialog.locator('button[aria-pressed]').count()).toBeGreaterThan(5);
-  await page.keyboard.press('Escape');
+  const deck = page.getByTestId('call-deck');
+  await expect(deck).toBeVisible({ timeout: 15_000 });
+  expect(await deck.locator('input[type="text"]').count()).toBe(0);
+  expect(await deck.locator('option').count()).toBeGreaterThan(5);
+  await deck.getByRole('button', { name: /did not call/i }).click();
 });
 
 test('the outcome list follows the admin, not the bundle', async ({ page }) => {
-  // Add an option in Settings and it has to appear in the dialog. This is the
-  // whole reason the dropdown stopped being a constant.
+  // Add an option in Settings and it has to appear on the deck. This is the
+  // whole reason the list stopped being a constant in the bundle.
   const value = `QA Outcome ${Date.now()}`;
   await page.goto('/admin/picklists');
   await waitForRecords(page).catch(() => undefined);
@@ -139,18 +137,12 @@ test('the outcome list follows the admin, not the bundle', async ({ page }) => {
   try {
     await page.goto(recordUrl);
     await page.locator('button[title^="Call "]').first().click();
-    const dialog = page.getByRole('dialog');
-    await expect(dialog).toBeVisible({ timeout: 15_000 });
-
-    /*
-      The row shows the six a rep uses all day; everything else — including
-      anything an admin adds — is one tap behind "more outcomes". That tap is
-      part of the promise: an outcome added in Settings has to be reachable
-      from the console, or Settings is editing a list nobody can pick from.
-    */
-    await dialog.getByRole('button', { name: /more outcomes$/ }).click();
-    await expect(dialog.getByRole('button', { name: value, exact: true })).toHaveCount(1);
-    await page.keyboard.press('Escape');
+    const deck = page.getByTestId('call-deck');
+    await expect(deck).toBeVisible({ timeout: 15_000 });
+    // Reachable, not merely present: an option Settings can add and the deck
+    // cannot pick is Settings editing a list nobody can use.
+    await deck.getByRole('combobox', { name: /how the call went/i }).selectOption(value);
+    await deck.getByRole('button', { name: /did not call/i }).click();
   } finally {
     await page.evaluate(async (gone) => {
       const token = localStorage.getItem('ipropy.token');

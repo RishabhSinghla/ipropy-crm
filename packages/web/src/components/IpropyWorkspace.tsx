@@ -6,7 +6,8 @@ import {
   Phone, Sparkles, Star, Trash2, Users,
 } from 'lucide-react';
 import { FieldValue } from './FieldRenderer';
-import { CallButton, CallDispositionProvider } from './CallDisposition';
+import { CallButton, CallDispositionProvider, useCallDisposition } from './CallDisposition';
+import { CallDeck } from './CallDeck';
 import { WhatsAppComposerProvider } from './WhatsAppComposer';
 import { MatchingTab } from './MatchingTab';
 import { WhatsAppTab } from './WhatsAppTab';
@@ -286,7 +287,7 @@ export function IpropyWorkspace({
     call dialog belongs to a record, and re-keying it is what stops an outcome
     being saved against whoever was on screen before.
   */
-  return <CallDispositionProvider key={active?.id ?? 'none'} recordId={active?.id ?? ''} module={module.name} recordLabel={active?.label ?? ''}>
+  return <CallDispositionProvider key={active?.id ?? 'none'} recordId={active?.id ?? ''} module={module.name}>
     <WhatsAppComposerProvider key={active?.id ?? 'none'} recordId={active?.id ?? ''} module={module.name} recordLabel={active?.label ?? ''}>
     <section data-testid="ipropy-workspace" className="bg-[#f7f9fc] dark:bg-slate-950">
     {/*
@@ -520,6 +521,15 @@ export function IpropyWorkspace({
                   </>
                 )}
               </Dropdown>
+
+              {/*
+                The live call, docked in the header the rep is already reading —
+                24 September 2026, the owner: no dialog over the record, because
+                the record is the thing you need while you are talking. Last in
+                the row and behind a divider of his own, so it never crowds the
+                controls that belong to the record.
+              */}
+              <LiveCallDeck />
             </span>
           </div>
 
@@ -749,3 +759,21 @@ function StatusPill({ field, row }: { field: FieldMeta; row: RecordEnvelope }): 
 }
 function displayOf(row: RecordEnvelope, field: FieldMeta): string { const display = row.display?.[field.name]; if (display) return display; const value = row.values[field.name]; return Array.isArray(value) ? value.join(', ') : value == null ? '' : String(value); }
 function dueLabel(value: unknown): { label: string; tone: string } | null { if (!value) return null; const date = new Date(String(value)); if (Number.isNaN(date.getTime())) return null; const today = new Date(); today.setHours(0, 0, 0, 0); date.setHours(0, 0, 0, 0); const diff = Math.round((date.getTime() - today.getTime()) / 86_400_000); return diff < 0 ? { label: 'Overdue', tone: 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' } : diff === 0 ? { label: 'Today', tone: 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' } : diff === 1 ? { label: 'Tomorrow', tone: 'bg-brand-100 text-brand-700 dark:bg-brand-950/40 dark:text-brand-300' } : { label: date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }), tone: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' }; }
+
+/**
+ * The deck, when a call is running, and nothing at all when one is not.
+ *
+ * A component of its own because `useCallDisposition` is a hook and this
+ * renders inside a conditional — and because the record page draws the very
+ * same thing, so there is one deck rather than two that drift.
+ */
+function LiveCallDeck(): JSX.Element | null {
+  const calls = useCallDisposition();
+  if (!calls?.deck) return null;
+  return (
+    <>
+      <span className="mx-0.5 h-10 w-px shrink-0 bg-slate-200 dark:bg-slate-700" aria-hidden />
+      <CallDeck {...calls.deck} />
+    </>
+  );
+}

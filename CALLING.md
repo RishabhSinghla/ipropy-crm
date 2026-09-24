@@ -685,3 +685,44 @@ machine it ran on.
 the cards described an outcome the server refuses — caught by
 `tests/integration/callConsoleSaves.test.ts`, which is the only layer that runs
 the picklist check. It has a card anyway, for the admin who adds it.
+
+---
+
+## The call lives in the record's header now, not over it
+
+**24 September 2026, the owner**, with a design of his own: *"we dont want that
+full popup and things opening when click call button but instead now I want it
+like this."*
+
+Pressing Call used to cover the record with a dialog — so the one screen a rep
+needs while talking was hidden behind the thing they pressed to start talking.
+`components/CallDeck.tsx` sits in the header instead, two rows with his divider
+between them: the clock, the equaliser and the call's own controls above; where
+this record sits in the queue, what was said, and the way out below. The record
+stays where it is, so status, follow-up date and notes are edited in place —
+which is what the split view was built for.
+
+* **One deck, two headers.** The split view and the record page both draw it
+  from the same provider, so a rep who arrives either way sees the same thing
+  and the two cannot drift.
+* **Mute and keypad are drawn and dead on purpose**, as End already was.
+  Android hands a running call to the handset's *default phone app* and to
+  nobody else. They carry the reason in their tooltip and light up on their own
+  the day `mayControlLiveCall` says otherwise.
+* **The outcome is on the deck.** A call saved with no outcome is a row nobody
+  can report on, so the admin's own picklist rides on the second row rather
+  than being lost with the dialog.
+
+**And Save & Next had never once worked.** It navigates to the next record with
+`?dial=1`, and the effect that reads that flag needs the record's phone number —
+but the record was fetched only while a call was already running. So arriving
+with the flag, the number was unknown, the effect returned early, and the flag
+sat in the address bar for ever: the next person opened and nobody was rung.
+Fixed by fetching the record when a call is running **or** about to be placed.
+Found by driving it in a real browser, which is the only place it shows.
+
+**What went with the dialog, and is worth knowing before somebody asks for it
+back:** the free-text call note, the Hot/Warm/Cold intent, the voice-dictated
+note, and the WhatsApp follow-up switch. Notes have a home already — the Notes
+panel is on screen beside the call. The other three are not offered anywhere
+now; `ipy_call.intent` still exists and is simply never written.

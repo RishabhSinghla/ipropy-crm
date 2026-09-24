@@ -31,7 +31,8 @@ import DocumentViewer, { isPreviewable, type ViewableFile } from '../components/
 import ComposeModal from '../components/ComposeModal';
 import MatchingTab from '../components/MatchingTab';
 import { PeekLink } from '../components/PeekLink';
-import { CallButton, CallDispositionProvider } from '../components/CallDisposition';
+import { CallButton, CallDispositionProvider, useCallDisposition } from '../components/CallDisposition';
+import { CallDeck } from '../components/CallDeck';
 import { WhatsAppComposerProvider } from '../components/WhatsAppComposer';
 import { WhatsAppButton } from '../components/WhatsAppButton';
 import { isNative } from '../lib/native';
@@ -348,7 +349,6 @@ export default function RecordDetail(): JSX.Element {
     <CallDispositionProvider
       recordId={record.id}
       module={moduleName!}
-      recordLabel={record.label}
       followUpField={meta.fields.find((field) => field.columnName === 'next_followup_at')?.name
         ?? meta.fields.find((field) => field.name === 'next_follow_up' || field.columnName === 'next_follow_up')?.name
         ?? 'next_followup_at'}
@@ -418,6 +418,10 @@ export default function RecordDetail(): JSX.Element {
               >
                 <Star className={cn('h-4 w-4', record.starred && 'fill-amber-400 text-amber-400')} />
               </button>
+
+              {/* The live call, in the header rather than over the record.
+                  The same deck the split view draws, from the same provider. */}
+              <LiveCallDeck />
 
               {phone && <WhatsAppButton to={phone} />}
               {phone && <CallButton to={phone} />}
@@ -2994,5 +2998,23 @@ function CallEditHistory({ callId }: { callId: string }): JSX.Element {
         );
       })}
     </ol>
+  );
+}
+
+/**
+ * The deck, when a call is running, and nothing at all when one is not.
+ *
+ * A component of its own because `useCallDisposition` is a hook and this
+ * renders inside a conditional. One deck, drawn the same here and in the
+ * split view, so a rep who arrives from either sees the same thing.
+ */
+function LiveCallDeck(): JSX.Element | null {
+  const calls = useCallDisposition();
+  if (!calls?.deck) return null;
+  return (
+    <span className="flex shrink-0 items-center gap-2">
+      <span className="h-16 w-px bg-slate-200 dark:bg-slate-700" aria-hidden />
+      <CallDeck {...calls.deck} />
+    </span>
   );
 }
