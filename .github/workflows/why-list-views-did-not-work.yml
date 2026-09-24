@@ -82,4 +82,5 @@ jobs:
 
           echo "--- every ui. setting, with its category ---"
           psql "$PROD_DATABASE_URL" -P pager=off -c \
-            "SELECT key, category, value FROM ipy_setting WHERE key LIKE 'ui.%' ORDER BY key;"
+            "SELECT key, category, value, updated_at, updated_by IS NOT NULL AS saved_by_a_person
+               FROM ipy_setting WHERE key LIKE 'ui.%' ORDER BY key;"
