@@ -24,6 +24,24 @@ session, without being asked for again.
 * **No apologies and no self-flagellation.** Correct the thing and carry on.
 * **Smallest possible change.** Touch the least code that does the job. Nothing gets broken or
   churned for tidiness.
+* **Stupidly simple, and still enterprise grade.** Asked for on 24 September 2026, and it
+  applies to every codebase we are given, not only this one: *"even a fresher out of college
+  just sees the codebase and isn't terrified at all"*. So a person with only a slight touch of
+  tech should be able to open a file we wrote and follow it. The bar is not "fewer features"
+  and it is not "fewer safeguards" — security stays tight, logging stays real, the tests stay.
+  What goes is cleverness. In practice:
+  * **Name things what they are.** `whyItFailed`, `needsUninstallFirst`, `backlogFirst` — a
+    function whose name is a sentence needs no comment explaining what it does.
+  * **One idea per function, and short.** If it does not fit on a screen, it is two things.
+  * **No cleverness that saves lines and costs understanding.** A plain `if` beats a nested
+    ternary; a named variable beats a chain nobody can read aloud.
+  * **Comments say why, never what** — the existing rule, and the reason it exists.
+  * **Security and logging are simple to read, not simple to bypass.** One obvious place that
+    checks permission, one obvious place that writes the log. A reader must be able to point at
+    the line that keeps the CRM safe. Tightness comes from there being one path, not from the
+    path being hard to follow.
+  * **A new reader should not need this file to follow the code.** `CLAUDE.md` exists for the
+    history and the traps. The code itself has to stand on its own.
 * **Check the work before showing it.** Unit, integration and end-to-end as the change
   warrants — he should not have to ask for testing.
 * **Keep the docs true.** Any `.md` a change makes stale is updated in the same piece of work.
