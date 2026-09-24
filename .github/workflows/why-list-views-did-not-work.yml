@@ -1,0 +1,64 @@
+# Why switching a list view off did not take effect on production.
+#
+# Read-only. It answers three questions that cannot be answered from a laptop,
+# in the order they actually matter:
+#
+#   1. Is the fix even deployed? A commit passing CI is not a commit Render
+#      built — this repo has watched a deploy fail sixteen minutes after a green
+#      run, which looks exactly like a fix that did not work.
+#   2. Did the migration that creates the setting's row run there?
+#   3. What does the row actually hold, and under which category?
+#
+# It prints a settings row and a build string. No credential is printed, and
+# nothing is written.
+name: Why the list views did not switch off
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  look:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Is the fix deployed?
+        run: |
+          echo "--- what production is serving ---"
+          # The health endpoint carries the version; the entry chunk carries the
+          # code. `grep -a` because a fetched bundle is binary to BSD grep and
+          # silently prints nothing, which reads as a failed deploy.
+          curl -fsS https://crm.ipropy.com/api/health || echo "health did not answer"
+          echo
+          html=$(curl -fsS https://crm.ipropy.com/ || true)
+          entry=$(printf '%s' "$html" | grep -ao '/assets/index-[A-Za-z0-9_-]*\.js' | head -1)
+          echo "entry chunk: ${entry:-NONE FOUND}"
+          if [ -n "$entry" ]; then
+            bundle=$(curl -fsS "https://crm.ipropy.com$entry" || true)
+            # A string only the new code has: the admin page's own heading.
+            printf '%s' "$bundle" | grep -aq 'List views' \
+              && echo "RESULT: the List Views screen IS in the deployed bundle" \
+              || echo "RESULT: the List Views screen is NOT in the deployed bundle — production is behind"
+          fi
+
+      - name: Install PostgreSQL 18 client
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: What the database says
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          echo "--- did migration 168 run? ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -c \
+            "SELECT filename, applied_at FROM ipy_migration WHERE filename LIKE '16%' ORDER BY filename;"
+
+          echo "--- every ui. setting, with its category ---"
+          psql "$PROD_DATABASE_URL" -P pager=off -c \
+            "SELECT key, category, value FROM ipy_setting WHERE key LIKE 'ui.%' ORDER BY key;"
