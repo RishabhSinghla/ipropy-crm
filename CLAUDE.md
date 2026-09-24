@@ -759,9 +759,28 @@ beginning* — so fixing the read alone would have uploaded every rep's personal
 call history. It returns null on failure and pairing refuses rather than guesses.
 
 Building needs **JDK 21** (not 17 — Capacitor 8 plugins declare a Java 21
-toolchain and Gradle will not substitute another). iPhone needs Xcode and an
-Apple Developer account, neither of which is on this machine; the project is
-complete and unbuilt.
+toolchain and Gradle will not substitute another).
+
+**iPhone needs Xcode. It does not need a paid Apple Developer account to be
+tested**, and this file said otherwise for weeks, which is why nobody has run
+it once. Three different things get called "you need an account":
+
+| what | costs | expires |
+|---|---|---|
+| the **Simulator** on a Mac | nothing, no account at all | never |
+| a **real iPhone**, free Apple ID | nothing | the build stops after 7 days |
+| **TestFlight / the App Store** | $99 a year | — |
+
+So the first rung is free and was always available: `npx cap open ios`, press
+Run, and the app is on screen. `packages/app/ios` is committed and complete.
+Neither Xcode nor a Mac is on this container, so that rung is the owner's to
+climb; everything up to it — the bundle, `cap sync`, the project — is here.
+
+**Expo is the wrong tool and the question comes up because the names sound
+alike.** Expo builds React Native, where the UI is native components; this app
+is a React *web* bundle in a Capacitor webview, which is the entire reason the
+screens update themselves from production and the metadata engine is not
+reimplemented. Moving to Expo means rewriting every screen and losing that.
 
 **Android Studio is not required and never was — the SDK is.** This container
 has JDK 21 and no Android SDK, and its egress proxy refuses
