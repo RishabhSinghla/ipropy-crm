@@ -761,20 +761,31 @@ call history. It returns null on failure and pairing refuses rather than guesses
 Building needs **JDK 21** (not 17 — Capacitor 8 plugins declare a Java 21
 toolchain and Gradle will not substitute another).
 
-**iPhone needs Xcode. It does not need a paid Apple Developer account to be
-tested**, and this file said otherwise for weeks, which is why nobody has run
-it once. Three different things get called "you need an account":
+**iPhone: Apple's toolchain runs on macOS and nowhere else, so every road
+needs a Mac somewhere. What differs is whose, and what it can produce:**
 
-| what | costs | expires |
+| road | needs | produces |
 |---|---|---|
-| the **Simulator** on a Mac | nothing, no account at all | never |
-| a **real iPhone**, free Apple ID | nothing | the build stops after 7 days |
-| **TestFlight / the App Store** | $99 a year | — |
+| **CI compile** (`build-the-ios-app.yml`) | nothing — a GitHub macOS runner | proof it builds; nothing installable |
+| Xcode on the owner's Mac | Xcode (~15 GB) | Simulator, or 7 days on his own iPhone |
+| **TestFlight** | **$99/year**, plus CI | the app on the whole team's iPhones |
 
-So the first rung is free and was always available: `npx cap open ios`, press
-Run, and the app is on screen. `packages/app/ios` is committed and complete.
-Neither Xcode nor a Mac is on this container, so that rung is the owner's to
-climb; everything up to it — the bundle, `cap sync`, the project — is here.
+**The owner has refused Xcode** (24 September 2026 — an Air, and it would
+"hang and heat my mac"), and refused the Home Screen install as an answer. So
+the only road left to a real app on a real iPhone is the paid account, and
+that is worth stating as a cost rather than worked around: a signing
+certificate comes from a paid Developer account, or from Xcode handing a free
+Apple ID a seven-day one. **There is no third door.** Anything claiming
+otherwise (sideloading tools, re-signers) still needs a computer running
+software every seven days.
+
+What is free and was never done: **the project had never been compiled, by
+anybody, anywhere.** `build-the-ios-app.yml` does that on a macOS runner with
+`CODE_SIGNING_ALLOWED=NO` against the simulator SDK — no certificate, no
+account. It proves the Swift builds, the plugins link and the bundle copies
+in. It is `workflow_dispatch` only because **macOS runners bill at ten times
+Linux**, and this repository ran its allowance out once before, in August,
+stopping every deploy for nine days.
 
 **Expo is the wrong tool and the question comes up because the names sound
 alike.** Expo builds React Native, where the UI is native components; this app

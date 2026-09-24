@@ -1,0 +1,103 @@
+# Compile the iPhone app, on a Mac nobody has to own.
+#
+# Apple's toolchain runs on macOS and nowhere else, so an iOS build needs *a*
+# Mac — but not the owner's. A GitHub runner is one, with Xcode already on it,
+# and `packages/app/ios` has been committed and complete since it was
+# generated and **has never once been compiled, by anybody**. So the first
+# thing worth knowing is whether it even builds, and that costs no money and
+# no Apple account at all.
+#
+# `CODE_SIGNING_ALLOWED=NO` against the simulator SDK is what makes that true:
+# signing is the part that needs a certificate, and a simulator build needs
+# none. It proves the Swift compiles, the plugins link, the web bundle copies
+# in and the app assembles. It does not produce anything installable.
+#
+# ## What this deliberately does not do, and why
+#
+# **It cannot put the app on an iPhone.** That needs a signing certificate,
+# which Apple issues to a paid Developer account ($99/year) or, through Xcode
+# on a Mac, to a free Apple ID for seven days at a time. There is no third
+# door, and pretending otherwise would have somebody waiting for a build that
+# can never land on a handset. Once that account exists, this file grows an
+# archive-and-upload step and the team installs through TestFlight like any
+# other app.
+#
+# ## Minutes
+#
+# **macOS runners bill at ten times the rate of Linux ones.** A build here is
+# ten-odd minutes of wall clock and therefore a hundred-odd minutes of
+# allowance, and this repository has run its allowance out once before, in
+# August, which stopped every deploy for nine days. So this is
+# `workflow_dispatch` only — never on push, never on a schedule — and it is
+# worth running when the native half changes, not when a screen does.
+name: Build the iPhone app
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: What Xcode is on this runner
+        run: |
+          xcodebuild -version
+          xcrun simctl list runtimes | head -20
+
+      - name: Install
+        run: npm ci
+
+      # No VITE_API_BASE: a release build talks to production. Setting it here
+      # is how a build pointed at somebody's laptop reaches a real phone.
+      - name: Build the web bundle
+        run: |
+          npm run build:deps
+          npm run build -w @ipropy/web
+
+      - name: Copy it into the iOS project
+        working-directory: packages/web
+        run: npx cap sync ios
+
+      # Against the simulator SDK and with signing off, so no certificate and
+      # no Apple account are involved. SPM rather than CocoaPods, so the
+      # project builds directly -- there is no .xcworkspace to open.
+      - name: Compile it
+        working-directory: packages/app/ios/App
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project App.xcodeproj \
+            -scheme App \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build \
+            | tail -60
+
+      - name: Say what this did and did not prove
+        run: |
+          cat <<'MSG'
+          The iPhone app compiles.
+
+          What that means: the Swift builds, the Capacitor plugins link, the
+          web bundle copied in, and the app assembles. Until this run, none of
+          that had ever been checked -- the project was generated, committed
+          and never compiled.
+
+          What it does not mean: there is nothing installable here. A build
+          that can go on an iPhone has to be signed, and Apple issues the
+          certificate for that only to a paid Developer account, or through
+          Xcode on a Mac to a free Apple ID for seven days at a time.
+          MSG
