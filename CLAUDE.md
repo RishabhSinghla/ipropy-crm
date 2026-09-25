@@ -18,6 +18,7 @@ before you work in that area** — each carries traps that have already cost a d
 | The phone app, dialling, call recording, the call console | [`CALLING.md`](CALLING.md) |
 | Lists, the split view, tags | [`SCREENS.md`](SCREENS.md) |
 | A deploy, or something misbehaving on production | [`OPERATIONS.md`](OPERATIONS.md) |
+| Anything a person clicks, before calling it done | the `prove-it` skill |
 | The AI stack, before adding any framework | [`AI-ARCHITECTURE.md`](AI-ARCHITECTURE.md) |
 | Full architecture, state and roadmap | [`PROJECT_HANDOVER.md`](PROJECT_HANDOVER.md) |
 | Production is on fire | [`RUNBOOK.md`](RUNBOOK.md) |
@@ -61,7 +62,13 @@ session, without being asked for again.
   * **A new reader should not need this file to follow the code.** `CLAUDE.md` exists for the
     history and the traps. The code itself has to stand on its own.
 * **Check the work before showing it.** Unit, integration and end-to-end as the change
-  warrants — he should not have to ask for testing.
+  warrants — he should not have to ask for testing. **A green test run is not a working
+  feature**: on 24 September 2026 three bugs were live with typecheck clean and
+  1,732 tests green, and all three took minutes to find in a browser. Anything a
+  person clicks gets driven in one — the `prove-it` skill is how — and every
+  check is reported as **pass**, **fail** or **couldn't tell**. That third word
+  is the one that matters: without it, anything unobserved gets rounded up to a
+  pass, which is exactly how a feature is called finished when it is not.
 * **Keep the docs true.** Any `.md` a change makes stale is updated in the same piece of work.
   That is part of the task, not a follow-up.
 * **Decide without asking.** He has granted standing permission for ordinary work. Ask only
