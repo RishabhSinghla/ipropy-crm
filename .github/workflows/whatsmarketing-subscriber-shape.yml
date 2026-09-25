@@ -79,3 +79,19 @@ jobs:
                 -d "apiToken=$TOKEN" -d "phone_number_id=$PNID" -d "phone_number=$who" \
                 | jq -c '(.message | if type=="array" then .[0] else . end) | {label_names_type: (.label_names|type), label_names, bot_reply_label, ai_reply_label}'
             done | sort | uniq -c
+
+      - name: Do the note and label write endpoints exist? (sent incomplete, so nothing is written)
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          TOKEN: ${{ secrets.WHATSMARKETING_API_TOKEN }}
+        run: |
+          set -u
+          BASE=https://app.whatsmarketing.in/api/v1
+          PNID=$(psql "$PROD_DATABASE_URL" -Atc "SELECT config->>'phoneNumberId' FROM ipy_integration WHERE provider = 'whatsapp_whatsmarketing'")
+          # No phone_number and no note/label: a real endpoint refuses with its
+          # own JSON; a missing one answers the HTML 404 page. Either way no
+          # contact is touched, because none is named.
+          for path in whatsapp/subscriber/chat/add whatsapp/subscriber/chat/add-notes whatsapp/subscriber/chat/assign whatsapp/subscriber/chat/assign-labels whatsapp/label/list whatsapp/get/label/list whatsapp/label/create; do
+            body=$(curl -sS --max-time 30 -X POST "$BASE/$path" -d "apiToken=$TOKEN" -d "phone_number_id=$PNID" | head -c 300 | tr '\n' ' ')
+            case "$body" in *"Not Found"*) echo "$path -> 404, does not exist";; *) echo "$path -> $body";; esac
+          done
