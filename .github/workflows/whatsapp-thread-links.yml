@@ -42,3 +42,24 @@ jobs:
            GROUP BY 1, 2, 3, 4
            ORDER BY count(*) DESC;
           SQL
+
+      # Where the messages on a record's WhatsApp tab came from. The tab reads
+      # every WhatsApp thread for the record's numbers; this says how many rows
+      # are the business number and how many are something older. Counts only.
+      - name: Where each WhatsApp message came from
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT (c.wa_account_id IS NOT NULL)            AS phone_account_thread,
+                 m.route, m.sent_via, m.provider, m.direction,
+                 (m.whatsapp_web_account_id IS NOT NULL)  AS whatsapp_web,
+                 min(m.created_at)::date AS first_day,
+                 max(m.created_at)::date AS last_day,
+                 count(*)
+            FROM ipy_message m
+            JOIN ipy_conversation c ON c.id = m.conversation_id
+           WHERE c.channel = 'whatsapp'
+           GROUP BY 1, 2, 3, 4, 5, 6
+           ORDER BY count(*) DESC;
+          SQL
