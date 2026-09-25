@@ -1148,7 +1148,7 @@ database.
 ## Five things the owner asked for on 24 September
 
 * **The queue filters by module.** "Contacts chats" and "Inventories chats" sit
-  under the seven status filters in the same dropdown, prefixed `module:` so a
+  under the other filters in the same dropdown, prefixed `module:` so a
   module name can never be mistaken for a status. The entries come from the
   CRM's own metadata — there are two modules today and an admin may add a third
   with no deploy, so **no module is named in the screen or in the route**; the
@@ -1201,9 +1201,12 @@ database.
 * **The chat header is the record's header.** Name, Assigned To, *Updated …*
   and the same header-field strip the record page shows for that module. The
   status chips, the follow-up date, Take, Send a property, Mark unread and the
-  ⋯ menu are gone at the owner's request — which also means **a thread's
-  open/pending/resolved status can no longer be changed from the screen**,
-  though the filter still lists them.
+  ⋯ menu are gone at the owner's request.
+* **Open / Pending / Resolved is gone from WhatsApp entirely** — the owner's
+  call the same day: "no use to me". No filter, no route (`/status` is
+  removed), no `setStatus`, and neither an inbound message nor a reassignment
+  touches `ipy_conversation.status` for WhatsApp any more. The column itself
+  stays, because the older `/api/comms` inbox for other channels still reads it.
 * **The empty right-hand pane was a misfiled chat.** A chat started from an
   Inventory record was saved with `record_module = 'leads'`, because
   `send.ts` had the module hard-coded. The pane asked the leads API for a

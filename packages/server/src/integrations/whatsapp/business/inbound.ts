@@ -216,8 +216,7 @@ export async function receiveInbound(
               -- The 24-hour service window reopens on every inbound message.
               -- Outside it only an approved template may be sent, and this is
               -- the column the composer reads to know which it is offering.
-              window_expires_at = $2::timestamptz + interval '24 hours',
-              status = CASE WHEN status = 'resolved' THEN 'open' ELSE status END
+              window_expires_at = $2::timestamptz + interval '24 hours'
         WHERE id = $1`,
       [conversation.id, message.sentAt, body?.slice(0, 200) ?? null],
     );

@@ -1284,8 +1284,6 @@ export const api = {
   waBizTake: (id: string) => post<{ ok: true }>(`/api/whatsapp-business/conversations/${id}/take`, {}),
   waBizAssign: (id: string, to: string | null) =>
     post<{ ok: true }>(`/api/whatsapp-business/conversations/${id}/assign`, { to }),
-  waBizStatusSet: (id: string, status: 'open' | 'pending' | 'resolved') =>
-    post<{ ok: true }>(`/api/whatsapp-business/conversations/${id}/status`, { status }),
   waBizSavedTemplates: () => get<{
     id: string; name: string; language: string; category: string; status: string;
     bodyText: string; variableCount: number; variableMap: Record<string, string>;

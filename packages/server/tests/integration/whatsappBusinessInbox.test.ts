@@ -15,7 +15,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../src/db/pool.js';
 import {
-  assign, conversationMessages, listConversations, markRead, markUnread, setStatus,
+  assign, conversationMessages, listConversations, markRead, markUnread,
 } from '../../src/integrations/whatsapp/business/inbox.js';
 
 const stamp = Date.now();
@@ -123,19 +123,6 @@ describe('the shared WhatsApp inbox', () => {
     expect(row!.unread_count).toBeGreaterThan(0);
   });
 
-  it('resolves a chat and reopens it when it is assigned again', async () => {
-    await setStatus({ userId: rep, isAdmin: false, conversationId: conversations.mine, status: 'resolved' });
-    expect((await db.queryOne<{ status: string }>(
-      `SELECT status FROM ipy_conversation WHERE id = $1`, [conversations.mine],
-    ))!.status).toBe('resolved');
-
-    // Handing a resolved chat to somebody is asking them to do something, so
-    // it comes back open rather than arriving already finished.
-    await assign({ userId: admin, isAdmin: true, conversationId: conversations.mine, to: otherRep });
-    expect((await db.queryOne<{ status: string }>(
-      `SELECT status FROM ipy_conversation WHERE id = $1`, [conversations.mine],
-    ))!.status).toBe('open');
-  });
 });
 
 /**

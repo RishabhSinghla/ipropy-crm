@@ -34,21 +34,18 @@ import { readMessageMedia, WhatsAppMedia } from '../components/WhatsAppMedia';
  * which was true.
  */
 
-type Filter = 'all' | 'mine' | 'unassigned' | 'unread' | 'open' | 'pending' | 'resolved';
+type Filter = 'all' | 'mine' | 'unassigned' | 'unread';
 
 const FILTERS: { value: Filter; label: string }[] = [
   { value: 'all', label: 'All chats' },
   { value: 'mine', label: 'My chats' },
   { value: 'unassigned', label: 'Unassigned' },
   { value: 'unread', label: 'Unread' },
-  { value: 'open', label: 'Open' },
-  { value: 'pending', label: 'Pending' },
-  { value: 'resolved', label: 'Resolved' },
 ];
 
 /*
-  One dropdown, two kinds of answer: how a thread stands, and which module the
-  person on the other end is a record of. A module entry is prefixed so the two
+  One dropdown, two kinds of answer: whose chat it is (or whether it is read),
+  and which module the person on the other end is a record of. A module entry is prefixed so the two
   cannot collide, and the modules themselves come from the CRM's own metadata —
   there are two today and an admin may add a third with no deploy, so no module
   is ever named in this file.

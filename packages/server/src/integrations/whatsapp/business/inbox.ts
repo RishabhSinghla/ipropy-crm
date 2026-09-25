@@ -18,7 +18,7 @@ import { db } from '../../../db/pool.js';
 import { BadRequestError, NotFoundError } from '../../../utils/errors.js';
 import { notify } from '../../../core/notifications/index.js';
 
-export type InboxFilter = 'all' | 'mine' | 'unassigned' | 'unread' | 'open' | 'pending' | 'resolved';
+export type InboxFilter = 'all' | 'mine' | 'unassigned' | 'unread';
 
 export interface InboxConversation {
   id: string;
@@ -118,9 +118,6 @@ export async function listConversations(input: {
   }
   if (input.filter === 'unassigned') where.push(`${HOLDER} IS NULL`);
   if (input.filter === 'unread') where.push(`c.unread_count > 0`);
-  if (input.filter === 'open') where.push(`c.status = 'open'`);
-  if (input.filter === 'pending') where.push(`c.status = 'pending'`);
-  if (input.filter === 'resolved') where.push(`c.status = 'resolved'`);
 
   if (input.module?.trim()) {
     params.push(input.module.trim());
@@ -259,8 +256,7 @@ export async function assign(input: {
   }
 
   await db.query(
-    `UPDATE ipy_conversation SET assigned_to = $2, status = CASE WHEN status = 'resolved' THEN 'open' ELSE status END
-      WHERE id = $1`,
+    `UPDATE ipy_conversation SET assigned_to = $2 WHERE id = $1`,
     [input.conversationId, input.to],
   );
 
@@ -282,16 +278,6 @@ export async function assign(input: {
       link: '/chats',
     });
   }
-}
-
-export async function setStatus(input: {
-  userId: string; isAdmin: boolean; conversationId: string; status: 'open' | 'pending' | 'resolved';
-}): Promise<void> {
-  await readableConversation(input.userId, input.isAdmin, input.conversationId);
-  await db.query(
-    `UPDATE ipy_conversation SET status = $2 WHERE id = $1`,
-    [input.conversationId, input.status],
-  );
 }
 
 /**

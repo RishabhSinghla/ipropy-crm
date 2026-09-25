@@ -22,7 +22,7 @@ import {
 import { sendOnBusinessNumber } from '../../integrations/whatsapp/business/send.js';
 import {
   assign, conversationMessages, listConversations, markRead, markUnread,
-  noteViewing, othersViewing, setStatus,
+  noteViewing, othersViewing,
 } from '../../integrations/whatsapp/business/inbox.js';
 import { db } from '../../db/pool.js';
 import {
@@ -196,7 +196,7 @@ whatsappBusinessRouter.post('/send', asyncHandler(async (req, res) => {
 // The shared inbox
 // ---------------------------------------------------------------------------
 
-const filters = ['all', 'mine', 'unassigned', 'unread', 'open', 'pending', 'resolved'] as const;
+const filters = ['all', 'mine', 'unassigned', 'unread'] as const;
 
 whatsappBusinessRouter.get('/conversations', asyncHandler(async (req, res) => {
   const user = getUser(req);
@@ -250,13 +250,6 @@ whatsappBusinessRouter.post('/conversations/:id/assign', asyncHandler(async (req
 whatsappBusinessRouter.post('/conversations/:id/take', asyncHandler(async (req, res) => {
   const user = getUser(req);
   await assign({ userId: user.id, isAdmin: user.isAdmin, conversationId: req.params.id, to: user.id });
-  res.json({ ok: true });
-}));
-
-whatsappBusinessRouter.post('/conversations/:id/status', asyncHandler(async (req, res) => {
-  const user = getUser(req);
-  const input = z.object({ status: z.enum(['open', 'pending', 'resolved']) }).parse(req.body ?? {});
-  await setStatus({ userId: user.id, isAdmin: user.isAdmin, conversationId: req.params.id, status: input.status });
   res.json({ ok: true });
 }));
 
