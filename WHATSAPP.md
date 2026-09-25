@@ -1300,11 +1300,36 @@ and any way to see it.
   the same list (`OPTED_OUT` in `inbox.ts`, last ten digits, the same way
   `send.ts` compares).
 
-**Not synced with WhatsMarketing's own Subscribed flag.** Their subscriber
-list is theirs; the CRM's list is the CRM's. A customer's STOP reaches both
-(each reads the message), but an unsubscribe pressed in one screen is not
-copied to the other. Their subscriber API was never read for it, and the field
-name is not known from here — worth doing only if the team uses both.
+**Connected to WhatsMarketing by a note, because a note is all their API
+allows.** Checked against the live account on 25 September
+(`whatsmarketing-subscriber-shape.yml`, read-only):
+
+* A subscriber row carries `subscriber_id, chat_id, first_name, last_name,
+  email, gender, created_at, assigned_agent(_id), bot_reply_label,
+  ai_reply_label, label_names, custom_fields` — **no subscribed field at
+  all**, and there is no subscribe or unsubscribe endpoint. Their dashboard's
+  "Subscribed" cannot be read or set from outside.
+* Their document's paths are partly wrong. `/whatsapp/subscriber/chat/add`,
+  `/chat/assign`, `/label/list` and `/label/create` answer **404**; the real
+  ones are `/chat/add-notes` and `/chat/assign-labels`, found by sending each
+  incomplete and reading the refusal (nothing written). Labels need an id and
+  nothing lists or creates one, and `label_names` is already used for their
+  broadcast lists ("FBD Dealer Msg List 1"), so the CRM does not touch labels —
+  an assign that replaces rather than adds would wipe those.
+
+So `consentSync.ts` leaves a note on the contact — *"iPropy CRM: UNSUBSCRIBED
+from WhatsApp on 25 Sept 2026 by Priya Sharma. Do not message or broadcast to
+this number."*, or the matching "subscribed again" — whenever the CRM's list
+changes: either button, and a customer's STOP or START (after commit). It is
+best effort: WhatsMarketing being down never undoes or delays the CRM's own
+unsubscribe, which is what actually stops a send. The toast says when the note
+was left.
+
+**The other direction** needs nothing for a customer's STOP — it arrives on the
+business number and the CRM reads every message there. What cannot reach the
+CRM is somebody flipping "Subscribed" by hand inside WhatsMarketing's own
+screen, because their API does not expose it. Ask them for an endpoint if the
+team ever works that way.
 
 ---
 

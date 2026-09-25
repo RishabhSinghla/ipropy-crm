@@ -117,6 +117,22 @@ async function call(path: string, fields: Record<string, string>): Promise<Recor
 const digits = (to: string): string => to.replace(/\D/g, '');
 
 /**
+ * Write a note on a contact in WhatsMarketing, visible in their inbox's Notes.
+ *
+ * `/whatsapp/subscriber/chat/add-notes`, not `/chat/add` as their document
+ * says — the documented path answers 404, and this one was found on 25
+ * September 2026 by sending it incomplete and reading its refusal. Their API
+ * has no subscribe or unsubscribe of its own, and no field that says which a
+ * contact is; a note is the one honest thing the CRM can leave there.
+ */
+export async function addWhatsMarketingNote(phoneWithCountryCode: string, note: string): Promise<void> {
+  await call('/whatsapp/subscriber/chat/add-notes', {
+    phone_number: digits(phoneWithCountryCode),
+    note_text: note,
+  });
+}
+
+/**
  * Each template id to the *other* id the same row publishes.
  *
  * Filled whenever the template list is read. It exists so a "template not

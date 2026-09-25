@@ -161,8 +161,11 @@ export default function BusinessChats(): JSX.Element {
 
   const consent = useMutation({
     mutationFn: (subscribed: boolean) => api.waBizConversationConsent(active!.id, subscribed),
-    onSuccess: ({ optedOut }) => {
-      toast.success(optedOut ? 'Unsubscribed from WhatsApp' : 'Subscribed to WhatsApp again');
+    onSuccess: ({ optedOut, notedInWhatsMarketing }) => {
+      toast.success(
+        optedOut ? 'Unsubscribed from WhatsApp' : 'Subscribed to WhatsApp again',
+        notedInWhatsMarketing ? 'A note saying so is on their contact in WhatsMarketing too.' : undefined,
+      );
       refresh();
     },
     onError: (err: Error) => toast.error('Could not change that', err.message),

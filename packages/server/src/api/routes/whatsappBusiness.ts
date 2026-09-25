@@ -25,6 +25,7 @@ import {
   noteViewing, othersViewing, readableConversation,
 } from '../../integrations/whatsapp/business/inbox.js';
 import { recordConsent } from '../../core/consent/index.js';
+import { tellWhatsMarketingAboutConsent } from '../../integrations/whatsapp/business/consentSync.js';
 import { db } from '../../db/pool.js';
 import {
   listStoredTemplates, organisationName, resolveTemplate, saveMapping, syncTemplates,
@@ -366,7 +367,10 @@ whatsappBusinessRouter.post('/conversations/:id/consent', asyncHandler(async (re
     action: subscribed ? 'opt_in' : 'opt_out', source: 'manual',
     recordId: conversation.recordId, userId: user.id,
   });
-  res.json({ optedOut: !subscribed });
+  const notedInWhatsMarketing = await tellWhatsMarketingAboutConsent({
+    handle: conversation.handle, subscribed, byWhom: user.fullName ?? 'a team member',
+  });
+  res.json({ optedOut: !subscribed, notedInWhatsMarketing });
 }));
 
 /**
@@ -380,13 +384,18 @@ whatsappBusinessRouter.post('/contacts/:module/:id/consent', asyncHandler(async 
   const record = await recordService.getRecord(getScope(req), req.params.module!, req.params.id!);
   const handles = await handlesOf(req.params.module!, record.values ?? {});
   if (!handles.length) throw new BadRequestError('This record has no phone number to unsubscribe.');
+  let notedInWhatsMarketing = false;
   for (const handle of handles) {
     await recordConsent({
       handle, channel: 'whatsapp', action: subscribed ? 'opt_in' : 'opt_out',
       source: 'manual', recordId: req.params.id, userId: user.id,
     });
+    const noted = await tellWhatsMarketingAboutConsent({
+      handle, subscribed, byWhom: user.fullName ?? 'a team member',
+    });
+    notedInWhatsMarketing ||= noted;
   }
-  res.json({ optedOut: !subscribed });
+  res.json({ optedOut: !subscribed, notedInWhatsMarketing });
 }));
 
 /**

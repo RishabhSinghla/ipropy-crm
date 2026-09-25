@@ -76,8 +76,11 @@ export function WhatsAppTab({ module, recordId, mobile }: {
 
   const consent = useMutation({
     mutationFn: (subscribed: boolean) => api.waBizContactConsent(module, recordId, subscribed),
-    onSuccess: ({ optedOut: nowOut }) => {
-      toast.success(nowOut ? 'Unsubscribed from WhatsApp' : 'Subscribed to WhatsApp again');
+    onSuccess: ({ optedOut: nowOut, notedInWhatsMarketing }) => {
+      toast.success(
+        nowOut ? 'Unsubscribed from WhatsApp' : 'Subscribed to WhatsApp again',
+        notedInWhatsMarketing ? 'A note saying so is on their contact in WhatsMarketing too.' : undefined,
+      );
       void queryClient.invalidateQueries({ queryKey: ['whatsapp', 'contact', module, recordId] });
       void queryClient.invalidateQueries({ queryKey: ['wa-biz'] });
     },

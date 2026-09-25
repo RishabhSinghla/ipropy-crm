@@ -31,6 +31,7 @@ import { keepInboundMedia } from './media.js';
 import { HOLDER } from './inbox.js';
 import { whyItFailed } from './whyItFailed.js';
 import { consentKeyword, recordConsent } from '../../../core/consent/index.js';
+import { tellWhatsMarketingAboutConsent } from './consentSync.js';
 import type { InboundMessage, StatusUpdate } from './types.js';
 
 const MODULE = 'leads';
@@ -301,6 +302,14 @@ export async function receiveInbound(
         handle: message.from, channel: 'whatsapp', action: asked,
         source: 'keyword', messageText: message.text, recordId,
       }, conn);
+      // After commit: a call to the vendor must never hold a transaction open.
+      onCommit(conn, async () => {
+        await tellWhatsMarketingAboutConsent({
+          handle: message.from,
+          subscribed: asked === 'opt_in',
+          byWhom: `the customer (they wrote "${(message.text ?? '').trim()}")`,
+        });
+      });
     }
 
     await pruneEvents(conn);

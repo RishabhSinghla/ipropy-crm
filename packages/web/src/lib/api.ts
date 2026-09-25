@@ -1361,9 +1361,9 @@ export const api = {
   }>(`/api/whatsapp-business/contacts/${module}/${id}/messages`),
   /** Unsubscribe somebody from WhatsApp, or put them back. */
   waBizConversationConsent: (conversationId: string, subscribed: boolean) =>
-    post<{ optedOut: boolean }>(`/api/whatsapp-business/conversations/${conversationId}/consent`, { subscribed }),
+    post<{ optedOut: boolean; notedInWhatsMarketing: boolean }>(`/api/whatsapp-business/conversations/${conversationId}/consent`, { subscribed }),
   waBizContactConsent: (module: string, id: string, subscribed: boolean) =>
-    post<{ optedOut: boolean }>(`/api/whatsapp-business/contacts/${module}/${id}/consent`, { subscribed }),
+    post<{ optedOut: boolean; notedInWhatsMarketing: boolean }>(`/api/whatsapp-business/contacts/${module}/${id}/consent`, { subscribed }),
 
   tags: (module?: string) => get<{ id: string; name: string; color: string; created_by: string | null; modules: string[]; usage_count: number }[]>(`/api/tags${qs({ module })}`),
   createTag: (body: { name: string; color?: string; modules?: string[] }) => post<{ id: string; name: string; color: string }>('/api/tags', body),
