@@ -1,0 +1,60 @@
+# What does WhatsMarketing say about whether a contact is subscribed?
+#
+# Their documentation (v1.0) has no subscribe or unsubscribe endpoint, yet
+# their dashboard shows "Subscribed" on every contact. Before the CRM mirrors
+# that flag it has to know the field's real name and values — an invented one
+# would read as "subscribed" for everybody and send to the people who asked us
+# to stop.
+#
+# Read-only: two list/get calls. Prints the FIELD NAMES of a subscriber row,
+# and the values of fields whose names look like a status, and nothing else —
+# no names, numbers or message text.
+name: WhatsMarketing subscriber shape
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  look:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install PostgreSQL 18 client
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18 jq
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: Field names and status-like values
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          TOKEN: ${{ secrets.WHATSMARKETING_API_TOKEN }}
+        run: |
+          set -u
+          BASE=https://app.whatsmarketing.in/api/v1
+          PNID=$(psql "$PROD_DATABASE_URL" -Atc "SELECT config->>'phoneNumberId' FROM ipy_integration WHERE provider = 'whatsapp_whatsmarketing'")
+          if [ -z "${TOKEN:-}" ] || [ -z "$PNID" ]; then echo "token set: $([ -n "${TOKEN:-}" ] && echo yes || echo no); phone number id set: $([ -n "$PNID" ] && echo yes || echo no)"; exit 1; fi
+
+          STATUSY='status|subscri|opt|block|unsub|stop|active|consent'
+
+          echo "== subscriber/list: keys of each row, and status-like values =="
+          curl -sS --max-time 30 -X POST "$BASE/whatsapp/subscriber/list" \
+            -d "apiToken=$TOKEN" -d "phone_number_id=$PNID" -d "limit=20" -d "offset=1" -d "orderBy=1" \
+            > list.json
+          jq -r '.status as $s | "answer status: \($s)"' list.json
+          jq -r '(.message | if type=="array" then .[0] else . end) | keys_unsorted | join(", ")' list.json
+          jq -r --arg re "$STATUSY" '.message[]? | to_entries | map(select(.key | test($re; "i"))) | map("\(.key)=\(.value)") | join("  ")' list.json | sort | uniq -c
+
+          echo
+          echo "== subscriber/get for the first row: keys, and status-like values =="
+          FIRST=$(jq -r '.message[0].chat_id // .message[0].phone_number // empty' list.json)
+          curl -sS --max-time 30 -X POST "$BASE/whatsapp/subscriber/get" \
+            -d "apiToken=$TOKEN" -d "phone_number_id=$PNID" -d "phone_number=$FIRST" > one.json
+          jq -r '.status as $s | "answer status: \($s)"' one.json
+          jq -r '(.message | if type=="array" then .[0] else . end) | if type=="object" then (keys_unsorted | join(", ")) else "message is a \(type)" end' one.json
+          jq -r --arg re "$STATUSY" '(.message | if type=="array" then .[0] else . end) | if type=="object" then (to_entries | map(select(.key | test($re; "i"))) | map("\(.key)=\(.value)") | join("  ")) else empty end' one.json
