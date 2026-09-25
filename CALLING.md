@@ -764,3 +764,39 @@ it should be just a little below so things dont hide underneath it."*
   the name, the assignment and the fields; to its right the controls and, under
   them, the call. One hairline — a heavier rule in a header this tight reads as
   a border somebody forgot to remove.
+
+### Driven end to end, 25 September 2026 — and it found two more
+
+The whole calling flow put through the `prove-it` skill against the running
+CRM: **22 pass, 0 fail, 3 couldn't tell.** Two real faults came out of it, both
+in the Save & Next hand-off and both invisible to 1,040 unit tests, 692
+integration tests and a clean typecheck.
+
+* **The record page spent the dial flag on its way through.** Once the split
+  view is the default, `/{module}/{id}` is a waypoint — but the whole record
+  mounted for a tick on the way, call provider included. That provider saw the
+  `?dial=1` it had just been handed, took it off the address using the path it
+  still had (`/leads/:id`), and rang the number it still held, which was the
+  person already dealt with. By the time the split view mounted the flag was
+  gone. **A waypoint must not *do* anything on the way through**, so
+  `RecordDetail` is a wrapper that decides before any of it mounts.
+* **And then the flag came back.** `ListView` writes the address from its own
+  state and carries `open` and `dial` across — from *that render's* copy of the
+  parameters. The call provider strips `dial` a moment later, and the effect
+  put it straight back, so a refresh would re-ring somebody who had just been
+  called. It reads `window.location.search` now: what is true, not what was
+  true one render ago.
+
+`e2e/callOutcome.spec.ts` pins the promise, because this hand-off has now
+broken twice for two entirely different reasons.
+
+**What could not be checked from here, and is not counted as working:** whether
+a handset actually rings, whether the desk can hang up a real call
+(`ipy_device.can_end_call` decides, and no phone is paired here), and hearing a
+call as it happens — which Android closed to third parties in 10 and no
+permission reopens.
+
+**What the database confirmed rather than the screen:** the call row itself
+(`Interested`, outbound, 60s, against the right record) and the chase date an
+outcome schedules — a `Busy` call wrote `next_followup_at`, an `Interested` one
+correctly wrote none, because that card carries no `followUpInHours`.

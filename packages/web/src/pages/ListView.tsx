@@ -386,12 +386,18 @@ export default function ListView(): JSX.Element {
       is named by somebody else entirely: global search, a chat, Save & Next.
       Without these two lines a record link landed on the list and then lost
       the record a heartbeat later, which reads exactly like the link being
-      ignored. `dial` travels the same way; the call provider takes it off the
-      address itself once it has rung, and this simply stops fighting it.
+      ignored.
+
+      **Read from the live address, not from this render's copy.** The call
+      provider takes `dial` off once it has rung, and a captured `searchParams`
+      from the render before that still holds it — so this effect put the flag
+      straight back, and a refresh would ring somebody who had just been
+      called. `window.location.search` is what is true now.
     */
-    const open = searchParams.get('open');
+    const carried = new URLSearchParams(window.location.search);
+    const open = carried.get('open');
     if (open) next.set('open', open);
-    const dial = searchParams.get('dial');
+    const dial = carried.get('dial');
     if (dial) next.set('dial', dial);
 
     if (next.toString() !== searchParams.toString()) {

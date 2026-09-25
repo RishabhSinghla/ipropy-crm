@@ -152,3 +152,41 @@ test('the outcome list follows the admin, not the bundle', async ({ page }) => {
     }, value);
   }
 });
+
+/**
+ * Save & Next opens the next person **and rings them**.
+ *
+ * This has now failed twice for two different reasons, and neither was visible
+ * to any other layer. First the record was fetched only while a call was
+ * already running, so arriving on `?dial=1` the number was unknown and the
+ * effect returned early. Then the record page — which is only a waypoint once
+ * the split view is the default — mounted its own call provider for a tick,
+ * saw the flag it had just been handed and spent it against the old address.
+ * Both times Save & Next opened the next person and rang nobody.
+ *
+ * So the promise is pinned here: the flag survives the hand-off, a deck comes
+ * up on the next person, and the flag does not come back afterwards — because
+ * a flag left in the address re-rings somebody on the next refresh.
+ */
+test('Save & Next carries the call to the next person', async ({ page }) => {
+  await page.goto(recordUrl);
+  await page.locator('button[title^="Call "]').first().click();
+
+  const deck = page.getByTestId('call-deck');
+  await expect(deck).toBeVisible({ timeout: 15_000 });
+  const save = deck.getByRole('button', { name: /^save/i });
+  const wasOffered = (await save.textContent())?.includes('Next');
+
+  await deck.getByRole('combobox', { name: /how the call went/i }).selectOption('Interested');
+  await save.click();
+
+  // Landed on somebody else, still in whichever view this person uses.
+  await expect.poll(() => page.url(), { timeout: 25_000 }).not.toContain(recordUrl.split('/').pop());
+
+  if (wasOffered) {
+    // A deck on the next person, which is the half that kept breaking.
+    await expect(page.getByTestId('call-deck')).toBeVisible({ timeout: 20_000 });
+  }
+  // And the flag is gone, or the next refresh rings them again.
+  expect(page.url()).not.toContain('dial=1');
+});

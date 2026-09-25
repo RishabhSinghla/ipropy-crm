@@ -335,15 +335,32 @@ export function CallDispositionProvider({
   */
   const phoneField = described?.fields.find((f) => f.uitype === 'phone');
   const autoNumber = phoneField ? (record?.display?.[phoneField.name] ?? record?.values?.[phoneField.name]) : null;
+  /*
+    **The flag belongs to the record the address names, and to no other.**
+
+    Save & Next saves, clears the call, and navigates — all inside the provider
+    belonging to the person just called. That outgoing instance sees the new
+    `?dial=1` for a heartbeat before it is replaced, and with no guard it spent
+    the flag: it stripped `dial` from the address and rang the number it still
+    had, which was the person already dealt with. By the time the next record's
+    provider mounted, the flag was gone and no deck appeared. From the desk it
+    read as Save & Next opening the next person and doing nothing.
+
+    `open` is the discriminator because the split view names the open record
+    there; a provider whose record is not the one the address names is on its
+    way out and must keep its hands off.
+  */
+  const namedInTheAddress = params.get('open');
+  const isForThisRecord = !namedInTheAddress || namedInTheAddress === recordId;
   useEffect(() => {
-    if (dialParam !== '1' || target || !autoNumber) return;
+    if (dialParam !== '1' || !isForThisRecord || target || !autoNumber) return;
     const next = new URLSearchParams(params);
     next.delete('dial');
     setParams(next, { replace: true });
     void startCall(String(autoNumber));
     // `startCall` is recreated on every render and guards itself with a ref.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dialParam, autoNumber, target]);
+  }, [dialParam, autoNumber, target, isForThisRecord]);
 
   const nextLabel = nextRecord ? String(nextRecord.display?.full_name ?? nextRecord.label ?? 'Next record') : null;
 

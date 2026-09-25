@@ -39,7 +39,51 @@ import { WhatsAppButton } from '../components/WhatsAppButton';
 import { isNative } from '../lib/native';
 import { downloadFromUrl } from '../lib/nativeActions';
 
-export default function RecordDetail(): JSX.Element {
+/**
+ * **The split view is where a record opens, wherever the link came from.**
+ *
+ * 24 September 2026, the owner: *"I want split view to be only opened"* —
+ * global search, a chat, Save & Next, a pasted URL. Every one of those points
+ * at this address, so switching off the table and the board still left half
+ * the CRM opening records full width. Redirecting here rather than at each
+ * link is the whole point: a road added next month is covered without anybody
+ * remembering to.
+ *
+ * **It is a wrapper, and that is not tidiness.** When this page redirects it
+ * is a waypoint, and a waypoint must not *do* anything on the way through.
+ * With the redirect inside the page itself, the whole record mounted for a
+ * tick — including its call provider, which saw the `?dial=1` it had just been
+ * handed and took it off the address using the path it still had
+ * (`/leads/:id`). The flag was spent before the split view ever mounted, so
+ * Save & Next opened the next person and rang nobody. Deciding before any of
+ * that mounts is the fix; the page below never runs when it is only passing
+ * through.
+ */
+export default function RecordDetail(): JSX.Element | null {
+  const { module: moduleName, id } = useParams<{ module: string; id: string }>();
+  const navigate = useNavigate();
+  const [detailParams] = useSearchParams();
+  const listViewSetting = useApp((state) => state.user?.ui?.listViews);
+  const opensInSplitView = useMemo(
+    () => resolveListMode(loadListMode(moduleName), null, enabledListModes(listViewSetting)) === 'ipropy',
+    [moduleName, listViewSetting],
+  );
+
+  useEffect(() => {
+    if (!opensInSplitView || !moduleName || !id) return;
+    const query = new URLSearchParams({ open: id });
+    // The dial flag travels, or Save & Next opens the next person and rings
+    // nobody — which is exactly what it did before this wrapper existed.
+    if (detailParams.get('dial')) query.set('dial', detailParams.get('dial')!);
+    navigate(`/${moduleName}?${query.toString()}`, { replace: true });
+  }, [opensInSplitView, moduleName, id, detailParams, navigate]);
+
+  if (opensInSplitView) return null;
+  return <FullRecordPage />;
+}
+
+/** The record on a page of its own: the table, the board, or the split view switched off. */
+function FullRecordPage(): JSX.Element {
   const { module: moduleName, id } = useParams<{ module: string; id: string }>();
   const navigate = useNavigate();
   const [detailParams] = useSearchParams();
@@ -57,34 +101,6 @@ export default function RecordDetail(): JSX.Element {
     : '';
   const queryClient = useQueryClient();
   const { user } = useApp();
-
-  /*
-    **The split view is where a record opens, wherever the link came from.**
-
-    24 September 2026, the owner: *"I want split view to be only opened"* —
-    global search, a chat, Save & Next, a pasted URL. Each of those pointed at
-    this page, so switching off the table and the board still left half the CRM
-    opening records full-width.
-
-    Doing it here rather than at every link is the whole point: there is one
-    address for a record and every one of those roads already uses it, so a
-    road added next month is covered without anybody remembering to.
-
-    `?dial=1` travels with it, or Save & Next would open the next person and
-    ring nobody. Anybody who has chosen the table or the board — or an admin
-    who has switched the split view off — lands here exactly as before.
-  */
-  const listViewSetting = useApp((state) => state.user?.ui?.listViews);
-  const opensInSplitView = useMemo(
-    () => resolveListMode(loadListMode(moduleName), null, enabledListModes(listViewSetting)) === 'ipropy',
-    [moduleName, listViewSetting],
-  );
-  useEffect(() => {
-    if (!opensInSplitView || !moduleName || !id) return;
-    const query = new URLSearchParams({ open: id });
-    if (detailParams.get('dial')) query.set('dial', detailParams.get('dial')!);
-    navigate(`/${moduleName}?${query.toString()}`, { replace: true });
-  }, [opensInSplitView, moduleName, id, detailParams, navigate]);
 
   const [tab, setTab] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
