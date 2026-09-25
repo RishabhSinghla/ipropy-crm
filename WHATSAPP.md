@@ -428,10 +428,11 @@ strip they measure.
 thread; everybody else sees their own and the unassigned queue, and **not** one another rep
 is working — two people answering one customer is what a shared inbox exists to prevent.
 A manager who needs to read it uses the contact's WhatsApp tab, where the CRM's ordinary
-record permissions decide, as everywhere else. Take / assign / transfer / mark unread /
-open / pending / resolved are all there, a hand-over tells the person losing the thread, and
-the header shows who else is looking (in memory, 45 seconds, because it is true for half a
-minute and nobody wants to read it tomorrow).
+record permissions decide, as everywhere else. **Who holds a linked thread is the record's
+owner, not the thread** (`HOLDER` in `business/inbox.ts`, since 25 September — see below);
+only a thread with no record keeps its own `assigned_to`. The header shows who else is
+looking (in memory, 45 seconds, because it is true for half a minute and nobody wants to read
+it tomorrow).
 
 **Rule 8 again, the fifth time, and an integration test caught it rather than production.**
 The inbox list bound the user id even for an admin, whose visibility clause is `TRUE` and
@@ -1156,18 +1157,11 @@ database.
   which is the half worth pinning — one appearing under both would be invisible
   until somebody counted. `tests/integration/whatsappBusinessInbox.test.ts`.
 
-* **Every row wears a sticker saying which it is.** The module's own
-  `singularLabel` in the admin's own module colour, through `badgeVars` so the
-  text clears WCAG AA on its own tint in both themes rather than landing at
-  2–3:1 — the pattern this repo's conventions already name. The name truncates
-  before the sticker does: which module a chat belongs to is one word, and
-  losing it is the whole point of having it.
+* **Every row wears a tag saying which it is** — replaced the next day by the
+  corner tag below.
 
-* **"Assigned To" reads like the record page.** It was a permanently open
-  select box on the line whose job is to say who the conversation is *with*;
-  it is the label, a small face and the name now, and becomes a dropdown when
-  somebody clicks it. `Select` gained optional `autoFocus` and `onBlur` for
-  that rather than the screen growing a second kind of dropdown.
+* **"Assigned To" reads like the record page** — and on 25 September stopped
+  being editable here at all; see below.
 
 * **The record's WhatsApp tab caught up with the Chats screen.** Same tinted
   canvas (a white bubble on a white page does not read as a bubble), the date
@@ -1183,6 +1177,47 @@ database.
 
 * **Which list views exist is now an admin decision** — see
   [`SCREENS.md`](SCREENS.md).
+
+---
+
+## Eight things the owner asked for on 25 September
+
+* **A window bar down the left of every chat row.** Green with the hours left
+  (`23h`, then `40m` in the last hour) while the 24-hour window is open; yellow
+  with `Exp` once it has shut, meaning *only a template can start this one*.
+  `windowLeft()` in `web/src/lib/whatsapp.ts`; the server sends
+  `windowExpiresAt` on each row.
+* **The module sticker became a corner tag** — `LD` or `INV`, top right above
+  the time, tinted in the module's colour through `badgeVars`. The word comes
+  from `ipy_module.settings.shortLabel` (migration `170`, and the seed), so an
+  admin's third module gets one with no deploy; without it the first three
+  letters of the label stand in (`moduleTag()`).
+* **One Assigned To, and it lives on the record.** `HOLDER` in
+  `business/inbox.ts` is `COALESCE(the record's owner_id, c.assigned_to)`, and it
+  drives who sees a thread, the *Mine* and *Unassigned* filters, and the name on
+  the row. So changing the owner in the CRM moves the chat with it, and the
+  Chats screen shows the name read-only. A thread with no linked record keeps
+  its own assignment, because it has no record to take it from.
+* **The chat header is the record's header.** Name, Assigned To, *Updated …*
+  and the same header-field strip the record page shows for that module. The
+  status chips, the follow-up date, Take, Send a property, Mark unread and the
+  ⋯ menu are gone at the owner's request — which also means **a thread's
+  open/pending/resolved status can no longer be changed from the screen**,
+  though the filter still lists them.
+* **The empty right-hand pane was a misfiled chat.** A chat started from an
+  Inventory record was saved with `record_module = 'leads'`, because
+  `send.ts` had the module hard-coded. The pane asked the leads API for a
+  property's id and waited forever. Read off production on 25 September: **4 of
+  8 linked threads** were misfiled. `send.ts` now reads the record's real
+  module (`moduleOfRecord`), migration `169` refiles the existing ones, and the
+  pane says *"could not be opened"* on an error rather than a skeleton that
+  never ends.
+* **The day chip carries the date** for the last week too — *Tuesday, 22 Sept*.
+* **The record's WhatsApp tab scrolls from anywhere.** It used to be a scroll
+  area inside a scroll area, so the wheel only worked over one strip of the
+  page. The tab now fills the pane with the page itself not scrolling, the
+  message list is the one thing that does, and it opens at the newest message.
+  Driven in a browser: the wheel scrolled from three different spots.
 
 ---
 

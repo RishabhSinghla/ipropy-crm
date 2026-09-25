@@ -133,7 +133,16 @@ export function dayLabel(at: string | Date, now: Date = new Date()): string {
   const days = Math.round((midnight(now) - midnight(when)) / 86_400_000);
   if (days === 0) return 'Today';
   if (days === 1) return 'Yesterday';
-  if (days > 1 && days < 7) return when.toLocaleDateString('en-IN', { weekday: 'long' });
+  /*
+    The weekday *and* the date. "Monday" alone left the reader counting back
+    through the week — 25 September 2026, the owner: *"you have written Monday
+    there but I need to see date also alongside of it."*
+  */
+  if (days > 1 && days < 7) {
+    const weekday = when.toLocaleDateString('en-IN', { weekday: 'long' });
+    const date = when.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+    return `${weekday}, ${date}`;
+  }
   return when.toLocaleDateString('en-IN', {
     day: 'numeric', month: 'long', ...(when.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }),
   });
@@ -143,4 +152,41 @@ export function dayLabel(at: string | Date, now: Date = new Date()): string {
 export function bubbleTime(at: string | Date): string {
   const when = at instanceof Date ? at : new Date(at);
   return when.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+}
+
+/**
+ * How long WhatsApp's 24-hour reply window has left, as the queue shows it.
+ *
+ * Open: the hours left ("18h"), or minutes in the last hour ("45m"), so a rep
+ * can see who has to be answered first. Shut: "Exp", meaning only an approved
+ * template can start the conversation again.
+ *
+ * Rounded **down**. A window with 18h 50m left reads "18h", never "19h" —
+ * promising a rep time the customer has not given is how a reply lands one
+ * minute too late and gets refused.
+ */
+export function windowLeft(expiresAt: string | null | undefined, now: Date = new Date()): {
+  open: boolean; label: string;
+} {
+  const ends = expiresAt ? new Date(expiresAt).getTime() : NaN;
+  const left = ends - now.getTime();
+  if (!Number.isFinite(left) || left <= 0) return { open: false, label: 'Exp' };
+  const minutes = Math.floor(left / 60_000);
+  if (minutes < 60) return { open: true, label: `${Math.max(minutes, 1)}m` };
+  return { open: true, label: `${Math.floor(minutes / 60)}h` };
+}
+
+/**
+ * The two- or three-letter tag on a chat saying which module its record is in.
+ *
+ * Read from the module's own `shortLabel` — LD and INV, set as data in
+ * migration 170 — so no module is named in the screen. A module an admin adds
+ * later, with no short label of its own, gets the first three letters of its
+ * name rather than nothing.
+ */
+export function moduleTag(meta: { label: string; settings?: Record<string, unknown> } | undefined): string | null {
+  if (!meta) return null;
+  const own = meta.settings?.shortLabel;
+  if (typeof own === 'string' && own.trim()) return own.trim().toUpperCase();
+  return meta.label.replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase() || null;
 }

@@ -62,7 +62,8 @@ const MODULES: ModuleDef[] = [
       a fake number, so the strict rule produced worse data than the loose one
       and produced it permanently. Neither field is mandatory now; the pair is.
     */
-    settings: { requireOneOf: [['mobile', 'email']] },
+    // `shortLabel` is the tag on a WhatsApp chat saying which module it belongs to.
+    settings: { requireOneOf: [['mobile', 'email']], shortLabel: 'LD' },
     supportsConversion: true,
     blocks: [
       {
@@ -369,7 +370,7 @@ const MODULES: ModuleDef[] = [
     // One owner / contact number means one Property record in this CRM. Unit
     // numbers can repeat across projects and are descriptive, not an identity.
     duplicateCheckFields: ['mobile'],
-    settings: { duplicateCheckMode: 'all' },
+    settings: { duplicateCheckMode: 'all', shortLabel: 'INV' },
     blocks: [
       {
         name: 'property_information',

@@ -2,25 +2,23 @@ import { type JSX, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
-  Building2, CalendarClock, Check, CheckCheck, Clock, Inbox, MailOpen, MessageCircle,
-  MoreHorizontal, Paperclip, Search, Send, UserPlus,
+  CheckCheck, Clock, Inbox, MessageCircle, Paperclip, Search, Send,
 } from 'lucide-react';
 import { relativeTime, type RecordEnvelope } from '@ipropy/shared';
 import { api, type ModuleSummary } from '../lib/api';
-import { toast, useApp } from '../lib/store';
+import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
 import { useFillHeight } from '../lib/fillHeight';
 import {
-  bubbleTime, composerMode, dayLabel, displayNumber, outboundTone, wentOut, whyNoTextBox,
+  bubbleTime, composerMode, dayLabel, displayNumber, moduleTag, outboundTone, wentOut, whyNoTextBox, windowLeft,
 } from '../lib/whatsapp';
-import { Avatar, Dropdown, DropdownItem, EmptyState, Select, Skeleton, Spinner } from '../components/ui';
+import { Avatar, EmptyState, Select, Skeleton, Spinner } from '../components/ui';
 import { badgeVars } from '../lib/color';
-import { ACTION_CIRCLE } from '../lib/actionCircle';
 import { ChatRecordPane, ChatRecordPaneSkeleton, useChatRecord } from '../components/ChatRecordPane';
 import { HeaderFieldStrip } from '../components/RecordBlocks';
+import { FieldValue } from '../components/FieldRenderer';
 import { useRecordPanes, type DescribedModule } from '../lib/recordPanes';
 import { readMessageMedia, WhatsAppMedia } from '../components/WhatsAppMedia';
-import { SharePropertyDialog } from '../components/SharePropertyDialog';
 
 /**
  * The team's WhatsApp, on the business number.
@@ -57,25 +55,6 @@ const FILTERS: { value: Filter; label: string }[] = [
 */
 const MODULE_PREFIX = 'module:';
 
-/** A chat's module sticker: small enough to skim, big enough to tell apart. */
-function ModuleSticker({ module, modules }: {
-  module: string | null; modules: ModuleSummary[] | undefined;
-}): JSX.Element | null {
-  const meta = (modules ?? []).find((entry) => entry.name === module);
-  if (!meta) return null;
-  return (
-    <span
-      // The admin's own module colour, through `badgeVars` so the text clears
-      // WCAG AA on its own tint in both themes rather than landing at 2-3:1.
-      style={badgeVars(meta.color)}
-      className="badge-tinted shrink-0 rounded px-1 py-px text-[10px] font-bold uppercase tracking-wide"
-      title={`A record in ${meta.label}`}
-    >
-      {meta.singularLabel || meta.label}
-    </span>
-  );
-}
-
 /** One row of the queue, as `listConversations` returns it. */
 type ChatRow = Awaited<ReturnType<typeof api.waBizConversations>>[number];
 
@@ -96,7 +75,6 @@ interface BizMessage {
 
 export default function BusinessChats(): JSX.Element {
   const queryClient = useQueryClient();
-  const me = useApp((state) => state.user);
   const [filter, setFilter] = useState<Filter>('all');
   // Empty means every module. Set from the same dropdown, prefixed so a module
   // name can never be mistaken for a status.
@@ -120,7 +98,6 @@ export default function BusinessChats(): JSX.Element {
     enabled: Boolean(activeId),
     refetchInterval: activeId ? 10_000 : false,
   });
-  const { data: users } = useQuery({ queryKey: ['users'], queryFn: () => api.users() });
   // For the "Contacts chats" entries in the dropdown and the sticker on each
   // row. Metadata, so a module an admin adds appears here with no deploy.
   const { data: modules } = useQuery({ queryKey: ['modules'], queryFn: () => api.modules() });
@@ -129,8 +106,6 @@ export default function BusinessChats(): JSX.Element {
     queryFn: () => api.waBizSavedTemplates(),
   });
   const [templateId, setTemplateId] = useState('');
-  const [sharing, setSharing] = useState(false);
-  const [followUpOn, setFollowUpOn] = useState('');
 
   /*
     **The open conversation must survive the list changing under it.**
@@ -154,7 +129,7 @@ export default function BusinessChats(): JSX.Element {
     page and the split view use — so an edit made here refreshes there, and
     opening one warms the other.
   */
-  const { module: recordModule, record: recordRow } = useChatRecord(
+  const { module: recordModule, record: recordRow, failed: recordFailed } = useChatRecord(
     active?.recordModule ?? null,
     active?.recordId ?? null,
   );
@@ -192,21 +167,6 @@ export default function BusinessChats(): JSX.Element {
       refresh();
       toast.error('Could not send', err.message);
     },
-  });
-
-  /*
-    A date typed in the chat goes straight to the one definition of a
-    follow-up — the date on the record, a note in the timeline, a nudge to
-    whoever owns the lead. Nothing about "chase them" is decided here.
-  */
-  const followUp = useMutation({
-    mutationFn: (on: string) => api.waBizFollowUp(active!.id, on),
-    onSuccess: (result) => {
-      setFollowUpOn('');
-      toast.success('Follow-up set', `You will be reminded on ${result.on}.`);
-      refresh();
-    },
-    onError: (err: Error) => toast.error('Could not set that follow-up', err.message),
   });
 
   /*
@@ -357,151 +317,35 @@ export default function BusinessChats(): JSX.Element {
               row, which is what the owner was looking at when he asked for
               this page to look like that one.
             */}
+            {/*
+              **The record's own header, and nothing else.** 25 September 2026,
+              the owner: *"I want this header in WhatsApp module to exactly
+              match the header we have for the record."* So the chips saying
+              "Template only" and "Open", the follow-up box, Send a property,
+              Mark unread and the three dots are gone, and what is left is the
+              split view's header drawn from the same fields: the name, who the
+              record is assigned to, when it was last touched, and the strip an
+              admin arranges in Admin → Split View.
+
+              A thread nobody has linked to a record has no header fields to
+              show, so it gets the name and the number and nothing pretending
+              to be more.
+            */}
             <header className="border-b border-slate-200 bg-white px-4 py-2.5 dark:border-slate-800 dark:bg-slate-900">
               <div className="flex min-w-0 items-start gap-3">
                 <Avatar name={who} size={42} className="mt-0.5" />
                 <div className="min-w-0 flex-1">
-                  <div className="flex min-w-0 items-center gap-x-3 whitespace-nowrap">
-                    {/*
-                      The name floors at a readable width rather than giving
-                      way first. Sharing a row with the assignment box and the
-                      last-message line, `min-w-0 truncate` squeezed it to
-                      "Riya …" — three characters of the one thing on this
-                      screen that has to be readable. What yields instead is
-                      the last-message line below, which the queue row beside
-                      it already says.
-                    */}
-                    <h2 className="min-w-[9rem] truncate text-xl font-extrabold tracking-tight text-slate-950 dark:text-white">{who}</h2>
-                    <AssignedTo
-                      assignedTo={active.assignedTo}
-                      assignedName={active.assignedName}
-                      users={users}
-                      onChange={(value) => void api.waBizAssign(active.id, value).then(refresh)}
-                    />
-                    {active.lastMessageAt && (
-                      <span className="min-w-0 truncate text-sm text-slate-400">Last message {relativeTime(active.lastMessageAt)}</span>
-                    )}
-                  </div>
-
-                  {/*
-                    The facts, on one line under the name — the number, whether
-                    a free reply can go at all, and where the thread stands.
-                    Facts, not controls: the controls are the circles beside
-                    them.
-                  */}
-                  {/*
-                    The record's own facts, the same strip the split view's
-                    header carries — Contact Type, Mobile, Unit Number,
-                    Budget, Next Follow-up, Lead Status, whatever the admin
-                    arranged. The owner asked for exactly this on 20 September:
-                    *"I need those things in header which are there in
-                    screenshot 2"*. Editable where they stand, so a budget can
-                    be corrected mid-conversation without leaving it.
-                  */}
-                  {recordModule && recordRow && (
-                    <ChatHeaderFields module={recordModule} record={recordRow} />
+                  {recordModule && recordRow ? (
+                    <ChatRecordHeader module={recordModule} record={recordRow} who={who} />
+                  ) : (
+                    <>
+                      <h2 className="truncate text-xl font-extrabold tracking-tight text-slate-950 dark:text-white">{who}</h2>
+                      <p className="mt-0.5 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                        {displayNumber(active.handle, active.waId)}
+                      </p>
+                    </>
                   )}
-
-                  <div className="mt-1 flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-xs">
-                    <span className="shrink-0 font-semibold text-slate-600 dark:text-slate-300">{displayNumber(active.handle, active.waId)}</span>
-                    <span className="text-slate-300">·</span>
-                    {mode === 'text'
-                      ? <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-2xs font-bold text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-200">Can reply freely</span>
-                      : <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-2xs font-bold text-amber-900 dark:bg-amber-950/60 dark:text-amber-200">Template only</span>}
-                    <span className="shrink-0 rounded bg-slate-200 px-1.5 py-0.5 text-2xs font-bold capitalize text-slate-700 dark:bg-slate-700 dark:text-slate-200">{active.status}</span>
-                    {/* Somebody else has this thread open. Shown rather than
-                        guessed at, because two replies to one customer is the
-                        thing a shared inbox is supposed to prevent. */}
-                    {(thread?.alsoViewing ?? []).length > 0 && (
-                      <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-2xs font-bold text-amber-900 dark:bg-amber-950/60 dark:text-amber-200">
-                        {(thread!.alsoViewing).join(', ')} also here
-                      </span>
-                    )}
-                    <label className="ml-auto flex shrink-0 items-center gap-1 rounded-md border border-slate-200 px-2 py-0.5 text-2xs dark:border-slate-700" title="Chase them on a day">
-                      <CalendarClock className="h-3.5 w-3.5 text-slate-400" />
-                      <span className="text-muted">Follow up</span>
-                      {/*
-                        A date, not a dialog. Deciding to chase somebody on
-                        Tuesday takes one tap, and anything longer gets skipped
-                        in the middle of a conversation — which is how
-                        follow-ups stop happening.
-                      */}
-                      <input
-                        type="date"
-                        aria-label="Follow up on"
-                        className="bg-transparent text-2xs outline-none"
-                        min={new Date().toISOString().slice(0, 10)}
-                        value={followUpOn}
-                        disabled={followUp.isPending}
-                        onChange={(event) => {
-                          setFollowUpOn(event.target.value);
-                          if (event.target.value) followUp.mutate(event.target.value);
-                        }}
-                      />
-                    </label>
-                  </div>
                 </div>
-
-                <span className="mt-1 flex shrink-0 items-center gap-2">
-                  {active.assignedTo !== me?.id && (
-                    <button
-                      className={cn(ACTION_CIRCLE, 'hover:bg-emerald-600')}
-                      aria-label="Take this chat"
-                      title="Take this chat"
-                      onClick={() => void api.waBizTake(active.id).then(refresh)}
-                    >
-                      <UserPlus className="h-4 w-4" />
-                    </button>
-                  )}
-                  <button
-                    className={cn(ACTION_CIRCLE, 'hover:bg-brand-600')}
-                    aria-label="Send a property"
-                    title="Send a property to this buyer"
-                    onClick={() => setSharing(true)}
-                  >
-                    <Building2 className="h-4 w-4" />
-                  </button>
-                  <button
-                    className={cn(ACTION_CIRCLE, 'hover:bg-slate-600')}
-                    aria-label="Mark unread"
-                    title="Mark unread"
-                    onClick={() => void api.waBizUnread(active.id).then(refresh)}
-                  >
-                    <MailOpen className="h-4 w-4" />
-                  </button>
-                  {/*
-                    Open / Pending / Resolved in the menu the record page has,
-                    rather than a dropdown of its own taking a third of the
-                    header. The one it is on is ticked, so the menu also says
-                    where the thread stands.
-                  */}
-                  <Dropdown
-                    align="right"
-                    className="min-w-[12rem]"
-                    trigger={(
-                      <button className={cn(ACTION_CIRCLE, 'hover:bg-slate-600')} aria-label="More actions" title="More actions">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </button>
-                    )}
-                  >
-                    {(close) => (
-                      <>
-                        {(['open', 'pending', 'resolved'] as const).map((value) => (
-                          <DropdownItem
-                            key={value}
-                            icon={active.status === value ? <Check className="h-3.5 w-3.5" /> : <span className="h-3.5 w-3.5" />}
-                            onClick={() => {
-                              close();
-                              void api.waBizStatusSet(active.id, value).then(refresh);
-                            }}
-                          >
-                            <span className="capitalize">{value}</span>
-                          </DropdownItem>
-                        ))}
-                      </>
-                    )}
-                  </Dropdown>
-                </span>
               </div>
             </header>
 
@@ -693,16 +537,6 @@ export default function BusinessChats(): JSX.Element {
         )}
       </section>
 
-      {sharing && active && (
-        <SharePropertyDialog
-          to={active.handle}
-          contactId={active.recordId}
-          contactLabel={active.recordLabel ?? active.contactName ?? active.handle}
-          onClose={() => setSharing(false)}
-          onSent={refresh}
-        />
-      )}
-
       {/*
         The contact itself, not a card about it.
 
@@ -717,7 +551,20 @@ export default function BusinessChats(): JSX.Element {
           {active.recordId && active.recordModule ? (
             recordModule && recordRow
               ? <ChatRecordPane module={recordModule} record={recordRow} />
-              : <ChatRecordPaneSkeleton />
+              /*
+                **A failed fetch is not a slow one.** These boxes used to wait
+                for ever on a record that was never coming — the grey pane the
+                owner reported on 25 September. It says so now, which is the
+                difference between "still loading" and "go and look".
+              */
+              : recordFailed
+                ? (
+                  <div className="card p-3 text-xs text-muted">
+                    <p className="font-semibold text-slate-700 dark:text-slate-200">This contact could not be opened.</p>
+                    <p className="mt-1">It may have been deleted, moved to another module, or be outside what you can see.</p>
+                  </div>
+                )
+                : <ChatRecordPaneSkeleton />
           ) : (
             <div className="card border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
               <p className="font-semibold">Nobody in the CRM holds this number.</p>
@@ -730,63 +577,6 @@ export default function BusinessChats(): JSX.Element {
         </aside>
       )}
     </div>
-  );
-}
-
-/**
- * Who holds this thread, drawn the way the record page draws it: the label,
- * a small face, the name — and a dropdown only once somebody clicks it.
- *
- * The owner asked for the two screens to say this the same way. A permanently
- * open select box is a control shouting for attention on a line whose job is
- * to say who this conversation is with; the record page shows the answer and
- * lets you change it, and so does this.
- */
-function AssignedTo({ assignedTo, assignedName, users, onChange }: {
-  assignedTo: string | null;
-  assignedName: string | null;
-  users: Record<string, unknown>[] | undefined;
-  onChange: (value: string | null) => void;
-}): JSX.Element {
-  const [editing, setEditing] = useState(false);
-
-  if (editing) {
-    return (
-      <span className="inline-flex shrink-0 items-center gap-1.5 text-sm">
-        <span className="text-xs font-normal text-muted">Assigned To:</span>
-        <Select
-          value={assignedTo ?? ''}
-          autoFocus
-          onChange={(value) => { onChange(value || null); setEditing(false); }}
-          onBlur={() => setEditing(false)}
-          placeholder="Unassigned"
-          options={[{ value: '', label: 'Unassigned' }, ...(users ?? []).map((user) => ({
-            value: String(user.id), label: String(user.fullName ?? user.email),
-          }))]}
-        />
-      </span>
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={() => setEditing(true)}
-      title="Change who holds this chat"
-      className="inline-flex shrink-0 items-center gap-1.5 rounded px-1 py-0.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
-    >
-      <span className="text-xs font-normal text-muted">Assigned To:</span>
-      {assignedName ? (
-        <>
-          <Avatar name={assignedName} size={18} />
-          <span className="font-semibold text-slate-800 dark:text-slate-100">{assignedName}</span>
-        </>
-      ) : (
-        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-2xs font-bold text-amber-900 dark:bg-amber-950/60 dark:text-amber-200">
-          Unassigned
-        </span>
-      )}
-    </button>
   );
 }
 
@@ -810,32 +600,55 @@ function ChatQueueRow({ row, active, onSelect, modules }: {
   row: ChatRow; active: boolean; onSelect: () => void; modules: ModuleSummary[] | undefined;
 }): JSX.Element {
   const who = row.recordLabel ?? row.contactName ?? row.handle;
+  const replyWindow = windowLeft(row.windowExpiresAt);
+  const tag = moduleTag(modules?.find((entry) => entry.name === row.recordModule));
+  const tagColour = modules?.find((entry) => entry.name === row.recordModule)?.color;
+
   return (
     <button
       type="button"
       onClick={onSelect}
       className={cn(
-        'relative flex w-full items-start gap-2.5 border-b border-slate-100 px-3 py-2.5 text-left transition-colors dark:border-slate-800',
+        'relative flex w-full items-stretch gap-2.5 border-b border-slate-100 py-2.5 pl-2 pr-3 text-left transition-colors dark:border-slate-800',
         active ? 'bg-brand-50 dark:bg-brand-950/50' : 'hover:bg-slate-50 dark:hover:bg-slate-800/70',
       )}
     >
       {active && <span className="absolute inset-y-0 left-0 w-1 bg-brand-600" aria-hidden />}
-      <span className="relative shrink-0">
+
+      {/*
+        **The reply window, down the left of every chat.** 25 September 2026,
+        the owner. Green with the hours left while a free reply may still go;
+        yellow with "Exp" once only an approved template can reopen the
+        conversation. Read from the same expiry the composer checks, so the bar
+        and the box underneath it can never disagree.
+      */}
+      <span
+        className="flex w-9 shrink-0 flex-col items-center gap-1"
+        title={replyWindow.open ? `A free reply can go for ${replyWindow.label} more` : 'The 24-hour window has shut: send a template to start again'}
+      >
+        <span className={cn(
+          'inline-flex items-center gap-0.5 rounded px-1 py-px text-[10px] font-bold tabular-nums',
+          replyWindow.open
+            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200'
+            : 'bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200',
+        )}>
+          {!replyWindow.open && <Clock className="h-2.5 w-2.5" />}
+          {replyWindow.label}
+        </span>
+        <span className={cn('w-1 flex-1 rounded-full', replyWindow.open ? 'bg-emerald-500' : 'bg-amber-400')} aria-hidden />
+      </span>
+
+      <span className="relative shrink-0 self-start">
         <Avatar name={who} size={36} />
         {row.unreadCount > 0 && (
           <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-500 dark:border-slate-900" title="Waiting for a reply" />
         )}
       </span>
-      <span className="min-w-0 flex-1">
-        {/* The name gives way before the sticker does: which module this is
-            is one word, and losing it is what the sticker exists to prevent. */}
-        <span className="flex min-w-0 items-center gap-1.5">
-          <span className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">{who}</span>
-          <ModuleSticker module={row.recordModule} modules={modules} />
-        </span>
+      <span className="min-w-0 flex-1 self-start">
+        <span className="block truncate text-sm font-bold text-slate-900 dark:text-slate-100">{who}</span>
         <span className="mt-1 block truncate text-xs text-slate-500">{row.lastMessagePreview ?? 'No messages yet'}</span>
       </span>
-      <span className="flex shrink-0 flex-col items-end gap-1">
+      <span className="flex shrink-0 flex-col items-end gap-1 self-start pt-2">
         {row.lastMessageAt
           ? <span className="px-1.5 py-0.5 text-2xs font-bold text-slate-400">{relativeTime(row.lastMessageAt)}</span>
           : <span className="px-1.5 py-0.5 text-2xs font-bold text-slate-300">—</span>}
@@ -843,12 +656,27 @@ function ChatQueueRow({ row, active, onSelect, modules }: {
           <span className="rounded-full bg-emerald-600 px-1.5 py-0.5 text-2xs font-bold text-white">{row.unreadCount} new</span>
         ) : !row.assignedName ? (
           <span className="rounded bg-amber-100 px-1.5 py-0.5 text-2xs font-bold text-amber-900 dark:bg-amber-950/60 dark:text-amber-200">Unassigned</span>
-        ) : row.status !== 'open' ? (
-          <span className="rounded bg-slate-200 px-1.5 py-0.5 text-2xs font-bold capitalize text-slate-700 dark:bg-slate-700 dark:text-slate-200">{row.status}</span>
         ) : (
           <span className="max-w-[7rem] truncate px-1.5 py-0.5 text-2xs font-semibold text-slate-400">{row.assignedName}</span>
         )}
       </span>
+
+      {/*
+        **LD or INV, hanging from the top-right corner.** Which module the
+        person is a record of, in the smallest space that still reads — above
+        the time and out of the name's way, where the old sticker beside the
+        name made long names truncate for it. The module's own colour, through
+        `badgeVars`, so it clears contrast in both themes.
+      */}
+      {tag && (
+        <span
+          style={badgeVars(tagColour)}
+          className="badge-tinted absolute right-2 top-0 rounded-b-md px-1.5 pb-px text-[9px] font-extrabold leading-tight tracking-wide"
+          title={`A record in ${modules?.find((entry) => entry.name === row.recordModule)?.label ?? ''}`}
+        >
+          {tag}
+        </span>
+      )}
     </button>
   );
 }
@@ -860,30 +688,40 @@ function ChatQueueRow({ row, active, onSelect, modules }: {
  * header is rendered inside a conditional — calling it there would break the
  * rules of hooks. It renders the identical strip the split view's header does.
  */
-function ChatHeaderFields({ module, record }: {
-  module: DescribedModule; record: RecordEnvelope;
-}): JSX.Element | null {
-  const { headerFields, phoneField } = useRecordPanes(module);
-  /*
-    Two of these facts are already the two biggest things on this screen: the
-    record's label is the heading, and the number is the line under it. Left
-    in, "Full Name: Riya Sharma" and "Mobile: +91 9910190056" ate the whole
-    strip and pushed Budget, Status and Next Follow-up — the facts somebody
-    actually needs mid-conversation — off the end. Both are dropped through
-    metadata (`labelFields`, the phone field the panes already found) rather
-    than by naming a field here.
-  */
-  const facts = headerFields.filter((field) => (
-    !module.labelFields.includes(field.name) && field.name !== phoneField?.name
-  ));
-  if (!facts.length) return null;
+function ChatRecordHeader({ module, record, who }: {
+  module: DescribedModule; record: RecordEnvelope; who: string;
+}): JSX.Element {
+  const { headerFields, assignedField } = useRecordPanes(module);
   return (
-    <HeaderFieldStrip
-      module={module}
-      row={record}
-      fields={facts}
-      canEdit={record.can?.edit ?? module.permissions.edit}
-      className="mt-1"
-    />
+    <>
+      <div className="flex min-w-0 items-center gap-x-3 whitespace-nowrap">
+        <h2 className="min-w-[9rem] truncate text-xl font-extrabold tracking-tight text-slate-950 dark:text-white">{who}</h2>
+        {/*
+          **One assignment, the record's.** A contact assigned to Vijay is
+          Vijay's in WhatsApp too, and it changes where the record changes —
+          read here straight off the record's own field, so there is no second
+          copy on the conversation to drift out of step with it.
+        */}
+        {assignedField && (
+          <span className="inline-flex shrink-0 items-center gap-1.5 text-sm">
+            <span className="text-xs font-normal text-muted">Assigned To:</span>
+            <FieldValue
+              field={assignedField}
+              value={record.values[assignedField.name]}
+              display={record.display?.[assignedField.name]}
+              compact
+            />
+          </span>
+        )}
+        <span className="min-w-0 truncate text-sm text-slate-400">Updated {relativeTime(record.updatedAt)}</span>
+      </div>
+      <HeaderFieldStrip
+        module={module}
+        row={record}
+        fields={headerFields}
+        canEdit={record.can?.edit ?? module.permissions.edit}
+        className="mt-2"
+      />
+    </>
   );
 }

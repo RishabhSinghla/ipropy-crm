@@ -400,7 +400,19 @@ export function IpropyWorkspace({
 
       <SplitHandle label="Resize the list" onDrag={resize} />
 
-      {active && <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
+      {/*
+        **One scroll area, never two stacked.** The WhatsApp tab has its own
+        scrolling message list; with this pane scrolling too, the wheel went to
+        whichever happened to be under the mouse, so the chat scrolled only when
+        the pointer sat over the bubbles and the whole pane lurched everywhere
+        else — 25 September 2026, the owner: *"only bringing mouse to a certain
+        place scroll is working."* On that tab the pane holds still and the list
+        does all the scrolling.
+      */}
+      {active && <main className={cn(
+        'flex min-h-0 min-w-0 flex-1 flex-col',
+        tab === 'whatsapp' ? 'overflow-hidden' : 'overflow-y-auto',
+      )}>
         {/* Sticky, so the name, the assignment and the tabs stay on screen
             while the fields below them scroll. */}
         <header className="relative sticky top-0 z-10 border-b border-slate-200 bg-white px-4 pt-2 dark:border-slate-800 dark:bg-slate-900 sm:px-5">
@@ -587,7 +599,10 @@ export function IpropyWorkspace({
             <DeskTab active={tab === 'whatsapp'} onClick={() => setTab('whatsapp')}><MessageCircle className="h-3.5 w-3.5" />WhatsApp</DeskTab>
           </nav>
         </header>
-        <div className="min-w-0 flex-1 bg-[#f7f9fc] p-4 sm:p-6 dark:bg-slate-950/50">
+        <div className={cn(
+          'min-w-0 flex-1 bg-[#f7f9fc] dark:bg-slate-950/50',
+          tab === 'whatsapp' ? 'flex min-h-0 flex-col' : 'p-4 sm:p-6',
+        )}>
           {/*
             Notes beside Basic Information rather than in a third column. Two
             panes, as the owner asked — and a note is written about what is on

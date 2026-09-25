@@ -35,9 +35,32 @@ export interface InboxConversation {
   lastMessagePreview: string | null;
   /** Whether a free reply is allowed, or only an approved template. */
   windowOpen: boolean;
+  /** When that stops being true, so the queue can say how long is left. */
+  windowExpiresAt: string | null;
   /** WhatsApp's own full number, so a screen can print one a person recognises. */
   waId: string | null;
 }
+
+/**
+ * Who holds a thread: **the person its record is assigned to.**
+ *
+ * 25 September 2026, the owner: *"There is no different assigned to of record
+ * between WhatsApp and what our system has."* A contact assigned to Vijay is
+ * Vijay's conversation too, and reassigning the contact reassigns the chat —
+ * with nothing to keep in step, because this is read off the record every
+ * time rather than copied onto the conversation.
+ *
+ * A thread nobody has linked to a record has no owner to borrow, so it keeps
+ * its own `assigned_to`; that is the unknown-number queue, and it is still
+ * worked the way it always was. One SQL expression rather than a join, because
+ * the three queries that decide "whose is this" join different tables and all
+ * of them call the conversation `c`.
+ */
+export const HOLDER = `COALESCE(
+  (SELECT holder.owner_id FROM ipy_record holder
+    WHERE holder.id = c.record_id AND holder.is_deleted = false),
+  c.assigned_to
+)`;
 
 /**
  * Who may see a thread, as a clause plus the parameters it actually names.
@@ -59,7 +82,7 @@ export function visibility(userId: string, isAdmin: boolean, nextIndex: number):
 } {
   return isAdmin
     ? { clause: 'TRUE', params: [] }
-    : { clause: `(c.assigned_to = $${nextIndex} OR c.assigned_to IS NULL)`, params: [userId] };
+    : { clause: `(${HOLDER} = $${nextIndex} OR ${HOLDER} IS NULL)`, params: [userId] };
 }
 
 export async function listConversations(input: {
@@ -91,9 +114,9 @@ export async function listConversations(input: {
 
   if (input.filter === 'mine') {
     params.push(input.userId);
-    where.push(`c.assigned_to = $${params.length}`);
+    where.push(`${HOLDER} = $${params.length}`);
   }
-  if (input.filter === 'unassigned') where.push(`c.assigned_to IS NULL`);
+  if (input.filter === 'unassigned') where.push(`${HOLDER} IS NULL`);
   if (input.filter === 'unread') where.push(`c.unread_count > 0`);
   if (input.filter === 'open') where.push(`c.status = 'open'`);
   if (input.filter === 'pending') where.push(`c.status = 'pending'`);
@@ -125,13 +148,13 @@ export async function listConversations(input: {
     wa_id: string | null;
   }>(
     `SELECT c.id, c.handle, c.contact_name, c.record_id, c.record_module,
-            r.label AS record_label, c.assigned_to,
+            r.label AS record_label, ${HOLDER} AS assigned_to,
             trim(u.first_name || ' ' || u.last_name) AS assigned_name,
             c.status, c.unread_count, c.last_message_at, c.last_message_preview,
             c.window_expires_at, c.wa_id
        FROM ipy_conversation c
        LEFT JOIN ipy_record r ON r.id = c.record_id
-       LEFT JOIN ipy_user u ON u.id = c.assigned_to
+       LEFT JOIN ipy_user u ON u.id = ${HOLDER}
       WHERE ${where.join(' AND ')}
       ORDER BY c.last_message_at DESC NULLS LAST
       LIMIT $${params.length}`,
@@ -153,6 +176,7 @@ export async function listConversations(input: {
     lastMessageAt: row.last_message_at,
     lastMessagePreview: row.last_message_preview,
     windowOpen: Boolean(row.window_expires_at && new Date(row.window_expires_at).getTime() > now),
+    windowExpiresAt: row.window_expires_at,
     waId: row.wa_id,
   }));
 }
@@ -168,7 +192,7 @@ export async function readableConversation(
   const row = await db.queryOne<{
     id: string; handle: string; record_id: string | null; assigned_to: string | null;
   }>(
-    `SELECT id, handle, record_id, assigned_to
+    `SELECT id, handle, record_id, ${HOLDER} AS assigned_to
        FROM ipy_conversation c
       WHERE c.id = $1 AND c.channel = 'whatsapp' AND c.wa_account_id IS NULL
         AND ${see.clause}`,

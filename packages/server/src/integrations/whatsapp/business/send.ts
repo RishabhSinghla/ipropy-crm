@@ -25,8 +25,6 @@ import { activeBusinessProvider } from './registry.js';
 import { whyItFailed } from './whyItFailed.js';
 import { prepareOutgoingMedia } from './media.js';
 
-const MODULE = 'leads';
-
 export interface BusinessSendInput {
   userId: string;
   to: string;
@@ -77,6 +75,22 @@ async function optedOut(handle: string): Promise<boolean> {
 }
 
 /** The business thread for this number, created on first contact from our side. */
+/**
+ * Which module a record lives in, read off the record rather than assumed.
+ *
+ * This used to be the constant `'leads'`, so a buyer messaged from an
+ * Inventory record got a thread filed as a lead — and the Chats screen then
+ * asked for a lead that did not exist and sat on its loading boxes for ever.
+ */
+async function moduleOfRecord(recordId: string | null): Promise<string | null> {
+  if (!recordId) return null;
+  const row = await db.queryOne<{ name: string }>(
+    `SELECT m.name FROM ipy_record r JOIN ipy_module m ON m.id = r.module_id WHERE r.id = $1`,
+    [recordId],
+  );
+  return row?.name ?? null;
+}
+
 async function conversationFor(handle: string, recordId: string | null, userId: string): Promise<{
   id: string; windowOpen: boolean; waId: string | null;
 }> {
@@ -101,7 +115,7 @@ async function conversationFor(handle: string, recordId: string | null, userId: 
         `UPDATE ipy_conversation
             SET record_id = COALESCE(record_id, $2), record_module = COALESCE(record_module, $3)
           WHERE id = $1`,
-        [existing.id, recordId, MODULE],
+        [existing.id, recordId, await moduleOfRecord(recordId)],
       );
     }
     return {
@@ -114,7 +128,7 @@ async function conversationFor(handle: string, recordId: string | null, userId: 
     `INSERT INTO ipy_conversation (channel, handle, record_id, record_module, assigned_to)
      VALUES ('whatsapp', $1, $2, $3, $4)
      RETURNING id`,
-    [handle, recordId, recordId ? MODULE : null, userId],
+    [handle, recordId, await moduleOfRecord(recordId), userId],
   );
   // Nobody has written to us, so there is no window: only a template may go.
   return { id: created!.id, windowOpen: false, waId: null };

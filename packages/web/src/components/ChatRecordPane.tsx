@@ -31,6 +31,8 @@ import { Skeleton } from './ui';
  */
 export function useChatRecord(moduleName: string | null, recordId: string | null): {
   module: DescribedModule | undefined; record: RecordEnvelope | undefined; loading: boolean;
+  /** The record could not be fetched — gone, not this module, or not yours. */
+  failed: boolean;
 } {
   const { data: module } = useQuery({
     queryKey: ['module', moduleName],
@@ -42,12 +44,14 @@ export function useChatRecord(moduleName: string | null, recordId: string | null
     chat warms the record and opening the record warms the chat — and an edit
     made in one is invalidated for both.
   */
-  const { data: record, isLoading } = useQuery({
+  const { data: record, isLoading, isError } = useQuery({
     queryKey: ['record', moduleName, recordId],
     queryFn: () => api.record(moduleName!, recordId!),
     enabled: Boolean(moduleName && recordId),
+    // A record that is not there will not be there on the third try either.
+    retry: false,
   });
-  return { module: module as DescribedModule | undefined, record, loading: isLoading };
+  return { module: module as DescribedModule | undefined, record, loading: isLoading, failed: isError };
 }
 
 export function ChatRecordPane({ module, record }: {

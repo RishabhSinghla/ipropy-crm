@@ -1,4 +1,4 @@
-import { type JSX, useState } from 'react';
+import { type JSX, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Clock, MessageCircle, Send } from 'lucide-react';
 import { api } from '../lib/api';
@@ -126,18 +126,31 @@ export function WhatsAppTab({ module, recordId, mobile }: {
     onError: (err: Error) => toast.error('Could not send the template', err.message),
   });
 
+  /*
+    Open at the newest message, the way WhatsApp does. The list scrolls on its
+    own now, so without this it opened at the oldest one — and it follows new
+    messages down as they arrive, so the fifteen-second refresh never leaves a
+    reply sitting out of sight below the fold.
+  */
+  const bottomOf = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const list = bottomOf.current;
+    if (list) list.scrollTop = list.scrollHeight;
+  }, [messages?.length]);
+
   if (isLoading) return <div className="space-y-2 p-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>;
 
   const conversation = messages ?? [];
 
+
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-1 flex-col">
       {/*
         A tinted canvas, the same one the Chats screen uses, so a white
         incoming bubble reads as a bubble. On white the thread looked like a
         page with faint boxes on it rather than like a chat.
       */}
-      <div className="flex-1 space-y-2 overflow-y-auto bg-slate-100 p-4 dark:bg-slate-950">
+      <div ref={bottomOf} className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-slate-100 p-4 dark:bg-slate-950">
         {conversation.length === 0 && (
           <EmptyState
             icon={<MessageCircle className="h-8 w-8" />}
