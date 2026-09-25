@@ -1233,8 +1233,11 @@ database.
   18 September 2026, against **50** from the business number. The route copied
   each rep's personal chats off their handset, so none of it was ever in
   WhatsMarketing's inbox. The record's tab and its Timeline now read
-  `wa_account_id IS NULL` only. **The rows are still in the table**; deleting
-  them is the owner's call, not a side effect of hiding them.
+  `wa_account_id IS NULL` only. **The owner then asked for them deleted**, and
+  migration `171` does it: the phone-sync threads, their messages (cascade),
+  their copies in the search index (`ipy_embedding`, kind `message`), and any
+  campaign or broadcast pointer at them. A production backup was taken first.
+  The `ipy_wa_account` rows themselves are left; they hold no message text.
 * **A new message now tells the person at the desk.** `tellSomebody` already
   wrote the bell and sent Web Push; what a laptop lacked was anything you
   would notice. `web/src/lib/whatsappAlert.ts`: a toast that stays twelve
