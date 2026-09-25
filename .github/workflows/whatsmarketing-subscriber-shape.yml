@@ -58,3 +58,24 @@ jobs:
           jq -r '.status as $s | "answer status: \($s)"' one.json
           jq -r '(.message | if type=="array" then .[0] else . end) | if type=="object" then (keys_unsorted | join(", ")) else "message is a \(type)" end' one.json
           jq -r --arg re "$STATUSY" '(.message | if type=="array" then .[0] else . end) | if type=="object" then (to_entries | map(select(.key | test($re; "i"))) | map("\(.key)=\(.value)") | join("  ")) else empty end' one.json
+
+      - name: Labels — the only subscription marker their API lets the CRM read and set
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          TOKEN: ${{ secrets.WHATSMARKETING_API_TOKEN }}
+        run: |
+          set -u
+          BASE=https://app.whatsmarketing.in/api/v1
+          PNID=$(psql "$PROD_DATABASE_URL" -Atc "SELECT config->>'phoneNumberId' FROM ipy_integration WHERE provider = 'whatsapp_whatsmarketing'")
+          echo "== label/list, raw (label names are not personal data) =="
+          curl -sS --max-time 30 -X POST "$BASE/whatsapp/label/list" \
+            -d "apiToken=$TOKEN" -d "phone_number_id=$PNID" | head -c 3000
+          echo
+          echo "== how label_names looks on subscribers that carry any (type and value only) =="
+          curl -sS --max-time 30 -X POST "$BASE/whatsapp/subscriber/list" \
+            -d "apiToken=$TOKEN" -d "phone_number_id=$PNID" -d "limit=40" -d "offset=1" -d "orderBy=1" \
+            | jq -r '.message[]?.chat_id // empty' | head -40 | while read -r who; do
+              curl -sS --max-time 30 -X POST "$BASE/whatsapp/subscriber/get" \
+                -d "apiToken=$TOKEN" -d "phone_number_id=$PNID" -d "phone_number=$who" \
+                | jq -c '(.message | if type=="array" then .[0] else . end) | {label_names_type: (.label_names|type), label_names, bot_reply_label, ai_reply_label}'
+            done | sort | uniq -c
