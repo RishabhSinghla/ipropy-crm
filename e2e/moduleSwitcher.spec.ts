@@ -15,7 +15,7 @@ function trigger(page: Page) {
 
 test('it names the screen you are on', async ({ page }) => {
   await page.goto('/leads');
-  await expect(page.getByText(/^[\d,]+ of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
   await expect(trigger(page)).toContainText('Leads');
 
   await page.goto('/dashboard');

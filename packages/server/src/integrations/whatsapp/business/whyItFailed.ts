@@ -35,8 +35,9 @@ const MEANINGS: { code: string; plain: string }[] = [
   },
   {
     code: '131026',
-    plain: 'This number cannot receive the message — it may not be on WhatsApp, '
-      + 'or it may have blocked the business number.',
+    plain: 'WhatsApp could not deliver this to that phone. Usually the number is '
+      + 'not on WhatsApp, or the person has not accepted WhatsApp\'s latest terms, '
+      + 'or their app is very out of date. Call them, or check the number.',
   },
   {
     code: '131048',

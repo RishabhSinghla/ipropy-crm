@@ -1,6 +1,7 @@
 import { type JSX, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Clock, MessageCircle, Send } from 'lucide-react';
+import { Clock, ExternalLink, MessageCircle, Send } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
@@ -145,6 +146,19 @@ export function WhatsAppTab({ module, recordId, mobile }: {
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
+      {/*
+        The way back to the same conversation on the WhatsApp screen, where the
+        whole team's queue is — the mirror of "Open the full record" there.
+      */}
+      <div className="flex justify-end border-b border-slate-200 bg-white px-4 py-1.5 dark:border-slate-800 dark:bg-slate-900">
+        <Link
+          to={`/whatsapp/chats?record=${recordId}`}
+          className="inline-flex items-center gap-1.5 text-2xs font-semibold text-muted transition-colors hover:text-brand-600"
+        >
+          <ExternalLink className="h-3 w-3" />
+          Open in WhatsApp
+        </Link>
+      </div>
       {/*
         A tinted canvas, the same one the Chats screen uses, so a white
         incoming bubble reads as a bubble. On white the thread looked like a

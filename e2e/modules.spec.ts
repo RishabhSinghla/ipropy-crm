@@ -113,7 +113,7 @@ const TOOL_ROUTES = new Set(['/capture']);
 function settled(page: Page, route: string) {
   return TOOL_ROUTES.has(route)
     ? page.getByRole('heading', { level: 1 })
-    : page.getByText(/^[\d,]+ of [\d,]+ records$/);
+    : page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/);
 }
 
 /**

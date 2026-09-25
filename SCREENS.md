@@ -431,4 +431,14 @@ The bubble on the switcher button is the count for **the screen you are on**,
 the same number as that screen's row in the menu. Until 25 September it was
 the total waiting on the *other* screens, so on Leads it showed Inventories'
 17 while the menu said Leads 99+ — correct by its own rule, and read by
-everybody as a bug. What is waiting elsewhere is now an amber dot beside it.
+everybody as a bug. The other screens' counts stay in the menu, one per row (an amber dot beside the button was tried and removed the same day at the owner's request).
+
+---
+
+## The record count is a range
+
+`51–100 of 22,981 records` on page 2 of fifty (`recordRange` in
+`ListView.tsx`). It used to say "50 of 22,981" on every page. Opening a link to
+page 2 also used to land on page 1: the search box's 300ms debounce ran on
+arrival with nothing typed and reset the page. It only resets when the words
+change now.

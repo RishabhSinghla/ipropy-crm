@@ -1251,6 +1251,31 @@ database.
 
 ---
 
+## Messages sent from WhatsMarketing's own inbox
+
+Until 25 September the poller (`pollInbound.ts`) stored only what the
+**customer** said. A row the business sent was read for its delivery tick and
+dropped — correct for a message the CRM sent itself, since the CRM already held
+it, and wrong for one somebody typed into WhatsMarketing's shared inbox, which
+therefore never reached the record. The record read as a customer talking to
+nobody.
+
+`recordSentElsewhere` in `inbound.ts` now stores those, on the same business
+thread, as outbound. Two guards, both pinned by tests:
+
+* **A message the CRM sent is never stored twice.** The vendor hands it back
+  with the same `wa_message_id` the CRM saved from the send, so an existing
+  `provider_message_id` means "already held".
+* **A row under two minutes old waits for the next visit.** The CRM writes that
+  id a moment after the vendor accepts a send; a poll landing in that moment
+  would otherwise take the CRM's own message for a stranger's.
+
+And a failure that arrives later as a delivery report (131026 on a template,
+say) now gets the same plain sentence from `whyItFailed` as one refused at
+send time, instead of Meta's bare code.
+
+---
+
 ## Driven end to end, 25 September 2026 — 34 pass, 1 real fault
 
 The whole WhatsApp route put through the `prove-it` skill against a running

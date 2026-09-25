@@ -29,6 +29,7 @@ import { matchContact, matchKey } from '../matchContact.js';
 import { businessProvider } from './registry.js';
 import { keepInboundMedia } from './media.js';
 import { HOLDER } from './inbox.js';
+import { whyItFailed } from './whyItFailed.js';
 import type { InboundMessage, StatusUpdate } from './types.js';
 
 const MODULE = 'leads';
@@ -139,6 +140,71 @@ async function conversationFor(
     [handle, contactName, recordId, recordId ? MODULE : null, owner?.owner_id ?? null, waId],
   );
   return { id: created!.id, assignedTo: owner?.owner_id ?? null };
+}
+
+/**
+ * A message the business sent from outside the CRM — typed into the vendor's
+ * own inbox (WhatsMarketing's shared inbox, say) rather than this one.
+ *
+ * Without this the customer's side of the conversation reached the record and
+ * our side of it did not, so the record read as a customer talking to nobody.
+ * Returns false when the CRM already holds the message, which is every message
+ * the CRM sent itself: the vendor hands those back with the same id.
+ */
+export async function recordSentElsewhere(provider: string, message: {
+  providerMessageId: string;
+  to: string;
+  text: string | null;
+  media: InboundMessage['media'];
+  sentAt: Date;
+}): Promise<boolean> {
+  const handle = matchKey(message.to);
+  if (!handle) return false;
+
+  const alreadyHeld = await db.queryOne<{ id: string }>(
+    `SELECT id FROM ipy_message WHERE provider_message_id = $1 LIMIT 1`, [message.providerMessageId],
+  );
+  if (alreadyHeld) return false;
+
+  const match = await matchContact(MODULE, message.to);
+  const recordId = match.kind === 'one' ? match.recordId : null;
+
+  return transaction(async (conn): Promise<boolean> => {
+    if (!await claimEvent(conn, provider, 'message', `sent:${message.providerMessageId}`)) return false;
+
+    const conversation = await conversationFor(
+      conn, handle, recordId, null, String(message.to).replace(/\D/g, '') || null,
+    );
+    const body = message.text ?? message.media?.caption ?? null;
+
+    // `sent` rather than `queued`: the vendor has already sent it, and the
+    // delivery receipt read beside it moves it on to delivered or read.
+    await conn.query(
+      `INSERT INTO ipy_message
+         (conversation_id, direction, channel, type, body, media, status,
+          provider_message_id, provider, route, created_at)
+       VALUES ($1, 'outbound', 'whatsapp', $2, $3, $4, 'sent', $5, $6, 'business', $7)`,
+      [
+        conversation.id,
+        message.media ? 'image' : 'text',
+        body,
+        message.media ? JSON.stringify(message.media) : null,
+        message.providerMessageId,
+        provider,
+        message.sentAt,
+      ],
+    );
+    await conn.query(
+      `UPDATE ipy_conversation
+          SET last_message_at = GREATEST(COALESCE(last_message_at, $2::timestamptz), $2::timestamptz),
+              last_message_preview = CASE WHEN last_message_at IS NULL OR last_message_at <= $2::timestamptz
+                                          THEN COALESCE($3, last_message_preview)
+                                          ELSE last_message_preview END
+        WHERE id = $1`,
+      [conversation.id, message.sentAt, body?.slice(0, 200) ?? null],
+    );
+    return true;
+  });
 }
 
 export interface StoredInbound {
@@ -355,7 +421,9 @@ export async function applyStatus(provider: string, update: StatusUpdate): Promi
               read_at = CASE WHEN $2 = 'read' THEN COALESCE(read_at, $3) ELSE read_at END,
               error_message = $4
         WHERE id = $1`,
-      [row.id, update.state, update.at, update.error],
+      // The same plain words a refused send gets: a failure that comes back
+      // later as a delivery report used to show Meta's bare code instead.
+      [row.id, update.state, update.at, update.error ? whyItFailed(update.error) : null],
     );
     return true;
   });

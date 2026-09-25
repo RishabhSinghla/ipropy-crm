@@ -17,7 +17,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../src/db/pool.js';
 import { recordService } from '../../src/core/entity/recordService.js';
-import { applyStatus, receiveInbound } from '../../src/integrations/whatsapp/business/inbound.js';
+import { applyStatus, receiveInbound, recordSentElsewhere } from '../../src/integrations/whatsapp/business/inbound.js';
 import { metaCloudProvider } from '../../src/integrations/whatsapp/business/metaCloud.js';
 import { adminContext } from './fixtures.js';
 
@@ -160,6 +160,34 @@ describe('the official WhatsApp webhook', () => {
     );
     expect(row!.status).toBe('read');
     expect(row!.read_at).not.toBeNull();
+  });
+
+  it('keeps a message sent from the vendor\'s own inbox, once, on the same thread', async () => {
+    const sent = { providerMessageId: `wamid.ELSEWHERE${stamp}`, to: `91${KNOWN}`, text: 'Okay', media: null, sentAt: new Date() };
+    expect(await recordSentElsewhere(PROVIDER, sent)).toBe(true);
+    // Read again on the next poll: nothing new.
+    expect(await recordSentElsewhere(PROVIDER, sent)).toBe(false);
+
+    const rows = await db.query<{ direction: string; body: string; record_id: string | null }>(
+      `SELECT m.direction, m.body, c.record_id FROM ipy_message m
+         JOIN ipy_conversation c ON c.id = m.conversation_id
+        WHERE m.provider_message_id = $1`, [sent.providerMessageId],
+    );
+    expect(rows.rows).toEqual([{ direction: 'outbound', body: 'Okay', record_id: recordId }]);
+  });
+
+  it('does not store a second copy of a message the CRM sent itself', async () => {
+    const conversation = await db.queryOne<{ id: string }>(
+      `SELECT id FROM ipy_conversation WHERE handle = $1 AND wa_account_id IS NULL`, [KNOWN],
+    );
+    await db.query(
+      `INSERT INTO ipy_message (conversation_id, direction, channel, body, status, provider_message_id, provider, route)
+       VALUES ($1, 'outbound', 'whatsapp', 'from the CRM', 'queued', $2, $3, 'business')`,
+      [conversation!.id, `wamid.CRMSENT${stamp}`, PROVIDER],
+    );
+    expect(await recordSentElsewhere(PROVIDER, {
+      providerMessageId: `wamid.CRMSENT${stamp}`, to: `91${KNOWN}`, text: 'from the CRM', media: null, sentAt: new Date(),
+    })).toBe(false);
   });
 
   it('refuses a delivery that is not signed by the provider', () => {

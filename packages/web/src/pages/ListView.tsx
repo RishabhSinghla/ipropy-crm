@@ -221,9 +221,13 @@ export default function ListView(): JSX.Element {
   }, [page]);
 
   useEffect(() => {
+    // Only when the words changed. This used to fire on arrival too, with
+    // nothing typed, and put every link to page 2 back on page 1 a third of a
+    // second after it opened (the owner's report, 25 September).
+    if (searchInput === search) return;
     const timer = setTimeout(() => { setSearch(searchInput); setPage(1); }, 300);
     return () => clearTimeout(timer);
-  }, [searchInput]);
+  }, [searchInput, search]);
 
   const { data: liveMeta, isLoading: metaLoading, error: metaError, refetch: refetchMeta } = useQuery({
     queryKey: ['module', moduleName],
@@ -964,11 +968,13 @@ export default function ListView(): JSX.Element {
                 total on its own says nothing about how far down the page
                 anybody has got — "25 of 22,970" answers both at once. The
                 count is the rows actually delivered, not the page size, so
-                the last page says 20 rather than 25. */}
+                the last page says 20 rather than 25.
+
+                A range since 25 September: page 2 of fifty used to say "50 of
+                22,981" again, as if nobody had moved. It says "51–100" now —
+                where these rows sit, and how far down the list you are. */}
             <span className="hidden shrink-0 text-xs font-semibold text-slate-700 tnum xl:inline dark:text-slate-200">
-              {isFetching && !data
-                ? 'Loading…'
-                : `${rows.length.toLocaleString('en-IN')} of ${(data?.total ?? 0).toLocaleString('en-IN')} records`}
+              {isFetching && !data ? 'Loading…' : recordRange(page, pageSize, rows.length, data?.total ?? 0)}
             </span>
 
             {/*
@@ -2751,4 +2757,13 @@ function NameNewViewDialog({
       </p>
     </Modal>
   );
+}
+
+/** "51–100 of 22,981 records": which rows are on this page, out of how many. */
+export function recordRange(page: number, pageSize: number, onThisPage: number, total: number): string {
+  const count = (n: number): string => n.toLocaleString('en-IN');
+  if (onThisPage === 0) return `0 of ${count(total)} records`;
+  const first = (page - 1) * pageSize + 1;
+  const last = first + onThisPage - 1;
+  return `${count(first)}–${count(last)} of ${count(total)} records`;
 }

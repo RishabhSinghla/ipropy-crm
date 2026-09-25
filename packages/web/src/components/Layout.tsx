@@ -177,17 +177,19 @@ export default function Layout(): JSX.Element {
             to="/whatsapp"
             title="WhatsApp — the team's chats, campaigns and templates"
             className={({ isActive }) => cn(
-              'flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-semibold transition-colors',
+              'flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm font-semibold transition-colors',
               /*
-                WhatsApp's green, darkened until white on it clears AA — the
-                brand's own #25D366 lands at 1.98:1 under white text and its
-                teal #128C7E at 4.14, both short of 4.5 for 14px semibold. It
-                still reads as WhatsApp; it failed every accessibility spec in
-                the suite, because this button is on every signed-in page.
+                A soft green pill everywhere else, and solid green while you
+                are in WhatsApp — the way a selected tab looks, so the change
+                reads as "you are here". It used to go from green to a dark
+                teal (#075E54) on its own page, which the owner found heavy
+                (25 September). #0B8043 is WhatsApp's green darkened until
+                white on it clears AA; the brand's own #25D366 is 1.98:1.
               */
               isActive
-                ? 'bg-[#075E54] text-white'
-                : 'bg-[#0B8043] text-white hover:bg-[#097A41]',
+                ? 'border-[#0B8043] bg-[#0B8043] text-white shadow-sm'
+                : 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:border-emerald-300 hover:bg-emerald-100 '
+                  + 'dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/50',
             )}
           >
             <MessagesSquare className="h-4 w-4" />
@@ -474,11 +476,10 @@ function ModuleSwitcher({
     the same as that screen's row in the menu. It used to be the total waiting
     on the *other* screens, which put Inventories' 17 beside the word "Leads"
     while the menu said Leads 99+ — correct, and read by everybody as a bug.
-    What is waiting elsewhere is a dot, so closing the tabs hides nothing.
+    The other screens' counts are in the menu itself, one per row.
   */
   const total = entries.reduce((sum, e) => sum + (e.badge ?? 0), 0);
   const here = current ? (current.badge ?? 0) : total;
-  const waitingElsewhere = current ? total - here > 0 : false;
 
   return (
     <div className="hidden shrink-0 lg:block">
@@ -501,9 +502,6 @@ function ModuleSwitcher({
               >
                 {here > 99 ? '99+' : here}
               </span>
-            )}
-            {waitingElsewhere && (
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" title="New on another screen — open the menu" />
             )}
             <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
           </button>

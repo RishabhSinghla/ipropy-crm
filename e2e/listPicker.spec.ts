@@ -19,7 +19,7 @@ function isListSearch(r: Request): boolean {
 
 async function openPicker(page: Page) {
   await page.goto('/leads');
-  await expect(page.getByText(/^[\d,]+ of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: /Choose or manage list views/ }).click();
   await expect(page.getByText('Select list or tag')).toBeVisible();
 }
@@ -80,7 +80,7 @@ test('a list can be acted on from its own row', async ({ page }) => {
 
 test('choosing a list clears a tag, and the two do not stack', async ({ page }) => {
   await openPicker(page);
-  const full = await page.getByText(/^[\d,]+ of [\d,]+ records$/).innerText();
+  const full = await page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/).innerText();
 
   const tag = page.locator('[aria-pressed="false"]').filter({ hasText: /^[a-z][a-z -]+\d*$/ }).last();
   if (!(await tag.count())) test.skip(true, 'no tags in this database');
@@ -100,5 +100,5 @@ test('choosing a list clears a tag, and the two do not stack', async ({ page }) 
     surviving underneath a list, which shows as the count staying narrowed.
   */
   await expect(trigger).not.toContainText(name);
-  await expect(page.getByText(/^[\d,]+ of [\d,]+ records$/)).toHaveText(full);
+  await expect(page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/)).toHaveText(full);
 });

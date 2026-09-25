@@ -26,6 +26,7 @@ const received = vi.hoisted(() => ({ calls: [] as { provider: string; message: R
 
 const reported = vi.hoisted(() => ({ calls: [] as { ok: boolean; detail: string }[] }));
 const applied = vi.hoisted(() => ({ calls: [] as Record<string, unknown>[] }));
+const keptElsewhere = vi.hoisted(() => ({ calls: [] as Record<string, unknown>[] }));
 
 vi.mock('../src/core/settings/integrations.js', () => ({
   getIntegrationCredentials: () => credentials.value,
@@ -48,6 +49,10 @@ vi.mock('../src/integrations/whatsapp/business/inbound.js', () => ({
   }),
   applyStatus: vi.fn(async (_provider: string, update: Record<string, unknown>) => {
     applied.calls.push(update);
+    return true;
+  }),
+  recordSentElsewhere: vi.fn(async (_provider: string, message: Record<string, unknown>) => {
+    keptElsewhere.calls.push(message);
     return true;
   }),
 }));
@@ -80,6 +85,7 @@ beforeEach(() => {
   received.calls = [];
   reported.calls = [];
   applied.calls = [];
+  keptElsewhere.calls = [];
   active.name = 'whatsapp_whatsmarketing';
   credentials.value = { apiToken: 'tok' };
   config.value = { phoneNumberId: '984702481401419' };
@@ -88,6 +94,27 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('pulling replies in', () => {
+  it('keeps what somebody sent from the WhatsMarketing inbox, but not in the moment the CRM is still writing its own', async () => {
+    // Their clock is UTC with no zone marker, the way readTime reads it.
+    const ist = (msAgo: number): string => new Date(Date.now() - msAgo)
+      .toISOString().slice(0, 19).replace('T', ' ');
+    wire(
+      [{ chat_id: '919891222206' }],
+      [
+        { sender: 'bot', wa_message_id: 'wamid.FROMTHEIRINBOX', conversation_time: ist(30 * 60_000),
+          message_content: JSON.stringify({ text: { body: 'Okay' } }) },
+        { sender: 'bot', wa_message_id: 'wamid.JUSTNOW', conversation_time: ist(10_000),
+          message_content: JSON.stringify({ text: { body: 'the CRM may still be writing this one' } }) },
+      ],
+    );
+
+    await pollWhatsMarketingInbound();
+    expect(keptElsewhere.calls).toHaveLength(1);
+    expect(keptElsewhere.calls[0]).toMatchObject({ providerMessageId: 'wamid.FROMTHEIRINBOX', to: '919891222206', text: 'Okay' });
+    // And never as something the customer said.
+    expect(received.calls).toHaveLength(0);
+  });
+
   it('stores what the customer wrote, through the same door the webhook uses', async () => {
     wire(
       [{ chat_id: '919811533633', first_name: 'Yogesh', last_name: 'Bindal' }],

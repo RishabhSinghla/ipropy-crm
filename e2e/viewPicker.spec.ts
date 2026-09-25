@@ -14,7 +14,7 @@ import { test, expect } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/leads');
-  await expect(page.getByText(/^[\d,]+ of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
 });
 
 test('the view picker opens and lists views', async ({ page }) => {
@@ -69,7 +69,7 @@ test('the search box narrows the list once there are enough views', async ({ pag
     created.push((await made.json()).id as string);
   }
   await page.reload();
-  await expect(page.getByText(/^[\d,]+ of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
 
   await page.getByRole('button', { name: 'Choose or manage list views' }).click();
   const search = page.getByLabel('Search lists and tags');

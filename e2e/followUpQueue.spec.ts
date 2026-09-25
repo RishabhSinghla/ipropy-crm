@@ -27,14 +27,14 @@ function isListSearch(r: Request): boolean {
 
 async function openPanel(page: import('@playwright/test').Page): Promise<void> {
   await page.goto('/leads');
-  await expect(page.getByText(/^[\d,]+ of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: /^Follow-ups/ }).click();
   await expect(page.getByRole('heading', { name: 'Follow-up Queue' })).toBeVisible();
 }
 
 test('the three cards add up to the number on the button', async ({ page }) => {
   await page.goto('/leads');
-  await expect(page.getByText(/^[\d,]+ of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
 
   const trigger = page.getByRole('button', { name: /^Follow-ups/ });
   // The count is a chip beside the word now, not "(981)" in the label.
@@ -78,7 +78,7 @@ test('a sort the person chose is not taken away by a queue', async ({ page }) =>
   const sorted = page.waitForRequest((r) => isListSearch(r) && Boolean(r.postDataJSON()?.sortBy));
 
   await page.goto('/leads');
-  await expect(page.getByText(/^[\d,]+ of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/^[\d,]+(–[\d,]+)? of [\d,]+ records$/)).toBeVisible({ timeout: 30_000 });
   await page.locator('thead th').nth(1).getByRole('button').first().click();
   const chosen = (await sorted).postDataJSON().sortBy as string;
 

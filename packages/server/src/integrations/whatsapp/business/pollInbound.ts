@@ -37,7 +37,7 @@ import {
 import { logger } from '../../../utils/logger.js';
 import { db } from '../../../db/pool.js';
 import type { InboundMessage, StatusUpdate } from './types.js';
-import { applyStatus, receiveInbound } from './inbound.js';
+import { applyStatus, receiveInbound, recordSentElsewhere } from './inbound.js';
 import { activeBusinessProvider } from './registry.js';
 import { WHATSMARKETING_PROVIDER } from './whatsMarketing.js';
 import { metaCloudProvider } from './metaCloud.js';
@@ -449,6 +449,31 @@ async function report(ok: boolean, detail: string): Promise<void> {
  * never throws — it shares a tick with the workflow engine and a vendor
  * timeout must not stop follow-ups going out.
  */
+/**
+ * A message somebody sent from WhatsMarketing's own inbox, stored on the record.
+ *
+ * One that is under two minutes old is left for the next visit. The CRM writes
+ * the vendor's id onto a message it sent a moment after the vendor accepts it,
+ * and a poll landing in that moment would otherwise store the CRM's own message
+ * a second time.
+ */
+const JUST_SENT_MS = 2 * 60 * 1000;
+
+async function keepSentElsewhere(row: Record<string, unknown>, handle: string, floor: Date): Promise<boolean> {
+  const id = String(row.wa_message_id ?? '');
+  if (!id) return false;
+  const sentAt = readTime(row.conversation_time ?? row.created_at);
+  if (sentAt < floor || Date.now() - sentAt.getTime() < JUST_SENT_MS) return false;
+  const { text, media } = textOfMessage(row.message_content);
+  if (!text && !media) return false;
+  try {
+    return await recordSentElsewhere(WHATSMARKETING_PROVIDER, { providerMessageId: id, to: handle, text, media, sentAt });
+  } catch (err) {
+    logger.warn({ err, providerMessageId: id }, 'could not store a message sent from the WhatsMarketing inbox');
+    return false;
+  }
+}
+
 export async function pollWhatsMarketingInbound(): Promise<{ checked: number; stored: number }> {
   const provider = activeBusinessProvider();
   // Only when WhatsMarketing is the live provider. Another BSP's webhook works
@@ -510,6 +535,7 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
   let tooOld = 0;
   let known = 0;
   let statuses = 0;
+  let sentElsewhere = 0;
   /* Keys and types only — see `describeShape`. Never a customer's words. */
   let unreadableShape: string | null = null;
 
@@ -539,7 +565,9 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
 
     for (const row of rowsOf(thread.message)) {
       if (!isFromCustomer(row)) {
-        // Ours. Not a message to store — but it carries how it went.
+        // Ours. Kept when somebody sent it from the vendor's own inbox, and
+        // either way it carries how it went.
+        if (await keepSentElsewhere(row, handle, floor)) sentElsewhere += 1;
         if (await readOutboundStatus(row)) statuses += 1;
         continue;
       }
@@ -613,6 +641,7 @@ export async function pollWhatsMarketingInbound(): Promise<{ checked: number; st
         + `newest customer message visible anywhere: ${newestFromAnyone?.toISOString() ?? 'none'}`
         + `${newestFrom ? ` from ${newestFrom}` : ''}; `
         + `${known} already held; ${statuses} delivery update${statuses === 1 ? '' : 's'}; `
+        + `${sentElsewhere} sent from their inbox; `
         + `dropped: ${noId} with no id, ${unreadable} unreadable, `
         + `${refused} refused by the store, ${tooOld} older than ${HISTORY_FLOOR_DAYS} days`
         + `${unreadableShape ? `; first unreadable shape: ${unreadableShape}` : ''}.`,

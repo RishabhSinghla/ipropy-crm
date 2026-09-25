@@ -1,6 +1,6 @@
 import { type JSX, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   CheckCheck, Clock, Inbox, MessageCircle, Paperclip, Search, Send,
 } from 'lucide-react';
@@ -119,6 +119,20 @@ export default function BusinessChats(): JSX.Element {
   */
   const [picked, setPicked] = useState<ChatRow | null>(null);
   const active = (conversations ?? []).find((row) => row.id === activeId) ?? picked;
+
+  /*
+    Arriving from a record's "Open in WhatsApp": open that person's chat.
+    Done once and then taken off the address, so the list refreshing every
+    fifteen seconds cannot keep dragging the screen back to it.
+  */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const wantedRecord = searchParams.get('record');
+  useEffect(() => {
+    if (!wantedRecord || !conversations) return;
+    const row = conversations.find((candidate) => candidate.recordId === wantedRecord);
+    if (row) { setActiveId(row.id); setPicked(row); }
+    setSearchParams((params) => { params.delete('record'); return params; }, { replace: true });
+  }, [wantedRecord, conversations, setSearchParams]);
   /** What to call them: the CRM's name for this person, else the number. */
   const who = active ? (active.recordLabel ?? active.contactName ?? active.handle) : '';
   /*
