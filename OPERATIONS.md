@@ -338,14 +338,24 @@ rather than assumed:
 | author **and** committer | the developer | `false` — `unknown_key` |
 | author only | the developer | `true` — `valid` |
 
-The second row is strictly better and is **not reachable automatically**: git has no
+The second row is strictly better, and **it is the one to use.** Git has no
 `committer.name` config key — it reads `GIT_COMMITTER_*` from the environment and
 falls back to `user.*` — and the shells this tool runs are non-interactive and source
-no profile, so there is nowhere to put those exports that every commit would read.
-A `.bashrc` block was tried and did nothing. A name that is always right beat a tick
-that appears only when somebody remembers a prefix. `main` does not require signed
-commits (an unverified one pushed cleanly), so nothing breaks. To have both on one
-commit: `GIT_COMMITTER_NAME=Claude GIT_COMMITTER_EMAIL=noreply@anthropic.com git commit …`
+no profile, so a `.bashrc` block was tried and did nothing.
+
+This file used to conclude from that that the second row was "not reachable
+automatically" and settle for the first. That was wrong: there is nowhere to put
+the exports so that *every* commit reads them, but they go on the commit itself,
+and that is one line rather than a lost tick. **So every commit is made this way:**
+
+```bash
+GIT_COMMITTER_NAME=Claude GIT_COMMITTER_EMAIL=noreply@anthropic.com git commit …
+```
+
+Author stays the developer, so GitHub still links the commit to whoever's session
+made it; committer is the key that signed it, so the tick is green. `main` does not
+require signed commits, so an unverified one still pushes cleanly — this is about
+the commit list being readable, not about a gate.
 
 **What this does not fix, and cannot from here:** the *deployments* page says
 "Deployed by RishabhSinghla" on every row regardless. That is Render's GitHub
