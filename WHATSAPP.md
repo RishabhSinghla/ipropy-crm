@@ -1224,6 +1224,30 @@ database.
 
 ---
 
+## Three more the same afternoon
+
+* **The old messages on a record's WhatsApp tab were reps' own WhatsApp.**
+  Counted on production 25 September (`whatsapp-thread-links.yml`, counts
+  only): **1,734** messages from the removed phone-sync route (`provider =
+  'whatsapp_agent'`, a thread with a `wa_account_id`), 2 August 2025 to
+  18 September 2026, against **50** from the business number. The route copied
+  each rep's personal chats off their handset, so none of it was ever in
+  WhatsMarketing's inbox. The record's tab and its Timeline now read
+  `wa_account_id IS NULL` only. **The rows are still in the table**; deleting
+  them is the owner's call, not a side effect of hiding them.
+* **A new message now tells the person at the desk.** `tellSomebody` already
+  wrote the bell and sent Web Push; what a laptop lacked was anything you
+  would notice. `web/src/lib/whatsappAlert.ts`: a toast that stays twelve
+  seconds and opens the chat when clicked, and — when the CRM tab is in the
+  background — a desktop notification from the browser. Permission is asked on
+  the first click after login, because browsers ignore a page that asks
+  unprompted. Skipped when that browser already has push switched on in
+  Settings, so nobody gets the same alert twice.
+* **Who is told is the record's owner** (`HOLDER`), the same person the Chats
+  screen shows — it used to be the thread's own `assigned_to`.
+
+---
+
 ## Driven end to end, 25 September 2026 — 34 pass, 1 real fault
 
 The whole WhatsApp route put through the `prove-it` skill against a running

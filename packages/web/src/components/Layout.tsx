@@ -469,7 +469,16 @@ function ModuleSwitcher({
     .sort((a, b) => b.to.length - a.to.length)
     .find((e) => location.pathname === e.to || location.pathname.startsWith(`${e.to}/`));
 
-  const waiting = entries.reduce((sum, e) => sum + (e.badge ?? 0), 0) - (current?.badge ?? 0);
+  /*
+    The bubble on the button is the count of the screen you are on, so it reads
+    the same as that screen's row in the menu. It used to be the total waiting
+    on the *other* screens, which put Inventories' 17 beside the word "Leads"
+    while the menu said Leads 99+ — correct, and read by everybody as a bug.
+    What is waiting elsewhere is a dot, so closing the tabs hides nothing.
+  */
+  const total = entries.reduce((sum, e) => sum + (e.badge ?? 0), 0);
+  const here = current ? (current.badge ?? 0) : total;
+  const waitingElsewhere = current ? total - here > 0 : false;
 
   return (
     <div className="hidden shrink-0 lg:block">
@@ -485,15 +494,16 @@ function ModuleSwitcher({
           >
             <span className="text-brand-600 dark:text-brand-400">{current?.icon ?? <LayoutDashboard className="h-4 w-4" />}</span>
             <span className="max-w-[10rem] truncate">{current?.label ?? 'Dashboard'}</span>
-            {/* What is waiting somewhere else. Without it, closing the row of
-                tabs would hide every unseen count behind a click. */}
-            {waiting > 0 && (
+            {here > 0 && (
               <span
                 className="rounded-full bg-brand-600 px-1.5 py-0.5 text-2xs font-semibold text-white"
-                title={`${waiting} waiting on other screens`}
+                title={`${here} new on this screen`}
               >
-                {waiting > 99 ? '99+' : waiting}
+                {here > 99 ? '99+' : here}
               </span>
+            )}
+            {waitingElsewhere && (
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" title="New on another screen — open the menu" />
             )}
             <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
           </button>

@@ -350,6 +350,10 @@ export interface Toast {
   kind: 'success' | 'error' | 'info';
   title: string;
   body?: string;
+  /** Where clicking the toast goes. A new WhatsApp message opens its chat. */
+  link?: string;
+  /** How long it stays, in milliseconds. */
+  stayFor?: number;
 }
 
 interface ToastState {
@@ -363,7 +367,7 @@ export const useToasts = create<ToastState>((set, get) => ({
   push: (toast) => {
     const id = Math.random().toString(36).slice(2);
     set({ toasts: [...get().toasts, { ...toast, id }] });
-    setTimeout(() => get().dismiss(id), toast.kind === 'error' ? 7000 : 4000);
+    setTimeout(() => get().dismiss(id), toast.stayFor ?? (toast.kind === 'error' ? 7000 : 4000));
   },
   dismiss: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) }),
 }));

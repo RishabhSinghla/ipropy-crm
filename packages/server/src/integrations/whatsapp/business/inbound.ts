@@ -28,6 +28,7 @@ import { notifyMany } from '../../../core/notifications/index.js';
 import { matchContact, matchKey } from '../matchContact.js';
 import { businessProvider } from './registry.js';
 import { keepInboundMedia } from './media.js';
+import { HOLDER } from './inbox.js';
 import type { InboundMessage, StatusUpdate } from './types.js';
 
 const MODULE = 'leads';
@@ -302,8 +303,11 @@ export async function receiveInbound(
 }
 
 async function tellSomebody(stored: StoredInbound, message: InboundMessage): Promise<void> {
+  // HOLDER, the inbox's own rule: the record's owner in the CRM decides who is
+  // told, the same person the Chats screen shows under Assigned To.
   const conversation = await db.queryOne<{ assigned_to: string | null; contact_name: string | null }>(
-    `SELECT assigned_to, contact_name FROM ipy_conversation WHERE id = $1`, [stored.conversationId],
+    `SELECT ${HOLDER} AS assigned_to, c.contact_name FROM ipy_conversation c WHERE c.id = $1`,
+    [stored.conversationId],
   );
   const recipients = conversation?.assigned_to
     ? [conversation.assigned_to]

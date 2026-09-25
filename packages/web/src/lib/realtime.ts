@@ -14,6 +14,7 @@ import { api, tokenStore } from './api';
 import { invalidateRecordQueries } from './invalidate';
 import { apiBase, isNative } from './native';
 import { takePendingDial } from './dialWatch';
+import { announceWhatsApp, askForDesktopNotificationsOnFirstClick, isWhatsAppMessage, type LiveNotification } from './whatsappAlert';
 
 let socket: Socket | null = null;
 
@@ -74,8 +75,12 @@ export function useRealtime(enabled: boolean): void {
       void qc.invalidateQueries({ queryKey: ['conversations'] });
       void qc.invalidateQueries({ queryKey: ['conversation'] });
     };
-    const onNotification = (): void => {
+    const onNotification = (note?: LiveNotification): void => {
       void qc.invalidateQueries({ queryKey: ['notifications'] });
+      if (isWhatsAppMessage(note)) {
+        void qc.invalidateQueries({ queryKey: ['wa-biz'] });
+        void announceWhatsApp(note!);
+      }
     };
     const onCall = (): void => {
       void qc.invalidateQueries({ queryKey: ['calls'] });
@@ -113,6 +118,7 @@ export function useRealtime(enabled: boolean): void {
     s.on('connect', onConnect);
     window.addEventListener('ipropy:resumed', onResume);
     void takePendingDial();
+    const stopAsking = isNative ? () => {} : askForDesktopNotificationsOnFirstClick();
 
     return () => {
       s.off('record:updated', onRecordChanged);
@@ -128,6 +134,7 @@ export function useRealtime(enabled: boolean): void {
       s.off('device:dial', onDial);
       s.off('connect', onConnect);
       window.removeEventListener('ipropy:resumed', onResume);
+      stopAsking();
     };
   }, [enabled, qc]);
 }

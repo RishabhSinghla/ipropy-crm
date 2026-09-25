@@ -73,7 +73,10 @@ export async function buildTimeline(
              LEFT JOIN ipy_user u ON u.id = m.sent_by
              LEFT JOIN ipy_wa_account wa ON wa.id = m.wa_account_id
              LEFT JOIN ipy_user wu ON wu.id = wa.user_id
-             WHERE cv.record_id = $1 ORDER BY m.created_at DESC LIMIT $2`,
+             -- The removed phone-sync route's threads (a wa_account_id) are
+             -- reps' own WhatsApp, not the business number — kept, not shown.
+             WHERE cv.record_id = $1 AND cv.wa_account_id IS NULL
+             ORDER BY m.created_at DESC LIMIT $2`,
             [recordId, limit],
           )
         : empty<MessageRow>(),

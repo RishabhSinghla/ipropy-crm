@@ -422,3 +422,13 @@ half the CRM opening records full width.
   name is dropped a heartbeat after arrival — which is exactly what happened to
   `open` the first time. It carries `open` and `dial` through now. **Any new
   parameter somebody else puts on a list URL needs the same line.**
+
+---
+
+## The number on the module switcher
+
+The bubble on the switcher button is the count for **the screen you are on**,
+the same number as that screen's row in the menu. Until 25 September it was
+the total waiting on the *other* screens, so on Leads it showed Inventories'
+17 while the menu said Leads 99+ — correct by its own rule, and read by
+everybody as a bug. What is waiting elsewhere is now an amber dot beside it.

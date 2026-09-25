@@ -319,6 +319,12 @@ whatsappBusinessRouter.get('/contacts/:module/:id/messages', asyncHandler(async 
        JOIN ipy_conversation c ON c.id = m.conversation_id
        LEFT JOIN ipy_user u ON u.id = m.sent_by
       WHERE c.channel = 'whatsapp'
+        -- The business number only. A thread with a wa_account_id came from
+        -- the removed phone-sync route, which copied reps' own WhatsApp off
+        -- their handsets: 1,734 rows on production (Aug 2025 – 18 Sep 2026)
+        -- that the business inbox has never held, and which read to the owner
+        -- as messages appearing from nowhere. Kept in the table, not shown.
+        AND c.wa_account_id IS NULL
         AND (c.record_id = $1 OR ($2::text[] <> '{}' AND c.handle = ANY($2::text[])))
       ORDER BY m.created_at ASC
       LIMIT 500`,

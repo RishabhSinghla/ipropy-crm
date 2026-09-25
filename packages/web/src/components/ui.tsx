@@ -1,5 +1,6 @@
 import { type JSX, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, Check, ChevronDown, Info, Loader2, X } from 'lucide-react';
 import { authedFileUrl } from '../lib/api';
 import { avatarBackground, badgeVars } from '../lib/color';
@@ -443,6 +444,7 @@ export function Select({
 
 export function ToastHost(): JSX.Element {
   const { toasts, dismiss } = useToasts();
+  const navigate = useNavigate();
   return createPortal(
     <div
       role="status"
@@ -465,10 +467,22 @@ export function ToastHost(): JSX.Element {
             {t.kind === 'error' && <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400" />}
             {t.kind === 'info' && <Info className="h-4 w-4 text-slate-500" />}
           </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{t.title}</p>
-            {t.body && <p className="mt-0.5 text-xs text-muted">{t.body}</p>}
-          </div>
+          {t.link ? (
+            <button
+              type="button"
+              onClick={() => { dismiss(t.id); navigate(t.link!); }}
+              className="min-w-0 flex-1 text-left"
+            >
+              <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{t.title}</p>
+              {t.body && <p className="mt-0.5 line-clamp-2 text-xs text-muted">{t.body}</p>}
+              <p className="mt-1 text-xs font-medium text-brand-600 dark:text-brand-400">Open chat</p>
+            </button>
+          ) : (
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{t.title}</p>
+              {t.body && <p className="mt-0.5 text-xs text-muted">{t.body}</p>}
+            </div>
+          )}
           <button onClick={() => dismiss(t.id)} className="shrink-0 text-slate-400 hover:text-slate-600">
             <X className="h-3.5 w-3.5" />
           </button>
