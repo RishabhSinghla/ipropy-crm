@@ -1183,3 +1183,71 @@ database.
 
 * **Which list views exist is now an admin decision** — see
   [`SCREENS.md`](SCREENS.md).
+
+---
+
+## Driven end to end, 25 September 2026 — 34 pass, 1 real fault
+
+The whole WhatsApp route put through the `prove-it` skill against a running
+CRM with a provider genuinely connected: **Meta Cloud pointed at a local
+stand-in through its own `baseUrl`**, which is why that field being a setting
+rather than a constant keeps paying for itself. A guard every check trips over
+is a guard that hides everything behind it, so the check supplied the
+configuration rather than accepting the refusal.
+
+**What was proved, most of it read from the database rather than the screen:**
+
+| promise | what was seen |
+|---|---|
+| an unsigned delivery is refused | HTTP 401 |
+| a signed delivery is accepted | HTTP 200, thread opened |
+| the same delivery twice is one message | two identical POSTs, **one** `ipy_message` row |
+| a thread finds its contact by number | `record_id` set, `wa_id` written in full |
+| the 24-hour window opens on an inbound | `window_expires_at` in the future |
+| a reply reaches the provider | the stand-in received it **addressed `919810220579`, not the ten-digit handle** |
+| a status only moves forward | delivered → read, then a late `sent` left it **read** |
+| templates sync and store | `site_visit_invite` added from the provider |
+| a blank fills per person | *"Hello WA UI …, shall we book a site visit?"* |
+| an audience that moved cannot be approved | *"This audience is 94 people now, not the 999999 you were shown."* |
+| the audience is frozen at approval | 94 rows written then |
+| ten a minute | 10 sent, then 20 a minute later — counted at both ends |
+| opt-out is refused even inside the window | *"This person has opted out of WhatsApp messages."* |
+| outside the window only a template goes | refused, with the reason |
+| looking at a thread writes nothing | 26 conversations before and after |
+| the queue filters by module | *All chats · My chats · Leads chats · Inventories chats* |
+
+### The fault: the screen refused it and the server did not
+
+**A campaign whose template has a blank nobody has mapped was approved and
+frozen for all ninety-four people.** The preview answers `unmapped`, and the
+dialog keeps Send dead until it is empty — and that was the whole of the guard.
+Driving the API directly walked straight past it.
+
+That is the exact failure this feature exists to prevent, one layer down: an
+approver is shown a number, approves it, and not one message goes, because
+WhatsApp refuses a template with a hole in it. `approveCampaign` refuses it
+now, reading the same `setupGaps` rule the preview uses rather than a second
+copy of it, and `tests/integration/whatsappCampaigns.test.ts` pins it.
+
+**A guard that lives only in a screen is a guard the next screen walks past.**
+
+### Two probes that lied before the product did
+
+Both worth recording, because both looked like product bugs for a minute.
+
+* **A campaign preview "failing" with 422** was the check sending `filter` where
+  the route wants `audience`, and reading `/templates` (the provider's list,
+  no CRM ids) instead of `/templates/saved`.
+* **"Opt-out is ignored"** was a POST to `/api/whatsapp-business/opt-out`,
+  which does not exist — so nothing was ever opted out and the send was right
+  to go. There is no route to opt somebody out at all; the row was written
+  straight into `ipy_channel_optout`, and the guard then refused correctly.
+  **Worth knowing: a customer cannot be opted out from anywhere in the CRM.**
+
+### Not counted as working
+
+Nothing here touched a real Meta account, a real phone or a real customer. The
+stand-in answers the Cloud API's shapes; whether Meta itself accepts the same
+calls is what the Test Connection button on the live card is for. Inbound from
+WhatsMarketing is still polled rather than pushed, because their webhook is
+switched off at their end.

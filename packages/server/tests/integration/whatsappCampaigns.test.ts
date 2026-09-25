@@ -175,6 +175,26 @@ describe('before anything is sent', () => {
 });
 
 describe('approving it', () => {
+  /*
+    **The screen knowing is not the same as the CRM knowing.**
+
+    The preview answers `unmapped` and the dialog keeps Send dead until it is
+    empty — and that was the whole of the guard. Driving the API directly on
+    25 September 2026 approved a campaign with an unfilled blank for all
+    ninety-four people: the screen refused it and the server did not. A guard
+    that lives only in a screen is one the next screen walks past, and this one
+    protects the exact failure the feature exists to prevent — an approver is
+    shown a number, approves it, and not one message goes.
+  */
+  it('refuses a template with a blank nobody has mapped, not just on the screen', async () => {
+    await saveMapping(templateId, 'leads', {});
+    await expect(approveCampaign({
+      ctx, userId: ctx.user.id, campaignId, expectedCount: 2,
+    })).rejects.toThrow(/Nobody would get this/);
+    // Put it back, so the tests after this one approve a sendable campaign.
+    await saveMapping(templateId, 'leads', { 1: 'field:full_name' });
+  });
+
   it('refuses a count the person was not shown', async () => {
     await expect(approveCampaign({
       ctx, userId: ctx.user.id, campaignId, expectedCount: 4,

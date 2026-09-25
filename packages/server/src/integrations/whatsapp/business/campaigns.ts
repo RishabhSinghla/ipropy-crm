@@ -190,9 +190,7 @@ export async function previewCampaign(input: {
     "is empty on this record" is deliberately not one of these: that is a real
     per-person skip, and the campaign still goes to everybody else.
   */
-  const unmapped = (sample[0]?.missing ?? []).filter((gap) => (
-    gap.includes('nothing is mapped to it') || gap.includes('needs setting again')
-  ));
+  const unmapped = setupGaps(sample[0]?.missing ?? []);
   return { total: page.total, reachable, sample, skipped, unmapped };
 }
 
@@ -203,6 +201,20 @@ export async function previewCampaign(input: {
  * since — somebody edited the view, a lead was created — this refuses and says
  * so rather than sending to a number nobody agreed to.
  */
+/**
+ * The blanks nobody has told the CRM how to fill.
+ *
+ * Not the same thing as a blank whose field is empty on one record: that is a
+ * real per-person skip and the campaign still goes to everybody else. These
+ * are unfilled for *everybody*, because WhatsApp refuses a template with a
+ * hole in it — so a campaign carrying one reaches nobody at all.
+ */
+function setupGaps(missing: string[]): string[] {
+  return missing.filter((gap) => (
+    gap.includes('nothing is mapped to it') || gap.includes('needs setting again')
+  ));
+}
+
 export async function approveCampaign(input: {
   ctx: ScopeContext;
   userId: string;
@@ -227,6 +239,39 @@ export async function approveCampaign(input: {
     confirmLarge: input.confirmLarge,
   });
   if (refusal) throw new BadRequestError(refusal);
+
+  /*
+    **A template with a blank nobody has mapped reaches nobody, so approving
+    one is refused here and not only on the screen.**
+
+    The dialog already knows — `previewCampaign` answers `unmapped` and the
+    Send button stays dead until it is empty. But a guard that lives only in
+    the screen is a guard the next screen walks past, and this one protects
+    the exact failure the whole feature exists to prevent: an approver is shown
+    a number, approves it, and not one message goes. Found by driving the API
+    directly on 25 September 2026 — the screen refused it and the server
+    approved all ninety-four.
+
+    Read off one recipient, because a setup gap is the same for every record.
+  */
+  const first = recipients.reachable[0];
+  if (first) {
+    const filled = await resolveTemplate({
+      ctx: input.ctx,
+      templateId: campaign.templateId,
+      module: campaign.moduleName,
+      recordId: first.recordId,
+      agentName: '',
+      orgName: await organisationName(),
+    });
+    const gaps = setupGaps(filled.missing.map((gap) => `{{${gap.slot}}} ${gap.reason}`));
+    if (gaps.length) {
+      throw new BadRequestError(
+        `Nobody would get this. WhatsApp refuses a template with an unfilled blank, and ${gaps.join('; ')}. `
+        + 'Map it in Admin → WhatsApp Templates, then approve again.',
+      );
+    }
+  }
 
   await transaction(async (conn: Tx) => {
     for (const person of recipients.reachable) {
@@ -489,13 +534,20 @@ async function countReachable(
 // Rows
 // ---------------------------------------------------------------------------
 
-async function readCampaign(id: string): Promise<{ status: string; moduleName: string; audience: Audience }> {
-  const row = await db.queryOne<{ status: string; module_name: string; audience: Audience }>(
-    `SELECT status, module_name, audience FROM ipy_campaign WHERE id = $1`,
+async function readCampaign(id: string): Promise<{
+  status: string; moduleName: string; audience: Audience; templateId: string;
+}> {
+  const row = await db.queryOne<{ status: string; module_name: string; audience: Audience; template_id: string }>(
+    `SELECT status, module_name, audience, template_id FROM ipy_campaign WHERE id = $1`,
     [id],
   );
   if (!row) throw new NotFoundError('No such campaign.');
-  return { status: row.status, moduleName: row.module_name, audience: row.audience ?? {} };
+  return {
+    status: row.status,
+    moduleName: row.module_name,
+    audience: row.audience ?? {},
+    templateId: row.template_id,
+  };
 }
 
 export async function listCampaigns(): Promise<CampaignRow[]> {
