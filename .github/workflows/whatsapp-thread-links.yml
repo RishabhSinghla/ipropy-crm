@@ -1,0 +1,44 @@
+# Why a WhatsApp chat's right-hand pane stays grey.
+#
+# Read-only. Counts, by what each thread says its record's module is and what
+# the record says, how many business threads point at a record in the wrong
+# module, at a deleted record, or at nothing. Prints no names and no numbers —
+# counts only.
+name: WhatsApp thread links
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  look:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install PostgreSQL 18 client
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: Where each business thread's record really lives
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT c.record_module AS thread_says,
+                 m.name          AS record_says,
+                 r.is_deleted    AS record_deleted,
+                 (c.record_id IS NULL) AS unlinked,
+                 count(*)
+            FROM ipy_conversation c
+            LEFT JOIN ipy_record r ON r.id = c.record_id
+            LEFT JOIN ipy_module m ON m.id = r.module_id
+           WHERE c.channel = 'whatsapp' AND c.wa_account_id IS NULL
+           GROUP BY 1, 2, 3, 4
+           ORDER BY count(*) DESC;
+          SQL
