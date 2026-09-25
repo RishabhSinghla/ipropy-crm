@@ -2,7 +2,7 @@ import { type JSX, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
-  CheckCheck, Clock, Inbox, MessageCircle, Paperclip, Search, Send,
+  BellOff, CheckCheck, Clock, Inbox, MessageCircle, Paperclip, Search, Send,
 } from 'lucide-react';
 import { relativeTime, type RecordEnvelope } from '@ipropy/shared';
 import { api, type ModuleSummary } from '../lib/api';
@@ -19,6 +19,7 @@ import { HeaderFieldStrip } from '../components/RecordBlocks';
 import { FieldValue } from '../components/FieldRenderer';
 import { useRecordPanes, type DescribedModule } from '../lib/recordPanes';
 import { readMessageMedia, WhatsAppMedia } from '../components/WhatsAppMedia';
+import { UnsubscribedPanel, UnsubscribeLink } from '../components/WhatsAppConsent';
 
 /**
  * The team's WhatsApp, on the business number.
@@ -157,6 +158,15 @@ export default function BusinessChats(): JSX.Element {
   const refresh = (): void => {
     void queryClient.invalidateQueries({ queryKey: ['wa-biz'] });
   };
+
+  const consent = useMutation({
+    mutationFn: (subscribed: boolean) => api.waBizConversationConsent(active!.id, subscribed),
+    onSuccess: ({ optedOut }) => {
+      toast.success(optedOut ? 'Unsubscribed from WhatsApp' : 'Subscribed to WhatsApp again');
+      refresh();
+    },
+    onError: (err: Error) => toast.error('Could not change that', err.message),
+  });
 
   const send = useMutation({
     mutationFn: (input: { text?: string; attachmentId?: string }) => api.waBizSend({
@@ -456,6 +466,10 @@ export default function BusinessChats(): JSX.Element {
             </div>
 
             <footer className="border-t border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+              {active.optedOut ? (
+                <UnsubscribedPanel who={who} onSubscribeAgain={() => consent.mutateAsync(true)} />
+              ) : (
+              <>
               {mode === 'template' && (
                 <div className="mb-2 space-y-2 rounded-lg bg-amber-50 px-3 py-2 dark:bg-amber-950/40">
                   <p className="flex items-center gap-1.5 text-xs text-amber-900 dark:text-amber-200">
@@ -543,6 +557,11 @@ export default function BusinessChats(): JSX.Element {
                   {send.isPending ? <Spinner className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />} Send
                 </button>
               </div>
+              <div className="mt-1.5 flex justify-end">
+                <UnsubscribeLink who={who} onUnsubscribe={() => consent.mutateAsync(false)} />
+              </div>
+              </>
+              )}
             </footer>
           </>
         )}
@@ -656,7 +675,12 @@ function ChatQueueRow({ row, active, onSelect, modules }: {
         )}
       </span>
       <span className="min-w-0 flex-1 self-start">
-        <span className="block truncate text-sm font-bold text-slate-900 dark:text-slate-100">{who}</span>
+        <span className="flex min-w-0 items-center gap-1">
+          <span className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">{who}</span>
+          {row.optedOut && (
+            <BellOff className="h-3 w-3 shrink-0 text-rose-600 dark:text-rose-400" aria-label="Unsubscribed from WhatsApp" />
+          )}
+        </span>
         <span className="mt-1 block truncate text-xs text-slate-500">{row.lastMessagePreview ?? 'No messages yet'}</span>
       </span>
       <span className="flex shrink-0 flex-col items-end gap-1 self-start pt-2">

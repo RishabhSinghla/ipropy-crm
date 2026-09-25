@@ -79,6 +79,8 @@ export async function recordConsent(input: {
   source?: 'keyword' | 'manual' | 'import' | 'api' | 'call_disposition';
   messageText?: string | null;
   recordId?: string | null;
+  /** The person who changed it by hand. Empty when the customer did it themselves. */
+  userId?: string | null;
 }, conn: Tx = db): Promise<void> {
   const handle = normaliseHandle(input.handle, input.channel);
 
@@ -96,8 +98,8 @@ export async function recordConsent(input: {
   }
 
   await conn.query(
-    `INSERT INTO ipy_consent_event (record_id, handle, channel, action, source, message_text)
-     VALUES ($1,$2,$3,$4,$5,$6)`,
+    `INSERT INTO ipy_consent_event (record_id, handle, channel, action, source, message_text, user_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
     [
       input.recordId ?? null,
       handle,
@@ -105,6 +107,25 @@ export async function recordConsent(input: {
       input.action,
       input.source ?? 'manual',
       input.messageText ?? null,
+      input.userId ?? null,
     ],
   );
+}
+
+/**
+ * What a customer typed, read as a request to stop or start.
+ *
+ * Only the whole message, and only these words: "stop" inside "don't stop
+ * calling me about the flat" is not an unsubscribe. The same words WhatsApp
+ * vendors honour (WhatsMarketing's own inbox included), so a customer gets the
+ * same answer whichever system reads the message first.
+ */
+const STOP_WORDS = ['stop', 'unsubscribe', 'stop all', 'opt out', 'optout'];
+const START_WORDS = ['start', 'subscribe', 'unstop', 'opt in', 'optin'];
+
+export function consentKeyword(text: string | null | undefined): 'opt_out' | 'opt_in' | null {
+  const said = (text ?? '').trim().toLowerCase().replace(/[.!]+$/, '');
+  if (STOP_WORDS.includes(said)) return 'opt_out';
+  if (START_WORDS.includes(said)) return 'opt_in';
+  return null;
 }

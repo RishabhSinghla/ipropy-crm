@@ -30,6 +30,7 @@ import { businessProvider } from './registry.js';
 import { keepInboundMedia } from './media.js';
 import { HOLDER } from './inbox.js';
 import { whyItFailed } from './whyItFailed.js';
+import { consentKeyword, recordConsent } from '../../../core/consent/index.js';
 import type { InboundMessage, StatusUpdate } from './types.js';
 
 const MODULE = 'leads';
@@ -287,6 +288,20 @@ export async function receiveInbound(
         WHERE id = $1`,
       [conversation.id, message.sentAt, body?.slice(0, 200) ?? null],
     );
+
+    /*
+      A customer who writes STOP is unsubscribed there and then, in the same
+      transaction as their message; START puts them back. Every send checks
+      the same list, so nothing more goes to them — not a reply, a template
+      or a campaign — until they, or a person on the team, say otherwise.
+    */
+    const asked = consentKeyword(message.text);
+    if (asked) {
+      await recordConsent({
+        handle: message.from, channel: 'whatsapp', action: asked,
+        source: 'keyword', messageText: message.text, recordId,
+      }, conn);
+    }
 
     await pruneEvents(conn);
 

@@ -1276,6 +1276,38 @@ send time, instead of Meta's bare code.
 
 ---
 
+## Unsubscribe (opt-out), 25 September
+
+The owner asked for WhatsMarketing's "Subscribed / Unsubscribed" in the CRM.
+The list already existed (`ipy_channel_optout`, `core/consent`) and every send
+already checked it — replies, templates and campaigns all go through
+`sendOnBusinessNumber`, which refuses *"This person has opted out"*, and a
+campaign reads that as `skipped`. What was missing was any way on or off it,
+and any way to see it.
+
+* **A customer who writes STOP is unsubscribed** in the same transaction as the
+  message (`receiveInbound` → `consentKeyword`); START puts them back. Only
+  the whole message counts — "don't stop sending me flats" is not a request.
+  Words: stop, unsubscribe, stop all, opt out / start, subscribe, unstop, opt in.
+* **A rep can do it by hand**: "Unsubscribe from WhatsApp" under the message
+  box on the Chats screen and on a record's WhatsApp tab, and "Subscribe
+  again" on the red panel that replaces the box once someone is off. Both ask
+  first. From a record it covers every phone number on it.
+* **Who did it is recorded**: `ipy_consent_event.user_id` (migration `172`),
+  empty when the customer did it themselves.
+* **It shows**: a bell-off mark beside the name in the chat list, and the red
+  panel instead of the message box — the record tab and the Chats screen read
+  the same list (`OPTED_OUT` in `inbox.ts`, last ten digits, the same way
+  `send.ts` compares).
+
+**Not synced with WhatsMarketing's own Subscribed flag.** Their subscriber
+list is theirs; the CRM's list is the CRM's. A customer's STOP reaches both
+(each reads the message), but an unsubscribe pressed in one screen is not
+copied to the other. Their subscriber API was never read for it, and the field
+name is not known from here — worth doing only if the team uses both.
+
+---
+
 ## Driven end to end, 25 September 2026 — 34 pass, 1 real fault
 
 The whole WhatsApp route put through the `prove-it` skill against a running

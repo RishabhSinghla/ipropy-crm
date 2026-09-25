@@ -1270,7 +1270,7 @@ export const api = {
     recordModule: string | null; recordLabel: string | null; assignedTo: string | null;
     assignedName: string | null; status: string; unreadCount: number;
     lastMessageAt: string | null; lastMessagePreview: string | null; waId: string | null; windowOpen: boolean;
-    windowExpiresAt: string | null;
+    windowExpiresAt: string | null; optedOut: boolean;
   }[]>(`/api/whatsapp-business/conversations${qs({ filter, search: search || undefined, module: module || undefined })}`),
   waBizMessages: (conversationId: string) => get<{
     messages: Record<string, unknown>[]; alsoViewing: string[];
@@ -1357,8 +1357,13 @@ export const api = {
     messages: Record<string, unknown>[];
   }>(`/api/whatsapp-business/threads/by-number${qs({ to, module, recordId })}`),
   waBizContactMessages: (module: string, id: string) => get<{
-    messages: Record<string, unknown>[];
+    messages: Record<string, unknown>[]; optedOut: boolean;
   }>(`/api/whatsapp-business/contacts/${module}/${id}/messages`),
+  /** Unsubscribe somebody from WhatsApp, or put them back. */
+  waBizConversationConsent: (conversationId: string, subscribed: boolean) =>
+    post<{ optedOut: boolean }>(`/api/whatsapp-business/conversations/${conversationId}/consent`, { subscribed }),
+  waBizContactConsent: (module: string, id: string, subscribed: boolean) =>
+    post<{ optedOut: boolean }>(`/api/whatsapp-business/contacts/${module}/${id}/consent`, { subscribed }),
 
   tags: (module?: string) => get<{ id: string; name: string; color: string; created_by: string | null; modules: string[]; usage_count: number }[]>(`/api/tags${qs({ module })}`),
   createTag: (body: { name: string; color?: string; modules?: string[] }) => post<{ id: string; name: string; color: string }>('/api/tags', body),

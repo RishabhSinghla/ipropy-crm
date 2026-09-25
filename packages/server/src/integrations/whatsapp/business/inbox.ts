@@ -20,6 +20,18 @@ import { notify } from '../../../core/notifications/index.js';
 
 export type InboxFilter = 'all' | 'mine' | 'unassigned' | 'unread';
 
+/**
+ * Whether the number on thread `c` has unsubscribed from WhatsApp.
+ *
+ * Compared on the last ten digits, the same way `send.ts` refuses a send, so a
+ * number stored as +91 98912 22206 and one stored as 9891222206 are one person.
+ */
+export const OPTED_OUT = `EXISTS (
+  SELECT 1 FROM ipy_channel_optout optout
+   WHERE optout.channel = 'whatsapp'
+     AND right(regexp_replace(optout.handle, '\\D', '', 'g'), 10) = right(c.handle, 10)
+)`;
+
 export interface InboxConversation {
   id: string;
   handle: string;
@@ -37,6 +49,8 @@ export interface InboxConversation {
   windowOpen: boolean;
   /** When that stops being true, so the queue can say how long is left. */
   windowExpiresAt: string | null;
+  /** The customer has asked for no more WhatsApp messages. Nothing can be sent. */
+  optedOut: boolean;
   /** WhatsApp's own full number, so a screen can print one a person recognises. */
   waId: string | null;
 }
@@ -143,12 +157,13 @@ export async function listConversations(input: {
     last_message_at: string | null; last_message_preview: string | null;
     window_expires_at: string | null;
     wa_id: string | null;
+    opted_out: boolean;
   }>(
     `SELECT c.id, c.handle, c.contact_name, c.record_id, c.record_module,
             r.label AS record_label, ${HOLDER} AS assigned_to,
             trim(u.first_name || ' ' || u.last_name) AS assigned_name,
             c.status, c.unread_count, c.last_message_at, c.last_message_preview,
-            c.window_expires_at, c.wa_id
+            c.window_expires_at, c.wa_id, ${OPTED_OUT} AS opted_out
        FROM ipy_conversation c
        LEFT JOIN ipy_record r ON r.id = c.record_id
        LEFT JOIN ipy_user u ON u.id = ${HOLDER}
@@ -174,6 +189,7 @@ export async function listConversations(input: {
     lastMessagePreview: row.last_message_preview,
     windowOpen: Boolean(row.window_expires_at && new Date(row.window_expires_at).getTime() > now),
     windowExpiresAt: row.window_expires_at,
+    optedOut: row.opted_out,
     waId: row.wa_id,
   }));
 }

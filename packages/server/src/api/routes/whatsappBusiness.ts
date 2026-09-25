@@ -22,8 +22,9 @@ import {
 import { sendOnBusinessNumber } from '../../integrations/whatsapp/business/send.js';
 import {
   assign, conversationMessages, listConversations, markRead, markUnread,
-  noteViewing, othersViewing,
+  noteViewing, othersViewing, readableConversation,
 } from '../../integrations/whatsapp/business/inbox.js';
+import { recordConsent } from '../../core/consent/index.js';
 import { db } from '../../db/pool.js';
 import {
   listStoredTemplates, organisationName, resolveTemplate, saveMapping, syncTemplates,
@@ -335,7 +336,57 @@ whatsappBusinessRouter.get('/contacts/:module/:id/messages', asyncHandler(async 
   );
   // Both routes in one column, because the customer had one conversation even
   // if it reached them two ways. `route` says which, on every line.
-  res.json({ messages: rows, user: user.id });
+  // Whether any of this record's numbers has unsubscribed, so the tab can say
+  // so rather than offer a Send that will be refused.
+  const optedOut = handles.length > 0 && Boolean(await db.queryOne(
+    `SELECT 1 FROM ipy_channel_optout
+      WHERE channel = 'whatsapp'
+        AND right(regexp_replace(handle, '\\D', '', 'g'), 10) = ANY(
+          SELECT right(h, 10) FROM unnest($1::text[]) AS h)
+      LIMIT 1`,
+    [handles],
+  ));
+  res.json({ messages: rows, user: user.id, optedOut });
+}));
+
+/**
+ * Unsubscribe somebody from WhatsApp, or put them back — from the Chats screen.
+ *
+ * The same list a customer's own STOP writes to, and the same list every send
+ * checks. Whoever can open the chat can change it; the trail records who did.
+ */
+const consentBody = z.object({ subscribed: z.boolean() });
+
+whatsappBusinessRouter.post('/conversations/:id/consent', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const { subscribed } = consentBody.parse(req.body ?? {});
+  const conversation = await readableConversation(user.id, user.isAdmin, req.params.id!);
+  await recordConsent({
+    handle: conversation.handle, channel: 'whatsapp',
+    action: subscribed ? 'opt_in' : 'opt_out', source: 'manual',
+    recordId: conversation.recordId, userId: user.id,
+  });
+  res.json({ optedOut: !subscribed });
+}));
+
+/**
+ * The same, from a record's WhatsApp tab. Every phone number on the record,
+ * because a customer who says "stop" means stop, whichever of their numbers
+ * the next message would have gone to.
+ */
+whatsappBusinessRouter.post('/contacts/:module/:id/consent', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const { subscribed } = consentBody.parse(req.body ?? {});
+  const record = await recordService.getRecord(getScope(req), req.params.module!, req.params.id!);
+  const handles = await handlesOf(req.params.module!, record.values ?? {});
+  if (!handles.length) throw new BadRequestError('This record has no phone number to unsubscribe.');
+  for (const handle of handles) {
+    await recordConsent({
+      handle, channel: 'whatsapp', action: subscribed ? 'opt_in' : 'opt_out',
+      source: 'manual', recordId: req.params.id, userId: user.id,
+    });
+  }
+  res.json({ optedOut: !subscribed });
 }));
 
 /**

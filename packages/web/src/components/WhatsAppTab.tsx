@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
 import { readMessageMedia, WhatsAppMedia } from './WhatsAppMedia';
+import { UnsubscribedPanel, UnsubscribeLink } from './WhatsAppConsent';
 import { bubbleTime, composerMode, dayLabel, outboundTone, wentOut, whyNoTextBox } from '../lib/whatsapp';
 import { EmptyState, Select, Skeleton, Spinner } from './ui';
 
@@ -36,7 +37,7 @@ export function WhatsAppTab({ module, recordId, mobile }: {
   const { data: business } = useQuery({ queryKey: ['wa-biz', 'status'], queryFn: () => api.waBizStatus() });
   const onBusiness = Boolean(business?.connected);
 
-  const { data: messages, isLoading } = useQuery({
+  const { data: contact, isLoading } = useQuery({
     queryKey: ['whatsapp', 'contact', module, recordId],
     enabled: onBusiness,
     /*
@@ -54,7 +55,9 @@ export function WhatsAppTab({ module, recordId, mobile }: {
     */
     refetchInterval: 15_000,
     refetchOnWindowFocus: true,
-    queryFn: async () => ((await api.waBizContactMessages(module, recordId)).messages.map((row) => ({
+    queryFn: async () => {
+      const answer = await api.waBizContactMessages(module, recordId);
+      return { optedOut: answer.optedOut, messages: answer.messages.map((row) => ({
         id: String(row.id),
         direction: row.direction as 'inbound' | 'outbound',
         body: (row.body as string | null) ?? null,
@@ -65,7 +68,20 @@ export function WhatsAppTab({ module, recordId, mobile }: {
           : 'the business number',
         status: String(row.status ?? ''),
         error: (row.error_message as string | null) ?? null,
-      }))),
+      })) };
+    },
+  });
+  const messages = contact?.messages;
+  const optedOut = Boolean(contact?.optedOut);
+
+  const consent = useMutation({
+    mutationFn: (subscribed: boolean) => api.waBizContactConsent(module, recordId, subscribed),
+    onSuccess: ({ optedOut: nowOut }) => {
+      toast.success(nowOut ? 'Unsubscribed from WhatsApp' : 'Subscribed to WhatsApp again');
+      void queryClient.invalidateQueries({ queryKey: ['whatsapp', 'contact', module, recordId] });
+      void queryClient.invalidateQueries({ queryKey: ['wa-biz'] });
+    },
+    onError: (err: Error) => toast.error('Could not change that', err.message),
   });
 
   const send = useMutation({
@@ -245,7 +261,13 @@ export function WhatsAppTab({ module, recordId, mobile }: {
         still can, and this is where a rep already is. Without it the only way
         to reach the customer from a record was to leave the record.
       */}
-      {onBusiness && mode === 'template' && mobile && (
+      {optedOut && (
+        <div className="border-t border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+          <UnsubscribedPanel who="This person" onSubscribeAgain={() => consent.mutateAsync(true)} />
+        </div>
+      )}
+
+      {!optedOut && onBusiness && mode === 'template' && mobile && (
         <div className="space-y-2 border-t border-slate-200 bg-amber-50 px-3 py-2 dark:border-slate-800 dark:bg-amber-950/40">
           <p className="flex items-center gap-1.5 text-xs text-amber-900 dark:text-amber-200">
             <Clock className="h-3.5 w-3.5" />
@@ -284,8 +306,9 @@ export function WhatsAppTab({ module, recordId, mobile }: {
         </div>
       )}
 
+      {!optedOut && (
       <form
-        className="flex items-end gap-2 border-t border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900"
+        className="flex flex-wrap items-end gap-2 border-t border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900"
         onSubmit={(e) => { e.preventDefault(); if (draft.trim()) send.mutate(draft.trim()); }}
       >
         <textarea
@@ -308,7 +331,13 @@ export function WhatsAppTab({ module, recordId, mobile }: {
           {send.isPending ? <Spinner /> : <Send className="h-3.5 w-3.5" />}
           Send
         </button>
+        {onBusiness && mobile && (
+          <div className="flex w-full justify-end">
+            <UnsubscribeLink who="this person" onUnsubscribe={() => consent.mutateAsync(false)} />
+          </div>
+        )}
       </form>
+      )}
     </div>
   );
 }

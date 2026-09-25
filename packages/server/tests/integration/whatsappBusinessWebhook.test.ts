@@ -20,6 +20,7 @@ import { recordService } from '../../src/core/entity/recordService.js';
 import { applyStatus, receiveInbound, recordSentElsewhere } from '../../src/integrations/whatsapp/business/inbound.js';
 import { metaCloudProvider } from '../../src/integrations/whatsapp/business/metaCloud.js';
 import { adminContext } from './fixtures.js';
+import { listConversations } from '../../src/integrations/whatsapp/business/inbox.js';
 
 const PROVIDER = 'whatsapp_meta';
 const stamp = Date.now();
@@ -58,6 +59,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db.query(`DELETE FROM ipy_wa_webhook_event WHERE provider = $1`, [PROVIDER]);
+  await db.query(
+    `DELETE FROM ipy_channel_optout WHERE right(regexp_replace(handle, '\\D', '', 'g'), 10) = $1`, [KNOWN],
+  );
   await db.query(
     `DELETE FROM ipy_conversation WHERE handle IN ($1, $2)`,
     [`91${KNOWN}`.slice(-10), `91${UNKNOWN}`.slice(-10)],
@@ -188,6 +192,33 @@ describe('the official WhatsApp webhook', () => {
     expect(await recordSentElsewhere(PROVIDER, {
       providerMessageId: `wamid.CRMSENT${stamp}`, to: `91${KNOWN}`, text: 'from the CRM', media: null, sentAt: new Date(),
     })).toBe(false);
+  });
+
+  it('unsubscribes a customer who writes STOP, and takes them back on START', async () => {
+    const ctx = await adminContext();
+    const optedOut = async (): Promise<boolean | undefined> => (await listConversations({
+      userId: ctx.user.id, isAdmin: true, filter: 'all', search: KNOWN,
+    })).find((row) => row.handle === KNOWN)?.optedOut;
+
+    const say = async (text: string, id: string): Promise<void> => {
+      const batch = metaCloudProvider.parseWebhook(delivery(`91${KNOWN}`, `${id}${stamp}`, text));
+      await receiveInbound(PROVIDER, batch.messages[0]);
+    };
+
+    await say('STOP', 'wamid.STOP');
+    expect(await optedOut()).toBe(true);
+    const trail = await db.queryOne<{ action: string; source: string; record_id: string | null }>(
+      `SELECT action, source, record_id FROM ipy_consent_event
+        WHERE right(regexp_replace(handle, '\\D', '', 'g'), 10) = $1 ORDER BY created_at DESC LIMIT 1`, [KNOWN],
+    );
+    expect(trail).toEqual({ action: 'opt_out', source: 'keyword', record_id: recordId });
+
+    // A sentence with the word in it is not a request.
+    await say("don't stop sending me flats", 'wamid.NOTSTOP');
+    expect(await optedOut()).toBe(true);
+
+    await say('Start', 'wamid.START');
+    expect(await optedOut()).toBe(false);
   });
 
   it('refuses a delivery that is not signed by the provider', () => {
