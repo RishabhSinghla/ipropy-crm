@@ -1,0 +1,152 @@
+# Set the record header's five facts, and rename Unit Number to "House No.".
+#
+# The owner's prototype of 26 September names five facts for a record's header
+# — Mobile, Contact Type, House No., Budget, Locality — and calls the unit
+# field "House No.". Neither is code: the header list is `ui.split_view` and
+# the name is `ipy_field.label`, both of which an admin sets in the CRM. He
+# asked for them to be set for him, and production is not reachable from a
+# development container, so this does exactly what those two screens do.
+#
+# Dry run by default: it prints what is there and what it would write, and
+# changes nothing. `apply: true` writes.
+#
+# Two things it must get right, and both have bitten this repo before:
+#
+#   * A renamed label needs `is_customised = true`, or the seed puts the
+#     template's word back on the next cold start. `PUT /api/meta/fields/:id`
+#     sets it for exactly that reason.
+#   * Both caches are per process. `uiSettings()` memoises for the life of the
+#     container and the metadata registry is read on nearly every request, so
+#     a direct write is invisible until the container restarts — which reads
+#     exactly like the setting not working. The last step says so; run
+#     "Deploy now" after this, or wait for the next deploy.
+#
+# Nothing here touches a record. Only two metadata rows and one settings row.
+name: Set the header keys
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Write it (unticked = show what would change, change nothing)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  set:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Install psql 18
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-18
+
+      - name: Set them
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          APPLY: ${{ inputs.apply }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PROD_DATABASE_URL" ]; then
+            echo "No PROD_DATABASE_URL secret configured." >&2
+            exit 1
+          fi
+
+          # The five, by the field names production actually has — read off it
+          # rather than guessed. `budget` on a contact is what they will spend;
+          # `demand` on a unit is what it asks. Queue and form are left empty
+          # on purpose: empty means "keep what the CRM shipped", so this
+          # changes the header and nothing else.
+          WANT='{
+            "leads":      {"queue": [], "header": ["mobile","contact_type","unit_no","budget","preferred_locations"], "form": []},
+            "properties": {"queue": [], "header": ["mobile","contact_type","unit_number","demand","preferred_locations"], "form": []}
+          }'
+
+          echo "=== the header list now ==="
+          psql "$PROD_DATABASE_URL" -tAc \
+            "SELECT coalesce((SELECT value::text FROM ipy_setting WHERE key = 'ui.split_view'), '(no row)');"
+          echo
+          echo "=== what it would become ==="
+          echo "$WANT"
+          echo
+          echo "=== every field named below must exist and be active ==="
+          # A header naming a field that is not there shows nothing, silently,
+          # which reads as the setting being broken. Checked before writing.
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT m.name AS module, f.name, f.label, f.is_active
+              FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+             WHERE (m.name = 'leads'      AND f.name IN ('mobile','contact_type','unit_no','budget','preferred_locations'))
+                OR (m.name = 'properties' AND f.name IN ('mobile','contact_type','unit_number','demand','preferred_locations'))
+             ORDER BY m.name, f.name;"
+          MISSING=$(psql "$PROD_DATABASE_URL" -tAc "
+            SELECT count(*) FROM (
+              SELECT 'leads' AS m, unnest(ARRAY['mobile','contact_type','unit_no','budget','preferred_locations']) AS n
+              UNION ALL
+              SELECT 'properties', unnest(ARRAY['mobile','contact_type','unit_number','demand','preferred_locations'])
+            ) w
+            WHERE NOT EXISTS (
+              SELECT 1 FROM ipy_field f JOIN ipy_module mo ON mo.id = f.module_id
+               WHERE mo.name = w.m AND f.name = w.n AND f.is_active);")
+          if [ "$MISSING" != "0" ]; then
+            echo "$MISSING of the ten named fields are missing or hidden on production. Not writing." >&2
+            exit 1
+          fi
+
+          echo
+          echo "=== the unit field's name now ==="
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT m.name AS module, f.name, f.label, f.is_customised
+              FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+             WHERE (m.name = 'leads' AND f.name = 'unit_no')
+                OR (m.name = 'properties' AND f.name = 'unit_number');"
+
+          if [ "$APPLY" != "true" ]; then
+            echo
+            echo "Dry run. Nothing was written. Tick 'Write it' to apply."
+            exit 0
+          fi
+
+          echo
+          echo "=== writing ==="
+          # One statement, so the header and the name cannot half-land.
+          psql "$PROD_DATABASE_URL" -v ON_ERROR_STOP=1 -v want="$WANT" <<'SQL'
+          BEGIN;
+
+          -- The row exists (migration 160 creates it under `ui`), but a row
+          -- inserted by the settings PUT with no category lands in `general`
+          -- and the admin screen, which asks for `ui`, never sees it again.
+          -- Stated here so this cannot be the thing that goes wrong.
+          INSERT INTO ipy_setting (key, value, category)
+          VALUES ('ui.split_view', :'want'::jsonb, 'ui')
+          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, category = 'ui';
+
+          -- `is_customised` claims the field as admin-owned, or `db:seed` puts
+          -- "Unit Number" back on the next cold start.
+          UPDATE ipy_field f
+             SET label = 'House No.', is_customised = true, updated_at = now()
+            FROM ipy_module m
+           WHERE m.id = f.module_id
+             AND ((m.name = 'leads' AND f.name = 'unit_no')
+               OR (m.name = 'properties' AND f.name = 'unit_number'));
+
+          COMMIT;
+          SQL
+
+          echo
+          echo "=== after ==="
+          psql "$PROD_DATABASE_URL" -tAc \
+            "SELECT value::text FROM ipy_setting WHERE key = 'ui.split_view';"
+          psql "$PROD_DATABASE_URL" -P pager=off -c "
+            SELECT m.name AS module, f.name, f.label, f.is_customised
+              FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
+             WHERE (m.name = 'leads' AND f.name = 'unit_no')
+                OR (m.name = 'properties' AND f.name = 'unit_number');"
+          echo
+          echo "Written. Both caches live for the life of the container, so run"
+          echo "the 'Deploy now' workflow to restart it — until then the CRM is"
+          echo "still serving the old header and the old name."
