@@ -2605,6 +2605,31 @@ component.
 **And the open record in the queue is tinted, not only ringed.** A ring on a
 white card among white cards is easy to lose at a glance down a long list.
 
+**Then he worked the screen and asked for four changes to it**, the same
+evening, and two of them reverse decisions written above.
+
+* **The stage chip is the solid variant now** — the admin's hue as the fill
+  rather than as a wash of itself — *"Normal editable Rounded chip in dark
+  color as we picked from Master Dropdown colors, Its shold be very bold and
+  highlighted."* `lib/color.ts` already computed both beside each other, and
+  picks black or white on top so the pair still clears AA; a hue nobody has
+  chosen falls back to the brand rather than to an invented one.
+* **Neither pill has a chevron.** They are still the same controls — the whole
+  chip opens the list — and an arrow on a chip that size ate a third of the
+  word inside it.
+* **Every outcome is on screen at once, in 11px.** This showed six with the
+  rest behind *"N more outcomes"*, on the reasoning that three rows and a
+  scroll after every call is how a rep stops recording them. He has now worked
+  the screen: *"decrease all deposition font size. so that we can see all call
+  otcome in a screen."* He is right, and the reason is worth keeping — **a
+  hidden option is worse than a small one**, because a rep who cannot see what
+  happened picks the nearest thing they can see, and that is a wrong outcome
+  in a report rather than a slow one. `splitOutcomes` still decides the
+  *order*, so the six used all day stay first and a renamed option cannot move
+  "Interested" under somebody's thumb; it simply no longer hides the tail.
+  Measured: the whole deck is 768px in a 1050px window with seventeen
+  outcomes.
+
 **Two sessions answered this message at once, and the merge is worth writing
 down.** A parallel session shipped read-only chips for the same two pills and
 its own treatment of the queue row, hours apart. What survived, and why: the

@@ -22,7 +22,7 @@
  */
 import { type JSX, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, PhoneCall } from 'lucide-react';
+import { PhoneCall } from 'lucide-react';
 import type { FieldMeta, RecordEnvelope } from '@ipropy/shared';
 import { Dropdown, DropdownItem } from './ui';
 import { api } from '../lib/api';
@@ -61,11 +61,19 @@ export function HeaderPills({ module, row, canEdit, className }: {
 /**
  * Where this record stands, in the colour the admin chose for that stage.
  *
- * The tint comes from the option's own hex through `badgeVars`, never from
- * `${color}18` written here: a raw hue as text on a wash of itself lands
- * around 2–3:1, and which stage was readable would depend entirely on which
- * colour somebody picked. A stage with no colour set falls back to the
- * recessed tone rather than to an invented one.
+ * **26 September 2026, the owner:** *"it should be Normal editable Rounded
+ * chip in dark color as we picked from Master Dropdown colors, Its shold be
+ * very bold and highlighted then all text eye catching."* So it is the
+ * **solid** variant — the admin's hue as the fill rather than as a wash of
+ * itself — which `lib/color.ts` already computes beside the tinted one, with
+ * black or white on top chosen so the pair still clears AA. Which of those it
+ * picks is why a raw `${color}18` written here would not do: that lands
+ * around 2–3:1, and how readable a stage came out would depend entirely on
+ * which colour somebody happened to choose.
+ *
+ * **No arrow**, on the same instruction. It is still the same control — the
+ * whole chip opens the list — and a chevron on a chip this size ate a third
+ * of the word inside it.
  */
 function StatusPill({ module, field, row, canEdit }: {
   module: DescribedModule; field: FieldMeta; row: RecordEnvelope; canEdit: boolean;
@@ -103,15 +111,15 @@ function StatusPill({ module, field, row, canEdit }: {
           aria-label={`${field.label}${label ? `, ${label}` : ', not set'}. Change it`}
           style={badgeVars(chosen?.color)}
           className={cn(
-            'inline-flex h-7 max-w-[11rem] items-center gap-1 rounded px-2.5 text-xs font-bold',
+            'inline-flex h-8 max-w-[12rem] items-center rounded-full px-3.5 text-sm font-extrabold tracking-tight',
+            'shadow-sm transition-transform hover:brightness-110 active:scale-95',
             'disabled:cursor-not-allowed disabled:opacity-60',
-            chosen?.color
-              ? 'badge-tinted'
-              : 'bg-[var(--surface-muted)] text-[var(--text)] dark:bg-slate-800 dark:text-slate-100',
+            // A stage nobody has given a colour falls back to the brand rather
+            // than to an invented hue — still dark, still eye-catching.
+            chosen?.color ? 'badge-solid' : 'bg-brand-700 text-white',
           )}
         >
           <span className="truncate">{label || field.label}</span>
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
         </button>
       }
     >
@@ -205,13 +213,13 @@ function CallAgainPill({ module, followUp, row, canEdit }: {
           title={last?.disposition ? `Last call: ${label} — record another` : 'Record how a call went'}
           aria-label={last?.disposition ? `Last call ${label}. Record how a call went` : 'Record how a call went'}
           className={cn(
-            'inline-flex h-7 max-w-[11rem] items-center gap-1 rounded bg-brand-700 px-2.5 text-xs font-bold text-white',
-            'hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-60',
+            'inline-flex h-8 max-w-[12rem] items-center gap-1.5 rounded-full bg-brand-800 px-3.5 text-sm font-extrabold tracking-tight text-white',
+            'shadow-sm transition-transform hover:bg-brand-900 active:scale-95',
+            'disabled:cursor-not-allowed disabled:opacity-60',
           )}
         >
-          <PhoneCall className="h-3.5 w-3.5 shrink-0" aria-hidden />
+          <PhoneCall className="h-4 w-4 shrink-0" aria-hidden />
           <span className="truncate">{label}</span>
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
         </button>
       }
     >

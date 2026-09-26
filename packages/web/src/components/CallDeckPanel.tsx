@@ -17,7 +17,7 @@
  * A panel that replaced the team's notes permanently would take away the box
  * everybody writes in, and a call deck standing empty says nothing.
  */
-import { type JSX, useEffect, useState } from 'react';
+import { type JSX, useEffect } from 'react';
 import {
   ChevronLeft, ChevronRight, Mic, Pause, PhoneOff, SkipForward, Volume2, VolumeX,
 } from 'lucide-react';
@@ -191,23 +191,28 @@ function Notes({ deck }: { deck: CallDeckState }): JSX.Element {
  * gets a card — a rep who cannot record what happened is the worse failure.
  */
 function Outcomes({ deck }: { deck: CallDeckState }): JSX.Element {
-  const [showAll, setShowAll] = useState(false);
   /*
-    Six, not seventeen. The admin's list can be any length — this database
-    carries seventeen — and three rows and a scroll after every call is how a
-    rep stops recording outcomes. `splitOutcomes` picks the six used all day,
-    in a fixed order so a renamed option cannot move "Interested" under
-    somebody's thumb, and always keeps the chosen one among them.
+    Every outcome on screen at once, in smaller type.
+
+    **26 September 2026, the owner:** *"from call deck decrease all deposition
+    font size. so that we can see all call otcome in a screen."* This showed
+    six with the rest a tap behind "N more outcomes", on the reasoning that
+    three rows and a scroll after every call is how a rep stops recording
+    them. He has worked the screen and wants the whole list — and he is right
+    that a hidden option is worse than a small one, because a rep who cannot
+    see what happened picks the nearest thing they can see.
+
+    The order is still `splitOutcomes`' — the six used all day first, in a
+    fixed order, so a renamed option cannot move "Interested" under somebody's
+    thumb. It just no longer hides the tail.
   */
   const { first, rest } = splitOutcomes(deck.outcomes.map((o) => o.value), deck.outcome);
-  // The logger writes a stable value; a rep reads the name their admin typed,
-  // so the chip is labelled from the option and keyed by the value.
+  const shown = [...first, ...rest];
   const labels = new Map(deck.outcomes.map((o) => [o.value, o.label]));
-  const shown = showAll ? [...first, ...rest] : first;
   return (
     <div>
       <p className="key-label mb-1.5">Call disposition</p>
-      <div className="grid grid-cols-3 gap-1.5">
+      <div className="grid grid-cols-3 gap-1">
         {shown.map((value) => {
           const chosen = value === deck.outcome;
           return (
@@ -219,7 +224,7 @@ function Outcomes({ deck }: { deck: CallDeckState }): JSX.Element {
               aria-label={labels.get(value) ?? value}
               title={outcomeCard(value).hint}
               className={cn(
-                'rounded border px-1.5 py-2 text-xs font-semibold transition-colors',
+                'rounded border px-1 py-1.5 text-[11px] font-semibold leading-tight transition-colors',
                 chosen
                   ? 'border-positive bg-positive-soft text-positive-on-soft'
                   : 'border-[var(--border)] bg-[var(--surface-subtle)] text-[var(--text)] hover:bg-[var(--surface-muted)] dark:text-slate-100',
@@ -230,15 +235,6 @@ function Outcomes({ deck }: { deck: CallDeckState }): JSX.Element {
           );
         })}
       </div>
-      {rest.length > 0 && (
-        <button
-          type="button"
-          onClick={() => setShowAll((on) => !on)}
-          className="mt-1.5 w-full rounded py-1 text-xs font-semibold text-muted hover:bg-[var(--surface-muted)]"
-        >
-          {showAll ? 'Fewer outcomes' : `${rest.length} more outcomes`}
-        </button>
-      )}
     </div>
   );
 }
