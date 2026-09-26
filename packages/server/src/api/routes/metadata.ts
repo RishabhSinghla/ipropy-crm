@@ -1855,6 +1855,22 @@ metadataRouter.put('/modules/:name/picklist-dependency', asyncHandler(async (req
   res.json({ ok: true });
 }));
 
+/** Remove a dependency deliberately; leaving an invisible stale rule is worse than no rule. */
+metadataRouter.delete('/modules/:name/picklist-dependency', asyncHandler(async (req, res) => {
+  await assertCapability(getUser(req), 'admin.picklists');
+  const module = await registry.requireModule(req.params.name);
+  const { sourceField, targetField } = z.object({
+    sourceField: z.string().min(1),
+    targetField: z.string().min(1),
+  }).parse(req.query);
+  await db.query(
+    `DELETE FROM ipy_picklist_dependency WHERE module_id = $1 AND source_field = $2 AND target_field = $3`,
+    [module.id, sourceField, targetField],
+  );
+  invalidateAll();
+  res.json({ ok: true });
+}));
+
 // ---------------------------------------------------------------------------
 // Layout designer
 // ---------------------------------------------------------------------------

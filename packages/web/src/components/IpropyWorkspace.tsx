@@ -2,8 +2,8 @@ import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDate, recordStrength, relativeTime, type FieldMeta, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
-  AlarmClock, ArrowRightLeft, ArrowUpDown, Building2, CalendarClock, Check, CircleEllipsis, FileText, Link2,
-  MessageCircle, MoreHorizontal, Phone, Sparkles, Star, Trash2, TriangleAlert, Users,
+  AlarmClock, ArrowRightLeft, ArrowUpDown, Building2, CalendarClock, Check, CircleCheck, CircleEllipsis, FileText, Link2,
+  MessageCircle, MoreHorizontal, Phone, PhoneCall, Sparkles, Star, Trash2, TriangleAlert, Users,
 } from 'lucide-react';
 import { FieldValue } from './FieldRenderer';
 import { CALL_DECK_DOCK_ID } from './LiveCallDeck';
@@ -264,8 +264,22 @@ export function IpropyWorkspace({
     reasoning is the mistake this repo keeps finding months later.
   */
   const { headerFields, blocks, subtitleFields, queueChosen, assignedField, statusField, followUpField, phoneField } = useRecordPanes(module);
+  const callDispositionField = useMemo(
+    () => module.fields.find((field) => field.name === 'call_disposition' || field.columnName === 'call_disposition'),
+    [module.fields],
+  );
   const cardFields = useMemo(() => queueCardFields(module.fields), [module.fields]);
   const phoneValue = active && phoneField ? displayOf(active, phoneField) : '';
+  const { data: matchingCount } = useQuery({
+    queryKey: ['workspace-matching-count', module.name, active?.id],
+    enabled: Boolean(active?.id),
+    staleTime: 60_000,
+    queryFn: async (): Promise<number> => {
+      if (!active) return 0;
+      if (module.name === 'leads') return (await api.matchProperties(module.name, active.id, false, 50)).matches?.length ?? 0;
+      return (await api.buyersForProperty(active.id, false, 50)).buyers?.length ?? 0;
+    },
+  });
 
   /*
     What the queue's one menu can do. Ordering and the follow-up windows are
@@ -399,7 +413,7 @@ export function IpropyWorkspace({
             </div>
           )}
         </div>
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-[#faf8ff] p-2 dark:bg-slate-950">
+        <div className="min-h-0 flex-1 overflow-y-auto bg-white dark:bg-slate-950">
           {rows.map((row) => (
             <QueueCard
               key={row.id}
@@ -463,13 +477,11 @@ export function IpropyWorkspace({
                 nothing — the opposite of the ask. The name gives way first
                 (`truncate`) and everything beside it holds its width.
               */}
-              <div className="flex min-w-0 items-center gap-x-3 whitespace-nowrap">
+              <div className="flex min-w-0 items-center gap-x-2 whitespace-nowrap">
                 <h2 className="min-w-0 truncate text-xl font-extrabold tracking-tight text-slate-950 dark:text-white">{active.label}</h2>
-                {/* Between the name and when it was last touched, which is
-                    where the owner asked for it. */}
                 {assignedField && (
-                  <span className="inline-flex shrink-0 items-center gap-1.5 text-sm">
-                    <span className="shrink-0 text-xs font-normal text-muted">{assignedField.label}:</span>
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-700 dark:bg-violet-950/40 dark:text-violet-200" title="Agent">
+                    <Users className="h-3 w-3" aria-hidden />
                     {canEdit && isInlineEditable(assignedField) ? (
                       <EditableField
                         module={module.name}
@@ -487,12 +499,12 @@ export function IpropyWorkspace({
                     )}
                   </span>
                 )}
-                <span className="shrink-0 text-sm text-slate-400">Updated {relativeTime(active.updatedAt)}</span>
               </div>
-
-              {/* How complete the record is, under the name rather than
-                  wrapped around the avatar. */}
-              <StrengthBar module={module} row={active} className="mt-1 max-w-[11rem]" slim />
+              <div className="mt-0.5 flex items-center gap-2 text-xs">
+                <span className="text-slate-400">Updated {relativeTime(active.updatedAt)}</span>
+                <span className="text-slate-300">•</span>
+                <span className="font-semibold text-blue-600 dark:text-blue-300">{recordStrength(module.fields, active.values).percent}% Profile Complete</span>
+              </div>
 
             </div>
 
@@ -501,7 +513,17 @@ export function IpropyWorkspace({
                   name after "Updated …", capped at two — the end of a line of
                   text is where a chip goes unread, and the owner asked for
                   them beside the icons in every view. */}
-              <TagChips module={module.name} tags={active.tags} className="mr-0.5 max-w-[16rem]" />
+              <TagChips module={module.name} tags={active.tags} className="mr-0.5 max-w-[11rem]" />
+              {statusField && displayOf(active, statusField) && (
+                <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-brand-700 px-3 py-2 text-xs font-bold text-white shadow-sm">
+                  <CircleCheck className="h-3.5 w-3.5" />{displayOf(active, statusField)}
+                </span>
+              )}
+              {callDispositionField && displayOf(active, callDispositionField) && (
+                <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-bold text-violet-700 dark:border-violet-900 dark:bg-violet-950/40 dark:text-violet-200">
+                  <PhoneCall className="h-3.5 w-3.5" />{displayOf(active, callDispositionField)}
+                </span>
+              )}
               {/*
                 The line the owner asked for twice: everything to its left is
                 the record, everything to its right is what you *do* with it —
@@ -613,7 +635,7 @@ export function IpropyWorkspace({
           <nav className="mt-1.5 flex max-w-full overflow-x-auto" aria-label="Record workspace sections">
             <DeskTab active={tab === 'overview'} onClick={() => setTab('overview')}>Overview</DeskTab>
             <DeskTab active={tab === 'timeline'} onClick={() => setTab('timeline')}>Timeline</DeskTab>
-            <DeskTab active={tab === 'matching'} onClick={() => setTab('matching')}><Link2 className="h-3.5 w-3.5" />Matching {module.name === 'leads' ? 'inventory' : 'leads'}</DeskTab>
+            <DeskTab active={tab === 'matching'} onClick={() => setTab('matching')}><Link2 className="h-3.5 w-3.5" />Matching {module.name === 'leads' ? 'inventory' : 'leads'} {matchingCount ? <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-2xs font-bold text-violet-700">{matchingCount}</span> : null}</DeskTab>
             <DeskTab active={tab === 'files'} onClick={() => setTab('files')}><FileText className="h-3.5 w-3.5" />Files</DeskTab>
             <DeskTab active={tab === 'calls'} onClick={() => setTab('calls')}><Phone className="h-3.5 w-3.5" />Calls</DeskTab>
             <DeskTab active={tab === 'whatsapp'} onClick={() => setTab('whatsapp')}><MessageCircle className="h-3.5 w-3.5" />WhatsApp</DeskTab>
@@ -736,7 +758,9 @@ function QueueCard({ row, active, checked, attention, card, followUpField, admin
   const type = card.type ? read(card.type) : '';
   const unit = card.unit ? read(card.unit) : '';
   const description = unitDescription(card, read);
-  const adminText = adminLine?.map(read).filter(Boolean).join(' — ') ?? '';
+  // Contact type is already the compact chip beside the name. Repeating it in
+  // the detail line wastes the one piece of queue real estate a rep scans.
+  const adminText = adminLine?.filter((field) => field.name !== card.type?.name).map(read).filter(Boolean).join(' — ') ?? '';
   const price = card.price ? cardPrice(row.values[card.price.name]) : '';
   const areaUnitField = card.area?.config.unitField;
   const area = card.area
@@ -763,13 +787,13 @@ function QueueCard({ row, active, checked, attention, card, followUpField, admin
         onClick={onSelect}
         aria-current={active ? 'true' : undefined}
         className={cn(
-          'relative block w-full overflow-hidden rounded-lg border bg-white py-3 pl-4 pr-3 text-left transition-shadow dark:bg-slate-900',
+          'relative block w-full overflow-hidden border-b-2 border-slate-200 bg-white py-2.5 pl-4 pr-3 text-left transition-colors dark:border-slate-800 dark:bg-slate-900',
           active
-            ? 'border-[var(--border)] shadow-md ring-1 ring-brand-600/25 dark:border-slate-700 dark:ring-brand-400/40'
-            : 'border-[var(--border)] hover:shadow-sm dark:border-slate-800',
+            ? 'bg-violet-50/80 shadow-[inset_4px_0_0_#7c3aed] dark:bg-violet-950/30'
+            : 'hover:bg-violet-50/50 dark:hover:bg-slate-800',
         )}
       >
-        {active && <span className="absolute inset-y-0 left-0 w-1.5 bg-brand-600 dark:bg-brand-400" aria-hidden />}
+        {active && <span className="absolute inset-y-0 left-0 w-1 bg-brand-600 dark:bg-brand-400" aria-hidden />}
 
         {/* 1. Who, and what kind of contact. Room kept on the right for the star. */}
         <span className="flex min-w-0 items-center gap-2 pr-12">

@@ -37,17 +37,17 @@ function asDay(value: unknown): Date | null {
   return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
 }
 
-/** "1 day", "12 days", "1 month", "3 months", "1 year". */
+/** Compact queue notation: "1D", "12D", "1M", "3M", "1Y". */
 export function howLongOverdue(days: number): string {
   if (days >= 365) {
     const years = Math.floor(days / 365);
-    return years === 1 ? '1 year' : `${years} years`;
+    return `${years}Y`;
   }
   if (days >= 30) {
     const months = Math.floor(days / 30);
-    return months === 1 ? '1 month' : `${months} months`;
+    return `${months}M`;
   }
-  return days === 1 ? '1 day' : `${days} days`;
+  return `${days}D`;
 }
 
 /**

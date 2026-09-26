@@ -257,6 +257,8 @@ export default function RecordForm({
 
   const validate = (): boolean => {
     const next: Record<string, string> = {};
+    const statusField = module.fields.find((field) => field.name === 'status' || field.columnName === 'status');
+    const lostStatus = Boolean(statusField && /lost/i.test(String(values[statusField.name] ?? '')));
 
     for (const block of blocks) {
       for (const name of block.fields) {
@@ -265,9 +267,10 @@ export default function RecordForm({
         // Required always, or required only in a particular state — the same
         // rule the server applies, so the form cannot accept what the API will
         // refuse. A hold needs an end date once the unit is Held, and not before.
+        const lostReasonRequired = field.name === 'lost_reason' && lostStatus;
         const required = field.isMandatory
           || (field.config?.requiredWhen ? evaluateFilter(field.config.requiredWhen, values) : false);
-        if (!required) continue;
+        if (!required && !lostReasonRequired) continue;
         if (field.displayType === 'hidden' || field.displayType === 'detail_only') continue;
         // A field hidden by its own condition cannot be filled in, so requiring
         // it would deadlock the form on something the user cannot even see.

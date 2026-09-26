@@ -663,12 +663,13 @@ export const api = {
   createLayout: (module: string, data: Record<string, unknown>) =>
     post<{ id: string }>(`/api/meta/modules/${module}/layouts`, data),
   picklists: () => get<Record<string, { value: string; label: string; color: string | null }[]>>('/api/meta/picklists'),
-  picklist: (name: string) => get<{ value: string; label: string; color: string | null }[]>(`/api/meta/picklists/${name}`),
+  picklist: (name: string) => get<{ value: string; label: string; color: string | null; isActive?: boolean; meta?: Record<string, unknown> }[]>(`/api/meta/picklists/${name}`),
   picklistCatalogue: () => get<{
     name: string; label: string; isSystem: boolean; allowAdhoc: boolean; isOrdered: boolean;
     values: {
       value: string; label: string; color: string | null;
       sequence: number; isActive: boolean; isDefault: boolean;
+      meta?: Record<string, unknown>;
       /** What the application matches on this exact word, if anything. */
       usedInCode: string | null;
     }[];
@@ -685,6 +686,10 @@ export const api = {
     put<{ values: unknown[]; renamedRecords: number; renamedFilters: number; skipped?: string[] }>(
       `/api/meta/picklists/${name}/values`, { values, restore },
     ),
+  savePicklistDependency: (module: string, data: { sourceField: string; targetField: string; mapping: Record<string, string[]> }) =>
+    put(`/api/meta/modules/${module}/picklist-dependency`, data),
+  deletePicklistDependency: (module: string, sourceField: string, targetField: string) =>
+    del(`/api/meta/modules/${module}/picklist-dependency?sourceField=${encodeURIComponent(sourceField)}&targetField=${encodeURIComponent(targetField)}`),
   createPicklist: (data: { name: string; label: string; values?: unknown[] }) =>
     post('/api/meta/picklists', data),
   renamePicklist: (name: string, label: string) => patch(`/api/meta/picklists/${name}`, { label }),

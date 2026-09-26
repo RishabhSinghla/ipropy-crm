@@ -10,7 +10,7 @@ import { compressImage, formatBytes } from '../lib/compressImage';
 import { toast, useApp } from '../lib/store';
 import { useWatchRecord } from '../lib/realtime';
 import { invalidateRecordQueries } from '../lib/invalidate';
-import { useCallDispositions } from '../lib/callDispositions';
+import { useCallDispositionOptions } from '../lib/callDispositions';
 import { enabledListModes, loadListMode, resolveListMode } from '../lib/listMode';
 import { useVoiceCapture } from '../lib/useVoiceCapture';
 import { loadListNav } from '../lib/listNav';
@@ -2845,7 +2845,7 @@ export function CallsTab({ recordId }: { recordId: string }): JSX.Element {
   const [draftNotes, setDraftNotes] = useState('');
   // The stored outcome stays selectable even if the admin has since removed it:
   // opening an old call to fix its notes must not quietly rewrite its outcome.
-  const editDispositions = useCallDispositions(draftDisposition);
+  const editDispositions = useCallDispositionOptions(draftDisposition);
   const [saving, setSaving] = useState(false);
   const [historyOpen, setHistoryOpen] = useState<string | null>(null);
   const editVoice = useVoiceCapture(async (audio) => {
@@ -2965,7 +2965,7 @@ export function CallsTab({ recordId }: { recordId: string }): JSX.Element {
           <div>
             <label className="label" htmlFor="call-edit-outcome">Outcome</label>
             <select id="call-edit-outcome" className="input" value={draftDisposition} onChange={(event) => setDraftDisposition(event.target.value)}>
-              {editDispositions.map((value) => <option key={value} value={value}>{value}</option>)}
+              {editDispositions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </div>
           <div>

@@ -387,6 +387,10 @@ const MODULES: ModuleDef[] = [
           // name itself. Plain text, so it needs no second record to exist.
           F.text('project_name', 'Project', { quickCreate: true, searchable: true }),
           F.pick('status', 'Status', 'property_status', { mandatory: true, quickCreate: true }),
+          // Inventory can leave the market for a reason too. Keeping this on
+          // the property record means a manager can distinguish an actual sale
+          // from an owner withdrawing the unit or taking it to another broker.
+          F.pick('lost_reason', 'Lost Reason', 'lost_reason'),
           F.pick('property_type', 'Property Type', 'property_type', { quickCreate: true }),
           // Configuration (the "2 BHK" picklist) is deleted — this business
           // only ever used it to mean bedroom count, and Bedrooms (below, now

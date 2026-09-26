@@ -24,6 +24,15 @@ import { api } from './api';
  * dialog is saved.
  */
 export function useCallDispositions(current?: string): string[] {
+  return useCallDispositionOptions(current).map((option) => option.value);
+}
+
+/**
+ * The call logger writes stable values, while people should always see the
+ * name their admin entered.  Keep both together so every call surface can use
+ * the value for saving and the label for reading.
+ */
+export function useCallDispositionOptions(current?: string): { value: string; label: string }[] {
   const { data } = useQuery({
     queryKey: ['picklist', 'call_disposition'],
     queryFn: () => api.picklist('call_disposition'),
@@ -32,7 +41,9 @@ export function useCallDispositions(current?: string): string[] {
 
   const live = (data ?? [])
     .filter((option) => (option as { isActive?: boolean }).isActive !== false)
-    .map((option) => option.value);
-  const values = live.length ? live : [...CALL_DISPOSITIONS];
-  return current && !values.includes(current) ? [...values, current] : values;
+    .map((option) => ({ value: option.value, label: option.label || option.value }));
+  const values = live.length ? live : CALL_DISPOSITIONS.map((value) => ({ value, label: value }));
+  return current && !values.some((option) => option.value === current)
+    ? [...values, { value: current, label: current }]
+    : values;
 }

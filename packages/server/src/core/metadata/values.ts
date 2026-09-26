@@ -399,6 +399,14 @@ export function validateRequired(
   requireOneOf: string[][] = [],
 ): void {
   const errors: { field: string; message: string }[] = [];
+  // Loss is not just another pipeline colour: without the reason the team
+  // cannot learn why an opportunity closed.  Keep this metadata-shaped rather
+  // than tied to a particular picklist value — administrators may call the
+  // status "Lost", "Lead Lost" or "Not Won" and records still store the
+  // stable value they configured.  Modules without a Lost Reason field are
+  // unaffected.
+  const statusField = fields.find((field) => field.name === 'status' || field.columnName === 'status');
+  const lostStatus = Boolean(statusField && /lost/i.test(String(merged[statusField.name] ?? '')));
   for (const f of fields) {
     if (!f.isActive) continue;
     /*
@@ -410,9 +418,10 @@ export function validateRequired(
       instead block every ordinary property that is not on hold, which is all of
       them. The condition is what makes the rule sayable.
     */
+    const lostReasonRequired = f.name === 'lost_reason' && lostStatus;
     const required = f.isMandatory
       || (f.config.requiredWhen ? evaluateFilter(f.config.requiredWhen, merged) : false);
-    if (!required) continue;
+    if (!required && !lostReasonRequired) continue;
     if (f.displayType === 'hidden') continue;
     // A field the form was told to hide cannot have been filled in. Requiring
     // it anyway would reject a save the user had no way to make valid — the
@@ -429,7 +438,7 @@ export function validateRequired(
       `status` and nothing else, so skipping the untouched date is how a hold
       with no end date gets saved, which is the whole failure.
     */
-    const conditional = Boolean(f.config.requiredWhen);
+    const conditional = Boolean(f.config.requiredWhen) || lostReasonRequired;
     if (!isCreate && !conditional && !(f.name in values)) continue;
 
     const value = isCreate || f.name in values ? values[f.name] : merged[f.name];

@@ -45,7 +45,7 @@ export interface CallDeckProps {
   /** Who the call is with, so the deck says so on any screen. */
   who: string;
   /** The admin's own outcome list, and the one chosen. */
-  outcomes: string[];
+  outcomes: { value: string; label: string }[];
   outcome: string;
   onOutcome: (value: string) => void;
   saving: boolean;
@@ -136,8 +136,8 @@ export function CallDeck({
           aria-label="How the call went"
           className="min-w-0 flex-1 rounded-md border-0 bg-white/10 px-1.5 py-1 text-xs font-medium text-white focus:outline-none focus:ring-1 focus:ring-emerald-400"
         >
-          {outcomes.map((value) => (
-            <option key={value} value={value} className="text-slate-900">{value}</option>
+          {outcomes.map((option) => (
+            <option key={option.value} value={option.value} className="text-slate-900">{option.label}</option>
           ))}
         </select>
         {/*

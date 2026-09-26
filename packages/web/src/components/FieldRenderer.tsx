@@ -206,6 +206,9 @@ export function FieldValue({
     case 'picklist':
     case 'radio': {
       const option = field.options?.find((o) => o.value === value);
+      if (option?.meta?.plainText === true) {
+        return <span className="font-medium text-slate-700 dark:text-slate-200">{option.label ?? String(value)}</span>;
+      }
       return <Badge color={option?.color}>{option?.label ?? String(value)}</Badge>;
     }
 
@@ -217,7 +220,9 @@ export function FieldValue({
         <span className="inline-flex flex-wrap items-center gap-1">
           {shown.map((v) => {
             const option = field.options?.find((o) => o.value === v);
-            return <Badge key={String(v)} color={option?.color}>{option?.label ?? String(v)}</Badge>;
+            return option?.meta?.plainText === true
+              ? <span key={String(v)} className="font-medium text-slate-700 dark:text-slate-200">{option.label ?? String(v)}</span>
+              : <Badge key={String(v)} color={option?.color}>{option?.label ?? String(v)}</Badge>;
           })}
           {compact && list.length > 2 && (
             <span className="text-2xs text-muted">+{list.length - 2}</span>

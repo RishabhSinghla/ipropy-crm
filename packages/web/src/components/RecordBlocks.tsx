@@ -143,7 +143,7 @@ export function HeaderFieldStrip({ module, row, fields, canEdit, className }: {
   }, [fields, row.id]);
 
   return (
-    <div className={cn('flex items-stretch gap-2 pb-0.5 text-sm font-medium text-slate-800 dark:text-slate-100', className)}>
+    <div className={cn('flex items-stretch gap-2 rounded-lg bg-[#f5f5ff] px-2.5 py-1.5 text-sm font-medium text-slate-800 dark:bg-slate-800/70 dark:text-slate-100', className)}>
       {/*
         A ledger strip, not a sentence.
 

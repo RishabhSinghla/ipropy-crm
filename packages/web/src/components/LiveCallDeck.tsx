@@ -17,7 +17,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api, type LiveCallState } from '../lib/api';
 import { useLiveCall } from '../lib/liveCall';
-import { useCallDispositions } from '../lib/callDispositions';
+import { useCallDispositionOptions } from '../lib/callDispositions';
 import { deckStatus, followUpFor, minutesFrom, type PhoneCallReport } from '../lib/callConsole';
 import { getSocket } from '../lib/realtime';
 import { toast } from '../lib/store';
@@ -40,10 +40,10 @@ function Deck(): JSX.Element | null {
   const { update, finish } = useLiveCall.getState();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const outcomes = useCallDispositions();
-  const outcome = call.outcome && outcomes.includes(call.outcome)
+  const outcomes = useCallDispositionOptions();
+  const outcome = call.outcome && outcomes.some((option) => option.value === call.outcome)
     ? call.outcome
-    : (outcomes.includes('Call Back Later') ? 'Call Back Later' : outcomes[0] ?? 'Call Back Later');
+    : (outcomes.some((option) => option.value === 'Call Back Later') ? 'Call Back Later' : outcomes[0]?.value ?? 'Call Back Later');
   const [saving, setSaving] = useState(false);
   const report = usePhoneReport();
   const now = useTick(1000);

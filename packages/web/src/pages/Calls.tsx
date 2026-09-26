@@ -17,7 +17,7 @@ import { PhoneCall, PhoneIncoming, PhoneMissed, PhoneOutgoing, Play } from 'luci
 import { relativeTime } from '@ipropy/shared';
 import { api } from '../lib/api';
 import { useApp } from '../lib/store';
-import { useCallDispositions } from '../lib/callDispositions';
+import { useCallDispositionOptions } from '../lib/callDispositions';
 import { cn } from '../lib/utils';
 import { Avatar, EmptyState, Skeleton } from '../components/ui';
 import { CallDonut } from '../components/CallDonut';
@@ -115,7 +115,7 @@ interface CallRow {
 
 export default function Calls(): JSX.Element {
   const { user } = useApp();
-  const dispositions = useCallDispositions();
+  const dispositions = useCallDispositionOptions();
   const [direction, setDirection] = useState('');
   const [answered, setAnswered] = useState('');
   const [disposition, setDisposition] = useState('');
@@ -186,7 +186,7 @@ export default function Calls(): JSX.Element {
           <span className="label">Outcome</span>
           <select className="input w-auto" value={disposition} onChange={(e) => setDisposition(e.target.value)}>
             <option value="">Any outcome</option>
-            {dispositions.map((value) => <option key={value} value={value}>{value}</option>)}
+            {dispositions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </label>
         <Picker label="When" value={range} onChange={setRange} options={RANGES} />

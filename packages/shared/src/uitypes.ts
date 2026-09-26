@@ -498,6 +498,8 @@ export interface PicklistOption {
   sequence: number;
   isActive: boolean;
   isDefault?: boolean;
+  /** Presentation hints chosen in Dropdowns.  They never change the stored value. */
+  meta?: Record<string, unknown>;
   /** picklist dependency: which values of the child picklist this unlocks */
   children?: Record<string, string[]>;
 }
