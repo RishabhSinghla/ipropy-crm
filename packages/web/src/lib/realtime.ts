@@ -115,6 +115,9 @@ export function useRealtime(enabled: boolean): void {
     s.on('call:ended', onCall);
     s.on('lead:new', onLead);
     s.on('device:dial', onDial);
+    // A hang-up or a speaker/mute/hold from the desk, collected the same way.
+    s.on('device:hangup', onDial);
+    s.on('device:control', onDial);
     s.on('connect', onConnect);
     window.addEventListener('ipropy:resumed', onResume);
     void takePendingDial();
@@ -132,6 +135,8 @@ export function useRealtime(enabled: boolean): void {
       s.off('call:ended', onCall);
       s.off('lead:new', onLead);
       s.off('device:dial', onDial);
+      s.off('device:hangup', onDial);
+      s.off('device:control', onDial);
       s.off('connect', onConnect);
       window.removeEventListener('ipropy:resumed', onResume);
       stopAsking();

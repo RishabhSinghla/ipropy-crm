@@ -22,7 +22,7 @@
  * cannot both be given the same call.
  */
 import { api } from './api';
-import { callSyncSupported, endCallOnPhone, placeCallFromPhone } from './callSync';
+import { callSyncSupported, endCallOnPhone, performCallAction, placeCallFromPhone } from './callSync';
 import { isNative } from './native';
 import { dial } from './nativeActions';
 
@@ -52,6 +52,17 @@ export async function takePendingDial(): Promise<void> {
       seconds rather than ninety, because a late hang-up would cut off the
       *next* conversation and there is no undoing that.
     */
+    /*
+      Speaker, mute or hold from the desk. The phone's own call service also
+      collects these every second while a call is up, and whichever asks first
+      is given it — the claim is atomic — so this path only matters when the
+      app happens to be open.
+    */
+    if (command.kind === 'control' && command.action) {
+      await performCallAction(command.action, command.on !== false, command.id);
+      return;
+    }
+
     if (command.kind === 'hangup') {
       const ended = await endCallOnPhone(command.id);
       if (!ended.ended) {

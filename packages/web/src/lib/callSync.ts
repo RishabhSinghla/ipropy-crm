@@ -29,6 +29,8 @@ export interface CallSyncStatus {
   lastSyncSummary: string | null;
   locationEnabled: boolean;
   uploadRecordings: boolean;
+  /** Whether the rep has pointed the app at their phone recorder's folder. Absent on an older build. */
+  recordingFolderChosen?: boolean;
   version: string;
   /**
    * Whether this handset may end a call on the CRM's instruction.
@@ -38,6 +40,12 @@ export interface CallSyncStatus {
    * it as not done either way.
    */
   canEndCall?: boolean;
+  /**
+   * Whether iPropy is this phone's calling app — the only way Android lets an
+   * app switch speaker, mute and hold on a running call, or know when the
+   * other side picked up. Absent on an older build.
+   */
+  canControlCall?: boolean;
 }
 
 interface CallSyncPlugin {
@@ -47,13 +55,21 @@ interface CallSyncPlugin {
   syncNow(): Promise<{ started: boolean }>;
   setLocationEnabled(options: { enabled: boolean }): Promise<CallSyncStatus>;
   setUploadRecordings(options: { enabled: boolean }): Promise<CallSyncStatus>;
+  /** Android's folder chooser, for the folder the phone's call recorder saves to. */
+  chooseRecordingFolder(): Promise<CallSyncStatus>;
   requestCallLog(): Promise<CallSyncStatus>;
   requestCallPermissions(): Promise<CallSyncStatus>;
   placeCall(options: { number: string; commandId?: string }): Promise<{ placed: boolean; reason?: string }>;
   /** Ends the call this handset is on. Only the phone's own dialler may. */
   endCall(options: { commandId?: string }): Promise<{ ended: boolean; reason?: string }>;
   /** Whether Android has this app as the default phone app, right now. */
-  callControl(): Promise<{ canEndCall: boolean }>;
+  callControl(): Promise<{ canEndCall: boolean; canControlCall?: boolean }>;
+  /** Android's own "make iPropy your calling app" dialog. */
+  requestCallApp(): Promise<{ canControlCall: boolean }>;
+  /** Android's default-apps settings, to hand the calling app back. */
+  openCallAppSettings(): Promise<void>;
+  /** Speaker, mute, hold or end, on the call this phone is on. */
+  callAction(options: { action: string; on: boolean; commandId?: string }): Promise<{ done: boolean; reason?: string }>;
   /** Ask for the permission that lets the CRM end a call. Android's own dialog. */
   requestDialerRole(): Promise<{ canEndCall: boolean }>;
   requestLocation(): Promise<CallSyncStatus>;
@@ -227,13 +243,41 @@ export async function endCallOnPhone(commandId?: string): Promise<{ ended: boole
   }
 }
 
-/** Whether this handset is its own phone app today. Answers false on an old build. */
-export async function callControlState(): Promise<{ canEndCall: boolean }> {
-  if (!callSyncSupported) return { canEndCall: false };
+/** Whether this handset can end, and control, a call today. Answers false on an old build. */
+export async function callControlState(): Promise<{ canEndCall: boolean; canControlCall: boolean }> {
+  if (!callSyncSupported) return { canEndCall: false, canControlCall: false };
   try {
-    return await CallSync.callControl();
+    const answer = await CallSync.callControl();
+    return { canEndCall: answer.canEndCall, canControlCall: answer.canControlCall === true };
   } catch {
-    return { canEndCall: false };
+    return { canEndCall: false, canControlCall: false };
+  }
+}
+
+/**
+ * Ask Android to make iPropy this phone's calling app.
+ *
+ * What it buys: the CRM can switch speaker, mute and hold on a live call and
+ * knows the moment the other side picks up, and the phone's own call screen
+ * becomes iPropy's. The rep can hand it back from Android's settings.
+ */
+export async function askToControlCalls(): Promise<{ canControlCall: boolean }> {
+  if (!callSyncSupported) return { canControlCall: false };
+  try {
+    return await CallSync.requestCallApp();
+  } catch (err) {
+    toast.error('This app is too old to control calls', 'Install the newest iPropy app, then try again.');
+    return { canControlCall: false };
+  }
+}
+
+/** Carry out a live-call instruction from the desk, on the call this phone is on. */
+export async function performCallAction(action: string, on: boolean, commandId: string): Promise<{ done: boolean; reason?: string }> {
+  if (!callSyncSupported) return { done: false, reason: 'not-android' };
+  try {
+    return await CallSync.callAction({ action, on, commandId });
+  } catch (err) {
+    return { done: false, reason: (err as Error).message || 'this app is too old to control calls' };
   }
 }
 
@@ -252,5 +296,19 @@ export async function askToEndCalls(): Promise<{ canEndCall: boolean }> {
   } catch (err) {
     toast.error('Android would not ask', (err as Error).message);
     return { canEndCall: false };
+  }
+}
+
+/**
+ * Point the app at the phone's call-recorder folder, which is what lets
+ * recordings reach the CRM at all. Android shows its own folder chooser.
+ */
+export async function chooseRecordingFolder(): Promise<CallSyncStatus> {
+  if (!callSyncSupported) return UNAVAILABLE;
+  try {
+    return await CallSync.chooseRecordingFolder();
+  } catch {
+    toast.error('This app is too old to send recordings', 'Install the newest iPropy app, then try again.');
+    return await callSyncStatus();
   }
 }

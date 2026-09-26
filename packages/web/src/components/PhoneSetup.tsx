@@ -27,7 +27,7 @@ import { type JSX, useCallback, useEffect, useState } from 'react';
 import { Check, ChevronRight, Settings as SettingsIcon, ShieldAlert } from 'lucide-react';
 import { toast } from '../lib/store';
 import {
-  askForCallPermissions, askToEndCalls, callSyncStatus, callSyncSupported, enableCallSync,
+  askForCallPermissions, askToControlCalls, askToEndCalls, callSyncStatus, chooseRecordingFolder, callSyncSupported, enableCallSync,
   openAppSettings, setCallSyncLocation, type CallSyncStatus,
 } from '../lib/callSync';
 import { enablePush, permissionState } from '../lib/push';
@@ -88,6 +88,11 @@ export function PhoneSetup({ compact }: { compact?: boolean } = {}): JSX.Element
         settled(step, await enableCallSync());
       } else if (step === 'callPhone' || step === 'callLog') {
         settled(step, await askForCallPermissions());
+      } else if (step === 'recordings') {
+        settled(step, await chooseRecordingFolder());
+      } else if (step === 'callControl') {
+        await askToControlCalls();
+        settled(step, await callSyncStatus());
       } else if (step === 'endCall') {
         await askToEndCalls();
         refresh();

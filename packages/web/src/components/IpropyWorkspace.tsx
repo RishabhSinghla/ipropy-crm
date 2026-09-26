@@ -6,8 +6,8 @@ import {
   Phone, Sparkles, Star, Trash2, Users,
 } from 'lucide-react';
 import { FieldValue } from './FieldRenderer';
-import { CallButton, CallDispositionProvider, useCallDisposition } from './CallDisposition';
-import { CallDeck } from './CallDeck';
+import { CALL_DECK_DOCK_ID } from './LiveCallDeck';
+import { CallButton, CallDispositionProvider } from './CallDisposition';
 import { WhatsAppComposerProvider } from './WhatsAppComposer';
 import { MatchingTab } from './MatchingTab';
 import { WhatsAppTab } from './WhatsAppTab';
@@ -314,12 +314,15 @@ export function IpropyWorkspace({
   const allChecked = rows.length > 0 && rows.every((row) => selected.has(row.id));
 
   /*
-    One provider around the whole view, keyed on the record that is open: the
-    call dialog belongs to a record, and re-keying it is what stops an outcome
-    being saved against whoever was on screen before.
+    One provider around the whole view, **not keyed on the open record**.
+    Keyed, every click in the list rebuilt the entire split view — list
+    included — so the list jumped back to the top and the record just clicked
+    scrolled out of sight (26 September 2026, the owner). A call belongs to the
+    record it was started from through `useLiveCall` now, and the WhatsApp
+    composer closes itself when the record changes, so neither needs the key.
   */
-  return <CallDispositionProvider key={active?.id ?? 'none'} recordId={active?.id ?? ''} module={module.name}>
-    <WhatsAppComposerProvider key={active?.id ?? 'none'} recordId={active?.id ?? ''} module={module.name} recordLabel={active?.label ?? ''}>
+  return <CallDispositionProvider recordId={active?.id ?? ''} module={module.name}>
+    <WhatsAppComposerProvider recordId={active?.id ?? ''} module={module.name} recordLabel={active?.label ?? ''}>
     <section data-testid="ipropy-workspace" className="bg-[#f7f9fc] dark:bg-slate-950">
     {/*
       A fixed-height row with one draggable divider, not a min-height one.
@@ -432,7 +435,7 @@ export function IpropyWorkspace({
             the owner drew it, and out of the layout so nothing moves when it
             appears.
           */}
-          <LiveCallDeck />
+          <CallDeckDock />
 
           <div className="flex min-w-0 items-start gap-3">
             <Avatar name={active.label} size={42} className="mt-0.5" />
@@ -699,14 +702,32 @@ function QueueRow({ row, active, checked, attention, statusField, followUpField,
     person. Empty values drop out rather than printing a stray dash.
   */
   const subtitle = subtitleFields.map((field) => displayOf(row, field)).filter(Boolean).join(' — ');
+  /*
+    The open record is brought into view when it was opened from somewhere
+    else — global search, a link, Save & Next — and left exactly where it is
+    when it was clicked, because `nearest` does nothing to a row already on
+    screen.
+  */
+  const self = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (active) self.current?.scrollIntoView({ block: 'nearest' });
+  }, [active]);
   return (
     <button
+      ref={self}
       type="button"
       onClick={onSelect}
+      aria-current={active ? 'true' : undefined}
       className={cn(
         'relative flex w-full items-start gap-2.5 border-b border-slate-100 px-3 py-2.5 text-left transition-colors dark:border-slate-800',
+        /*
+          Unmistakable, not a tint (26 September 2026, the owner: "I want to
+          be distinctly visible which record is actually selected"). A solid
+          brand-tinted fill, an inset outline and the bar down the left, so it
+          reads at a glance in both themes.
+        */
         active
-          ? 'bg-brand-50 dark:bg-brand-950/50'
+          ? 'bg-brand-100 ring-2 ring-inset ring-brand-500 dark:bg-brand-900/60 dark:ring-brand-400'
           : 'hover:bg-slate-50 dark:hover:bg-slate-800/70',
       )}
     >
@@ -719,7 +740,7 @@ function QueueRow({ row, active, checked, attention, statusField, followUpField,
         are written — so the marker could come out slate on slate and the row
         looked no different from its neighbours. Nothing competes with a span.
       */}
-      {active && <span className="absolute inset-y-0 left-0 w-1 bg-brand-600" aria-hidden />}
+      {active && <span className="absolute inset-y-0 left-0 w-1.5 bg-brand-600 dark:bg-brand-400" aria-hidden />}
       <input
         aria-label={`Select ${row.label}`}
         type="checkbox"
@@ -733,7 +754,10 @@ function QueueRow({ row, active, checked, attention, statusField, followUpField,
         {attention && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-amber-500 dark:border-slate-900" title="Needs attention" />}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-1.5 truncate text-sm font-bold text-slate-900 dark:text-slate-100">
+        <span className={cn(
+          'flex items-center gap-1.5 truncate text-sm font-bold',
+          active ? 'text-brand-800 dark:text-brand-100' : 'text-slate-900 dark:text-slate-100',
+        )}>
           <span className="truncate">{row.label}</span>
           {row.starred && <Star className="h-3 w-3 shrink-0 fill-amber-400 text-amber-500" />}
         </span>
@@ -812,27 +836,13 @@ function StatusPill({ field, row }: { field: FieldMeta; row: RecordEnvelope }): 
 function displayOf(row: RecordEnvelope, field: FieldMeta): string { const display = row.display?.[field.name]; if (display) return display; const value = row.values[field.name]; return Array.isArray(value) ? value.join(', ') : value == null ? '' : String(value); }
 function dueLabel(value: unknown): { label: string; tone: string } | null { if (!value) return null; const date = new Date(String(value)); if (Number.isNaN(date.getTime())) return null; const today = new Date(); today.setHours(0, 0, 0, 0); date.setHours(0, 0, 0, 0); const diff = Math.round((date.getTime() - today.getTime()) / 86_400_000); return diff < 0 ? { label: 'Overdue', tone: 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' } : diff === 0 ? { label: 'Today', tone: 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' } : diff === 1 ? { label: 'Tomorrow', tone: 'bg-brand-100 text-brand-700 dark:bg-brand-950/40 dark:text-brand-300' } : { label: date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }), tone: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' }; }
 
-/**
- * The deck, when a call is running, and nothing at all when one is not.
- *
- * A component of its own because `useCallDisposition` is a hook and this
- * renders inside a conditional — and because the record page draws the very
- * same thing, so there is one deck rather than two that drift.
- */
-function LiveCallDeck(): JSX.Element | null {
-  const calls = useCallDisposition();
-  if (!calls?.deck) return null;
+/** Where the call deck docks when this record's header is on screen. */
+function CallDeckDock(): JSX.Element {
   /*
-    **It floats, and that is the fix rather than the shortcut.** Sitting in the
-    header's own row, the deck appearing pushed the name, the assignment and
-    every action circle sideways the instant Call was pressed, and pulled them
-    back when the call ended — the bounce the owner reported. Taken out of the
-    flow it changes no other element's position at all, and it lands in the
-    top-right corner he drew it in.
+    Only the spot the deck docks in when this record's header is on screen.
+    The deck itself is drawn once by the app's shell (`components/LiveCallDeck`)
+    so it survives leaving this page mid-call; it sits over this placeholder
+    until somebody drags it elsewhere.
   */
-  return (
-    <div className="absolute right-3 top-12 z-30">
-      <CallDeck {...calls.deck} />
-    </div>
-  );
+  return <div id={CALL_DECK_DOCK_ID} aria-hidden="true" className="pointer-events-none absolute right-3 top-12 h-px w-[23rem]" />;
 }

@@ -442,3 +442,21 @@ everybody as a bug. The other screens' counts stay in the menu, one per row (an 
 page 2 also used to land on page 1: the search box's 300ms debounce ran on
 arrival with nothing typed and reset the page. It only resets when the words
 change now.
+
+---
+
+## Clicking a record keeps the list where it is
+
+**26 September 2026, the owner:** scroll down, click a record, and the list
+jumped back to the top with the chosen row out of sight. The whole split view
+was wrapped in providers **keyed on the open record** — the call and the
+WhatsApp composer — so every click rebuilt the view, list and all. The call now
+lives in `useLiveCall` and the composer closes itself when the record changes,
+so neither is keyed. The WhatsApp provider also stays mounted whether or not a
+provider is connected; swapping the tree around `children` when the status
+arrived rebuilt the page once more.
+
+The open row is **unmistakable**: a solid brand fill, a 2px inset outline and a
+1.5 bar down the left, the name in brand ink, `aria-current`. It is scrolled
+into view with `block: 'nearest'` when it was opened from elsewhere (search, a
+link, Save & Next), which does nothing to a row that was just clicked.

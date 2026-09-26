@@ -50,6 +50,8 @@ export interface EventMap {
   'lead.captured': { recordId: string; source: string; raw: unknown };
   'form.submitted': { webformId: string; recordId: string; module: string };
   'notification.created': { userId: string; notificationId: string };
+  /** A rep's phone saying what its call is doing — ringing, answered, speaker, mute, hold, ended. */
+  'phone.call': { userId: string; live: unknown };
 }
 
 type EventName = keyof EventMap;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  elapsedLabel, followUpFor, mayControlLiveCall, minutesFrom, outcomeCard, splitOutcomes,
+  deckStatus, elapsedLabel, followUpFor, mayControlLiveCall, minutesFrom, outcomeCard, splitOutcomes,
 } from '../src/lib/callConsole';
 
 describe('the call console', () => {
@@ -98,5 +98,41 @@ describe('six on the row, the rest a tap away', () => {
     expect(first).toContain('Site Visit Scheduled');
     expect(rest).not.toContain('Site Visit Scheduled');
     expect(first).toHaveLength(6);
+  });
+});
+
+describe('the words at the top of the call deck', () => {
+  const pressedAt = 1_000_000;
+  const call = { pressedAt, placing: false };
+  const report = (state: 'dialling' | 'ringing' | 'active' | 'held' | 'ended', extra: Partial<{ connectedAt: number; talkedSeconds: number }> = {}) => ({
+    state, connectedAt: extra.connectedAt ?? null, talkedSeconds: extra.talkedSeconds ?? null, reportedAt: pressedAt + 2_000,
+  });
+
+  it('says Calling while the CRM is still asking the phone', () => {
+    expect(deckStatus(null, { pressedAt, placing: true }, pressedAt)).toEqual({ label: 'Calling…', ticking: false });
+  });
+
+  it('shows Ringing, with no clock, until they pick up', () => {
+    expect(deckStatus(report('dialling'), call, pressedAt + 20_000)).toEqual({ label: 'Ringing…', ticking: false });
+  });
+
+  it('starts the clock from when they answered, not from when Call was pressed', () => {
+    const answered = pressedAt + 12_000;
+    expect(deckStatus(report('active', { connectedAt: answered }), call, answered + 65_000)).toEqual({ label: '01:05', ticking: true });
+  });
+
+  it('says On hold and keeps the clock', () => {
+    expect(deckStatus(report('held', { connectedAt: pressedAt }), call, pressedAt + 30_000).label).toBe('On hold · 00:30');
+  });
+
+  it('says how long they talked once it ends, or that nobody answered', () => {
+    expect(deckStatus(report('ended', { talkedSeconds: 95 }), call, pressedAt).label).toBe('Call ended · 01:35');
+    expect(deckStatus(report('ended'), call, pressedAt).label).toBe('Not answered');
+  });
+
+  it('shows no clock when the phone says nothing about this call', () => {
+    expect(deckStatus(null, call, pressedAt + 60_000)).toEqual({ label: 'Calling on your phone', ticking: false });
+    const lastCall = { ...report('active', { connectedAt: 0 }), reportedAt: pressedAt - 60_000 };
+    expect(deckStatus(lastCall, call, pressedAt + 60_000).label).toBe('Calling on your phone');
   });
 });

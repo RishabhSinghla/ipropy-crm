@@ -20,6 +20,7 @@ import { useApp } from '../lib/store';
 import { useCallDispositions } from '../lib/callDispositions';
 import { cn } from '../lib/utils';
 import { Avatar, EmptyState, Skeleton } from '../components/ui';
+import { CallDonut } from '../components/CallDonut';
 
 const DIRECTIONS = [
   { key: '', label: 'All calls' },
@@ -34,23 +35,65 @@ const ANSWERED = [
   { key: 'no', label: 'Not answered' },
 ] as const;
 
-/** Today, and the first of this month — the two ranges somebody asks for daily. */
-function startOf(kind: 'today' | 'week' | 'month'): string {
-  const now = new Date();
-  if (kind === 'today') return now.toISOString().slice(0, 10);
-  if (kind === 'week') {
-    const day = (now.getDay() + 6) % 7;
-    return new Date(now.getTime() - day * 86_400_000).toISOString().slice(0, 10);
-  }
-  return `${now.toISOString().slice(0, 7)}-01`;
+/** A date as YYYY-MM-DD on this computer's own calendar, not UTC's. */
+function localDay(date: Date): string {
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
+/** Today, the Monday of this week and the first of this month. */
+function boundaries(now = new Date()): { today: string; week: string; month: string } {
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+  return {
+    today: localDay(now),
+    week: localDay(monday),
+    month: localDay(new Date(now.getFullYear(), now.getMonth(), 1)),
+  };
+}
+
+/** The day before a YYYY-MM-DD date, because the list's `to` includes the day it names. */
+function dayBefore(day: string): string {
+  const date = new Date(`${day}T12:00:00`);
+  date.setDate(date.getDate() - 1);
+  return localDay(date);
+}
+
+/*
+  The first three are the ones somebody asks for daily and overlap on purpose
+  ("this week" includes today). The last three are the When chart's own
+  slices, which do not — clicking "Earlier this week" shows exactly the calls
+  that slice counted.
+*/
 const RANGES = [
   { key: '', label: 'All time' },
   { key: 'today', label: 'Today' },
   { key: 'week', label: 'This week' },
   { key: 'month', label: 'This month' },
+  { key: 'earlier-week', label: 'Earlier this week' },
+  { key: 'earlier-month', label: 'Earlier this month' },
+  { key: 'before-month', label: 'Before this month' },
 ] as const;
+
+function rangeDates(range: string): { from?: string; to?: string } {
+  const day = boundaries();
+  switch (range) {
+    case 'today': return { from: day.today };
+    case 'week': return { from: day.week };
+    case 'month': return { from: day.month };
+    case 'earlier-week': return { from: day.week, to: dayBefore(day.today) };
+    case 'earlier-month': return { from: day.month, to: dayBefore(day.week < day.month ? day.today : day.week) };
+    // When this week began last month, those days belong to "earlier this
+    // week" in the chart, so they are left out here too.
+    case 'before-month': return { to: dayBefore(day.week < day.month ? day.week : day.month) };
+    default: return {};
+  }
+}
+
+/** The When chart's slices, mapped onto the ranges above. */
+const WHEN_SLICE_TO_RANGE: Record<string, string> = {
+  today: 'today', week: 'earlier-week', month: 'earlier-month', earlier: 'before-month',
+};
 
 interface CallRow {
   id: string;
@@ -77,22 +120,48 @@ export default function Calls(): JSX.Element {
   const [answered, setAnswered] = useState('');
   const [disposition, setDisposition] = useState('');
   const [range, setRange] = useState('');
-  const [mine, setMine] = useState(false);
+  // Whose calls: '' is everybody the viewer may see.
+  const [agent, setAgent] = useState('');
   const [playing, setPlaying] = useState<string | null>(null);
 
-  const params = useMemo(() => ({
-    limit: 100,
+  const { data: agentList } = useQuery({ queryKey: ['call-agents'], queryFn: () => api.callAgents() });
+
+  /** Every filter except the paging, shared by the list and the charts. */
+  const filters = useMemo(() => ({
     ...(direction ? { direction } : {}),
     ...(answered ? { answered } : {}),
     ...(disposition ? { disposition } : {}),
-    ...(range ? { from: startOf(range as 'today' | 'week' | 'month') } : {}),
-    ...(mine && user ? { userId: user.id } : {}),
-  }), [direction, answered, disposition, range, mine, user]);
+    ...rangeDates(range),
+    ...(agent ? { userId: agent } : {}),
+  }), [direction, answered, disposition, range, agent]);
+  const params = useMemo(() => ({ limit: 100, ...filters }), [filters]);
 
   const { data, isLoading } = useQuery({
     queryKey: ['calls', params],
     queryFn: () => api.callsWithTotal(params),
   });
+  /*
+    Each chart leaves its own filter out, so choosing "Outgoing" does not turn
+    the direction donut into one solid ring — it keeps showing the whole split
+    with Outgoing picked out, while the other two charts narrow to it.
+  */
+  const without = (key: 'direction' | 'answered' | 'range'): Record<string, unknown> => {
+    const rest: Record<string, unknown> = {
+      ...(disposition ? { disposition } : {}),
+      ...(agent ? { userId: agent } : {}),
+      ...boundaries(),
+    };
+    if (key !== 'direction' && direction) rest.direction = direction;
+    if (key !== 'answered' && answered) rest.answered = answered;
+    if (key !== 'range') Object.assign(rest, rangeDates(range));
+    return rest;
+  };
+  const byDirection = useQuery({ queryKey: ['calls-breakdown', 'direction', without('direction')], queryFn: () => api.callsBreakdown(without('direction')) });
+  const byAnswered = useQuery({ queryKey: ['calls-breakdown', 'answered', without('answered')], queryFn: () => api.callsBreakdown(without('answered')) });
+  const byWhen = useQuery({ queryKey: ['calls-breakdown', 'when', without('range')], queryFn: () => api.callsBreakdown(without('range')) });
+  const count = (list: { key: string; count: number }[] | undefined, key: string): number =>
+    list?.find((slice) => slice.key === key)?.count ?? 0;
+  const whenSelected = Object.entries(WHEN_SLICE_TO_RANGE).find(([, value]) => value === range)?.[0] ?? '';
 
   const calls = (data?.calls ?? []) as unknown as CallRow[];
   const talkTime = calls.reduce((sum, call) => sum + (call.duration_seconds || 0), 0);
@@ -121,15 +190,55 @@ export default function Calls(): JSX.Element {
           </select>
         </label>
         <Picker label="When" value={range} onChange={setRange} options={RANGES} />
-        <label className="flex items-center gap-2 pb-1.5">
-          <input
-            type="checkbox"
-            checked={mine}
-            onChange={(e) => setMine(e.target.checked)}
-            className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-0"
-          />
-          <span className="text-sm">Only mine</span>
+        <label>
+          <span className="label">Agent</span>
+          <select
+            className="input w-auto"
+            value={agent}
+            onChange={(e) => setAgent(e.target.value)}
+            aria-label="Agent"
+          >
+            {/* Somebody who may only see their own calls gets their own name, and no choice. */}
+            {agentList?.canSeeAll !== false && <option value="">All agents</option>}
+            {(agentList?.agents ?? []).map((person) => (
+              <option key={person.id} value={person.id}>{person.id === user?.id ? `${person.name} (me)` : person.name}</option>
+            ))}
+          </select>
         </label>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <CallDonut
+          title="Direction"
+          selected={direction}
+          onSelect={setDirection}
+          slices={[
+            { key: 'outbound', label: 'Outgoing', count: count(byDirection.data?.direction, 'outbound') },
+            { key: 'inbound', label: 'Incoming', count: count(byDirection.data?.direction, 'inbound') },
+            { key: 'missed', label: 'Missed', count: count(byDirection.data?.direction, 'missed') },
+            { key: 'other', label: 'Other', count: count(byDirection.data?.direction, 'other'), selectable: false },
+          ]}
+        />
+        <CallDonut
+          title="Picked up"
+          selected={answered}
+          onSelect={setAnswered}
+          slices={[
+            { key: 'yes', label: 'Answered', count: count(byAnswered.data?.answered, 'yes') },
+            { key: 'no', label: 'Not answered', count: count(byAnswered.data?.answered, 'no') },
+          ]}
+        />
+        <CallDonut
+          title="When"
+          selected={whenSelected}
+          onSelect={(key) => setRange(key ? WHEN_SLICE_TO_RANGE[key] ?? '' : '')}
+          slices={[
+            { key: 'today', label: 'Today', count: count(byWhen.data?.when, 'today') },
+            { key: 'week', label: 'Earlier this week', count: count(byWhen.data?.when, 'week') },
+            { key: 'month', label: 'Earlier this month', count: count(byWhen.data?.when, 'month') },
+            { key: 'earlier', label: 'Before this month', count: count(byWhen.data?.when, 'earlier') },
+          ]}
+        />
       </div>
 
       {isLoading ? <Skeleton className="h-64 w-full" /> : !calls.length ? (
@@ -166,8 +275,11 @@ export default function Calls(): JSX.Element {
                 </span>
               )}
 
-              <span className="shrink-0 text-xs tabular-nums text-muted">
-                {formatDuration(call.duration_seconds)}
+              {/* Always a labelled column, so a row with no talk time says so
+                  rather than leaving a gap that reads as missing data. */}
+              <span className="w-32 shrink-0 whitespace-nowrap text-xs tabular-nums" title="How long the call lasted">
+                <span className="text-muted">Duration </span>
+                <span className="font-semibold text-slate-800 dark:text-slate-100">{formatDuration(call.duration_seconds)}</span>
               </span>
               <span className="shrink-0 text-xs text-muted" title={new Date(call.started_at).toLocaleString('en-IN')}>
                 {relativeTime(call.started_at)}
@@ -175,14 +287,18 @@ export default function Calls(): JSX.Element {
 
               {/* Loaded only when somebody presses play: a hundred <audio>
                   elements each fetch their own metadata on render. */}
-              {call.recording_url && (
+              {call.recording_url ? (
                 playing === call.id
                   ? <audio src={api.recordingUrl(call.id)} controls autoPlay className="h-8 w-56 shrink-0" />
                   : (
-                    <button className="btn-secondary btn-sm shrink-0" onClick={() => setPlaying(call.id)}>
+                    <button className="btn-secondary btn-sm w-28 shrink-0 justify-center" onClick={() => setPlaying(call.id)}>
                       <Play className="h-3.5 w-3.5" /> Recording
                     </button>
                   )
+              ) : (
+                <span className="w-28 shrink-0 text-center text-xs text-muted" title="No recording reached the CRM for this call">
+                  No recording
+                </span>
               )}
             </article>
           ))}
@@ -221,7 +337,7 @@ function DirectionIcon({ direction, answered }: { direction: string; answered: b
 }
 
 function formatDuration(seconds: number): string {
-  if (!seconds) return '—';
+  if (!seconds) return '0s';
   const minutes = Math.floor(seconds / 60);
   const rest = seconds % 60;
   return minutes ? `${minutes}m ${String(rest).padStart(2, '0')}s` : `${rest}s`;

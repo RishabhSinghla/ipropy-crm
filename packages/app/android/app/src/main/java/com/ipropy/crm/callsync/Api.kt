@@ -232,6 +232,40 @@ object Api {
         }
     }
 
+    /**
+     * What the call on this handset is doing, for the deck on the desk.
+     * Short timeouts: a state that arrives ten seconds late is wrong by then.
+     */
+    fun reportCallState(baseUrl: String, token: String, state: JSONObject) {
+        try {
+            val connection = open(baseUrl, "/api/device/state", "POST", token)
+            connection.connectTimeout = 5_000
+            connection.readTimeout = 5_000
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.outputStream.use { it.write(state.toString().toByteArray()) }
+            connection.responseCode
+            connection.disconnect()
+        } catch (e: Exception) {
+            Log.w(TAG, "call state report failed", e)
+        }
+    }
+
+    /** The next instruction the desk has queued for this phone, claimed, or null. */
+    fun nextCommand(baseUrl: String, token: String): JSONObject? = try {
+        val connection = open(baseUrl, "/api/device/commands/next", "GET", token)
+        connection.connectTimeout = 5_000
+        connection.readTimeout = 5_000
+        val body = if (connection.responseCode == 200) {
+            connection.inputStream.bufferedReader().use { it.readText() }
+        } else null
+        connection.disconnect()
+        body?.let { JSONObject(it).optJSONObject("command") }
+    } catch (e: Exception) {
+        Log.w(TAG, "command poll failed", e)
+        null
+    }
+
     private fun open(baseUrl: String, path: String, method: String, token: String): HttpURLConnection {
         val connection = URL(baseUrl.trimEnd('/') + path).openConnection() as HttpURLConnection
         connection.requestMethod = method

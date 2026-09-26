@@ -32,8 +32,8 @@ import DocumentViewer, { isPreviewable, type ViewableFile } from '../components/
 import ComposeModal from '../components/ComposeModal';
 import MatchingTab from '../components/MatchingTab';
 import { PeekLink } from '../components/PeekLink';
-import { CallButton, CallDispositionProvider, useCallDisposition } from '../components/CallDisposition';
-import { CallDeck } from '../components/CallDeck';
+import { CALL_DECK_DOCK_ID } from '../components/LiveCallDeck';
+import { CallButton, CallDispositionProvider } from '../components/CallDisposition';
 import { WhatsAppComposerProvider } from '../components/WhatsAppComposer';
 import { WhatsAppButton } from '../components/WhatsAppButton';
 import { isNative } from '../lib/native';
@@ -403,7 +403,7 @@ function FullRecordPage(): JSX.Element {
       {/* Header */}
       <div className="card relative mb-4 overflow-visible">
         {/* The live call, floating in this card's top-right corner. */}
-        <LiveCallDeck />
+        <CallDeckDock />
         {/* Two rows, not three.
 
             The nav row held nothing but a back arrow and a record counter and
@@ -3044,21 +3044,13 @@ function CallEditHistory({ callId }: { callId: string }): JSX.Element {
   );
 }
 
-/**
- * The deck, when a call is running, and nothing at all when one is not.
- *
- * A component of its own because `useCallDisposition` is a hook and this
- * renders inside a conditional. One deck, drawn the same here and in the
- * split view, so a rep who arrives from either sees the same thing.
- */
-function LiveCallDeck(): JSX.Element | null {
-  const calls = useCallDisposition();
-  if (!calls?.deck) return null;
-  // Floating, for the same reason as in the split view: in the flow it shoved
-  // every button in the header sideways the moment Call was pressed.
-  return (
-    <div className="absolute right-3 top-14 z-30">
-      <CallDeck {...calls.deck} />
-    </div>
-  );
+/** Where the call deck docks when this record's header is on screen. */
+function CallDeckDock(): JSX.Element {
+  /*
+    Only the spot the deck docks in when this record's header is on screen.
+    The deck itself is drawn once by the app's shell (`components/LiveCallDeck`)
+    so it survives leaving this page mid-call; it sits over this placeholder
+    until somebody drags it elsewhere.
+  */
+  return <div id={CALL_DECK_DOCK_ID} aria-hidden="true" className="pointer-events-none absolute right-3 top-14 h-px w-[23rem]" />;
 }

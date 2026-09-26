@@ -9,10 +9,12 @@ import android.provider.Settings
 import android.telecom.TelecomManager
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import androidx.activity.result.ActivityResult
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
+import com.getcapacitor.annotation.ActivityCallback
 import com.getcapacitor.annotation.CapacitorPlugin
 import com.getcapacitor.annotation.Permission
 import com.getcapacitor.annotation.PermissionCallback
@@ -72,11 +74,13 @@ class CallSyncPlugin : Plugin() {
         put("callLogGranted", getPermissionState(CALL_LOG)?.toString() == "granted")
         put("callPhoneGranted", getPermissionState(PLACE_CALL)?.toString() == "granted")
         put("canEndCall", canEndCall())
+        put("canControlCall", isCallApp())
         put("locationGranted", getPermissionState(LOCATION)?.toString() == "granted")
         put("backgroundLocationGranted", hasBackgroundLocation())
         put("lastSyncAt", prefs.lastSyncAt)
         put("lastSyncSummary", prefs.lastSyncSummary)
         put("locationEnabled", prefs.locationEnabled)
+        put("recordingFolderChosen", !prefs.recordingTreeUri.isNullOrBlank())
         put("uploadRecordings", prefs.uploadRecordings)
         put("version", BuildConfig.VERSION_NAME)
     }
@@ -167,6 +171,43 @@ class CallSyncPlugin : Plugin() {
     @PluginMethod
     fun setUploadRecordings(call: PluginCall) {
         prefs.uploadRecordings = call.getBoolean("enabled", false) == true
+        call.resolve(currentStatus())
+    }
+
+    /**
+     * Point the app at the folder this phone's own call recorder saves to.
+     *
+     * **Without this no recording has ever reached the CRM.** Android 10 shut
+     * third-party call recording, so iPropy reads the files the phone maker's
+     * recorder writes — and modern Android hides that folder from every app
+     * until the person picks it in Android's own folder chooser. The engine
+     * that matches and uploads the files was here all along; nothing ever let
+     * anybody choose the folder. The grant is kept across reboots and covers
+     * that folder and nothing else.
+     */
+    @PluginMethod
+    fun chooseRecordingFolder(call: PluginCall) {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+        startActivityForResult(call, intent, "afterRecordingFolder")
+    }
+
+    @ActivityCallback
+    private fun afterRecordingFolder(call: PluginCall, result: ActivityResult) {
+        val uri = result.data?.data
+        if (result.resultCode != android.app.Activity.RESULT_OK || uri == null) {
+            call.resolve(currentStatus())
+            return
+        }
+        try {
+            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (e: SecurityException) {
+            call.resolve(currentStatus())
+            return
+        }
+        prefs.recordingTreeUri = uri.toString()
+        prefs.uploadRecordings = true
+        // Look straight away rather than at the next fifteen-minute sync.
+        WorkManager.getInstance(context).enqueue(OneTimeWorkRequestBuilder<SyncWorker>().build())
         call.resolve(currentStatus())
     }
 
@@ -331,7 +372,66 @@ class CallSyncPlugin : Plugin() {
      */
     @PluginMethod
     fun callControl(call: PluginCall) {
-        call.resolve(JSObject().put("canEndCall", canEndCall()))
+        call.resolve(JSObject().put("canEndCall", canEndCall()).put("canControlCall", isCallApp()))
+    }
+
+    /**
+     * Make iPropy this phone's calling app — Android's own "set as default"
+     * dialog, which the rep can answer either way and reverse from Android's
+     * settings at any time.
+     *
+     * The one thing that lets the CRM switch speaker, mute and hold on a
+     * running call and know when the other side picks up: Android gives
+     * those to the calling app and nobody else.
+     */
+    @PluginMethod
+    fun requestCallApp(call: PluginCall) {
+        if (isCallApp()) { call.resolve(JSObject().put("canControlCall", true)); return }
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val roles = context.getSystemService(android.app.role.RoleManager::class.java)
+            roles.createRequestRoleIntent(android.app.role.RoleManager.ROLE_DIALER)
+        } else {
+            Intent(TelecomManager.ACTION_CHANGE_DEFAULT_DIALER)
+                .putExtra(TelecomManager.EXTRA_CHANGE_DEFAULT_DIALER_PACKAGE_NAME, context.packageName)
+        }
+        startActivityForResult(call, intent, "afterCallApp")
+    }
+
+    @ActivityCallback
+    private fun afterCallApp(call: PluginCall, result: ActivityResult) {
+        call.resolve(JSObject().put("canControlCall", isCallApp()))
+    }
+
+    /** Android's settings page where the rep can hand the calling app back. */
+    @PluginMethod
+    fun openCallAppSettings(call: PluginCall) {
+        val intent = Intent(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS
+            else Settings.ACTION_SETTINGS,
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+        call.resolve()
+    }
+
+    /**
+     * Speaker, mute, hold or end on the call this phone is on — an
+     * instruction from the desk that reached the app's web view first. The
+     * same [LiveCall.perform] the phone's own buttons use.
+     */
+    @PluginMethod
+    fun callAction(call: PluginCall) {
+        val action = call.getString("action").orEmpty()
+        val on = call.getBoolean("on", true) ?: true
+        val error = com.ipropy.crm.calls.LiveCall.perform(action, on)
+        report(call.getString("commandId"), error == null, error)
+        val result = JSObject().put("done", error == null)
+        if (error != null) result.put("reason", error)
+        call.resolve(result)
+    }
+
+    private fun isCallApp(): Boolean {
+        val telecom = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
+        return telecom.defaultDialerPackage == context.packageName
     }
 
     /** Ask for the permission, showing Android's own dialog. */
@@ -350,9 +450,10 @@ class CallSyncPlugin : Plugin() {
         call.resolve(JSObject().put("canEndCall", canEndCall()))
     }
 
-    private fun canEndCall(): Boolean =
+    private fun canEndCall(): Boolean = isCallApp() || (
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
             getPermissionState(END_CALL)?.toString() == "granted"
+        )
 
     /** Close the command out, if it came from one. Best effort, off the main thread. */
     private fun report(commandId: String?, ok: Boolean, error: String?) {

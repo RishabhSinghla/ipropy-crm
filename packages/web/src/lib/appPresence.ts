@@ -36,8 +36,8 @@ async function announce(): Promise<void> {
       can take that role back from its own settings without telling anybody,
       so it is asked every minute rather than remembered.
     */
-    const { canEndCall } = await callControlState();
-    await api.appIsOpen({ canEndCall });
+    const { canEndCall, canControlCall } = await callControlState();
+    await api.appIsOpen({ canEndCall, canControlCall });
   } catch {
     // A status column is never worth a toast.
   }

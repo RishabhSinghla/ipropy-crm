@@ -10,6 +10,7 @@ import {
 import { applyBrandColour, toast, useApp } from '../lib/store';
 import { api, authedFileUrl, type ModuleSummary, type SearchHit } from '../lib/api';
 import { useRealtime } from '../lib/realtime';
+import { LiveCallDeck } from './LiveCallDeck';
 import { arrangeHeaderTabs } from '../lib/headerTabs';
 import { cn } from '../lib/utils';
 import { resolveIcon } from '../lib/icons';
@@ -250,6 +251,8 @@ export default function Layout(): JSX.Element {
               header lives outside it and stays usable throughout. */}
           <ErrorBoundary resetKey={location.pathname}>
             <Outlet />
+            {/* The call, if one is running — over every page, until it is saved. */}
+            <LiveCallDeck />
           </ErrorBoundary>
         </main>
 

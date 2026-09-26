@@ -148,11 +148,14 @@ test.describe('accessibility', () => {
     const call = page.locator('button[title^="Call "]').first();
     await expect(call).toBeVisible({ timeout: 20_000 });
     await call.click();
-    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByRole('dialog').locator('button[aria-pressed]').first()).toBeVisible();
+    // The call deck, not a dialog: the console became the header's deck on
+    // 24 September 2026, and this scan was still waiting for a dialog.
+    const deck = page.getByTestId('call-deck');
+    await expect(deck).toBeVisible({ timeout: 20_000 });
+    await expect(deck.locator('button[aria-pressed]').first()).toBeVisible();
     const { violations } = await scan(page);
     expect(violations, summarise(violations)).toEqual([]);
-    await page.keyboard.press('Escape');
+    await deck.getByRole('button', { name: /save & exit/i }).click();
   });
 
   test('the pipeline breakdown panel has no violations', async ({ page }) => {

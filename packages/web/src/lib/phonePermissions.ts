@@ -14,7 +14,7 @@
  */
 import type { CallSyncStatus } from './callSync';
 
-export type PhoneStep = 'pair' | 'callPhone' | 'callLog' | 'endCall' | 'alerts' | 'location';
+export type PhoneStep = 'pair' | 'callPhone' | 'callLog' | 'endCall' | 'callControl' | 'recordings' | 'alerts' | 'location';
 
 export interface PhoneNeed {
   key: PhoneStep;
@@ -58,6 +58,18 @@ export const PHONE_NEEDS: PhoneNeed[] = [
     required: false,
   },
   {
+    key: 'callControl',
+    title: 'Control calls from the CRM',
+    why: 'Makes iPropy this phone\'s calling app, so speaker, mute, hold and end work from the computer too, and the timer starts when they pick up.',
+    required: false,
+  },
+  {
+    key: 'recordings',
+    title: 'Call recordings',
+    why: 'Turn on automatic call recording in your phone\'s own dialler first, then pick the folder it saves to (often Recordings/Call or MIUI/sound_recorder/call_rec). Each recording then appears on its call in the CRM.',
+    required: false,
+  },
+  {
     key: 'alerts',
     title: 'Notifications',
     why: 'Follow-ups and new leads reach you when the app is closed.',
@@ -86,6 +98,8 @@ export function stepIsDone(step: PhoneStep, input: PhoneSetupInput): boolean {
     case 'callPhone': return s.callPhoneGranted;
     case 'callLog': return s.callLogGranted;
     case 'endCall': return s.canEndCall === true;
+    case 'callControl': return s.canControlCall === true;
+    case 'recordings': return s.recordingFolderChosen === true && s.uploadRecordings;
     case 'alerts': return input.alerts === 'granted';
     /*
       Background and not merely foreground. "While using the app" reads as

@@ -1047,7 +1047,7 @@ export const api = {
   revokeDevice: (id: string) => del(`/api/telephony/devices/${id}`),
   /** Ring a number from the signed-in user's own paired phone. */
   /** The app saying it is open, so a desk Call knows it can reach this phone. */
-  appIsOpen: (state: { canEndCall?: boolean } = {}) =>
+  appIsOpen: (state: { canEndCall?: boolean; canControlCall?: boolean } = {}) =>
     post<{ deviceId: string | null }>('/api/telephony/devices/app-open', state),
   dialOnPhone: (data: { to: string; module?: string; recordId?: string }) =>
     post<{ sent: boolean; reason?: string; device?: string; commandId?: string; expiresAt?: string }>('/api/telephony/dial', data),
@@ -1059,10 +1059,17 @@ export const api = {
   */
   pendingDial: () => get<{
     command: {
-      id: string; kind: 'dial' | 'hangup'; number: string | null;
+      id: string; kind: 'dial' | 'hangup' | 'control'; number: string | null;
+      /** For a live-call control: which switch, and which way. */
+      action?: 'speaker' | 'mute' | 'hold' | null; on?: boolean | null;
       module: string | null; recordId: string | null; expiresAt: string;
     } | null;
   }>('/api/telephony/dial/pending'),
+  /** The call this person's phone is on, as the phone last reported it. */
+  liveCall: () => get<LiveCallState>('/api/telephony/live-call'),
+  /** Speaker, mute or hold on the phone's live call. Refused with a reason when the phone cannot. */
+  callControlOnPhone: (action: 'speaker' | 'mute' | 'hold', on: boolean) =>
+    post<{ sent: boolean; reason?: string; detail?: string }>('/api/telephony/call-control', { action, on }),
   /** Did the phone actually take it? queued | delivered | done | failed | expired. */
   /*
     End the call the rep's own phone is on. Answers `sent: false` with a
@@ -1093,6 +1100,15 @@ export const api = {
     const calls = await res.json() as Record<string, unknown>[];
     return { calls, total: total || calls.length };
   },
+  /** How the filtered calls split by direction, picked up, and when — for the Calls page's charts. */
+  callsBreakdown: (params: Record<string, unknown>) => get<{
+    total: number;
+    direction: { key: string; count: number }[];
+    answered: { key: string; count: number }[];
+    when: { key: string; count: number }[];
+  }>(`/api/telephony/calls/breakdown${qs(params)}`),
+  /** Whose calls this person may filter the Calls page to. */
+  callAgents: () => get<{ canSeeAll: boolean; agents: { id: string; name: string }[] }>('/api/telephony/calls/agents'),
   /** Whose number is this? One, nobody, several, or "somebody else's lead". */
   callerLookup: (phone: string) => get<{
     kind: 'one' | 'none' | 'ambiguous' | 'restricted';
@@ -1479,3 +1495,17 @@ export const api = {
   leadInbox: (status?: string) => get<Record<string, unknown>[]>(`/api/lead-inbox${qs({ status })}`),
 
 };
+
+/** What a rep's phone last said about the call it is on. */
+export interface LiveCallState {
+  state: 'dialling' | 'ringing' | 'active' | 'held' | 'ended' | null;
+  number: string | null;
+  direction: string | null;
+  speaker: boolean;
+  muted: boolean;
+  connectedSecondsAgo: number | null;
+  talkedSeconds: number | null;
+  updatedSecondsAgo: number | null;
+  canControlCall: boolean;
+  canEndCall: boolean;
+}

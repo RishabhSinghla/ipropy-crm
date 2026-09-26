@@ -141,31 +141,39 @@ telephonyRouter.post('/log', asyncHandler(async (req, res) => {
   }));
 }));
 
-telephonyRouter.get('/calls', asyncHandler(async (req, res) => {
+/**
+ * The Calls page's filters, turned into SQL once for the list and the charts.
+ *
+ * One definition, so the donut above the list can never count a different set
+ * of calls from the list under it — the same person, the same dates, the same
+ * "who may see whose".
+ */
+const callFilterSchema = z.object({
+  recordId: z.string().uuid().optional(),
+  userId: z.string().uuid().optional(),
+  direction: z.enum(['inbound', 'outbound', 'missed', 'rejected', 'blocked', 'unknown']).optional(),
+  source: z.enum(['api', 'device', 'manual']).optional(),
+  hasRecording: z.coerce.boolean().optional(),
+  disposition: z.string().max(60).optional(),
+  /*
+    Answered is not a direction and not a status: a call with time on the
+    clock was picked up, whichever way it went and whatever the handset
+    chose to call it. Filtering on `status` instead gives a different answer
+    on every make of phone.
+  */
+  answered: z.enum(['yes', 'no']).optional(),
+  from: z.string().max(40).optional(),
+  to: z.string().max(40).optional(),
+});
+
+async function callFilters(
+  req: Parameters<typeof getScope>[0],
+  query: z.infer<typeof callFilterSchema>,
+): Promise<{ clauses: string[]; params: unknown[] }> {
   const user = getUser(req);
   const {
-    recordId, userId, limit, offset, direction, source, hasRecording,
-    disposition, answered, from, to,
-  } = z.object({
-    recordId: z.string().uuid().optional(),
-    userId: z.string().uuid().optional(),
-    direction: z.enum(['inbound', 'outbound', 'missed', 'rejected', 'blocked', 'unknown']).optional(),
-    source: z.enum(['api', 'device', 'manual']).optional(),
-    hasRecording: z.coerce.boolean().optional(),
-    disposition: z.string().max(60).optional(),
-    /*
-      Answered is not a direction and not a status: a call with time on the
-      clock was picked up, whichever way it went and whatever the handset
-      chose to call it. Filtering on `status` instead gives a different answer
-      on every make of phone.
-    */
-    answered: z.enum(['yes', 'no']).optional(),
-    from: z.string().max(40).optional(),
-    to: z.string().max(40).optional(),
-    limit: z.coerce.number().int().max(200).default(50),
-    offset: z.coerce.number().int().default(0),
-  }).parse(req.query);
-
+    recordId, userId, direction, source, hasRecording, disposition, answered, from, to,
+  } = query;
   const clauses: string[] = [];
   const params: unknown[] = [];
   if (recordId) { params.push(recordId); clauses.push(`c.record_id = $${params.length}`); }
@@ -186,6 +194,16 @@ telephonyRouter.get('/calls', asyncHandler(async (req, res) => {
   if (recordId) await assertRecordIdAccess(req, recordId);
   if (userId) { params.push(userId); clauses.push(`c.user_id = $${params.length}`); }
   else if (!canSeeAll) { params.push(user.id); clauses.push(`c.user_id = $${params.length}`); }
+  return { clauses, params };
+}
+
+telephonyRouter.get('/calls', asyncHandler(async (req, res) => {
+  const query = callFilterSchema.extend({
+    limit: z.coerce.number().int().max(200).default(50),
+    offset: z.coerce.number().int().default(0),
+  }).parse(req.query);
+  const { limit, offset } = query;
+  const { clauses, params } = await callFilters(req, query);
   params.push(limit, offset);
 
   const rows = await db.query(
@@ -224,6 +242,83 @@ telephonyRouter.get('/calls', asyncHandler(async (req, res) => {
   );
   res.setHeader('X-Total-Count', String(total?.count ?? rows.rows.length));
   res.json(rows.rows);
+}));
+
+/**
+ * Who the Calls page can be filtered to: everybody who has made or taken a
+ * call, for somebody allowed to see the whole team's, and only themselves
+ * otherwise — the same rule the list itself enforces.
+ */
+telephonyRouter.get('/calls/agents', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const canSeeAll = user.isAdmin || await hasCapability(user, 'telephony.listen_recordings');
+  const rows = await db.query<{ id: string; name: string }>(
+    `SELECT u.id, trim(u.first_name || ' ' || u.last_name) AS name
+       FROM ipy_user u
+      WHERE ${canSeeAll ? `EXISTS (SELECT 1 FROM ipy_call c WHERE c.user_id = u.id) OR u.is_active = true` : 'u.id = $1'}
+      ORDER BY u.first_name, u.last_name`,
+    canSeeAll ? [] : [user.id],
+  );
+  res.json({ canSeeAll, agents: rows.rows });
+}));
+
+/**
+ * How the calls the Calls page is showing split three ways — direction, picked
+ * up, and when — for its three charts.
+ *
+ * The same filters as the list, so a slice counts exactly the rows clicking it
+ * shows. `today`, `week` and `month` are the dates the page itself filters on,
+ * passed in rather than worked out here, so "This week" means one thing on
+ * both sides of the wire.
+ */
+telephonyRouter.get('/calls/breakdown', asyncHandler(async (req, res) => {
+  const query = callFilterSchema.extend({
+    today: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    week: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    month: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  }).parse(req.query);
+  const { clauses, params } = await callFilters(req, query);
+  params.push(query.today, query.week, query.month);
+  const today = `$${params.length - 2}::timestamptz`;
+  const week = `$${params.length - 1}::timestamptz`;
+  const month = `$${params.length}::timestamptz`;
+
+  const row = await db.queryOne<Record<string, number>>(
+    `SELECT COUNT(*)::int AS total,
+            COUNT(*) FILTER (WHERE c.direction = 'outbound')::int AS outbound,
+            COUNT(*) FILTER (WHERE c.direction = 'inbound')::int  AS inbound,
+            COUNT(*) FILTER (WHERE c.direction = 'missed')::int   AS missed,
+            COUNT(*) FILTER (WHERE c.direction NOT IN ('outbound', 'inbound', 'missed'))::int AS other_direction,
+            COUNT(*) FILTER (WHERE c.duration_seconds > 0)::int  AS answered,
+            COUNT(*) FILTER (WHERE c.duration_seconds = 0)::int  AS unanswered,
+            COUNT(*) FILTER (WHERE c.started_at >= ${today})::int AS today,
+            COUNT(*) FILTER (WHERE c.started_at >= ${week} AND c.started_at < ${today})::int AS rest_of_week,
+            COUNT(*) FILTER (WHERE c.started_at >= ${month} AND c.started_at < LEAST(${week}, ${today}))::int AS rest_of_month,
+            COUNT(*) FILTER (WHERE c.started_at < LEAST(${month}, ${week}, ${today}))::int AS earlier
+       FROM ipy_call c
+      ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}`,
+    params,
+  );
+  const n = (key: string): number => Number(row?.[key] ?? 0);
+  res.json({
+    total: n('total'),
+    direction: [
+      { key: 'outbound', count: n('outbound') },
+      { key: 'inbound', count: n('inbound') },
+      { key: 'missed', count: n('missed') },
+      { key: 'other', count: n('other_direction') },
+    ],
+    answered: [
+      { key: 'yes', count: n('answered') },
+      { key: 'no', count: n('unanswered') },
+    ],
+    when: [
+      { key: 'today', count: n('today') },
+      { key: 'week', count: n('rest_of_week') },
+      { key: 'month', count: n('rest_of_month') },
+      { key: 'earlier', count: n('earlier') },
+    ],
+  });
 }));
 
 telephonyRouter.get('/calls/:id', asyncHandler(async (req, res) => {
@@ -649,9 +744,12 @@ telephonyRouter.post('/devices/app-open', asyncHandler(async (req, res) => {
     minute rather than remembered from pairing, and the desk's End button
     follows it.
   */
-  const input = z.object({ canEndCall: z.boolean().optional() }).parse(req.body ?? {});
+  const input = z.object({
+    canEndCall: z.boolean().optional(),
+    canControlCall: z.boolean().optional(),
+  }).parse(req.body ?? {});
   const { markAppOpen } = await import('../../integrations/telephony/deviceSync.js');
-  res.json(await markAppOpen(user.id, input.canEndCall));
+  res.json(await markAppOpen(user.id, input.canEndCall, input.canControlCall));
 }));
 
 telephonyRouter.post('/dial', asyncHandler(async (req, res) => {
@@ -745,12 +843,51 @@ telephonyRouter.post('/hangup', asyncHandler(async (req, res) => {
   res.json({ sent: true, commandId: queued.commandId, device: queued.deviceLabel, expiresAt: queued.expiresAt });
 }));
 
+/**
+ * The call this person's phone is on right now, for the deck on the desk.
+ * Read on arrival and every couple of seconds; the socket carries each change
+ * in between.
+ */
+telephonyRouter.get('/live-call', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  const { liveCallFor } = await import('../../integrations/telephony/deviceSync.js');
+  res.json(await liveCallFor(user.id));
+}));
+
+/**
+ * Speaker, mute or hold, from the desk, on the call the rep's phone is on.
+ *
+ * Refused with the reason, never queued into nowhere, when the phone is not
+ * its own calling app — the only case in which Android lets an app touch a
+ * running call.
+ */
+telephonyRouter.post('/call-control', asyncHandler(async (req, res) => {
+  const user = getUser(req);
+  await assertCapability(user, 'telephony.call');
+  const input = z.object({
+    action: z.enum(['speaker', 'mute', 'hold']),
+    on: z.boolean(),
+  }).parse(req.body ?? {});
+  const { queueCallControl } = await import('../../integrations/telephony/deviceSync.js');
+  const queued = await queueCallControl({ userId: user.id, action: input.action, on: input.on });
+  if (!queued) {
+    res.json({
+      sent: false,
+      reason: 'not-the-calling-app',
+      detail: 'Make iPropy this phone\'s calling app (on the phone: iPropy → This phone → Control calls from the CRM).',
+    });
+    return;
+  }
+  emitToUser(user.id, 'device:control', { commandId: queued.commandId, expiresAt: queued.expiresAt });
+  res.json({ sent: true, commandId: queued.commandId, device: queued.deviceLabel });
+}));
+
 telephonyRouter.get('/dial/pending', asyncHandler(async (req, res) => {
   const user = getUser(req);
   await assertCapability(user, 'telephony.call');
   const row = await db.queryOne<{
     id: string; kind: string; number: string | null; module: string | null;
-    record_id: string | null; expires_at: string;
+    record_id: string | null; expires_at: string; action: string | null; on: boolean | null;
   }>(
     /*
       Any kind, not only a dial. Hanging up travels the same road as ringing —
@@ -765,6 +902,7 @@ telephonyRouter.get('/dial/pending', asyncHandler(async (req, res) => {
      UPDATE ipy_device_command command SET status = 'delivered', delivered_at = now()
        FROM next_command WHERE command.id = next_command.id
      RETURNING command.id, command.kind, command.payload->>'number' AS number,
+               command.payload->>'action' AS action, (command.payload->>'on')::boolean AS "on",
                command.module, command.record_id, command.expires_at`,
     [user.id],
   );
@@ -776,6 +914,9 @@ telephonyRouter.get('/dial/pending', asyncHandler(async (req, res) => {
       id: row.id,
       kind: row.kind,
       number: row.number,
+      // A live-call control: which switch, and which way.
+      action: row.action,
+      on: row.on,
       module: row.module,
       recordId: row.record_id,
       expiresAt: row.expires_at,

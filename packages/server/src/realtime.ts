@@ -159,6 +159,11 @@ function wireEvents(): void {
   bus.on('notification.created', (p) => {
     emitTo(`user:${p.userId}`, 'notification', p);
   });
+
+  // The call deck on every screen that person has open follows the handset.
+  bus.on('phone.call', (p) => {
+    emitTo(`user:${p.userId}`, 'phone:call', p.live);
+  });
 }
 
 /**

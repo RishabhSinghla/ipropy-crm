@@ -69,17 +69,36 @@ deviceRouter.post('/state', asyncHandler(async (req, res) => {
   const device = await authenticateDevice(bearer(req.headers.authorization) ?? undefined);
   const input = z.object({
     canEndCall: z.boolean().optional(),
+    canControlCall: z.boolean().optional(),
     liveNumber: z.string().max(32).nullable().optional(),
     liveState: z.enum(['dialling', 'ringing', 'active', 'held', 'ended']).nullable().optional(),
+    direction: z.enum(['incoming', 'outgoing']).nullable().optional(),
+    speaker: z.boolean().optional(),
+    muted: z.boolean().optional(),
   }).parse(req.body ?? {});
 
   const { reportPhoneState } = await import('../../integrations/telephony/deviceSync.js');
   await reportPhoneState(device, {
     canEndCall: input.canEndCall,
+    canControlCall: input.canControlCall,
     liveNumber: input.liveNumber ?? null,
     liveState: input.liveState ?? null,
+    direction: input.direction ?? null,
+    speaker: input.speaker,
+    muted: input.muted,
   });
   res.json({ ok: true });
+}));
+
+/**
+ * The next instruction for this handset — speaker, mute, hold, hang up — asked
+ * by the phone's own call service every second while a call is up, so it
+ * works with the app's screen closed.
+ */
+deviceRouter.get('/commands/next', asyncHandler(async (req, res) => {
+  const device = await authenticateDevice(bearer(req.headers.authorization) ?? undefined);
+  const { nextCommandFor } = await import('../../integrations/telephony/deviceSync.js');
+  res.json({ command: await nextCommandFor(device) });
 }));
 
 const entrySchema = z.object({

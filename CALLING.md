@@ -800,3 +800,92 @@ permission reopens.
 (`Interested`, outbound, 60s, against the right record) and the chase date an
 outcome schedules — a `Busy` call wrote `next_followup_at`, an `Interested` one
 correctly wrote none, because that card carries no `followUpInHours`.
+
+---
+
+## One deck for the whole CRM, live from the phone — 26 September 2026
+
+**The owner:** speaker, hold, mute and end *"shown and not highlighted"*; the
+timer to start *"only once call connected else it shows ringing"*; the deck to
+stay *"all around the CRM … wherever I drag it"* with no close button; Save &
+Exit beside Save & Next; and everything working both ways, phone and desk.
+
+**The deck belongs to the CRM now, not to a record page.** `lib/liveCall.ts`
+holds the call (record, number, outcome, when Call was pressed) in one store,
+kept in `localStorage` so a refresh brings it back; `components/LiveCallDeck`
+draws it once from the app shell (`Layout`), portalled to `document.body` and
+pinned to the window. A record header leaves an empty `#call-deck-dock` and
+the deck sits over it until dragged; a dragged spot is kept across pages. There
+is no ✕: **Save & Exit** saves and closes, **Save & Next** saves and rings the
+next record, and neither can lose a call.
+
+**Speaker, mute, hold and "they picked up" need iPropy to be the phone's
+calling app.** Android gives a running call to the default dialler and nobody
+else — `TelecomManager.endCall()` was the only exception, which is why End
+alone worked without it. So the app can now *be* the calling app, opt-in, from
+**This phone → Control calls from the CRM** (`requestCallApp`, Android's own
+role dialog, reversible in Android's settings):
+
+* `calls/PhoneCallService.kt` — the `InCallService`; hands every call to
+  `LiveCall` and puts the in-call screen up (a full-screen notification for a
+  call ringing in). Ringing is left to Android (`IN_CALL_SERVICE_RINGING`
+  false), so the rep's ringtone is untouched.
+* `calls/LiveCall.kt` — the one place a call is touched. Reports every change
+  (`dialling` → `active` → `held` → `ended`, speaker, mute) to
+  `POST /api/device/state`, and while a call is up **collects the desk's
+  commands itself every second** from `GET /api/device/commands/next` with the
+  device token — the web view is asleep during a call, so it cannot be the
+  only road. That route hands over `control` and `hangup` only; a dial stays
+  the web view's to place.
+* `calls/InCallActivity.kt` — the phone's own call screen, built in code:
+  speaker, mute, hold, end, answer/decline, clock from the answer. Its buttons
+  call the same `LiveCall.perform` the desk's do.
+* `calls/DialActivity.kt` — the dial pad Android insists a calling app has.
+
+**The server** (`deviceSync.ts`, migration `173`): `live_call_connected_at` is
+set on the first `active` and cleared when a new call starts dialling, so the
+desk's clock is the talk time and never the ring time; `live_call_ended_at`
+gives the final duration, which Save now logs instead of an estimate. Every
+report goes out on the socket as `phone:call` and the deck also polls
+`/api/telephony/live-call` every two seconds. `POST /api/telephony/call-control`
+queues `speaker`/`mute`/`hold` only for a handset with `can_control_call`, and
+refuses with the reason otherwise. Pinned by `liveCallBothWays.test.ts`; the
+words on the deck by `deckStatus` in `lib/callConsole.ts` and its tests.
+
+**What a phone that is not the calling app shows:** "Calling on your phone",
+no clock (nothing can say when they answered), controls dead with the reason in
+their tooltip, End live if it granted `ANSWER_PHONE_CALLS`.
+
+**Not proven on a handset.** The Android half compiles on the CI runner
+(`build-the-app.yml`) and was never run on a phone from here — no device, no
+emulator. The desk half was driven in a browser against a stand-in phone
+posting real device-token reports: 17 checks, all pass.
+
+### Recordings had never once reached the CRM
+
+Read off production 26 September (`call-recordings-check.yml`, counts only):
+**245 calls, 0 with a recording**, ever. The engine (`RecordingFinder`,
+`SyncWorker.uploadRecordings`, `POST /api/device/recordings`) was complete;
+**nothing ever let anybody choose the folder** it reads — modern Android shows
+a phone recorder's folder to an app only after the person picks it in the
+system's folder chooser — and nothing switched uploading on. The phone setup
+checklist now has **Call recordings**: `chooseRecordingFolder` opens
+`ACTION_OPEN_DOCUMENT_TREE`, keeps the grant, turns uploading on and syncs at
+once. The phone's own automatic call recording has to be on first; that is the
+maker's setting, not ours.
+
+Also read the same day: **no active phone had `can_end_call`**, which is why
+End has been dead on every desk.
+
+### The Calls page
+
+An **Agent** picker replaces "Only mine" (`/api/telephony/calls/agents`, the
+same who-may-see-whose rule as the list), and three donuts — **Direction,
+Picked up, When** — sit above the list (`components/CallDonut.tsx`). Each slice
+is a filter: click to apply, click again to clear. Counts come from
+`/api/telephony/calls/breakdown`, built on the **same `callFilters`** as the
+list, so a slice counts exactly the rows clicking it shows; each chart leaves
+its own filter out so it keeps showing the whole split. "When" slices are
+disjoint (today / earlier this week / earlier this month / before), with
+matching entries in the When dropdown. Every row now always says its Duration
+and either offers the recording or says "No recording".

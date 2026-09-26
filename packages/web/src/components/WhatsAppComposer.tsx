@@ -56,6 +56,13 @@ export function WhatsAppComposerProvider({ recordId, module, recordLabel, childr
 }): JSX.Element {
   const [to, setTo] = useState<string | null>(null);
   const { data: status } = useQuery({ queryKey: ['wa-biz', 'status'], queryFn: () => api.waBizStatus() });
+  /*
+    A message being written belongs to the record it was opened on. This
+    provider stays mounted while the split view moves from one record to the
+    next (so the list keeps its scroll), so a composer left open must close
+    rather than carry one person's number onto the next.
+  */
+  useEffect(() => { setTo(null); }, [recordId]);
 
   /*
     No official number, no composer — and deliberately not a composer that
@@ -63,14 +70,17 @@ export function WhatsAppComposerProvider({ recordId, module, recordLabel, childr
     behaviour (the Chats screen on that thread) is still the useful one. So
     nothing about today changes until a provider is actually switched on, and
     the moment one is, every icon in the CRM becomes a composer.
-  */
-  if (!status?.connected) return <>{children}</>;
 
+    The provider itself is always there, with no composer in it until then:
+    swapping the tree around `children` once the status arrives would rebuild
+    the whole page underneath it.
+  */
   return (
-    <WhatsAppComposerContext.Provider value={{ compose: setTo }}>
+    <WhatsAppComposerContext.Provider value={status?.connected ? { compose: setTo } : null}>
       {children}
-      {to && (
+      {status?.connected && to && (
         <ComposerDialog
+          key={recordId}
           to={to}
           module={module}
           recordId={recordId}

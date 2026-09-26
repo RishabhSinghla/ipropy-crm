@@ -179,3 +179,51 @@ export function splitOutcomes(all: string[], chosen: string): { first: string[];
   }
   return { first, rest: all.filter((value) => !first.includes(value)) };
 }
+
+/** What the phone last said about its call, as far as the deck needs to know. */
+export interface PhoneCallReport {
+  state: 'dialling' | 'ringing' | 'active' | 'held' | 'ended' | null;
+  /** When they picked up, on this computer's clock; null before that. */
+  connectedAt: number | null;
+  talkedSeconds: number | null;
+  /** When the phone last reported, on this computer's clock. */
+  reportedAt: number | null;
+}
+
+/**
+ * The words at the top of the call deck.
+ *
+ * **26 September 2026, the owner:** the timer *"only start once call
+ * connected else it shows ringing."* Only the phone knows when the other side
+ * picked up, and only once iPropy is its calling app — so the clock runs from
+ * the phone's own "answered", never from the moment Call was pressed. A phone
+ * that reports nothing about this call (not the calling app, or an older app)
+ * gets "Calling on your phone" and no clock at all, rather than a clock
+ * counting a call that may not have been answered.
+ */
+export function deckStatus(
+  report: PhoneCallReport | null,
+  call: { pressedAt: number; placing: boolean },
+  now: number,
+): { label: string; ticking: boolean } {
+  if (call.placing) return { label: 'Calling…', ticking: false };
+  // A report from before this call was pressed is about the last one.
+  const aboutThisCall = report?.state && report.reportedAt !== null && report.reportedAt >= call.pressedAt - 5_000;
+  if (!report || !aboutThisCall) return { label: 'Calling on your phone', ticking: false };
+  switch (report.state) {
+    case 'dialling':
+    case 'ringing':
+      return { label: 'Ringing…', ticking: false };
+    case 'active':
+      return { label: elapsedLabel(report.connectedAt ? now - report.connectedAt : 0), ticking: true };
+    case 'held':
+      return { label: `On hold · ${elapsedLabel(report.connectedAt ? now - report.connectedAt : 0)}`, ticking: true };
+    case 'ended':
+      return {
+        label: report.talkedSeconds ? `Call ended · ${elapsedLabel(report.talkedSeconds * 1000)}` : 'Not answered',
+        ticking: false,
+      };
+    default:
+      return { label: 'Calling on your phone', ticking: false };
+  }
+}

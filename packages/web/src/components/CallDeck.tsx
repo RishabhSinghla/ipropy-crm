@@ -1,74 +1,82 @@
 import { type JSX, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
-import { Grid3x3, GripVertical, MicOff, PhoneOff, RotateCcw, X } from 'lucide-react';
+import { GripVertical, MicOff, Pause, PhoneOff, RotateCcw, Volume2 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { elapsedLabel, mayControlLiveCall, NO_LIVE_CONTROL_REASON } from '../lib/callConsole';
 import { Spinner } from './ui';
 import { type DeckSpot, forgetDeckSpot, keepOnScreen, loadDeckSpot, saveDeckSpot } from '../lib/dragDeck';
 
 /**
- * The live call, in the record's own header.
+ * The live call, floating over whatever screen the rep is on.
  *
- * **24 September 2026, the owner**, with a design of his own: *"we dont want
- * that full popup and things opening when click call button but instead now I
- * want it like this."* Pressing Call used to cover the record with a dialog —
- * so the one screen a rep needs while talking, the record, was behind the
- * thing they pressed to start talking. The deck sits in the header instead and
- * the record stays where it is: status, follow-up date and notes are all
- * editable in place, which is what the split view is for.
+ * **24 September 2026, the owner**, with a design of his own: the call sits
+ * in the record's header rather than a dialog over it. **26 September:** it
+ * follows the rep to any screen until the call is saved, stays wherever it is
+ * dragged, and has no close button — Save & Exit and Save & Next are the two
+ * ways out, and both keep the call.
  *
- * Two rows, divided, exactly as he drew them: the clock and the call's own
- * controls above, where the call is in the queue and the way out below.
+ * Two rows, divided, as he drew them: who, the status and the call's own
+ * controls above; where the call is in the queue and the way out below.
  *
- * **Mute and keypad are drawn and dead on purpose.** Android hands a running
- * call to the handset's *default phone app* and to nobody else; iPropy gives a
- * number to the dialler and reads the call log afterwards. A control that
- * looks alive and does nothing is the failure this repo keeps writing down, so
- * they carry the reason in their tooltip and light up on their own the day
- * `mayControlLiveCall` says the app may touch a live call.
+ * **Speaker, mute, hold and end are real only when the phone says so.**
+ * Android lets only a phone's *calling app* touch a running call, so they
+ * light up once iPropy is the rep's calling app and show what the phone
+ * reports — a tap on the handset lights the button here too. Otherwise they
+ * are drawn dead with the reason, never a button that does nothing.
  */
 export interface CallDeckProps {
-  /** Seconds are counted from here; null before the call is placed. */
-  startedAt: number | null;
-  /** True while the CRM is still asking a phone to ring. */
-  placing: boolean;
+  /** "Ringing…", the clock from when they answered, "On hold · 01:05", "Call ended · 02:10". */
+  status: string;
+  /** Whether the call is up and talking — the equaliser moves only then. */
+  talking: boolean;
+  /** Speaker, mute and hold: whether each is on, as the phone reports it. */
+  speakerOn: boolean;
+  muted: boolean;
+  held: boolean;
+  /** Whether the phone lets the CRM switch those at all (iPropy is its calling app). */
+  canControl: boolean;
+  /** Why the switches are dead, when they are. */
+  noControlReason: string;
+  onControl: (action: 'speaker' | 'mute' | 'hold', on: boolean) => void;
+  /** Whether this rep's phone has told us it can hang up. */
+  canEndCall: boolean;
+  onHangUp: () => void;
   /** Where this record sits in the queue being worked, 1-based. */
   position: number | null;
   total: number | null;
+  /** Who the call is with, so the deck says so on any screen. */
+  who: string;
   /** The admin's own outcome list, and the one chosen. */
   outcomes: string[];
   outcome: string;
   onOutcome: (value: string) => void;
-  /** Whether this rep's phone has told us it can hang up. */
-  canEndCall: boolean;
-  onHangUp: () => void;
   saving: boolean;
-  /** Save the call and open the next record; null when there is no next one. */
+  /** The next record's name; null when there is no next one. */
   nextLabel: string | null;
   onSave: (andDialNext: boolean) => void;
-  /** Throw the call away without writing anything. */
-  onDiscard: () => void;
+  /** Where the record's header wants it, when it has not been moved. */
+  dock: { top: number; left: number } | null;
 }
 
 export function CallDeck({
-  startedAt, placing, position, total, outcomes, outcome, onOutcome,
-  canEndCall, onHangUp, saving, nextLabel, onSave, onDiscard,
+  status, talking, speakerOn, muted, held, canControl, noControlReason, onControl,
+  canEndCall, onHangUp, position, total, who, outcomes, outcome, onOutcome,
+  saving, nextLabel, onSave, dock,
 }: CallDeckProps): JSX.Element {
-  const timer = useElapsed(startedAt);
-  const liveControls = mayControlLiveCall({ endCall: canEndCall });
   const { box, spot, grab, putBack } = useMovable();
+  /*
+    Always pinned to the window, never inside a page, so moving from one
+    screen to another cannot take it away. Where it goes: where it was
+    dragged, else where the record's header docks it, else the top-right.
+  */
+  const place = spot
+    ? { left: spot.left, top: spot.top }
+    : dock ?? { top: 64, left: Math.max(8, window.innerWidth - 384) };
 
   return (
     <div
       ref={box}
       data-testid="call-deck"
-      /*
-        Docked in the header until somebody moves it, and pinned to the window
-        once they have. Two positions rather than one because the dock has to
-        follow the header as the page scrolls, and a deck dropped somewhere
-        deliberately has to stay exactly where it was put.
-      */
-      style={spot ? { position: 'fixed', left: spot.left, top: spot.top, right: 'auto' } : undefined}
-      className="w-[19rem] shrink-0 rounded-xl bg-slate-900 px-2.5 py-1.5 text-white shadow-float dark:bg-black"
+      style={{ position: 'fixed', left: place.left, top: place.top, zIndex: 60 }}
+      className="w-[23rem] rounded-xl bg-slate-900 px-2.5 py-1.5 text-white shadow-float dark:bg-black"
     >
       <div className="flex items-center gap-2">
         {/*
@@ -79,46 +87,48 @@ export function CallDeck({
           type="button"
           onPointerDown={grab}
           onDoubleClick={putBack}
-          title={spot ? 'Drag to move · double-click to put it back in the header' : 'Drag to move it anywhere'}
+          title={spot ? 'Drag to move · double-click to put it back' : 'Drag to move it anywhere'}
           aria-label="Move the call panel"
           className="-ml-1 cursor-grab touch-none text-slate-500 hover:text-white active:cursor-grabbing"
         >
           <GripVertical className="h-4 w-4" />
         </button>
-        <span className="text-sm font-bold tabular-nums">
-          {placing ? 'Ringing…' : timer}
+        <span className="min-w-0">
+          <span className="block truncate text-[11px] font-semibold text-slate-300">{who}</span>
+          <span className="block text-sm font-bold tabular-nums" data-testid="call-status">{status}</span>
         </span>
-        <Equaliser />
+        {talking && <Equaliser />}
         <span className="ml-auto flex items-center gap-1">
-          <DeckButton label="Mute" enabled={liveControls}><MicOff className="h-3.5 w-3.5" /></DeckButton>
-          <DeckButton label="Keypad" enabled={liveControls}><Grid3x3 className="h-3.5 w-3.5" /></DeckButton>
-          <DeckButton label="End call" enabled={canEndCall} danger onClick={onHangUp}>
+          <DeckButton label={speakerOn ? 'Speaker on' : 'Speaker'} on={speakerOn} enabled={canControl} reason={noControlReason} onClick={() => onControl('speaker', !speakerOn)}>
+            <Volume2 className="h-3.5 w-3.5" />
+          </DeckButton>
+          <DeckButton label={muted ? 'Muted' : 'Mute'} on={muted} enabled={canControl} reason={noControlReason} onClick={() => onControl('mute', !muted)}>
+            <MicOff className="h-3.5 w-3.5" />
+          </DeckButton>
+          <DeckButton label={held ? 'On hold' : 'Hold'} on={held} enabled={canControl} reason={noControlReason} onClick={() => onControl('hold', !held)}>
+            <Pause className="h-3.5 w-3.5" />
+          </DeckButton>
+          <DeckButton label="End call" enabled={canEndCall} reason={noControlReason} danger onClick={onHangUp}>
             <PhoneOff className="h-3.5 w-3.5" />
           </DeckButton>
           {spot && (
-            <DeckButton label="Put it back in the header" enabled onClick={putBack}>
+            <DeckButton label="Put it back" enabled reason="" onClick={putBack}>
               <RotateCcw className="h-3.5 w-3.5" />
             </DeckButton>
           )}
-          <DeckButton label="Did not call" enabled onClick={onDiscard}>
-            <X className="h-3.5 w-3.5" />
-          </DeckButton>
         </span>
       </div>
 
-      {/* The divider the owner drew, and it earns its keep: above is the call
-          itself, below is what becomes of it. */}
+      {/* The divider the owner drew: above is the call itself, below is what becomes of it. */}
       <div className="my-1.5 border-t border-white/15" />
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
         <span className="shrink-0 text-[11px] font-semibold tabular-nums text-slate-400">
           {position && total ? `${position} / ${total}` : '—'}
         </span>
         {/*
           What was said, in the admin's own words — never a list written here,
-          so an outcome added in Settings is offered the same afternoon. A call
-          saved with no outcome is a row nobody can report on, which is why it
-          is on the deck rather than left behind with the dialog.
+          so an outcome added in Settings is offered the same afternoon.
         */}
         <select
           value={outcome}
@@ -130,16 +140,32 @@ export function CallDeck({
             <option key={value} value={value} className="text-slate-900">{value}</option>
           ))}
         </select>
+        {/*
+          Two ways out, both of which save (26 September 2026, the owner):
+          Save & Exit closes the call here; Save & Next rings the next person
+          in the list. There is no way out that forgets the call.
+        */}
         <button
           type="button"
           disabled={saving}
-          onClick={() => onSave(Boolean(nextLabel))}
-          title={nextLabel ? `Save this call and ring ${nextLabel}` : 'Save this call'}
-          className="inline-flex shrink-0 items-center gap-1 rounded-md bg-emerald-500 px-2.5 py-1 text-xs font-bold text-white hover:bg-emerald-400 disabled:opacity-60"
+          onClick={() => onSave(false)}
+          title="Save this call and close the panel"
+          className="inline-flex shrink-0 items-center gap-1 rounded-md bg-white/15 px-2 py-1 text-xs font-bold text-white hover:bg-white/25 disabled:opacity-60"
         >
           {saving && <Spinner className="h-3 w-3" />}
-          {nextLabel ? 'Save & Next' : 'Save'}
+          Save &amp; Exit
         </button>
+        {nextLabel && (
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => onSave(true)}
+            title={`Save this call and ring ${nextLabel}`}
+            className="inline-flex shrink-0 items-center gap-1 rounded-md bg-emerald-700 px-2 py-1 text-xs font-bold text-white hover:bg-emerald-600 disabled:opacity-60"
+          >
+            Save &amp; Next
+          </button>
+        )}
       </div>
     </div>
   );
@@ -207,32 +233,26 @@ function useMovable(): {
   return { box, spot, grab, putBack };
 }
 
-/** The clock, ticking. Nothing else on the page moves while a call is live. */
-function useElapsed(startedAt: number | null): string {
-  const [, tick] = useState(0);
-  useEffect(() => {
-    if (!startedAt) return;
-    const timer = window.setInterval(() => tick((n) => n + 1), 1000);
-    return () => window.clearInterval(timer);
-  }, [startedAt]);
-  return elapsedLabel(startedAt ? Date.now() - startedAt : 0);
-}
-
-/** One round control on the deck. Dead ones say why rather than pretending. */
-function DeckButton({ label, enabled, danger, onClick, children }: {
-  label: string; enabled: boolean; danger?: boolean; onClick?: () => void; children: JSX.Element;
+/**
+ * One round control on the deck. Lit when that switch is on, so the desk and
+ * the phone read the same; dead ones say why rather than pretending.
+ */
+function DeckButton({ label, enabled, on = false, reason, danger, onClick, children }: {
+  label: string; enabled: boolean; on?: boolean; reason: string; danger?: boolean;
+  onClick?: () => void; children: JSX.Element;
 }): JSX.Element {
   return (
     <button
       type="button"
       disabled={!enabled}
       onClick={onClick}
-      title={enabled ? label : `${label} — ${NO_LIVE_CONTROL_REASON}`}
-      aria-label={enabled ? label : `${label}, unavailable. ${NO_LIVE_CONTROL_REASON}`}
+      aria-pressed={danger ? undefined : on}
+      title={enabled ? label : `${label} — ${reason}`}
+      aria-label={enabled ? label : `${label}, unavailable. ${reason}`}
       className={cn(
         'inline-flex h-7 w-7 items-center justify-center rounded-full transition-colors',
-        danger ? 'bg-red-500 text-white' : 'bg-white/10 text-slate-200',
-        enabled ? 'hover:bg-white/25' : 'cursor-not-allowed opacity-40',
+        danger ? 'bg-red-500 text-white' : on ? 'bg-emerald-500 text-white' : 'bg-white/10 text-slate-200',
+        enabled ? (danger ? 'hover:bg-red-400' : 'hover:bg-white/25') : 'cursor-not-allowed opacity-40',
       )}
     >
       {children}

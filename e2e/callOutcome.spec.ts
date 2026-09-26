@@ -70,15 +70,16 @@ test('tapping the number opens the deck in the header, not a dialog over the rec
   expect(await outcomes.locator('option').count(), 'the outcome list did not load').toBeGreaterThan(5);
 
   /*
-    Mute, keypad and End are drawn and dead, on purpose. Android hands a
-    running call to the handset's own dialler and to nobody else, and a red
-    End button that ends nothing is the exact failure this repo keeps writing
-    down.
+    Speaker, mute, hold and End are dead, with the reason, until a phone says
+    iPropy is its calling app — Android lets nobody else touch a running
+    call, and a red End that ends nothing is the failure this repo keeps
+    writing down. No handset here has said so.
   */
   const endCall = deck.getByRole('button', { name: /end call/i });
   await expect(endCall).toBeDisabled();
-  await expect(endCall).toHaveAttribute('title', /dialler end a call/i);
-  await deck.getByRole('button', { name: /did not call/i }).click();
+  await expect(endCall).toHaveAttribute('title', /calling app|Control calls from the CRM/i);
+  await expect(deck.getByRole('button', { name: /^mute/i })).toBeDisabled();
+  await deck.getByRole('button', { name: /save & exit/i }).click();
   await expect(deck).toBeHidden();
 });
 
@@ -89,7 +90,7 @@ test('saving the outcome records the call on the lead', async ({ page }) => {
   const deck = page.getByTestId('call-deck');
   await expect(deck).toBeVisible({ timeout: 15_000 });
   await deck.getByRole('combobox', { name: /how the call went/i }).selectOption('Interested');
-  await deck.getByRole('button', { name: /^save/i }).click();
+  await deck.getByRole('button', { name: /save & exit/i }).click();
 
   await expect(deck).toBeHidden({ timeout: 20_000 });
 
@@ -109,7 +110,7 @@ test('an outcome the list does not offer cannot be sent', async ({ page }) => {
   await expect(deck).toBeVisible({ timeout: 15_000 });
   expect(await deck.locator('input[type="text"]').count()).toBe(0);
   expect(await deck.locator('option').count()).toBeGreaterThan(5);
-  await deck.getByRole('button', { name: /did not call/i }).click();
+  await deck.getByRole('button', { name: /save & exit/i }).click();
 });
 
 test('the outcome list follows the admin, not the bundle', async ({ page }) => {
@@ -142,7 +143,7 @@ test('the outcome list follows the admin, not the bundle', async ({ page }) => {
     // Reachable, not merely present: an option Settings can add and the deck
     // cannot pick is Settings editing a list nobody can use.
     await deck.getByRole('combobox', { name: /how the call went/i }).selectOption(value);
-    await deck.getByRole('button', { name: /did not call/i }).click();
+    await deck.getByRole('button', { name: /save & exit/i }).click();
   } finally {
     await page.evaluate(async (gone) => {
       const token = localStorage.getItem('ipropy.token');
@@ -174,8 +175,9 @@ test('Save & Next carries the call to the next person', async ({ page }) => {
 
   const deck = page.getByTestId('call-deck');
   await expect(deck).toBeVisible({ timeout: 15_000 });
-  const save = deck.getByRole('button', { name: /^save/i });
-  const wasOffered = (await save.textContent())?.includes('Next');
+  const next = deck.getByRole('button', { name: /save & next/i });
+  const wasOffered = (await next.count()) > 0;
+  const save = wasOffered ? next : deck.getByRole('button', { name: /save & exit/i });
 
   await deck.getByRole('combobox', { name: /how the call went/i }).selectOption('Interested');
   await save.click();

@@ -445,17 +445,18 @@ export async function listDevices(userId: string, isAdmin: boolean): Promise<Rec
  * else: every device considered belongs to this same person.
  */
 export async function markAppOpen(
-  userId: string, canEndCall?: boolean,
+  userId: string, canEndCall?: boolean, canControlCall?: boolean,
 ): Promise<{ deviceId: string | null }> {
   const row = await db.queryOne<{ id: string }>(
     `UPDATE ipy_device
         SET app_open_at = now(),
             last_seen_at = now(),
-            can_end_call = COALESCE($2, can_end_call)
+            can_end_call = COALESCE($2, can_end_call),
+            can_control_call = COALESCE($3, can_control_call)
       WHERE id = (SELECT id FROM ipy_device WHERE user_id = $1 AND is_active = true
                    ORDER BY last_sync_at DESC NULLS LAST, created_at DESC LIMIT 1)
       RETURNING id`,
-    [userId, canEndCall ?? null],
+    [userId, canEndCall ?? null, canControlCall ?? null],
   );
   return { deviceId: row?.id ?? null };
 }
@@ -641,21 +642,173 @@ export async function queueHangUp(input: {
  */
 export async function reportPhoneState(device: AuthedDevice, state: {
   canEndCall?: boolean;
+  canControlCall?: boolean;
   liveNumber?: string | null;
   liveState?: string | null;
-}): Promise<void> {
+  direction?: 'incoming' | 'outgoing' | null;
+  speaker?: boolean;
+  muted?: boolean;
+}): Promise<LiveCallState> {
+  /*
+    The clock starts at the first report of `active` for a call and nowhere
+    else: a phone reporting "dialling" is ringing somebody who has not picked
+    up, and counting from there is the timer the owner asked to stop. A new
+    call (dialling or ringing after nothing, or after an ended one) clears the
+    last call's clock, so it cannot carry over.
+  */
   await db.query(
     `UPDATE ipy_device
         SET can_end_call = COALESCE($2, can_end_call),
-            live_call_number = $3,
-            live_call_state = $4,
+            can_control_call = COALESCE($3, can_control_call),
+            live_call_connected_at = CASE
+              WHEN $5::text IN ('dialling', 'ringing')
+                   AND (live_call_state IS NULL OR live_call_state = 'ended') THEN NULL
+              WHEN $5::text = 'active' AND live_call_connected_at IS NULL THEN now()
+              WHEN $5::text = 'active' AND live_call_state = 'ended' THEN now()
+              ELSE live_call_connected_at
+            END,
+            live_call_ended_at = CASE
+              WHEN $5::text = 'ended' AND live_call_state IS DISTINCT FROM 'ended' THEN now()
+              WHEN $5::text IN ('dialling', 'ringing', 'active', 'held') THEN NULL
+              ELSE live_call_ended_at
+            END,
+            live_call_number = COALESCE($4, live_call_number),
             live_call_started_at = CASE
-              WHEN $4::text IS NULL THEN NULL
-              WHEN live_call_state IS DISTINCT FROM $4::text THEN now()
+              WHEN $5::text IS NULL THEN live_call_started_at
+              WHEN live_call_state IS DISTINCT FROM $5::text THEN now()
               ELSE live_call_started_at
             END,
+            live_call_state = COALESCE($5, live_call_state),
+            live_call_direction = COALESCE($6, live_call_direction),
+            live_call_speaker = COALESCE($7, live_call_speaker),
+            live_call_muted = COALESCE($8, live_call_muted),
+            live_call_updated_at = CASE WHEN $5::text IS NULL THEN live_call_updated_at ELSE now() END,
             last_seen_at = now()
       WHERE id = $1`,
-    [device.id, state.canEndCall ?? null, state.liveNumber ?? null, state.liveState ?? null],
+    [
+      device.id, state.canEndCall ?? null, state.canControlCall ?? null, state.liveNumber ?? null,
+      state.liveState ?? null, state.direction ?? null,
+      state.speaker ?? null, state.muted ?? null,
+    ],
+  );
+  const live = await liveCallFor(device.userId);
+  // Straight to every open screen of that person — the deck on the desk
+  // lights speaker the moment the rep taps it on the handset.
+  bus.emit('phone.call', { userId: device.userId, live });
+  return live;
+}
+
+export interface LiveCallState {
+  state: 'dialling' | 'ringing' | 'active' | 'held' | 'ended' | null;
+  number: string | null;
+  direction: string | null;
+  speaker: boolean;
+  muted: boolean;
+  /** Seconds since they picked up; null before that. Relative, so two clocks never disagree. */
+  connectedSecondsAgo: number | null;
+  /** How long the call ran, once it has ended. */
+  talkedSeconds: number | null;
+  /** Seconds since the phone last said anything about this call. */
+  updatedSecondsAgo: number | null;
+  canControlCall: boolean;
+  canEndCall: boolean;
+}
+
+/**
+ * The call this person's phone is on, as the phone last reported it.
+ *
+ * The handset most recently heard from wins; a rep with two paired phones is
+ * holding the one that spoke last.
+ */
+export async function liveCallFor(userId: string): Promise<LiveCallState> {
+  const row = await db.queryOne<{
+    state: string | null; number: string | null; direction: string | null;
+    speaker: boolean; muted: boolean; connected_ago: number | null; talked: number | null;
+    updated_ago: number | null; can_control_call: boolean; can_end_call: boolean;
+  }>(
+    `SELECT live_call_state AS state, live_call_number AS number, live_call_direction AS direction,
+            live_call_speaker AS speaker, live_call_muted AS muted,
+            EXTRACT(EPOCH FROM (now() - live_call_connected_at))::int AS connected_ago,
+            EXTRACT(EPOCH FROM (live_call_ended_at - live_call_connected_at))::int AS talked,
+            EXTRACT(EPOCH FROM (now() - live_call_updated_at))::int AS updated_ago,
+            can_control_call, can_end_call
+       FROM ipy_device
+      WHERE user_id = $1 AND is_active = true
+      ORDER BY live_call_updated_at DESC NULLS LAST, app_open_at DESC NULLS LAST
+      LIMIT 1`,
+    [userId],
+  );
+  return {
+    state: (row?.state ?? null) as LiveCallState['state'],
+    number: row?.number ?? null,
+    direction: row?.direction ?? null,
+    speaker: Boolean(row?.speaker),
+    muted: Boolean(row?.muted),
+    connectedSecondsAgo: row?.state === 'ended' ? null : (row?.connected_ago ?? null),
+    talkedSeconds: row?.state === 'ended' ? (row?.talked ?? 0) : null,
+    updatedSecondsAgo: row?.updated_ago ?? null,
+    canControlCall: Boolean(row?.can_control_call),
+    canEndCall: Boolean(row?.can_end_call),
+  };
+}
+
+/** The live-call controls a desk may ask the phone for. `end` travels as a hang-up. */
+export type CallControlAction = 'speaker' | 'mute' | 'hold';
+
+/**
+ * Ask the rep's phone to switch speaker, mute or hold on the call it is on.
+ *
+ * Only a handset that is its own calling app is sent anything — Android lets
+ * no other app touch a running call — so this answers null rather than
+ * queueing an instruction nothing will ever carry out. Twenty seconds to live,
+ * like a hang-up: a late "speaker on" landing on the next call is a surprise
+ * nobody asked for.
+ */
+export async function queueCallControl(input: {
+  userId: string; action: CallControlAction; on: boolean;
+}): Promise<QueuedDial | null> {
+  const device = await db.queryOne<{ id: string; label: string }>(
+    `SELECT id, label FROM ipy_device
+      WHERE user_id = $1 AND is_active = true AND can_control_call = true
+      ORDER BY live_call_updated_at DESC NULLS LAST, app_open_at DESC NULLS LAST
+      LIMIT 1`,
+    [input.userId],
+  );
+  if (!device) return null;
+  const row = await db.queryOne<{ id: string; expires_at: string }>(
+    `INSERT INTO ipy_device_command (device_id, user_id, kind, payload, expires_at)
+     VALUES ($1, $2, 'control', jsonb_build_object('action', $3::text, 'on', $4::boolean),
+             now() + ($5 || ' seconds')::interval)
+     RETURNING id, expires_at`,
+    [device.id, input.userId, input.action, input.on, String(HANGUP_TTL_SECONDS)],
+  );
+  return { commandId: row!.id, deviceId: device.id, deviceLabel: device.label, expiresAt: row!.expires_at };
+}
+
+/**
+ * The next instruction for one handset, claimed as it is handed over.
+ *
+ * The phone's own call service asks this every second while a call is up,
+ * with its device token — so speaker, mute, hold and hang-up reach it even
+ * when the app's screen is closed and its web view asleep. The same
+ * `FOR UPDATE SKIP LOCKED` claim as the web view's poll, so the two can never
+ * both be given one command.
+ */
+export async function nextCommandFor(device: AuthedDevice): Promise<{
+  id: string; kind: string; payload: Record<string, unknown>;
+} | null> {
+  return db.queryOne(
+    `WITH next_command AS (
+       SELECT id FROM ipy_device_command
+        WHERE device_id = $1 AND status = 'queued' AND expires_at > now()
+          -- Live-call commands only. Placing a call is the app's own job and
+          -- stays on its road; claiming one here would strand it.
+          AND kind IN ('control', 'hangup')
+        ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED
+     )
+     UPDATE ipy_device_command command SET status = 'delivered', delivered_at = now()
+       FROM next_command WHERE command.id = next_command.id
+     RETURNING command.id, command.kind, command.payload`,
+    [device.id],
   );
 }
