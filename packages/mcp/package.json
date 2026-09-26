@@ -15,13 +15,13 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "^1.30.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "tsx": "^4.23.13",
+    "tsx": "^4.23.15",
     "typescript": "^5.7.2",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.1"
   },
   "main": "./dist/lib.js",
   "types": "./dist/lib.d.ts",
