@@ -63,7 +63,7 @@ test('a field chosen in Admin shows up under the name in the queue', async ({ pa
   await forgetTheChoice(page);
   await expect(page.getByTestId('ipropy-workspace')).toBeVisible({ timeout: 30_000 });
   // A queue row, not the sorting button that shares the pane with them.
-  const queue = page.locator('aside').first().locator('button:has(input[type="checkbox"])');
+  const queue = page.locator('aside').first().getByTestId('queue-card');
   // Whatever the first row is, its second line is a phone number now rather
   // than the contact type it carried before.
   await expect(queue.first()).toContainText(/\d{5}/);
@@ -82,6 +82,6 @@ test('clearing it puts back what the CRM ships', async ({ page }) => {
   await forgetTheChoice(page);
   await expect(page.getByTestId('ipropy-workspace')).toBeVisible({ timeout: 30_000 });
   // Back to the contact type, which is what `config.listSubtitle` flags.
-  await expect(page.locator('aside').first().locator('button:has(input[type="checkbox"])').first())
+  await expect(page.locator('aside').first().getByTestId('queue-card').first())
     .toContainText(/Buyer|Seller|Tenant|Investor/);
 });

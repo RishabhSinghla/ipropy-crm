@@ -122,6 +122,36 @@ to the list's requested columns while the split view is showing, because otherwi
 is blank on any view whose columns do not happen to include it — which reads as the feature
 not working rather than as a column being absent.
 
+**Each queue row is a card, in the owner's colours** (26 September 2026, from his
+mock-up). Three lines: the name with the contact-type chip beside it and a star on the
+right; a blue building icon, **`H. No: <unit>`** in bold, then portion, bedrooms + category,
+locality (`Single, 4 BHK Builder Floor, Greenfields Colony`), cut short with `…` rather
+than wrapped; then the price in bold indigo, the size beside it, and the task chip on the
+right. `lib/queueCard.ts` maps each fact to a short list of field names, first one present
+wins, because Contacts and Inventories name them differently (`unit_no` / `unit_number`,
+`budget` / `demand`, `portion` / `portion_type`); a fact the module lacks drops out.
+`withQueueCardColumns` asks the list for all of them, and for an area's unit field too.
+
+* **The task chip** (`lib/followUpDates.ts`): **Today** (amber), **Tomorrow** (blue),
+  **Overdue (1 day / 3 months / 1 year)** (red), **Pending** (slate) for anything after
+  tomorrow, nothing when no date is set. The exact date is on hover.
+* **The open card** has a plum bar down its left edge, a plum name and a lifted shadow.
+* **The star is a real button** that adds or removes a favourite from the list, and the
+  tick box for bulk actions appears on hover or once ticked. The card, star and tick box
+  are three sibling controls, never one inside another, which HTML does not allow.
+* **An admin's queue line still wins.** When Admin → Split View has chosen the line under
+  the name, it replaces the middle line.
+* The pipeline status chip is no longer on the card; it is in the open record's header.
+
+**A follow-up date is one tap to set, everywhere.** Any date marked as a due date, or named
+Next Follow-up, shows **Today / Tomorrow / Next Week / Next Month** under its date box.
+Every editor of that date is `FieldInput`, so this covers the record page, the split view,
+the list's inline edit and the new-record form. In an inline edit, a tap saves at once
+(`onPickNow`); in a form it fills the box and saves with the rest. Next Month keeps the day
+of the month, except that 31 January becomes the last day of February, not 3 March. All of
+these are local calendar days, never `toISOString()`, which in India gives yesterday's date
+before 5:30 am.
+
 **The divider drags** (`SplitHandle`), pointer events so a finger on a tablet works, with
 the pointer captured so a fast drag does not let go halfway across the screen, and arrow
 keys for anyone not using a mouse. The width is per browser like the view choice itself, and

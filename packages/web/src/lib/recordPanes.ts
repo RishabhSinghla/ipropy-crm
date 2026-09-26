@@ -60,6 +60,8 @@ export interface RecordPanes {
   blocks: FieldBlockSpec[];
   /** The line under a name in a queue — `Buyer — 304`. */
   subtitleFields: FieldMeta[];
+  /** True when Admin → Split View chose that line, rather than the CRM. */
+  queueChosen: boolean;
   assignedField?: FieldMeta;
   statusField?: FieldMeta;
   followUpField?: FieldMeta;
@@ -179,5 +181,6 @@ export function useRecordPanes(module: DescribedModule): RecordPanes {
     }];
   }, [panes?.form, pickFields, layout.blocks, fieldMap, module.fields, module.labelFields, subtitleFields]);
 
-  return { headerFields, blocks, subtitleFields, assignedField, statusField, followUpField, phoneField };
+  const queueChosen = pickFields(panes?.queue).length > 0;
+  return { headerFields, blocks, subtitleFields, queueChosen, assignedField, statusField, followUpField, phoneField };
 }

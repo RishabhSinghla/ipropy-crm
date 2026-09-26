@@ -14,6 +14,7 @@ import { cn, restrictionForField } from '../lib/utils';
 import { FieldInput, FieldValue } from '../components/FieldRenderer';
 import { EditableField, isInlineEditable } from '../components/EditableField';
 import { assignmentField, byLabel, fieldByKey, pipelineFieldOf, subtitleFieldsOf, withQueueSubtitle } from '../lib/fields';
+import { withQueueCardColumns } from '../lib/queueCard';
 import { DEFAULT_PAGE_SIZE, loadPageSize, PAGE_SIZE_OPTIONS, savePageSize } from '../lib/pageSize';
 import { enabledListModes, loadListMode, resolveListMode, saveListMode, type ListMode } from '../lib/listMode';
 import { FilterBuilder, countConditions } from '../components/FilterBuilder';
@@ -522,10 +523,13 @@ export default function ListView(): JSX.Element {
       list asked for. Without this the line is blank on any view whose columns
       do not happen to include it, which reads as the feature not working.
     */
-    columns: withQueueSubtitle(
-      masterColumns?.length ? masterColumns : (columns.length ? columns : undefined),
-      displayMode === 'ipropy' ? meta : undefined,
-      splitQueue ?? undefined,
+    columns: withQueueCardColumns(
+      withQueueSubtitle(
+        masterColumns?.length ? masterColumns : (columns.length ? columns : undefined),
+        displayMode === 'ipropy' ? meta : undefined,
+        splitQueue ?? undefined,
+      ),
+      displayMode === 'ipropy' ? meta?.fields : undefined,
     ),
     groupBy: groupByField,
   }), [activeView?.id, page, pageSize, search, effectiveSort, effectiveFilter, masterColumns, splitQueue, columns, groupByField, displayMode, meta]);

@@ -62,7 +62,14 @@ const { pollWhatsMarketingInbound, textOfMessage, describeShape, OURS_SENDERS, _
 
 /** A fixed "now" so the watermark arithmetic is readable. */
 const T = (iso: string): string => iso;
-const RECENT = T('2026-09-19 12:30:00');
+/**
+ * WhatsMarketing's clock: UTC, no zone marker. "Recent" has to be relative to
+ * today — the poller ignores anything older than a week, so a fixed date here
+ * turned every test that used it red seven days after it was written.
+ */
+const utcAgo = (ms: number): string => new Date(Date.now() - ms).toISOString().slice(0, 19).replace('T', ' ');
+const DAY = 24 * 60 * 60 * 1000;
+const RECENT = utcAgo(DAY);
 const OLD = T('2026-09-01 09:00:00');
 
 const wire = (subscribers: unknown, thread: unknown): void => {
@@ -89,7 +96,7 @@ beforeEach(() => {
   active.name = 'whatsapp_whatsmarketing';
   credentials.value = { apiToken: 'tok' };
   config.value = { phoneNumberId: '984702481401419' };
-  __resetPollWatermark(new Date('2026-09-10T00:00:00Z'));
+  __resetPollWatermark(new Date(Date.now() - 3 * DAY));
 });
 afterEach(() => { vi.unstubAllGlobals(); });
 

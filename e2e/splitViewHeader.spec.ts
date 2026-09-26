@@ -137,7 +137,7 @@ test('the star turns the record into a favourite and says so', async ({ page }) 
 
 test('the open record is obvious in the queue', async ({ page }) => {
   await splitView(page);
-  const rows = page.locator('aside').first().locator('button:has(input[type="checkbox"])');
+  const rows = page.locator('aside').first().getByTestId('queue-card');
 
   /*
     The marker used to be `border-l-4 border-l-brand-600` on a row that also
@@ -146,9 +146,12 @@ test('the open record is obvious in the queue', async ({ page }) => {
     are written. Measured, so a class that is present while the row still looks
     like its neighbours cannot pass.
   */
-  const chosen = rows.nth(2);
+  const chosen = rows.nth(2).locator('button').first();
   await chosen.click();
-  const background = await chosen.evaluate((el) => getComputedStyle(el).backgroundColor);
-  const plain = await rows.nth(4).evaluate((el) => getComputedStyle(el).backgroundColor);
-  expect(background, 'the open record looks like every other row').not.toBe(plain);
+  // Cards are white either way; the open one is outlined and lifted.
+  const look = (el: Element): string => `${getComputedStyle(el).boxShadow} ${getComputedStyle(el).borderColor}`;
+  const open = await chosen.evaluate(look);
+  const plain = await rows.nth(4).locator('button').first().evaluate(look);
+  expect(open, 'the open record looks like every other row').not.toBe(plain);
+  await expect(chosen).toHaveAttribute('aria-current', 'true');
 });

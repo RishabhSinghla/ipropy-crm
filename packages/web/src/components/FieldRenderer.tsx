@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { api, tokenStore } from '../lib/api';
 import { optionsWithValue } from '../lib/picklistOptions';
+import { localDay, quickFollowUpDates } from '../lib/followUpDates';
 import { toast } from '../lib/store';
 import { cn } from '../lib/utils';
 import { Avatar, Badge, ScoreChip } from './ui';
@@ -362,6 +363,42 @@ export interface FieldInputProps {
    * for screen readers and unfindable by accessible name.
    */
   id?: string;
+  /**
+   * Save this value straight away. A follow-up date's Today / Tomorrow /
+   * Next Week / Next Month buttons call it, so one tap sets the date without
+   * a second click to confirm. Callers without it get the value as a normal
+   * change, saved with the rest of their form.
+   */
+  onPickNow?: (value: unknown) => void;
+}
+
+/**
+ * A date that chases somebody: the one an admin marked as a due date, or the
+ * module's Next Follow-up (Inventories' carries no mark, only the name).
+ */
+function isFollowUpDate(field: FieldMeta): boolean {
+  return Boolean(field.config.dueDate) || /next.*follow.*up/i.test(field.name);
+}
+
+/** Today / Tomorrow / Next Week / Next Month under a follow-up date. */
+function QuickFollowUpDates({ onPick }: { onPick: (day: string) => void }): JSX.Element {
+  return (
+    <div className="mt-1 grid grid-cols-2 gap-1 rounded-lg border border-[#e2e8f0] bg-white p-1 dark:border-slate-700 dark:bg-slate-900">
+      {quickFollowUpDates().map((choice) => (
+        <button
+          key={choice.label}
+          type="button"
+          // Keeps focus in the editor, so the inline edit does not close and
+          // save the old value on blur before this click lands.
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => onPick(choice.value)}
+          className="whitespace-nowrap rounded-md px-2 py-1 text-xs font-semibold text-[#701a75] hover:bg-[#fae8ff] dark:text-fuchsia-300 dark:hover:bg-slate-800"
+        >
+          {choice.label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 export function FieldInput(props: FieldInputProps): JSX.Element {
@@ -455,8 +492,8 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
         </label>
       );
 
-    case 'date':
-      return (
+    case 'date': {
+      const input = (
         <input
           id={id}
           type="date"
@@ -465,13 +502,26 @@ export function FieldInput(props: FieldInputProps): JSX.Element {
           // Next Follow-up is the task due date. A past task can be reported
           // by the Pending queue, but no new edit may schedule work backwards.
           min={field.columnName === 'next_followup_at' || field.columnName === 'next_follow_up'
-            ? new Date().toISOString().slice(0, 10)
+            ? localDay(new Date())
             : undefined}
           onChange={(e) => onChange(e.target.value || null)}
           disabled={readOnly}
           autoFocus={autoFocus}
         />
       );
+      if (!isFollowUpDate(field) || readOnly) return input;
+      return (
+        <div>
+          {input}
+          <QuickFollowUpDates
+            onPick={(day) => {
+              onChange(day);
+              props.onPickNow?.(day);
+            }}
+          />
+        </div>
+      );
+    }
 
     case 'datetime':
       return (

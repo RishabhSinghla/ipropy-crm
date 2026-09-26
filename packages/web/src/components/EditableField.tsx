@@ -448,7 +448,7 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
             />
           ) : kind === 'form' ? (
             <div className="w-80 animate-fade-in space-y-2 rounded-xl border border-slate-200 bg-white p-3 shadow-float dark:border-slate-700 dark:bg-slate-900">
-              <FieldInput field={field} value={draft} onChange={setDraft} autoFocus error={mandatoryError} />
+              <FieldInput field={field} value={draft} onChange={setDraft} onPickNow={pickAndClose} autoFocus error={mandatoryError} />
               {mandatoryError && <p className="text-2xs text-negative">{mandatoryError}</p>}
               <div className="flex justify-end gap-1.5 pt-0.5">
                 <button type="button" className="btn-ghost btn-sm" onClick={closeWithoutSaving}>Cancel</button>
@@ -664,6 +664,10 @@ function InlineTextEditor({
         onChange={handleChange}
         onChangeOther={onChangeOther}
         formValues={formValues}
+        onPickNow={(v) => {
+          handleChange(v);
+          commitOnce();
+        }}
         autoFocus
         error={error}
       />

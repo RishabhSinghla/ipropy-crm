@@ -1,9 +1,9 @@
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { recordStrength, relativeTime, type FieldMeta, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
+import { formatDate, recordStrength, relativeTime, type FieldMeta, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
-  ArrowRightLeft, ArrowUpDown, Check, FileText, Link2, MessageCircle, MoreHorizontal,
-  Phone, Sparkles, Star, Trash2, Users,
+  AlarmClock, ArrowRightLeft, ArrowUpDown, Building2, CalendarClock, Check, CircleEllipsis, FileText, Link2,
+  MessageCircle, MoreHorizontal, Phone, Sparkles, Star, Trash2, TriangleAlert, Users,
 } from 'lucide-react';
 import { FieldValue } from './FieldRenderer';
 import { CALL_DECK_DOCK_ID } from './LiveCallDeck';
@@ -17,9 +17,11 @@ import { CallsTab, FilesTab, RecordCollaboratorsPanel, TimelineTab } from '../pa
 import { EditableField, isInlineEditable } from './EditableField';
 import { FieldBlock, HeaderFieldStrip, NotesPanel } from './RecordBlocks';
 import { useRecordPanes, type DescribedModule } from '../lib/recordPanes';
+import { cardArea, cardPrice, queueCardFields, unitDescription, type CardFields } from '../lib/queueCard';
+import { followUpChip, type FollowUpChip as FollowUpChipValue, type FollowUpTone } from '../lib/followUpDates';
 import { invalidateRecordQueries } from '../lib/invalidate';
 import { ModuleIcon } from './Layout';
-import { Avatar, Badge, ConfirmDialog, Dropdown, DropdownItem, Modal, Spinner } from './ui';
+import { Avatar, ConfirmDialog, Dropdown, DropdownItem, Modal, Spinner } from './ui';
 import { ACTION_BASE, ACTION_CIRCLE, ACTION_REST } from '../lib/actionCircle';
 import { api } from '../lib/api';
 import { cn, restrictionForField } from '../lib/utils';
@@ -261,7 +263,8 @@ export function IpropyWorkspace({
     conversation and must reach the same answer. A second copy of this
     reasoning is the mistake this repo keeps finding months later.
   */
-  const { headerFields, blocks, subtitleFields, assignedField, statusField, followUpField, phoneField } = useRecordPanes(module);
+  const { headerFields, blocks, subtitleFields, queueChosen, assignedField, statusField, followUpField, phoneField } = useRecordPanes(module);
+  const cardFields = useMemo(() => queueCardFields(module.fields), [module.fields]);
   const phoneValue = active && phoneField ? displayOf(active, phoneField) : '';
 
   /*
@@ -396,8 +399,22 @@ export function IpropyWorkspace({
             </div>
           )}
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {rows.map((row) => <QueueRow key={row.id} row={row} active={row.id === active?.id} checked={selected.has(row.id)} attention={attentionIds.has(row.id)} statusField={statusField} followUpField={followUpField} subtitleFields={subtitleFields} onSelect={() => setActiveId(row.id)} onToggle={(checked) => onToggleSelect(row.id, checked)} />)}
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-[#faf8ff] p-2 dark:bg-slate-950">
+          {rows.map((row) => (
+            <QueueCard
+              key={row.id}
+              row={row}
+              active={row.id === active?.id}
+              checked={selected.has(row.id)}
+              attention={attentionIds.has(row.id)}
+              card={cardFields}
+              followUpField={followUpField ?? cardFields.followUp}
+              adminLine={queueChosen ? subtitleFields : null}
+              onSelect={() => setActiveId(row.id)}
+              onToggle={(checked) => onToggleSelect(row.id, checked)}
+              onStar={() => star.mutate(row)}
+            />
+          ))}
         </div>
       </aside>
 
@@ -683,99 +700,172 @@ export function IpropyWorkspace({
 }
 
 /**
- * One record in the queue.
+ * One record in the queue, as a card.
  *
- * Two lines and two chips, in the order a rep reads them: who this is with
- * when they are due, then the module's own facts with the status under that
- * date. No completeness bar — the owner asked for it off this side on
- * 19 September; it is a number about the *record*, and the queue is about the
- * people in it.
+ * **26 September 2026, the owner**, from a mock-up, in the colours he chose:
  *
- * No chevron either. It pointed at nothing: the record opens in the pane
- * already on screen, and the owner's word for it was "irritating".
+ *   Name  [TYPE]                                              ☆
+ *   🏢 H. No: A-2701 • Single, 4 BHK Builder Floor, Greenfields Colony
+ *   ₹1.85 Cr  2,100 sq.ft                                 [TODAY]
+ *
+ * The open record carries a plum bar down its left edge and a lifted shadow,
+ * so which one is open reads at a glance. The middle line is cut short with
+ * "…" rather than wrapping, so every card is the same height.
+ *
+ * When Admin → Split View has chosen the line under the name, that choice
+ * replaces the middle line: an admin's arrangement outranks this default.
+ *
+ * The card, its star and its tick box are three separate buttons laid over one
+ * another rather than one button holding two more. A button inside a button
+ * is not allowed in HTML, and a screen reader cannot reach the inner one.
  */
-function QueueRow({ row, active, checked, attention, statusField, followUpField, subtitleFields, onSelect, onToggle }: { row: RecordEnvelope; active: boolean; checked: boolean; attention: boolean; statusField?: FieldMeta; followUpField?: FieldMeta; subtitleFields: FieldMeta[]; onSelect: () => void; onToggle: (checked: boolean) => void }): JSX.Element {
-  const due = followUpField ? dueLabel(row.values[followUpField.name]) : null;
-  /*
-    A contact's Type then its Unit Number, joined by a hyphen — "Buyer — 304".
-    Never the record id, which identifies a row to a database and nothing to a
-    person. Empty values drop out rather than printing a stray dash.
-  */
-  const subtitle = subtitleFields.map((field) => displayOf(row, field)).filter(Boolean).join(' — ');
+function QueueCard({ row, active, checked, attention, card, followUpField, adminLine, onSelect, onToggle, onStar }: {
+  row: RecordEnvelope;
+  active: boolean;
+  checked: boolean;
+  attention: boolean;
+  card: CardFields;
+  followUpField?: FieldMeta;
+  /** Admin → Split View's chosen line, when there is one. */
+  adminLine: FieldMeta[] | null;
+  onSelect: () => void;
+  onToggle: (checked: boolean) => void;
+  onStar: () => void;
+}): JSX.Element {
+  const read = (field: FieldMeta): string => displayOf(row, field);
+  const type = card.type ? read(card.type) : '';
+  const unit = card.unit ? read(card.unit) : '';
+  const description = unitDescription(card, read);
+  const adminText = adminLine?.map(read).filter(Boolean).join(' — ') ?? '';
+  const price = card.price ? cardPrice(row.values[card.price.name]) : '';
+  const areaUnitField = card.area?.config.unitField;
+  const area = card.area
+    ? cardArea(row.values[card.area.name], typeof areaUnitField === 'string' ? row.values[areaUnitField] : undefined)
+    : '';
+  const followUp = followUpField ? row.values[followUpField.name] : null;
+  const due = followUpChip(followUp);
+
   /*
     The open record is brought into view when it was opened from somewhere
     else — global search, a link, Save & Next — and left exactly where it is
-    when it was clicked, because `nearest` does nothing to a row already on
+    when it was clicked, because `nearest` does nothing to a card already on
     screen.
   */
-  const self = useRef<HTMLButtonElement>(null);
+  const self = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (active) self.current?.scrollIntoView({ block: 'nearest' });
   }, [active]);
-  return (
-    <button
-      ref={self}
-      type="button"
-      onClick={onSelect}
-      aria-current={active ? 'true' : undefined}
-      className={cn(
-        'relative flex w-full items-start gap-2.5 border-b border-slate-100 px-3 py-2.5 text-left transition-colors dark:border-slate-800',
-        /*
-          Unmistakable, not a tint (26 September 2026, the owner: "I want to
-          be distinctly visible which record is actually selected"). A solid
-          brand-tinted fill, an inset outline and the bar down the left, so it
-          reads at a glance in both themes.
-        */
-        active
-          ? 'bg-brand-100 ring-2 ring-inset ring-brand-500 dark:bg-brand-900/60 dark:ring-brand-400'
-          : 'hover:bg-slate-50 dark:hover:bg-slate-800/70',
-      )}
-    >
-      {/*
-        The bar marking the open record is an element, not a border.
 
-        It was `border-l-4 border-l-brand-600` on a row that also says
-        `border-b border-slate-100`, and which of those two decides the left
-        edge's colour is Tailwind's stylesheet order rather than the order they
-        are written — so the marker could come out slate on slate and the row
-        looked no different from its neighbours. Nothing competes with a span.
-      */}
-      {active && <span className="absolute inset-y-0 left-0 w-1.5 bg-brand-600 dark:bg-brand-400" aria-hidden />}
-      <input
-        aria-label={`Select ${row.label}`}
-        type="checkbox"
-        checked={checked}
-        onClick={(event) => event.stopPropagation()}
-        onChange={(event) => onToggle(event.target.checked)}
-        className="mt-1.5 h-4 w-4 shrink-0 rounded border-slate-300"
-      />
-      <span className="relative shrink-0">
-        <Avatar name={row.label} size={36} />
-        {attention && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-amber-500 dark:border-slate-900" title="Needs attention" />}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className={cn(
-          'flex items-center gap-1.5 truncate text-sm font-bold',
-          active ? 'text-brand-800 dark:text-brand-100' : 'text-slate-900 dark:text-slate-100',
-        )}>
-          <span className="truncate">{row.label}</span>
-          {row.starred && <Star className="h-3 w-3 shrink-0 fill-amber-400 text-amber-500" />}
+  return (
+    <div ref={self} data-testid="queue-card" className="group relative">
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-current={active ? 'true' : undefined}
+        className={cn(
+          'relative block w-full overflow-hidden rounded-lg border bg-white py-3 pl-4 pr-3 text-left transition-shadow dark:bg-slate-900',
+          active
+            ? 'border-[#e2e8f0] shadow-md ring-1 ring-[#701a75]/25 dark:border-slate-700 dark:ring-fuchsia-400/40'
+            : 'border-[#e2e8f0] hover:shadow-sm dark:border-slate-800',
+        )}
+      >
+        {active && <span className="absolute inset-y-0 left-0 w-1.5 bg-[#701a75] dark:bg-fuchsia-400" aria-hidden />}
+
+        {/* 1. Who, and what kind of contact. Room kept on the right for the star. */}
+        <span className="flex min-w-0 items-center gap-2 pr-12">
+          <span className={cn(
+            'truncate text-base font-bold',
+            active ? 'text-[#701a75] dark:text-fuchsia-300' : 'text-[#0f172a] dark:text-slate-100',
+          )}>
+            {row.label}
+          </span>
+          {type && (
+            <span className="shrink-0 rounded bg-[#fae8ff] px-1.5 py-0.5 text-2xs font-bold uppercase tracking-wide text-[#701a75] dark:bg-fuchsia-950/50 dark:text-fuchsia-200">
+              {type}
+            </span>
+          )}
+          {attention && <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" title="Needs attention" />}
         </span>
-        <span className="mt-1 block truncate text-xs text-slate-500">{subtitle || '—'}</span>
-      </span>
+
+        {/* 2. Which unit, cut short with "…" rather than wrapped. */}
+        <span className="mt-1.5 flex min-w-0 items-center gap-1.5 text-sm text-[#475569] dark:text-slate-400">
+          <Building2 className="h-4 w-4 shrink-0 text-[#4338ca] dark:text-indigo-300" aria-hidden />
+          {adminLine ? (
+            <span className="truncate">{adminText || '—'}</span>
+          ) : (
+            <span className="truncate">
+              {unit && <span className="font-semibold text-[#0f172a] dark:text-slate-100">H. No: {unit}</span>}
+              {unit && description && ' • '}
+              {description}
+              {!unit && !description && '—'}
+            </span>
+          )}
+        </span>
+
+        {/* 3. The money, the size, and when they are due. */}
+        {(price || area || due) && <span className="mt-2 flex items-center gap-2">
+          {price && <span className="shrink-0 whitespace-nowrap text-lg font-extrabold tabular-nums text-[#3730a3] dark:text-indigo-300">{price}</span>}
+          {area && <span className="min-w-0 truncate whitespace-nowrap text-xs text-[#64748b] dark:text-slate-400">{area}</span>}
+          <span className="ml-auto shrink-0">
+            {due && <FollowUpBadge due={due} date={followUp} />}
+          </span>
+        </span>}
+      </button>
+
       {/*
-        The date and the status in one column on the right, the status under
-        the date and ending where it ends. Two chips on two different lines
-        with two different right edges is the thing that makes a queue look
-        ragged, and the owner asked for them lined up.
+        The star and the tick box sit over the card's top-right corner. The tick
+        box only shows on hover or once ticked, so the card reads like the
+        mock-up until somebody reaches for a bulk action.
       */}
-      <span className="flex shrink-0 flex-col items-end gap-1">
-        {due
-          ? <span className={cn('rounded px-1.5 py-0.5 text-2xs font-bold', due.tone)}>{due.label}</span>
-          : <span className="px-1.5 py-0.5 text-2xs font-bold text-slate-300">—</span>}
-        {statusField && <StatusPill field={statusField} row={row} />}
+      <span className="absolute right-2.5 top-2.5 flex items-center gap-1">
+        <input
+          aria-label={`Select ${row.label}`}
+          type="checkbox"
+          checked={checked}
+          onChange={(event) => onToggle(event.target.checked)}
+          className={cn(
+            'h-4 w-4 rounded border-slate-300 transition-opacity',
+            checked ? 'opacity-100' : 'opacity-0 focus:opacity-100 group-hover:opacity-100',
+          )}
+        />
+        <button
+          type="button"
+          onClick={onStar}
+          aria-pressed={Boolean(row.starred)}
+          aria-label={row.starred ? `Remove ${row.label} from favourites` : `Add ${row.label} to favourites`}
+          title={row.starred ? 'Remove from favourites' : 'Add to favourites'}
+          className="rounded p-1 text-slate-400 hover:text-[#701a75] dark:hover:text-fuchsia-300"
+        >
+          <Star className={cn('h-5 w-5', row.starred && 'fill-[#701a75] text-[#701a75] dark:fill-fuchsia-300 dark:text-fuchsia-300')} />
+        </button>
       </span>
-    </button>
+    </div>
+  );
+}
+
+/*
+  The owner's colours for the task chip, one per state. Each text colour
+  clears WCAG AA against its tint; Pending uses the darker of his two slates,
+  because #64748b on #f1f5f9 falls just short.
+*/
+const FOLLOW_UP_STYLE: Record<FollowUpTone, { className: string; icon: typeof AlarmClock }> = {
+  today: { className: 'bg-[#fffbeb] text-[#b45309] dark:bg-amber-950/50 dark:text-amber-300', icon: AlarmClock },
+  tomorrow: { className: 'bg-[#eff6ff] text-[#1d4ed8] dark:bg-blue-950/50 dark:text-blue-300', icon: CalendarClock },
+  overdue: { className: 'bg-[#fef2f2] text-[#b91c1c] dark:bg-red-950/50 dark:text-red-300', icon: TriangleAlert },
+  pending: { className: 'bg-[#f1f5f9] text-[#475569] dark:bg-slate-800 dark:text-slate-300', icon: CircleEllipsis },
+};
+
+function FollowUpBadge({ due, date }: { due: FollowUpChipValue; date: unknown }): JSX.Element {
+  const style = FOLLOW_UP_STYLE[due.tone];
+  const Icon = style.icon;
+  return (
+    <span
+      className={cn('inline-flex items-center gap-1 rounded px-2 py-1 text-2xs font-bold uppercase tracking-wide', style.className)}
+      title={date ? `Follow-up ${formatDate(String(date))}` : undefined}
+    >
+      <Icon className="h-3.5 w-3.5" aria-hidden />
+      {due.label}
+    </span>
   );
 }
 
@@ -816,25 +906,7 @@ function StrengthBar({ module, row, className, slim = false }: { module: ModuleM
  * here, which is the thing the owner asked to be rid of.
  */
 function DeskTab({ active = false, onClick, children }: { active?: boolean; onClick: () => void; children: React.ReactNode }): JSX.Element { return <button onClick={onClick} className={cn('flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-semibold transition-colors', active ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200')}>{children}</button>; }
-/**
- * The record's stage, as the CRM draws a stage everywhere else.
- *
- * `Badge` rather than a tint computed here: it fills the chip and `lib/color.ts`
- * guarantees the text clears WCAG AA against that fill in both themes. This
- * used to paint the admin's raw hex as text on a 12% wash of itself, which is
- * the pattern CLAUDE.md names — it lands around 2–3:1, and how readable it came
- * out depended entirely on which colour somebody had chosen.
- */
-function StatusPill({ field, row }: { field: FieldMeta; row: RecordEnvelope }): JSX.Element {
-  const value = String(row.values[field.name] ?? '');
-  const color = field.options?.find((option) => option.value === value)?.color;
-  // Never nothing: a row with no stage set has to look different from a row
-  // whose stage simply did not load.
-  const label = displayOf(row, field) || 'No status';
-  return <Badge color={color} className="max-w-32 shrink-0 truncate text-2xs">{label}</Badge>;
-}
 function displayOf(row: RecordEnvelope, field: FieldMeta): string { const display = row.display?.[field.name]; if (display) return display; const value = row.values[field.name]; return Array.isArray(value) ? value.join(', ') : value == null ? '' : String(value); }
-function dueLabel(value: unknown): { label: string; tone: string } | null { if (!value) return null; const date = new Date(String(value)); if (Number.isNaN(date.getTime())) return null; const today = new Date(); today.setHours(0, 0, 0, 0); date.setHours(0, 0, 0, 0); const diff = Math.round((date.getTime() - today.getTime()) / 86_400_000); return diff < 0 ? { label: 'Overdue', tone: 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' } : diff === 0 ? { label: 'Today', tone: 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' } : diff === 1 ? { label: 'Tomorrow', tone: 'bg-brand-100 text-brand-700 dark:bg-brand-950/40 dark:text-brand-300' } : { label: date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }), tone: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' }; }
 
 /** Where the call deck docks when this record's header is on screen. */
 function CallDeckDock(): JSX.Element {
