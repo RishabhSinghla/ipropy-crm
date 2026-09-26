@@ -2581,6 +2581,18 @@ component.
 **And the open record in the queue is tinted, not only ringed.** A ring on a
 white card among white cards is easy to lose at a glance down a long list.
 
+**Two sessions answered this message at once, and the merge is worth writing
+down.** A parallel session shipped read-only chips for the same two pills and
+its own treatment of the queue row, hours apart. What survived, and why: the
+**dropdown pills** here, because his own message asks for *"a Drop-down Hint
+arrow also"* on each and the chips could not be opened, and because the second
+chip read a record field called `call_disposition` which **neither module has
+on production** — an outcome lives on `ipy_call`, so that chip would have been
+invisible there whatever anybody typed into it. The other session's **queue
+row** survived instead of the card tint written here: it already answers
+*"colour highlight on selected contact"*, and two answers to one ask is how a
+row ends up tinted twice. Before adding either back, read this paragraph.
+
 **What is not proved:** none of this has been exercised against a real handset
 — a live call was staged by writing `ipropy.liveCall` and the panel driven
 from there, which proves the layout, the wiring and the outcome rules but not
