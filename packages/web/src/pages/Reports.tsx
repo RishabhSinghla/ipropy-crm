@@ -470,8 +470,8 @@ function ReportResult({
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-muted dark:border-slate-700">
-              {columns.map((column) => <th key={column} className="py-2 pr-4 font-semibold">{column}</th>)}
+            <tr>
+              {columns.map((column) => <th key={column} className="list-head">{column}</th>)}
             </tr>
           </thead>
           <tbody>

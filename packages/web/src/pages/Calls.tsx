@@ -319,7 +319,17 @@ function Picker({
   return (
     <label>
       <span className="label">{label}</span>
-      <select className="input w-auto" value={value} onChange={(e) => onChange(e.target.value)}>
+      {/*
+        Named explicitly, although the <label> wraps it.
+
+        A wrapping label's accessible name is its whole text content, and an
+        embedded control contributes its own value — so this select announced
+        as "Direction All calls", and changed its own name every time somebody
+        picked something. The breakdown donut beside it is legitimately called
+        "Direction: Outgoing 21, …", so without a stable name there was no way
+        to say which of the two you meant.
+      */}
+      <select aria-label={label} className="input w-auto" value={value} onChange={(e) => onChange(e.target.value)}>
         {options.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
       </select>
     </label>

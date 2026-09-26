@@ -2450,14 +2450,40 @@ used. It reads the stylesheet now and derives the surfaces from it too — the
 drift rule this repo applies to components, applied to a constant. It also pins
 white-on-brand-600 and the three soft/on-soft pairs in both themes.
 
-**What is done and what is not.** The token layer, the component classes, the
-header strip and the queue card are in. What is **not** yet converted are the
-screens that draw their own markup rather than the shared classes — the
-dossier's own field tiles, the dashboard's widget chrome, the admin tables —
-and the prototype's *content* decisions (which five keys sit in the header,
-"House No." as a label) are metadata, set in Admin → Split View and the Field
-Manager rather than in code. Anyone continuing should keep going through the
-token layer first and only then touch a screen.
+**The dossier panels came next, and the whole of it went through two more
+classes rather than through each screen.** `.panel-head` is a panel's own
+section heading — "Property Information", "Notes" — on the same two tokens as
+the table header, because the record page and the split view had each drawn
+that strip themselves in slightly different greys. `.key-tile` is the recessed
+square a value sits in, and `.key-label` the small flag above or beside it.
+Converted: `FieldBlock` and `NotesPanel` (so the split view and the Chats pane
+move together), the record page's own block fields, and the five table headers
+that had never joined `.list-head` — Reports and Unit Master among them.
+
+**The record page keeps its label *beside* the box, not above it**, and that is
+deliberate rather than an oversight: it is the owner's own instruction from #67,
+*"keep key name in left side from the box… box is too big"*. The prototype
+stacks them; only the typography and the tones moved, so his earlier decision
+stands. Anyone changing that should get it from him, not from the mock-up.
+
+**The queue card's three frozen hexes are tokens now** (`#701a75`, `#e2e8f0`,
+`#fae8ff` → `brand-600`, `var(--border)`, `brand-100`). They were written the
+day the design landed and were right that day; an admin changing the Brand
+colour would have moved every other screen and left the queue behind.
+
+**And a spec that had quietly become a measurement of this machine.**
+`splitViewHeader.spec.ts` set the window to 900px and asserted the header
+strip ran out of room. Columns are tighter than the sentence they replaced, so
+six fields now fit where four did — nothing broke, and the spec failed. It
+narrows the window until something is genuinely hidden and *then* asserts the
+promise (hidden whole, never cut, and the line says so), which is the same
+rule this repo already applies to tests that lean on the data in front of them.
+
+**What is still not converted:** the dashboard's own tooltip and drill markup,
+the import and integration tables' inner rows, and the prototype's *content*
+decisions — which five keys sit in the header, "House No." as a label — which
+are metadata, set in Admin → Split View and the Field Manager rather than in
+code. Keep going through the token layer first and only then touch a screen.
 
 ## Every request appears twice in development, and once in production
 

@@ -45,6 +45,31 @@ test('a narrow pane says there are more fields rather than cutting one in half',
   await page.setViewportSize({ width: 900, height: 900 });
   await splitView(page);
   const header = page.getByTestId('ipropy-workspace').locator('main > header');
+  const strip = header.getByTestId('header-fields');
+  const more = header.getByTitle(/More fields than fit/);
+
+  /*
+    Narrow the window until the strip actually runs out of room, rather than
+    guessing a width at which it does.
+
+    A fixed 900px used to overflow and no longer does — the fields were laid
+    out as a sentence and are now columns, which are tighter, so six of them
+    fit where four did. Nothing was broken by that; the spec was reporting how
+    wide this record's labels happen to be, which is the same trap as a spec
+    that depends on what is already in the database. What the screen promises
+    is the *relationship*: once something does not fit, it is hidden whole and
+    the line says so.
+  */
+  for (const width of [900, 760, 620, 480, 400]) {
+    await page.setViewportSize({ width, height: 900 });
+    // Give the strip's ResizeObserver a frame to recount.
+    await expect(async () => {
+      expect(await strip.locator('> span.invisible').count()).toBeGreaterThan(0);
+    }).toPass({ timeout: 3_000 }).catch(() => undefined);
+    if (await strip.locator('> span.invisible').count()) break;
+  }
+  expect(await strip.locator('> span.invisible').count(), 'the strip never ran out of room, even on a phone-width window')
+    .toBeGreaterThan(0);
 
   /*
     The strip clips, and clipping alone cut the last field through the middle
@@ -52,10 +77,8 @@ test('a narrow pane says there are more fields rather than cutting one in half',
     not fit whole is made invisible and the line ends with a `…`, which is the
     cue to shorten the list in Admin → Split View.
   */
-  const more = header.getByTitle(/More fields than fit/);
   await expect(more).toBeVisible();
 
-  const strip = header.getByTestId('header-fields');
   const box = (await strip.boundingBox())!;
   for (const field of await strip.locator('> span:visible').all()) {
     const item = await field.boundingBox();

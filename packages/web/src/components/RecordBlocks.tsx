@@ -27,12 +27,10 @@ export function FieldBlock({ module, title, columns, fields, row, canEdit }: {
   module: DescribedModule; title: string; columns: number; fields: FieldMeta[]; row: RecordEnvelope; canEdit: boolean;
 }): JSX.Element {
   const queryClient = useQueryClient();
-  return <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-    <header className="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
-      <p className="text-base font-bold text-slate-900 dark:text-white">{title}</p>
-    </header>
-    <dl className={cn('grid gap-x-8 gap-y-4 p-5', columns >= 3 ? 'sm:grid-cols-3' : columns === 1 ? '' : 'sm:grid-cols-2')}>{fields.map((field) => <div key={field.name}>
-      <dt className="mb-1.5 text-2xs font-bold uppercase tracking-wide text-slate-500">{field.label}{field.isMandatory && <span className="ml-0.5 text-rose-500">*</span>}</dt>
+  return <section className="card overflow-hidden">
+    <header className="panel-head">{title}</header>
+    <dl className={cn('grid gap-x-4 gap-y-3 p-4', columns >= 3 ? 'sm:grid-cols-3' : columns === 1 ? '' : 'sm:grid-cols-2')}>{fields.map((field) => <div key={field.name}>
+      <dt className="key-label mb-1">{field.label}{field.isMandatory && <span className="ml-0.5 text-negative">*</span>}</dt>
       {/*
         The whole cell is the target, not just the value inside it.
 
@@ -45,8 +43,8 @@ export function FieldBlock({ module, title, columns, fields, row, canEdit }: {
       */}
       <dd
         className={cn(
-          'min-h-10 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-100',
-          canEdit && isInlineEditable(field) && 'cursor-pointer hover:border-brand-300',
+          'key-tile min-h-9 text-sm text-slate-800 dark:bg-slate-800/70 dark:text-slate-100',
+          canEdit && isInlineEditable(field) && 'cursor-pointer hover:ring-1 hover:ring-brand-300',
         )}
         onClick={(event) => {
           if (event.target !== event.currentTarget) return;
@@ -83,9 +81,9 @@ export function NotesPanel({ module, record }: { module: string; record: RecordE
     onSuccess: () => { setNote(''); void queryClient.invalidateQueries({ queryKey: ['timeline', module, record.id] }); toast.success('Note added'); },
     onError: (error: Error) => toast.error('Could not add note', error.message),
   });
-  return <section className="h-fit overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-    <header className="flex h-12 items-center gap-2 border-b border-slate-200 px-5 dark:border-slate-800"><FileText className="h-4 w-4 text-brand-600" /><h3 className="font-bold text-slate-900 dark:text-white">Notes</h3></header>
-    <div className="p-4"><textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="Add a note for the team… type @ to notify someone" className="min-h-24 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm outline-none placeholder:text-slate-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-800" /><div className="mt-2 flex items-center justify-between"><span className="text-2xs text-slate-400">⌘↵ to post</span><button disabled={!note.trim() || add.isPending} onClick={() => add.mutate()} className="btn-primary btn-sm"><Send className="h-3.5 w-3.5" />{add.isPending ? 'Posting…' : 'Post'}</button></div></div>
+  return <section className="card h-fit overflow-hidden">
+    <header className="panel-head"><FileText className="h-4 w-4 text-brand-600" /><h3 className="text-sm font-semibold">Notes</h3></header>
+    <div className="p-4"><textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="Add a note for the team… type @ to notify someone" className="input min-h-24 resize-none p-3" /><div className="mt-2 flex items-center justify-between"><span className="text-2xs text-slate-400">⌘↵ to post</span><button disabled={!note.trim() || add.isPending} onClick={() => add.mutate()} className="btn-primary btn-sm"><Send className="h-3.5 w-3.5" />{add.isPending ? 'Posting…' : 'Post'}</button></div></div>
     <div className="max-h-[25rem] space-y-4 overflow-y-auto border-t border-slate-100 p-5 dark:border-slate-800">{isLoading ? <p className="text-sm text-slate-400">Loading notes…</p> : entries?.length ? entries.map((entry) => <NoteEntry key={entry.id} entry={entry} />) : <div className="py-10 text-center"><FileText className="mx-auto h-9 w-9 text-slate-300" /><p className="mt-3 text-sm font-semibold text-slate-500">No notes yet</p><p className="mt-1 text-xs text-slate-400">Internal team comments appear here.</p></div>}</div>
   </section>;
 }

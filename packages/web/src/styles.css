@@ -382,6 +382,23 @@
   }
 
   /*
+    A panel's own section heading — the strip that says "Property Information"
+    above a block of fields.
+
+    Every dossier panel drew this itself, each with its own grey and its own
+    hairline, so the record page and the split view disagreed about the tone of
+    the same heading. One class, on the same two tokens as the table header, so
+    they cannot drift again.
+  */
+  .panel-head {
+    @apply flex items-center gap-2 px-4 py-2.5 text-sm font-semibold;
+    background-color: var(--surface-muted);
+    color: var(--text);
+    border-bottom: 1px solid var(--border);
+    font-family: theme('fontFamily.display');
+  }
+
+  /*
     A status chip is a fixed object, not text that happens to be coloured.
 
     Its size is pinned — same height, same type, same padding — whether it is

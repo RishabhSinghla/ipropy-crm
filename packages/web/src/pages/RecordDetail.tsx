@@ -935,9 +935,7 @@ function OverviewTab({
               fields, because the empty ones are dropped below; they no longer
               fold the rest away.
             */}
-            <div className="flex w-full items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-4 py-2.5 dark:border-slate-800 dark:bg-slate-800/40">
-              <span className="text-sm font-medium">{block.label}</span>
-            </div>
+            <div className="panel-head">{block.label}</div>
 
             {(
               <dl className={cn(
@@ -965,9 +963,9 @@ function OverviewTab({
                       field.config.fullWidth && 'sm:col-span-2',
                     )}
                   >
-                    <dt className="w-[38%] max-w-[10rem] shrink-0 truncate text-2xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300" title={field.label}>{field.label}{(field.isMandatory || field.config.requiredWhen) && <span className="ml-0.5 text-red-500" aria-label="required">*</span>}</dt>
+                    <dt className="key-label w-[38%] max-w-[10rem] shrink-0 truncate" title={field.label}>{field.label}{(field.isMandatory || field.config.requiredWhen) && <span className="ml-0.5 text-negative" aria-label="required">*</span>}</dt>
                     <dd
-                      className={cn('min-w-0 flex-1 rounded-md border border-slate-200 bg-slate-50/70 px-2 py-1 text-sm text-slate-900 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-100', record.can?.edit && 'cursor-pointer hover:border-brand-300 hover:bg-brand-50/30 dark:hover:border-brand-700')}
+                      className={cn('key-tile min-w-0 flex-1 px-2 py-1 text-sm text-slate-900 dark:bg-slate-800/40 dark:text-slate-100', record.can?.edit && 'cursor-pointer hover:ring-1 hover:ring-brand-300 dark:hover:ring-brand-700')}
                       /*
                         The box is the edit target, and only the box.
 

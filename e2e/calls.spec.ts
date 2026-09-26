@@ -23,7 +23,13 @@ test('a filter narrows it, and the count follows', async ({ page }) => {
 
   // Incoming only. This database is mostly outgoing, so the count has to fall
   // — a screen that filters nothing would leave it exactly where it was.
-  await page.getByLabel('Direction').selectOption('inbound');
+  //
+  // `exact` because the breakdown donut beside the filters is labelled
+  // "Direction: Outgoing 21, Incoming 5…" for screen readers, so a loose match
+  // finds two elements and Playwright refuses the whole call. The chart being
+  // described properly is the point of that label; the spec has to say which
+  // control it means.
+  await page.getByLabel('Direction', { exact: true }).selectOption('inbound');
   await expect(async () => {
     const after = Number((await page.getByText(/^[\d,]+ calls ·/).innerText()).replace(/[^\d].*$/, '').replace(/,/g, ''));
     expect(after).toBeLessThan(before);

@@ -765,22 +765,22 @@ function QueueCard({ row, active, checked, attention, card, followUpField, admin
         className={cn(
           'relative block w-full overflow-hidden rounded-lg border bg-white py-3 pl-4 pr-3 text-left transition-shadow dark:bg-slate-900',
           active
-            ? 'border-[#e2e8f0] shadow-md ring-1 ring-[#701a75]/25 dark:border-slate-700 dark:ring-fuchsia-400/40'
-            : 'border-[#e2e8f0] hover:shadow-sm dark:border-slate-800',
+            ? 'border-[var(--border)] shadow-md ring-1 ring-brand-600/25 dark:border-slate-700 dark:ring-brand-400/40'
+            : 'border-[var(--border)] hover:shadow-sm dark:border-slate-800',
         )}
       >
-        {active && <span className="absolute inset-y-0 left-0 w-1.5 bg-[#701a75] dark:bg-fuchsia-400" aria-hidden />}
+        {active && <span className="absolute inset-y-0 left-0 w-1.5 bg-brand-600 dark:bg-brand-400" aria-hidden />}
 
         {/* 1. Who, and what kind of contact. Room kept on the right for the star. */}
         <span className="flex min-w-0 items-center gap-2 pr-12">
           <span className={cn(
             'truncate text-base font-bold',
-            active ? 'text-[#701a75] dark:text-fuchsia-300' : 'text-[#0f172a] dark:text-slate-100',
+            active ? 'text-brand-600 dark:text-brand-300' : 'text-[var(--text)] dark:text-slate-100',
           )}>
             {row.label}
           </span>
           {type && (
-            <span className="shrink-0 rounded bg-[#fae8ff] px-1.5 py-0.5 text-2xs font-bold uppercase tracking-wide text-[#701a75] dark:bg-fuchsia-950/50 dark:text-fuchsia-200">
+            <span className="shrink-0 rounded bg-brand-100 px-1.5 py-0.5 text-2xs font-bold uppercase tracking-wide text-brand-700 dark:bg-brand-950/50 dark:text-brand-200">
               {type}
             </span>
           )}
@@ -834,9 +834,9 @@ function QueueCard({ row, active, checked, attention, card, followUpField, admin
           aria-pressed={Boolean(row.starred)}
           aria-label={row.starred ? `Remove ${row.label} from favourites` : `Add ${row.label} to favourites`}
           title={row.starred ? 'Remove from favourites' : 'Add to favourites'}
-          className="rounded p-1 text-slate-400 hover:text-[#701a75] dark:hover:text-fuchsia-300"
+          className="rounded p-1 text-slate-400 hover:text-brand-600 dark:hover:text-brand-300"
         >
-          <Star className={cn('h-5 w-5', row.starred && 'fill-[#701a75] text-[#701a75] dark:fill-fuchsia-300 dark:text-fuchsia-300')} />
+          <Star className={cn('h-5 w-5', row.starred && 'fill-brand-600 text-brand-600 dark:fill-brand-300 dark:text-brand-300')} />
         </button>
       </span>
     </div>
