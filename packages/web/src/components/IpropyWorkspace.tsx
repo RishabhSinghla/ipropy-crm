@@ -503,7 +503,13 @@ export function IpropyWorkspace({
               <div className="mt-0.5 flex items-center gap-2 text-xs">
                 <span className="text-slate-400">Updated {relativeTime(active.updatedAt)}</span>
                 <span className="text-slate-300">•</span>
-                <span className="font-semibold text-blue-600 dark:text-blue-300">{recordStrength(module.fields, active.values).percent}% Profile Complete</span>
+                <span
+                  className="font-semibold text-blue-600 dark:text-blue-300"
+                  role="img"
+                  aria-label={`Record ${recordStrength(module.fields, active.values).percent}% complete`}
+                >
+                  {recordStrength(module.fields, active.values).percent}% Profile Complete
+                </span>
               </div>
 
             </div>
