@@ -331,7 +331,7 @@ export function Dropdown({
         <div
           ref={panelRef}
           className={cn(
-            'absolute z-40 mt-1 min-w-[12rem] max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-float dark:border-slate-700 dark:bg-slate-900',
+            'popover absolute z-40 mt-1 min-w-[12rem] max-w-[calc(100vw-1rem)] overflow-hidden py-1',
             align === 'right' ? 'right-0' : 'left-0',
             className,
           )}

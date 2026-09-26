@@ -169,7 +169,7 @@ export function WhatsAppTab({ module, recordId, mobile }: {
         The way back to the same conversation on the WhatsApp screen, where the
         whole team's queue is — the mirror of "Open the full record" there.
       */}
-      <div className="flex justify-end border-b border-slate-200 bg-white px-4 py-1.5 dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex justify-end border-b border-[var(--border)] bg-white px-4 py-1.5 dark:bg-slate-900">
         <Link
           to={`/whatsapp/chats?record=${recordId}`}
           className="inline-flex items-center gap-1.5 text-2xs font-semibold text-muted transition-colors hover:text-brand-600"
@@ -265,13 +265,13 @@ export function WhatsAppTab({ module, recordId, mobile }: {
         to reach the customer from a record was to leave the record.
       */}
       {optedOut && (
-        <div className="border-t border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+        <div className="border-t border-[var(--border)] bg-white p-3 dark:bg-slate-900">
           <UnsubscribedPanel who="This person" onSubscribeAgain={() => consent.mutateAsync(true)} />
         </div>
       )}
 
       {!optedOut && onBusiness && mode === 'template' && mobile && (
-        <div className="space-y-2 border-t border-slate-200 bg-amber-50 px-3 py-2 dark:border-slate-800 dark:bg-amber-950/40">
+        <div className="space-y-2 border-t border-[var(--border)] bg-amber-50 px-3 py-2 dark:bg-amber-950/40">
           <p className="flex items-center gap-1.5 text-xs text-amber-900 dark:text-amber-200">
             <Clock className="h-3.5 w-3.5" />
             {whyNoTextBox(business?.capabilities ?? [], business?.provider ?? null)}
@@ -311,7 +311,7 @@ export function WhatsAppTab({ module, recordId, mobile }: {
 
       {!optedOut && (
       <form
-        className="flex flex-wrap items-end gap-2 border-t border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900"
+        className="flex flex-wrap items-end gap-2 border-t border-[var(--border)] bg-white p-3 dark:bg-slate-900"
         onSubmit={(e) => { e.preventDefault(); if (draft.trim()) send.mutate(draft.trim()); }}
       >
         <textarea

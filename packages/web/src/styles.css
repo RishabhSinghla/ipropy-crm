@@ -375,6 +375,19 @@
     color: var(--text);
   }
 
+  /*
+    A floating panel — a dropdown's list, an inline editor, a small menu.
+
+    Seven files wrote the same eight utilities for this, each with its own
+    radius and its own dark-mode border, so the same menu looked slightly
+    different depending on which control opened it. Size and position stay
+    with the caller; what a floating panel *is* lives here.
+  */
+  .popover {
+    @apply rounded-lg bg-white shadow-float dark:bg-slate-900;
+    border: 1px solid var(--border);
+  }
+
   /* A field tile — the recessed square a value sits in on a dossier panel. */
   .key-tile {
     @apply rounded p-2;

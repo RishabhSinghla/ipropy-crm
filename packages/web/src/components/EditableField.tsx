@@ -447,7 +447,7 @@ export function EditableField(props: EditableFieldProps): JSX.Element {
               onPick={pickAndClose}
             />
           ) : kind === 'form' ? (
-            <div className="w-80 animate-fade-in space-y-2 rounded-xl border border-slate-200 bg-white p-3 shadow-float dark:border-slate-700 dark:bg-slate-900">
+            <div className="popover w-80 animate-fade-in space-y-2 p-3">
               <FieldInput field={field} value={draft} onChange={setDraft} onPickNow={pickAndClose} autoFocus error={mandatoryError} />
               {mandatoryError && <p className="text-2xs text-negative">{mandatoryError}</p>}
               <div className="flex justify-end gap-1.5 pt-0.5">
@@ -745,7 +745,7 @@ function PicklistPopover({
     // the end of <body> — "the button that says New" no longer distinguishes an
     // option from a table cell showing the same value.
     <div
-      className="w-max min-w-[13rem] max-w-xs animate-fade-in overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-float dark:border-slate-700 dark:bg-slate-900"
+      className="popover w-max min-w-[13rem] max-w-xs animate-fade-in overflow-hidden py-1"
       onKeyDown={keys}
     >
       {searchable && (
@@ -832,7 +832,7 @@ function OwnerPopover({
   const filteredUsers = users.filter((u) => !q || u.fullName.toLowerCase().includes(q));
 
   return (
-    <div className="w-64 animate-fade-in overflow-hidden rounded-xl border border-slate-200 bg-white shadow-float dark:border-slate-700 dark:bg-slate-900">
+    <div className="popover w-64 animate-fade-in overflow-hidden">
       <div className="border-b border-slate-100 p-2 dark:border-slate-800">
         <input
           className="input py-1 text-xs"

@@ -1092,7 +1092,7 @@ export function MultiSelect({
       </div>
 
       {open && !disabled && (
-        <div className="absolute z-30 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-float dark:border-slate-700 dark:bg-slate-900">
+        <div className="popover absolute z-30 mt-1 max-h-64 w-full overflow-y-auto">
           <div className="sticky top-0 border-b border-slate-100 bg-white p-2 dark:border-slate-800 dark:bg-slate-900">
             <input
               className="input py-1 text-xs"
@@ -1273,7 +1273,7 @@ export function ReferencePicker({
       </div>
 
       {open && !disabled && (
-        <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-float dark:border-slate-700 dark:bg-slate-900">
+        <div className="popover absolute z-30 mt-1 w-full overflow-hidden">
           {modules.length > 1 && (
             <div className="flex gap-1 border-b border-slate-100 p-1.5 dark:border-slate-800">
               {modules.map((m) => (

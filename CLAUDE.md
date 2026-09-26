@@ -2479,11 +2479,40 @@ narrows the window until something is genuinely hidden and *then* asserts the
 promise (hidden whole, never cut, and the line says so), which is the same
 rule this repo already applies to tests that lean on the data in front of them.
 
-**What is still not converted:** the dashboard's own tooltip and drill markup,
-the import and integration tables' inner rows, and the prototype's *content*
-decisions — which five keys sit in the header, "House No." as a label — which
-are metadata, set in Admin → Split View and the Field Manager rather than in
-code. Keep going through the token layer first and only then touch a screen.
+**The app frame came next, and one of them was a real miss.** `Layout.tsx`
+painted `bg-slate-50` across the whole shell, which sits *over* `--app-bg` on
+`body` — so the design's canvas (`#f5f6fa`) was never once on screen. The
+shell reads the token now, and the header, the drawer, the phone's bottom bar,
+the list toolbar, its mobile footer and the kanban columns take `var(--border)`
+rather than `border-slate-200` with a hand-written dark twin beside it.
+
+**`.popover` is the floating panel** — a dropdown's list, an inline editor, a
+small menu. Seven files wrote the same eight utilities for it, each with its
+own radius and its own dark-mode border, so the same menu looked slightly
+different depending on which control opened it. Size and position stay with
+the caller; what a floating panel *is* lives in one place.
+
+**The three view buttons above a list are one control**, and the chosen one is
+the brand. The split-view button was emerald while the other two were slate —
+a third colour the palette does not name, from before there was a palette.
+
+**The WhatsApp screens are on the tokens too.** The conversation's tinted
+canvas and the contact column are `--surface-muted` rather than `slate-50`,
+which matters more here than elsewhere: the tint is what makes a white
+incoming bubble read as a bubble, so it has to move with the theme.
+
+**What is still not converted:** the import and integration screens' inner
+rows, and the dashboard's own drill markup below the widget frame.
+
+**The prototype's *content* choices are data, and nobody should write them
+into code.** Which five facts sit in the header — Mobile, Contact Type,
+House No., Budget, Locality — and what a field is *called* are
+**Admin → Split View** and the Field Manager. `ui.split_view` reads `{}` on a
+development database — the shipped fallback, and correct until somebody
+chooses; production's own row has not been read from here, since this
+container can no longer reach the site. Writing those names into a component is the exact thing
+`useRecordPanes` exists to prevent: the first admin to add a field would find
+the header could not learn about it.
 
 ## Every request appears twice in development, and once in production
 

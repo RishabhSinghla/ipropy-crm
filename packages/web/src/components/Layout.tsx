@@ -100,7 +100,7 @@ export default function Layout(): JSX.Element {
 
   return (
     <PeekProvider>
-      <div className="flex h-screen flex-col overflow-hidden bg-slate-50 dark:bg-slate-950">
+      <div className="flex h-screen flex-col overflow-hidden bg-[var(--app-bg)]">
         {/* Visually hidden until focused — the first Tab stop on every page. */}
         <a
           href="#main"
@@ -112,7 +112,7 @@ export default function Layout(): JSX.Element {
         {/* Top bar: brand and primary navigation on the left, search and
             actions on the right. One row, every width — the old sidebar spent
             its whole height saying what a 12px tab now says. */}
-        <header className="flex h-14 shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-3 dark:border-slate-800 dark:bg-slate-900 sm:gap-3 sm:px-4">
+        <header className="flex h-14 shrink-0 items-center gap-2 border-b border-[var(--border)] bg-white px-3 dark:bg-slate-900 sm:gap-3 sm:px-4">
           <button
             onClick={() => setDrawerOpen(true)}
             className="btn-ghost p-2 lg:hidden"
@@ -494,7 +494,7 @@ function ModuleSwitcher({
             type="button"
             aria-label="Switch module"
             title="Switch module"
-            className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-100 dark:hover:bg-slate-800"
+            className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-1.5 text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-100 dark:bg-slate-800/70 dark:text-slate-100 dark:hover:bg-slate-800"
           >
             <span className="text-brand-600 dark:text-brand-400">{current?.icon ?? <LayoutDashboard className="h-4 w-4" />}</span>
             <span className="max-w-[10rem] truncate">{current?.label ?? 'Dashboard'}</span>
@@ -636,7 +636,7 @@ function MobileNav({
 
       <div
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-slate-200 bg-white transition-transform duration-200 ease-out dark:border-slate-800 dark:bg-slate-900 lg:hidden',
+          'fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-[var(--border)] bg-white transition-transform duration-200 ease-out dark:bg-slate-900 lg:hidden',
           open ? 'translate-x-0' : '-translate-x-full',
         )}
       >
@@ -745,7 +745,7 @@ function BottomTabs({
     <nav
       ref={navRef}
       aria-label="Primary"
-      className="fixed inset-x-0 bottom-0 z-40 flex shrink-0 items-stretch justify-around border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] lg:hidden dark:border-slate-800 dark:bg-slate-900"
+      className="fixed inset-x-0 bottom-0 z-40 flex shrink-0 items-stretch justify-around border-t border-[var(--border)] bg-white pb-[env(safe-area-inset-bottom)] lg:hidden dark:bg-slate-900"
     >
       {tabs.map((tab) => (
         <NavLink
@@ -1005,7 +1005,7 @@ function GlobalSearch(): JSX.Element {
       </kbd>
 
       {open && query.trim().length >= 2 && (
-        <div className="absolute z-40 mt-1 max-h-96 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-float dark:border-slate-700 dark:bg-slate-900">
+        <div className="popover absolute z-40 mt-1 max-h-96 w-full overflow-y-auto">
           {loading && <div className="flex justify-center py-6"><Spinner className="text-slate-400" /></div>}
           {!loading && results.length === 0 && (
             <p className="px-3 py-6 text-center text-xs text-muted">No matches for “{query}”</p>

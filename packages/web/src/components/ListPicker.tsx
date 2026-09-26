@@ -237,7 +237,7 @@ function ViewRow({
       </div>
 
       {menuOpen && (
-        <div className="absolute right-1 top-8 z-50 w-36 rounded-md border border-slate-200 bg-white py-1 shadow-float dark:border-slate-700 dark:bg-slate-900">
+        <div className="popover absolute right-1 top-8 z-50 w-36 py-1">
           <MenuItem icon={<Pencil className="h-3 w-3" />} onClick={onEdit}>Edit</MenuItem>
           <MenuItem icon={<Copy className="h-3 w-3" />} onClick={onDuplicate}>Duplicate</MenuItem>
           {/* Sharing a list here is what it means in this CRM: making it public
