@@ -28,6 +28,18 @@
     /* The recessed tone: table headers, field tiles, the inside of a chip.
        Cool rather than grey, so a white card on top of it still reads as lit. */
     --surface-muted: #f2f3ff;
+    /*
+      A lighter step again, for a band that runs the width of a panel rather
+      than a tile inside one.
+
+      26 September 2026, the owner, of the record header's key strip: *"Light
+      color Background of the Mobile, House No., Portion, Next Follow Up, Lost
+      Reason, and also be little bit lighter colour of this background."* The
+      recessed tone is right for a small tile with white all around it; across
+      a whole header it reads as a second panel, which is exactly what he was
+      looking at. `tests/color.test.ts` pins the text on it.
+    */
+    --surface-subtle: #f8f9ff;
     --surface-raised: #ffffff;
     --border: #e2e7ff;
     --text: #131b2e;
@@ -140,6 +152,8 @@
     --app-bg: #0b1220;
     --surface: #0f172a;
     --surface-muted: #1e293b;
+    /* Dark mode goes the other way: a band *below* the panel, not above it. */
+    --surface-subtle: #161f31;
     --surface-raised: #1e293b;
     --border: #334155;
     --text: #f1f5f9;

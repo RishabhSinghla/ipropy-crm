@@ -2514,6 +2514,79 @@ container can no longer reach the site. Writing those names into a component is 
 `useRecordPanes` exists to prevent: the first admin to add a field would find
 the header could not learn about it.
 
+## The call deck moved into the pane, and four things beside it
+
+**26 September 2026, the owner**, with a design of his own and five requests
+in one message. His own safety line came with them — *"if you cant do new
+work then Please mind in my work do not stopped by this processor, i am happy
+with old, but want to New UI/UX"* — so nothing underneath any of this changed.
+
+**The deck takes the notes box's place while a call is up**
+(`components/CallDeckPanel.tsx`): *"We want to Create in UI/UX in the
+replacement of current note section in the right pane, the size should be same
+as per note section/Box … the Existing Functionality and Feature are work
+Perfect."* Top to bottom as he drew it — where this record sits in the queue
+and who is next, who is on the call, the clock with the live controls, the
+note, the outcome, the chase date, and the three ways out.
+
+**Two renderings, one state, and that is the whole of the design.** The
+floating bar is what makes a call follow a rep to the dashboard or the Calls
+page; the panel is where a call is actually *worked*. Both read
+`useCallDeckState`, pulled out of `LiveCallDeck` rather than copied — a second
+copy drifts, and the way it drifts is that one of them learns a new rule about
+the chase date and the other does not, so the same call saves differently
+depending on which control the rep happened to press. **They are never both on
+screen**: `liveCall.inPane` is set by the panel while it is mounted and the bar
+stands down, which also stops the bar sitting over the very header it docks
+beside. That flag is a fact about a *screen*, not about the call, so it is
+deliberately not remembered across a reload and is cleared by `finish()` —
+without that the next call started from the dashboard would have no bar at
+all. `tests/callDeckInPane.test.ts` pins both.
+
+**Six outcomes, not seventeen.** `splitOutcomes` already existed for exactly
+this and the panel reuses it: this database carries seventeen, and three rows
+and a scroll after every call is how a rep stops recording outcomes at all.
+
+**Two pills beside the name** (`components/HeaderPills.tsx`), immediately left
+of the star, on both modules: the record's stage in the colour the admin chose
+for it, and a dark-purple call pill. *"colour Picked from Leads/Inventory
+Status Dropdown Colour … Colour Always Fix With Dark Purple as theme button."*
+The fixed colour on the second is also the right call — two coloured pills side
+by side leave neither saying anything, and the stage is the one carrying
+meaning in its colour. **No screen names a field**: which field is the stage
+and which the chase date is `useRecordPanes`'s decision, the same one the
+record header and the chat pane read, and the option colours come off the
+field's own metadata through `badgeVars` rather than a hex written here.
+Choosing an outcome on the call pill writes a call through the same `logCall`
+the deck saves with, and lets the outcome set the chase date through
+`followUpFor` — which still never overwrites a date somebody has already put
+in the future.
+
+**The queue card's second line is size first now.** *"Accommodation/
+Configuration then portion then catagory then Locality i.e 3 BHK, Single,
+Builder Floor, Greenfields Colony."* It led with the portion and glued the
+bedrooms to the category as one phrase — "Single, 3 BHK Builder Floor" — so
+the fact a buyer names first came second and two separate facts read as one.
+One function, so Contacts and Inventories cannot drift into two formats, which
+is what he asked for. The icon is a home rather than an office block.
+
+**The header key strip is a band now, not a line of text.** It runs to the
+panel's own edges (`-mx-4 … sm:-mx-5`, with the band's own padding putting the
+first field back under the name), has room above and below, and sits on
+`--surface-subtle` — a step lighter again than a field tile, because across a
+whole header the recessed tone reads as a second panel, which is what he was
+looking at. The Chats header carries the same band, since it is the same
+component.
+
+**And the open record in the queue is tinted, not only ringed.** A ring on a
+white card among white cards is easy to lose at a glance down a long list.
+
+**What is not proved:** none of this has been exercised against a real handset
+— a live call was staged by writing `ipropy.liveCall` and the panel driven
+from there, which proves the layout, the wiring and the outcome rules but not
+what an Android phone reports mid-call. That half still needs a machine with
+an Android SDK, which this container does not have.
+
 ## Every request appears twice in development, and once in production
 
 `main.tsx` wraps the app in `React.StrictMode`, which double-invokes effects in

@@ -17,6 +17,7 @@ export default {
         surface: {
           DEFAULT: 'var(--surface)',
           muted: 'var(--surface-muted)',
+          subtle: 'var(--surface-subtle)',
           raised: 'var(--surface-raised)',
         },
         // Semantic text tokens — see the contrast note in styles.css. Use these

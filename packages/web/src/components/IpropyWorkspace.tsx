@@ -2,8 +2,8 @@ import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDate, recordStrength, relativeTime, type FieldMeta, type ModuleMeta, type RecordEnvelope } from '@ipropy/shared';
 import {
-  AlarmClock, ArrowRightLeft, ArrowUpDown, Building2, CalendarClock, Check, CircleCheck, CircleEllipsis, FileText, Link2,
-  MessageCircle, MoreHorizontal, Phone, PhoneCall, Sparkles, Star, Trash2, TriangleAlert, Users,
+  AlarmClock, ArrowRightLeft, ArrowUpDown, CalendarClock, Check, CircleEllipsis, FileText, Home, Link2,
+  MessageCircle, MoreHorizontal, Phone, Sparkles, Star, Trash2, TriangleAlert, Users,
 } from 'lucide-react';
 import { FieldValue } from './FieldRenderer';
 import { CALL_DECK_DOCK_ID } from './LiveCallDeck';
@@ -16,6 +16,8 @@ import { TagButton, TagChips } from './TagButton';
 import { CallsTab, FilesTab, RecordCollaboratorsPanel, TimelineTab } from '../pages/RecordDetail';
 import { EditableField, isInlineEditable } from './EditableField';
 import { FieldBlock, HeaderFieldStrip, NotesPanel } from './RecordBlocks';
+import { HeaderPills } from './HeaderPills';
+import { CallDeckPanel, useCallIsOn } from './CallDeckPanel';
 import { useRecordPanes, type DescribedModule } from '../lib/recordPanes';
 import { cardArea, cardPrice, queueCardFields, unitDescription, type CardFields } from '../lib/queueCard';
 import { followUpChip, type FollowUpChip as FollowUpChipValue, type FollowUpTone } from '../lib/followUpDates';
@@ -264,10 +266,6 @@ export function IpropyWorkspace({
     reasoning is the mistake this repo keeps finding months later.
   */
   const { headerFields, blocks, subtitleFields, queueChosen, assignedField, statusField, followUpField, phoneField } = useRecordPanes(module);
-  const callDispositionField = useMemo(
-    () => module.fields.find((field) => field.name === 'call_disposition' || field.columnName === 'call_disposition'),
-    [module.fields],
-  );
   const cardFields = useMemo(() => queueCardFields(module.fields), [module.fields]);
   const phoneValue = active && phoneField ? displayOf(active, phoneField) : '';
   const { data: matchingCount } = useQuery({
@@ -328,6 +326,8 @@ export function IpropyWorkspace({
   // A list row carries no `can`, so the module's own permission stands in
   // until the record itself arrives and answers for this row.
   const canEdit = active?.can?.edit ?? module.permissions.edit;
+  // While a call is up on the open record, the deck takes the notes box's place.
+  const onCall = useCallIsOn(module.name, active?.id ?? '');
   const allChecked = rows.length > 0 && rows.every((row) => selected.has(row.id));
 
   /*
@@ -520,16 +520,22 @@ export function IpropyWorkspace({
                   text is where a chip goes unread, and the owner asked for
                   them beside the icons in every view. */}
               <TagChips module={module.name} tags={active.tags} className="mr-0.5 max-w-[11rem]" />
-              {statusField && displayOf(active, statusField) && (
-                <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-brand-700 px-3 py-2 text-xs font-bold text-white shadow-sm">
-                  <CircleCheck className="h-3.5 w-3.5" />{displayOf(active, statusField)}
-                </span>
-              )}
-              {callDispositionField && displayOf(active, callDispositionField) && (
-                <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-bold text-violet-700 dark:border-violet-900 dark:bg-violet-950/40 dark:text-violet-200">
-                  <PhoneCall className="h-3.5 w-3.5" />{displayOf(active, callDispositionField)}
-                </span>
-              )}
+              {/*
+                Where the record stands and how the last call went, immediately
+                left of the star — 26 September 2026, the owner, for both
+                modules. Which field each reads is metadata, never named here.
+
+                These replaced two read-only chips that landed here the same
+                afternoon from a parallel session. Two reasons, both from his
+                own message: he asked for *"a Drop-down Hint arrow also"* on
+                each, and the chips were read-only; and the second read a
+                record field called `call_disposition`, which neither module
+                has on production — an outcome lives on `ipy_call`, so the
+                chip would have been invisible there whatever was typed into
+                it. The status colour comes off the picklist option the admin
+                chose, which is the other half of what he asked for.
+              */}
+              <HeaderPills module={module} row={active} canEdit={canEdit} />
               {/*
                 The line the owner asked for twice: everything to its left is
                 the record, everything to its right is what you *do* with it —
@@ -636,7 +642,19 @@ export function IpropyWorkspace({
               things phone number, next follow-up all other things be in
               line editable." The same strip the WhatsApp chat header shows.
             */}
-            <HeaderFieldStrip module={module} row={active} fields={headerFields} canEdit={canEdit} className="mt-2" />
+            {/*
+              Edge to edge, which is why it pulls back out of the header's own
+              padding: the band is a rule across the panel, and a band with
+              white either side of it is a box. Its own `px` puts the first
+              field back where the name above it starts.
+            */}
+            <HeaderFieldStrip
+              module={module}
+              row={active}
+              fields={headerFields}
+              canEdit={canEdit}
+              className="-mx-4 mt-2 border-y border-[var(--border)] sm:-mx-5"
+            />
 
           <nav className="mt-1.5 flex max-w-full overflow-x-auto" aria-label="Record workspace sections">
             <DeskTab active={tab === 'overview'} onClick={() => setTab('overview')}>Overview</DeskTab>
@@ -671,7 +689,15 @@ export function IpropyWorkspace({
                   />
                 ))}
               </div>
-              <NotesPanel module={module.name} record={active} />
+              {/*
+                The call takes the notes box's place while it is up, and gives
+                it back the moment it is saved — 26 September 2026, the owner.
+                A deck standing empty says nothing, and a notes box the team
+                can never reach is worse than either.
+              */}
+              {onCall
+                ? <CallDeckPanel module={module.name} recordId={active.id} />
+                : <NotesPanel module={module.name} record={active} />}
             </div>
           )}
           {tab === 'timeline' && <TimelineTab module={module.name} id={active.id} />}
@@ -819,7 +845,7 @@ function QueueCard({ row, active, checked, attention, card, followUpField, admin
 
         {/* 2. Which unit, cut short with "…" rather than wrapped. */}
         <span className="mt-1.5 flex min-w-0 items-center gap-1.5 text-sm text-[#475569] dark:text-slate-400">
-          <Building2 className="h-4 w-4 shrink-0 text-[#4338ca] dark:text-indigo-300" aria-hidden />
+          <Home className="h-4 w-4 shrink-0 text-[#4338ca] dark:text-indigo-300" aria-hidden />
           {adminLine ? (
             <span className="truncate">{adminText || '—'}</span>
           ) : (

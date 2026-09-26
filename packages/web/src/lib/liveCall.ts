@@ -35,6 +35,17 @@ interface LiveCallStore {
   begin: (call: Omit<CrmCall, 'placing' | 'outcome' | 'pressedAt'>) => void;
   update: (changes: Partial<CrmCall>) => void;
   finish: () => void;
+  /*
+    Whether the record's own pane is showing the call in full.
+
+    The floating bar exists so a call follows a rep to the dashboard or the
+    Calls page; on the record it *is* on, the pane shows the whole deck, and
+    both at once is one call wearing two faces — the bar also sits over the
+    header it docks beside. The pane says so while it is mounted, and this is
+    deliberately not remembered: it is true of a screen, not of the call.
+  */
+  inPane: boolean;
+  setInPane: (on: boolean) => void;
 }
 
 /*
@@ -75,7 +86,9 @@ export const useLiveCall = create<LiveCallStore>((set, get) => ({
     remember(get().call);
   },
   finish: () => {
-    set({ call: null });
+    set({ call: null, inPane: false });
     remember(null);
   },
+  inPane: false,
+  setInPane: (on) => set({ inPane: on }),
 }));

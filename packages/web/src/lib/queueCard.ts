@@ -72,13 +72,25 @@ export function withQueueCardColumns(columns: string[] | undefined, fields: Fiel
 type Reader = (field: FieldMeta) => string;
 
 /**
- * "Single, 4 BHK Builder Floor, Greenfields Colony" — portion, then bedrooms
- * and category as one phrase, then the locality.
+ * "3 BHK, Single, Builder Floor, Greenfields Colony" — what you would say
+ * about the place, in the order somebody says it.
+ *
+ * **26 September 2026, the owner**, of the Contacts queue: *"Fix the
+ * Middle/Second Row Values as Same as Inventory format i.e Home Icon Then
+ * Accommodation/Configuration then portion then catagory then Locality"*.
+ * It used to lead with the portion and glue the bedrooms to the category as
+ * one phrase — "Single, 3 BHK Builder Floor" — so the fact a buyer names
+ * first came second, and two separate facts read as one. Four facts, four
+ * commas' worth of separation, size first.
+ *
+ * One function, so Contacts and Inventories cannot drift into two formats —
+ * which is the whole of what he asked for.
  */
 export function unitDescription(card: CardFields, read: Reader): string {
   const text = (field?: FieldMeta): string => (field ? read(field).trim() : '');
-  const kind = [text(card.bedrooms), text(card.category)].filter(Boolean).join(' ');
-  return [text(card.portion), kind, text(card.locality)].filter(Boolean).join(', ');
+  return [text(card.bedrooms), text(card.portion), text(card.category), text(card.locality)]
+    .filter(Boolean)
+    .join(', ');
 }
 
 /** "₹1.85 Cr", or empty when there is no price. */

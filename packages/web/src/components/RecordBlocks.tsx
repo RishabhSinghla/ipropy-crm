@@ -143,7 +143,22 @@ export function HeaderFieldStrip({ module, row, fields, canEdit, className }: {
   }, [fields, row.id]);
 
   return (
-    <div className={cn('flex items-stretch gap-2 rounded-lg bg-[#f5f5ff] px-2.5 py-1.5 text-sm font-medium text-slate-800 dark:bg-slate-800/70 dark:text-slate-100', className)}>
+    <div className={cn(
+      /*
+        A band, not a line of text.
+
+        26 September 2026, the owner: *"Increase the stripe size end to end
+        from left to right … and Little bit from bottom and Top … Light color
+        Background of the Mobile, House No., Portion, Next Follow Up, Lost
+        Reason, and also be little bit lighter colour of this background."*
+        The caller decides how far it runs — the split view's header lets it
+        out to the panel's own edges — and the tone is `--surface-subtle`,
+        one step lighter than a field tile, because across a whole header the
+        recessed tone reads as a second panel.
+      */
+      'flex items-stretch gap-2 bg-[var(--surface-subtle)] px-4 py-2 text-sm font-medium text-slate-800 dark:text-slate-100 sm:px-5',
+      className,
+    )}>
       {/*
         A ledger strip, not a sentence.
 

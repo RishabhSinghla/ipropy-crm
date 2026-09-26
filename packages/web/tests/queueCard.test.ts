@@ -37,7 +37,11 @@ describe('queue card', () => {
       portion: 'Single', configuration: '4 BHK', category: 'Builder Floor', preferred_locations: 'Greenfields Colony',
     };
     const line = unitDescription(queueCardFields(leads), (f) => values[f.name] ?? '');
-    expect(line).toBe('Single, 4 BHK Builder Floor, Greenfields Colony');
+    // Size first, then portion, category and locality, each its own fact —
+    // 26 September 2026, the owner: "Accommodation/Configuration then portion
+    // then catagory then Locality i.e 3 BHK, Single, Builder Floor,
+    // Greenfields Colony".
+    expect(line).toBe('4 BHK, Single, Builder Floor, Greenfields Colony');
   });
 
   it('drops missing parts without stray commas', () => {

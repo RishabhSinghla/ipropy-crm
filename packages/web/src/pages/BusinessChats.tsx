@@ -758,7 +758,8 @@ function ChatRecordHeader({ module, record, who }: {
         row={record}
         fields={headerFields}
         canEdit={record.can?.edit ?? module.permissions.edit}
-        className="mt-2"
+        // Out to this header's own padding, the same band as the split view.
+        className="-mx-4 mt-2 border-y border-[var(--border)]"
       />
     </>
   );

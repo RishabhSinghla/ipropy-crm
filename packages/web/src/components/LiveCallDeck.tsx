@@ -31,11 +31,74 @@ const NOT_THE_CALLING_APP =
 
 export function LiveCallDeck(): JSX.Element | null {
   const call = useLiveCall((state) => state.call);
-  if (!call) return null;
+  // The record's own pane draws the whole deck; the bar is for every other
+  // screen. Both at once is one call wearing two faces.
+  const inPane = useLiveCall((state) => state.inPane);
+  if (!call || inPane) return null;
   return createPortal(<Deck />, document.body);
 }
 
-function Deck(): JSX.Element | null {
+function Deck(): JSX.Element {
+  const deck = useCallDeckState();
+  return (
+    <CallDeck
+      status={deck.status} talking={deck.talking}
+      speakerOn={deck.speakerOn} muted={deck.muted} held={deck.held}
+      canControl={deck.canControl} noControlReason={deck.noControlReason} onControl={deck.onControl}
+      canEndCall={deck.canEndCall} onHangUp={deck.onHangUp}
+      position={deck.position} total={deck.total} who={deck.who}
+      outcomes={deck.outcomes} outcome={deck.outcome} onOutcome={deck.onOutcome}
+      saving={deck.saving} nextLabel={deck.nextLabel} onSave={deck.onSave} dock={deck.dock}
+    />
+  );
+}
+
+/** Everything a live call needs to be worked and finished. */
+export interface CallDeckState {
+  status: string;
+  talking: boolean;
+  speakerOn: boolean; muted: boolean; held: boolean;
+  canControl: boolean; noControlReason: string;
+  onControl: (action: 'speaker' | 'mute' | 'hold', on: boolean) => void;
+  canEndCall: boolean; onHangUp: () => void;
+  position: number | null; total: number | null;
+  who: string;
+  /* Value and label together: the logger writes a stable value while a rep
+     must always read the name their admin typed. */
+  outcomes: { value: string; label: string }[];
+  outcome: string;
+  onOutcome: (value: string) => void;
+  /** What the rep typed while they talked, kept until the call is saved. */
+  notes: string; onNotes: (value: string) => void;
+  /** The chase date this call leaves behind, as a local day. */
+  followUp: string | null; onFollowUp: (day: string | null) => void;
+  saving: boolean;
+  nextLabel: string | null;
+  onSave: (andDialNext: boolean) => void;
+  /** The one way out that forgets the call — nobody was spoken to. */
+  onDiscard: () => void;
+  dock: { top: number; left: number } | null;
+}
+
+/**
+ * Everything a live call needs, computed once.
+ *
+ * **26 September 2026, the owner** asked for the call to be a full panel in
+ * the record's right pane, where the notes box is, rather than only the small
+ * bar that floats over every screen. Both are real: the bar is what makes a
+ * call follow a rep from the dashboard to the Calls page, and the panel is
+ * where the call is actually *worked*. So there are two renderings and one
+ * state — a second copy of this reasoning would drift, and the way it drifts
+ * is that one of them learns a new rule about the chase date and the other
+ * does not, so the same call saves differently depending on which control the
+ * rep happened to press.
+ *
+ * **Only call it where a live call is known to exist.** Both callers check
+ * first and render nothing without one; this hook would have to return a
+ * different shape on every field otherwise, which is how a panel comes to
+ * render half a call.
+ */
+export function useCallDeckState(): CallDeckState {
   const call = useLiveCall((state) => state.call)!;
   const { update, finish } = useLiveCall.getState();
   const queryClient = useQueryClient();
@@ -45,6 +108,8 @@ function Deck(): JSX.Element | null {
     ? call.outcome
     : (outcomes.some((option) => option.value === 'Call Back Later') ? 'Call Back Later' : outcomes[0]?.value ?? 'Call Back Later');
   const [saving, setSaving] = useState(false);
+  const [notes, setNotes] = useState('');
+  const [chaseOverride, setChaseOverride] = useState<string | null | undefined>(undefined);
   const report = usePhoneReport();
   const now = useTick(1000);
   const status = deckStatus(report, call, now);
@@ -122,9 +187,16 @@ function Deck(): JSX.Element | null {
         to: call.number, recordId: call.recordId, module: call.module, direction: 'outbound',
         durationSeconds: !answered ? 0 : (talked ?? minutesFrom(call.pressedAt, Date.now(), 1) * 60),
         disposition: outcome,
+        ...(notes.trim() ? { notes: notes.trim() } : {}),
       });
-      // The outcome chases them for you, and never argues with a date somebody already chose.
-      const chaseOn = followUpFor(outcome, (record?.values?.[call.followUpField] as string | null | undefined) ?? null, new Date());
+      /*
+        A date the rep picked on the panel wins — they were on the call. With
+        nothing picked the outcome chases them for you, and still never argues
+        with a date somebody has already put in the future.
+      */
+      const chaseOn = chaseOverride !== undefined
+        ? chaseOverride
+        : followUpFor(outcome, (record?.values?.[call.followUpField] as string | null | undefined) ?? null, new Date());
       if (chaseOn) await api.update(call.module, call.recordId, { [call.followUpField]: chaseOn });
 
       toast.success('Call logged', chaseOn ? 'Follow-up scheduled.' : 'One conversation moved forward.');
@@ -146,30 +218,35 @@ function Deck(): JSX.Element | null {
     }
   };
 
-  return (
-    <CallDeck
-      status={status.label}
-      talking={status.ticking && report?.state === 'active'}
-      speakerOn={speakerOn}
-      muted={muted}
-      held={held}
-      canControl={Boolean(report?.canControlCall) && live}
-      noControlReason={report?.canControlCall ? 'Only while the call is up.' : NOT_THE_CALLING_APP}
-      onControl={(action, on) => void control(action, on)}
-      canEndCall={Boolean(report?.canEndCall) && report?.state !== 'ended'}
-      onHangUp={() => void hangUp()}
-      position={neighbours?.position ?? null}
-      total={neighbours?.total ?? null}
-      who={who}
-      outcomes={outcomes}
-      outcome={outcome}
-      onOutcome={(value) => update({ outcome: value })}
-      saving={saving}
-      nextLabel={nextLabel}
-      onSave={(andNext) => void save(andNext)}
-      dock={dock}
-    />
-  );
+  return {
+    status: status.label,
+    talking: status.ticking && report?.state === 'active',
+    speakerOn,
+    muted,
+    held,
+    canControl: Boolean(report?.canControlCall) && live,
+    noControlReason: report?.canControlCall ? 'Only while the call is up.' : NOT_THE_CALLING_APP,
+    onControl: (action, on) => void control(action, on),
+    canEndCall: Boolean(report?.canEndCall) && report?.state !== 'ended',
+    onHangUp: () => void hangUp(),
+    position: neighbours?.position ?? null,
+    total: neighbours?.total ?? null,
+    who,
+    outcomes,
+    outcome,
+    onOutcome: (value) => update({ outcome: value }),
+    notes,
+    onNotes: setNotes,
+    followUp: chaseOverride ?? null,
+    onFollowUp: (day) => setChaseOverride(day),
+    saving,
+    nextLabel,
+    onSave: (andNext) => void save(andNext),
+    // Nobody was spoken to, so nothing is written — the one way out that
+    // forgets, and the reason Save & Exit is not the only button.
+    onDiscard: () => finish(),
+    dock,
+  };
 }
 
 /**
