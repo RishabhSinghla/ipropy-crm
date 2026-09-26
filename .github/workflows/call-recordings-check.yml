@@ -1,0 +1,36 @@
+# Do call recordings reach the CRM at all? Read-only, counts only.
+name: Call recordings check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  look:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install PostgreSQL 18 client
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+      - name: Calls, recordings and phones
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          psql "$PROD_DATABASE_URL" -P pager=off <<'SQL'
+          SELECT source, count(*) AS calls,
+                 count(*) FILTER (WHERE recording_url IS NOT NULL) AS with_recording,
+                 max(started_at)::date AS latest_call,
+                 max(started_at) FILTER (WHERE recording_url IS NOT NULL)::date AS latest_recording
+            FROM ipy_call GROUP BY source ORDER BY calls DESC;
+          SELECT app_version, count(*) AS phones,
+                 count(*) FILTER (WHERE last_sync_at > now() - interval '7 days') AS synced_this_week,
+                 count(*) FILTER (WHERE can_end_call) AS can_end_call
+            FROM ipy_device WHERE is_active GROUP BY app_version ORDER BY phones DESC;
+          SQL
