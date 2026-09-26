@@ -25,9 +25,28 @@ export default {
         muted: 'var(--text-muted)',
         positive: 'var(--text-positive)',
         negative: 'var(--text-negative)',
+        // The design's second and third voices: indigo for operational states
+        // and entity links, emerald for conversions. Variables like the brand
+        // scale, so a recolour stays one place.
+        accent: {
+          DEFAULT: 'var(--accent)',
+          soft: 'var(--accent-soft)',
+          'on-soft': 'var(--accent-on-soft)',
+        },
+        'positive-soft': 'var(--positive-soft)',
+        'positive-on-soft': 'var(--positive-on-soft)',
+        'negative-soft': 'var(--negative-soft)',
+        'negative-on-soft': 'var(--negative-on-soft)',
       },
       fontFamily: {
-        sans: ['Inter var', 'Inter', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
+        /*
+          Two typefaces with a job each, which is the whole point of the
+          pairing: Geist carries dense record text, and Space Grotesk carries
+          names, figures and section headings. `sans` is the body face because
+          it is what every unstyled element inherits.
+        */
+        sans: ['Geist Variable', 'Geist', 'Inter var', 'Inter', 'system-ui', 'sans-serif'],
+        display: ['Space Grotesk Variable', 'Space Grotesk', 'Geist Variable', 'system-ui', 'sans-serif'],
         mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
       },
       fontSize: {

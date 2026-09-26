@@ -145,11 +145,34 @@ export function HeaderFieldStrip({ module, row, fields, canEdit, className }: {
   }, [fields, row.id]);
 
   return (
-    <div className={cn('flex items-center gap-2 pb-0.5 text-sm font-medium text-slate-800 dark:text-slate-100', className)}>
-      <div ref={strip} data-testid="header-fields" className="flex min-w-0 flex-1 items-center gap-x-3.5 overflow-hidden whitespace-nowrap">
+    <div className={cn('flex items-stretch gap-2 pb-0.5 text-sm font-medium text-slate-800 dark:text-slate-100', className)}>
+      {/*
+        A ledger strip, not a sentence.
+
+        It used to read `Mobile: +91 … Email: … Budget: …` on one line, so the
+        labels and the facts carried the same weight and the eye had to parse
+        punctuation to find a number. The design stacks each pair into its own
+        column — the label above in structural micro-type, the fact below in
+        the display face — divided by hairlines, which is what makes five keys
+        readable at a glance instead of five in a row.
+      */}
+      <div
+        ref={strip}
+        data-testid="header-fields"
+        className="flex min-w-0 flex-1 items-stretch overflow-hidden whitespace-nowrap divide-x"
+        style={{ borderColor: 'var(--border)' }}
+      >
         {fields.map((field, index) => (
-          <span key={field.name} className={cn('inline-flex shrink-0 items-center gap-1', index >= fits && 'invisible')}>
-            <span className="shrink-0 text-xs font-normal text-muted">{field.label}:</span>
+          <span
+            key={field.name}
+            className={cn(
+              'inline-flex shrink-0 flex-col justify-center py-0.5',
+              index === 0 ? 'pr-3.5' : 'px-3.5',
+              index >= fits && 'invisible',
+            )}
+            style={{ borderColor: 'var(--border)' }}
+          >
+            <span className="key-label shrink-0">{field.label}</span>
             {canEdit && isInlineEditable(field) ? (
               <EditableField
                 module={module.name}

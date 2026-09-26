@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   AA_LARGE,
@@ -283,16 +284,50 @@ describe('tintedTextVars', () => {
   });
 });
 
-describe('the muted text tokens in styles.css', () => {
-  // These are the values --text-muted / --text-positive / --text-negative
-  // resolve to. They live in CSS, so nothing else can catch a regression here.
+describe('the text tokens in styles.css', () => {
+  /*
+    Read out of the stylesheet rather than copied here.
+
+    This block used to hold the hexes as constants, and on 26 September 2026
+    the palette changed underneath it: every value in `styles.css` moved and
+    all six assertions carried on passing against colours the CRM no longer
+    used. A test that keeps its own copy of the thing it is testing stops
+    testing it the first time somebody edits the original — the same drift
+    rule this repo applies to components, applied to a constant.
+  */
+  const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+  /** The value of one custom property inside `:root` or `.dark`. */
+  function token(scope: 'root' | 'dark', name: string): string {
+    const block = scope === 'root'
+      ? css.slice(css.indexOf(':root {'), css.indexOf('.dark {'))
+      : css.slice(css.indexOf('.dark {'));
+    const match = new RegExp(`--${name}:\\s*(#[0-9a-fA-F]{3,8})`).exec(block);
+    if (!match) throw new Error(`--${name} is not set in ${scope}`);
+    return match[1];
+  }
+
   const TOKENS = {
-    light: { muted: '#5b6b80', positive: '#047857', negative: '#c81e1e' },
-    dark: { muted: '#94a3b8', positive: '#34d399', negative: '#f87171' },
+    light: {
+      muted: token('root', 'text-muted'),
+      positive: token('root', 'text-positive'),
+      negative: token('root', 'text-negative'),
+    },
+    dark: {
+      muted: token('dark', 'text-muted'),
+      positive: token('dark', 'text-positive'),
+      negative: token('dark', 'text-negative'),
+    },
   };
+
+  /*
+    The three surfaces each theme actually puts text on: the card, the canvas
+    behind it, and the recessed tone inside field tiles and table headers —
+    read from the stylesheet too, because the canvas moved in the same change.
+  */
   const SURFACE_SET = {
-    light: ['#ffffff', '#f8fafc', '#f1f5f9'],
-    dark: ['#0f172a', '#020617', '#1e293b'],
+    light: ['#ffffff', token('root', 'app-bg'), token('root', 'surface-muted')],
+    dark: [token('dark', 'surface'), token('dark', 'app-bg'), token('dark', 'surface-muted')],
   };
 
   it('clear AA on every surface of their own theme', () => {
@@ -308,7 +343,31 @@ describe('the muted text tokens in styles.css', () => {
 
   it('improve on the slate steps they replaced', () => {
     expect(ratio(TOKENS.light.muted, '#ffffff')).toBeGreaterThan(ratio('#94a3b8', '#ffffff'));
-    expect(ratio(TOKENS.dark.muted, '#0f172a')).toBeGreaterThan(ratio('#64748b', '#0f172a'));
+    expect(ratio(TOKENS.dark.muted, token('dark', 'surface'))).toBeGreaterThan(ratio('#64748b', '#0f172a'));
+  });
+
+  /*
+    The brand scale is what every primary button, selected row and focus ring
+    is painted from, and white sits on `brand-600`. An admin can overwrite the
+    scale from Brand settings, so this pins the shipped one only — but the
+    shipped one is what every screenshot and every new tenant starts from.
+  */
+  it('carry white legibly on the brand fill', () => {
+    const r = ratio('#ffffff', token('root', 'brand-600'));
+    expect(r, `white on brand-600 = ${r.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA_NORMAL);
+  });
+
+  it('pair the accent voices with their own soft grounds', () => {
+    for (const [fg, bg] of [
+      ['accent-on-soft', 'accent-soft'],
+      ['positive-on-soft', 'positive-soft'],
+      ['negative-on-soft', 'negative-soft'],
+    ] as const) {
+      for (const scope of ['root', 'dark'] as const) {
+        const r = ratio(token(scope, fg), token(scope, bg));
+        expect(r, `${scope}/${fg} on ${bg} = ${r.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA_NORMAL);
+      }
+    }
   });
 });
 

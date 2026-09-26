@@ -1,3 +1,17 @@
+/*
+  The two typefaces of the Sovereign Financial design, self-hosted.
+
+  Not Google's CDN on purpose: `securityPolicy` in `app.ts` says
+  `style-src 'self'` and names no font host, so a `<link>` to
+  fonts.googleapis.com is refused by the browser and the whole CRM silently
+  falls back to the system font — the same shape of failure as the Team map's
+  tile host, and just as invisible outside the console. Bundled from npm there
+  is nothing to allow, nothing to be blocked, and no third party between a rep
+  and their screen.
+*/
+@import '@fontsource-variable/space-grotesk';
+@import '@fontsource-variable/geist';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -11,17 +25,38 @@
      slate-400, the previous muted colour, is 2.56:1 on white. */
   :root {
     --surface: #ffffff;
-    --surface-muted: #fbfcff;
+    /* The recessed tone: table headers, field tiles, the inside of a chip.
+       Cool rather than grey, so a white card on top of it still reads as lit. */
+    --surface-muted: #f2f3ff;
     --surface-raised: #ffffff;
-    --border: #e6ecf5;
-    --text: #0f172a;
-    /* The page behind the cards. slate-50 is a grey ground and it made a
-       screen of white cards look dusty; this is the same value cooled and
-       lifted so the cards read as lit rather than laid on newsprint. */
-    --app-bg: #f6f9fe;
-    --text-muted: #5b6b80;
+    --border: #e2e7ff;
+    --text: #131b2e;
+    /* The canvas behind every card. */
+    --app-bg: #f5f6fa;
+    /*
+      Secondary copy. The design names `#50434e`, which is 7.6:1 on white and
+      6.5:1 on the recessed tone — both clear AA, and `tests/color.test.ts`
+      asserts it against all three surfaces rather than trusting the palette.
+    */
+    --text-muted: #50434e;
     --text-positive: #047857;
-    --text-negative: #c81e1e;
+    --text-negative: #ba1a1a;
+
+    /*
+      The second and third voices of this palette, which the old one had no
+      names for: indigo for operational states and entity links, emerald for
+      yields and conversions. They are variables like the brand scale so a
+      future recolour is one place, and they are *not* `brand-*` — the brand
+      scale is the admin's to overwrite from Brand settings, and these are the
+      design's own.
+    */
+    --accent: #4e45d5;
+    --accent-soft: #e3dfff;
+    --accent-on-soft: #100069;
+    --positive-soft: #d7f7e8;
+    --positive-on-soft: #00432b;
+    --negative-soft: #ffdad6;
+    --negative-on-soft: #93000a;
 
     /*
       The brand scale. These are the indigo values the CRM shipped with; the
@@ -30,17 +65,17 @@
       the eleven shades from a single chosen hex). Tailwind's `brand-*` tokens
       resolve here, so buttons, links, chips and focus rings all follow.
     */
-    --brand-50: #eef2ff;
-    --brand-100: #e0e7ff;
-    --brand-200: #c7d2fe;
-    --brand-300: #a5b4fc;
-    --brand-400: #818cf8;
-    --brand-500: #6366f1;
-    --brand-600: #4f46e5;
-    --brand-700: #4338ca;
-    --brand-800: #3730a3;
-    --brand-900: #312e81;
-    --brand-950: #1e1b4b;
+    --brand-50: #fdf4ff;
+    --brand-100: #ffd6f9;
+    --brand-200: #ffa9fb;
+    --brand-300: #ed8ceb;
+    --brand-400: #b5559b;
+    --brand-500: #913b94;
+    --brand-600: #701a75;
+    --brand-700: #5e1563;
+    --brand-800: #520058;
+    --brand-900: #400046;
+    --brand-950: #37003b;
 
     /*
       List typography and row shading, in one place.
@@ -69,35 +104,57 @@
        wide grid was competing at the same weight; slate-700 keeps a full row
        legible (10:1 on the sheet) while letting the name, the status chip and
        the due date be the things that carry weight. */
-    --list-text: #334155;
+    --list-text: #3a4459;
     --list-row: #ffffff;
     /* The stripe is a hint, not a band. At #f4f6f8 every second row read as
        grey paper and the whole grid looked switched off. Kept that lightness
        and dropped the blue cast: the blue read as a selection on a screen
        where selection is also blue, and a neutral sheet lets the coloured
        things in a row — status, overdue, avatar — be the only colour. */
-    --list-row-alt: #fafafa;
-    --list-row-hover: #f1f5f9;
+    --list-row-alt: #fafaff;
+    --list-row-hover: #f2f3ff;
     /* Selection stays blue on purpose: it is the one row state that means
        something a person chose, and it has to beat both stripe and hover. */
-    --list-row-selected: #d8e8ff;
-    --list-head-bg: #f8fafc;
+    --list-row-selected: #ffd6f9;
+    --list-head-bg: #f2f3ff;
     /* Left near-black deliberately. A muted header was tried here and got
        looked past — the column names are how anybody navigates a wide grid. */
-    --list-head-text: #0f172a;
-    --list-head-border: #e2e8f0;
+    --list-head-text: #131b2e;
+    --list-head-border: #e2e7ff;
   }
 
   .dark {
+    /*
+      The brand's light end, lifted for a dark ground.
+
+      The scale below is a *plum*, and where indigo's mid-steps happened to be
+      bright enough to read on slate, plum's are not: `dark:text-brand-400`
+      came out at 3.3:1 on a panel — every brand-coloured link in dark mode,
+      failed by the contrast scan on /settings. Only the steps used as **text**
+      move; 500 and 600 stay where they are because they are fills, and white
+      on brand-600 is 10:1 and has to stay that way.
+    */
+    --brand-300: #ffa9fb;
+    --brand-400: #ed8ceb;
+
     --app-bg: #0b1220;
     --surface: #0f172a;
     --surface-muted: #1e293b;
     --surface-raised: #1e293b;
     --border: #334155;
     --text: #f1f5f9;
-    --text-muted: #94a3b8;
+    --text-muted: #a8b3c4;
     --text-positive: #34d399;
     --text-negative: #f87171;
+
+    /* The same three voices, lifted for a dark ground. */
+    --accent: #c3c0ff;
+    --accent-soft: #372abf;
+    --accent-on-soft: #e3dfff;
+    --positive-soft: #005137;
+    --positive-on-soft: #85f8c4;
+    --negative-soft: #93000a;
+    --negative-on-soft: #ffdad6;
 
     --list-text: #e2e8f0;
     --list-row: #0f172a;
@@ -248,29 +305,42 @@
 }
 
 @layer components {
+  /*
+    Depth here is tonal, not blurred: a white panel on the canvas, framed by a
+    hairline. The old card carried a drop shadow and an `xl` radius, which read
+    as a floating tile; this design wants panels that sit *in* the page, so the
+    shadow goes and the corner tightens. `border` is the token, so an admin's
+    dark mode and the light sheet stay one decision.
+  */
   .card {
-    @apply rounded-xl border border-slate-200 bg-white shadow-card dark:border-slate-800 dark:bg-slate-900;
+    @apply rounded-lg bg-white dark:bg-slate-900;
+    border: 1px solid var(--border);
   }
 
   .btn {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium
+    @apply inline-flex items-center justify-center gap-1.5 rounded px-3 py-2 text-sm font-semibold
            transition-colors disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-primary { @apply btn bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-800; }
   .btn-secondary {
-    @apply btn border border-slate-200 bg-white text-slate-700 hover:bg-slate-50
-           dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800;
+    @apply btn bg-white text-slate-800 hover:bg-[var(--surface-muted)]
+           dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800;
+    border: 1px solid var(--border);
   }
-  .btn-ghost { @apply btn text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800; }
+  .btn-ghost {
+    @apply btn hover:bg-[var(--surface-muted)] dark:text-slate-300 dark:hover:bg-slate-800;
+    color: var(--text-muted);
+  }
   .btn-danger { @apply btn bg-red-600 text-white hover:bg-red-700; }
   .btn-sm { @apply px-2.5 py-1.5 text-xs; }
 
   .input {
-    @apply w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900
-           placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500
-           disabled:bg-slate-50 disabled:text-slate-500
-           dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500
+    @apply w-full rounded bg-white px-3 py-2 text-sm text-slate-900
+           placeholder:text-slate-400 focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600
+           disabled:bg-[var(--surface-muted)] disabled:text-slate-500
+           dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500
            dark:disabled:bg-slate-800;
+    border: 1px solid var(--border);
   }
   /* `color` is set from the variable rather than @apply text-muted: @apply is
      resolved against the Tailwind config loaded when the dev server booted, so
@@ -282,6 +352,36 @@
   }
 
   /*
+    The design's structural flag: the tiny uppercase word that sits above a
+    value in a header strip or a field tile. It is a *label* rather than text
+    that happens to be small, so it is one class and one decision — the
+    tracking is what makes a row of them read as a ledger rather than as
+    shouting.
+  */
+  .key-label {
+    @apply block font-semibold uppercase;
+    color: var(--text-muted);
+    font-size: 10px;
+    line-height: 14px;
+    letter-spacing: 0.06em;
+  }
+
+  /* The value under it: the fact itself, in the display face. */
+  .key-value {
+    @apply block truncate font-semibold;
+    font-family: theme('fontFamily.display');
+    font-size: 13px;
+    line-height: 18px;
+    color: var(--text);
+  }
+
+  /* A field tile — the recessed square a value sits in on a dossier panel. */
+  .key-tile {
+    @apply rounded p-2;
+    background-color: var(--surface-muted);
+  }
+
+  /*
     A status chip is a fixed object, not text that happens to be coloured.
 
     Its size is pinned — same height, same type, same padding — whether it is
@@ -290,6 +390,17 @@
     a picklist edit swapped the read-state chip for the editor's own type
     scale, so the row's height changed under the cursor mid-click.
   */
+  /*
+    Every heading in the CRM, in one place. Space Grotesk carries names,
+    figures and section titles; Geist carries everything else. Applying it
+    here rather than per screen is what stops half the CRM drifting back to
+    the body face the first time somebody adds a panel.
+  */
+  h1, h2, h3, .font-display {
+    font-family: theme('fontFamily.display');
+    letter-spacing: -0.01em;
+  }
+
   .badge {
     @apply inline-flex shrink-0 items-center gap-1 rounded font-semibold;
     height: 22px;
