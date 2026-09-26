@@ -410,14 +410,14 @@ function WidgetFrame({
       <div data-no-drag className="absolute right-2 top-2 z-10 flex gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
         <button
           onClick={onEdit}
-          className="rounded-md border border-slate-200 bg-white/95 p-1.5 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/95 dark:hover:bg-slate-800"
+          className="rounded-md border border-[var(--border)] bg-white/95 p-1.5 shadow-sm hover:bg-[var(--surface-muted)] dark:bg-slate-900/95 dark:hover:bg-slate-800"
           aria-label={`Edit ${widget.title}`}
         >
           <Pencil className="h-3.5 w-3.5" />
         </button>
         <button
           onClick={onRemove}
-          className="rounded-md border border-slate-200 bg-white/95 p-1.5 text-negative shadow-sm hover:bg-red-50 dark:border-slate-700 dark:bg-slate-900/95 dark:hover:bg-red-950/40"
+          className="rounded-md border border-[var(--border)] bg-white/95 p-1.5 text-negative shadow-sm hover:bg-red-50 dark:bg-slate-900/95 dark:hover:bg-red-950/40"
           aria-label={`Remove ${widget.title}`}
         >
           <Trash2 className="h-3.5 w-3.5" />

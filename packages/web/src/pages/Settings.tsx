@@ -56,7 +56,7 @@ export default function SettingsPage(): JSX.Element {
         role="dialog"
         aria-modal="true"
         aria-label="Settings"
-        className="mx-auto w-full max-w-3xl animate-scale-in overflow-hidden rounded-2xl border border-slate-200/70 bg-white shadow-float dark:border-slate-700/70 dark:bg-slate-900"
+        className="popover mx-auto w-full max-w-3xl animate-scale-in overflow-hidden"
       >
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
           <div>
@@ -191,7 +191,7 @@ function PreferencesTab({
                 'flex flex-1 flex-col items-center gap-2 rounded-lg border p-4 transition-colors',
                 theme === option.value
                   ? 'border-brand-500 bg-brand-50 dark:bg-brand-950/50'
-                  : 'border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800',
+                  : 'border-[var(--border)] hover:bg-[var(--surface-muted)] dark:hover:bg-slate-800',
               )}
             >
               <option.icon className="h-5 w-5" />
@@ -1526,7 +1526,7 @@ function PairPhoneModal({ open, onClose, onPaired }: {
           </p>
           <div>
             <span className="label">Server address</span>
-            <div className="relative rounded-lg border border-slate-200 bg-slate-50 p-3 pr-10 dark:border-slate-700 dark:bg-slate-950/60">
+            <div className="relative rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3 pr-10 dark:bg-slate-950/60">
               <code className="block break-all font-mono text-xs">{serverUrl}</code>
               <button
                 className="btn-ghost btn-sm absolute right-1.5 top-1.5"
@@ -1541,7 +1541,7 @@ function PairPhoneModal({ open, onClose, onPaired }: {
           </div>
           <div>
             <span className="label">Pairing token</span>
-            <div className="relative rounded-lg border border-slate-200 bg-slate-50 p-3 pr-10 dark:border-slate-700 dark:bg-slate-950/60">
+            <div className="relative rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3 pr-10 dark:bg-slate-950/60">
               <code className="block break-all font-mono text-xs">{pairing.token}</code>
               <button
                 className="btn-ghost btn-sm absolute right-1.5 top-1.5"

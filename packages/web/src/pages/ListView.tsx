@@ -859,7 +859,7 @@ export default function ListView(): JSX.Element {
         whole change — no colour, because the row is a container and the
         coloured thing in it should go on being the New button.
       */}
-      <div className="shrink-0 border-b-2 border-slate-200 bg-white px-3 py-2.5 shadow-sm dark:border-slate-700 dark:bg-slate-900 sm:px-4">
+      <div className="shrink-0 border-b border-[var(--border)] bg-white px-3 py-2.5 dark:bg-slate-900 sm:px-4">
         {/*
           No title bar.
 
@@ -1028,12 +1028,12 @@ export default function ListView(): JSX.Element {
             {/* Only the views the admin left on, and nothing at all when
                 there is one: a row of one button is not a choice. */}
             <div className={cn(
-              'inline-flex overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700',
+              'inline-flex overflow-hidden rounded-lg border border-[var(--border)]',
               allowedModes.length < 2 && 'hidden',
             )}>
               {allowedModes.includes('table') && <button
                 onClick={() => chooseMode('table')}
-                className={cn('px-2 py-1.5', displayMode === 'table' ? 'bg-slate-100 dark:bg-slate-800' : 'hover:bg-slate-50 dark:hover:bg-slate-800')}
+                className={cn('px-2 py-1.5', displayMode === 'table' ? 'bg-brand-100 text-brand-700 dark:bg-brand-950/40 dark:text-brand-200' : 'hover:bg-[var(--surface-muted)] dark:hover:bg-slate-800')}
                 title="Table"
               >
                 <List className="h-3.5 w-3.5" />
@@ -1043,7 +1043,7 @@ export default function ListView(): JSX.Element {
                 disabled={!stageField && !activeView?.groupBy}
                 className={cn(
                   'px-2 py-1.5 disabled:opacity-30',
-                  displayMode === 'kanban' ? 'bg-slate-100 dark:bg-slate-800' : 'hover:bg-slate-50 dark:hover:bg-slate-800',
+                  displayMode === 'kanban' ? 'bg-brand-100 text-brand-700 dark:bg-brand-950/40 dark:text-brand-200' : 'hover:bg-[var(--surface-muted)] dark:hover:bg-slate-800',
                 )}
                 title={stageField ? 'Kanban' : 'This module has no pipeline field'}
               >
@@ -1051,7 +1051,7 @@ export default function ListView(): JSX.Element {
               </button>}
               {allowedModes.includes('ipropy') && <button
                 onClick={() => chooseMode('ipropy')}
-                className={cn('px-2 py-1.5', displayMode === 'ipropy' ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200' : 'hover:bg-slate-50 dark:hover:bg-slate-800')}
+                className={cn('px-2 py-1.5', displayMode === 'ipropy' ? 'bg-brand-100 text-brand-700 dark:bg-brand-950/40 dark:text-brand-200' : 'hover:bg-[var(--surface-muted)] dark:hover:bg-slate-800')}
                 title="Split view"
                 aria-label="Split view"
               >
@@ -1661,7 +1661,7 @@ export default function ListView(): JSX.Element {
 
       {/* Pagination */}
       {displayMode !== 'kanban' && (data?.total ?? 0) > 0 && (
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-4 py-2 lg:hidden dark:border-slate-800 dark:bg-slate-900 sm:px-6">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-[var(--border)] bg-white px-4 py-2 lg:hidden dark:bg-slate-900 sm:px-6">
           <p className="text-xs text-muted tnum">
             {((data!.page - 1) * data!.pageSize + 1).toLocaleString('en-IN')}–
             {Math.min(data!.page * data!.pageSize, data!.total).toLocaleString('en-IN')} of {data!.total.toLocaleString('en-IN')}
@@ -2287,7 +2287,7 @@ function KanbanBoard({
           <div
             key={col.key}
             className={cn(
-              'flex w-64 shrink-0 flex-col rounded-xl border bg-slate-100/60 transition-colors dark:bg-slate-900/60 sm:w-72',
+              'flex w-64 shrink-0 flex-col rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] transition-colors dark:bg-slate-900/60 sm:w-72',
               overColumn === col.key
                 ? 'border-brand-400 bg-brand-50 dark:border-brand-700 dark:bg-brand-950/40'
                 : 'border-slate-200 dark:border-slate-800',
@@ -2323,7 +2323,7 @@ function KanbanBoard({
                   onDragEnd={() => setDragging(null)}
                   onClick={() => openRecord(`/${module.name}/${row.id}`)}
                   className={cn(
-                    'cursor-pointer rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm transition-all hover:shadow-md dark:border-slate-700 dark:bg-slate-800',
+                    'card cursor-pointer p-2.5 transition-shadow hover:shadow-md dark:bg-slate-800',
                     row.starred && 'border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30',
                     !row.starred && attentionIds.has(row.id) && 'border-brand-300 bg-brand-50/70 dark:border-brand-800 dark:bg-brand-950/30',
                     dragging === row.id && 'opacity-40',

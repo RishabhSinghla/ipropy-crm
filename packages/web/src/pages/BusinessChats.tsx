@@ -268,7 +268,7 @@ export default function BusinessChats(): JSX.Element {
     */
     <div ref={shell} style={{ height: shellHeight ?? undefined }} className="flex overflow-hidden">
       {/* The queue */}
-      <aside className="flex w-80 shrink-0 flex-col border-r border-slate-200 dark:border-slate-800">
+      <aside className="flex w-80 shrink-0 flex-col border-r border-[var(--border)]">
         <div className="space-y-2 border-b border-slate-100 p-3 dark:border-slate-800">
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" />
@@ -322,7 +322,7 @@ export default function BusinessChats(): JSX.Element {
       </aside>
 
       {/* The conversation */}
-      <section className="flex min-w-0 flex-1 flex-col bg-slate-50 dark:bg-slate-950/40">
+      <section className="flex min-w-0 flex-1 flex-col bg-[var(--surface-muted)] dark:bg-slate-950/40">
         {!active ? (
           <div className="flex flex-1 items-center justify-center">
             <EmptyState icon={<Inbox className="h-8 w-8" />} title="Pick a chat" body="Conversations on the business number appear on the left." />
@@ -355,7 +355,7 @@ export default function BusinessChats(): JSX.Element {
               show, so it gets the name and the number and nothing pretending
               to be more.
             */}
-            <header className="border-b border-slate-200 bg-white px-4 py-2.5 dark:border-slate-800 dark:bg-slate-900">
+            <header className="border-b border-[var(--border)] bg-white px-4 py-2.5 dark:bg-slate-900">
               <div className="flex min-w-0 items-start gap-3">
                 <Avatar name={who} size={42} className="mt-0.5" />
                 <div className="min-w-0 flex-1">
@@ -468,7 +468,7 @@ export default function BusinessChats(): JSX.Element {
               <div ref={endRef} />
             </div>
 
-            <footer className="border-t border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+            <footer className="border-t border-[var(--border)] bg-white p-3 dark:bg-slate-900">
               {active.optedOut ? (
                 <UnsubscribedPanel who={who} onSubscribeAgain={() => consent.mutateAsync(true)} />
               ) : (
@@ -580,7 +580,7 @@ export default function BusinessChats(): JSX.Element {
         the same metadata — every value editable where it stands.
       */}
       {active && (
-        <aside className="hidden w-[24rem] shrink-0 flex-col overflow-y-auto border-l border-slate-200 bg-slate-50 p-3 xl:flex 2xl:w-[28rem] dark:border-slate-800 dark:bg-slate-950/40">
+        <aside className="hidden w-[24rem] shrink-0 flex-col overflow-y-auto border-l border-[var(--border)] bg-[var(--surface-muted)] p-3 xl:flex 2xl:w-[28rem] dark:bg-slate-950/40">
           {active.recordId && active.recordModule ? (
             recordModule && recordRow
               ? <ChatRecordPane module={recordModule} record={recordRow} />

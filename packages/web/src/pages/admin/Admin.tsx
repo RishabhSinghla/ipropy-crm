@@ -138,7 +138,7 @@ export default function AdminPage(): JSX.Element {
     // time. Below `lg` the same destinations become a horizontally scrolling
     // strip above full-width content.
     <div className="flex h-full min-w-0 flex-col lg:flex-row">
-      <nav className="shrink-0 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 lg:w-56 lg:overflow-y-auto lg:border-b-0 lg:border-r lg:p-3">
+      <nav className="shrink-0 border-b border-[var(--border)] bg-white dark:bg-slate-900 lg:w-56 lg:overflow-y-auto lg:border-b-0 lg:border-r lg:p-3">
         <div className="mb-4 hidden items-center gap-2 px-1 lg:flex">
           <Settings2 className="h-4 w-4 text-slate-400" />
           <h2 className="text-sm font-semibold">Admin</h2>

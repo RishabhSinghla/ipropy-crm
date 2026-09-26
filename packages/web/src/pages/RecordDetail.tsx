@@ -2801,7 +2801,7 @@ function MentionTextarea({
         <ul
           role="listbox"
           aria-label="Mention a colleague"
-          className="absolute z-20 mt-1 max-h-52 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800"
+          className="popover absolute z-20 mt-1 max-h-52 w-full overflow-y-auto py-1"
         >
           {matches.map((person, i) => (
             <li key={person.id}>
