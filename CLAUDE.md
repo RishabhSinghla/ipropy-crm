@@ -2504,6 +2504,30 @@ incoming bubble read as a bubble, so it has to move with the theme.
 **What is still not converted:** the import and integration screens' inner
 rows, and the dashboard's own drill markup below the widget frame.
 
+**Both content choices were already made, and the dry run is what caught it.**
+On 26 September the owner asked for the header's five facts and the "House
+No." label to be set for him. A dry run against production first — because a
+job that writes to a live settings row should never be the thing that
+discovers what is in it — found **both already done**, and done more fully
+than the prototype named: the labels read `House No.` with `is_customised`
+set, and `ui.split_view` held seven header fields per module plus `queue` and
+`form` lists somebody had chosen field by field. His own message that day
+listed *"Mobile, House No., Portion, Next Follow Up, Lost Reason"*, which is
+that live arrangement rather than the prototype's five — he was describing
+what he already had.
+
+**The first version of `set-the-header-keys.yml` would have destroyed it.** It
+passed a whole object and let `ON CONFLICT DO UPDATE SET value = EXCLUDED`
+replace the row, which would have emptied every `queue` and `form` list in it.
+It merges now — `jsonb_set` on one module's `header` key, every other key and
+every other module left exactly as found — and takes the fields as an input
+rather than carrying them in the file, so it cannot go stale against a
+decision made in the CRM. Proved both ways against a real database (a module
+already present, and one absent) before it was allowed near production. The
+general rule, which this repo keeps re-learning in new clothes: **a settings
+row is somebody's work, and a job that rewrites one wholesale cannot tell a
+value nobody chose from a value somebody spent an afternoon on.**
+
 **The prototype's *content* choices are data, and nobody should write them
 into code.** Which five facts sit in the header — Mobile, Contact Type,
 House No., Budget, Locality — and what a field is *called* are

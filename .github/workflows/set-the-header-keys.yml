@@ -1,11 +1,29 @@
 # Set the record header's five facts, and rename Unit Number to "House No.".
 #
-# The owner's prototype of 26 September names five facts for a record's header
-# — Mobile, Contact Type, House No., Budget, Locality — and calls the unit
-# field "House No.". Neither is code: the header list is `ui.split_view` and
-# the name is `ipy_field.label`, both of which an admin sets in the CRM. He
-# asked for them to be set for him, and production is not reachable from a
-# development container, so this does exactly what those two screens do.
+# **BOTH JOBS WERE ALREADY DONE BY THE TIME THIS RAN, AND ITS FIRST VERSION
+# WOULD HAVE DESTROYED THE CONFIGURATION IT FOUND.** Read this before using it.
+#
+# The owner's prototype of 26 September named five facts for a record's header
+# and called the unit field "House No.". Neither is code: the header list is
+# `ui.split_view` and the name is `ipy_field.label`, both of which an admin
+# sets in the CRM. He asked for them to be set for him, and production is not
+# reachable from a development container, so this does what those two screens
+# do.
+#
+# A dry run on 26 September found that somebody had already done both — the
+# labels read "House No." with `is_customised` set, and `ui.split_view` held a
+# fuller arrangement than the prototype named: seven header fields per module
+# plus `queue` and `form` lists somebody had chosen field by field. His own
+# message that day listed "Mobile, House No., Portion, Next Follow Up, Lost
+# Reason", which is that live arrangement rather than the prototype's five —
+# he was describing what he already had.
+#
+# So this now **merges** rather than replaces: it writes only the `header`
+# list for a module named in `modules`, and leaves `queue`, `form` and every
+# other module exactly as it finds them. The first version passed a whole
+# object and would have emptied all of it — a settings row is a person's work,
+# and a job that overwrites one wholesale has no way to tell a value nobody
+# chose from a value somebody spent an afternoon on.
 #
 # Dry run by default: it prints what is there and what it would write, and
 # changes nothing. `apply: true` writes.
@@ -21,7 +39,7 @@
 #     exactly like the setting not working. The last step says so; run
 #     "Deploy now" after this, or wait for the next deploy.
 #
-# Nothing here touches a record. Only two metadata rows and one settings row.
+# Nothing here touches a record.
 name: Set the header keys
 
 on:
@@ -29,6 +47,16 @@ on:
     inputs:
       apply:
         description: "Write it (unticked = show what would change, change nothing)"
+        type: boolean
+        default: false
+      leads_header:
+        description: "Contacts header fields, comma separated. Blank = leave Contacts alone."
+        default: ""
+      properties_header:
+        description: "Inventory header fields, comma separated. Blank = leave Inventory alone."
+        default: ""
+      rename_unit_field:
+        description: "Also rename the unit field's label to \"House No.\""
         type: boolean
         default: false
 
@@ -50,6 +78,9 @@ jobs:
         env:
           PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
           APPLY: ${{ inputs.apply }}
+          LEADS_HEADER: ${{ inputs.leads_header }}
+          PROPERTIES_HEADER: ${{ inputs.properties_header }}
+          RENAME_UNIT_FIELD: ${{ inputs.rename_unit_field }}
         run: |
           set -euo pipefail
           if [ -z "$PROD_DATABASE_URL" ]; then
@@ -57,53 +88,96 @@ jobs:
             exit 1
           fi
 
-          # The five, by the field names production actually has — read off it
-          # rather than guessed. `budget` on a contact is what they will spend;
-          # `demand` on a unit is what it asks. Queue and form are left empty
-          # on purpose: empty means "keep what the CRM shipped", so this
-          # changes the header and nothing else.
-          WANT='{
-            "leads":      {"queue": [], "header": ["mobile","contact_type","unit_no","budget","preferred_locations"], "form": []},
-            "properties": {"queue": [], "header": ["mobile","contact_type","unit_number","demand","preferred_locations"], "form": []}
-          }'
-
-          echo "=== the header list now ==="
+          echo "=== ui.split_view as it stands ==="
           psql "$PROD_DATABASE_URL" -tAc \
-            "SELECT coalesce((SELECT value::text FROM ipy_setting WHERE key = 'ui.split_view'), '(no row)');"
+            "SELECT coalesce((SELECT jsonb_pretty(value) FROM ipy_setting WHERE key = 'ui.split_view'), '(no row)');"
           echo
-          echo "=== what it would become ==="
-          echo "$WANT"
-          echo
-          echo "=== every field named below must exist and be active ==="
-          # A header naming a field that is not there shows nothing, silently,
-          # which reads as the setting being broken. Checked before writing.
-          psql "$PROD_DATABASE_URL" -P pager=off -c "
-            SELECT m.name AS module, f.name, f.label, f.is_active
-              FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
-             WHERE (m.name = 'leads'      AND f.name IN ('mobile','contact_type','unit_no','budget','preferred_locations'))
-                OR (m.name = 'properties' AND f.name IN ('mobile','contact_type','unit_number','demand','preferred_locations'))
-             ORDER BY m.name, f.name;"
-          MISSING=$(psql "$PROD_DATABASE_URL" -tAc "
-            SELECT count(*) FROM (
-              SELECT 'leads' AS m, unnest(ARRAY['mobile','contact_type','unit_no','budget','preferred_locations']) AS n
-              UNION ALL
-              SELECT 'properties', unnest(ARRAY['mobile','contact_type','unit_number','demand','preferred_locations'])
-            ) w
-            WHERE NOT EXISTS (
-              SELECT 1 FROM ipy_field f JOIN ipy_module mo ON mo.id = f.module_id
-               WHERE mo.name = w.m AND f.name = w.n AND f.is_active);")
-          if [ "$MISSING" != "0" ]; then
-            echo "$MISSING of the ten named fields are missing or hidden on production. Not writing." >&2
-            exit 1
-          fi
-
-          echo
-          echo "=== the unit field's name now ==="
+          echo "=== the unit field's name as it stands ==="
           psql "$PROD_DATABASE_URL" -P pager=off -c "
             SELECT m.name AS module, f.name, f.label, f.is_customised
               FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
              WHERE (m.name = 'leads' AND f.name = 'unit_no')
                 OR (m.name = 'properties' AND f.name = 'unit_number');"
+
+          # Only the modules actually named are touched. Everything else in the
+          # row — the other module, and this one's own `queue` and `form` —
+          # is left exactly as found: a settings row is somebody's work, and a
+          # job that rewrites one wholesale cannot tell a value nobody chose
+          # from a value somebody spent an afternoon on.
+          changed=0
+          for spec in "leads:$LEADS_HEADER" "properties:$PROPERTIES_HEADER"; do
+            module="${spec%%:*}"
+            raw="${spec#*:}"
+            [ -z "$raw" ] && { echo "$module: no header given, leaving it alone."; continue; }
+            changed=1
+
+            # Comma separated in, a JSON array out, so a typo cannot become SQL.
+            fields=$(printf '%s' "$raw" | tr ',' '\n' | sed 's/^ *//; s/ *$//' | grep -v '^$' \
+              | python3 -c 'import json,sys; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))')
+            echo
+            echo "=== $module header would become: $fields"
+
+            # A header naming a field that is not there shows nothing, silently,
+            # which reads as the setting being broken. Checked before writing.
+            missing=$(psql "$PROD_DATABASE_URL" -tAc "
+              SELECT count(*) FROM jsonb_array_elements_text('$fields'::jsonb) AS want(n)
+               WHERE NOT EXISTS (
+                 SELECT 1 FROM ipy_field f JOIN ipy_module mo ON mo.id = f.module_id
+                  WHERE mo.name = '$module' AND f.name = want.n AND f.is_active);")
+            if [ "$missing" != "0" ]; then
+              echo "$missing of those fields are missing or hidden on $module. Not writing." >&2
+              exit 1
+            fi
+
+            if [ "$APPLY" = "true" ]; then
+              # jsonb_set with create_if_missing: the module's own `header` key
+              # and nothing else. `||` on the whole object would drop the rest.
+              psql "$PROD_DATABASE_URL" -v ON_ERROR_STOP=1 -tAc "
+                INSERT INTO ipy_setting (key, value, category)
+                VALUES ('ui.split_view',
+                        jsonb_build_object('$module', jsonb_build_object(
+                          'queue', '[]'::jsonb, 'header', '$fields'::jsonb, 'form', '[]'::jsonb)),
+                        'ui')
+                ON CONFLICT (key) DO UPDATE SET
+                  value = jsonb_set(
+                    CASE WHEN jsonb_typeof(ipy_setting.value) = 'object'
+                         THEN ipy_setting.value ELSE '{}'::jsonb END
+                      || CASE WHEN (CASE WHEN jsonb_typeof(ipy_setting.value) = 'object'
+                                         THEN ipy_setting.value ELSE '{}'::jsonb END) ? '$module'
+                              THEN '{}'::jsonb
+                              ELSE jsonb_build_object('$module', jsonb_build_object(
+                                     'queue', '[]'::jsonb, 'header', '[]'::jsonb, 'form', '[]'::jsonb))
+                         END,
+                    '{$module,header}', '$fields'::jsonb, true),
+                  category = 'ui';"
+              echo "$module: written."
+            fi
+          done
+
+          if [ "$RENAME_UNIT_FIELD" = "true" ]; then
+            changed=1
+            echo
+            echo "=== the unit field would be renamed to \"House No.\" ==="
+            if [ "$APPLY" = "true" ]; then
+              # `is_customised` claims the field as admin-owned, or `db:seed`
+              # puts "Unit Number" back on the next cold start.
+              psql "$PROD_DATABASE_URL" -v ON_ERROR_STOP=1 -tAc "
+                UPDATE ipy_field f
+                   SET label = 'House No.', is_customised = true, updated_at = now()
+                  FROM ipy_module m
+                 WHERE m.id = f.module_id
+                   AND ((m.name = 'leads' AND f.name = 'unit_no')
+                     OR (m.name = 'properties' AND f.name = 'unit_number'))
+                   AND f.label IS DISTINCT FROM 'House No.';"
+              echo "renamed."
+            fi
+          fi
+
+          if [ "$changed" = "0" ]; then
+            echo
+            echo "Nothing was asked for. Give a header list, or tick the rename."
+            exit 0
+          fi
 
           if [ "$APPLY" != "true" ]; then
             echo
@@ -112,40 +186,9 @@ jobs:
           fi
 
           echo
-          echo "=== writing ==="
-          # One statement, so the header and the name cannot half-land.
-          psql "$PROD_DATABASE_URL" -v ON_ERROR_STOP=1 -v want="$WANT" <<'SQL'
-          BEGIN;
-
-          -- The row exists (migration 160 creates it under `ui`), but a row
-          -- inserted by the settings PUT with no category lands in `general`
-          -- and the admin screen, which asks for `ui`, never sees it again.
-          -- Stated here so this cannot be the thing that goes wrong.
-          INSERT INTO ipy_setting (key, value, category)
-          VALUES ('ui.split_view', :'want'::jsonb, 'ui')
-          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, category = 'ui';
-
-          -- `is_customised` claims the field as admin-owned, or `db:seed` puts
-          -- "Unit Number" back on the next cold start.
-          UPDATE ipy_field f
-             SET label = 'House No.', is_customised = true, updated_at = now()
-            FROM ipy_module m
-           WHERE m.id = f.module_id
-             AND ((m.name = 'leads' AND f.name = 'unit_no')
-               OR (m.name = 'properties' AND f.name = 'unit_number'));
-
-          COMMIT;
-          SQL
-
-          echo
           echo "=== after ==="
           psql "$PROD_DATABASE_URL" -tAc \
-            "SELECT value::text FROM ipy_setting WHERE key = 'ui.split_view';"
-          psql "$PROD_DATABASE_URL" -P pager=off -c "
-            SELECT m.name AS module, f.name, f.label, f.is_customised
-              FROM ipy_field f JOIN ipy_module m ON m.id = f.module_id
-             WHERE (m.name = 'leads' AND f.name = 'unit_no')
-                OR (m.name = 'properties' AND f.name = 'unit_number');"
+            "SELECT jsonb_pretty(value) FROM ipy_setting WHERE key = 'ui.split_view';"
           echo
           echo "Written. Both caches live for the life of the container, so run"
           echo "the 'Deploy now' workflow to restart it — until then the CRM is"
