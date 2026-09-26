@@ -10,11 +10,11 @@ describe('followUpChip', () => {
     expect(followUpChip('2026-10-05', now)).toEqual({ label: 'Pending', tone: 'pending' });
   });
 
-  it('says how long a task is overdue, in days, months or years', () => {
-    expect(followUpChip('2026-09-25', now)?.label).toBe('Overdue (1 day)');
-    expect(followUpChip('2026-09-24', now)?.label).toBe('Overdue (2 days)');
-    expect(followUpChip('2026-08-20', now)?.label).toBe('Overdue (1 month)');
-    expect(followUpChip('2025-09-01', now)?.label).toBe('Overdue (1 year)');
+  it('uses compact D, M and Y notation for a task overdue', () => {
+    expect(followUpChip('2026-09-25', now)?.label).toBe('Overdue (1D)');
+    expect(followUpChip('2026-09-24', now)?.label).toBe('Overdue (2D)');
+    expect(followUpChip('2026-08-20', now)?.label).toBe('Overdue (1M)');
+    expect(followUpChip('2025-09-01', now)?.label).toBe('Overdue (1Y)');
   });
 
   it('shows nothing when no date is set or the value is not a date', () => {
@@ -25,12 +25,12 @@ describe('followUpChip', () => {
 });
 
 describe('howLongOverdue', () => {
-  it('counts plainly', () => {
-    expect(howLongOverdue(1)).toBe('1 day');
-    expect(howLongOverdue(29)).toBe('29 days');
-    expect(howLongOverdue(30)).toBe('1 month');
-    expect(howLongOverdue(95)).toBe('3 months');
-    expect(howLongOverdue(800)).toBe('2 years');
+  it('counts in compact queue notation', () => {
+    expect(howLongOverdue(1)).toBe('1D');
+    expect(howLongOverdue(29)).toBe('29D');
+    expect(howLongOverdue(30)).toBe('1M');
+    expect(howLongOverdue(95)).toBe('3M');
+    expect(howLongOverdue(800)).toBe('2Y');
   });
 });
 
