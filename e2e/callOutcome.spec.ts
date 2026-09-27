@@ -22,16 +22,12 @@ test.describe.configure({ mode: 'serial' });
 
 const name = `Call Outcome ${Date.now()}`;
 
-/*
-  The outcomes, as the split view's deck draws them: one button each under
-  "Call disposition", named by the admin's own label.
-*/
-function outcomeButtons(deck: Locator): Locator {
-  return deck.getByText('Call disposition', { exact: true }).locator('..').getByRole('button');
+/* The CRM-configured outcomes, rendered as one accessible dropdown. */
+function outcomeSelect(deck: Locator): Locator {
+  return deck.getByRole('combobox', { name: 'Call disposition' });
 }
 async function chooseOutcome(deck: Locator, value: string): Promise<void> {
-  // Each outcome button is named by its own label, exactly.
-  await deck.getByRole('button', { name: value, exact: true }).first().click();
+  await outcomeSelect(deck).selectOption({ label: value });
 }
 let recordUrl = '';
 
@@ -71,7 +67,7 @@ test('tapping the number opens the deck in the header, not a dialog over the rec
 
   // The real list, not one lonely option: the picklist ships with thirteen and
   // an admin only ever adds to it.
-  expect(await outcomeButtons(deck).count(), 'the outcome list did not load').toBeGreaterThan(5);
+  expect(await outcomeSelect(deck).locator('option').count(), 'the outcome list did not load').toBeGreaterThan(5);
 
   /*
     Speaker, mute, hold and End are dead, with the reason, until a phone says
@@ -113,7 +109,7 @@ test('an outcome the list does not offer cannot be sent', async ({ page }) => {
   const deck = page.getByTestId('call-deck-panel').or(page.getByTestId('call-deck')).first();
   await expect(deck).toBeVisible({ timeout: 15_000 });
   expect(await deck.locator('input[type="text"]').count()).toBe(0);
-  expect(await outcomeButtons(deck).count()).toBeGreaterThan(5);
+  expect(await outcomeSelect(deck).locator('option').count()).toBeGreaterThan(5);
   await deck.getByRole('button', { name: /save & exit/i }).click();
 });
 
